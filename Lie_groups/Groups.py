@@ -1,8 +1,8 @@
 import torch 
 
 class Group(object) : 
-    Lie_algebra = NotImplemented
-    Discrete_Generators = NotImplemented 
+    lie_algebra = NotImplemented
+    discrete_generators = NotImplemented 
     is_orthogonal = False
     is_permutation = False
     d = NotImplemented
@@ -219,7 +219,7 @@ class SO13p(Group):
 
     # Adjust variance for samples along boost generators. For equivariance checks
     # the exps for high order tensors can get very large numbers
-    z_scale = torch.array([.3,.3,.3,1,1,1]) # can get rid of now
+    z_scale = torch.tensor([.3,.3,.3,1,1,1]) # can get rid of now
 
 
 class SO13(SO13p):
