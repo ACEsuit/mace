@@ -1,11 +1,24 @@
 import torch
 from functools import reduce 
+from Linear_ops_base import LinearOperator,Lazy
+
 
 product = lambda c: reduce(lambda a,b:a*b,c)
 
 #Taken on https://github.com/mfinzi/equivariant-MLP from Marc Finzi
 
-class I():
+
+def lazify(x):
+    if isinstance(x,LinearOperator): return x
+    elif isinstance(x,(jnp.ndarray,np.ndarray)): return Lazy(x)
+    else: raise NotImplementedError
+
+def densify(x):
+    if isinstance(x,LinearOperator): return x.to_dense()
+    elif isinstance(x,(jnp.ndarray,np.ndarray)): return x
+
+
+class I(LinearOperator):
     def __init__(self,d):
         shape = (d,d)
         super().__init__(None, shape)
@@ -18,7 +31,7 @@ class I():
     def invT(self):
         return self
 
-class LazyKron():
+class LazyKron(LinearOperator):
 
     def __init__(self,Ms):
         self.Ms = Ms
@@ -50,7 +63,7 @@ def kronsum(A,B):
     return torch.kron(A,torch.eye(B.shape[-1])) + torch.kron(torch.eye(A.shape[-1]),B)
 
 
-class LazyKronsum():
+class LazyKronsum(LinearOperator):
     
     def __init__(self,Ms):
         self.Ms = Ms
@@ -79,7 +92,7 @@ class LazyKronsum():
         if len(Ms)==1: return Ms[0]
         return super().__new__(cls)
 
-class JVP():
+class JVP(LinearOperator):
     def __init__(self,operator_fn,X,TX):
         self.shape = operator_fn(X).shape
         self.vjp = lambda v: torch.autograd.functional.jvp(lambda x: operator_fn(x)@v,[X],[TX])[1]
@@ -93,7 +106,7 @@ class JVP():
         return self.vjp_T(v)
 
 
-class ConcatLazy():
+class ConcatLazy(LinearOperator):
     """ Produces a linear operator equivalent to concatenating
         a collection of matrices Ms along axis=0 """
     def __init__(self,Ms):
@@ -112,7 +125,7 @@ class ConcatLazy():
         dense_Ms = [M.to_dense() if isinstance(M,LinearOperator) else M for M in self.Ms]
         return torch.concatenate(dense_Ms,axis=0)
     
-class LazyDirectSum():
+class LazyDirectSum(LinearOperator):
     def __init__(self,Ms,multiplicities=None):
         self.Ms = [ M for M in Ms]
         self.multiplicities = [1 for M in Ms] if multiplicities is None else multiplicities
