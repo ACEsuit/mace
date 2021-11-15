@@ -1,6 +1,6 @@
 import torch
-
-
+from Rotations import LorentzD, WignerD, matrix_to_angles
+from Groups import Group,SO,SU,SO13
 class Rep(object):
     r""" The base Representation class. Representation objects formalize the vector space V
         on which the group acts, the group representation matrix ρ(g), and the Lie Algebra
@@ -111,7 +111,7 @@ class Rep(object):
 
 
 
-@dispatch
+
 def mul_reps(ra,rb:int):
     if rb==1: return ra
     if rb==0: return 0
@@ -120,7 +120,7 @@ def mul_reps(ra,rb:int):
     else:
         return emlp.reps.product_sum_reps.DeferredSumRep(*(rb*[ra]))
 
-@dispatch
+
 def mul_reps(ra:int,rb):
     return mul_reps(rb,ra)
 
@@ -234,10 +234,8 @@ class SO3Irreps(Rep):
     def size(self):
         return 2*self.order + 1
     def rho(self,M):
-        irreps = o3.Irreps('1x' + str(self.order) + 'e')
-        print(type(np.array(M)))
-        M = torch.tensor(np.array(M))
-        return torch.asarray(irreps.D_from_matrix(M))
+        alpha,beta,gamma = matrix_to_angles(M)
+        return WignerD(self.order,alpha,beta,gamma)[0] #take the real part
     def __str__(self):
         number2sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
         return f"𝜓{self.order}".translate(number2sub)
@@ -254,15 +252,14 @@ class SU2Irreps(Rep):
     is_regular=False
     def __init__(self,order):
         assert order>0, "Use Scalar for 𝜓₀"
-        self.G=SO(3)
+        self.G=SU(2)
         self.order = order
     def size(self):
         return 2*self.order + 1
     def rho(self,M):
         irreps = o3.Irreps('1x' + str(self.order) + 'e')
-        print(type(np.array(M)))
-        M = torch.tensor(np.array(M))
-        return torch.asarray(irreps.D_from_matrix(M))
+        alpha,beta,gamma = matrix_to_angles(M)
+        return WignerD(self.order,alpha,beta,gamma)
     def __str__(self):
         number2sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
         return f"𝜓{self.order}".translate(number2sub)
@@ -273,3 +270,28 @@ class SU2Irreps(Rep):
     @property
     def T(self):
         return self
+
+class SO13Irreps(Rep):
+    """ (Real) Irreducible representations of SO3 """
+    is_regular=False
+    def __init__(self,order):
+        assert order>0, "Use Scalar for 𝜓₀"
+        self.G=SO13()
+        self.order = order
+    def size(self):
+        return 2*sum(self.order) + 1
+    def rho(self,M):
+        alpha,beta,gamma = Matrix_to_euler(M)
+        return LorentzD(self.order,alpha,beta,gamma)
+    def __str__(self):
+        number2sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+        return f"𝜓{self.order}".translate(number2sub)
+    def __eq__(self,other):
+        return type(self)==type(other) and self.G==other.G and self.order==other.order
+    def __hash__(self):
+        return hash((type(self),self.G,self.order))
+    @property
+    def T(self):
+        return self
+
+print(SO3Irreps(1).__str__())

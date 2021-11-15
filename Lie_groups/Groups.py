@@ -236,7 +236,7 @@ class O13(SO13p):
 
 class SO11p(Group):
     """ The identity component of O(1,1) (Lorentz group in 1+1 dimensions)"""
-    lie_algebra = torch.array([[0.,1.],[1.,0.]])[None]
+    lie_algebra = torch.tensor([[0.,1.],[1.,0.]])[None]
 
 
 class O11(SO11p):
