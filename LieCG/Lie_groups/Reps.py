@@ -1,6 +1,10 @@
 import torch
-from Rotations import LorentzD, WignerD, matrix_to_angles
-from Groups import Group,SO,SU,SO13
+from functools import reduce
+from Lie_groups.Linear_ops import JVP
+from Lie_groups.Rotations import LorentzD, WignerD, matrix_to_angles
+from Lie_groups.Groups import Group,SO,SU,SO13
+from Lie_groups.Linear_ops import JVP
+
 class Rep(object):
     r""" The base Representation class. Representation objects formalize the vector space V
         on which the group acts, the group representation matrix ρ(g), and the Lie Algebra
@@ -21,7 +25,7 @@ class Rep(object):
     def drho(self,A): 
         """ Lie Algebra representation of the matrix A of shape (d,d)"""
         In = torch.eye(A.shape[0])
-        return LazyJVP(self.rho,In,A)
+        return JVP(self.rho,In,A)
 
 
     def __call__(self,G):
@@ -235,7 +239,7 @@ class SO3Irreps(Rep):
         return 2*self.order + 1
     def rho(self,M):
         alpha,beta,gamma = matrix_to_angles(M)
-        return WignerD(self.order,alpha,beta,gamma)[0] #take the real part
+        return WignerD(self.order,alpha,beta,gamma).real #take the real part
     def __str__(self):
         number2sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
         return f"𝜓{self.order}".translate(number2sub)
@@ -257,7 +261,6 @@ class SU2Irreps(Rep):
     def size(self):
         return 2*self.order + 1
     def rho(self,M):
-        irreps = o3.Irreps('1x' + str(self.order) + 'e')
         alpha,beta,gamma = matrix_to_angles(M)
         return WignerD(self.order,alpha,beta,gamma)
     def __str__(self):
@@ -281,7 +284,7 @@ class SO13Irreps(Rep):
     def size(self):
         return 2*sum(self.order) + 1
     def rho(self,M):
-        alpha,beta,gamma = Matrix_to_euler(M)
+        alpha,beta,gamma = matrix_to_angles(M)
         return LorentzD(self.order,alpha,beta,gamma)
     def __str__(self):
         number2sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
@@ -294,4 +297,3 @@ class SO13Irreps(Rep):
     def T(self):
         return self
 
-print(SO3Irreps(1).__str__())

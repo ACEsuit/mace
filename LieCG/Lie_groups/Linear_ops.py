@@ -1,6 +1,6 @@
 import torch
 from functools import reduce 
-from Linear_ops_base import LinearOperator,Lazy
+from Lie_groups.Linear_ops_base import LinearOperator,Lazy
 
 
 product = lambda c: reduce(lambda a,b:a*b,c)
@@ -10,12 +10,12 @@ product = lambda c: reduce(lambda a,b:a*b,c)
 
 def lazify(x):
     if isinstance(x,LinearOperator): return x
-    elif isinstance(x,(jnp.ndarray,np.ndarray)): return Lazy(x)
+    elif isinstance(x,(torch.tensor)): return Lazy(x)
     else: raise NotImplementedError
 
 def densify(x):
     if isinstance(x,LinearOperator): return x.to_dense()
-    elif isinstance(x,(jnp.ndarray,np.ndarray)): return x
+    elif isinstance(x,(torch.tensor)): return x
 
 
 class I(LinearOperator):

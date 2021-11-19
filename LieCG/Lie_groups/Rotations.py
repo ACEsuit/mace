@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-
+from CG_coefficients.CG_lorentz import CGDict
 
 
 #Copied from the Lorentz Equivariant Network A. Bogatskiy, B. Anderson, J. T. Offermann, M. Roussi, D. W. Miller, R. Kondor, 
@@ -47,19 +47,17 @@ def littled(j, beta):
 
 
 def WignerD(j, alpha, beta, gamma, numpy_test=False, dtype=torch.float64, device=torch.device('cpu')):
-    d = littled(j, beta)
+    d = torch.tensor(littled(j, np.array(beta)))
 
-    Jz = np.arange(-j, j + 1)
-    Jzl = np.expand_dims(Jz, 1)
+    Jz = torch.arange(-j, j + 1)
+    Jzl = torch.unsqueeze(Jz,1)
 
     # np.multiply() broadcasts, so this isn't actually matrix multiplication, and 'left'/'right' are lies
-    left = np.exp(1j * alpha * Jzl)
-    right = np.exp(1j * gamma * Jz)
+    left = torch.exp(1j * alpha * Jzl)
+    right = torch.exp(1j * gamma * Jz)
 
     D = left * d * right
 
-    if not numpy_test:
-        D = complex_from_numpy(D, dtype=dtype, device=device)
 
     return D
 
