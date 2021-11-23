@@ -1,9 +1,14 @@
 import torch
+from os import sys
+
+sys.path.append(r'C:\Users\Lilyes\Documents\GitHub\LieCG\LieCG')
 
 from tqdm.auto import tqdm
 import logging
 import itertools
+from Lie_groups.Reps import SU2Irreps
 from Lie_groups.Linear_ops import ConcatLazy, LazyKron, LazyKronsum
+from Lie_groups.Groups import SU
 
 class ConvergenceError(Exception): pass
 
@@ -15,8 +20,8 @@ class Clebsch_Gordan():
         self.Group = Group
         self.lmax = lmax
         self.irreps = irreps
-        self.lie_generators = Group.lie_algebra()
-        self.discrete_generators = Group.discrete_generators()
+        self.lie_generators = Group.lie_algebra
+        self.discrete_generators = Group.discrete_generators
 
     def constraint_matrix(self,l1,l2,l3) : 
         #Create the constraint matrix for CG(l1,l2,l3). The Nullspace of this constraint matrix corresponds to the 
@@ -27,16 +32,17 @@ class Clebsch_Gordan():
         self.irreps_l3 = self.irreps(l3)
         
         A =[]
-        A.extend([LazyKronsum(self.irreps_l1(Ti), self.irreps_l2(Ti)) for Ti in self.lie_algebra]) #replace with lazy for saving cost
-        A.extend([LazyKron(self.irreps_l1(hi), self.irreps_l2(hi)) for hi in self.discrete_generators]) #replace with lazy for cost
+        print(self.irreps_l1.drho)
+        A.extend([LazyKronsum([self.irreps_l1.drho(Ti), self.irreps_l2.drho(Ti)]) for Ti in self.lie_generators]) #replace with lazy for saving cost
+        A.extend([LazyKron(self.irreps_l1.rho(hi), self.irreps_l2.rho(hi)) for hi in self.discrete_generators]) #replace with lazy for cost
         A = ConcatLazy(A)#replace with lazy for cost
 
         B = []
-        B.extend([self.irreps_l3(Ti) for Ti in self.lie_algebra])
-        B.extend([self.irreps_l3(hi) for hi in self.discrete_generators])
+        B.extend([self.irreps_l3.drho(Ti) for Ti in self.lie_generators])
+        B.extend([self.irreps_l3.rho(hi) for hi in self.discrete_generators])
         B = ConcatLazy(B)
 
-        const_m = LazyKronsum(A.T,-B)    
+        const_m = LazyKronsum([A.T,-B])    
 
         return const_m
     
@@ -128,3 +134,4 @@ def krylov_constraint_solve_upto_r(C,r,tol=1e-5,lr=1e-2):#,W0=None):
     #logging.debug(f"found Rank {r}, above cutoff {S[rank-1]:.3e} after {S[rank] if r>rank else np.inf:.3e}. Loss {final_L:.1e}")
     return Q
 
+#print(Clebsch_Gordan(Group=SU(2),lmax=3,irreps=SU2Irreps).constraint_matrix(1/2,1/2,1))

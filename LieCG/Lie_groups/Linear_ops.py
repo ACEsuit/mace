@@ -1,6 +1,6 @@
 import torch
 from functools import reduce 
-from Linear_ops_base import LinearOperator,Lazy
+from Lie_groups.Linear_ops_base import LinearOperator,Lazy
 
 
 product = lambda c: reduce(lambda a,b:a*b,c)
@@ -68,7 +68,7 @@ class LazyKronsum(LinearOperator):
     def __init__(self,Ms):
         self.Ms = Ms
         shape = product([Mi.shape[0] for Mi in Ms]), product([Mi.shape[1] for Mi in Ms])
-        dtype=torch.dtype('float32')
+        dtype=torch.cfloat
         super().__init__(dtype,shape)
 
     def _matvec(self,v):

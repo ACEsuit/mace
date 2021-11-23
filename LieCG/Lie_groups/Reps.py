@@ -1,9 +1,9 @@
 import torch
 from functools import reduce
-from Linear_ops import JVP
-from Rotations import LorentzD, WignerD, matrix_to_angles, matrix_to_angles_SU2
-from Groups import Group,SO,SU,SO13
-from Linear_ops import JVP
+from Lie_groups.Linear_ops import JVP
+from Lie_groups.Rotations import LorentzD, WignerD, matrix_to_angles, matrix_to_angles_SU2
+from Lie_groups.Groups import Group,SO,SU,SO13
+from Lie_groups.Linear_ops import JVP
 
 class Rep(object):
     r""" The base Representation class. Representation objects formalize the vector space V
@@ -302,9 +302,4 @@ class SO13Irreps(Rep):
     def T(self):
         return self
 
-A = SU2Irreps(1)
-from scipy.stats import unitary_group
-M = torch.tensor(unitary_group.rvs(2))
-M = M / (torch.det(M)**(1/2))
-print(A.drho(M))
 

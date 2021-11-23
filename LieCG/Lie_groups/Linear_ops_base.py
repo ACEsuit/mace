@@ -104,13 +104,13 @@ class LinearOperator(object):
         be convertible to a length-2 tuple.
         """
         if dtype is not None:
-            dtype = torch.dtype(dtype)
+            dtype = dtype
 
         shape = tuple(shape)
         if not isshape(shape):
             raise ValueError("invalid shape %r (must be 2-d)" % (shape,))
 
-        self.dtype = torch.dtype('float32') #force float 32
+        self.dtype = torch.cfloat #force float 32
         self.shape = shape
 
     def _init_dtype(self):
@@ -767,7 +767,7 @@ def isshape(x, nonneg=False):
         return False
     else:
         if isintlike(M) and isintlike(N):
-            if torch.size(M) == 0 and torch.size(N) == 0:
+            if np.ndim(M) == 0 and np.ndim(N) == 0:
                 if not nonneg or (M >= 0 and N >= 0):
                     return True
         return False
