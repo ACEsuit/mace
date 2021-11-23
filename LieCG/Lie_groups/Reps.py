@@ -1,9 +1,9 @@
 import torch
 from functools import reduce
-from Lie_groups.Linear_ops import JVP
-from Lie_groups.Rotations import LorentzD, WignerD, matrix_to_angles
-from Lie_groups.Groups import Group,SO,SU,SO13
-from Lie_groups.Linear_ops import JVP
+from Linear_ops import JVP
+from Rotations import LorentzD, WignerD, matrix_to_angles, matrix_to_angles_SU2
+from Groups import Group,SO,SU,SO13
+from Linear_ops import JVP
 
 class Rep(object):
     r""" The base Representation class. Representation objects formalize the vector space V
@@ -16,6 +16,7 @@ class Rep(object):
         At minimum, new representations need to implement ``rho``, ``__str__``."""
         
     is_permutation=False
+    is_complex = False
 
     def rho(self,M):
         """ Group representation of the matrix M of shape (d,d)"""
@@ -24,7 +25,10 @@ class Rep(object):
         
     def drho(self,A): 
         """ Lie Algebra representation of the matrix A of shape (d,d)"""
-        In = torch.eye(A.shape[0])
+        if self.is_complex : 
+            In = torch.eye(A.shape[0],dtype=torch.cfloat)
+        else : 
+            In = torch.eye(A.shape[0])
         return JVP(self.rho,In,A)
 
 
@@ -258,10 +262,11 @@ class SU2Irreps(Rep):
         assert order>0, "Use Scalar for 𝜓₀"
         self.G=SU(2)
         self.order = order
+        self.is_complex = True
     def size(self):
         return 2*self.order + 1
     def rho(self,M):
-        alpha,beta,gamma = matrix_to_angles(M)
+        alpha,beta,gamma = matrix_to_angles_SU2(M)
         return WignerD(self.order,alpha,beta,gamma)
     def __str__(self):
         number2sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
@@ -275,7 +280,7 @@ class SU2Irreps(Rep):
         return self
 
 class SO13Irreps(Rep):
-    """ (Real) Irreducible representations of SO3 """
+    """ (Real) Irreducible representations of SO13 """
     is_regular=False
     def __init__(self,order):
         assert order>0, "Use Scalar for 𝜓₀"
@@ -296,4 +301,10 @@ class SO13Irreps(Rep):
     @property
     def T(self):
         return self
+
+A = SU2Irreps(1)
+from scipy.stats import unitary_group
+M = torch.tensor(unitary_group.rvs(2))
+M = M / (torch.det(M)**(1/2))
+print(A.drho(M))
 

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from CG_coefficients.CG_lorentz import CGDict
+#from CG_coefficients.CG_lorentz import CGDict
 
 
 #Copied from the Lorentz Equivariant Network A. Bogatskiy, B. Anderson, J. T. Offermann, M. Roussi, D. W. Miller, R. Kondor, 
@@ -239,3 +239,11 @@ def xyz_to_angles(xyz):
     beta = torch.acos(xyz[..., 1])
     alpha = torch.atan2(xyz[..., 0], xyz[..., 2])
     return alpha, beta
+
+def matrix_to_angles_SU2(R):
+    alpha = 2 * torch.acos(torch.sqrt(R[0,0] * R[0,0].conj()))
+    beta = torch.atan2(R[0,0].imag,R[0,0].real) + torch.atan2(R[0,1].imag,R[0,1].real) - torch.tensor(np.pi)/2
+    gamma = torch.atan2(R[0,0].imag,R[0,0].real) - torch.atan2(R[0,1].imag,R[0,1].real) + torch.tensor(np.pi)/2
+
+
+    return alpha,beta,gamma

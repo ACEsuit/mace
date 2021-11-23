@@ -1,6 +1,6 @@
 import torch
 from functools import reduce 
-from Lie_groups.Linear_ops_base import LinearOperator,Lazy
+from Linear_ops_base import LinearOperator,Lazy
 
 
 product = lambda c: reduce(lambda a,b:a*b,c)
@@ -97,7 +97,7 @@ class JVP(LinearOperator):
         self.shape = operator_fn(X).shape
         self.vjp = lambda v: torch.autograd.functional.jvp(lambda x: operator_fn(x)@v,[X],[TX])[1]
         self.vjp_T = lambda v: torch.autograd.functional.jvp(lambda x: operator_fn(x).T@v,[X],[TX])[1]
-        self.dtype= torch.dtype('float32')
+        self.dtype= torch.cfloat
     def _matmat(self,v):
         return self.vjp(v)
     def _matvec(self,v):
