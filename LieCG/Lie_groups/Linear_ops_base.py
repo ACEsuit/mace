@@ -236,7 +236,6 @@ class LinearOperator(object):
         if X.ndim != 2:
             raise ValueError('expected 2-d ndarray or matrix, not %d-d'
                              % X.ndim)
-
         if X.shape[0] != self.shape[1]:
             raise ValueError('dimension mismatch: %r, %r'
                              % (self.shape, X.shape))

@@ -43,6 +43,8 @@ class LazyKron(LinearOperator):
     def _matmat(self,v):
         ev = v.reshape(*[Mi.shape[-1] for Mi in self.Ms],-1)
         for i,M in enumerate(self.Ms):
+            if M.dtype != torch.complex64 and M.dtype != torch.complex32 :
+                M = M.type(torch.complex64)
             ev_front = torch.moveaxis(ev,i,0)
             Mev_front = (M@ev_front.reshape(M.shape[-1],-1)).reshape(M.shape[0],*ev_front.shape[1:])
             ev =torch.moveaxis(Mev_front,0,i)
@@ -95,8 +97,11 @@ class LazyKronsum(LinearOperator):
 class JVP(LinearOperator):
     def __init__(self,operator_fn,X,TX):
         self.shape = operator_fn(X).shape
-        self.vjp = lambda v: torch.autograd.functional.jvp(lambda x: operator_fn(x)@v,[X],[TX])[1]
-        self.vjp_T = lambda v: torch.autograd.functional.jvp(lambda x: operator_fn(x).T@v,[X],[TX])[1]
+        self.X = X
+        self.TX = TX
+        self.oper = operator_fn
+        self.vjp = lambda v: torch.autograd.functional.jvp(lambda x: operator_fn(x)@v,TX,X)[1]
+        self.vjp_T = lambda v: torch.autograd.functional.jvp(lambda x: operator_fn(x).T@v,TX,X)[1]
         self.dtype= torch.cfloat
     def _matmat(self,v):
         return self.vjp(v)
@@ -117,13 +122,14 @@ class ConcatLazy(LinearOperator):
         super().__init__(None,shape)
 
     def _matmat(self,V):
-        return torch.concatenate([M@V for M in self.Ms],axis=0)
+        
+        return torch.cat([M@V for M in self.Ms],dim=0)
     def _rmatmat(self,V):
         Vs = torch.split(V,len(self.Ms))
         return sum([self.Ms[i].T@Vs[i] for i in range(len(self.Ms))])
     def to_dense(self):
         dense_Ms = [M.to_dense() if isinstance(M,LinearOperator) else M for M in self.Ms]
-        return torch.concatenate(dense_Ms,axis=0)
+        return torch.cat(dense_Ms,dim=0)
     
 class LazyDirectSum(LinearOperator):
     def __init__(self,Ms,multiplicities=None):
@@ -162,5 +168,6 @@ def lazy_direct_matmat(v,Ms,mults):
         elems = M@v[i:i_end].T.reshape(k*multiplicity,M.shape[-1]).T
         y.append(elems.T.reshape(k,multiplicity*M.shape[0]).T)
         i = i_end
-    y = torch.concatenate(y,axis=0) #concatenate over rep axis
+    y = torch.cat(y,dim=0) #concatenate over rep axis
     return  y
+

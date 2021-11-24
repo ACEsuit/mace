@@ -1,7 +1,8 @@
 import torch
 from functools import reduce
+from Lie_groups.Rotations import su2_algebra_irres
 from Lie_groups.Linear_ops import JVP
-from Lie_groups.Rotations import LorentzD, WignerD, matrix_to_angles, matrix_to_angles_SU2
+from Lie_groups.Rotations import LorentzD, WignerD, matrix_to_angles, matrix_to_angles_SU2, WignerD_SU2
 from Lie_groups.Groups import Group,SO,SU,SO13
 from Lie_groups.Linear_ops import JVP
 
@@ -151,9 +152,9 @@ class ScalarRep(Rep):
     def T(self):
         return self
     def rho(self,M):
-        return torch.eye(1)
+        return torch.eye(1,dtype=torch.cfloat)
     def drho(self,M):
-        return 0*torch.eye(1)
+        return 0*torch.eye(1,dtype=torch.cfloat)
     def __hash__(self):
         return 0
     def __eq__(self,other):
@@ -266,8 +267,9 @@ class SU2Irreps(Rep):
     def size(self):
         return 2*self.order + 1
     def rho(self,M):
-        alpha,beta,gamma = matrix_to_angles_SU2(M)
-        return WignerD(self.order,alpha,beta,gamma)
+        return WignerD_SU2(self.order).WignerD(M)
+    def drho(self,M) :
+        return su2_algebra_irres(self.order,self.G).drho(M)
     def __str__(self):
         number2sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
         return f"𝜓{self.order}".translate(number2sub)

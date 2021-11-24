@@ -8,46 +8,46 @@ import numpy as np
 # https://github.com/fizisist/LorentzGroupNetwork
 
 def create_J(j):
-    mrange = -np.arange(-j, j)
-    jp_diag = np.sqrt((j + mrange) * (j - mrange + 1))
-    Jp = np.diag(jp_diag, k=1)
-    Jm = np.diag(jp_diag, k=-1)
+    mrange = -torch.arange(-j, j)
+    jp_diag = torch.sqrt((j + mrange) * (j - mrange + 1))
+    Jp = torch.diag(jp_diag, diagonal=1)
+    Jm = torch.diag(jp_diag, diagonal=-1)
     # Jx = (Jp + Jm) / complex(2, 0)
     # Jy = -(Jp - Jm) / complex(0, 2)
-    Jz = np.diag(-np.arange(-j, j + 1))
-    Id = np.eye(2 * j + 1)
+    Jz = torch.diag(-torch.arange(-j, j + 1))
+    Id = torch.eye(2 * j + 1)
     return Jp, Jm, Jz, Id
 
 
 def create_Jy(j):
-    mrange = -np.arange(-j, j)
-    jp_diag = np.sqrt((j + mrange) * (j - mrange + 1))
-    Jp = np.diag(jp_diag, k=1)
-    Jm = np.diag(jp_diag, k=-1)
+    mrange = -torch.arange(-j, j)
+    jp_diag = torch.sqrt((j + mrange) * (j - mrange + 1))
+    Jp = torch.diag(jp_diag, diagonal=1)
+    Jm = torch.diag(jp_diag, diagonal=-1)
     Jy = -(Jp - Jm) / complex(0, 2)
     return Jy
 
 
 def create_Jx(j):
-    mrange = -np.arange(-j, j)
-    jp_diag = np.sqrt((j + mrange) * (j - mrange + 1))
-    Jp = np.diag(jp_diag, k=1)
-    Jm = np.diag(jp_diag, k=-1)
+    mrange = -torch.arange(-j, j)
+    jp_diag = torch.sqrt((j + mrange) * (j - mrange + 1))
+    Jp = torch.diag(jp_diag, diagonal=1)
+    Jm = torch.diag(jp_diag, diagonal=-1)
     Jx = (Jp + Jm) / complex(2, 0)
     return Jx
 
 
 def littled(j, beta):
     Jy = create_Jy(j)
-    evals, evecs = np.linalg.eigh(Jy)
+    evals, evecs = torch.linalg.eigh(Jy)
     evecsh = evecs.conj().T
-    evals_exp = np.diag(np.exp(1j * beta * evals))
-    d = np.matmul(np.matmul(evecs, evals_exp), evecsh)
+    evals_exp = torch.diag(torch.exp(1j * beta * evals))
+    d = torch.matmul(torch.matmul(evecs, evals_exp), evecsh)
     return d
 
 
 def WignerD(j, alpha, beta, gamma, numpy_test=False, dtype=torch.float64, device=torch.device('cpu')):
-    d = torch.tensor(littled(j, np.array(beta)))
+    d = littled(j, beta)
 
     Jz = torch.arange(-j, j + 1)
     Jzl = torch.unsqueeze(Jz,1)
@@ -247,3 +247,84 @@ def matrix_to_angles_SU2(R):
 
 
     return alpha,beta,gamma
+
+class WignerD_SU2():
+  def __init__(self,l):
+    self.l = l
+  def WignerD(self,input, numpy_test=False, dtype=torch.float64, device=torch.device('cpu')):
+    angles = matrix_to_angles_SU2(input)
+    d = littled(self.l, angles[1])
+
+    Jz = torch.arange(-self.l, self.l + 1)
+    Jzl = torch.unsqueeze(Jz,1)
+
+    # np.multiply() broadcasts, so this isn't actually matrix multiplication, and 'left'/'right' are lies
+    left = torch.exp(1j * angles[0] * Jzl)
+    right = torch.exp(1j * angles[2] * Jz)
+
+    D = left * d * right
+    return D
+  def matrix_to_angles_SU2(R):
+ 
+            
+    alpha = 2 * torch.acos(torch.sqrt(R[0,0] * R[0,0].conj()))
+    beta = torch.atan2(R[0,0].imag,R[0,0].real) + torch.atan2(R[0,1].imag,R[0,1].real) - torch.tensor(np.pi)/2
+    gamma = torch.atan2(R[0,0].imag,R[0,0].real) - torch.atan2(R[0,1].imag,R[0,1].real) + torch.tensor(np.pi)/2
+
+    return alpha,beta,gamma 
+
+class su2_algebra_irres():
+    def __init__(self,j,group):
+        self.j = j
+        self.lie_algebra = group.lie_algebra
+
+    def mul_plus(self,j,m):
+        print(m)
+        mul_p = torch.sqrt(torch.tensor(j*(j+1) - m*(m+1)))
+        return mul_p
+
+    def mul_min(self,j,m) : 
+        mul_min = torch.sqrt(torch.tensor(j*(j+1) - m*(m-1)))
+        return mul_min
+    
+    def drho(self,M):
+        if torch.equal(M , self.lie_algebra[0]) : 
+         return (1/(2*1j))*(self.drho_plus() + self.drho_min())
+        if torch.equal(M , self.lie_algebra[1])  :
+            return -(1/(2))*(self.drho_plus() - self.drho_min())
+        if torch.equal(M , self.lie_algebra[2])  :
+            return (1/1j)*self.drho_J3()
+    def drho_plus(self) :
+        drho = torch.zeros((int(2*self.j + 1),int(2*self.j + 1)),dtype=torch.cfloat)
+        for i in range(int(2*self.j + 1)) :
+            for k in range(int(2*self.j + 1)): 
+                if i+1==k :
+                    
+                    drho[i,k] = self.mul_plus(self.j,i- self.j) 
+                else :
+                    drho[0,0] = 0
+        return drho
+    def drho_min(self) :
+        drho = torch.zeros((int(2*self.j + 1),int(2*self.j + 1)),dtype=torch.cfloat)
+        for i in range(int(2*self.j + 1)) :
+            for k in range(int(2*self.j + 1)) :
+                if i-1==k :
+                    print(k)
+                    drho[i,k] = self.mul_min(self.j,i - self.j) 
+                else :
+                    drho[0,0] = 0
+        return drho
+    def drho_J3(self) :
+        drho = self.drho_min()@ self.drho_plus()  -  self.drho_plus() @ self.drho_min()
+        return (-1/2)*drho
+
+
+
+
+
+
+
+
+    
+
+

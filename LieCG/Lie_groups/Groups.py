@@ -292,3 +292,4 @@ class S(Group): #The permutation group
         # adding superflous extra generators surprisingly can sometimes actually *decrease* 
         # the runtime of the iterative krylov solver by improving the conditioning 
         # of the constraint matrix
+print(SU(2).lie_algebra)
