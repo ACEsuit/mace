@@ -279,7 +279,6 @@ class su2_algebra_irres():
         self.lie_algebra = group.lie_algebra
 
     def mul_plus(self,j,m):
-        print(m)
         mul_p = torch.sqrt(torch.tensor(j*(j+1) - m*(m+1)))
         return mul_p
 
@@ -299,7 +298,6 @@ class su2_algebra_irres():
         for i in range(int(2*self.j + 1)) :
             for k in range(int(2*self.j + 1)): 
                 if i+1==k :
-                    
                     drho[i,k] = self.mul_plus(self.j,i- self.j) 
                 else :
                     drho[0,0] = 0
@@ -309,7 +307,6 @@ class su2_algebra_irres():
         for i in range(int(2*self.j + 1)) :
             for k in range(int(2*self.j + 1)) :
                 if i-1==k :
-                    print(k)
                     drho[i,k] = self.mul_min(self.j,i - self.j) 
                 else :
                     drho[0,0] = 0

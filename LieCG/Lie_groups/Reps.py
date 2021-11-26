@@ -1,5 +1,8 @@
 import torch
 from functools import reduce
+from os import sys
+sys.path.append(r'C:\Users\Lilyes\Documents\GitHub\LieCG\LieCG')
+
 from Lie_groups.Rotations import su2_algebra_irres
 from Lie_groups.Linear_ops import JVP
 from Lie_groups.Rotations import LorentzD, WignerD, matrix_to_angles, matrix_to_angles_SU2, WignerD_SU2
