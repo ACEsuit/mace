@@ -1,0 +1,7 @@
+{
+    "python.analysis.extraPaths": [
+        "./LieCG",
+        "./LieACE/functions",
+        "./LieACE/functions"
+    ]
+}
