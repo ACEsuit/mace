@@ -57,7 +57,7 @@ class EdgeEmbeddingBlock(torch.nn.Module):
 
 
 
-class atomic_base(torch.nn.Module):
+class AtomicBaseBlock(torch.nn.Module):
     """ Create the Atomic base from pooling 1-particle basis"""
     def __init__(self, ):
         super().__init__()
@@ -80,3 +80,28 @@ class atomic_base(torch.nn.Module):
                              reduce='sum')  #size [num_nodes,n,lmax**2 + 2*lmax + 1]
         node_feats = (A_nlm_real, A_nlm_imag)
         return node_feats, edges_features
+
+class VectorizeBlock(torch.nn.Module):
+    def __init__(self,
+                c_tildes_dict : Dict[str,torch.Tensor],
+                 device = 'cpu'):
+        super().__init__()
+        #Create the dict or pass it? For correlation 4 can be very long
+        self.max_corr = c_tildes_dict['degree'].max_corr() 
+        contract_module = OrderedDict()
+        for vu in range(self.max_corr,1,-1) :  
+          contract_module[f"contract_{vu}"]  = tensor_contract_nd_update_sparse(
+                                                              c_tildes_dict[vu],
+                                                              correlation=vu,
+                                                              device = device)
+        contract_module["vector_contract"] = vector_contract()
+        self.contract = torch.nn.Sequential(contract_module) 
+         
+    def forward(self,
+                atomic_basis, #atomic basis for one atom and one species
+                c_tildes_dict_w): #c_tilde weighter for the corresponding element
+        
+        A_z = {'atomic_basis' : [atomic_basis[0].flatten().unsqueeze(1),atomic_basis[1].flatten().unsqueeze(1)],
+               'c_tildes_dict_w' : c_tildes_dict_w} #hack needs to be removed 
+        A_v = self.contract(A_z)['a_update']
+        return A_v
