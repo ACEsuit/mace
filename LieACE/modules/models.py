@@ -10,8 +10,10 @@ import numpy as np
 class ACE_layer(torch.nn.Module):
     def __init__(
         self,
-        r_cut : float,
+        r_max : float,
         degrees : List,
+        num_bessel : float,
+        lmax : float,
         num_polynomial_cutoff : int,
         num_elements : int,
         A : Dict[int,Any],#Rot3DCoeff
@@ -29,7 +31,7 @@ class ACE_layer(torch.nn.Module):
             num_polynomial_cutoff=num_polynomial_cutoff,
         )
         self.sh = SphericalHarmonics(lmax=lmax)
-        self.atomic_basis = AtomicBasis.atomic_base(num_elements=self.num_elements)
+        self.atomic_basis = AtomicBaseBlock()
         
         
         
