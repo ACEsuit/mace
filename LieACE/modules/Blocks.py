@@ -1,12 +1,6 @@
 import torch
-
 from typing import Dict, List
 from os import sys
-
-
-
-sys.path.append(r'C:\Users\Lilyes\Documents\GitHub\LieCG\LieACE')
-sys.path.append(r'C:\Users\Lilyes\Documents\GitHub\LieCG\LieCG')
 import torch
 import numpy as np
 from CG_coefficients.CG_lorentz import CGDict
@@ -16,6 +10,62 @@ from Radial_basis import BesselBasis
 from torch_scatter import scatter
 
 
+class LinearNodeEmbeddingBlock(torch.nn.Module):
+    def __init__(self, num_in: int, num_out: int):
+        super().__init__()
+        self.linear = torch.nn.Linear(num_in, num_out)
+
+    def forward(
+            self,
+            node_attrs: torch.Tensor,  # [n_nodes, 1]
+    ):
+        return self.linear(node_attrs)
+
+class NonLinearBlock(torch.nn.Module):
+    def __init__(self, gate : torch.nn.Module):
+        super().__init__()
+        self.non_linearity = gate
+
+    def forward(
+            self,
+            x: torch.Tensor  # [n_nodes, 1]
+    ) -> torch.Tensor:  # [..., ]
+        return self.gate(x)  # [n_nodes, 1]
+
+class AtomicEnergiesBlock(torch.nn.Module):
+    atomic_energies: torch.Tensor
+
+    def __init__(self, atomic_energies: Union[np.ndarray, torch.Tensor]):
+        super().__init__()
+        assert len(atomic_energies.shape) == 1
+
+        self.register_buffer('atomic_energies', torch.tensor(atomic_energies,
+                                                             dtype=torch.get_default_dtype()))  # [n_elements, ]
+
+    def forward(
+            self,
+            x: torch.Tensor  # one-hot of elements [..., n_elements]
+    ) -> torch.Tensor:  # [..., ]
+        return torch.matmul(x, self.atomic_energies)
+
+    def __repr__(self):
+        formatted_energies = ', '.join([f'{x:.4f}' for x in self.atomic_energies])
+        return f'{self.__class__.__name__}(energies=[{formatted_energies}])'
+
+class RadialEmbeddingBlock(torch.nn.Module):
+    def __init__(self, r_max: float, num_bessel: int, num_polynomial_cutoff: int):
+        super().__init__()
+        self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
+        self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
+        self.out_dim = num_bessel
+
+    def forward(
+            self,
+            edge_lengths: torch.Tensor,  # [n_edges, 1]
+    ):
+        bessel = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
+        cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
+        return bessel * cutoff  # [n_edges, n_basis]
 
 class EdgeEmbeddingBlock(torch.nn.Module):
     def __init__(self,
@@ -25,37 +75,23 @@ class EdgeEmbeddingBlock(torch.nn.Module):
                  num_polynomial_cutoff: int = 6,
                  ):
         super().__init__()
-        cg_dict = CGDict(maxdim = lmax)
-        self.zf = ZonalFunctions(maxdim=lmax,cg_dict = cg_dict)
-        self.radial_fn = BesselBasis(r_max=r_cut, num_basis=nmax)  #one can specify any radial_basis
-        self.cutoff_fn = PolynomialCutoff(r_max=r_cut, p=num_polynomial_cutoff)  #anycutoff
-        self.factor4pi = torch.sqrt(4 * torch.tensor(np.pi, dtype=torch.float64))
-
+        self.linear_radial = torch.nn.Linear(nmax,nmax)
+        
     def forward(
             self,
             edge_index : torch.Tensor, 
-            edge_lenghts : torch.Tensor, # [n_edges, 1]
-            edge_vectors : torch.Tensor,  # [n_edges, 3]
-            node_attrs : torch.Tensor, 
+            radial_feats : List[torch.Tensor], # [n_edges, num_basis]
+            edge_attrs : List[torch.Tensor],  # [n_edges, 3]
+            node_attrs : torch.Tensor,      
     ) -> List[torch.tensor,torch.tensor]:
-        #data.
-        #data.edge_lengths: torch.Tensor,  # [n_edges, 1]
         sender, receiver = edge_index
-        radial = self.radial_fn(edge_lenghts)  # [n_edges, 1, num_basis]
-        cutoff = self.cutoff_fn(edge_lenghts).unsqueeze(-1)  # [n_edges, 1]
-        radial = radial * cutoff  # [n_edges, 1, num_basis]
-        ylm = self.zf(edge_vectors)  # [n_edges, lmax*2 + 2*lmax +1]
-        ylm_r = ylm[0]  # [n_edges, lmax*2 + 2*lmax +1]
-        ylm_i = ylm[1]   # [n_edges, lmax*2 + 2*lmax +1]
-        combined_r = torch.einsum('bi,bk,bj -> bkij', radial.view(radial.size()[0],
-                                                                      radial.size()[-1]), node_attrs[sender],
-                                      ylm_r)  # [n_edges, n_basis , lmax*2 + 2*lmax +1] real part of radial embedding
-        combined_i = torch.einsum('bi,bk,bj -> bkij', radial.view(radial.size()[0],
-                                                                      radial.size()[-1]), node_attrs[sender],
-                                      ylm_i)  # [n_edges, n_basis , lmax*2 + 2*lmax +1] imag part of radial embedding
+        r_size = radial_feats.size()
+        radial_feats = self.linear_radial(radial_feats)
+        combined_r = torch.einsum('bi,bk,bj -> bkij', radial_feats.view(r_size[0],r_size[-1])
+                                                    ,node_attrs[sender],edge_attrs)  # [n_edges, n_basis , lmax*2 + 2*lmax +1] real part of radial embedding
+        combined_i = torch.einsum('bi,bk,bj -> bkij', radial_feats.view(r_size[0],r_size[-1])
+                                                    ,node_attrs[sender],edge_attrs)  # [n_edges, n_basis , lmax*2 + 2*lmax +1] imag part of radial embedding
         return (combined_r, combined_i) # [n_edges, n_basis , lmax*2 + 2*lmax +1]
-
-
 
 class AtomicBaseBlock(torch.nn.Module):
     """ Create the Atomic base from pooling 1-particle basis"""
@@ -73,13 +109,13 @@ class AtomicBaseBlock(torch.nn.Module):
                 'bkij,bl -> bkij',radial_feature[0],node_feats[sender])  # [n_edges,n_species, n_basis , lmax*2 + 2*lmax +1] real part of radial embedding
         combined_i = torch.einsum(
                 'bkij,bl -> bkij',radial_feature[1],node_feats[sender])  # [n_edges,n_species, n_basis , lmax*2 + 2*lmax +1] imag part of radial embedding
-        edges_features = (combined_r, combined_i)
-        A_nlm_real = scatter(edges_features[0], index=receiver, dim=0, dim_size=num_nodes,
+        edge_feats = (combined_r, combined_i)
+        A_nlm_real = scatter(edge_feats[0], index=receiver, dim=0, dim_size=num_nodes,
                              reduce='sum')  #size [num_nodes,n,lmax**2 + 2*lmax + 1]
-        A_nlm_imag = scatter(edges_features[1], index=receiver, dim=0, dim_size=num_nodes,
+        A_nlm_imag = scatter(edge_feats[1], index=receiver, dim=0, dim_size=num_nodes,
                              reduce='sum')  #size [num_nodes,n,lmax**2 + 2*lmax + 1]
         node_feats = (A_nlm_real, A_nlm_imag)
-        return node_feats, edges_features
+        return node_feats, edge_feats
 
 class VectorizeBlock(torch.nn.Module):
     def __init__(self,
