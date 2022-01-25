@@ -1,90 +1,74 @@
 from typing import Dict, Any, Type, List
+
 import torch
-from .blocks import (LinearNodeEmbeddingBlock, NonLinearBlock, AtomicEnergiesBlock, RadialEmbeddingBlock,
-                    EdgeEmbeddingBlock, AtomicBaseBlock,  VectorizeBlock)
-from spherical_harmonics import SphericalHarmonics
 import numpy as np
 
+from .blocks import (LinearNodeEmbeddingBlock, NonLinearBlock, AtomicEnergiesBlock, ProdBasisBlock, RadialEmbeddingBlock,
+                    EdgeEmbeddingBlock, AtomicBaseBlock,  VectorizeBlock)
+from .utils import create_U_element, get_edge_vectors_and_lengths
+from LieACE.data import AtomicData
+from spherical_harmonics import SphericalHarmonics
+
+from torch_scatter import scatter_sum
 
 
-class ACE_layer(torch.nn.Module):
+class InvariantMultiACE(torch.nn.Module):
     def __init__(
         self,
-        r_max : float,
-        degrees : List,
-        num_bessel : float,
-        lmax : float,
-        num_polynomial_cutoff : int,
-        num_elements : int,
-        A : Dict[int,Any],#Rot3DCoeff
-        non_linear = False,
+        r_max: float,
+        degrees: List,
+        num_bessel: float,
+        lmax: float,
+        num_polynomial_cutoff: int,
+        num_elements: int,
+        hidden_features: int,
+        num_layers: int,
+        atomic_energies: np.ndarray,
+        A: Dict[int,Any],#Rot3DCoeff
+        non_linear: bool,
         device = 'cpu',
     ):
-        super().__init__() 
-        
+        super().__init__()  
         #Embedding
         self.num_elements = num_elements
-        self.node_embedding = LinearNodeEmbeddingBlock(num_in = num_elements, num_out = num_elements) #change to higher embedding
+        self.node_embedding = LinearNodeEmbeddingBlock(num_in = num_elements, num_out = hidden_features) #change to higher embedding
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
         )
-        self.sh = SphericalHarmonics(lmax=lmax)
-        self.atomic_basis = AtomicBaseBlock()
-        
-        
-        
-        self.c_tildes_dicts = { i : ProdBasis.create_U_element(
-            node_deg = degrees,
-            n_elements = self.num_elements,
-            i = i,
-            A = A,
-            device = device) for i in range(self.num_elements)}
-        
-        
-        self.weightings = torch.nn.ModuleList()
-        self.contract = torch.nn.ModuleList()
-        
+        self.spherical_harmonics = SphericalHarmonics(lmax=lmax)
+        self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
-        
-        for i in range(self.num_elements):
 
-            self.weightings.append(ProdBasis.c_tildes_weight(
-                self.c_tildes_dicts[i],num_elements = num_elements,device=device))
-            self.contract.append(ProdBasis.vectorize_basis(self.weightings[i](self.c_tildes_dicts[i]),
-                                                           device=device))
-        
-        self.c_tildes_dicts_w = {} #init the weights c_tildes_dicts
-        
-        self.non_linear = non_linear
-        
-    def forward(self, data : AtomicData) -> Dict[str, Any]:
-        
+        #Atomic Basis
+        self.atomic_basis = torch.nn.ModuleList()
+        self.prod_basis = torch.nn.ModuleList()
 
-        
-        data = self.atomic_basis(data)
-        
-        for elem in range(self.num_elements): 
-            self.c_tildes_dicts_w[elem] = self.weightings[elem](self.c_tildes_dicts[elem])
-           
-        ace_features = torch.empty(data.num_nodes,1)
-        
-        for i in range(data.num_nodes): #TODO : multithread this loop
-            element = int((data.node_attrs[i] == 1).nonzero(as_tuple=False).squeeze())
-            max_n = data.node_degree[element].max_n() + 1 # #TODO : change that for different molecules in the same batch!!!!
-            max_l = data.node_degree[element].max_l() ##TODO : change that for different molecules in the same batch!!!!
-            max_lm = (max_l + 1)**2
-            ace_features[i,:] = self.contract[element](
-                [data.node_features[0][i][:,:max_n,:max_lm],data.node_features[1][i][:,:max_n,:max_lm]], #atomic basis real part and imag part
-                self.c_tildes_dicts_w[element])[0] #the real part of the invariant ACE feature
-        
-        if self.non_linear : 
-        
-            data['ace_features'] = torch.tanh(ace_features)
-            
-        else : 
-        
-            data['ace_features'] = ace_features    
+        self.atomic_basis.append(AtomicBaseBlock())
+        self.prod_basis.append(ProdBasisBlock(degrees = self.degrees, num_elements = num_elements, A = A, device = device))
+
+        for _ in range(num_layers - 1):
+            self.atomic_basis.append(AtomicBaseBlock())
+            self.prod_basis.append(ProdBasisBlock(degrees = self.degrees, num_elements = num_elements, A = A, device = device))
+        self.readouts = torch.nn.ModuleList([(self.prod_basis[-1].out,1 )])
+
+    def forward(self, data: AtomicData) -> Dict[str, Any]:
+        #setup
+        data.positions.requires_grad = True
+
+        # Atomic energies
+        node_e0 = self.atomic_energies_fn(data.node_attrs)
+        e0 = scatter_sum(src=node_e0, index=data.batch, dim=-1, dim_size=data.num_graphs)  # [n_graphs,]
+
+        #Embedding 
+        node_feats = self.node_embedding(data.node_attrs)
+        vectors, lenghts = get_edge_vectors_and_lengths(positions=data.positions,
+                                                        edge_index=data.edge_index,
+                                                        shifts=data.shifts)
+        edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(lenghts)
+
+
             
         return data

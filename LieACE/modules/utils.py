@@ -8,11 +8,10 @@ import torch.nn
 import torch.utils.data
 from torch_scatter import scatter_sum
 from torch_sparse import spmm
-
-from ace_torch.functions.sparse_tensor_dot import tensor_contract_nd_update_sparse,unfold,fold,expand_element,vector_contract
-from ace_torch.functions.cg import create_U,Rot3DCoeffs #if we precompute them, then load here whatever we precomputed
-
-
+from CG_coefficients.CG_rot import create_U
+from LieACE.modules.blocks import AtomicEnergiesBlock
+from LieACE.modules.sparse_tools import expand_element, fold, unfold
+from LieACE.tools.torch_tools import to_numpy
 
 
 

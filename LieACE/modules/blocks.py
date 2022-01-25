@@ -1,12 +1,13 @@
+from collections import OrderedDict
 import torch
-from typing import Dict, List
+from typing import Dict, List, Union
 from os import sys
 import torch
 import numpy as np
-from CG_coefficients.CG_lorentz import CGDict
-from functions.Zonal_functions import ZonalFunctions
-from Cutoff import PolynomialCutoff
-from Radial_basis import BesselBasis
+
+from sparse_tools import tensor_contract_nd_update_sparse, vector_contract
+from .utils import c_tildes_weight, create_U_element
+from .radial import PolynomialCutoff, BesselBasis
 from torch_scatter import scatter
 
 
@@ -141,3 +142,46 @@ class VectorizeBlock(torch.nn.Module):
                'c_tildes_dict_w' : c_tildes_dict_w} #hack needs to be removed 
         A_v = self.contract(A_z)['a_update']
         return A_v
+
+class ProdBasisBlock(torch.nn.module):
+    def __init__(self,
+                degrees,
+                num_elements,
+                hidden_features,
+                A,
+                device) -> None:
+        super().__init__()
+        self.degrees = degrees
+        self.c_tildes_dicts = {i: create_U_element(
+            node_deg = degrees,
+            n_elements = self.num_elements,
+            i = i,
+            A = A,
+            device = device) for i in range(self.num_elements)}
+    
+        self.weightings = torch.nn.ModuleList()
+        self.contract = torch.nn.ModuleList()
+        for i in range(self.num_elements):
+            self.weightings.append(c_tildes_weight(
+                self.c_tildes_dicts[i],num_elements = num_elements,device=device))
+            self.contract.append(VectorizeBlock(self.weightings[i](self.c_tildes_dicts[i]),
+                                                           device=device))
+        self.c_tildes_dicts_w = {} #init the weights c_tildes_dicts
+        ace_feats = []
+        self.linear = torch.nn.Linear(hidden_features,hidden_features)
+    def forward(self,
+                node_attrs: torch.tensor,
+                node_feats: List[torch.tensor]):
+        num_nodes = node_feats.shape[0]
+        for elem in range(self.num_elements): 
+            self.c_tildes_dicts_w[elem] = self.weightings[elem](self.c_tildes_dicts[elem])
+        ace_feats = []
+        for i in range(num_nodes): #TODO : multithread this loop
+            element = int((node_attrs[i] == 1).nonzero(as_tuple=False).squeeze())
+            max_n = self.degrees[element].max_n() + 1 # #TODO : change that for different molecules in the same batch!!!!
+            max_l = self.degrees[element].max_l() ##TODO : change that for different molecules in the same batch!!!!
+            max_lm = (max_l + 1)**2
+            ace_feats.append(self.contract[element](
+                [node_feats[0][i][:,:max_n,:max_lm],node_feats[1][i][:,:max_n,:max_lm]], #atomic basis real part and imag part
+                self.c_tildes_dicts_w[element])[0]) #the real part of the invariant ACE feature
+        return self.linear(ace_feats)
