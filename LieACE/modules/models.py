@@ -5,7 +5,7 @@ import numpy as np
 
 from .blocks import (LinearNodeEmbeddingBlock, NonLinearBlock, AtomicEnergiesBlock, ProdBasisBlock, RadialEmbeddingBlock,
                     EdgeEmbeddingBlock, AtomicBaseBlock,  VectorizeBlock)
-from .utils import create_U_element, get_edge_vectors_and_lengths
+from .utils import compute_forces, create_U_element, get_edge_vectors_and_lengths
 from LieACE.data import AtomicData
 from spherical_harmonics import SphericalHarmonics
 
@@ -53,7 +53,7 @@ class InvariantMultiACE(torch.nn.Module):
             self.prod_basis.append(ProdBasisBlock(degrees = self.degrees, num_elements = num_elements, A = A, device = device))
         self.readouts = torch.nn.ModuleList([(self.prod_basis[-1].out,1 )])
 
-    def forward(self, data: AtomicData) -> Dict[str, Any]:
+    def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
         #setup
         data.positions.requires_grad = True
 
@@ -67,8 +67,21 @@ class InvariantMultiACE(torch.nn.Module):
                                                         edge_index=data.edge_index,
                                                         shifts=data.shifts)
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lenghts)
+        radial_features = self.radial_embedding(lenghts)
 
+        for atomic_basis, prod_basis in zip(self.atomic_basis,self.prod_basis):
+            node_feats = atomic_basis(edge_index = data.edge_index,
+                                      radial_features = radial_features,
+                                      node_feats = node_feats)
+            node_feats = prod_basis(node_attrs = data.node_attrs,
+                                    node_feats = node_feats)
 
-            
-        return data
+        node_inter_es = self.readouts[0](node_feats).squeeze(-1)  # {[n_nodes, ], } 
+        inter_e = scatter_sum(src=node_inter_es, index=data.batch, dim=-1, dim_size=data.num_graphs)  # [n_graphs,]
+
+        total_e = e0 + inter_e
+
+        return {
+            'energy': total_e,
+            'forces': compute_forces(energy=total_e, positions=data.positions, training=training),
+        }
