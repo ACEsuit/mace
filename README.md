@@ -1,6 +1,6 @@
-# ACE_torch
+# LieACE
 
-ACE implementation in PyTorch.
+ACE implementation in PyTorch for Lie Groups.
 
 ## Requirements
 
