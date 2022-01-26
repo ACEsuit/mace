@@ -3,6 +3,8 @@ from typing import Dict, Any, Type, List
 import torch
 import numpy as np
 
+from LieCG.CG_coefficients.CG_rot import Rot3DCoeffs
+
 from .blocks import (LinearNodeEmbeddingBlock, NonLinearBlock, AtomicEnergiesBlock, ProdBasisBlock, RadialEmbeddingBlock,
                     EdgeEmbeddingBlock, AtomicBaseBlock,  VectorizeBlock)
 from .utils import compute_forces, create_U_element, get_edge_vectors_and_lengths
@@ -17,18 +19,21 @@ class InvariantMultiACE(torch.nn.Module):
         self,
         r_max: float,
         degrees: List,
-        num_bessel: float,
-        lmax: float,
         num_polynomial_cutoff: int,
         num_elements: int,
         hidden_features: int,
         num_layers: int,
         atomic_energies: np.ndarray,
-        A: Dict[int,Any],#Rot3DCoeff
         non_linear: bool,
         device = 'cpu',
     ):
         super().__init__()  
+
+        lmax = max([degrees[i].max_l() for i in range(self.num_elements)])
+        num_bessel = max([degrees[i].max_n() for i in range(self.num_elements)])
+        A = Rot3DCoeffs(lmax + 1)
+        self.degrees = degrees
+        
         #Embedding
         self.num_elements = num_elements
         self.node_embedding = LinearNodeEmbeddingBlock(num_in = num_elements, num_out = hidden_features) #change to higher embedding
