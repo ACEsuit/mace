@@ -1,8 +1,10 @@
 import logging
 import os
 from typing import Dict
+from LieACE.data.utils import unpack_configs_from_archive
 
-from .utils import Configurations, unpack_configs_from_archive
+from LieACE.tools.config import Configurations
+
 
 # Atomic energies (in eV)
 atomic_energies = {

@@ -34,11 +34,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--num_cutoff_basis', help='number of basis functions for smooth cutoff', type=int, default=6)
     parser.add_argument('--max_ell', help=r'highest \ell of spherical harmonics', type=int, default=3)
     parser.add_argument('--num_layers', help='number of interactions', type=int, default=3)
-    parser.add_argument('--hidden_irreps',
-                        help='irreps for hidden node states',
-                        type=str,
-                        default='32x0e + 32x1o + 32x2e + 32x3o')
-    parser.add_argument('--MLP_irreps', help='hidden irreps of the MLP in last readout', type=str, default='16x0e')
+    parser.add_argument('--hidden_features',
+                        help='hidden node states',
+                        type=int,
+                        default=32)
     parser.add_argument('--gate', help='non linearity for last readout', type=str, default='silu')
     parser.add_argument('--scaling',
                         help='type of scaling to the output',

@@ -8,10 +8,10 @@ import torch.nn
 import torch.utils.data
 from torch_scatter import scatter_sum
 from torch_sparse import spmm
-from CG_coefficients.CG_rot import create_U
 from LieACE.modules.blocks import AtomicEnergiesBlock
 from LieACE.modules.sparse_tools import expand_element, fold, unfold
 from LieACE.tools.torch_tools import to_numpy
+from LieCG.CG_coefficients.CG_rot import create_U
 
 
 

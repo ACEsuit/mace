@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.data import Batch
 
-from lieace.tools import TensorDict
+from LieACE.tools import TensorDict
 
 
 def mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:

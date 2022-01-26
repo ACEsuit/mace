@@ -4,7 +4,8 @@ from typing import Dict
 from torch_sparse import spmm
 from collections.abc import Iterable
 import operator
-from ace_torch.ops.ops import complex_spmm
+
+from LieACE.tools.complex_ops import complex_spmm
 
 
 
