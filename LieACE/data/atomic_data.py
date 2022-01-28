@@ -4,9 +4,6 @@ import numpy as np
 import torch.utils.data
 import torch_geometric
 
-
-import ase
-
 import importlib
 from LieACE.data.neighborhood import get_neighborhood
 from LieACE.tools.config import Configuration

@@ -9,7 +9,7 @@ from .blocks import (LinearNodeEmbeddingBlock, NonLinearBlock, AtomicEnergiesBlo
                     EdgeEmbeddingBlock, AtomicBaseBlock,  VectorizeBlock)
 from .utils import compute_forces, create_U_element, get_edge_vectors_and_lengths
 from LieACE.data import AtomicData
-from spherical_harmonics import SphericalHarmonics
+from .spherical_harmonics import SphericalHarmonics
 
 from torch_scatter import scatter_sum
 
