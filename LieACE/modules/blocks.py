@@ -237,19 +237,27 @@ class AgnosticResidualInteractionBlock(InteractionBlock):
     ) -> torch.Tensor:
         sender, receiver = edge_index
         num_nodes = node_feats.shape[0]
+        
         sc_real = self.skip_tp(node_feats.real, node_attrs)
         sc_imag = self.skip_tp(node_feats.imag, node_attrs)
+        
         node_feats_real = self.linear_up(node_feats.real)
         node_feats_imag = self.linear_up(node_feats.imag)
+        
         node_feats = torch.view_as_complex(torch.stack((node_feats_real,node_feats_imag)),dim=-1)
+        
         tp_weights = self.conv_tp_weights(edge_feats)
+        
         mji_real = self.conv_tp(node_feats[sender].real, edge_attrs.real, tp_weights) - self.conv_tp(node_feats[sender].imag, edge_attrs.imag, tp_weights) # [n_edges, irreps]
         mji_imag = self.conv_tp(node_feats[sender].imag, edge_attrs.real, tp_weights) + self.conv_tp(node_feats[sender].real, edge_attrs.imag, tp_weights)
+        
         message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
+        
         message_real = self.linear(message_real)/self.num_avg_neighbors
         message_real = message_real + sc_real
         message_real = self.equivariant_nonlin(message_real)
+        
         message_imag = self.linear(message_real)/self.num_avg_neighbors
         message_imag = message_real + sc_imag
         message_imag = self.equivariant_nonlin(message_imag)
