@@ -32,18 +32,26 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--r_max', help='distance cutoff (in Ang)', type=float, default=4.0)
     parser.add_argument('--degrees', help='degrees for each atoms', type=List)
     parser.add_argument('--num_cutoff_basis', help='number of basis functions for smooth cutoff', type=int, default=6)
-    parser.add_argument('--max_ell', help=r'highest \ell of spherical harmonics', type=int, default=3)
+    parser.add_argument('--max_ell', help=r'highest \ell of spherical harmonics', type=int, default=4)
     parser.add_argument('--num_layers', help='number of interactions', type=int, default=3)
-    parser.add_argument('--hidden_features',
-                        help='hidden node states',
-                        type=int,
-                        default=32)
+    parser.add_argument('--hidden_irreps',
+                        help='irreps for hidden node states',
+                        type=str,
+                        default='32x0e')
     parser.add_argument('--gate', help='non linearity for last readout', type=str, default='silu')
     parser.add_argument('--scaling',
                         help='type of scaling to the output',
                         type=str,
                         default='std_scaling',
                         choices=['std_scaling', 'rms_forces_scaling'])
+    parser.add_argument('--num_avg_neighbors',
+                        help='normalization factor for the message',
+                        type=float,
+                        default=1)
+    parser.add_argument('--compute_num_avg_neighbors',
+                        help='normalization factor for the message',
+                        type=bool,
+                        default=True)
 
     # Dataset
     parser.add_argument('--dataset',

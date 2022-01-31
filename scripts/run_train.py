@@ -6,6 +6,7 @@ from typing import Optional, Tuple, Dict, List
 import numpy as np
 import torch.nn.functional
 import torch_geometric
+from e3nn import o3
 from torch.optim.swa_utils import AveragedModel, SWALR
 from torch_ema import ExponentialMovingAverage
 
@@ -134,8 +135,6 @@ def main() -> None:
         drop_last=False,
     )
 
-    degrees = data.species_degrees(args.degrees)
-
     loss_fn: torch.nn.Module
     if args.loss == 'ace':
         loss_fn = modules.ACELoss(energy_weight=15.0, forces_weight=1.0)
@@ -144,25 +143,64 @@ def main() -> None:
     else:
         loss_fn = modules.EnergyForcesLoss(energy_weight=args.energy_weight, forces_weight=args.forces_weight)
     logging.info(loss_fn)
+    
+    if args.compute_num_avg_neighbors == True:
+        args.num_avg_neighbors = modules.compute_num_avg_neighbors(train_loader)
 
     # Build model
     logging.info('Building model')
     model_config = dict(
         r_max=args.r_max,
-        degrees=degrees,
+        num_bessel=args.num_radial_basis,
         num_polynomial_cutoff=args.num_cutoff_basis,
+        max_ell=args.max_ell,
+        interaction_cls=modules.interaction_classes[args.interaction],
+        num_interactions=args.num_interactions,
         num_elements=len(z_table),
-        hidden_features=args.hidden_features,
-        num_layers=args.num_layers,
+        hidden_irreps=o3.Irreps(args.hidden_irreps),
         atomic_energies=atomic_energies,
-        non_linear=args.non_linear,
-        device=device,
+        num_avg_neighbors=args.num_avg_neighbors,
+        correlation=args.correlation,
     )
 
     model: torch.nn.Module
-   
-    model = modules.InvariantMultiACE(**model_config)
-    
+    if args.model == 'scale_shift':
+        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
+        model = modules.ScaleShiftBodyOrderedModel(
+            **model_config,
+            atomic_inter_scale=std,
+            atomic_inter_shift=mean,
+        )
+    elif args.model == 'scale_shift_non_linear':
+        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
+        model = modules.ScaleShiftNonLinearBodyOrderedModel(
+            **model_config,
+            gate=gate_dict[args.gate],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=std,
+            atomic_inter_shift=mean,
+        )
+    elif args.model == 'scale_shift_non_linear_single_readout':
+        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
+        model = modules.ScaleShiftNonLinearSingleReadoutModel(
+            **model_config,
+            gate=gate_dict[args.gate],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=std,
+            atomic_inter_shift=mean,
+        )
+    elif args.model == 'scale_shift_single_readout':
+        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
+        model = modules.ScaleShiftSingleReadoutModel(
+            **model_config,
+            atomic_inter_scale=std,
+            atomic_inter_shift=mean,
+        )
+    elif args.model == 'single_readout':
+        model = modules.SingleReadoutModel(**model_config)
+    else:
+        model = modules.BodyOrderedModel(**model_config)
+
     model.to(device)
 
     # Optimizer
@@ -187,8 +225,12 @@ def main() -> None:
         optimizer = torch.optim.Adam(**param_options)
 
     logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + '_train')
-    lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=args.lr_scheduler_gamma)
 
+    if args.scheduler == 'ExponentialLR':
+        lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=args.lr_scheduler_gamma)
+    elif args.scheduler == 'ReduceLROnPlateau':
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, factor=args.lr_factor,
+                                                                  patience=args.scheduler_partience)
     checkpoint_handler = tools.CheckpointHandler(directory=args.checkpoints_dir, tag=tag, keep=args.keep_checkpoints)
 
     start_epoch = 0

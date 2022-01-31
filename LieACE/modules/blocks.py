@@ -1,24 +1,28 @@
+from abc import ABC, abstractmethod
 from collections import OrderedDict
-import torch
-from typing import Dict, List, Union
 from os import sys
-import torch
+from typing import Dict, List, Union
+
 import numpy as np
+import torch
+from e3nn import nn, o3
+from torch_scatter import scatter_sum
 
 from sparse_tools import tensor_contract_nd_update_sparse, vector_contract
+
+from .irreps_tools import tp_out_irreps_with_instructions
+from .radial import BesselBasis, PolynomialCutoff
 from .utils import c_tildes_weight, create_U_element
-from .radial import PolynomialCutoff, BesselBasis
-from torch_scatter import scatter
 
 
 class LinearNodeEmbeddingBlock(torch.nn.Module):
-    def __init__(self, num_in: int, num_out: int):
+    def __init__(self, irreps_in: o3.Irreps, irreps_out: o3.Irreps):
         super().__init__()
-        self.linear = torch.nn.Linear(num_in, num_out)
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irreps_out)
 
     def forward(
             self,
-            node_attrs: torch.Tensor,  # [n_nodes, 1]
+            node_attrs: torch.Tensor,  # [n_nodes, irreps]
     ):
         return self.linear(node_attrs)
 
@@ -32,6 +36,18 @@ class NonLinearBlock(torch.nn.Module):
             x: torch.Tensor  # [n_nodes, 1]
     ) -> torch.Tensor:  # [..., ]
         return self.gate(x)  # [n_nodes, 1]
+
+class LinearReadoutBlock(torch.nn.Module):
+    def __init__(self, irreps_in: o3.Irreps):
+        super().__init__()
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=o3.Irreps('0e'))
+
+    def forward(
+            self,
+            x: torch.Tensor  # [n_nodes, irreps]
+    ) -> torch.Tensor:  # [..., ]
+        return self.linear(x)  # [n_nodes, 1]
+
 
 class AtomicEnergiesBlock(torch.nn.Module):
     atomic_energies: torch.Tensor
@@ -68,120 +84,186 @@ class RadialEmbeddingBlock(torch.nn.Module):
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
         return bessel * cutoff  # [n_edges, n_basis]
 
-class EdgeEmbeddingBlock(torch.nn.Module):
+
+class ProductBasisBlock(torch.nn.Module):
     def __init__(self,
-                 lmax: int,
-                 r_cut: float,
-                 nmax: int = 8,
-                 num_polynomial_cutoff: int = 6,
-                 ):
-        super().__init__()
-        self.linear_radial = torch.nn.Linear(nmax,nmax)
+                 U_tensors: Dict[int,torch.tensor],
+                 node_feats_irreps: o3.Irreps,
+                 correlation: int,
+        ) -> None:
+        super().__init__()  
+        self.U_tensors = U_tensors   #Dict[str,[(lmax+1)**2]**correlation + [num_weights]]  
+        self.num_features = node_feats_irreps.count((0,1))
+        self.correlation = correlation
         
+        #Tensor contraction equations
+        self.equation_main = '...i' + 'k,k,bi->b' + '...'
+        self.equation_weighting = '...k,k->...'
+        self.equation_contract = 'b...i,bi->b' + '...'
+
+        #Create weight for product basis
+        self.weights = torch.nn.ParameterDict({})
+        for i in range(1,correlation+1):
+            num_params = self.U_tensors[i].size[-1]
+            params_list = torch.nn.ParameterList([torch.nn.Parameter(torch.randn(num_params)) for i in range(self.num_features)])
+            self.weights[i] = torch.nn.Parameter(params_list)
+
+        #Update linear 
+        self.linear = o3.Linear(node_feats_irreps, node_feats_irreps, internal_weights=True, shared_weights=True)
+
+    def forward(self,
+                node_feats: torch.tensor,
+        ) -> torch.Tensor:
+
+        output = []
+        for channel in range(self.num_features): #TODO Find a better way to implement this contraction
+            out = torch.einsum(self.equation_main,
+                               self.U_tensors[self.correlation],self.weights[self.correlation][channel],
+                               node_feats[:,channel,:])
+            for corr in range(self.correlation,0,-1):
+                c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[corr],self.weights[corr][channel])
+                c_tensor  = c_tensor + out
+                out = torch.einsum(self.equation_contract,c_tensor,node_feats[:,channel,:])
+            output.append(out)
+
+        node_feats = torch.stack(output,dim=-1)
+        node_feats = self.linear(node_feats)
+        return node_feats
+
+
+
+
+class InteractionBlock(ABC, torch.nn.Module):
+    def __init__(
+        self,
+        node_attrs_irreps: o3.Irreps,
+        node_feats_irreps: o3.Irreps,
+        edge_attrs_irreps: o3.Irreps,
+        edge_feats_irreps: o3.Irreps,
+        target_irreps: o3.Irreps,
+        num_avg_neighbors: float,
+    ) -> None:
+        super().__init__()
+        self.node_attrs_irreps = node_attrs_irreps
+        self.node_feats_irreps = node_feats_irreps
+        self.edge_attrs_irreps = edge_attrs_irreps
+        self.edge_feats_irreps = edge_feats_irreps
+        self.target_irreps = target_irreps
+        self.num_avg_neighbors = num_avg_neighbors
+
+        self._setup()
+
+    @abstractmethod
+    def _setup(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def forward(
-            self,
-            edge_index : torch.Tensor, 
-            radial_feats : List[torch.Tensor], # [n_edges, num_basis]
-            edge_attrs : List[torch.Tensor],  # [n_edges, 3]
-            node_attrs : torch.Tensor,      
-    ) -> List[torch.tensor,torch.tensor]:
-        sender, receiver = edge_index
-        r_size = radial_feats.size()
-        radial_feats = self.linear_radial(radial_feats)
-        combined_r = torch.einsum('bi,bk,bj -> bkij', radial_feats.view(r_size[0],r_size[-1])
-                                                    ,node_attrs[sender],edge_attrs)  # [n_edges, n_basis , lmax*2 + 2*lmax +1] real part of radial embedding
-        combined_i = torch.einsum('bi,bk,bj -> bkij', radial_feats.view(r_size[0],r_size[-1])
-                                                    ,node_attrs[sender],edge_attrs)  # [n_edges, n_basis , lmax*2 + 2*lmax +1] imag part of radial embedding
-        return (combined_r, combined_i) # [n_edges, n_basis , lmax*2 + 2*lmax +1]
-
-class AtomicBaseBlock(torch.nn.Module):
-    """ Create the Atomic base from pooling 1-particle basis"""
-    def __init__(self, ):
-        super().__init__()
-
-    def forward(self, 
-                edge_index: torch.tensor,
-                radial_feature: torch.tensor,
-                node_feats: torch.tensor,) -> List[torch.tensor,torch.tensor]:
-            
-        sender, receiver = edge_index  # The graph connectivity
-        num_nodes = node_feats.shape[0]
-        combined_r = torch.einsum(
-                'bkij,bl -> bkij',radial_feature[0],node_feats[sender])  # [n_edges,n_species, n_basis , lmax*2 + 2*lmax +1] real part of radial embedding
-        combined_i = torch.einsum(
-                'bkij,bl -> bkij',radial_feature[1],node_feats[sender])  # [n_edges,n_species, n_basis , lmax*2 + 2*lmax +1] imag part of radial embedding
-        edge_feats = (combined_r, combined_i)
-        A_nlm_real = scatter(edge_feats[0], index=receiver, dim=0, dim_size=num_nodes,
-                             reduce='sum')  #size [num_nodes,n,lmax**2 + 2*lmax + 1]
-        A_nlm_imag = scatter(edge_feats[1], index=receiver, dim=0, dim_size=num_nodes,
-                             reduce='sum')  #size [num_nodes,n,lmax**2 + 2*lmax + 1]
-        node_feats = (A_nlm_real, A_nlm_imag)
-        return node_feats, edge_feats
-
-class VectorizeBlock(torch.nn.Module):
-    def __init__(self,
-                c_tildes_dict : Dict[str,torch.Tensor],
-                 device = 'cpu'):
-        super().__init__()
-        #Create the dict or pass it? For correlation 4 can be very long
-        self.max_corr = c_tildes_dict['degree'].max_corr() 
-        contract_module = OrderedDict()
-        for vu in range(self.max_corr,1,-1) :  
-          contract_module[f"contract_{vu}"]  = tensor_contract_nd_update_sparse(
-                                                              c_tildes_dict[vu],
-                                                              correlation=vu,
-                                                              device = device)
-        contract_module["vector_contract"] = vector_contract()
-        self.contract = torch.nn.Sequential(contract_module) 
-         
-    def forward(self,
-                atomic_basis, #atomic basis for one atom and one species
-                c_tildes_dict_w): #c_tilde weighter for the corresponding element
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        raise NotImplementedError
         
-        A_z = {'atomic_basis' : [atomic_basis[0].flatten().unsqueeze(1),atomic_basis[1].flatten().unsqueeze(1)],
-               'c_tildes_dict_w' : c_tildes_dict_w} #hack needs to be removed 
-        A_v = self.contract(A_z)['a_update']
-        return A_v
+nonlinearities = { 1 : torch.nn.functional.silu,
+                   -1 : torch.tanh}
 
-class ProdBasisBlock(torch.nn.module):
-    def __init__(self,
-                degrees,
-                num_elements,
-                hidden_features,
-                A,
-                device) -> None:
-        super().__init__()
-        self.degrees = degrees
-        self.c_tildes_dicts = {i: create_U_element(
-            node_deg = degrees,
-            n_elements = self.num_elements,
-            i = i,
-            A = A,
-            device = device) for i in range(self.num_elements)}
+class AgnosticResidualInteractionBlock(InteractionBlock):
+    def _setup(self,) -> None:
     
-        self.weightings = torch.nn.ModuleList()
-        self.contract = torch.nn.ModuleList()
-        for i in range(self.num_elements):
-            self.weightings.append(c_tildes_weight(
-                self.c_tildes_dicts[i],num_elements = num_elements,device=device))
-            self.contract.append(VectorizeBlock(self.weightings[i](self.c_tildes_dicts[i]),
-                                                           device=device))
-        self.c_tildes_dicts_w = {} #init the weights c_tildes_dicts
-        ace_feats = []
-        self.linear = torch.nn.Linear(hidden_features,hidden_features)
-    def forward(self,
-                node_attrs: torch.tensor,
-                node_feats: List[torch.tensor]):
+
+        #First linear
+        self.linear_up = o3.Linear(self.node_feats_irreps,self.node_feats_irreps, internal_weights=True, shared_weights=True)
+
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(self.node_feats_irreps, self.edge_attrs_irreps,
+                                                                   self.target_irreps)
+        self.conv_tp = o3.TensorProduct(self.node_feats_irreps,
+                                        self.edge_attrs_irreps,
+                                        irreps_mid,
+                                        instructions=instructions,
+                                        shared_weights=False,
+                                        internal_weights=False)
+
+        irreps_mid = irreps_mid.simplify()
+
+        #Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet([input_dim]
+            + 3 * [64]
+            + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu)
+
+        #equivariant non linearity
+        irreps_scalars = o3.Irreps([
+                (mul, ir)
+                for mul, ir in self.target_irreps
+                if ir.l == 0
+                and ir in irreps_mid
+            ]
+        )
+        irreps_gated = o3.Irreps(
+            [
+                (mul, ir)
+                for mul, ir in self.target_irreps
+                if ir.l > 0
+                and ir in irreps_mid
+            ]
+        )
+        irreps_gates = o3.Irreps([mul,"0e"] for mul,_ in irreps_gated)
+        self.equivariant_nonlin = nn.Gate(irreps_scalars=irreps_scalars,act_scalars=[nonlinearities[ir.p] for _,ir in irreps_scalars],
+                irreps_gates=irreps_gates, act_gates=[torch.nn.functional.silu] * len(irreps_gates),irreps_gated=irreps_gated,)
+        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
+        self.irreps_out = self.equivariant_nonlin.irreps_out.simplify()
+
+        # Linear
+        self.linear = o3.Linear(irreps_mid, self.irreps_nonlin, internal_weights=True, shared_weights=True)
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(self.node_feats_irreps, self.node_attrs_irreps, self.irreps_nonlin)
+
+
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        sender, receiver = edge_index
         num_nodes = node_feats.shape[0]
-        for elem in range(self.num_elements): 
-            self.c_tildes_dicts_w[elem] = self.weightings[elem](self.c_tildes_dicts[elem])
-        ace_feats = []
-        for i in range(num_nodes): #TODO : multithread this loop
-            element = int((node_attrs[i] == 1).nonzero(as_tuple=False).squeeze())
-            max_n = self.degrees[element].max_n() + 1 # #TODO : change that for different molecules in the same batch!!!!
-            max_l = self.degrees[element].max_l() ##TODO : change that for different molecules in the same batch!!!!
-            max_lm = (max_l + 1)**2
-            ace_feats.append(self.contract[element](
-                [node_feats[0][i][:,:max_n,:max_lm],node_feats[1][i][:,:max_n,:max_lm]], #atomic basis real part and imag part
-                self.c_tildes_dicts_w[element])[0]) #the real part of the invariant ACE feature
-        return self.linear(ace_feats)
+        sc_real = self.skip_tp(node_feats.real, node_attrs)
+        sc_imag = self.skip_tp(node_feats.imag, node_attrs)
+        node_feats_real = self.linear_up(node_feats.real)
+        node_feats_imag = self.linear_up(node_feats.imag)
+        node_feats = torch.view_as_complex(torch.stack((node_feats_real,node_feats_imag)),dim=-1)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        mji_real = self.conv_tp(node_feats[sender].real, edge_attrs.real, tp_weights) - self.conv_tp(node_feats[sender].imag, edge_attrs.imag, tp_weights) # [n_edges, irreps]
+        mji_imag = self.conv_tp(node_feats[sender].imag, edge_attrs.real, tp_weights) + self.conv_tp(node_feats[sender].real, edge_attrs.imag, tp_weights)
+        message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
+        message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
+        message_real = self.linear(message_real)/self.num_avg_neighbors
+        message_real = message_real + sc_real
+        message_real = self.equivariant_nonlin(message_real)
+        message_imag = self.linear(message_real)/self.num_avg_neighbors
+        message_imag = message_real + sc_imag
+        message_imag = self.equivariant_nonlin(message_imag)
+        message = torch.stack((message_real,message_imag),dim=-1)
+        return  torch.view_as_complex(message) # [n_nodes, irreps]
+
+class ScaleShiftBlock(torch.nn.Module):
+    def __init__(self, scale: float, shift: float):
+        super().__init__()
+        self.register_buffer('scale', torch.tensor(scale, dtype=torch.get_default_dtype()))
+        self.register_buffer('shift', torch.tensor(shift, dtype=torch.get_default_dtype()))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.scale * x + self.shift
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}(scale={self.scale:.6f}, shift={self.shift:.6f})'

@@ -1,18 +1,17 @@
 
 from collections import OrderedDict
-from typing import Tuple,Dict,List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
 import torch.nn
 import torch.utils.data
-from torch_scatter import scatter_sum
-from torch_sparse import spmm
 from LieACE.modules.blocks import AtomicEnergiesBlock
 from LieACE.modules.sparse_tools import expand_element, fold, unfold
 from LieACE.tools.torch_tools import to_numpy
 from LieCG.CG_coefficients.CG_rot import create_U
-
+from torch_scatter import scatter_sum
+from torch_sparse import spmm
 
 
 def create_U_element(node_deg,
@@ -144,3 +143,20 @@ def compute_mean_rms_energy_forces(
     rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
 
     return mean, rms
+
+
+def compute_num_avg_neighbors(
+    data_loader: torch.utils.data.DataLoader,
+) -> Tuple[float, float]:
+
+    average_neighbors_list = []
+
+    for batch in data_loader:
+        _,count = torch.unique(batch.edge_index)
+        average_neighbors_list.append(torch.mean(count/2))
+
+    average_neighbors = torch.cat(average_neighbors_list, dim=0)  # [total_n_graphs]
+    
+    num_avg_neighbors = to_numpy(torch.mean(average_neighbors)).item()
+
+    return num_avg_neighbors
