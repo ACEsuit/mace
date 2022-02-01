@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
-from collections import OrderedDict
-from os import sys
-from typing import Dict, List, Union
+from typing import Dict, Union
 
 import numpy as np
 import torch
@@ -104,9 +102,9 @@ class ProductBasisBlock(torch.nn.Module):
         #Create weight for product basis
         self.weights = torch.nn.ParameterDict({})
         for i in range(1,correlation+1):
-            num_params = self.U_tensors[i].size[-1]
+            num_params = self.U_tensors[i].size()[-1]
             w = torch.nn.Parameter(torch.randn(num_params,self.num_features))
-            self.weights[i] = torch.nn.Parameter(w)
+            self.weights[str(i)] = torch.nn.Parameter(w)
 
         #Update linear 
         self.linear = o3.Linear(self.target_irreps, self.target_irreps, internal_weights=True, shared_weights=True)
@@ -115,10 +113,10 @@ class ProductBasisBlock(torch.nn.Module):
                 node_feats: torch.tensor,
         ) -> torch.Tensor:
         out = torch.einsum(self.equation_main,
-                               self.U_tensors[self.correlation],self.weights[self.correlation],
+                               self.U_tensors[str(self.correlation)],self.weights[self.correlation],
                                node_feats) #TODO : use optimize library and cuTENSOR
         for corr in range(self.correlation,0,-1):
-                c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[corr],self.weights[corr])
+                c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[str(corr)],self.weights[corr])
                 c_tensor  = c_tensor + out
                 out = torch.einsum(self.equation_contract,c_tensor,node_feats)
         return self.linear(out)

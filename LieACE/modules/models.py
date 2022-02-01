@@ -46,7 +46,7 @@ class InvariantMultiACE(torch.nn.Module):
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
         self.spherical_harmonics = SphericalHarmonics(lmax=max_ell)
         A = Rot3DCoeffs(max_ell + 1)
-        degree_func = NaiveMaxDeg({i : [0,max_ell]} for i in range(1,correlation+1))
+        degree_func = NaiveMaxDeg({i : [0,max_ell]for i in range(1,correlation+1)})
         U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func) for nu in range(1,correlation+1)}
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
@@ -60,13 +60,16 @@ class InvariantMultiACE(torch.nn.Module):
             num_avg_neighbors=num_avg_neighbors,
         )
         self.interactions = torch.nn.ModuleList([inter])
-
+        
+        node_feats_irreps_out = inter.irreps_out
         prod = ProductBasisBlock(
-            U_tensors = U_tensors,
-            num_features = node_feats_irreps,
-            correlation = correlation,
-        )
+                 U_tensors=U_tensors,
+                 node_feats_irreps=node_feats_irreps_out,
+                 target_irreps=hidden_irreps,
+                 correlation=correlation,
+         )
         self.product = torch.nn.ModuleList([prod]) 
+        
         for _ in range(num_interactions - 1):
             node_feats_irreps_out = inter.irreps_out
             inter = interaction_cls(

@@ -255,7 +255,8 @@ def create_U(A, nu: int, degree_func):
             for ls in all_ll:
                 Ure, Mll = re_basis(A, torch.tensor(ls))  # compute coupling coefficients and corresponding m-s
                 for ns in all_ns:  # iterate over all n-tuples
-                    if degree_func(ns, ls, nu):  # check if the combination of n-s and l-s is allowed
+                    if degree_func(ns, ls, nu): # check if the combination of n-s and l-s is allowed
+                        print(ns,ls,nu, Ure.numpy().size)
                         if Ure.numpy().size != 0:
                             for u in Ure:
                                 ind = Mll_to_inds(ns, ls, Mll, lmax)  # convert them to sparse tensor inidcies
@@ -266,7 +267,7 @@ def create_U(A, nu: int, degree_func):
     index_mm = torch.tensor(index_mm)
     inds = torch.cat((index_mm[None, :], torch.transpose(torch.tensor(inds), 0, 1)))
     size = (len(index_mm.unique()),) + tuple(((nmax + 1) * (lmax + 1)**2 for i in range(nu)))
-    return torch.sparse_coo_tensor(inds, coeffs, size=size), index_mm
+    return torch.sparse_coo_tensor(inds, coeffs, size=size).to_dense().moveaxis(0,-1)
 
 
 # -----------------------------------
