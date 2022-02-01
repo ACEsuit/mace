@@ -1,12 +1,11 @@
-import torch
+import operator
+from collections.abc import Iterable
 from functools import reduce
 from typing import Dict
-from torch_sparse import spmm
-from collections.abc import Iterable
-import operator
 
+import torch
 from LieACE.tools.complex_ops import complex_spmm
-
+from torch_sparse import spmm
 
 
 def spreshape(sp, ncol):

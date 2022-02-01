@@ -8,11 +8,10 @@ import torch
 from e3nn import nn, o3
 from torch_scatter import scatter_sum
 
-from sparse_tools import tensor_contract_nd_update_sparse, vector_contract
 
 from .irreps_tools import tp_out_irreps_with_instructions
 from .radial import BesselBasis, PolynomialCutoff
-from .utils import c_tildes_weight, create_U_element
+
 
 
 class LinearNodeEmbeddingBlock(torch.nn.Module):
@@ -89,46 +88,40 @@ class ProductBasisBlock(torch.nn.Module):
     def __init__(self,
                  U_tensors: Dict[int,torch.tensor],
                  node_feats_irreps: o3.Irreps,
+                 target_irreps: o3.Irreps,
                  correlation: int,
         ) -> None:
         super().__init__()  
         self.U_tensors = U_tensors   #Dict[str,[(lmax+1)**2]**correlation + [num_weights]]  
         self.num_features = node_feats_irreps.count((0,1))
         self.correlation = correlation
-        
+        self.target_irreps = target_irreps
         #Tensor contraction equations
-        self.equation_main = '...i' + 'k,k,bi->b' + '...'
-        self.equation_weighting = '...k,k->...'
-        self.equation_contract = 'b...i,bi->b' + '...'
+        self.equation_main = '...ik,kc,bci -> bc...'
+        self.equation_weighting = '...k,kc->c...'
+        self.equation_contract = 'bc...i,bci->bc...'
 
         #Create weight for product basis
         self.weights = torch.nn.ParameterDict({})
         for i in range(1,correlation+1):
             num_params = self.U_tensors[i].size[-1]
-            params_list = torch.nn.ParameterList([torch.nn.Parameter(torch.randn(num_params)) for i in range(self.num_features)])
-            self.weights[i] = torch.nn.Parameter(params_list)
+            w = torch.nn.Parameter(torch.randn(num_params,self.num_features))
+            self.weights[i] = torch.nn.Parameter(w)
 
         #Update linear 
-        self.linear = o3.Linear(node_feats_irreps, node_feats_irreps, internal_weights=True, shared_weights=True)
+        self.linear = o3.Linear(self.target_irreps, self.target_irreps, internal_weights=True, shared_weights=True)
 
     def forward(self,
                 node_feats: torch.tensor,
         ) -> torch.Tensor:
-
-        output = []
-        for channel in range(self.num_features): #TODO Find a better way to implement this contraction
-            out = torch.einsum(self.equation_main,
-                               self.U_tensors[self.correlation],self.weights[self.correlation][channel],
-                               node_feats[:,channel,:])
-            for corr in range(self.correlation,0,-1):
-                c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[corr],self.weights[corr][channel])
+        out = torch.einsum(self.equation_main,
+                               self.U_tensors[self.correlation],self.weights[self.correlation],
+                               node_feats) #TODO : use optimize library and cuTENSOR
+        for corr in range(self.correlation,0,-1):
+                c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[corr],self.weights[corr])
                 c_tensor  = c_tensor + out
-                out = torch.einsum(self.equation_contract,c_tensor,node_feats[:,channel,:])
-            output.append(out)
-
-        node_feats = torch.stack(output,dim=-1)
-        node_feats = self.linear(node_feats)
-        return node_feats
+                out = torch.einsum(self.equation_contract,c_tensor,node_feats)
+        return self.linear(out)
 
 
 
@@ -237,6 +230,7 @@ class AgnosticResidualInteractionBlock(InteractionBlock):
     ) -> torch.Tensor:
         sender, receiver = edge_index
         num_nodes = node_feats.shape[0]
+        num_features = self.node_feats_irreps.count((0,1))
         
         sc_real = self.skip_tp(node_feats.real, node_attrs)
         sc_imag = self.skip_tp(node_feats.imag, node_attrs)
@@ -262,7 +256,7 @@ class AgnosticResidualInteractionBlock(InteractionBlock):
         message_imag = message_real + sc_imag
         message_imag = self.equivariant_nonlin(message_imag)
         message = torch.stack((message_real,message_imag),dim=-1)
-        return  torch.view_as_complex(message) # [n_nodes, irreps]
+        return  torch.view_as_complex(message).reshape(message.size[0],num_features,message.size[0]/num_features) # [n_nodes, channels, (lmax + 1)**2]
 
 class ScaleShiftBlock(torch.nn.Module):
     def __init__(self, scale: float, shift: float):

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, Type
 
 import numpy as np
 import torch
@@ -8,11 +8,10 @@ from LieCG.CG_coefficients.CG_rot import Rot3DCoeffs, create_U
 from e3nn import o3
 from torch_scatter import scatter_sum
 
-from .blocks import (AtomicEnergiesBlock, LinearNodeEmbeddingBlock, LinearReadoutBlock, NonLinearBlock, RadialEmbeddingBlock, 
+from LieACE.modules.blocks import (AtomicEnergiesBlock, LinearNodeEmbeddingBlock, LinearReadoutBlock, RadialEmbeddingBlock, 
                     InteractionBlock, ProductBasisBlock)
-from .spherical_harmonics import SphericalHarmonics
-from .utils import (compute_forces, create_U_element,
-                    get_edge_vectors_and_lengths)
+from LieACE.modules.spherical_harmonics import SphericalHarmonics
+from LieACE.modules.utils import (compute_forces, get_edge_vectors_and_lengths)
 
 
 
@@ -80,9 +79,10 @@ class InvariantMultiACE(torch.nn.Module):
             )
             self.interactions.append(inter)
             prod = ProductBasisBlock(
-            U_tensors = U_tensors,
-                    node_feats_irreps = node_feats_irreps_out,
-                    correlation = correlation,
+                    U_tensors=U_tensors,
+                    node_feats_irreps=node_feats_irreps_out,
+                    target_irreps=hidden_irreps,
+                    correlation=correlation,
             )
             self.product.append(prod)
 
