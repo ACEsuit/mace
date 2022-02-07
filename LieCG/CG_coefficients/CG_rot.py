@@ -252,7 +252,6 @@ def create_U(A, nu: int, degree_func):
         if l_filter(ll):  # check sum(ls)=even
             all_ll = set(itertools.permutations(ll))  # #generate all permutations of allowed l-s
             for ls in all_ll:
-                print(ls)
                 Ure, Mll = re_basis(A, torch.tensor(ls))  # compute coupling coefficients and corresponding m-s
                 for ns in all_ns:  # iterate over all n-tuples
                     if degree_func(ns, ls, nu): # check if the combination of n-s and l-s is allowed

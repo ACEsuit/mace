@@ -106,7 +106,7 @@ class InvariantMultiACE(torch.nn.Module):
         vectors, lengths = get_edge_vectors_and_lengths(positions=data.positions,
                                                         edge_index=data.edge_index,
                                                         shifts=data.shifts)
-        edge_attrs = self.spherical_harmonics(vectors)
+        edge_attrs = self.spherical_harmonics.compute_ylm_all(vectors)
         edge_feats = self.radial_embedding(lengths)
 
         # Interactions

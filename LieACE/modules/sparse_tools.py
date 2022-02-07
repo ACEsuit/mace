@@ -4,8 +4,6 @@ from functools import reduce
 from typing import Dict
 
 import torch
-from LieACE.tools.complex_ops import complex_spmm
-from torch_sparse import spmm
 
 
 def spreshape(sp, ncol):

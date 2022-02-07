@@ -2,13 +2,16 @@ import torch
 from numpy import pi as np_pi
 
 
-class SphericalHarmonics():
-    def __init__(self, lmax, prec='DOUBLE'):
+class SphericalHarmonics(torch.nn.Module):
+    def __init__(self, lmax, prec='DOUBLE', device='cpu'):
+        super().__init__()
         self._lmax = lmax
+        self.device = device
         # self.rhat = rhat
         self.prec = Precision(prec)
         self.alm, self.blm = self.pre_compute()
         self.pi = self.float_tensor(np_pi)
+        
 
     def lm1d(self, l, m):
         return m + l * (l + 1) // 2
@@ -20,15 +23,15 @@ class SphericalHarmonics():
         return l * (l + 1) + m
 
     def float_tensor(self, x):
-        return torch.as_tensor(x, dtype=self.prec.float)
+        return torch.as_tensor(x, dtype=self.prec.float,device=self.device)
 
     def int_tensor(self, x):
-        return torch.as_tensor(x, dtype=self.prec.int)
+        return torch.as_tensor(x, dtype=self.prec.int,device=self.device)
 
     def pre_compute(self):
         alm = [self.float_tensor(0.)]
         blm = [self.float_tensor(0.)]
-        lindex = torch.arange(0, self._lmax + 1, dtype=self.prec.float)
+        lindex = torch.arange(0, self._lmax + 1, dtype=self.prec.float, device=self.device)
         for i in range(1, self._lmax + 1):
             l = lindex[i]
             lsq = l * l
@@ -43,7 +46,7 @@ class SphericalHarmonics():
                 if i == j:
                     cl = -torch.sqrt(1.0 + 0.5 / m)
                     alm += [cl]
-                    blm += [torch.tensor(0)]  # placeholder
+                    blm += [torch.tensor(0,device=self.device)]  # placeholder
                 else:
                     alm += [a]
                     blm += [b]
@@ -150,7 +153,7 @@ class SphericalHarmonics():
         return torch.reshape(ylm_r, [-1, self._lmax + 1, 2 * self._lmax + 1]),\
                 torch.reshape(ylm_i, [-1, self._lmax + 1, 2 * self._lmax + 1])  ##[None, nYlm, 1] -> [None, l, m]
 
-    def compute_ylm_all(self, rhat):
+    def forward(self, rhat):
         rhat = self.float_tensor(rhat)
         self.l_tile = []
         e_x = self.float_tensor([[1.], [0.], [0.]])
@@ -217,9 +220,11 @@ class SphericalHarmonics():
         ylm_r = torch.stack(sqr_ylm_r).permute(1, 0, 2)  ##[nYlm, None, 1] -> [None, nYlm, 1]
         #ylm_i = torch.transpose(torch.stack(sqr_ylm_i), [1, 0, 2])  ##[nYlm, None, 1] -> [None, nYlm, 1]
         ylm_i = torch.stack(sqr_ylm_i).permute(1, 0, 2)
-        return torch.as_tensor(ylm_r).flatten(1,
-                                              -1), torch.as_tensor(ylm_i).flatten(1,
-                                                                                  -1)  # [None, nYlm, 1] -> [None, nYlm]
+        
+        ylm_r = torch.as_tensor(ylm_r).flatten(1,-1)
+        ylm_i = torch.as_tensor(ylm_i).flatten(1,-1)
+        ylm = torch.stack((ylm_r,ylm_i),dim=-1)
+        return torch.view_as_complex(ylm)
 
     def compute_ylm(self, l, m, rhat):
         rhat = self.float_tensor(rhat)
