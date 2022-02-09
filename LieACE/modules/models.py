@@ -29,6 +29,7 @@ class InvariantMultiACE(torch.nn.Module):
         atomic_energies: np.ndarray,
         num_avg_neighbors: float,
         correlation: int,
+        device: str='cpu',
     ):
         super().__init__()
 
@@ -47,10 +48,11 @@ class InvariantMultiACE(torch.nn.Module):
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps*num_features).sort()[0].simplify()
         
-        self.spherical_harmonics = SphericalHarmonics(lmax=max_ell)
+        self.spherical_harmonics = SphericalHarmonics(lmax=max_ell,device=device)
         A = Rot3DCoeffs(max_ell + 1)
         degree_func = NaiveMaxDeg({i : [0,max_ell]for i in range(1,correlation+1)})
-        U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func) for nu in range(1,correlation+1)}
+        U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func).type(torch.complex128)
+                     for nu in range(1,correlation+1)}
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
@@ -91,7 +93,7 @@ class InvariantMultiACE(torch.nn.Module):
             )
             self.product.append(prod)
 
-        self.readouts = torch.nn.ModuleList([LinearReadoutBlock(self.interactions[-1].irreps_out)])
+        self.readouts = torch.nn.ModuleList([LinearReadoutBlock(hidden_irreps)])
 
     def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
         # Setup
@@ -106,17 +108,17 @@ class InvariantMultiACE(torch.nn.Module):
         vectors, lengths = get_edge_vectors_and_lengths(positions=data.positions,
                                                         edge_index=data.edge_index,
                                                         shifts=data.shifts)
-        edge_attrs = self.spherical_harmonics.compute_ylm_all(vectors)
+        edge_attrs = self.spherical_harmonics(vectors)*torch.sqrt(4 * torch.tensor(np.pi, dtype=torch.cdouble))
         edge_feats = self.radial_embedding(lengths)
 
         # Interactions
-        for interaction in self.interactions:
+        for interaction,product in zip(self.interactions,self.product):
             node_feats = interaction(node_attrs=data.node_attrs,
                                      node_feats=node_feats,
                                      edge_attrs=edge_attrs,
                                      edge_feats=edge_feats,
                                      edge_index=data.edge_index)
-            node_feats = self.product(node_feats=node_feats)
+            node_feats = product(node_feats=node_feats)
 
         node_inter_es = self.readouts[0](node_feats).squeeze(-1)  # {[n_nodes, ], }
 

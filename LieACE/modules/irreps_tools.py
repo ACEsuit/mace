@@ -1,5 +1,6 @@
 from typing import Tuple, List
 
+import torch
 from e3nn import o3
 
 
@@ -46,3 +47,18 @@ def linear_out_irreps(irreps: o3.Irreps, target_irreps: o3.Irreps) -> o3.Irreps:
             raise RuntimeError(f'{ir_in} not in {target_irreps}')
 
     return o3.Irreps(irreps_mid)
+
+
+def reshape_irreps(tensor: torch.Tensor, irreps: o3.Irreps):
+    field = []
+    ix = 0
+    out = []
+    batch, dim = tensor.shape
+    for mul, ir in irreps:
+        d = ir.dim
+        field = tensor[:,ix: ix + mul * d]  # [batch, sample, mul * repr]
+        ix += mul * d
+        field = field.reshape(batch, mul, d)
+        out.append(field)
+    return torch.cat(out,dim=-1)
+

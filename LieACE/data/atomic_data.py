@@ -1,6 +1,5 @@
-from typing import Iterable, Sequence, Dict, List
+from typing import  Sequence, Optional
 
-import numpy as np
 import torch.utils.data
 import torch_geometric
 
@@ -26,8 +25,8 @@ class AtomicData(torch_geometric.data.Data):
             node_attrs: torch.Tensor,  # [n_nodes, n_node_feats]
             positions: torch.Tensor,  # [n_nodes, 3]
             shifts : torch.Tensor, # [n_edges, 3],
-            forces: torch.Tensor,  # [n_nodes, 3]
-            energy: torch.Tensor,  # [, ]
+            forces: Optional[torch.Tensor],  # [n_nodes, 3]
+            energy: Optional[torch.Tensor],  # [, ]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -36,9 +35,8 @@ class AtomicData(torch_geometric.data.Data):
         assert positions.shape == (num_nodes, 3)
         assert shifts.shape[1] == 3
         assert len(node_attrs.shape) == 2
-        assert forces.shape == (num_nodes, 3)
-        assert len(energy.shape) == 0
-
+        assert forces is None or forces.shape == (num_nodes, 3)
+        assert energy is None or len(energy.shape) == 0
         # Aggregate data
         data = {
             'num_nodes': num_nodes,

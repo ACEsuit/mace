@@ -7,7 +7,7 @@ from e3nn import nn, o3
 from torch_scatter import scatter_sum
 
 
-from .irreps_tools import tp_out_irreps_with_instructions
+from .irreps_tools import linear_out_irreps, tp_out_irreps_with_instructions, reshape_irreps
 from .radial import BesselBasis, PolynomialCutoff
 
 
@@ -104,7 +104,7 @@ class ProductBasisBlock(torch.nn.Module):
         for i in range(1,correlation+1):
             num_params = self.U_tensors[i].size()[-1]
             w = torch.nn.Parameter(torch.randn(num_params,self.num_features))
-            self.weights[str(i)] = torch.nn.Parameter(w)
+            self.weights[str(i)] = w
 
         #Update linear 
         self.linear = o3.Linear(self.target_irreps, self.target_irreps, internal_weights=True, shared_weights=True)
@@ -112,14 +112,25 @@ class ProductBasisBlock(torch.nn.Module):
     def forward(self,
                 node_feats: torch.tensor,
         ) -> torch.Tensor:
+        
         out = torch.einsum(self.equation_main,
-                               self.U_tensors[str(self.correlation)],self.weights[self.correlation],
+                               self.U_tensors[self.correlation],self.weights[str(self.correlation)].type(torch.complex128),
                                node_feats) #TODO : use optimize library and cuTENSOR
-        for corr in range(self.correlation,0,-1):
-                c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[str(corr)],self.weights[corr])
+        
+        print(self.U_tensors[self.correlation])
+        print(self.weights[str(self.correlation)])
+        print(node_feats[0,:,:])
+        print(node_feats[3,:,:])
+
+        
+        for corr in range(self.correlation-1,0,-1):
+                c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[corr],self.weights[str(corr)].type(torch.complex128))
                 c_tensor  = c_tensor + out
                 out = torch.einsum(self.equation_contract,c_tensor,node_feats)
-        return self.linear(out)
+            
+        print(out[0,:][0].item())
+        print(out[3,:][0].item())
+        return self.linear(out.real)
 
 
 
@@ -230,31 +241,96 @@ class AgnosticResidualInteractionBlock(InteractionBlock):
         num_nodes = node_feats.shape[0]
         num_features = self.node_feats_irreps.count((0,1))
         
-        sc_real = self.skip_tp(node_feats.real, node_attrs)
-        sc_imag = self.skip_tp(node_feats.imag, node_attrs)
-        
-        node_feats_real = self.linear_up(node_feats.real)
-        node_feats_imag = self.linear_up(node_feats.imag)
-        
-        node_feats = torch.view_as_complex(torch.stack((node_feats_real,node_feats_imag)),dim=-1)
-        
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
         
-        mji_real = self.conv_tp(node_feats[sender].real, edge_attrs.real, tp_weights) - self.conv_tp(node_feats[sender].imag, edge_attrs.imag, tp_weights) # [n_edges, irreps]
-        mji_imag = self.conv_tp(node_feats[sender].imag, edge_attrs.real, tp_weights) + self.conv_tp(node_feats[sender].real, edge_attrs.imag, tp_weights)
+        mji_real = self.conv_tp(node_feats[sender], edge_attrs.real, tp_weights) # [n_edges, irreps]
+        mji_imag =  self.conv_tp(node_feats[sender], edge_attrs.imag, tp_weights)
         
         message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
         
         message_real = self.linear(message_real)/self.num_avg_neighbors
-        message_real = message_real + sc_real
-        message_real = self.equivariant_nonlin(message_real)
+        message_real = message_real + sc
+        message_real = self.equivariant_nonlin(message_real)  
         
         message_imag = self.linear(message_real)/self.num_avg_neighbors
-        message_imag = message_real + sc_imag
+        message_imag = message_imag 
         message_imag = self.equivariant_nonlin(message_imag)
-        message = torch.stack((message_real,message_imag),dim=-1)
-        return  torch.view_as_complex(message).reshape(message.size[0],num_features,message.size[0]/num_features) # [n_nodes, channels, (lmax + 1)**2]
+        
+        message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
+        
+        return torch.reshape(message,[message.size()[0],num_features,message.size()[1]//num_features]) # [n_nodes, channels, (lmax + 1)**2]
+
+
+class LinearResidualInteractionBlock(InteractionBlock):
+    def _setup(self,) -> None:
+    
+
+ #First linear
+        self.linear_up = o3.Linear(self.node_feats_irreps,self.node_feats_irreps, internal_weights=True, shared_weights=True)
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(self.node_feats_irreps, self.edge_attrs_irreps,
+                                                                   self.target_irreps)
+        self.conv_tp = o3.TensorProduct(self.node_feats_irreps,
+                                        self.edge_attrs_irreps,
+                                        irreps_mid,
+                                        instructions=instructions,
+                                        shared_weights=False,
+                                        internal_weights=False)
+
+
+        #Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet([input_dim]
+            + 3 * [64]
+            + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu)
+
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = linear_out_irreps(irreps_mid, self.target_irreps)
+        self.irreps_out = self.irreps_out.simplify()
+        self.linear = o3.Linear(irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True)
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(self.node_feats_irreps, self.node_attrs_irreps, self.irreps_out)
+
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        sender, receiver = edge_index
+        num_nodes = node_feats.shape[0]
+        
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+
+        tp_weights = self.conv_tp_weights(edge_feats)     
+  
+        mji_real = self.conv_tp(node_feats[sender], edge_attrs.real, tp_weights) # [n_edges, irreps]
+        mji_imag =  self.conv_tp(node_feats[sender], edge_attrs.imag, tp_weights)
+        
+        message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
+        message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
+        
+        message_real = self.linear(message_real)/self.num_avg_neighbors
+        message_real = message_real + sc
+
+        message_imag = self.linear(message_imag)/self.num_avg_neighbors
+        message_imag = message_imag 
+        
+        message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
+        return reshape_irreps(message,self.irreps_out) # [n_nodes, channels, (lmax + 1)**2]
+
+
 
 class ScaleShiftBlock(torch.nn.Module):
     def __init__(self, scale: float, shift: float):

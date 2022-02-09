@@ -1,6 +1,7 @@
 import torch
 import numpy as np
-#from CG_coefficients.CG_lorentz import CGDict
+from LieCG.CG_coefficients.CG_lorentz import CGDict
+
 
 
 #Copied from the Lorentz Equivariant Network A. Bogatskiy, B. Anderson, J. T. Offermann, M. Roussi, D. W. Miller, R. Kondor, 
