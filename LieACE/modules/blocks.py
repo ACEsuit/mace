@@ -108,28 +108,18 @@ class ProductBasisBlock(torch.nn.Module):
 
         #Update linear 
         self.linear = o3.Linear(self.target_irreps, self.target_irreps, internal_weights=True, shared_weights=True)
-
+    
     def forward(self,
                 node_feats: torch.tensor,
         ) -> torch.Tensor:
-        
         out = torch.einsum(self.equation_main,
                                self.U_tensors[self.correlation],self.weights[str(self.correlation)].type(torch.complex128),
-                               node_feats) #TODO : use optimize library and cuTENSOR
-        
-        print(self.U_tensors[self.correlation])
-        print(self.weights[str(self.correlation)])
-        print(node_feats[0,:,:])
-        print(node_feats[3,:,:])
-
-        
+                               node_feats) #TODO : use optimize library and cuTENSOR 
         for corr in range(self.correlation-1,0,-1):
                 c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[corr],self.weights[str(corr)].type(torch.complex128))
                 c_tensor  = c_tensor + out
                 out = torch.einsum(self.equation_contract,c_tensor,node_feats)
-            
-        print(out[0,:][0].item())
-        print(out[3,:][0].item())
+                
         return self.linear(out.real)
 
 
@@ -328,6 +318,7 @@ class LinearResidualInteractionBlock(InteractionBlock):
         message_imag = message_imag 
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
+        
         return reshape_irreps(message,self.irreps_out) # [n_nodes, channels, (lmax + 1)**2]
 
 
