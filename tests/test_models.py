@@ -45,16 +45,15 @@ def test_multiace_model():
         num_polynomial_cutoff=6,
         max_ell=3,
         interaction_cls=modules.interaction_classes['LinearResidualInteractionBlock'],
-        num_interactions=2,
+        num_interactions=3,
         num_elements=2,
         hidden_irreps=o3.Irreps('32x0e'),
         atomic_energies=atomic_energies,
-        num_avg_neighbors=2,
-        correlation=2,
+        num_avg_neighbors=8,
+        correlation=3,
     )
     model = modules.InvariantMultiACE(**model_config)
 
-    #assert tools.count_parameters(model) == 75944
 
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
     atomic_data2 = data.AtomicData.from_config(config2, z_table=table, cutoff=3.0)
@@ -68,8 +67,38 @@ def test_multiace_model():
     batch = next(iter(data_loader))
 
     output = model(batch)
-    print(output)
+    assert torch.allclose(output['energy'][0],output['energy'][1])
 
 
 test_multiace_model()
 
+
+def test_model_cuda():
+    atomic_energies = np.array([1.0, 3.0], dtype=float)
+    model_config = dict(
+        r_max=4,
+        num_bessel=8,
+        num_polynomial_cutoff=6,
+        max_ell=3,
+        interaction_cls=modules.interaction_classes['LinearResidualInteractionBlock'],
+        num_interactions=3,
+        num_elements=2,
+        hidden_irreps=o3.Irreps('32x0e'),
+        atomic_energies=atomic_energies,
+        num_avg_neighbors=8,
+        correlation=2,
+        device='cuda'
+    )
+    model = modules.InvariantMultiACE(**model_config).to('cuda')
+    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
+
+    data_loader = torch_geometric.data.DataLoader(
+        dataset=[atomic_data, atomic_data, atomic_data, atomic_data, atomic_data],
+        batch_size=5,
+        shuffle=True,
+        drop_last=False,
+    )
+    batch = next(iter(data_loader)).to('cuda')
+    output = model(batch)
+    assert torch.allclose(output['energy'][0],output['energy'][1])
+test_model_cuda()
