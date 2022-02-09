@@ -154,24 +154,36 @@ class Rot3DCoeffs:
     def _compute_val(self, ll, mm, kk):
         val = 0.0
         N = len(ll)
-        print(ll[N - 2])
-        jmin = max([abs(ll[N - 2] - ll[N - 1]), abs(kk[N - 2] + kk[N - 1]), abs(mm[N - 2] + mm[N - 1])])
-        jmax = ll[N - 2] + ll[N - 1]
-        for j in range(jmin, jmax + 1):
-            cgk = self.cg((ll[N - 2], kk[N - 2], ll[N - 1], kk[N - 1], j, kk[N - 2] + kk[N - 1]))
-            cgm = self.cg((ll[N - 2], mm[N - 2], ll[N - 1], mm[N - 1], j, mm[N - 2] + mm[N - 1]))
-            if cgk * cgm != 0:
-                llpp = torch.cat((ll[:-2], torch.tensor([j])))  # (llp..., j)
-                mmpp = torch.cat(
-                    (torch.tensor(mm[:-2]), torch.tensor([mm[N - 2] + mm[N - 1]])))  # (mmp..., mm[N-1]+mm[N])
-                kkpp = torch.cat(
-                    (torch.tensor(kk[:-2]), torch.tensor([kk[N - 2] + kk[N - 1]])))  # (kkp..., kk[N-1]+kk[N])
-                if len(llpp) == 1:
-                    a = self.coco_init(llpp[0], mmpp[0], kkpp[0])
-                else:
-                    a = self.__call__(llpp, mmpp, kkpp)  # this is okay because it is
-                    # a recursion, so they should be in self.vals
-                val += cgk * cgm * a
+        if N == 1 :
+            if ll[0] == mm[0] == kk[0] :
+                val = 1.0
+                return val
+            else : 
+                return val
+        elif N == 2 :
+            if ll[0] != ll[2] or sum(mm) == 0 or sum(kk) != 0 :
+                return val
+            else :
+                val = 8 * math.pi**2 / (2*ll[0] +1 )*(-1)**(mm[0]-kk[0])
+                return  val
+        else :
+            jmin = max([abs(ll[N - 2] - ll[N - 1]), abs(kk[N - 2] + kk[N - 1]), abs(mm[N - 2] + mm[N - 1])])
+            jmax = ll[N - 2] + ll[N - 1]
+            for j in range(jmin, jmax + 1):
+                cgk = self.cg((ll[N - 2], kk[N - 2], ll[N - 1], kk[N - 1], j, kk[N - 2] + kk[N - 1]))
+                cgm = self.cg((ll[N - 2], mm[N - 2], ll[N - 1], mm[N - 1], j, mm[N - 2] + mm[N - 1]))
+                if cgk * cgm != 0:
+                    llpp = torch.cat((ll[:-2], torch.tensor([j])))  # (llp..., j)
+                    mmpp = torch.cat(
+                        (torch.tensor(mm[:-2]), torch.tensor([mm[N - 2] + mm[N - 1]])))  # (mmp..., mm[N-1]+mm[N])
+                    kkpp = torch.cat(
+                        (torch.tensor(kk[:-2]), torch.tensor([kk[N - 2] + kk[N - 1]])))  # (kkp..., kk[N-1]+kk[N])
+                    if len(llpp) == 1:
+                        a = self.coco_init(llpp[0], mmpp[0], kkpp[0])
+                    else:
+                        a = self.__call__(llpp, mmpp, kkpp)  # this is okay because it is
+                        # a recursion, so they should be in self.vals
+                    val += cgk * cgm * a
         return val
 
 
