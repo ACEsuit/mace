@@ -18,7 +18,6 @@ config = Configuration(
         [0.0, 1.1, 0.3],
     ]),
     energy=-1.5,
-    degree = [{'type' : 'NaiveMaxDeg',1:[4,2],2:[4,2]}]
 )
 
 table = AtomicNumberTable([1])
