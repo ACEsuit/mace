@@ -161,7 +161,7 @@ class Rot3DCoeffs:
             else : 
                 return val
         elif N == 2 :
-            if ll[0] != ll[2] or sum(mm) == 0 or sum(kk) != 0 :
+            if ll[0] != ll[1] or sum(mm) != 0 or sum(kk) != 0 :
                 return val
             else :
                 val = 8 * math.pi**2 / (2*ll[0] +1 )*(-1)**(mm[0]-kk[0])
@@ -266,7 +266,6 @@ def create_U(A, nu: int, degree_func):
         if l_filter(ll):  # check sum(ls)=even
             all_ll = set(itertools.permutations(ll))  # #generate all permutations of allowed l-s
             for ls in all_ll:
-                print(ls)
                 Ure, Mll = re_basis(A, torch.tensor(ls))  # compute coupling coefficients and corresponding m-s
                 for ns in all_ns:  # iterate over all n-tuples
                     if degree_func(ns, ls, nu): # check if the combination of n-s and l-s is allowed

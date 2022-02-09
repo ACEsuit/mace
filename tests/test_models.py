@@ -43,14 +43,14 @@ def test_multiace_model():
         r_max=4,
         num_bessel=8,
         num_polynomial_cutoff=6,
-        max_ell=2,
+        max_ell=3,
         interaction_cls=modules.interaction_classes['LinearResidualInteractionBlock'],
-        num_interactions=1,
+        num_interactions=2,
         num_elements=2,
-        hidden_irreps=o3.Irreps('2x0e'),
+        hidden_irreps=o3.Irreps('32x0e'),
         atomic_energies=atomic_energies,
         num_avg_neighbors=2,
-        correlation=1,
+        correlation=2,
     )
     model = modules.InvariantMultiACE(**model_config)
 
