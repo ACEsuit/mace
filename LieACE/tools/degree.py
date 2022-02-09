@@ -29,7 +29,7 @@ class NaiveMaxDeg:
         self.maxdeg = maxdeg
 
     def __call__(self, n: int, l: int, corr: int):
-        return self.maxdeg[corr][0] >= np.sum(n) and self.maxdeg[corr][1] >= np.sum(l)/corr
+        return self.maxdeg[corr][0] >= np.sum(n) and self.maxdeg[corr][1] >= np.sum(l)//corr
 
     def max_n(self):
         nl_s = np.array(list(self.maxdeg.values()))
