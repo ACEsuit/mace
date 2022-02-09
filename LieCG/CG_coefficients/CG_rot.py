@@ -194,7 +194,6 @@ def re_basis(A, ll):
     CC = CC.numpy()
     # CC = torch.squeeze(CC).numpy()
     G = np.matmul(CC, CC.T)  # I think it works for invariants, if not below with for loops
-    
     # G = torch.zeros((len(CC), len(CC)))
     # for i in range(len(CC)):
     #     for j in range(len(CC)):
@@ -279,7 +278,8 @@ def create_U(A, nu: int, degree_func):
     index_mm = torch.tensor(index_mm)
     inds = torch.cat((index_mm[None, :], torch.transpose(torch.tensor(inds), 0, 1)))
     size = (len(index_mm.unique()),) + tuple(((nmax + 1) * (lmax + 1)**2 for i in range(nu)))
-    return torch.sparse_coo_tensor(inds, coeffs, size=size).to_dense().moveaxis(0,-1)
+    norm = abs(coeffs).mean()*(len(coeffs)**0.5)
+    return torch.sparse_coo_tensor(inds, coeffs/norm, size=size).to_dense().moveaxis(0,-1)
 
 
 # -----------------------------------
