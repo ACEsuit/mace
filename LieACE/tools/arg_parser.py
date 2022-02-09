@@ -38,7 +38,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
                         type=str,
                         default='LinearResidualInteractionBlock')
     parser.add_argument('--max_ell', help=r'highest \ell of spherical harmonics', type=int, default=4)
-    parser.add_argmuent('--correlation', help='correlation order at each layer', type=int, default=3)
+    parser.add_argument('--correlation', help='correlation order at each layer', type=int, default=3)
     parser.add_argument('--num_layers', help='number of interactions', type=int, default=3)
     parser.add_argument('--hidden_irreps',
                         help='irreps for hidden node states',

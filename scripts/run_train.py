@@ -76,10 +76,7 @@ def get_dataset(downloads_dir: str, dataset: str, subset: Optional[str], split: 
 
 
 atomic_energies_dict: Dict[str, Dict[int, float]] = {
-    'iso17': data.iso17_atomic_energies,
-    'rmd17': data.rmd17_atomic_energies,
     '3bpa': data.three_bpa_atomic_energies,
-    'acac': data.acac_atomic_energies,
     'ethanol': data.ethanol_atomic_energies,
 }
 

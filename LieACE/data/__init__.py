@@ -3,6 +3,9 @@ from .ethanol import atomic_energies as ethanol_atomic_energies
 from .ethanol import load as load_ethanol
 from .neighborhood import get_neighborhood
 from .utils import Configurations
+from .three_bpa import atomic_energies as three_bpa_atomic_energies
+from .three_bpa import load as load_3bpa
+
 
 __all__ = [
     'load_rmd17', 'rmd17_atomic_energies', 'AtomicData', 'get_neighborhood', 'Configuration', 'Configurations',
