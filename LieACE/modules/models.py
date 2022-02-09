@@ -51,7 +51,7 @@ class InvariantMultiACE(torch.nn.Module):
         self.spherical_harmonics = SphericalHarmonics(lmax=max_ell,device=device)
         A = Rot3DCoeffs(max_ell + 1)
         degree_func = NaiveMaxDeg({i : [0,max_ell]for i in range(1,correlation+1)})
-        U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func).type(torch.complex128)
+        U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func).type(torch.complex128).to(device)
                      for nu in range(1,correlation+1)}
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
