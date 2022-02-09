@@ -161,45 +161,14 @@ def main() -> None:
         atomic_energies=atomic_energies,
         num_avg_neighbors=args.num_avg_neighbors,
         correlation=args.correlation,
+        device=args.device,
     )
 
     model: torch.nn.Module
-    if args.model == 'scale_shift':
-        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
-        model = modules.ScaleShiftBodyOrderedModel(
-            **model_config,
-            atomic_inter_scale=std,
-            atomic_inter_shift=mean,
-        )
-    elif args.model == 'scale_shift_non_linear':
-        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
-        model = modules.ScaleShiftNonLinearBodyOrderedModel(
-            **model_config,
-            gate=gate_dict[args.gate],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=std,
-            atomic_inter_shift=mean,
-        )
-    elif args.model == 'scale_shift_non_linear_single_readout':
-        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
-        model = modules.ScaleShiftNonLinearSingleReadoutModel(
-            **model_config,
-            gate=gate_dict[args.gate],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=std,
-            atomic_inter_shift=mean,
-        )
-    elif args.model == 'scale_shift_single_readout':
-        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
-        model = modules.ScaleShiftSingleReadoutModel(
-            **model_config,
-            atomic_inter_scale=std,
-            atomic_inter_shift=mean,
-        )
-    elif args.model == 'single_readout':
-        model = modules.SingleReadoutModel(**model_config)
-    else:
-        model = modules.BodyOrderedModel(**model_config)
+
+    if args.model == 'InvariantMultiACE':
+        model = modules.InvariantMultiACE(**model_config)
+
 
     model.to(device)
 
