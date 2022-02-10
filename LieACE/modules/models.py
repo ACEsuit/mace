@@ -215,9 +215,9 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
             )
             self.product.append(prod)
             if i == num_interactions - 2:
-                self.readouts.append(NonLinearReadoutBlock(inter.irreps_out, MLP_irreps, gate))
+                self.readouts.append(NonLinearReadoutBlock(hidden_irreps, MLP_irreps, gate))
             else:
-                self.readouts.append(LinearReadoutBlock(inter.irreps_out))
+                self.readouts.append(LinearReadoutBlock(hidden_irreps))
 
     def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
         # Setup
