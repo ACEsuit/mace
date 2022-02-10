@@ -219,8 +219,6 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
             else:
                 self.readouts.append(LinearReadoutBlock(inter.irreps_out))
 
-        self.readouts = torch.nn.ModuleList([LinearReadoutBlock(hidden_irreps)])
-
     def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
         # Setup
         data.positions.requires_grad = True
