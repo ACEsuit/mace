@@ -91,7 +91,7 @@ def train(
 
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
-            lr_scheduler.step()
+            lr_scheduler.step(valid_loss)  #Can break if exponential LR, TODO fix that!
         else:
             swa.model.update_parameters(model)
             swa.scheduler.step()
