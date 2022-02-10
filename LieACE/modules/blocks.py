@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Union
+from typing import Dict, Union, Callable
 
 import numpy as np
 import torch
@@ -45,6 +45,20 @@ class LinearReadoutBlock(torch.nn.Module):
     ) -> torch.Tensor:  # [..., ]
         return self.linear(x)  # [n_nodes, 1]
 
+class NonLinearReadoutBlock(torch.nn.Module):
+    def __init__(self, irreps_in: o3.Irreps, MLP_irreps: o3.Irreps, gate: Callable):
+        super().__init__()
+        self.hidden_irreps = MLP_irreps
+        self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
+        self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
+        self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=o3.Irreps('0e'))
+
+    def forward(
+            self,
+            x: torch.Tensor  # [n_nodes, irreps]
+    ) -> torch.Tensor:  # [..., ]
+        x = self.non_linearity(self.linear_1(x))
+        return self.linear_2(x)  # [n_nodes, 1]
 
 class AtomicEnergiesBlock(torch.nn.Module):
     atomic_energies: torch.Tensor

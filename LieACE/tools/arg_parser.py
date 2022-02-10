@@ -28,7 +28,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--model',
                         help='model type',
                         default='InvariantMultiACE',
-                        choices=['InvariantMultiACE',])
+                        choices=['InvariantMultiACE','scale_shift_non_linear'])
     parser.add_argument('--r_max', help='distance cutoff (in Ang)', type=float, default=4.0)
     parser.add_argument('--degrees', help='degrees for each atoms', type=List)
     parser.add_argument('--num_radial_basis', help='number of radial basis functions', type=int, default=8)
