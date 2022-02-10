@@ -37,9 +37,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
                         help='name of interaction block',
                         type=str,
                         default='LinearResidualInteractionBlock')
-    parser.add_argument('--max_ell', help=r'highest \ell of spherical harmonics', type=int, default=4)
+    parser.add_argument('--max_ell', help=r'highest \ell of spherical harmonics', type=int, default=3)
     parser.add_argument('--correlation', help='correlation order at each layer', type=int, default=3)
-    parser.add_argument('--num_layers', help='number of interactions', type=int, default=3)
+    parser.add_argument('--num_interactions', help='number of interactions', type=int, default=3)
     parser.add_argument('--hidden_irreps',
                         help='irreps for hidden node states',
                         type=str,
@@ -81,6 +81,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--lr', help='Learning rate of optimizer', type=float, default=0.01)
     parser.add_argument('--weight_decay', help='weight decay (L2 penalty)', type=float, default=5e-5)
     parser.add_argument('--amsgrad', help='use amsgrad variant of optimizer', action='store_true', default=True)
+    parser.add_argument('--scheduler', help='Type of scheduler', type=str, default='ReduceLROnPlateau')
+    parser.add_argument('--lr_factor', help='Learning rate factor', type=float, default=0.8)
+    parser.add_argument('--scheduler_partience', help='Learning rate factor', type=int, default=50)
     parser.add_argument('--lr_scheduler_gamma', help='Gamma of learning rate scheduler', type=float, default=0.9993)
     parser.add_argument('--swa', help='use Stochastic Weight Averaging', action='store_true', default=False)
     parser.add_argument('--ema', help='use Exponential Moving Average', action='store_true', default=False)
