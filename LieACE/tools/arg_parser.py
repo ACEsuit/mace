@@ -40,6 +40,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--max_ell', help=r'highest \ell of spherical harmonics', type=int, default=3)
     parser.add_argument('--correlation', help='correlation order at each layer', type=int, default=3)
     parser.add_argument('--num_interactions', help='number of interactions', type=int, default=3)
+    parser.add_argument('--MLP_irreps', help='hidden irreps of the MLP in last readout', type=str, default='16x0e')
     parser.add_argument('--hidden_irreps',
                         help='irreps for hidden node states',
                         type=str,
