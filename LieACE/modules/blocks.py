@@ -117,7 +117,7 @@ class ProductBasisBlock(torch.nn.Module):
         self.weights = torch.nn.ParameterDict({})
         for i in range(1,correlation+1):
             num_params = self.U_tensors[i].size()[-1]
-            w = torch.nn.Parameter(torch.randn(num_params,self.num_features))
+            w = torch.nn.Parameter(torch.randn(num_params,self.num_features)/(self.num_features**0.5))
             self.weights[str(i)] = w
 
         #Update linear 

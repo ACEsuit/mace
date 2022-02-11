@@ -278,8 +278,8 @@ def create_U(A, nu: int, degree_func):
     index_mm = torch.tensor(index_mm)
     inds = torch.cat((index_mm[None, :], torch.transpose(torch.tensor(inds), 0, 1)))
     size = (len(index_mm.unique()),) + tuple(((nmax + 1) * (lmax + 1)**2 for i in range(nu)))
-    norm = abs(coeffs).mean()*(len(coeffs)**0.5)
-    return torch.sparse_coo_tensor(inds, coeffs/norm, size=size).to_dense().moveaxis(0,-1)
+    coeffs = torch.nn.functional.normalize(coeffs, dim=-1)/len(coeffs)**0.5
+    return torch.sparse_coo_tensor(inds, coeffs, size=size).to_dense().moveaxis(0,-1)
 
 
 # -----------------------------------
