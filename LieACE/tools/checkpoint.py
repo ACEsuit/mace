@@ -6,7 +6,8 @@ from typing import List, Tuple, Optional, Dict
 
 import torch
 
-TensorDict = Dict[str, torch.Tensor]
+from .torch_tools import TensorDict
+
 Checkpoint = Dict[str, TensorDict]
 
 
@@ -54,6 +55,8 @@ class CheckpointIO:
         return self.tag + self._epochs_string + str(epochs) + '.' + self._filename_extension
 
     def _list_file_paths(self) -> List[str]:
+        if not os.path.isdir(self.directory):
+            return []
         all_paths = [os.path.join(self.directory, f) for f in os.listdir(self.directory)]
         return [path for path in all_paths if os.path.isfile(path)]
 
@@ -70,13 +73,14 @@ class CheckpointIO:
             epochs=int(match.group('epochs')),
         )
 
-    def _get_latest_checkpoint_path(self) -> str:
+    def _get_latest_checkpoint_path(self) -> Optional[str]:
         all_file_paths = self._list_file_paths()
         checkpoint_info_list = [self._parse_checkpoint_path(path) for path in all_file_paths]
         selected_checkpoint_info_list = [info for info in checkpoint_info_list if info and info.tag == self.tag]
 
         if len(selected_checkpoint_info_list) == 0:
-            raise RuntimeError(f"Cannot find checkpoint with tag '{self.tag}' in '{self.directory}'")
+            logging.warning(f"Cannot find checkpoint with tag '{self.tag}' in '{self.directory}'")
+            return None
 
         latest_checkpoint_info = max(selected_checkpoint_info_list, key=lambda info: info.epochs)
         return latest_checkpoint_info.path
@@ -93,17 +97,21 @@ class CheckpointIO:
         torch.save(obj=checkpoint, f=path)
         self.old_path = path
 
-    def load_latest(self) -> Tuple[Checkpoint, int]:
-        return self.load(self._get_latest_checkpoint_path())
+    def load_latest(self, device: Optional[torch.device] = None) -> Optional[Tuple[Checkpoint, int]]:
+        path = self._get_latest_checkpoint_path()
+        if path is None:
+            return None
 
-    def load(self, path: str) -> Tuple[Checkpoint, int]:
+        return self.load(path, device=device)
+
+    def load(self, path: str, device: Optional[torch.device] = None) -> Tuple[Checkpoint, int]:
         checkpoint_info = self._parse_checkpoint_path(path)
 
         if checkpoint_info is None:
             raise RuntimeError(f"Cannot find path '{path}'")
 
         logging.info(f'Loading checkpoint: {checkpoint_info.path}')
-        return torch.load(f=checkpoint_info.path), checkpoint_info.epochs
+        return torch.load(f=checkpoint_info.path, map_location=device), checkpoint_info.epochs
 
 
 class CheckpointHandler:
@@ -115,12 +123,16 @@ class CheckpointHandler:
         checkpoint = self.builder.create_checkpoint(state)
         self.io.save(checkpoint, epochs)
 
-    def load_latest(self, state: CheckpointState, strict=False) -> int:
-        checkpoint, epochs = self.io.load_latest()
+    def load_latest(self, state: CheckpointState, device: Optional[torch.device] = None, strict=False) -> Optional[int]:
+        result = self.io.load_latest(device=device)
+        if result is None:
+            return None
+
+        checkpoint, epochs = result
         self.builder.load_checkpoint(state=state, checkpoint=checkpoint, strict=strict)
         return epochs
 
-    def load(self, state: CheckpointState, path: str, strict=False) -> int:
-        checkpoint, epochs = self.io.load(path)
+    def load(self, state: CheckpointState, path: str, strict=False, device: Optional[torch.device] = None) -> int:
+        checkpoint, epochs = self.io.load(path, device=device)
         self.builder.load_checkpoint(state=state, checkpoint=checkpoint, strict=strict)
         return epochs
