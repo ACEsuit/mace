@@ -255,11 +255,11 @@ class AgnosticResidualInteractionBlock(InteractionBlock):
         message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
         
-        message_real = self.linear(message_real)/self.num_avg_neighbors
+        message_real = self.linear(message_real)/2*self.num_avg_neighbors
         message_real = message_real + sc
         message_real = self.equivariant_nonlin(message_real)  
         
-        message_imag = self.linear(message_real)/self.num_avg_neighbors
+        message_imag = self.linear(message_real)/2*self.num_avg_neighbors
         message_imag = message_imag 
         message_imag = self.equivariant_nonlin(message_imag)
         
