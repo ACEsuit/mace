@@ -117,12 +117,12 @@ class ProductBasisBlock(torch.nn.Module):
         self.weights = torch.nn.ParameterDict({})
         for i in range(1,correlation+1):
             num_params = self.U_tensors[i].size()[-1]
-            w = torch.nn.Parameter(torch.randn(num_params,self.num_features)/(self.num_features**0.5))
+            w = torch.nn.Parameter(torch.randn(num_params,self.num_features))
             self.weights[str(i)] = w
 
         #Update linear 
         self.linear = o3.Linear(self.target_irreps, self.target_irreps, internal_weights=True, shared_weights=True)
-    
+
     def forward(self,
                 node_feats: torch.tensor,
         ) -> torch.Tensor:
@@ -255,15 +255,16 @@ class AgnosticResidualInteractionBlock(InteractionBlock):
         message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
         
-        message_real = self.linear(message_real)/2*self.num_avg_neighbors
+        message_real = self.linear(message_real)/(2*self.num_avg_neighbors)
         message_real = message_real + sc
         message_real = self.equivariant_nonlin(message_real)  
         
-        message_imag = self.linear(message_real)/2*self.num_avg_neighbors
+        message_imag = self.linear(message_real)/(2*self.num_avg_neighbors)
         message_imag = message_imag 
         message_imag = self.equivariant_nonlin(message_imag)
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
+        
         
         return torch.reshape(message,[message.size()[0],num_features,message.size()[1]//num_features]) # [n_nodes, channels, (lmax + 1)**2]
 
@@ -332,6 +333,8 @@ class LinearResidualInteractionBlock(InteractionBlock):
         message_imag = message_imag 
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
+        print(message.size())
+        print(torch.linalg.norm(message, dim=-1, keepdim=True))
         
         return reshape_irreps(message,self.irreps_out) # [n_nodes, channels, (lmax + 1)**2]
 
