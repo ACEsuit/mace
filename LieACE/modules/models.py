@@ -73,7 +73,7 @@ class InvariantMultiACE(torch.nn.Module):
                  target_irreps=hidden_irreps,
                  correlation=correlation,
          )
-        self.product = torch.nn.ModuleList([prod]) 
+        self.products = torch.nn.ModuleList([prod]) 
         
         for _ in range(num_interactions - 1):
             inter = interaction_cls(
@@ -91,7 +91,7 @@ class InvariantMultiACE(torch.nn.Module):
                     target_irreps=hidden_irreps,
                     correlation=correlation,
             )
-            self.product.append(prod)
+            self.products.append(prod)
 
         self.readouts = torch.nn.ModuleList([LinearReadoutBlock(hidden_irreps)])
 
@@ -112,7 +112,7 @@ class InvariantMultiACE(torch.nn.Module):
         edge_feats = self.radial_embedding(lengths)
 
         # Interactions
-        for interaction,product in zip(self.interactions,self.product):
+        for interaction,product in zip(self.interactions,self.products):
             node_feats = interaction(node_attrs=data.node_attrs,
                                      node_feats=node_feats,
                                      edge_attrs=edge_attrs,
@@ -192,7 +192,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
                  target_irreps=hidden_irreps,
                  correlation=correlation,
          )
-        self.product = torch.nn.ModuleList([prod]) 
+        self.products = torch.nn.ModuleList([prod]) 
 
         self.readouts = torch.nn.ModuleList()
         self.readouts.append(LinearReadoutBlock(hidden_irreps))
@@ -213,7 +213,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
                     target_irreps=hidden_irreps,
                     correlation=correlation,
             )
-            self.product.append(prod)
+            self.products.append(prod)
             if i == num_interactions - 2:
                 self.readouts.append(NonLinearReadoutBlock(hidden_irreps, MLP_irreps, gate))
             else:
@@ -237,7 +237,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
 
         # Interactions
         energies = [e0]
-        for interaction,product,readout in zip(self.interactions,self.product,self.readouts):
+        for interaction,product,readout in zip(self.interactions,self.products,self.readouts):
             node_feats = interaction(node_attrs=data.node_attrs,
                                      node_feats=node_feats,
                                      edge_attrs=edge_attrs,
@@ -289,7 +289,7 @@ class ScaleShiftNonLinearBodyOrderedModel(NonLinearBodyOrderedModel):
 
         # Interactions
         node_es_list = []
-        for interaction,product,readout in zip(self.interactions,self.product,self.readouts):
+        for interaction,product,readout in zip(self.interactions,self.products,self.readouts):
             node_feats = interaction(node_attrs=data.node_attrs,
                                      node_feats=node_feats,
                                      edge_attrs=edge_attrs,
