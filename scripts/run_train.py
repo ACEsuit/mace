@@ -182,9 +182,17 @@ def main() -> None:
     # Optimizer
     param_options = dict(
         params=[{
+            'name': 'embedding',
+            'params': model.node_embedding.parameters(),
+            'weight_decay': 0.0,
+        }, {
             'name': 'interactions',
             'params': model.interactions.parameters(),
             'weight_decay': args.weight_decay,
+        }, {
+            'name': 'products',
+            'params': model.products.parameters(),
+            'weight_decay': 0.0,
         }, {
             'name': 'readouts',
             'params': model.readouts.parameters(),
