@@ -2,6 +2,12 @@
 
 ACE implementation in PyTorch for Lie Groups.
 
+Code from :
+
+Ilyes Batatia
+Gregor Simm
+David Kovacs
+
 ## Requirements
 
 * Python >= 3.8
