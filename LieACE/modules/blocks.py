@@ -264,9 +264,7 @@ class AgnosticResidualInteractionBlock(InteractionBlock):
         message_imag = self.equivariant_nonlin(message_imag)
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
-        
-        
-        return torch.reshape(message,[message.size()[0],num_features,message.size()[1]//num_features]) # [n_nodes, channels, (lmax + 1)**2]
+        return reshape_irreps(message,self.irreps_out) # [n_nodes, channels, (lmax + 1)**2]
 
 
 class LinearResidualInteractionBlock(InteractionBlock):
@@ -333,9 +331,6 @@ class LinearResidualInteractionBlock(InteractionBlock):
         message_imag = message_imag 
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
-        print(message.size())
-        print(torch.linalg.norm(message, dim=-1, keepdim=True))
-        
         return reshape_irreps(message,self.irreps_out) # [n_nodes, channels, (lmax + 1)**2]
 
 
