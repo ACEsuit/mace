@@ -238,12 +238,13 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
         # Interactions
         energies = [e0]
         for interaction,product,readout in zip(self.interactions,self.products,self.readouts):
-            node_feats = interaction(node_attrs=data.node_attrs,
+            node_feats, sc = interaction(node_attrs=data.node_attrs,
                                      node_feats=node_feats,
                                      edge_attrs=edge_attrs,
                                      edge_feats=edge_feats,
                                      edge_index=data.edge_index)
-            node_feats = product(node_feats=node_feats)
+            node_feats = product(node_feats=node_feats,
+                                sc=sc)
             node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             energy = scatter_sum(src=node_energies, index=data.batch, dim=-1, dim_size=data.num_graphs)  # [n_graphs,]
             energies.append(energy)

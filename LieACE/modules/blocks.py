@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Union, Callable
+from typing import Dict, List, Union, Callable
 
 import numpy as np
 import torch
@@ -119,12 +119,12 @@ class ProductBasisBlock(torch.nn.Module):
             num_params = self.U_tensors[i].size()[-1]
             w = torch.nn.Parameter(torch.randn(num_params,self.num_features))
             self.weights[str(i)] = w
-
         #Update linear 
         self.linear = o3.Linear(self.target_irreps, self.target_irreps, internal_weights=True, shared_weights=True)
 
     def forward(self,
                 node_feats: torch.tensor,
+                sc: torch.tensor,
         ) -> torch.Tensor:
         out = torch.einsum(self.equation_main,
                                self.U_tensors[self.correlation],self.weights[str(self.correlation)].type(torch.complex128),
@@ -132,10 +132,8 @@ class ProductBasisBlock(torch.nn.Module):
         for corr in range(self.correlation-1,0,-1):
                 c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[corr],self.weights[str(corr)].type(torch.complex128))
                 c_tensor  = c_tensor + out
-                out = torch.einsum(self.equation_contract,c_tensor,node_feats)
-                
-        return self.linear(out.real)
-
+                out = torch.einsum(self.equation_contract,c_tensor,node_feats)   
+        return self.linear(out.real) + sc
 
 
 
@@ -255,11 +253,11 @@ class AgnosticResidualInteractionBlock(InteractionBlock):
         message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
         
-        message_real = self.linear(message_real)/(2*self.num_avg_neighbors)
+        message_real = self.linear(message_real)/self.num_avg_neighbors
         message_real = message_real + sc
         message_real = self.equivariant_nonlin(message_real)  
         
-        message_imag = self.linear(message_real)/(2*self.num_avg_neighbors)
+        message_imag = self.linear(message_real)/self.num_avg_neighbors
         message_imag = message_imag 
         message_imag = self.equivariant_nonlin(message_imag)
         
@@ -309,7 +307,7 @@ class LinearResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> List[torch.Tensor]:
         sender, receiver = edge_index
         num_nodes = node_feats.shape[0]
         
@@ -325,13 +323,13 @@ class LinearResidualInteractionBlock(InteractionBlock):
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
         
         message_real = self.linear(message_real)/self.num_avg_neighbors
-        message_real = message_real + sc
+        message_real = message_real
 
         message_imag = self.linear(message_imag)/self.num_avg_neighbors
         message_imag = message_imag 
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
-        return reshape_irreps(message,self.irreps_out) # [n_nodes, channels, (lmax + 1)**2]
+        return reshape_irreps(message,self.irreps_out), sc # [n_nodes, channels, (lmax + 1)**2]
 
 
 
