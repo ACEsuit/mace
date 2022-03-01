@@ -113,12 +113,13 @@ class InvariantMultiACE(torch.nn.Module):
 
         # Interactions
         for interaction,product in zip(self.interactions,self.products):
-            node_feats = interaction(node_attrs=data.node_attrs,
+            node_feats,sc = interaction(node_attrs=data.node_attrs,
                                      node_feats=node_feats,
                                      edge_attrs=edge_attrs,
                                      edge_feats=edge_feats,
                                      edge_index=data.edge_index)
-            node_feats = product(node_feats=node_feats)
+            node_feats = product(node_feats=node_feats,
+                                 sc=sc)
 
         node_inter_es = self.readouts[0](node_feats).squeeze(-1)  # {[n_nodes, ], }
 
