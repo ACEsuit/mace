@@ -28,7 +28,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--model',
                         help='model type',
                         default='InvariantMultiACE',
-                        choices=['InvariantMultiACE','scale_shift_non_linear'])
+                        choices=['InvariantMultiACE','scale_shift_non_linear','BOTNet','scale_shift_BOTNet'])
     parser.add_argument('--r_max', help='distance cutoff (in Ang)', type=float, default=4.0)
     parser.add_argument('--degrees', help='degrees for each atoms', type=List)
     parser.add_argument('--num_radial_basis', help='number of radial basis functions', type=int, default=8)
@@ -36,7 +36,11 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--interaction',
                         help='name of interaction block',
                         type=str,
-                        default='LinearResidualInteractionBlock')
+                        default='ComplexAgnosticInteractionBlock')
+    parser.add_argument('--interaction_first',
+                        help='name of interaction block',
+                        type=str,
+                        default='ComplexAgnosticInteractionBlock')
     parser.add_argument('--max_ell', help=r'highest \ell of spherical harmonics', type=int, default=3)
     parser.add_argument('--correlation', help='correlation order at each layer', type=int, default=3)
     parser.add_argument('--num_interactions', help='number of interactions', type=int, default=3)
