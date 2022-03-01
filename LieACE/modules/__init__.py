@@ -1,17 +1,21 @@
 from typing import Callable, Dict, Type
 
 from .blocks import (AtomicEnergiesBlock, RadialEmbeddingBlock, LinearNodeEmbeddingBlock, NonLinearBlock, InteractionBlock,
-                    LinearReadoutBlock, ProductBasisBlock, AgnosticResidualInteractionBlock, LinearResidualInteractionBlock, 
-                    NonLinearReadoutBlock  )
+                    LinearReadoutBlock, ProductBasisBlock, ComplexAgnosticInteractionBlock, 
+                    NonLinearReadoutBlock, AgnosticNonlinearInteractionBlock, ResidualElementDependentInteractionBlock,
+                    AgnosticResidualNonlinearInteractionBlock, LinearDipoleReadoutBlock, NonLinearDipoleReadoutBlock )
 from .loss import EnergyForcesLoss, ACELoss, WeightedEnergyForcesLoss
-from .models import InvariantMultiACE, ScaleShiftNonLinearBodyOrderedModel, NonLinearBodyOrderedModel
+from .models import (InvariantMultiACE, ScaleShiftNonLinearBodyOrderedModel, NonLinearBodyOrderedModel,
+                     BOTNet, ScaleShiftBOTNet, DipoleBOTNet)
 from .radial import BesselBasis, PolynomialCutoff
 from .utils import compute_mean_std_atomic_inter_energy, compute_mean_rms_energy_forces, compute_num_avg_neighbors
 
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {
-    'AgnosticResidualInteractionBlock': AgnosticResidualInteractionBlock,
-    'LinearResidualInteractionBlock': LinearResidualInteractionBlock,
+    'AgnosticNonlinearInteractionBlock': AgnosticNonlinearInteractionBlock,
+    'ComplexAgnosticInteractionBlock': ComplexAgnosticInteractionBlock,
+    'ResidualElementDependentInteractionBlock': ResidualElementDependentInteractionBlock,
+    'AgnosticResidualNonlinearInteractionBlock': AgnosticResidualNonlinearInteractionBlock,
 }
 
 scaling_classes: Dict[str, Type[Callable]]  = {
@@ -24,5 +28,6 @@ __all__ = [
     'LinearReadoutBlock', 'AtomicBaseBlock', 'ProductBasisBlock', 'BesselBasis', 'EnergyForcesLoss', 
     'ACELoss', 'WeightedEnergyForcesLoss', 'interaction_classes', 'InteractionBlock', 'InvariantMultiACE',
     'compute_mean_std_atomic_inter_energy', 'compute_num_avg_neighbors', 'NonLinearReadoutBlock', 'NonLinearBodyOrderedModel'
-    'ScaleShiftNonLinearBodyOrderedModel', 
+    'ScaleShiftNonLinearBodyOrderedModel', 'LinearDipoleReadoutBlock', 'NonLinearDipoleReadoutBlock', 'ScaleShiftNonLinearBodyOrderedModel',
+    'NonLinearBodyOrderedModel', 'BOTNet', 'ScaleShiftBOTNet', 'DipoleBOTNet'
 ]

@@ -158,48 +158,55 @@ def main() -> None:
         hidden_irreps=o3.Irreps(args.hidden_irreps),
         atomic_energies=atomic_energies,
         num_avg_neighbors=args.num_avg_neighbors,
-        correlation=args.correlation,
-        device=args.device,
     )
 
     model: torch.nn.Module
 
     if args.model == 'InvariantMultiACE':
-        model = modules.InvariantMultiACE(**model_config)
+        model = modules.InvariantMultiACE(
+            **model_config,
+            correlation=args.correlation,
+            device=args.device,)
     elif args.model == 'scale_shift_non_linear':
         mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
         model = modules.ScaleShiftNonLinearBodyOrderedModel(
             **model_config,
+            correlation=args.correlation,
             gate=gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            device=args.device,
+            atomic_inter_scale=std,
+            atomic_inter_shift=mean,
+        )
+    elif args.model == 'scale_shift_BOTNet':
+        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
+        model = modules.ScaleShiftBOTNet(
+            **model_config,
+            gate=gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=std,
             atomic_inter_shift=mean,
+        )
+    elif args.model == 'BOTNet':
+        model = modules.BOTNet(
+            **model_config,
+            gate=gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
         )
 
 
     model.to(device)
 
     # Optimizer
+    # Optimizer
     param_options = dict(
-        params=[{
-            'name': 'embedding',
-            'params': model.node_embedding.parameters(),
-            'weight_decay': 0.0,
-        }, {
-            'name': 'interactions',
-            'params': model.interactions.parameters(),
-            'weight_decay': args.weight_decay,
-        }, {
-            'name': 'products',
-            'params': model.products.parameters(),
-            'weight_decay': 0.0,
-        }, {
-            'name': 'readouts',
-            'params': model.readouts.parameters(),
-            'weight_decay': 0.0,
-        }],
+        params=model.parameters(),
         lr=args.lr,
         amsgrad=args.amsgrad,
+        weight_decay=args.weight_decay,
     )
 
     optimizer: torch.optim.Optimizer
