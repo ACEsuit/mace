@@ -85,7 +85,7 @@ def test_model_cuda():
         num_bessel=8,
         num_polynomial_cutoff=6,
         max_ell=3,
-        interaction_cls=modules.interaction_classes['ComplexAgnosticInteractionBlock'],
+        interaction_cls=modules.interaction_classes['ComplexAgnosticResidualInteractionBlock'],
         num_interactions=3,
         num_elements=2,
         hidden_irreps=o3.Irreps('32x0e'),

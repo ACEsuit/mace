@@ -368,11 +368,75 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         return message  # [n_nodes, irreps]
 
 
-class ComplexAgnosticInteractionBlock(InteractionBlock):
+class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
     def _setup(self,) -> None:
     
 
  #First linear
+        self.linear_up = o3.Linear(self.node_feats_irreps,self.node_feats_irreps, internal_weights=True, shared_weights=True)
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(self.node_feats_irreps, self.edge_attrs_irreps,
+                                                                   self.target_irreps)
+        self.conv_tp = o3.TensorProduct(self.node_feats_irreps,
+                                        self.edge_attrs_irreps,
+                                        irreps_mid,
+                                        instructions=instructions,
+                                        shared_weights=False,
+                                        internal_weights=False)
+
+
+        #Convolution weights
+        self.conv_tp_weights = TensorProductWeightsBlock(num_elements=self.node_attrs_irreps.num_irreps,
+                                                         num_edge_feats=self.edge_feats_irreps.num_irreps,
+                                                         num_feats_out=self.conv_tp.weight_numel)
+
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = linear_out_irreps(irreps_mid, self.target_irreps)
+        self.irreps_out = self.irreps_out.simplify()
+        self.linear = o3.Linear(irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True)
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(self.node_feats_irreps, self.node_attrs_irreps, self.node_feats_irreps)
+
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> List[torch.Tensor]:
+        sender, receiver = edge_index
+        num_nodes = node_feats.shape[0]
+        
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+
+        tp_weights = self.conv_tp_weights(edge_feats)     
+  
+        mji_real = self.conv_tp(node_feats[sender], edge_attrs.real, tp_weights) # [n_edges, irreps]
+        mji_imag =  self.conv_tp(node_feats[sender], edge_attrs.imag, tp_weights)
+        
+        message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
+        message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
+        
+        message_real = self.linear(message_real)/self.num_avg_neighbors
+        message_real = message_real
+
+        message_imag = self.linear(message_imag)/self.num_avg_neighbors
+        message_imag = message_imag 
+        
+        message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
+        return reshape_irreps(message,self.irreps_out), sc # [n_nodes, channels, (lmax + 1)**2]
+
+
+class ComplexResidualElementDependentInteractionBlock(InteractionBlock):
+    def _setup(self,) -> None:
+
+        #First linear
         self.linear_up = o3.Linear(self.node_feats_irreps,self.node_feats_irreps, internal_weights=True, shared_weights=True)
         # TensorProduct
         irreps_mid, instructions = tp_out_irreps_with_instructions(self.node_feats_irreps, self.edge_attrs_irreps,
@@ -433,7 +497,6 @@ class ComplexAgnosticInteractionBlock(InteractionBlock):
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
         return reshape_irreps(message,self.irreps_out), sc # [n_nodes, channels, (lmax + 1)**2]
-
 
 
 class ScaleShiftBlock(torch.nn.Module):
