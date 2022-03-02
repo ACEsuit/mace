@@ -6,6 +6,8 @@ from scipy.spatial.transform import Rotation as R
 
 from LieACE import data, modules, tools
 
+torch.set_default_dtype(torch.float64)
+
 config = data.utils.Configuration(
   atomic_numbers=np.array([8, 1, 1]),
     positions=np.array([
@@ -47,7 +49,7 @@ def test_multiace_model():
         num_bessel=8,
         num_polynomial_cutoff=6,
         max_ell=3,
-        interaction_cls=modules.interaction_classes['LinearResidualInteractionBlock'],
+        interaction_cls=modules.interaction_classes['ComplexAgnosticInteractionBlock'],
         num_interactions=3,
         num_elements=2,
         hidden_irreps=o3.Irreps('32x0e'),
@@ -83,7 +85,7 @@ def test_model_cuda():
         num_bessel=8,
         num_polynomial_cutoff=6,
         max_ell=3,
-        interaction_cls=modules.interaction_classes['LinearResidualInteractionBlock'],
+        interaction_cls=modules.interaction_classes['ComplexAgnosticInteractionBlock'],
         num_interactions=3,
         num_elements=2,
         hidden_irreps=o3.Irreps('32x0e'),
@@ -113,7 +115,7 @@ def benchmark_model():
         num_bessel=8,
         num_polynomial_cutoff=6,
         max_ell=3,
-        interaction_cls=modules.interaction_classes['LinearResidualInteractionBlock'],
+        interaction_cls=modules.interaction_classes['ComplexAgnosticInteractionBlock'],
         num_interactions=3,
         num_elements=2,
         hidden_irreps=o3.Irreps('32x0e'),
