@@ -79,7 +79,7 @@ def compute_forces(energy: torch.Tensor, positions: torch.Tensor, training=True)
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
         only_inputs=True,  # Diff only w.r.t. inputs
-        allow_unused=False,
+        allow_unused=False, # For complete dissociation turn to true
     )[0]  # [n_nodes, 3]
 
     return -1 * gradient
