@@ -55,11 +55,11 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
                         type=str,
                         default='std_scaling',
                         choices=['std_scaling', 'rms_forces_scaling'])
-    parser.add_argument('--num_avg_neighbors',
+    parser.add_argument('--avg_num_neighbors',
                         help='normalization factor for the message',
                         type=float,
                         default=1)
-    parser.add_argument('--compute_num_avg_neighbors',
+    parser.add_argument('--compute_avg_num_neighbors',
                         help='normalization factor for the message',
                         type=bool,
                         default=True)

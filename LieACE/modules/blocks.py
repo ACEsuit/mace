@@ -172,7 +172,7 @@ class InteractionBlock(ABC, torch.nn.Module):
         edge_attrs_irreps: o3.Irreps,
         edge_feats_irreps: o3.Irreps,
         target_irreps: o3.Irreps,
-        num_avg_neighbors: float,
+        avg_num_neighbors: float,
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -180,7 +180,7 @@ class InteractionBlock(ABC, torch.nn.Module):
         self.edge_attrs_irreps = edge_attrs_irreps
         self.edge_feats_irreps = edge_feats_irreps
         self.target_irreps = target_irreps
-        self.num_avg_neighbors = num_avg_neighbors
+        self.avg_num_neighbors = avg_num_neighbors
 
         self._setup()
 
@@ -489,10 +489,10 @@ class ComplexResidualElementDependentInteractionBlock(InteractionBlock):
         message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
         
-        message_real = self.linear(message_real)/self.num_avg_neighbors
+        message_real = self.linear(message_real)/self.avg_num_neighbors
         message_real = message_real
 
-        message_imag = self.linear(message_imag)/self.num_avg_neighbors
+        message_imag = self.linear(message_imag)/self.avg_num_neighbors
         message_imag = message_imag 
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))

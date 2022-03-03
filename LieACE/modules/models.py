@@ -27,7 +27,7 @@ class InvariantMultiACE(torch.nn.Module):
         num_elements: int,
         hidden_irreps: o3.Irreps,
         atomic_energies: np.ndarray,
-        num_avg_neighbors: float,
+        avg_num_neighbors: float,
         correlation: int,
         device: str='cpu',
     ):
@@ -62,7 +62,7 @@ class InvariantMultiACE(torch.nn.Module):
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
             target_irreps=interaction_irreps,
-            num_avg_neighbors=num_avg_neighbors,
+            avg_num_neighbors=avg_num_neighbors,
         )
         self.interactions = torch.nn.ModuleList([inter])
         
@@ -82,7 +82,7 @@ class InvariantMultiACE(torch.nn.Module):
                 edge_attrs_irreps=sh_irreps,
                 edge_feats_irreps=edge_feats_irreps,
                 target_irreps=interaction_irreps,
-                num_avg_neighbors=num_avg_neighbors,
+                avg_num_neighbors=avg_num_neighbors,
             )
             self.interactions.append(inter)
             prod = ProductBasisBlock(
@@ -147,7 +147,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         atomic_energies: np.ndarray,
-        num_avg_neighbors: float,
+        avg_num_neighbors: float,
         correlation: int,
         gate: Callable,
         device: str='cpu',
@@ -183,7 +183,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
             target_irreps=interaction_irreps,
-            num_avg_neighbors=num_avg_neighbors,
+            avg_num_neighbors=avg_num_neighbors,
         )
         self.interactions = torch.nn.ModuleList([inter])
         
@@ -206,7 +206,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
                 edge_attrs_irreps=sh_irreps,
                 edge_feats_irreps=edge_feats_irreps,
                 target_irreps=interaction_irreps,
-                num_avg_neighbors=num_avg_neighbors,
+                avg_num_neighbors=avg_num_neighbors,
             )
             self.interactions.append(inter)
             prod = ProductBasisBlock(
