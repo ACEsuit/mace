@@ -154,12 +154,16 @@ class ProductBasisBlock(torch.nn.Module):
                 sc: torch.tensor,
         ) -> torch.Tensor:
         out = torch.einsum(self.equation_main,
-                               self.U_tensors[self.correlation],self.weights[str(self.correlation)].type(torch.complex128),
+                               self.U_tensors[self.correlation],
+                               self.weights[str(self.correlation)].type(torch.complex128),
                                node_feats) #TODO : use optimize library and cuTENSOR 
         for corr in range(self.correlation-1,0,-1):
-                c_tensor = torch.einsum(self.equation_weighting,self.U_tensors[corr],self.weights[str(corr)].type(torch.complex128))
+                c_tensor = torch.einsum(self.equation_weighting,
+                                        self.U_tensors[corr],
+                                        self.weights[str(corr)].type(torch.complex128))
                 c_tensor  = c_tensor + out
-                out = torch.einsum(self.equation_contract,c_tensor,node_feats)   
+                out = torch.einsum(self.equation_contract,
+                                   c_tensor,node_feats)   
         return self.linear(out.real) + sc
 
 
@@ -370,7 +374,7 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         return message  # [n_nodes, irreps]
 
 
-class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
+class ComplexElementDependentResidualInteractionBlock(InteractionBlock):
     def _setup(self,) -> None:
     
 
@@ -396,9 +400,9 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
 
         # Linear
         irreps_mid = irreps_mid.simplify()
-        self.irreps_out = linear_out_irreps(irreps_mid, self.target_irreps)
-        self.irreps_out = self.irreps_out.simplify()
-        self.linear = o3.Linear(irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True)
+        self.irreps_out = self.target_irreps*self.num_radial_coupling
+
+        self.linear = o3.Linear(irreps_mid, self.irreps_out*self.num_radial_coupling, internal_weights=True, shared_weights=True)
 
         # Selector TensorProduct
         self.skip_tp = o3.FullyConnectedTensorProduct(self.node_feats_irreps, self.node_attrs_irreps, self.node_feats_irreps)
@@ -417,8 +421,7 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
         
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
-
-        tp_weights = self.conv_tp_weights(edge_feats)     
+        tp_weights = self.conv_tp_weights(node_attrs[sender],edge_feats)     
         
         node_feats = node_feats.repeat(1,self.num_radial_coupling)
 
@@ -428,31 +431,28 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
         message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
         
-        message_real = self.linear(message_real)/self.num_avg_neighbors
-        message_real = message_real
-
-        message_imag = self.linear(message_imag)/self.num_avg_neighbors
-        message_imag = message_imag 
+        message_real = self.linear(message_real)/ self.avg_num_neighbors
+        message_imag = self.linear(message_imag)/ self.avg_num_neighbors
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
         return reshape_irreps(message,self.irreps_out*self.num_radial_coupling), sc # [n_nodes, channels, n*(lmax + 1)**2]
 
 
-class ComplexResidualElementDependentInteractionBlock(InteractionBlock):
+class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
     def _setup(self,) -> None:
 
         #First linear
         self.linear_up = o3.Linear(self.node_feats_irreps,self.node_feats_irreps, internal_weights=True, shared_weights=True)
         # TensorProduct
-        irreps_mid, instructions = tp_out_irreps_with_instructions(self.node_feats_irreps, self.edge_attrs_irreps,
-                                                                   self.target_irreps)
-        self.conv_tp = o3.TensorProduct(self.node_feats_irreps,
+        irreps_mid, instructions = tp_out_irreps_with_instructions(self.node_feats_irreps*self.num_radial_coupling,
+                                                                   self.edge_attrs_irreps,
+                                                                   self.target_irreps*self.num_radial_coupling)
+        self.conv_tp = o3.TensorProduct(self.node_feats_irreps*self.num_radial_coupling,
                                         self.edge_attrs_irreps,
                                         irreps_mid,
                                         instructions=instructions,
                                         shared_weights=False,
                                         internal_weights=False)
-
 
         #Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
@@ -464,8 +464,7 @@ class ComplexResidualElementDependentInteractionBlock(InteractionBlock):
 
         # Linear
         irreps_mid = irreps_mid.simplify()
-        self.irreps_out = linear_out_irreps(irreps_mid, self.target_irreps)
-        self.irreps_out = self.irreps_out.simplify()
+        self.irreps_out = self.target_irreps*self.num_radial_coupling
         self.linear = o3.Linear(irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True)
 
         # Selector TensorProduct
@@ -485,9 +484,9 @@ class ComplexResidualElementDependentInteractionBlock(InteractionBlock):
         
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
-
         tp_weights = self.conv_tp_weights(edge_feats)     
-  
+        node_feats = node_feats.repeat(1,self.num_radial_coupling)
+
         mji_real = self.conv_tp(node_feats[sender], edge_attrs.real, tp_weights) # [n_edges, irreps]
         mji_imag =  self.conv_tp(node_feats[sender], edge_attrs.imag, tp_weights)
         
@@ -495,11 +494,8 @@ class ComplexResidualElementDependentInteractionBlock(InteractionBlock):
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
         
         message_real = self.linear(message_real)/self.avg_num_neighbors
-        message_real = message_real
-
         message_imag = self.linear(message_imag)/self.avg_num_neighbors
-        message_imag = message_imag 
-        
+
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
         return reshape_irreps(message,self.irreps_out), sc # [n_nodes, channels, (lmax + 1)**2]
 

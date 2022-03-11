@@ -49,13 +49,13 @@ def test_multiace_model():
         num_bessel=8,
         num_polynomial_cutoff=6,
         max_ell=3,
-        interaction_cls=modules.interaction_classes['ComplexAgnosticInteractionBlock'],
+        interaction_cls=modules.interaction_classes['ComplexAgnosticResidualInteractionBlock'],
         num_interactions=3,
         num_elements=2,
         hidden_irreps=o3.Irreps('32x0e'),
-        num_radial_coupling=1,
+        num_radial_coupling=5,
         atomic_energies=atomic_energies,
-        num_avg_neighbors=8,
+        avg_num_neighbors=8,
         correlation=3,
     )
     model = modules.InvariantMultiACE(**model_config)
@@ -65,7 +65,7 @@ def test_multiace_model():
     atomic_data2 = data.AtomicData.from_config(config2, z_table=table, cutoff=3.0)
 
     data_loader = torch_geometric.data.DataLoader(
-        dataset=[atomic_data, atomic_data2],
+        dataset=[atomic_data, atomic_data2,],
         batch_size=2,
         shuffle=True,
         drop_last=False,
@@ -91,7 +91,7 @@ def test_model_cuda():
         num_elements=2,
         hidden_irreps=o3.Irreps('32x0e'),
         atomic_energies=atomic_energies,
-        num_avg_neighbors=8,
+        avg_num_neighbors=8,
         correlation=2,
         device='cuda'
     )
@@ -121,7 +121,7 @@ def benchmark_model():
         num_elements=2,
         hidden_irreps=o3.Irreps('32x0e'),
         atomic_energies=atomic_energies,
-        num_avg_neighbors=8,
+        avg_num_neighbors=8,
         correlation=2,
         device='cuda'
     )
