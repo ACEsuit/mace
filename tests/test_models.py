@@ -53,6 +53,7 @@ def test_multiace_model():
         num_interactions=3,
         num_elements=2,
         hidden_irreps=o3.Irreps('32x0e'),
+        num_radial_coupling=1,
         atomic_energies=atomic_energies,
         num_avg_neighbors=8,
         correlation=3,

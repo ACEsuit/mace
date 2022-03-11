@@ -54,7 +54,7 @@ def main():
     )
 
     # Load model
-    model: modules.BodyOrderedModel = torch.load(f=args.model, map_location=device)
+    model = torch.load(f=args.model, map_location=device)
 
     # Collect data
     energies_list = []

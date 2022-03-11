@@ -25,6 +25,7 @@ class InvariantMultiACE(torch.nn.Module):
         interaction_cls: Type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
+        num_radial_coupling: int,
         hidden_irreps: o3.Irreps,
         atomic_energies: np.ndarray,
         avg_num_neighbors: float,
@@ -50,7 +51,7 @@ class InvariantMultiACE(torch.nn.Module):
         
         self.spherical_harmonics = SphericalHarmonics(lmax=max_ell,device=device)
         A = Rot3DCoeffs(max_ell + 1)
-        degree_func = NaiveMaxDeg({i : [0,max_ell]for i in range(1,correlation+1)})
+        degree_func = NaiveMaxDeg({i : [num_radial_coupling-1,max_ell]for i in range(1,correlation+1)})
         U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func).type(torch.complex128).to(device)
                      for nu in range(1,correlation+1)}
         # Interactions and readout
@@ -63,6 +64,7 @@ class InvariantMultiACE(torch.nn.Module):
             edge_feats_irreps=edge_feats_irreps,
             target_irreps=interaction_irreps,
             avg_num_neighbors=avg_num_neighbors,
+            num_radial_coupling=num_radial_coupling,
         )
         self.interactions = torch.nn.ModuleList([inter])
         
@@ -83,6 +85,7 @@ class InvariantMultiACE(torch.nn.Module):
                 edge_feats_irreps=edge_feats_irreps,
                 target_irreps=interaction_irreps,
                 avg_num_neighbors=avg_num_neighbors,
+                num_radial_coupling=num_radial_coupling,
             )
             self.interactions.append(inter)
             prod = ProductBasisBlock(
@@ -149,6 +152,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
         atomic_energies: np.ndarray,
         avg_num_neighbors: float,
         correlation: int,
+        num_radial_coupling: int,
         gate: Callable,
         device: str='cpu',
     ):
@@ -171,19 +175,20 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
         
         self.spherical_harmonics = SphericalHarmonics(lmax=max_ell,device=device)
         A = Rot3DCoeffs(max_ell + 1)
-        degree_func = NaiveMaxDeg({i : [0,max_ell]for i in range(1,correlation+1)})
+        degree_func = NaiveMaxDeg({i : [num_radial_coupling-1,max_ell]for i in range(1,correlation+1)})
         U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func).type(torch.complex128).to(device)
                      for nu in range(1,correlation+1)}
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
-        inter = interaction_cls(
+        inter = interaction_cls_first(
             node_attrs_irreps=node_attr_irreps,
             node_feats_irreps=node_feats_irreps,
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
             target_irreps=interaction_irreps,
             avg_num_neighbors=avg_num_neighbors,
+            num_radial_coupling=num_radial_coupling,
         )
         self.interactions = torch.nn.ModuleList([inter])
         
@@ -207,6 +212,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
                 edge_feats_irreps=edge_feats_irreps,
                 target_irreps=interaction_irreps,
                 avg_num_neighbors=avg_num_neighbors,
+                num_radial_coupling=num_radial_coupling,
             )
             self.interactions.append(inter)
             prod = ProductBasisBlock(

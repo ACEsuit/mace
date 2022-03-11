@@ -33,6 +33,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--degrees', help='degrees for each atoms', type=List)
     parser.add_argument('--num_radial_basis', help='number of radial basis functions', type=int, default=8)
     parser.add_argument('--num_cutoff_basis', help='number of basis functions for smooth cutoff', type=int, default=6)
+    parser.add_argument('--num_radial_coupling', help='number of radial channel to couple', type=int, default=1)
     parser.add_argument('--interaction',
                         help='name of interaction block',
                         type=str,

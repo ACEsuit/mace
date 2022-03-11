@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Union, Callable
+from typing import Dict, List, Optional, Union, Callable
 
 import numpy as np
 import torch
@@ -173,6 +173,7 @@ class InteractionBlock(ABC, torch.nn.Module):
         edge_feats_irreps: o3.Irreps,
         target_irreps: o3.Irreps,
         avg_num_neighbors: float,
+        num_radial_coupling: Optional[int],
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -181,6 +182,7 @@ class InteractionBlock(ABC, torch.nn.Module):
         self.edge_feats_irreps = edge_feats_irreps
         self.target_irreps = target_irreps
         self.avg_num_neighbors = avg_num_neighbors
+        self.num_radial_coupling = num_radial_coupling
 
         self._setup()
 
@@ -375,9 +377,10 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
  #First linear
         self.linear_up = o3.Linear(self.node_feats_irreps,self.node_feats_irreps, internal_weights=True, shared_weights=True)
         # TensorProduct
-        irreps_mid, instructions = tp_out_irreps_with_instructions(self.node_feats_irreps, self.edge_attrs_irreps,
-                                                                   self.target_irreps)
-        self.conv_tp = o3.TensorProduct(self.node_feats_irreps,
+        irreps_mid, instructions = tp_out_irreps_with_instructions(self.node_feats_irreps*self.num_radial_coupling,
+                                                                   self.edge_attrs_irreps,
+                                                                   self.target_irreps*self.num_radial_coupling)
+        self.conv_tp = o3.TensorProduct(self.node_feats_irreps*self.num_radial_coupling,
                                         self.edge_attrs_irreps,
                                         irreps_mid,
                                         instructions=instructions,
@@ -416,7 +419,9 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
         node_feats = self.linear_up(node_feats)
 
         tp_weights = self.conv_tp_weights(edge_feats)     
-  
+        
+        node_feats = node_feats.repeat(1,self.num_radial_coupling)
+
         mji_real = self.conv_tp(node_feats[sender], edge_attrs.real, tp_weights) # [n_edges, irreps]
         mji_imag =  self.conv_tp(node_feats[sender], edge_attrs.imag, tp_weights)
         
@@ -430,7 +435,7 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
         message_imag = message_imag 
         
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
-        return reshape_irreps(message,self.irreps_out), sc # [n_nodes, channels, (lmax + 1)**2]
+        return reshape_irreps(message,self.irreps_out*self.num_radial_coupling), sc # [n_nodes, channels, n*(lmax + 1)**2]
 
 
 class ComplexResidualElementDependentInteractionBlock(InteractionBlock):

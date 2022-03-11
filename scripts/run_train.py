@@ -166,6 +166,7 @@ def main() -> None:
         model = modules.InvariantMultiACE(
             **model_config,
             correlation=args.correlation,
+            num_radial_coupling=args.num_radial_coupling,
             device=args.device,)
     elif args.model == 'scale_shift_non_linear':
         mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
@@ -175,6 +176,7 @@ def main() -> None:
             gate=gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
+            num_radial_coupling=args.num_radial_coupling,
             device=args.device,
             atomic_inter_scale=std,
             atomic_inter_shift=mean,
