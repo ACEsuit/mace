@@ -8,7 +8,7 @@ from .loss import EnergyForcesLoss, ACELoss, WeightedEnergyForcesLoss
 from .models import (InvariantMultiACE, ScaleShiftNonLinearBodyOrderedModel, NonLinearBodyOrderedModel,
                      BOTNet, ScaleShiftBOTNet)
 from .radial import BesselBasis, PolynomialCutoff
-from .utils import compute_mean_std_atomic_inter_energy, compute_mean_rms_energy_forces, compute_num_avg_neighbors
+from .utils import compute_mean_std_atomic_inter_energy, compute_mean_rms_energy_forces, compute_avg_num_neighbors
 
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {
@@ -29,5 +29,5 @@ __all__ = [
     'ACELoss', 'WeightedEnergyForcesLoss', 'interaction_classes', 'InteractionBlock', 'InvariantMultiACE',
     'compute_mean_std_atomic_inter_energy', 'compute_num_avg_neighbors', 'NonLinearReadoutBlock', 'NonLinearBodyOrderedModel'
     'ScaleShiftNonLinearBodyOrderedModel', 'LinearDipoleReadoutBlock', 'NonLinearDipoleReadoutBlock', 'ScaleShiftNonLinearBodyOrderedModel',
-    'NonLinearBodyOrderedModel', 'BOTNet', 'ScaleShiftBOTNet',
+    'NonLinearBodyOrderedModel', 'BOTNet', 'ScaleShiftBOTNet', 'compute_avg_num_neighbors'
 ]

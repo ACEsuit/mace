@@ -129,12 +129,14 @@ class ProductBasisBlock(torch.nn.Module):
                  node_feats_irreps: o3.Irreps,
                  target_irreps: o3.Irreps,
                  correlation: int,
+                 avg_num_neighbors: int,
         ) -> None:
         super().__init__()  
         self.U_tensors = U_tensors   #Dict[str,[(lmax+1)**2]**correlation + [num_weights]]  
         self.num_features = node_feats_irreps.count((0,1))
         self.correlation = correlation
         self.target_irreps = target_irreps
+        self.avg_num_neighbors = avg_num_neighbors
         #Tensor contraction equations
         self.equation_main = '...ik,kc,bci -> bc...'
         self.equation_weighting = '...k,kc->c...'
@@ -493,8 +495,8 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
         message_real = scatter_sum(src=mji_real, index=receiver, dim=0, dim_size=num_nodes)  # [n_nodes, irreps]
         message_imag = scatter_sum(src=mji_imag, index=receiver, dim=0, dim_size=num_nodes) 
         
-        message_real = self.linear(message_real)/self.avg_num_neighbors
-        message_imag = self.linear(message_imag)/self.avg_num_neighbors
+        message_real = self.linear(message_real)
+        message_imag = self.linear(message_imag)
 
         message = torch.view_as_complex(torch.stack((message_real,message_imag),dim=-1))
         return reshape_irreps(message,self.irreps_out), sc # [n_nodes, channels, (lmax + 1)**2]

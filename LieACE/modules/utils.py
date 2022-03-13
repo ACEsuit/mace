@@ -147,7 +147,7 @@ def compute_mean_rms_energy_forces(
     return mean, rms
 
 
-def compute_num_avg_neighbors(data_loader: torch.utils.data.DataLoader) -> float:
+def compute_avg_num_neighbors(data_loader: torch.utils.data.DataLoader) -> float:
     num_neighbors = []
 
     for batch in data_loader:

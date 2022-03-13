@@ -203,7 +203,6 @@ def main() -> None:
     model.to(device)
 
     # Optimizer
-    # Optimizer
     param_options = dict(
         params=model.parameters(),
         lr=args.lr,

@@ -37,11 +37,11 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--interaction',
                         help='name of interaction block',
                         type=str,
-                        default='ComplexAgnosticInteractionBlock')
+                        default='ComplexAgnosticResidualInteractionBlock')
     parser.add_argument('--interaction_first',
                         help='name of interaction block',
                         type=str,
-                        default='ComplexAgnosticInteractionBlock')
+                        default='ComplexAgnosticResidualInteractionBlock')
     parser.add_argument('--max_ell', help=r'highest \ell of spherical harmonics', type=int, default=3)
     parser.add_argument('--correlation', help='correlation order at each layer', type=int, default=3)
     parser.add_argument('--num_interactions', help='number of interactions', type=int, default=3)

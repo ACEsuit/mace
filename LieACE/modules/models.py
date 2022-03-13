@@ -197,6 +197,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
                  node_feats_irreps=node_feats_irreps_out,
                  target_irreps=hidden_irreps,
                  correlation=correlation,
+                 avg_num_neighbors=avg_num_neighbors,
          )
         self.products = torch.nn.ModuleList([prod]) 
 
@@ -219,6 +220,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
                     node_feats_irreps=interaction_irreps,
                     target_irreps=hidden_irreps,
                     correlation=correlation,
+                    avg_num_neighbors=avg_num_neighbors,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
