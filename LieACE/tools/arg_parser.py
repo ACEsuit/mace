@@ -1,7 +1,7 @@
 import argparse
-from typing import Optional,List
+from typing import Optional, List
 
-
+# fmt: off
 def build_default_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 

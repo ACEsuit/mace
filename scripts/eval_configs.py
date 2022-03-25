@@ -11,27 +11,46 @@ from LieACE import data, tools, modules
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--configs', help='path to XYZ configurations', required=True)
-    parser.add_argument('--model', help='path to model', required=True)
-    parser.add_argument('--atomic_numbers', help='atomic numbers (comma-separated)', type=str, required=True)
-    parser.add_argument('--output', help='output path', required=True)
-    parser.add_argument('--r_max', help='distance cutoff (in Ang)', type=float, default=4.0)
-    parser.add_argument('--device', help='select device', type=str, choices=['cpu', 'cuda'], default='cpu')
-    parser.add_argument('--default_dtype',
-                        help='set default dtype',
-                        type=str,
-                        choices=['float32', 'float64'],
-                        default='float64')
-    parser.add_argument('--batch_size', help='batch size', type=int, default=64)
-    parser.add_argument('--no_contributions',
-                        help='model does not output energy contributions ',
-                        action='store_true',
-                        default=False)
+    parser.add_argument("--configs", help="path to XYZ configurations", required=True)
+    parser.add_argument("--model", help="path to model", required=True)
+    parser.add_argument(
+        "--atomic_numbers",
+        help="atomic numbers (comma-separated)",
+        type=str,
+        required=True,
+    )
+    parser.add_argument("--output", help="output path", required=True)
+    parser.add_argument(
+        "--r_max", help="distance cutoff (in Ang)", type=float, default=4.0
+    )
+    parser.add_argument(
+        "--device",
+        help="select device",
+        type=str,
+        choices=["cpu", "cuda"],
+        default="cpu",
+    )
+    parser.add_argument(
+        "--default_dtype",
+        help="set default dtype",
+        type=str,
+        choices=["float32", "float64"],
+        default="float64",
+    )
+    parser.add_argument("--batch_size", help="batch size", type=int, default=64)
+    parser.add_argument(
+        "--no_contributions",
+        help="model does not output energy contributions ",
+        action="store_true",
+        default=False,
+    )
     return parser.parse_args()
 
 
 def config_from_atoms(atoms: ase.Atoms) -> data.Configuration:
-    atomic_numbers = np.array([ase.data.atomic_numbers[symbol] for symbol in atoms.symbols])
+    atomic_numbers = np.array(
+        [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
+    )
     return data.Configuration(atomic_numbers=atomic_numbers, positions=atoms.positions)
 
 
@@ -41,13 +60,16 @@ def main():
     device = tools.init_device(args.device)
 
     # Load data and prepare input
-    atoms_list = ase.io.read(args.configs, format='extxyz', index=':')
+    atoms_list = ase.io.read(args.configs, format="extxyz", index=":")
     configs = [config_from_atoms(atoms) for atoms in atoms_list]
 
-    z_table = tools.AtomicNumberTable([int(z) for z in args.atomic_numbers.split(',')])
+    z_table = tools.AtomicNumberTable([int(z) for z in args.atomic_numbers.split(",")])
 
     data_loader = torch_geometric.data.DataLoader(
-        dataset=[data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max) for config in configs],
+        dataset=[
+            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+            for config in configs
+        ],
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
@@ -64,16 +86,20 @@ def main():
     for batch in data_loader:
         batch = batch.to(device)
         output = model(batch, training=False)
-        energies_list.append(tools.to_numpy(output['energy']))
+        energies_list.append(tools.to_numpy(output["energy"]))
 
         if not args.no_contributions:
-            contributions_list.append(tools.to_numpy(output['contributions']))
+            contributions_list.append(tools.to_numpy(output["contributions"]))
 
-        forces = np.split(tools.to_numpy(output['forces']), indices_or_sections=batch.ptr[1:], axis=0)
+        forces = np.split(
+            tools.to_numpy(output["forces"]), indices_or_sections=batch.ptr[1:], axis=0
+        )
         forces_collection.append(forces[:-1])  # drop last as its emtpy
 
     energies = np.concatenate(energies_list, axis=0)
-    forces_list = [forces for forces_list in forces_collection for forces in forces_list]
+    forces_list = [
+        forces for forces_list in forces_collection for forces in forces_list
+    ]
     assert len(atoms_list) == len(energies) == len(forces_list)
 
     if not args.no_contributions:
@@ -83,15 +109,15 @@ def main():
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
         atoms.calc = None  # crucial
-        atoms.info['energy'] = energy
-        atoms.arrays['forces'] = forces
+        atoms.info["energy"] = energy
+        atoms.arrays["forces"] = forces
 
         if not args.no_contributions:
-            atoms.info['contributions'] = contributions[i]
+            atoms.info["contributions"] = contributions[i]
 
     # Write atoms to output path
-    ase.io.write(args.output, images=atoms_list, format='extxyz')
+    ase.io.write(args.output, images=atoms_list, format="extxyz")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

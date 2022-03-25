@@ -4,12 +4,14 @@ from scipy.special import factorial
 import itertools
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 
-#From Lorentz group equivariant network Bogatskiy
+# From Lorentz group equivariant network Bogatskiy
 
-class CGDict():
+
+class CGDict:
     """
     A dictionary of Clebsch-Gordan (CG) coefficients to be used in CG operations.
     The CG coefficients
@@ -44,7 +46,7 @@ class CGDict():
 
         self.dtype = dtype
         if device is None:
-            self.device = torch.device('cpu')
+            self.device = torch.device("cpu")
         else:
             self.device = device
         self._transpose = transpose
@@ -92,18 +94,27 @@ class CGDict():
 
         # Otherwise, update the CG coefficients.
         cg_dict_new = _gen_cg_dict(new_maxdim, existing_keys=self._cg_dict.keys())
-        cg_dict_new = {key: {irrep: cg_tens.reshape(-1, cg_tens.shape[-1])
-                             for irrep, cg_tens in val.items()}
-                       for key, val in cg_dict_new.items()}
+        cg_dict_new = {
+            key: {
+                irrep: cg_tens.reshape(-1, cg_tens.shape[-1])
+                for irrep, cg_tens in val.items()
+            }
+            for key, val in cg_dict_new.items()
+        }
         if self.transpose:
-            cg_dict_new = {key: {irrep: cg_mat.permute(1, 0)
-                                 for irrep, cg_mat in val.items()}
-                           for key, val in cg_dict_new.items()}
+            cg_dict_new = {
+                key: {irrep: cg_mat.permute(1, 0) for irrep, cg_mat in val.items()}
+                for key, val in cg_dict_new.items()
+            }
 
         # Ensure elements of new CG dict are on correct device.
-        cg_dict_new = {key: {irrep: cg_mat.to(dtype=self.dtype, device=self.device)
-                             for irrep, cg_mat in val.items()}
-                       for key, val in cg_dict_new.items()}
+        cg_dict_new = {
+            key: {
+                irrep: cg_mat.to(dtype=self.dtype, device=self.device)
+                for irrep, cg_mat in val.items()
+            }
+            for key, val in cg_dict_new.items()
+        }
 
         # Now update the CG dict, and also update maxdim
         self._cg_dict.update(cg_dict_new)
@@ -125,16 +136,24 @@ class CGDict():
         if dtype is None and device is None:
             pass
         elif dtype is None and device is not None:
-            self._cg_dict = {key: {irrep: cg_mat.to(
-                device=device) for irrep, cg_mat in val.items()} for key, val in self._cg_dict.items()}
+            self._cg_dict = {
+                key: {irrep: cg_mat.to(device=device) for irrep, cg_mat in val.items()}
+                for key, val in self._cg_dict.items()
+            }
             self.device = device
         elif dtype is not None and device is None:
-            self._cg_dict = {key: val.to(dtype=dtype) for key, val in self._cg_dict.items()}
+            self._cg_dict = {
+                key: val.to(dtype=dtype) for key, val in self._cg_dict.items()
+            }
             self.dtype = dtype
         elif dtype is not None and device is not None:
-            self._cg_dict = {key: {irrep: cg_mat.to(device=device, dtype=dtype)
-                                   for irrep, cg_mat in val.items()}
-                             for key, val in self._cg_dict.items()}
+            self._cg_dict = {
+                key: {
+                    irrep: cg_mat.to(device=device, dtype=dtype)
+                    for irrep, cg_mat in val.items()
+                }
+                for key, val in self._cg_dict.items()
+            }
             self.device, self.dtype = device, dtype
         return self
 
@@ -149,7 +168,9 @@ class CGDict():
 
     def __getitem__(self, idx):
         if not self:
-            raise ValueError('CGDict() not initialized. Either set maxdim, or use update_maxdim()')
+            raise ValueError(
+                "CGDict() not initialized. Either set maxdim, or use update_maxdim()"
+            )
         return self._cg_dict[idx]
 
     def __bool__(self):
@@ -160,7 +181,7 @@ class CGDict():
 
 
 def _gen_cg_dict(maxdim, existing_keys=None):
-    '''
+    """
     Outputs a dictionary of tables of CG coefficients for the Lorentz group
     up to the given dimension maxdim of the G irrep subcomponents
     (every irrep of Lorentz group is V1 x V2, where V1 and V2 are irreps of G).
@@ -174,7 +195,7 @@ def _gen_cg_dict(maxdim, existing_keys=None):
     Therefore the dictionary values are tensors of shape ( (k1+1)*(n1+1), (k2+1)*(n2+1), (k+1)*(n+1) ).
     If we concatenate all such tensors for given (k1,n1,k2,n2), we get an orthogonal
     transformation from sum(T) to T1xT2, which is the CG operation done in cg_product().
-    '''
+    """
     cg_dict = {}
     # print("gen_cg_dict called with maxdim =", maxdim)
 
@@ -187,8 +208,12 @@ def _gen_cg_dict(maxdim, existing_keys=None):
         kmin, kmax = abs(k1 - k2), k1 + k2
         nmin, nmax = abs(n1 - n2), n1 + n2
         # dim1, dim2 = (k1 + 1) * (n1 + 1), (k2 + 1) * (n2 + 1)
-        for k, n in itertools.product(range(kmin, kmax + 1, 2), range(nmin, nmax + 1, 2)):
-            cg_dict[((k1, n1), (k2, n2))][(k, n)] = torch.tensor(clebschmat((k1, n1), (k2, n2), (k, n), fastcgmat=fastcgmat))
+        for k, n in itertools.product(
+            range(kmin, kmax + 1, 2), range(nmin, nmax + 1, 2)
+        ):
+            cg_dict[((k1, n1), (k2, n2))][(k, n)] = torch.tensor(
+                clebschmat((k1, n1), (k2, n2), (k, n), fastcgmat=fastcgmat)
+            )
 
     return cg_dict
 
@@ -213,7 +238,9 @@ def clebschSU2mat(j1, j2, j3):
         for m1 in (x / 2 for x in range(-int(2 * j1), int(2 * j1) + 1, 2)):
             for m2 in (x / 2 for x in range(-int(2 * j2), int(2 * j2) + 1, 2)):
                 if abs(m1 + m2) <= j3:
-                    mat[int(j1 + m1), int(j2 + m2), int(j3 + m1 + m2)] = clebschSU2((j1, m1), (j2, m2), (j3, m1 + m2))
+                    mat[int(j1 + m1), int(j2 + m2), int(j3 + m1 + m2)] = clebschSU2(
+                        (j1, m1), (j2, m2), (j3, m1 + m2)
+                    )
     return np.array(mat)
 
 
@@ -224,15 +251,27 @@ def clebschmat(rep1, rep2, rep, fastcgmat=memoize(clebschSU2mat)):
     k1, n1 = rep1
     k2, n2 = rep2
     k, n = rep
-    B1 = np.concatenate([fastcgmat(k / 2, n / 2, i / 2)
-                         for i in range(abs(k - n), k + n + 1, 2)], axis=-1)
+    B1 = np.concatenate(
+        [fastcgmat(k / 2, n / 2, i / 2) for i in range(abs(k - n), k + n + 1, 2)],
+        axis=-1,
+    )
     B2a = fastcgmat(k1 / 2, k2 / 2, k / 2)
     B2b = fastcgmat(n1 / 2, n2 / 2, n / 2)
-    B3a = np.concatenate([fastcgmat(k1 / 2, n1 / 2, i1 / 2)
-                          for i1 in range(abs(k1 - n1), k1 + n1 + 1, 2)], axis=-1)
-    B3b = np.concatenate([fastcgmat(k2 / 2, n2 / 2, i2 / 2)
-                          for i2 in range(abs(k2 - n2), k2 + n2 + 1, 2)], axis=-1)
-    H = np.einsum('cab', np.einsum('abc,dea,ghb,dgk,ehn', B1, B2a, B2b, B3a, B3b))
+    B3a = np.concatenate(
+        [
+            fastcgmat(k1 / 2, n1 / 2, i1 / 2)
+            for i1 in range(abs(k1 - n1), k1 + n1 + 1, 2)
+        ],
+        axis=-1,
+    )
+    B3b = np.concatenate(
+        [
+            fastcgmat(k2 / 2, n2 / 2, i2 / 2)
+            for i2 in range(abs(k2 - n2), k2 + n2 + 1, 2)
+        ],
+        axis=-1,
+    )
+    H = np.einsum("cab", np.einsum("abc,dea,ghb,dgk,ehn", B1, B2a, B2b, B3a, B3b))
     return H
 
 
@@ -250,27 +289,38 @@ def clebsch(idx1, idx2, idx):
 
     if int(2 * j1) not in range(abs(k1 - n1), k1 + n1 + 1, 2):
         print(idx1, idx2, idx)
-        raise ValueError('Invalid value of l1')
+        raise ValueError("Invalid value of l1")
     if int(2 * j2) not in range(abs(k2 - n2), k2 + n2 + 1, 2):
         print(idx1, idx2, idx)
-        raise ValueError('Invalid value of l2')
+        raise ValueError("Invalid value of l2")
     if int(2 * j) not in range(abs(k - n), k + n + 1, 2):
         print(idx1, idx2, idx)
-        raise ValueError('Invalid value of l')
+        raise ValueError("Invalid value of l")
     if m != m1 + m2:
         return 0
 
-    H = sum(fastcg((k / 2, mm1 + mm2), (n / 2, m - mm1 - mm2), (j, m)) *
-            fastcg((k1 / 2, mm1), (k2 / 2, mm2), (k / 2, mm1 + mm2)) *
-            fastcg((n1 / 2, m1 - mm1), (n2 / 2, m2 - mm2), (n / 2, m - mm1 - mm2)) *
-            fastcg((k1 / 2, mm1), (n1 / 2, m1 - mm1), (j1, m1)) *
-            fastcg((k2 / 2, mm2), (n2 / 2, m2 - mm2), (j2, m2))
-            for mm1 in (x / 2 for x in set(range(-k1, k1 + 1, 2)).intersection(set(range(int(2 * m1 - n1), int(2 * m1 + n1 + 1), 2))))
-            for mm2 in (x / 2 for x in set(range(-k2, k2 + 1, 2)).intersection(
-                set(range(int(2 * m2 - n2), int(2 * m2 + n2 + 1), 2))).intersection(
-                    set(range(int(2 * m - n - 2 * mm1), int(2 * m + n - 2 * mm1 + 1), 2))).intersection(
-                        set(range(int(- k - 2 * mm1), int(k - 2 * mm1 + 1), 2))))
+    H = sum(
+        fastcg((k / 2, mm1 + mm2), (n / 2, m - mm1 - mm2), (j, m))
+        * fastcg((k1 / 2, mm1), (k2 / 2, mm2), (k / 2, mm1 + mm2))
+        * fastcg((n1 / 2, m1 - mm1), (n2 / 2, m2 - mm2), (n / 2, m - mm1 - mm2))
+        * fastcg((k1 / 2, mm1), (n1 / 2, m1 - mm1), (j1, m1))
+        * fastcg((k2 / 2, mm2), (n2 / 2, m2 - mm2), (j2, m2))
+        for mm1 in (
+            x / 2
+            for x in set(range(-k1, k1 + 1, 2)).intersection(
+                set(range(int(2 * m1 - n1), int(2 * m1 + n1 + 1), 2))
             )
+        )
+        for mm2 in (
+            x / 2
+            for x in set(range(-k2, k2 + 1, 2))
+            .intersection(set(range(int(2 * m2 - n2), int(2 * m2 + n2 + 1), 2)))
+            .intersection(
+                set(range(int(2 * m - n - 2 * mm1), int(2 * m + n - 2 * mm1 + 1), 2))
+            )
+            .intersection(set(range(int(-k - 2 * mm1), int(k - 2 * mm1 + 1), 2)))
+        )
+    )
     return H
 
 
@@ -310,6 +360,7 @@ def clebsch(idx1, idx2, idx):
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 
+
 def clebschSU2(idx1, idx2, idx3):
     """Calculates the Clebsch-Gordon coefficient
     for SU(2) coupling (j1,m1) and (j2,m2) to give (j3,m3).
@@ -341,13 +392,31 @@ def clebschSU2(idx1, idx2, idx3):
     vmin = int(np.max([-j1 + j2 + m3, -j1 + m1, 0]))
     vmax = int(np.min([j2 + j3 + m1, j3 - j1 + j2, j3 + m3]))
 
-    C = np.sqrt((2.0 * j3 + 1.0) * factorial(j3 + j1 - j2) * factorial(j3 - j1 + j2) * factorial(j1 + j2 - j3) * factorial(j3 + m3) * factorial(j3 - m3) /
-                (factorial(j1 + j2 + j3 + 1) * factorial(j1 - m1) * factorial(j1 + m1) * factorial(j2 - m2) * factorial(j2 + m2)))
+    C = np.sqrt(
+        (2.0 * j3 + 1.0)
+        * factorial(j3 + j1 - j2)
+        * factorial(j3 - j1 + j2)
+        * factorial(j1 + j2 - j3)
+        * factorial(j3 + m3)
+        * factorial(j3 - m3)
+        / (
+            factorial(j1 + j2 + j3 + 1)
+            * factorial(j1 - m1)
+            * factorial(j1 + m1)
+            * factorial(j2 - m2)
+            * factorial(j2 + m2)
+        )
+    )
     S = 0
     for v in range(vmin, vmax + 1):
-        S += (-1.0) ** (v + j2 + m2) / factorial(v) * factorial(j2 + j3 + m1 - v) * factorial(j1 - m1 + v) / \
-            factorial(j3 - j1 + j2 - v) / \
-            factorial(j3 + m3 - v) / \
-            factorial(v + j1 - j2 - m3)
+        S += (
+            (-1.0) ** (v + j2 + m2)
+            / factorial(v)
+            * factorial(j2 + j3 + m1 - v)
+            * factorial(j1 - m1 + v)
+            / factorial(j3 - j1 + j2 - v)
+            / factorial(j3 + m3 - v)
+            / factorial(v + j1 - j2 - m3)
+        )
     C = C * S
     return C

@@ -29,14 +29,16 @@ class MultiACECalculator(Calculator):
 
     implemented_properties = ["energy", "forces"]
 
-    def __init__(self,
-                 model: torch.jit.ScriptModule,
-                 r_max: float,
-                 device: Union[str, torch.device],
-                 atomic_numbers: float,
-                 energy_units_to_eV: float = 1.0,
-                 length_units_to_A: float = 1.0,
-                 **kwargs):
+    def __init__(
+        self,
+        model: torch.jit.ScriptModule,
+        r_max: float,
+        device: Union[str, torch.device],
+        atomic_numbers: float,
+        energy_units_to_eV: float = 1.0,
+        length_units_to_A: float = 1.0,
+        **kwargs
+    ):
         Calculator.__init__(self, **kwargs)
         self.results = {}
 
@@ -60,12 +62,16 @@ class MultiACECalculator(Calculator):
 
         # prepare data
         configs = config_from_atoms(atoms)
-        #data = data.to(self.device)
+        # data = data.to(self.device)
 
         # predict + extract data
-        out = self.model(data.AtomicData.from_config(configs, z_table=self.z_table, cutoff=self.r_max))
-        forces = out['forces'].detach().cpu().numpy()
-        energy = out['energy'].detach().cpu().item()
+        out = self.model(
+            data.AtomicData.from_config(
+                configs, z_table=self.z_table, cutoff=self.r_max
+            )
+        )
+        forces = out["forces"].detach().cpu().numpy()
+        energy = out["energy"].detach().cpu().item()
 
         # store results
         self.results = {
@@ -76,7 +82,9 @@ class MultiACECalculator(Calculator):
 
 
 def config_from_atoms(atoms: ase.Atoms) -> data.Configuration:
-    atomic_numbers = np.array([ase.data.atomic_numbers[symbol] for symbol in atoms.symbols])
+    atomic_numbers = np.array(
+        [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
+    )
     return data.Configuration(atomic_numbers=atomic_numbers, positions=atoms.positions)
 
 
@@ -89,17 +97,20 @@ class AseInterface:
         working_dir (str): Path to directory where files should be stored
         device (str): cpu or cuda
     """
-    def __init__(self,
-                 molecule_path,
-                 ml_model,
-                 working_dir,
-                 device="cpu",
-                 energy="Energy",
-                 forces="Forces",
-                 energy_units="eV",
-                 forces_units="eV/Angstrom",
-                 r_max=4,
-                 rescale=None):
+
+    def __init__(
+        self,
+        molecule_path,
+        ml_model,
+        working_dir,
+        device="cpu",
+        energy="Energy",
+        forces="Forces",
+        energy_units="eV",
+        forces_units="eV/Angstrom",
+        r_max=4,
+        rescale=None,
+    ):
         # Setup directory
         self.working_dir = working_dir
         if not os.path.exists(self.working_dir):
@@ -112,9 +123,7 @@ class AseInterface:
 
         # Set up calculator
         calculator = MultiACECalculator(
-            model=ml_model,
-            r_max=self.r_max,
-            device=device,
+            model=ml_model, r_max=self.r_max, device=device,
         )
 
         self.molecule.set_calculator(calculator)
@@ -221,7 +230,9 @@ class AseInterface:
         self.dynamics.attach(logger, interval=interval)
         self.dynamics.attach(trajectory.write, interval=interval)
 
-    def _init_velocities(self, temp_init=300, remove_translation=True, remove_rotation=True):
+    def _init_velocities(
+        self, temp_init=300, remove_translation=True, remove_rotation=True
+    ):
         """
         Initialize velocities for molecular dynamics
         Args:
@@ -245,7 +256,9 @@ class AseInterface:
             steps (int): Number of simulation steps performed
         """
         if not self.dynamics:
-            raise AttributeError("Dynamics need to be initialized using the" " 'setup_md' function")
+            raise AttributeError(
+                "Dynamics need to be initialized using the" " 'setup_md' function"
+            )
 
         self.dynamics.run(steps)
 

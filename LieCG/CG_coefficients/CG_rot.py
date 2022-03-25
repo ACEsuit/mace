@@ -15,8 +15,7 @@ def coco_filter(ll, mm, invariant=True):
 def coco_filter2(ll, mm, kk, invariant=True):
     # for 3 invariant coefficients
     if invariant:
-        return sum(ll) % 2 == 0 and sum(mm) == 0 \
-            and sum(kk) == 0
+        return sum(ll) % 2 == 0 and sum(mm) == 0 and sum(kk) == 0
 
 
 # versions operating on numbers
@@ -31,8 +30,13 @@ def cg_m_condition(m1, m2, M):
 
 
 def cg_conditions(j1, m1, j2, m2, J, M):
-    return cg_l_condition(j1, j2, J) and cg_m_condition(m1, m2, M) and \
-            abs(m1) <= j1 and abs(m2) <= j2 and abs(M) <= J
+    return (
+        cg_l_condition(j1, j2, J)
+        and cg_m_condition(m1, m2, M)
+        and abs(m1) <= j1
+        and abs(m2) <= j2
+        and abs(M) <= J
+    )
 
 
 def clebschgordan(j1, m1, j2, m2, J, M):
@@ -56,6 +60,7 @@ def clebschgordan(j1, m1, j2, m2, J, M):
     else:
         return float(clebsch_gordan(S(j1), S(j2), S(J), S(m1), S(m2), S(M)))
 
+
 def clebschgordan_from_scratch(j1, m1, j2, m2, J, M):
     """
     Implementation wihtout any dependencies
@@ -76,10 +81,19 @@ def clebschgordan_from_scratch(j1, m1, j2, m2, J, M):
     if not cg_conditions(j1, m1, j2, m2, J, M):
         return 0
 
-    N = (2 * J + 1) * math.factorial(j1 + m1) * math.factorial(j1 - m1) * \
-        math.factorial(j2 + m2) * math.factorial(j2 - m2) * math.factorial(J + M) * \
-        math.factorial(J - M) / math.factorial(j1 + j2 - J) / math.factorial(j1 - j2 + J) / \
-        math.factorial(-1*j1 + j2 + J) / math.factorial(j1 + j2 + J + 1)
+    N = (
+        (2 * J + 1)
+        * math.factorial(j1 + m1)
+        * math.factorial(j1 - m1)
+        * math.factorial(j2 + m2)
+        * math.factorial(j2 - m2)
+        * math.factorial(J + M)
+        * math.factorial(J - M)
+        / math.factorial(j1 + j2 - J)
+        / math.factorial(j1 - j2 + J)
+        / math.factorial(-1 * j1 + j2 + J)
+        / math.factorial(j1 + j2 + J + 1)
+    )
 
     G = 0
     # 0 ≦ k ≦ j1+j2-J
@@ -88,9 +102,12 @@ def clebschgordan_from_scratch(j1, m1, j2, m2, J, M):
     lb = [0, j2 - J - m1, j1 - J + m2]
     ub = [j1 + j2 - J, j1 - m1, j2 + m2]
     for k in range(max(lb), min(ub) + 1):
-        G += (-1)**k * math.comb(j1 + j2 - J, k) * \
-            math.comb(j1 - j2 + J, j1 - m1 - k) * \
-            math.comb(-1*j1 + j2 + J, j2 + m2 - k)
+        G += (
+            (-1) ** k
+            * math.comb(j1 + j2 - J, k)
+            * math.comb(j1 - j2 + J, j1 - m1 - k)
+            * math.comb(-1 * j1 + j2 + J, j2 + m2 - k)
+        )
     return math.sqrt(N) * G
 
 
@@ -98,6 +115,7 @@ class ClebschGordan:
     """
     Class to store precomputed Clebsch-Gordan coefficients
     """
+
     def __init__(self):
         self.cg_val = {}
 
@@ -114,7 +132,9 @@ class ClebschGordan:
         elif inds in self.cg_val.keys():
             return self.cg_val[inds]
         else:
-            self.cg_val[inds] = clebschgordan(inds[0], inds[1], inds[2], inds[3], inds[4], inds[5])
+            self.cg_val[inds] = clebschgordan(
+                inds[0], inds[1], inds[2], inds[3], inds[4], inds[5]
+            )
             return self.cg_val[inds]
 
 
@@ -122,6 +142,7 @@ class Rot3DCoeffs:
     """
     Class to store the computed rotationally averaged coefficints of spherical harmonics
     """
+
     def __init__(self, max_N=20):
         self.vals = [dict() for i in range(max_N)]
         self.cg = ClebschGordan()
@@ -154,34 +175,62 @@ class Rot3DCoeffs:
     def _compute_val(self, ll, mm, kk):
         val = 0.0
         N = len(ll)
-        if N == 1 :
-            if ll[0] == mm[0] == kk[0] :
+        if N == 1:
+            if ll[0] == mm[0] == kk[0]:
                 val = 1.0
                 return val
-            else : 
+            else:
                 return val
-        elif N == 2 :
-            if ll[0] != ll[1] or sum(mm) != 0 or sum(kk) != 0 :
+        elif N == 2:
+            if ll[0] != ll[1] or sum(mm) != 0 or sum(kk) != 0:
                 return val
-            else :
-                val = 8 * math.pi**2 / (2*ll[0] +1 )*(-1)**(mm[0]-kk[0])
-                return  val
-        else :
-            jmin = max([abs(ll[N - 2] - ll[N - 1]), abs(kk[N - 2] + kk[N - 1]), abs(mm[N - 2] + mm[N - 1])])
+            else:
+                val = 8 * math.pi ** 2 / (2 * ll[0] + 1) * (-1) ** (mm[0] - kk[0])
+                return val
+        else:
+            jmin = max(
+                [
+                    abs(ll[N - 2] - ll[N - 1]),
+                    abs(kk[N - 2] + kk[N - 1]),
+                    abs(mm[N - 2] + mm[N - 1]),
+                ]
+            )
             jmax = ll[N - 2] + ll[N - 1]
             for j in range(jmin, jmax + 1):
-                cgk = self.cg((ll[N - 2], kk[N - 2], ll[N - 1], kk[N - 1], j, kk[N - 2] + kk[N - 1]))
-                cgm = self.cg((ll[N - 2], mm[N - 2], ll[N - 1], mm[N - 1], j, mm[N - 2] + mm[N - 1]))
+                cgk = self.cg(
+                    (
+                        ll[N - 2],
+                        kk[N - 2],
+                        ll[N - 1],
+                        kk[N - 1],
+                        j,
+                        kk[N - 2] + kk[N - 1],
+                    )
+                )
+                cgm = self.cg(
+                    (
+                        ll[N - 2],
+                        mm[N - 2],
+                        ll[N - 1],
+                        mm[N - 1],
+                        j,
+                        mm[N - 2] + mm[N - 1],
+                    )
+                )
                 if cgk * cgm != 0:
                     llpp = torch.cat((ll[:-2], torch.tensor([j])))  # (llp..., j)
                     mmpp = torch.cat(
-                        (torch.tensor(mm[:-2]), torch.tensor([mm[N - 2] + mm[N - 1]])))  # (mmp..., mm[N-1]+mm[N])
+                        (torch.tensor(mm[:-2]), torch.tensor([mm[N - 2] + mm[N - 1]]))
+                    )  # (mmp..., mm[N-1]+mm[N])
                     kkpp = torch.cat(
-                        (torch.tensor(kk[:-2]), torch.tensor([kk[N - 2] + kk[N - 1]])))  # (kkp..., kk[N-1]+kk[N])
+                        (torch.tensor(kk[:-2]), torch.tensor([kk[N - 2] + kk[N - 1]]))
+                    )  # (kkp..., kk[N-1]+kk[N])
                     if len(llpp) == 1:
                         a = self.coco_init(llpp[0], mmpp[0], kkpp[0])
                     else:
-                        a = self.__call__(llpp, mmpp, kkpp)  # this is okay because it is
+                        a = self.__call__(
+                            llpp, mmpp, kkpp
+                        )  # this is okay because it is
                         # a recursion, so they should be in self.vals
                     val += cgk * cgm * a
         return val
@@ -189,11 +238,14 @@ class Rot3DCoeffs:
 
 # Construction of CG coefficients numerically via SVD
 
+
 def re_basis(A, ll):
     CC, Mll = compute_Al(A, ll)
     CC = CC.numpy()
     # CC = torch.squeeze(CC).numpy()
-    G = np.matmul(CC, CC.T)  # I think it works for invariants, if not below with for loops
+    G = np.matmul(
+        CC, CC.T
+    )  # I think it works for invariants, if not below with for loops
     # G = torch.zeros((len(CC), len(CC)))
     # for i in range(len(CC)):
     #     for j in range(len(CC)):
@@ -207,10 +259,14 @@ def re_basis(A, ll):
     try:
         Ured = np.diag(np.sqrt(svdC[1][0:rk])) * np.conjugate(svdC[0][:, 0:rk]).T
     except:
-        Ured = np.matmul(np.diag(np.sqrt(svdC[1][0:rk])), np.conjugate(svdC[0][:, 0:rk]).T)
+        Ured = np.matmul(
+            np.diag(np.sqrt(svdC[1][0:rk])), np.conjugate(svdC[0][:, 0:rk]).T
+        )
     # Ured = torch.mm(torch.diag(torch.sqrt(svdC.S[0:rk])), torch.transpose(svdC.U[:, 0:rk]))  # Didn't take complex conjugate here,
     # Would be necessary if we were to do complex
-    Ure = np.zeros((rk, len(Mll)))  # First dimension in Juila code undefined not sure why, I think it is rk
+    Ure = np.zeros(
+        (rk, len(Mll))
+    )  # First dimension in Juila code undefined not sure why, I think it is rk
     for i in range(rk):
         tmp = np.zeros_like(Ure[i, :])
         for j in range(len(CC)):
@@ -231,7 +287,7 @@ def Mll_to_inds(ns, ll, Mll, lmax):
     for mll in Mll:
         ind = []
         for j in range(nu):
-            ind.append(ns[j] * (lmax + 1)**2 + ll[j]*(ll[j] + 1) + mll[j])
+            ind.append(ns[j] * (lmax + 1) ** 2 + ll[j] * (ll[j] + 1) + mll[j])
         inds.append(ind)
     return inds
 
@@ -250,7 +306,7 @@ def create_U(A, nu: int, degree_func):
     nmax = degree_func.max_n()
     lmax = degree_func.max_l()
     # Now generate all possible combinations of l
-    lls = itertools.combinations_with_replacement(range(lmax+1), nu)
+    lls = itertools.combinations_with_replacement(range(lmax + 1), nu)
     # generate all possibel combinations of ns
     ns_unique = list(itertools.combinations_with_replacement(range(nmax + 1), nu))
     all_ns = []
@@ -263,23 +319,39 @@ def create_U(A, nu: int, degree_func):
     i_mm = 0
     for ll in lls:  # iterate over allowed l-tuples
         if l_filter(ll):  # check sum(ls)=even
-            all_ll = set(itertools.permutations(ll))  # #generate all permutations of allowed l-s
+            all_ll = set(
+                itertools.permutations(ll)
+            )  # #generate all permutations of allowed l-s
             for ls in all_ll:
-                Ure, Mll = re_basis(A, torch.tensor(ls))  # compute coupling coefficients and corresponding m-s
+                Ure, Mll = re_basis(
+                    A, torch.tensor(ls)
+                )  # compute coupling coefficients and corresponding m-s
                 for ns in all_ns:  # iterate over all n-tuples
-                    if degree_func(ns, ls, nu): # check if the combination of n-s and l-s is allowed
+                    if degree_func(
+                        ns, ls, nu
+                    ):  # check if the combination of n-s and l-s is allowed
                         if Ure.numpy().size != 0:
                             for u in Ure:
-                                ind = Mll_to_inds(ns, ls, Mll, lmax)  # convert them to sparse tensor inidcies
+                                ind = Mll_to_inds(
+                                    ns, ls, Mll, lmax
+                                )  # convert them to sparse tensor inidcies
                                 inds += ind
                                 coeffs = torch.cat((coeffs, u))
-                                index_mm += [i_mm]*len(torch.flatten(u))  # will return the same index for elements that should share mm
+                                index_mm += [i_mm] * len(
+                                    torch.flatten(u)
+                                )  # will return the same index for elements that should share mm
                                 i_mm += 1
     index_mm = torch.tensor(index_mm)
     inds = torch.cat((index_mm[None, :], torch.transpose(torch.tensor(inds), 0, 1)))
-    size = (len(index_mm.unique()),) + tuple(((nmax + 1) * (lmax + 1)**2 for i in range(nu)))
-    norm = abs(coeffs).mean()*(len(coeffs)**0.5)
-    return torch.sparse_coo_tensor(inds, coeffs/norm, size=size).to_dense().moveaxis(0,-1)
+    size = (len(index_mm.unique()),) + tuple(
+        ((nmax + 1) * (lmax + 1) ** 2 for i in range(nu))
+    )
+    norm = abs(coeffs).mean() * (len(coeffs) ** 0.5)
+    return (
+        torch.sparse_coo_tensor(inds, coeffs / norm, size=size)
+        .to_dense()
+        .moveaxis(0, -1)
+    )
 
 
 # -----------------------------------
@@ -316,7 +388,9 @@ class MRange:
 
 
 def compute_Al(A, ll):
-    ms = tuple([tuple([m for m in range(-1 * ll[i], ll[i] + 1)]) for i in range(len(ll))])
+    ms = tuple(
+        [tuple([m for m in range(-1 * ll[i], ll[i] + 1)]) for i in range(len(ll))]
+    )
     mvecs = list(itertools.product(*ms))
     Mll = list(MRange(ll, mvecs))  # m-s corresponding to l with symmetry obeyed
     if len(Mll) == 0:
@@ -368,8 +442,13 @@ def torch_cg_m_condition(m1, m2, M):
 
 
 def torch_cg_conditions(j1, m1, j2, m2, J, M):
-    return torch_cg_l_condition(j1, j2, J) and torch_cg_m_condition(m1, m2, M) and \
-            torch.abs(m1) <= j1 and torch.abs(m2) <= j2 and torch.abs(M) <= J
+    return (
+        torch_cg_l_condition(j1, j2, J)
+        and torch_cg_m_condition(m1, m2, M)
+        and torch.abs(m1) <= j1
+        and torch.abs(m2) <= j2
+        and torch.abs(M) <= J
+    )
 
 
 def torch_binom(n, k):
@@ -404,10 +483,19 @@ def torch_clebschgordan(j1, m1, j2, m2, J, M):
     if not torch_cg_conditions(j1, m1, j2, m2, J, M):
         return 0
 
-    N = (2 * J + 1) * torch_factorial(j1 + m1) * torch_factorial(j1 - m1) * \
-        torch_factorial(j2 + m2) * torch_factorial(j2 - m2) * torch_factorial(J + M) * \
-        torch_factorial(J - M) / torch_factorial(j1 + j2 - J) / torch_factorial(j1 - j2 + J) / \
-        torch_factorial(-1*j1 + j2 + J) / torch_factorial(j1 + j2 + J + 1)
+    N = (
+        (2 * J + 1)
+        * torch_factorial(j1 + m1)
+        * torch_factorial(j1 - m1)
+        * torch_factorial(j2 + m2)
+        * torch_factorial(j2 - m2)
+        * torch_factorial(J + M)
+        * torch_factorial(J - M)
+        / torch_factorial(j1 + j2 - J)
+        / torch_factorial(j1 - j2 + J)
+        / torch_factorial(-1 * j1 + j2 + J)
+        / torch_factorial(j1 + j2 + J + 1)
+    )
 
     G = 0
     # 0 ≦ k ≦ j1+j2-J
@@ -416,7 +504,10 @@ def torch_clebschgordan(j1, m1, j2, m2, J, M):
     lb = torch.tensor([0, j2 - J - m1, j1 - J + m2])
     ub = torch.tensor([j1 + j2 - J, j1 - m1, j2 + m2])
     for k in range(torch.max(lb), torch.min(ub) + 1):
-        G += (-1)**k * torch_binom(j1 + j2 - J, k) * \
-            torch_binom(j1 - j2 + J, j1 - m1 - k) * \
-            torch_binom(-1*j1 + j2 + J, j2 + m2 - k)
+        G += (
+            (-1) ** k
+            * torch_binom(j1 + j2 - J, k)
+            * torch_binom(j1 - j2 + J, j1 - m1 - k)
+            * torch_binom(-1 * j1 + j2 + J, j2 + m2 - k)
+        )
     return torch.sqrt(N) * G

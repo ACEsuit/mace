@@ -3,7 +3,7 @@ from torch_geometric.data import Batch
 
 from LieACE.tools import TensorDict
 
-
+# fmt: off
 def mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
     return torch.mean(torch.square(ref['energy'] - pred['energy']))  # []
