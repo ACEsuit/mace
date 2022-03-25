@@ -7,6 +7,8 @@ from e3nn import nn, o3
 from torch_scatter import scatter_sum
 
 
+from LieACE.tools.torch_tools import get_complex_default_dtype
+
 from .irreps_tools import linear_out_irreps, tp_out_irreps_with_instructions, reshape_irreps
 from .radial import BesselBasis, PolynomialCutoff
 
@@ -132,6 +134,8 @@ class ProductBasisBlock(torch.nn.Module):
                  avg_num_neighbors: int,
         ) -> None:
         super().__init__()  
+
+        self.dtype = get_complex_default_dtype()
         self.U_tensors = U_tensors   #Dict[str,[(lmax+1)**2]**correlation + [num_weights]]  
         self.num_features = node_feats_irreps.count((0,1))
         self.correlation = correlation
@@ -157,12 +161,12 @@ class ProductBasisBlock(torch.nn.Module):
         ) -> torch.Tensor:
         out = torch.einsum(self.equation_main,
                                self.U_tensors[self.correlation],
-                               self.weights[str(self.correlation)].type(torch.complex128),
+                               self.weights[str(self.correlation)].type(self.dtype),
                                node_feats) #TODO : use optimize library and cuTENSOR 
         for corr in range(self.correlation-1,0,-1):
                 c_tensor = torch.einsum(self.equation_weighting,
                                         self.U_tensors[corr],
-                                        self.weights[str(corr)].type(torch.complex128))
+                                        self.weights[str(corr)].type(self.dtype))
                 c_tensor  = c_tensor + out
                 out = torch.einsum(self.equation_contract,
                                    c_tensor,node_feats)   

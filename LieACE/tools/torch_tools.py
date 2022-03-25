@@ -57,3 +57,12 @@ dtype_dict = {'float32': torch.float32, 'float64': torch.float64}
 
 def set_default_dtype(dtype: str) -> None:
     torch.set_default_dtype(dtype_dict[dtype])
+
+def get_complex_default_dtype():
+    default_dtype = torch.get_default_dtype()
+    if default_dtype == torch.float64:
+        return torch.complex128
+    elif default_dtype == torch.float32:
+        return torch.complex64
+    else:
+        return NotImplementedError

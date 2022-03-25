@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from LieACE.data import AtomicData
 from LieACE.tools.degree import NaiveMaxDeg
+from LieACE.tools.torch_tools import get_complex_default_dtype
 from LieCG.CG_coefficients.CG_rot import Rot3DCoeffs, create_U
 from e3nn import o3
 from torch_scatter import scatter_sum
@@ -34,6 +35,7 @@ class InvariantMultiACE(torch.nn.Module):
     ):
         super().__init__()
 
+        self.dtype = get_complex_default_dtype()
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -51,7 +53,7 @@ class InvariantMultiACE(torch.nn.Module):
         self.spherical_harmonics = SphericalHarmonics(lmax=max_ell,device=device)
         A = Rot3DCoeffs(max_ell + 1)
         degree_func = NaiveMaxDeg({i : [num_radial_coupling-1,max_ell]for i in range(1,correlation+1)})
-        U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func).type(torch.complex128).to(device)
+        U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func).type(self.dtype).to(device)
                      for nu in range(1,correlation+1)}
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
@@ -110,7 +112,7 @@ class InvariantMultiACE(torch.nn.Module):
         vectors, lengths = get_edge_vectors_and_lengths(positions=data.positions,
                                                         edge_index=data.edge_index,
                                                         shifts=data.shifts)
-        edge_attrs = self.spherical_harmonics(vectors)*torch.sqrt(4 * torch.tensor(np.pi, dtype=torch.cdouble))
+        edge_attrs = self.spherical_harmonics(vectors)*torch.sqrt(4 * torch.tensor(np.pi, dtype=self.dtype))
         edge_feats = self.radial_embedding(lengths)
 
         # Interactions
@@ -157,6 +159,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
     ):
         super().__init__()
 
+        self.dtype = get_complex_default_dtype()
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -175,7 +178,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
         self.spherical_harmonics = SphericalHarmonics(lmax=max_ell,device=device)
         A = Rot3DCoeffs(max_ell + 1)
         degree_func = NaiveMaxDeg({i : [num_radial_coupling-1,max_ell]for i in range(1,correlation+1)})
-        U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func).type(torch.complex128).to(device)
+        U_tensors = {nu : create_U(A=A,nu=nu,degree_func=degree_func).type(self.dtype).to(device)
                      for nu in range(1,correlation+1)}
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
@@ -241,7 +244,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
         vectors, lengths = get_edge_vectors_and_lengths(positions=data.positions,
                                                         edge_index=data.edge_index,
                                                         shifts=data.shifts)
-        edge_attrs = self.spherical_harmonics(vectors)*torch.sqrt(4 * torch.tensor(np.pi, dtype=torch.cdouble))
+        edge_attrs = self.spherical_harmonics(vectors)*torch.sqrt(4 * torch.tensor(np.pi, dtype=self.dtype))
         edge_feats = self.radial_embedding(lengths)
 
         # Interactions
