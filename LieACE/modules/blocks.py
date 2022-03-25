@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Union, Callable
+from typing import Dict, List, Optional, Tuple, Union, Callable
 
 import numpy as np
 import torch
@@ -495,7 +495,7 @@ class ComplexElementDependentResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> List[torch.Tensor]:
+    ) -> Tuple[torch.Tensor,torch.Tensor]:
         sender, receiver = edge_index
         num_nodes = node_feats.shape[0]
 
@@ -580,7 +580,7 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> List[torch.Tensor]:
+    ) -> Tuple[torch.Tensor,torch.Tensor]:
         sender, receiver = edge_index
         num_nodes = node_feats.shape[0]
 

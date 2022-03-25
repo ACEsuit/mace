@@ -1,13 +1,13 @@
-from typing import  Sequence, Optional
+import importlib
+from typing import Optional, Sequence
 
 import torch.utils.data
 import torch_geometric
-
-import importlib
 from LieACE.data.neighborhood import get_neighborhood
 from LieACE.tools.config import Configuration
 from LieACE.tools.torch_tools import to_one_hot
 from LieACE.tools.utils import AtomicNumberTable, atomic_numbers_to_indices
+
 mod = importlib.import_module('LieACE.tools.degree') #to be able to parse any degree
 
 
