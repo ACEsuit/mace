@@ -3,12 +3,12 @@ from numpy import pi as np_pi
 
 
 class SphericalHarmonics(torch.nn.Module):
-    def __init__(self, lmax, prec="DOUBLE", device="cpu"):
+    def __init__(self, lmax, dtype=torch.float64, device="cpu"):
         super().__init__()
         self._lmax = lmax
         self.device = device
         # self.rhat = rhat
-        self.prec = Precision(prec)
+        self.prec = Precision(dtype)
         self.alm, self.blm = self.pre_compute()
         self.pi = self.float_tensor(np_pi)
 
@@ -339,7 +339,7 @@ class SphericalHarmonics(torch.nn.Module):
 class Precision:
     def __init__(self, prec):
 
-        if prec == "DOUBLE":
+        if prec == torch.float64:
             self.float = torch.float64
             self.int = torch.int64
         else:
