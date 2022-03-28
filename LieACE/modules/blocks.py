@@ -157,9 +157,7 @@ class ProductBasisBlock(torch.nn.Module):
         self.weights = torch.nn.ParameterDict({})
         for i in range(1, correlation + 1):
             num_params = self.U_tensors[i].size()[-1]
-            w = torch.nn.Parameter(torch.randn(num_params, self.num_features)).type(
-                self.dtype
-            )
+            w = torch.nn.Parameter(torch.randn(num_params, self.num_features))
             self.weights[str(i)] = w
         # Update linear
         self.linear = o3.Linear(
@@ -173,12 +171,14 @@ class ProductBasisBlock(torch.nn.Module):
         out = contract(
             self.equation_main,
             self.U_tensors[self.correlation],
-            self.weights[str(self.correlation)],
+            self.weights[str(self.correlation)].type(self.dtype),
             node_feats,
         )  # TODO : use optimize library and cuTENSOR
         for corr in range(self.correlation - 1, 0, -1):
             c_tensor = contract(
-                self.equation_weighting, self.U_tensors[corr], self.weights[str(corr)],
+                self.equation_weighting,
+                self.U_tensors[corr],
+                self.weights[str(corr)].type(self.dtype),
             )
             c_tensor = c_tensor + out
             out = contract(self.equation_contract, c_tensor, node_feats)
