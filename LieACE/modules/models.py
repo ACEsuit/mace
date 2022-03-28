@@ -61,7 +61,7 @@ class InvariantMultiACE(torch.nn.Module):
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
-        self.spherical_harmonics = sphericalharmonics(lmax=max_ell, normalize=True)
+        self.spherical_harmonics = sphericalharmonics(lmax=max_ell, normalize=False)
         A = Rot3DCoeffs(max_ell + 1)
         degree_func = NaiveMaxDeg(
             {i: [num_radial_coupling - 1, max_ell] for i in range(1, correlation + 1)}
@@ -205,7 +205,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
 
-        self.spherical_harmonics = sphericalharmonics(lmax=max_ell, normalize=True)
+        self.spherical_harmonics = sphericalharmonics(lmax=max_ell, normalize=False)
         A = Rot3DCoeffs(max_ell + 1)
         degree_func = NaiveMaxDeg(
             {i: [num_radial_coupling - 1, max_ell] for i in range(1, correlation + 1)}
