@@ -1,3 +1,5 @@
+import math
+from sympy import re
 import torch
 from numpy import pi as np_pi
 
@@ -345,3 +347,162 @@ class Precision:
         else:
             self.float = torch.float32
             self.int = torch.int32
+
+
+class sphericalharmonics(torch.nn.Module):
+    def __init__(self, lmax: int, normalize: bool) -> None:
+        super().__init__()
+        self._lmax = lmax
+        self.normalize = normalize
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.normalize:
+            x = torch.nn.functional.normalize(
+                x, dim=-1
+            )  # forward 0's instead of nan for zero-radius
+        sh = _spherical_harmonics(
+            self._lmax, x[..., 0], x[..., 1], x[..., 2]
+        ) * torch.sqrt(4 * torch.tensor(math.pi, dtype=x.dtype, device=x.device))
+
+        return sh
+
+
+@torch.jit.script
+def _spherical_harmonics(
+    lmax: int, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor
+) -> torch.Tensor:
+    sh_0_0_r = (1 / 2) * math.sqrt(1 / math.pi) * torch.ones_like(x)
+    sh_0_0 = torch.complex(sh_0_0_r, torch.zeros_like(sh_0_0_r))
+    if lmax == 0:
+        return torch.stack([sh_0_0,], dim=-1)
+    xmiy = torch.complex(x, -y)
+    xpiy = torch.complex(x, y)
+    z = torch.complex(z, torch.zeros_like(z))
+    sh_1_0 = (1 / 2) * math.sqrt(3 / (2 * math.pi)) * (xmiy)
+    sh_1_1 = (1 / 2) * math.sqrt(3 / (math.pi)) * z
+    sh_1_2 = -(1 / 2) * math.sqrt(3 / (2 * math.pi)) * (xpiy)
+
+    if lmax == 1:
+        return torch.stack([sh_0_0, sh_1_0, sh_1_1, sh_1_2], dim=-1)
+
+    xmiy2 = (xmiy).pow(2)
+    xpiy2 = (xpiy).pow(2)
+    z2 = z.pow(2)
+    sh_2_0 = (1 / 4) * math.sqrt(15 / (2 * math.pi)) * xmiy2
+    sh_2_1 = (1 / 2) * math.sqrt(15 / (2 * math.pi)) * (xmiy) * z
+    sh_2_2 = (1 / 4) * math.sqrt(5 / (math.pi)) * (3 * z2 - 1)
+    sh_2_3 = -(1 / 2) * math.sqrt(15 / (2 * math.pi)) * (xpiy) * z
+    sh_2_4 = (1 / 4) * math.sqrt(15 / (2 * math.pi)) * xpiy2
+
+    if lmax == 2:
+        return torch.stack(
+            [sh_0_0, sh_1_0, sh_1_1, sh_1_2, sh_2_0, sh_2_1, sh_2_2, sh_2_3, sh_2_4],
+            dim=-1,
+        )
+
+    xmiy3 = xmiy2 * xmiy
+    xpiy3 = xpiy2 * xpiy
+    z3 = z2 * z
+    sh_3_0 = (1 / 8) * math.sqrt(35 / math.pi) * xmiy3
+    sh_3_1 = (1 / 4) * math.sqrt(105 / (2 * math.pi)) * xmiy2 * z
+    sh_3_2 = (1 / 8) * math.sqrt(21 / math.pi) * (xmiy) * (5 * z2 - 1)
+    sh_3_3 = (1 / 4) * math.sqrt(7 / math.pi) * (5 * z3 - 3 * z)
+    sh_3_4 = -(1 / 8) * math.sqrt(21 / math.pi) * (xpiy) * (5 * z2 - 1)
+    sh_3_5 = (1 / 4) * math.sqrt(105 / (2 * math.pi)) * (xpiy2) * z
+    sh_3_6 = -(1 / 8) * math.sqrt(35 / math.pi) * xpiy3
+
+    if lmax == 3:
+        return torch.stack(
+            [
+                sh_0_0,
+                sh_1_0,
+                sh_1_1,
+                sh_1_2,
+                sh_2_0,
+                sh_2_1,
+                sh_2_2,
+                sh_2_3,
+                sh_2_4,
+                sh_3_0,
+                sh_3_1,
+                sh_3_2,
+                sh_3_3,
+                sh_3_4,
+                sh_3_5,
+                sh_3_6,
+            ],
+            dim=-1,
+        )
+
+    sh_4_0 = 0.935414346693485 * sh_3_0 * z + 0.935414346693485 * sh_3_6 * x
+    sh_4_1 = (
+        0.661437827766148 * sh_3_0 * y
+        + 0.810092587300982 * sh_3_1 * z
+        + 0.810092587300983 * sh_3_5 * x
+    )
+    sh_4_2 = (
+        -0.176776695296637 * sh_3_0 * z
+        + 0.866025403784439 * sh_3_1 * y
+        + 0.684653196881458 * sh_3_2 * z
+        + 0.684653196881457 * sh_3_4 * x
+        + 0.176776695296637 * sh_3_6 * x
+    )
+    sh_4_3 = (
+        -0.306186217847897 * sh_3_1 * z
+        + 0.968245836551855 * sh_3_2 * y
+        + 0.790569415042095 * sh_3_3 * x
+        + 0.306186217847897 * sh_3_5 * x
+    )
+    sh_4_4 = (
+        -0.612372435695795 * sh_3_2 * x + sh_3_3 * y - 0.612372435695795 * sh_3_4 * z
+    )
+    sh_4_5 = (
+        -0.306186217847897 * sh_3_1 * x
+        + 0.790569415042096 * sh_3_3 * z
+        + 0.968245836551854 * sh_3_4 * y
+        - 0.306186217847897 * sh_3_5 * z
+    )
+    sh_4_6 = (
+        -0.176776695296637 * sh_3_0 * x
+        - 0.684653196881457 * sh_3_2 * x
+        + 0.684653196881457 * sh_3_4 * z
+        + 0.866025403784439 * sh_3_5 * y
+        - 0.176776695296637 * sh_3_6 * z
+    )
+    sh_4_7 = (
+        -0.810092587300982 * sh_3_1 * x
+        + 0.810092587300982 * sh_3_5 * z
+        + 0.661437827766148 * sh_3_6 * y
+    )
+    sh_4_8 = -0.935414346693485 * sh_3_0 * x + 0.935414346693486 * sh_3_6 * z
+    return torch.stack(
+        [
+            sh_0_0,
+            sh_1_0,
+            sh_1_1,
+            sh_1_2,
+            sh_2_0,
+            sh_2_1,
+            sh_2_2,
+            sh_2_3,
+            sh_2_4,
+            sh_3_0,
+            sh_3_1,
+            sh_3_2,
+            sh_3_3,
+            sh_3_4,
+            sh_3_5,
+            sh_3_6,
+            sh_4_0,
+            sh_4_1,
+            sh_4_2,
+            sh_4_3,
+            sh_4_4,
+            sh_4_5,
+            sh_4_6,
+            sh_4_7,
+            sh_4_8,
+        ],
+        dim=-1,
+    )
+

@@ -21,7 +21,7 @@ from LieACE.modules.blocks import (
     ProductBasisBlock,
     ScaleShiftBlock,
 )
-from LieACE.modules.spherical_harmonics import SphericalHarmonics
+from LieACE.modules.spherical_harmonics import sphericalharmonics
 from LieACE.modules.utils import compute_forces, get_edge_vectors_and_lengths
 
 
@@ -61,9 +61,7 @@ class InvariantMultiACE(torch.nn.Module):
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
-        self.spherical_harmonics = SphericalHarmonics(
-            lmax=max_ell, device=device, dtype=torch.get_default_dtype()
-        )
+        self.spherical_harmonics = sphericalharmonics(lmax=max_ell, normalize=True)
         A = Rot3DCoeffs(max_ell + 1)
         degree_func = NaiveMaxDeg(
             {i: [num_radial_coupling - 1, max_ell] for i in range(1, correlation + 1)}
@@ -135,9 +133,8 @@ class InvariantMultiACE(torch.nn.Module):
         vectors, lengths = get_edge_vectors_and_lengths(
             positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
         )
-        edge_attrs = self.spherical_harmonics(vectors) * torch.sqrt(
-            4 * torch.tensor(np.pi, dtype=self.dtype)
-        )
+        edge_attrs = self.spherical_harmonics(vectors)
+
         edge_feats = self.radial_embedding(lengths)
 
         # Interactions
@@ -208,9 +205,7 @@ class NonLinearBodyOrderedModel(torch.nn.Module):
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
 
-        self.spherical_harmonics = SphericalHarmonics(
-            lmax=max_ell, device=device, dtype=torch.get_default_dtype()
-        )
+        self.spherical_harmonics = sphericalharmonics(lmax=max_ell, normalize=True)
         A = Rot3DCoeffs(max_ell + 1)
         degree_func = NaiveMaxDeg(
             {i: [num_radial_coupling - 1, max_ell] for i in range(1, correlation + 1)}
