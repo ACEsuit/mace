@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from e3nn import nn, o3
 from torch_scatter import scatter_sum
+from opt_einsum import contract
 
 
 from LieACE.tools.torch_tools import get_complex_default_dtype
@@ -132,10 +133,14 @@ class ProductBasisBlock(torch.nn.Module):
         target_irreps: o3.Irreps,
         correlation: int,
         avg_num_neighbors: int,
+        use_complex: bool = True,
     ) -> None:
         super().__init__()
 
-        self.dtype = get_complex_default_dtype()
+        if use_complex:
+            self.dtype = get_complex_default_dtype()
+        else:
+            self.dtype = torch.get_default_dtype()
         self.U_tensors = (
             U_tensors  # Dict[str,[(lmax+1)**2]**correlation + [num_weights]]
         )
@@ -152,7 +157,9 @@ class ProductBasisBlock(torch.nn.Module):
         self.weights = torch.nn.ParameterDict({})
         for i in range(1, correlation + 1):
             num_params = self.U_tensors[i].size()[-1]
-            w = torch.nn.Parameter(torch.randn(num_params, self.num_features))
+            w = torch.nn.Parameter(torch.randn(num_params, self.num_features)).type(
+                self.dtype
+            )
             self.weights[str(i)] = w
         # Update linear
         self.linear = o3.Linear(
@@ -163,20 +170,18 @@ class ProductBasisBlock(torch.nn.Module):
         )
 
     def forward(self, node_feats: torch.tensor, sc: torch.tensor,) -> torch.Tensor:
-        out = torch.einsum(
+        out = contract(
             self.equation_main,
             self.U_tensors[self.correlation],
-            self.weights[str(self.correlation)].type(self.dtype),
+            self.weights[str(self.correlation)],
             node_feats,
         )  # TODO : use optimize library and cuTENSOR
         for corr in range(self.correlation - 1, 0, -1):
-            c_tensor = torch.einsum(
-                self.equation_weighting,
-                self.U_tensors[corr],
-                self.weights[str(corr)].type(self.dtype),
+            c_tensor = contract(
+                self.equation_weighting, self.U_tensors[corr], self.weights[str(corr)],
             )
             c_tensor = c_tensor + out
-            out = torch.einsum(self.equation_contract, c_tensor, node_feats)
+            out = contract(self.equation_contract, c_tensor, node_feats)
         return self.linear(out.real) + sc
 
 
@@ -495,7 +500,7 @@ class ComplexElementDependentResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor,torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender, receiver = edge_index
         num_nodes = node_feats.shape[0]
 
@@ -580,7 +585,7 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor,torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender, receiver = edge_index
         num_nodes = node_feats.shape[0]
 
