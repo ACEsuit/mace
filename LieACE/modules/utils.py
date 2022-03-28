@@ -108,7 +108,6 @@ def get_edge_vectors_and_lengths(
     positions: torch.Tensor,  # [n_nodes, 3]
     edge_index: torch.Tensor,  # [2, n_edges]
     shifts: torch.Tensor,  # [n_edges, 3]
-    eps=1e-9,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     sender, receiver = edge_index
     # From ase.neighborlist:
@@ -116,8 +115,7 @@ def get_edge_vectors_and_lengths(
     # where shifts = S.dot(cell)
     vectors = positions[receiver] - positions[sender] + shifts  # [n_edges, 3]
     lengths = torch.linalg.norm(vectors, dim=-1, keepdim=True)  # [n_edges, 1]
-    vectors_normed = vectors / (lengths + eps)
-    return vectors_normed, lengths
+    return vectors, lengths
 
 
 def compute_mean_std_atomic_inter_energy(
