@@ -522,8 +522,8 @@ class ComplexElementDependentResidualInteractionBlock(InteractionBlock):
             src=mji_imag, index=receiver, dim=0, dim_size=num_nodes
         )
 
-        message_real = self.linear(message_real) / self.avg_num_neighbors
-        message_imag = self.linear(message_imag) / self.avg_num_neighbors
+        message_real = self.linear(message_real)
+        message_imag = self.linear(message_imag)
 
         message = torch.view_as_complex(
             torch.stack((message_real, message_imag), dim=-1)
