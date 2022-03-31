@@ -2,6 +2,7 @@ from typing import Tuple, List
 
 import torch
 from e3nn import o3
+from e3nn.util.jit import compile_mode
 
 
 # Based on mir-group/nequip
@@ -53,16 +54,22 @@ def linear_out_irreps(irreps: o3.Irreps, target_irreps: o3.Irreps) -> o3.Irreps:
     return o3.Irreps(irreps_mid)
 
 
-def reshape_irreps(tensor: torch.Tensor, irreps: o3.Irreps):
-    field = []
-    ix = 0
-    out = []
-    batch, dim = tensor.shape
-    for mul, ir in irreps:
-        d = ir.dim
-        field = tensor[:, ix : ix + mul * d]  # [batch, sample, mul * repr]
-        ix += mul * d
-        field = field.reshape(batch, mul, d)
-        out.append(field)
-    return torch.cat(out, dim=-1)
+@compile_mode("script")
+class reshape_irreps(torch.nn.Module):
+    def __init__(self, irreps: o3.Irreps) -> None:
+        super().__init__()
+        self.irreps = irreps
+
+    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
+        field = []
+        ix = 0
+        out = []
+        batch, _ = tensor.shape
+        for mul, ir in self.irreps:
+            d = ir.dim
+            field = tensor[:, ix : ix + mul * d]  # [batch, sample, mul * repr]
+            ix += mul * d
+            field = field.reshape(batch, mul, d)
+            out.append(field)
+        return torch.cat(out, dim=-1)
 

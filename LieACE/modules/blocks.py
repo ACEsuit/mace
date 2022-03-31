@@ -136,7 +136,7 @@ class ProductBasisBlock(torch.nn.Module):
         use_complex: bool = True,
     ) -> None:
         super().__init__()
-
+        self.use_complex = use_complex
         if use_complex:
             self.dtype = get_complex_default_dtype()
         else:
@@ -182,7 +182,10 @@ class ProductBasisBlock(torch.nn.Module):
             )
             c_tensor = c_tensor + out
             out = contract(self.equation_contract, c_tensor, node_feats)
-        return self.linear(out.real) + sc
+        if self.use_complex:
+            return self.linear(out.real) + sc
+        else:
+            return self.linear(out) + sc
 
 
 class InteractionBlock(ABC, torch.nn.Module):
@@ -522,8 +525,8 @@ class ComplexElementDependentResidualInteractionBlock(InteractionBlock):
             src=mji_imag, index=receiver, dim=0, dim_size=num_nodes
         )
 
-        message_real = self.linear(message_real)
-        message_imag = self.linear(message_imag)
+        message_real = self.linear(message_real) / self.avg_num_neighbors
+        message_imag = self.linear(message_imag) / self.avg_num_neighbors
 
         message = torch.view_as_complex(
             torch.stack((message_real, message_imag), dim=-1)
@@ -578,6 +581,8 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
             self.node_feats_irreps, self.node_attrs_irreps, self.node_feats_irreps
         )
 
+        self.reshape = reshape_irreps(self.irreps_out)
+
     def forward(
         self,
         node_attrs: torch.Tensor,
@@ -613,7 +618,7 @@ class ComplexAgnosticResidualInteractionBlock(InteractionBlock):
             torch.stack((message_real, message_imag), dim=-1)
         )
         return (
-            reshape_irreps(message, self.irreps_out),
+            self.reshape(message),
             sc,
         )  # [n_nodes, channels, (lmax + 1)**2]
 
@@ -677,25 +682,13 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
         node_feats = node_feats.repeat(1, self.num_radial_coupling)
-
-        mji_real = self.conv_tp(
-            node_feats[sender], edge_attrs.real, tp_weights
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
-        mji_imag = self.conv_tp(node_feats[sender], edge_attrs.imag, tp_weights)
-
-        message_real = scatter_sum(
-            src=mji_real, index=receiver, dim=0, dim_size=num_nodes
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
-        message_imag = scatter_sum(
-            src=mji_imag, index=receiver, dim=0, dim_size=num_nodes
-        )
-
-        message_real = self.linear(message_real)
-        message_imag = self.linear(message_imag)
-
-        message = torch.view_as_complex(
-            torch.stack((message_real, message_imag), dim=-1)
-        )
+        message = self.linear(message)
         return (
             reshape_irreps(message, self.irreps_out),
             sc,
