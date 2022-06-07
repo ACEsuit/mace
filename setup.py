@@ -17,8 +17,8 @@ setup(
     install_requires=[
         'torch>=1.8',
         'numpy',
+        'e3nn',
         'ase',
-        'torch_geometric>=1.7.1',
     ],
     zip_safe=False,
     test_suite='pytest',
