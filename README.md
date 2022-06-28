@@ -9,6 +9,24 @@ Requirements:
 * Python >= 3.7
 * [PyTorch](https://pytorch.org/) >= 1.8
 
+
+### conda installation
+
+If you do not have cuda pre-installed, it is **recommanded** to use the conda installation.
+To install with conda, follow the steps below:
+```sh
+# Create a virtual environment and activate it
+conda create mace_env
+conda activate mace_env
+
+# Install PyTorch
+conda install pytorch torchvision torchaudio cudatoolkit=11.1 -c pytorch-lts -c conda-forge
+
+# Clone and install MACE (and all required packages), use token if still private repo
+git clone git@github.com:ACEsuit/mace.git 
+pip install ./mace
+```
+
 ### pip installation
 
 To install, follow the steps below:
@@ -28,22 +46,6 @@ git clone git@github.com:ACEsuit/mace.git
 pip install ./mace
 ```
 
-### conda installation
-
-If you do not have cuda pre-installed, it is **recommanded** to use the conda installation.
-To install with conda, follow the steps below:
-```sh
-# Create a virtual environment and activate it
-conda create mace_env
-conda activate mace_env
-
-# Install PyTorch
-conda install pytorch torchvision torchaudio cudatoolkit=11.1 -c pytorch-lts -c conda-forge
-
-# Clone and install MACE (and all required packages), use token if still private repo
-git clone git@github.com:ACEsuit/mace.git 
-pip install ./mace
-```
 
 **Note:** The homonymous package on [PyPI](https://pypi.org/project/MACE/) has nothing to do with this one.
 
