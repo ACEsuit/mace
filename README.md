@@ -30,7 +30,7 @@ pip install ./mace
 
 ### conda installation
 
-If you do not have cuda pre-installed, it is **recommanded** to use the conda installation : 
+If you do not have cuda pre-installed, it is **recommanded** to use the conda installation.
 To install with conda, follow the steps below:
 ```sh
 # Create a virtual environment and activate it
