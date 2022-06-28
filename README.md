@@ -43,15 +43,25 @@ python ./mace/scripts/run_train.py \
     --config_type_weights='{"Default":1.0}' \
     --E0s='{1:-13.663181292231226, 6:-1029.2809654211628, 7:-1484.1187695035828, 8:-2042.0330099956639}' \
     --model="MACE" \
-    --hidden_irreps='128x0e + 128x1o + 128x2e' \
+    --hidden_irreps='128x0e + 128x1o' \
     --r_max=5.0 \
-    --batch_size=5 \
-    --max_num_epochs=2500 \
+    --batch_size=10 \
+    --max_num_epochs=1500 \
+    --swa \
+    --start_swa=1200 \
     --ema \
     --ema_decay=0.99 \
     --restart_latest \
     --device=cuda \
 ```
+
+To give a specific validation set use the keyword `--valid_file`. To set a larger batch size for evaluating the validation set use the key `--valid_batch_size`. 
+
+To control the size of the model you need to change `--hidden_irreps`. For most applications the recommended default model size is `--hidden_irreps='128x0e'` meaning 128 invariant messages or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough than you can increase it's size either to higher order equivariant features eg. `128x0e + 128x1o + 128x2e` or increasing the number of messages to `256`. 
+
+It is usually preferred to add the isolated atoms to the training set, rather than parsing in their energies like above. They should be labelled by having in the `info` field `config_type`  set to `IsolatedAtom`. If you do not want to use or do not know the isolated atom energy you should set `--model=ScaleShiftMACE` and pass in a dictionary of 0-s: `E0s='{1:0.0, 6:0.0}'` or similar. 
+
+The keyword `--swa` is used to enable an option where at the end of the training for the last ca 20% of the epochs (from `--start_swa` epochs) the loss is changed such that the energy weight is increased. This setting usually helps lower the energy errors. 
 
 ### Evaluation
 
