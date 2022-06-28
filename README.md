@@ -51,6 +51,7 @@ python ./mace/scripts/run_train.py \
     --start_swa=1200 \
     --ema \
     --ema_decay=0.99 \
+    --amsgrad \
     --restart_latest \
     --device=cuda \
 ```
