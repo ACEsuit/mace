@@ -84,7 +84,7 @@ If the keyword `--swa` is enabled, the energy weight of the loss is increased fo
 To evaluate your MACE model on an XYZ file, run the `eval_configs.py`:
 
 ```sh
-python3 ./LieACE-real/scripts/eval_configs.py \
+python3 ./mace/scripts/eval_configs.py \
     --configs="your_configs.xyz" \
     --model="your_model.model" \
     --output="./your_output.xyz"
