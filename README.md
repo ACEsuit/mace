@@ -9,11 +9,9 @@ Requirements:
 * Python >= 3.7
 * [PyTorch](https://pytorch.org/) >= 1.8
 
-
 ### conda installation
 
-If you do not have cuda pre-installed, it is **recommanded** to use the conda installation.
-To install with conda, follow the steps below:
+If you do not have CUDA pre-installed, it is **recommended** to follow the conda installation process:
 ```sh
 # Create a virtual environment and activate it
 conda create mace_env
@@ -29,23 +27,19 @@ pip install ./mace
 
 ### pip installation
 
-To install, follow the steps below:
+To install via `pip`, follow the steps below:
 ```sh
 # Create a virtual environment and activate it
-python3.8 -m venv mace-venv
+python -m venv mace-venv
 source mace-venv/bin/activate
 
-# Select CUDA version
-CUDA="cu102"  # or, for instance, "cpu"
-
-# Install PyTorch
-pip install torch==1.8.2 --extra-index-url "https://download.pytorch.org/whl/lts/1.8/${CUDA}"
+# Install PyTorch (for example, for CUDA 10.2 [cu102])
+pip install torch==1.8.2 --extra-index-url "https://download.pytorch.org/whl/lts/1.8/cu102"
 
 # Clone and install MACE (and all required packages)
 git clone git@github.com:ACEsuit/mace.git
 pip install ./mace
 ```
-
 
 **Note:** The homonymous package on [PyPI](https://pypi.org/project/MACE/) has nothing to do with this one.
 
@@ -53,7 +47,7 @@ pip install ./mace
 
 ### Training 
 
-To train a MACE model, you can use the `run_train.py` script :
+To train a MACE model, you can use the `run_train.py` script:
 
 ```sh
 python ./mace/scripts/run_train.py \
@@ -77,17 +71,17 @@ python ./mace/scripts/run_train.py \
     --device=cuda \
 ```
 
-To give a specific validation set use the keyword `--valid_file`. To set a larger batch size for evaluating the validation set use the key `--valid_batch_size`. 
+To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`. 
 
-To control the size of the model you need to change `--hidden_irreps`. For most applications the recommended default model size is `--hidden_irreps='128x0e'` meaning 128 invariant messages or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough than you can increase it's size either to higher order equivariant features eg. `128x0e + 128x1o + 128x2e` or increasing the number of messages to `256`. 
+To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='128x0e'` (meaning 128 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. 
 
-It is usually preferred to add the isolated atoms to the training set, rather than parsing in their energies like above. They should be labelled by having in the `info` field `config_type`  set to `IsolatedAtom`. If you do not want to use or do not know the isolated atom energy you should set `--model=ScaleShiftMACE` and pass in a dictionary of 0-s: `E0s='{1:0.0, 6:0.0}'` or similar. 
+It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you should set `--model=ScaleShiftMACE` and pass a dictionary of 0's, e.g., `--E0s='{1:0.0, 6:0.0}'`. 
 
-The keyword `--swa` is used to enable an option where at the end of the training for the last ca 20% of the epochs (from `--start_swa` epochs) the loss is changed such that the energy weight is increased. This setting usually helps lower the energy errors. 
+If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs). This setting usually helps lower the energy errors. 
 
 ### Evaluation
 
-To evaluate your MACE model on an xyz file, run the `eval_configs.py` :
+To evaluate your MACE model on an XYZ file, run the `eval_configs.py`:
 
 ```sh
 python3 ./LieACE-real/scripts/eval_configs.py \
@@ -136,8 +130,9 @@ If you use this code, please cite our papers:
   archiveprefix = {arXiv}
  }
 ```
+
 ## Contact
 
 If you have any questions, please contact us at ilyes.batatia@ens-paris-saclay.fr.
 
-For bugs or request of new features please use github Issues.
+For bugs or feature request, please use [GitHub Issues](https://github.com/ACEsuit/mace/issues).
