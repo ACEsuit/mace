@@ -73,11 +73,15 @@ python ./mace/scripts/run_train.py \
 
 To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`. 
 
-To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='128x0e'` (meaning 128 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. 
+To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. 
 
 It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you should set `--model=ScaleShiftMACE` and pass a dictionary of 0's, e.g., `--E0s='{1:0.0, 6:0.0}'`. 
 
 If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs). This setting usually helps lower the energy errors. 
+
+The precision can be changed using the keyword ``--default_dtype``, the default is `float64` but `float32` gives a significant speed-up (usually a factor of x2 in training).
+
+The keywords ``--batch_size`` and ``--max_num_epochs`` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $max_num_epochs*\frac{num_configs_training}{batch_size}$.
 
 ### Evaluation
 
@@ -135,4 +139,4 @@ If you use this code, please cite our papers:
 
 If you have any questions, please contact us at ilyes.batatia@ens-paris-saclay.fr.
 
-For bugs or feature request, please use [GitHub Issues](https://github.com/ACEsuit/mace/issues).
+For bugs or feature requests, please use [GitHub Issues](https://github.com/ACEsuit/mace/issues).
