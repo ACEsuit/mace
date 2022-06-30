@@ -81,7 +81,7 @@ If the keyword `--swa` is enabled, the energy weight of the loss is increased fo
 
 The precision can be changed using the keyword ``--default_dtype``, the default is `float64` but `float32` gives a significant speed-up (usually a factor of x2 in training).
 
-The keywords ``--batch_size`` and ``--max_num_epochs`` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $max_num_epochs*\frac{num_configs_training}{batch_size}$.
+The keywords ``--batch_size`` and ``--max_num_epochs`` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $\text{max-num-epochs}*\frac{\text{num-configs-training}}{\text{batch-size}}$.
 
 ### Evaluation
 
