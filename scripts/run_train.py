@@ -173,6 +173,8 @@ def main() -> None:
         loss_fn = modules.WeightedEnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
         )
+    elif args.loss == "forces_only":
+        loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
     else:
         loss_fn = modules.EnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
@@ -331,6 +333,8 @@ def main() -> None:
 
     swa: Optional[tools.SWAContainer] = None
     if args.swa:
+        if args.loss == "forces_only":
+            logging.info("Can not select swa with forces only loss.")
         loss_fn_energy = modules.WeightedEnergyForcesLoss(
             energy_weight=args.swa_energy_weight, forces_weight=args.swa_forces_weight
         )
