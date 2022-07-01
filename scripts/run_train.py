@@ -107,12 +107,19 @@ def main() -> None:
     device = tools.init_device(args.device)
     tools.set_default_dtype(args.default_dtype)
 
+    try:
+        config_type_weights = ast.literal_eval(args.config_type_weights)
+        assert type(config_type_weights) == dict
+    except:
+        logging.warn("Config type weights not specified correctly, using Default")
+        config_type_weights = {"Default":1.0}
+
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
         train_path=args.train_file,
         valid_path=args.valid_file,
         valid_fraction=args.valid_fraction,
-        config_type_weights=ast.literal_eval(args.config_type_weights),
+        config_type_weights=config_type_weights,
         test_path=args.test_file,
         seed=args.seed,
         energy_key=args.energy_key,
@@ -139,7 +146,16 @@ def main() -> None:
             logging.info(
                 "Atomic Energies not in training file, using command line argument E0s"
             )
-            atomic_energies_dict = ast.literal_eval(args.E0s)
+            if args.E0s.lowercase() == "average":
+                raise NotImplementedError
+            else:
+                try:
+                    atomic_energies_dict = ast.literal_eval(args.E0s)
+                    assert type(atomic_energies_dict) == dict
+                except:
+                    raise RuntimeError(
+                        "E0s specified invalidly"
+                    )
         else:
             raise RuntimeError(
                 "E0s not found in training file and not specified in command line"
