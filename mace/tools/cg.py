@@ -4,6 +4,8 @@ from typing import List, Union
 import torch
 from e3nn import o3
 
+# Based on e3nn
+
 _TP = collections.namedtuple("_TP", "op, args")
 _INPUT = collections.namedtuple("_INPUT", "tensor, start, stop")
 

@@ -177,7 +177,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--loss",
         help="type of loss",
         default="weighted",
-        choices=["ef", "ace", "weighted"],
+        choices=["ef", "weighted", "forces_only"],
     )
     parser.add_argument(
         "--forces_weight", help="weight of forces loss", type=float, default=10.0
