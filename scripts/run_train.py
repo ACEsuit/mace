@@ -76,7 +76,7 @@ def get_dataset_from_xyz(
         # create list of tuples (config_type, list(Atoms))
         test_configs = data.test_config_types(all_test_configs)
         logging.info(
-            f"Loaded {len(all_test_configs)} test configurations from '{train_path}'"
+            f"Loaded {len(all_test_configs)} test configurations from '{test_path}'"
         )
     return (
         SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
@@ -146,8 +146,10 @@ def main() -> None:
             logging.info(
                 "Atomic Energies not in training file, using command line argument E0s"
             )
-            if args.E0s.lowercase() == "average":
-                raise NotImplementedError
+            if args.E0s.lower() == "average":
+                logging.info("Computing average Atomic Energies using least squares regression")
+                atomic_energies_dict = data.utils.compute_average_E0s(
+                                        collections.train, z_table)
             else:
                 try:
                     atomic_energies_dict = ast.literal_eval(args.E0s)
