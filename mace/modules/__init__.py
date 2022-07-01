@@ -1,4 +1,5 @@
-from typing import Callable, Dict, Type
+from typing import Callable, Dict, Optional, Type
+import torch
 
 from .blocks import (
     AgnosticNonlinearInteractionBlock,
@@ -36,6 +37,13 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
 scaling_classes: Dict[str, Callable] = {
     "std_scaling": compute_mean_std_atomic_inter_energy,
     "rms_forces_scaling": compute_mean_rms_energy_forces,
+}
+
+gate_dict: Dict[str, Optional[Callable]] = {
+    "abs": torch.abs,
+    "tanh": torch.tanh,
+    "silu": torch.nn.functional.silu,
+    "None": None,
 }
 
 __all__ = [
