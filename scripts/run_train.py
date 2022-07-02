@@ -110,8 +110,10 @@ def main() -> None:
     try:
         config_type_weights = ast.literal_eval(args.config_type_weights)
         assert isinstance(config_type_weights, dict)
-    except:
-        logging.warning("Config type weights not specified correctly, using Default")
+    except Exception as e:  # pylint: disable=W0703
+        logging.warning(
+            f"Config type weights not specified correctly ({e}), using Default"
+        )
         config_type_weights = {"Default": 1.0}
 
     # Data preparation
@@ -150,15 +152,17 @@ def main() -> None:
                 logging.info(
                     "Computing average Atomic Energies using least squares regression"
                 )
-                atomic_energies_dict = data.utils.compute_average_E0s(
+                atomic_energies_dict = data.compute_average_E0s(
                     collections.train, z_table
                 )
             else:
                 try:
                     atomic_energies_dict = ast.literal_eval(args.E0s)
                     assert isinstance(atomic_energies_dict, dict)
-                except:
-                    raise RuntimeError("E0s specified invalidly")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"E0s specified invalidly, error {e} occured"
+                    ) from e
         else:
             raise RuntimeError(
                 "E0s not found in training file and not specified in command line"
