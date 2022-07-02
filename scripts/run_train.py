@@ -109,10 +109,10 @@ def main() -> None:
 
     try:
         config_type_weights = ast.literal_eval(args.config_type_weights)
-        assert type(config_type_weights) == dict
+        assert isinstance(config_type_weights, dict)
     except:
-        logging.warn("Config type weights not specified correctly, using Default")
-        config_type_weights = {"Default":1.0}
+        logging.warning("Config type weights not specified correctly, using Default")
+        config_type_weights = {"Default": 1.0}
 
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
@@ -147,17 +147,18 @@ def main() -> None:
                 "Atomic Energies not in training file, using command line argument E0s"
             )
             if args.E0s.lower() == "average":
-                logging.info("Computing average Atomic Energies using least squares regression")
+                logging.info(
+                    "Computing average Atomic Energies using least squares regression"
+                )
                 atomic_energies_dict = data.utils.compute_average_E0s(
-                                        collections.train, z_table)
+                    collections.train, z_table
+                )
             else:
                 try:
                     atomic_energies_dict = ast.literal_eval(args.E0s)
-                    assert type(atomic_energies_dict) == dict
+                    assert isinstance(atomic_energies_dict, dict)
                 except:
-                    raise RuntimeError(
-                        "E0s specified invalidly"
-                    )
+                    raise RuntimeError("E0s specified invalidly")
         else:
             raise RuntimeError(
                 "E0s not found in training file and not specified in command line"
