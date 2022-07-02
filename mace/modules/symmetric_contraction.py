@@ -21,7 +21,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         path_normalization: str = "element",
         device: str = "cpu",
         internal_weights: Optional[bool] = None,
-        shared_weights: Optional[bool] = None,
+        shared_weights: Optional[torch.Tensor] = None,
         element_dependent: Optional[bool] = None,
         num_elements: Optional[int] = None,
     ) -> None:
