@@ -43,6 +43,7 @@ def train(
 ):
     lowest_loss = np.inf
     patience_counter = 0
+    swa_start = True
 
     if max_grad_norm is not None:
         logging.info(f"Using gradient clipping with tolerance={max_grad_norm:.3f}")
@@ -112,6 +113,9 @@ def train(
         if swa is None or epoch < swa.start:
             lr_scheduler.step(valid_loss)  # Can break if exponential LR, TODO fix that!
         else:
+            if swa_start:
+                logging.info("Changing loss based on SWA")
+                swa_start = False
             loss_fn = swa.loss_fn
             swa.model.update_parameters(model)
             swa.scheduler.step()

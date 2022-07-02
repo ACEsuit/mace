@@ -6,6 +6,8 @@ import ase.data
 import ase.io
 import numpy as np
 
+from mace.tools import AtomicNumberTable
+
 Vector = np.ndarray  # [3,]
 Positions = np.ndarray  # [..., 3]
 Forces = np.ndarray  # [..., 3]
@@ -163,3 +165,33 @@ def load_from_xyz(
         forces_key=forces_key,
     )
     return atomic_energies_dict, configs
+
+
+def compute_average_E0s(
+    collections_train: Configuration, z_table: AtomicNumberTable
+) -> dict:
+    """
+    Function to compute the average interaction energy of each chemical element
+    returns dictionary of E0s
+    """
+    len_train = len(collections_train)
+    len_zs = len(z_table)
+    A = np.zeros((len_train, len_zs))
+    B = np.zeros(len_train)
+    for i in range(len_train):
+        B[i] = collections_train[i].energy
+        for j, z in enumerate(z_table.zs):
+            A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
+    try:
+        E0s = np.linalg.lstsq(A, B, rcond=None)[0]
+        atomic_energies_dict = {}
+        for i, z in enumerate(z_table.zs):
+            atomic_energies_dict[z] = E0s[i]
+    except np.linalg.LinAlgError:
+        logging.warning(
+            "Failed to compute E0s using least squares regression, using the same for all atoms"
+        )
+        atomic_energies_dict = {}
+        for i, z in enumerate(z_table.zs):
+            atomic_energies_dict[z] = 0.0
+    return atomic_energies_dict
