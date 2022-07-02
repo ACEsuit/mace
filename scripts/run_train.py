@@ -76,7 +76,7 @@ def get_dataset_from_xyz(
         # create list of tuples (config_type, list(Atoms))
         test_configs = data.test_config_types(all_test_configs)
         logging.info(
-            f"Loaded {len(all_test_configs)} test configurations from '{train_path}'"
+            f"Loaded {len(all_test_configs)} test configurations from '{test_path}'"
         )
     return (
         SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
@@ -99,12 +99,21 @@ def main() -> None:
     device = tools.init_device(args.device)
     tools.set_default_dtype(args.default_dtype)
 
+    try:
+        config_type_weights = ast.literal_eval(args.config_type_weights)
+        assert isinstance(config_type_weights, dict)
+    except Exception as e:  # pylint: disable=W0703
+        logging.warning(
+            f"Config type weights not specified correctly ({e}), using Default"
+        )
+        config_type_weights = {"Default": 1.0}
+
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
         train_path=args.train_file,
         valid_path=args.valid_file,
         valid_fraction=args.valid_fraction,
-        config_type_weights=ast.literal_eval(args.config_type_weights),
+        config_type_weights=config_type_weights,
         test_path=args.test_file,
         seed=args.seed,
         energy_key=args.energy_key,
@@ -131,7 +140,21 @@ def main() -> None:
             logging.info(
                 "Atomic Energies not in training file, using command line argument E0s"
             )
-            atomic_energies_dict = ast.literal_eval(args.E0s)
+            if args.E0s.lower() == "average":
+                logging.info(
+                    "Computing average Atomic Energies using least squares regression"
+                )
+                atomic_energies_dict = data.compute_average_E0s(
+                    collections.train, z_table
+                )
+            else:
+                try:
+                    atomic_energies_dict = ast.literal_eval(args.E0s)
+                    assert isinstance(atomic_energies_dict, dict)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"E0s specified invalidly, error {e} occured"
+                    ) from e
         else:
             raise RuntimeError(
                 "E0s not found in training file and not specified in command line"
