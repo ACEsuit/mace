@@ -168,8 +168,8 @@ def load_from_xyz(
 
 
 def compute_average_E0s(
-    collections_train: Configuration, z_table: AtomicNumberTable
-) -> dict:
+    collections_train: Configurations, z_table: AtomicNumberTable
+) -> Dict[int, float]:
     """
     Function to compute the average interaction energy of each chemical element
     returns dictionary of E0s
