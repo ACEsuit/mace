@@ -107,7 +107,11 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="32x0e",
     )
     parser.add_argument(
-        "--gate", help="non linearity for last readout", type=str, default="silu"
+        "--gate",
+        help="non linearity for last readout",
+        type=str,
+        default="silu",
+        choices=["silu", "tanh", "abs", "None"],
     )
     parser.add_argument(
         "--scaling",
@@ -246,7 +250,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--swa",
-        help="use Stochastic Weight Averaging",
+        help="use Stochastic Weight Averaging, which decreases the learning rate and increases the energy weight at the end of the training to help converge them",
         action="store_true",
         default=False,
     )
