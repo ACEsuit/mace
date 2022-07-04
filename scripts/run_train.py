@@ -7,13 +7,14 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch.nn.functional
 from e3nn import o3
-from prettytable import PrettyTable
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
 
 import mace
 from mace import data, modules, tools
 from mace.tools import torch_geometric
+
+from utils import create_error_table
 
 
 @dataclasses.dataclass
@@ -403,11 +404,21 @@ def main() -> None:
     # Evaluation on test datasets
     logging.info("Computing metrics for training, validation, and test sets")
 
-    all_collections = [("train", collections.train), ("valid", collections.valid),
-                        ] + collections.tests
+    all_collections = [
+        ("train", collections.train),
+        ("valid", collections.valid),
+    ] + collections.tests
 
-    table = tools.create_error_table(args.error_table, all_collections,  z_table, args.r_max, 
-                                args.valid_batch_size, model, loss_fn, device)
+    table = create_error_table(
+        args.error_table,
+        all_collections,
+        z_table,
+        args.r_max,
+        args.valid_batch_size,
+        model,
+        loss_fn,
+        device,
+    )
 
     logging.info("\n" + str(table))
 
