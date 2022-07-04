@@ -403,29 +403,11 @@ def main() -> None:
     # Evaluation on test datasets
     logging.info("Computing metrics for training, validation, and test sets")
 
-    table = PrettyTable()
-    table.field_names = ["config_type", "rmse E / meV", "rmse F / meV / A"]
-    for name, subset in [
-        ("train", collections.train),
-        ("valid", collections.valid),
-    ] + collections.tests:
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
-                for config in subset
-            ],
-            batch_size=args.valid_batch_size,
-            shuffle=False,
-            drop_last=False,
-        )
+    all_collections = [("train", collections.train), ("valid", collections.valid),
+                        ] + collections.tests
 
-        logging.info(f"Evaluating {name} ...")
-        _, metrics = tools.evaluate(
-            model, loss_fn=loss_fn, data_loader=data_loader, device=device
-        )
-        table.add_row(
-            [name, f"{metrics['rmse_e'] * 1000:.1f}", f"{metrics['rmse_f'] * 1000:.1f}"]
-        )
+    table = tools.create_error_table(args.error_table, all_collections,  z_table, args.r_max, 
+                                args.valid_batch_size, model, loss_fn, device)
 
     logging.info("\n" + str(table))
 

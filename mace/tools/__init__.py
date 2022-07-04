@@ -17,12 +17,15 @@ from .utils import (
     atomic_numbers_to_indices,
     compute_c,
     compute_mae,
+    compute_rel_mae,
     compute_q95,
     compute_rmse,
+    compute_rel_rmse,
     get_atomic_number_table_from_zs,
     get_optimizer,
     get_tag,
     setup_logger,
+    create_error_table,
 )
 
 __all__ = [
@@ -48,8 +51,11 @@ __all__ = [
     "CheckpointState",
     "set_default_dtype",
     "compute_mae",
+    "compute_rel_mae",
     "compute_rmse",
+    "compute_rel_rmse",
     "compute_q95",
     "compute_c",
     "U_matrix_real",
+    "create_error_table"
 ]
