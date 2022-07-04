@@ -12,7 +12,14 @@ from torch_ema import ExponentialMovingAverage
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
 from .torch_tools import tensor_dict_to_device, to_numpy
-from .utils import MetricsLogger, compute_mae, compute_q95, compute_rel_mae, compute_rel_rmse, compute_rmse
+from .utils import (
+    MetricsLogger,
+    compute_mae,
+    compute_q95,
+    compute_rel_mae,
+    compute_rel_rmse,
+    compute_rmse,
+)
 
 
 @dataclasses.dataclass
@@ -177,7 +184,9 @@ def evaluate(
         total_loss += to_numpy(loss).item()
 
         delta_es_list.append(batch.energy - output["energy"])
-        delta_es_per_atom_list.append((batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1]))
+        delta_es_per_atom_list.append(
+            (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
+        )
         delta_fs_list.append(batch.forces - output["forces"])
         fs_list.append(batch.forces)
 
