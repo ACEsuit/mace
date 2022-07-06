@@ -43,6 +43,14 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
+    parser.add_argument(
+        "--error_table",
+        help="Type of error table produced at the end of the training",
+        type=str,
+        choices=["PerAtomRMSE", "TotalRMSE", "PerAtomMAE", "TotalMAE"],
+        default="PerAtomRMSE",
+    )
+
     # Model
     parser.add_argument(
         "--model",
@@ -256,9 +264,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--start_swa",
-        help="amount of epochs before using swa",
+        help="Number of epochs before switching to swa",
         type=int,
-        default=20000,
+        default=None,
     )
     parser.add_argument(
         "--ema",
