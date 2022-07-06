@@ -279,6 +279,10 @@ def main() -> None:
 
     swa: Optional[tools.SWAContainer] = None
     if args.swa:
+        if args.start_swa is None:
+            args.start_swa = (
+                args.max_num_epochs // 4 * 3
+            )  # if not set start swa at 75% of training
         if args.loss == "forces_only":
             logging.info("Can not select swa with forces only loss.")
         loss_fn_energy = modules.WeightedEnergyForcesLoss(
@@ -324,6 +328,7 @@ def main() -> None:
         swa=swa,
         ema=ema,
         max_grad_norm=args.clip_grad,
+        log_errors=args.error_table,
     )
 
     epoch = checkpoint_handler.load_latest(
