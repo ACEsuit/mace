@@ -43,6 +43,14 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
+    parser.add_argument(
+        "--error_table",
+        help="Type of error table produced at the end of the training",
+        type=str,
+        choices=["PerAtomRMSE", "TotalRMSE", "PerAtomMAE", "TotalMAE"],
+        default="PerAtomRMSE",
+    )
+
     # Model
     parser.add_argument(
         "--model",
@@ -107,7 +115,11 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="32x0e",
     )
     parser.add_argument(
-        "--gate", help="non linearity for last readout", type=str, default="silu"
+        "--gate",
+        help="non linearity for last readout",
+        type=str,
+        default="silu",
+        choices=["silu", "tanh", "abs", "None"],
     )
     parser.add_argument(
         "--scaling",
@@ -246,15 +258,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--swa",
-        help="use Stochastic Weight Averaging",
+        help="use Stochastic Weight Averaging, which decreases the learning rate and increases the energy weight at the end of the training to help converge them",
         action="store_true",
         default=False,
     )
     parser.add_argument(
         "--start_swa",
-        help="amount of epochs before using swa",
+        help="Number of epochs before switching to swa",
         type=int,
-        default=20000,
+        default=None,
     )
     parser.add_argument(
         "--ema",
