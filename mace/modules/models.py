@@ -248,7 +248,7 @@ class ScaleShiftMACE(MACE):
         output = {
             "energy": total_e,
             "forces": compute_forces(
-                energy=total_e, positions=data.positions, training=training
+                energy=inter_e, positions=data.positions, training=training
             ),
         }
 
@@ -437,7 +437,7 @@ class ScaleShiftBOTNet(BOTNet):
         output = {
             "energy": total_e,
             "forces": compute_forces(
-                energy=total_e, positions=data.positions, training=training
+                energy=inter_e, positions=data.positions, training=training
             ),
         }
 
