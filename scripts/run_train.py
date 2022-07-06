@@ -1,87 +1,18 @@
 import ast
-import dataclasses
 import logging
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import torch.nn.functional
 from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
-from utils import create_error_table
+from utils import create_error_table, get_dataset_from_xyz
 
 import mace
 from mace import data, modules, tools
 from mace.tools import torch_geometric
-
-
-@dataclasses.dataclass
-class SubsetCollection:
-    train: data.Configurations
-    valid: data.Configurations
-    tests: List[Tuple[str, data.Configurations]]
-
-
-def get_dataset_from_xyz(
-    train_path: str,
-    valid_path: str,
-    valid_fraction: float,
-    config_type_weights: Dict,
-    test_path: str = None,
-    seed: int = 1234,
-    energy_key: str = "energy",
-    forces_key: str = "forces",
-) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
-    """Load training and test dataset from xyz file"""
-    atomic_energies_dict, all_train_configs = data.load_from_xyz(
-        file_path=train_path,
-        config_type_weights=config_type_weights,
-        energy_key=energy_key,
-        forces_key=forces_key,
-        extract_atomic_energies=True,
-    )
-    logging.info(
-        f"Loaded {len(all_train_configs)} training configurations from '{train_path}'"
-    )
-    if valid_path is not None:
-        _, valid_configs = data.load_from_xyz(
-            file_path=valid_path,
-            config_type_weights=config_type_weights,
-            energy_key=energy_key,
-            forces_key=forces_key,
-            extract_atomic_energies=False,
-        )
-        logging.info(
-            f"Loaded {len(valid_configs)} validation configurations from '{valid_path}'"
-        )
-        train_configs = all_train_configs
-    else:
-        logging.info(
-            "Using random %s%% of training set for validation", 100 * valid_fraction
-        )
-        train_configs, valid_configs = data.random_train_valid_split(
-            all_train_configs, valid_fraction, seed
-        )
-
-    test_configs = []
-    if test_path is not None:
-        _, all_test_configs = data.load_from_xyz(
-            file_path=test_path,
-            config_type_weights=config_type_weights,
-            energy_key=energy_key,
-            forces_key=forces_key,
-            extract_atomic_energies=False,
-        )
-        # create list of tuples (config_type, list(Atoms))
-        test_configs = data.test_config_types(all_test_configs)
-        logging.info(
-            f"Loaded {len(all_test_configs)} test configurations from '{test_path}'"
-        )
-    return (
-        SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
-        atomic_energies_dict,
-    )
 
 
 def main() -> None:
