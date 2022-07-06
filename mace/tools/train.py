@@ -44,6 +44,7 @@ def train(
     logger: MetricsLogger,
     eval_interval: int,
     device: torch.device,
+    log_errors: str,
     swa: Optional[SWAContainer] = None,
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
@@ -91,9 +92,30 @@ def train(
             eval_metrics["mode"] = "eval"
             eval_metrics["epoch"] = epoch
             logger.log(eval_metrics)
-
-            logging.info(f"Epoch {epoch}: loss={valid_loss:.4f}")
-
+            if log_errors == "PerAtomRMSE":
+                error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+                error_f = eval_metrics["rmse_f"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
+                )
+            elif log_errors == "TotalRMSE":
+                error_e = eval_metrics["rmse_e"] * 1e3
+                error_f = eval_metrics["rmse_f"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
+                )
+            elif log_errors == "PerAtomMAE":
+                error_e = eval_metrics["mae_e_per_atom"] * 1e3
+                error_f = eval_metrics["mae_f"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E_per_atom={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+                )
+            elif log_errors == "TotalMAE":
+                error_e = eval_metrics["mae_e"] * 1e3
+                error_f = eval_metrics["mae_f"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+                )
             if valid_loss >= lowest_loss:
                 patience_counter += 1
                 if patience_counter >= patience:

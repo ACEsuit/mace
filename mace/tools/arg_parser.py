@@ -264,9 +264,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--start_swa",
-        help="amount of epochs before using swa",
+        help="Number of epochs before switching to swa",
         type=int,
-        default=20000,
+        default=None,
     )
     parser.add_argument(
         "--ema",
