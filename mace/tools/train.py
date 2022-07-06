@@ -12,7 +12,14 @@ from torch_ema import ExponentialMovingAverage
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
 from .torch_tools import tensor_dict_to_device, to_numpy
-from .utils import MetricsLogger, compute_mae, compute_q95, compute_rmse
+from .utils import (
+    MetricsLogger,
+    compute_mae,
+    compute_q95,
+    compute_rel_mae,
+    compute_rel_rmse,
+    compute_rmse,
+)
 
 
 @dataclasses.dataclass
@@ -37,6 +44,7 @@ def train(
     logger: MetricsLogger,
     eval_interval: int,
     device: torch.device,
+    log_errors: str,
     swa: Optional[SWAContainer] = None,
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
@@ -84,9 +92,30 @@ def train(
             eval_metrics["mode"] = "eval"
             eval_metrics["epoch"] = epoch
             logger.log(eval_metrics)
-
-            logging.info(f"Epoch {epoch}: loss={valid_loss:.4f}")
-
+            if log_errors == "PerAtomRMSE":
+                error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+                error_f = eval_metrics["rmse_f"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
+                )
+            elif log_errors == "TotalRMSE":
+                error_e = eval_metrics["rmse_e"] * 1e3
+                error_f = eval_metrics["rmse_f"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
+                )
+            elif log_errors == "PerAtomMAE":
+                error_e = eval_metrics["mae_e_per_atom"] * 1e3
+                error_f = eval_metrics["mae_f"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E_per_atom={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+                )
+            elif log_errors == "TotalMAE":
+                error_e = eval_metrics["mae_e"] * 1e3
+                error_f = eval_metrics["mae_f"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+                )
             if valid_loss >= lowest_loss:
                 patience_counter += 1
                 if patience_counter >= patience:
@@ -162,7 +191,9 @@ def evaluate(
 ) -> Tuple[float, Dict[str, Any]]:
     total_loss = 0.0
     delta_es_list = []
+    delta_es_per_atom_list = []
     delta_fs_list = []
+    fs_list = []
 
     start_time = time.time()
     for batch in data_loader:
@@ -175,21 +206,31 @@ def evaluate(
         total_loss += to_numpy(loss).item()
 
         delta_es_list.append(batch.energy - output["energy"])
+        delta_es_per_atom_list.append(
+            (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
+        )
         delta_fs_list.append(batch.forces - output["forces"])
+        fs_list.append(batch.forces)
 
     avg_loss = total_loss / len(data_loader)
 
     delta_es = to_numpy(torch.cat(delta_es_list, dim=0))
+    delta_es_per_atom = to_numpy(torch.cat(delta_es_per_atom_list, dim=0))
     delta_fs = to_numpy(torch.cat(delta_fs_list, dim=0))
+    fs = to_numpy(torch.cat(fs_list, dim=0))
 
     aux = {
         "loss": avg_loss,
         # Mean absolute error
         "mae_e": compute_mae(delta_es),
+        "mae_e_per_atom": compute_mae(delta_es_per_atom),
         "mae_f": compute_mae(delta_fs),
+        "rel_mae_f": compute_rel_mae(delta_fs, fs),
         # Root-mean-square error
         "rmse_e": compute_rmse(delta_es),
+        "rmse_e_per_atom": compute_rmse(delta_es_per_atom),
         "rmse_f": compute_rmse(delta_fs),
+        "rel_rmse_f": compute_rel_rmse(delta_fs, fs),
         # Q_95
         "q95_e": compute_q95(delta_es),
         "q95_f": compute_q95(delta_fs),
