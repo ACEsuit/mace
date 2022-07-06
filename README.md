@@ -50,7 +50,7 @@ pip install ./mace
 To train a MACE model, you can use the `run_train.py` script:
 
 ```sh
-python ./mace/scripts/run_train.py \
+python -m mace.scripts.run_train  \
     --name="MACE_model" \
     --train_file="train.xyz" \
     --valid_fraction=0.05 \
@@ -88,7 +88,7 @@ The keywords ``--batch_size`` and ``--max_num_epochs`` should be adapted based o
 To evaluate your MACE model on an XYZ file, run the `eval_configs.py`:
 
 ```sh
-python3 ./mace/scripts/eval_configs.py \
+python3 mace.scripts.eval_configs \
     --configs="your_configs.xyz" \
     --model="your_model.model" \
     --output="./your_output.xyz"
