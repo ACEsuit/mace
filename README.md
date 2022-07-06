@@ -140,3 +140,7 @@ If you use this code, please cite our papers:
 If you have any questions, please contact us at ilyes.batatia@ens-paris-saclay.fr.
 
 For bugs or feature requests, please use [GitHub Issues](https://github.com/ACEsuit/mace/issues).
+
+## License
+
+[ASL License](ASL.md)
