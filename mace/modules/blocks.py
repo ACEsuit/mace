@@ -100,7 +100,6 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         correlation: Union[int, Dict[str, int]],
         element_dependent: bool = True,
         use_sc: bool = True,
-        device: str = "cpu",
         num_elements: Optional[int] = None,
     ) -> None:
         super().__init__()
@@ -112,7 +111,6 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             correlation=correlation,
             element_dependent=element_dependent,
             num_elements=num_elements,
-            device=device,
         )
         # Update linear
         self.linear = o3.Linear(
