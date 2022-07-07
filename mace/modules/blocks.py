@@ -170,8 +170,7 @@ class InteractionBlock(ABC, torch.nn.Module):
         raise NotImplementedError
 
 
-nonlinearities = {1: torch.nn.functional.silu, -1: torch.tanh}
-
+nonlinearities = {1: torch.nn.SiLU(), -1: torch.nn.Tanh()}
 
 class TensorProductWeightsBlock(torch.nn.Module):
     def __init__(self, num_elements: int, num_edge_feats: int, num_feats_out: int):
@@ -287,7 +286,7 @@ class AgnosticNonlinearInteractionBlock(InteractionBlock):
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
             [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
-            torch.nn.functional.silu,
+            torch.nn.SiLU(),
         )
 
         # Linear
@@ -352,7 +351,7 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
             [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
-            torch.nn.functional.silu,
+            torch.nn.SiLU(),
         )
 
         # Linear
@@ -420,7 +419,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
             [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
-            torch.nn.functional.silu,
+            torch.nn.SiLU(),
         )
 
         # Linear
@@ -492,7 +491,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
             [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
-            torch.nn.functional.silu,
+            torch.nn.SiLU(),
         )
 
         # Linear
