@@ -41,7 +41,6 @@ class MACE(torch.nn.Module):
         device: str = "cpu",
     ):
         super().__init__()
-        self.dtype = torch.get_default_dtype()
         self.r_max = r_max
         self.atomic_numbers = atomic_numbers
         # Embedding
