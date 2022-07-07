@@ -170,6 +170,7 @@ class InteractionBlock(ABC, torch.nn.Module):
 
 nonlinearities = {1: torch.nn.SiLU(), -1: torch.nn.Tanh()}
 
+
 class TensorProductWeightsBlock(torch.nn.Module):
     def __init__(self, num_elements: int, num_edge_feats: int, num_feats_out: int):
         super().__init__()
