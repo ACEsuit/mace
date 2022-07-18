@@ -175,6 +175,18 @@ def main() -> None:
         )
     elif args.loss == "forces_only":
         loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
+    elif args.loss == "virials":
+        loss_fn = modules.WeightedEnergyForcesVirialsLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            virials_weights=args.virials_weight,
+        )
+    elif args.loss == "stress":
+        loss_fn = modules.WeightedEnergyForcesStressLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+        )
     else:
         loss_fn = modules.EnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight

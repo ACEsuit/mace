@@ -18,12 +18,21 @@ def weighted_mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Te
     )  # []
 
 
-def weighted_mean_squared_stress_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
+def weighted_mean_squared_stress(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
     configs_weight = ref.weight  # [n_graphs, ]
     num_atoms = ref.ptr[1:] - ref.ptr[:-1]  # [n_graphs,]
     return torch.mean(
         configs_weight * torch.square((ref["stress"] - pred["stress"]) / num_atoms)
+    )  # []
+
+
+def weighted_mean_squared_virials(ref: Batch, pred: TensorDict) -> torch.Tensor:
+    # energy: [n_graphs, ]
+    configs_weight = ref.weight  # [n_graphs, ]
+    num_atoms = ref.ptr[1:] - ref.ptr[:-1]  # [n_graphs,]
+    return torch.mean(
+        configs_weight * torch.square((ref["virials"] - pred["virials"]) / num_atoms)
     )  # []
 
 
@@ -122,11 +131,43 @@ class WeightedEnergyForcesStressLoss(torch.nn.Module):
         return (
             self.energy_weight * weighted_mean_squared_error_energy(ref, pred)
             + self.forces_weight * mean_squared_error_forces(ref, pred)
-            + self.stress_weight * weighted_mean_squared_stress_energy(ref, pred)
+            + self.stress_weight * weighted_mean_squared_stress(ref, pred)
         )
 
     def __repr__(self):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
             f"forces_weight={self.forces_weight:.3f}), stress_weight={self.stress_weight:.3f}"
+        )
+
+
+class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
+    def __init__(
+        self, energy_weight=1.0, forces_weight=1.0, virials_weight=1.0
+    ) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "virials_weight",
+            torch.tensor(virials_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        return (
+            self.energy_weight * weighted_mean_squared_error_energy(ref, pred)
+            + self.forces_weight * mean_squared_error_forces(ref, pred)
+            + self.virials_weight * weighted_mean_squared_virials(ref, pred)
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}), virials_weight={self.virials_weight:.3f}"
         )

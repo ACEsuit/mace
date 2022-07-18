@@ -189,7 +189,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--loss",
         help="type of loss",
         default="weighted",
-        choices=["ef", "weighted", "forces_only"],
+        choices=["ef", "weighted", "forces_only", "virials", "stress"],
     )
     parser.add_argument(
         "--forces_weight", help="weight of forces loss", type=float, default=10.0
@@ -208,6 +208,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="weight of energy loss after starting swa",
         type=float,
         default=1000.0,
+    )
+    parser.add_argument(
+        "--virials_weight", help="weight of virials loss", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--stress_weight", help="weight of virials loss", type=float, default=1.0
     )
     parser.add_argument(
         "--config_type_weights",
