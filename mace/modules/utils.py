@@ -1,5 +1,5 @@
 import logging
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -30,6 +30,134 @@ def compute_forces(
         logging.warning("Gradient is None, padded with zeros")
         return torch.zeros_like(positions)
     return -1 * gradient
+
+
+def compute_forces_virials(
+    energy: torch.Tensor,
+    positions: torch.Tensor,
+    displacement: torch.Tensor,
+    cell: Optional[torch.Tensor],
+    training=True,
+    compute_stress=False,
+) -> torch.Tensor:
+    forces, virials = torch.autograd.grad(
+        outputs=energy,  # [n_graphs, ]
+        inputs=[positions, displacement],  # [n_nodes, 3]
+        grad_outputs=torch.ones_like(energy),
+        retain_graph=training,  # Make sure the graph is not destroyed during training
+        create_graph=training,  # Create graph for second derivative
+        only_inputs=True,  # Diff only w.r.t. inputs
+        allow_unused=True,
+    )
+    stress = None
+    if compute_stress:
+        cell = cell.view(-1, 3, 3)
+        volume = torch.einsum(
+            "zi,zi->z",
+            cell[:, 0, :],
+            torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
+        ).unsqueeze(-1)
+        stress = virials / volume.view(-1, 1, 1)
+    if forces is None and virials is None:
+        logging.warning("Gradient is None, padded with zeros")
+        return torch.zeros_like(positions), torch.zeros_like(positions).expand(1, 1, 3)
+    elif forces is not None and virials is None:
+        logging.warning("Virial is None, padded with zeros")
+        return -1 * forces, torch.zeros_like(positions).expand(1, 1, 3)
+    elif forces is None and virials is not None:
+        logging.warning("Virial is None, padded with zeros")
+        return torch.zeros_like(positions), -1 * virials
+    return -1 * forces, -1 * virials, stress
+
+
+def get_edge_vectors_and_lengths(
+    positions: torch.Tensor,  # [n_nodes, 3]
+    edge_index: torch.Tensor,  # [2, n_edges]
+    shifts: torch.Tensor,  # [n_edges, 3]
+    normalize: bool = False,
+    eps: float = 1e-9,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    sender, receiver = edge_index
+    # From ase.neighborlist:
+    # D = positions[j]-positions[i]+S.dot(cell)
+    # where shifts = S.dot(cell)
+    vectors = positions[receiver] - positions[sender] + shifts  # [n_edges, 3]
+    lengths = torch.linalg.norm(vectors, dim=-1, keepdim=True)  # [n_edges, 1]
+    if normalize:
+        vectors_normed = vectors / (lengths + eps)
+        return vectors_normed, lengths
+
+    return vectors, lengths
+
+
+def get_symmetric_displacement(
+    positions: torch.Tensor,
+    unit_shifts: torch.Tensor,
+    cell: torch.Tensor,
+    edge_index: torch.Tensor,
+    num_graphs: torch.Tensor,
+    batch: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if cell is None:
+        logging.info("Virial required but no cell provided")
+        cell = torch.zeros(
+            num_graphs * 3,
+            3,
+            dtype=positions.dtype,
+            device=positions.device,
+        )
+    sender = edge_index[0]
+    displacement = torch.zeros(
+        (num_graphs, 3, 3),
+        dtype=positions.dtype,
+        device=positions.device,
+        requires_grad=True,
+    )
+    symmetric_displacement = 0.5 * (
+        displacement + displacement.transpose(-1, -2)
+    )  # From https://github.com/mir-group/nequip
+    positions = positions + torch.einsum(
+        "be,bec->bc", positions, symmetric_displacement[batch]
+    )
+    cell = cell.view(-1, 3, 3)
+    cell = cell + torch.matmul(cell, symmetric_displacement)
+    shifts = torch.einsum(
+        "be,bec->bc",
+        unit_shifts,
+        cell[batch[sender]],
+    )
+    return positions, shifts, displacement
+
+
+def get_outputs(
+    energy: torch.Tensor,
+    positions: torch.Tensor,
+    displacement: Optional[torch.Tensor],
+    cell: Optional[torch.Tensor],
+    training: bool = False,
+    compute_force: bool = True,
+    compute_virials: bool = True,
+    compute_stress: bool = True,
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+    if compute_force and compute_virials:
+        forces, virials, stress = compute_forces_virials(
+            energy=energy,
+            positions=positions,
+            displacement=displacement,
+            cell=cell,
+            compute_stress=compute_stress,
+            training=training,
+        )
+    elif compute_force and not compute_stress:
+        forces, virials, stress = (
+            compute_forces(energy=energy, positions=positions, training=training),
+            None,
+            None,
+        )
+        stress = None
+    else:
+        forces, virials, stress = (None, None, None)
+    return forces, virials, stress
 
 
 def get_edge_vectors_and_lengths(

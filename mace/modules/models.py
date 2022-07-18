@@ -17,7 +17,12 @@ from .blocks import (
     RadialEmbeddingBlock,
     ScaleShiftBlock,
 )
-from .utils import compute_forces, get_edge_vectors_and_lengths
+from .utils import (
+    compute_forces,
+    get_edge_vectors_and_lengths,
+    get_outputs,
+    get_symmetric_displacement,
+)
 
 
 class MACE(torch.nn.Module):
@@ -132,9 +137,26 @@ class MACE(torch.nn.Module):
             else:
                 self.readouts.append(LinearReadoutBlock(hidden_irreps))
 
-    def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
+    def forward(
+        self,
+        data: AtomicData,
+        training=False,
+        compute_force: bool = True,
+        compute_virials: bool = False,
+        compute_stress: bool = False,
+    ) -> Dict[str, Any]:
         # Setup
         data.positions.requires_grad = True
+        displacement = None
+        if compute_virials:
+            data.positions, data.shifts, displacement = get_symmetric_displacement(
+                positions=data.positions,
+                unit_shifts=data.unit_shifts,
+                cell=data.cell,
+                edge_index=data.edge_index,
+                num_graphs=data.num_graphs,
+                batch=data.batch,
+            )
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data.node_attrs)
@@ -174,13 +196,24 @@ class MACE(torch.nn.Module):
         # Sum over energy contributions
         contributions = torch.stack(energies, dim=-1)
         total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
+        # Outputs
+        forces, virials, stress = get_outputs(
+            energy=total_energy,
+            positions=data.positions,
+            displacement=displacement,
+            cell=data.cell,
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+        )
 
         return {
             "energy": total_energy,
             "contributions": contributions,
-            "forces": compute_forces(
-                energy=total_energy, positions=data.positions, training=training
-            ),
+            "forces": forces,
+            "virials": virials,
+            "stress": stress,
         }
 
 

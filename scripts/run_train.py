@@ -185,6 +185,17 @@ def main() -> None:
         args.avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
     logging.info(f"Average number of neighbors: {args.avg_num_neighbors:.3f}")
 
+    # Selecting outputs
+    if args.compute_stress:
+        compute_virials = True
+    output_dict = {
+        "forces": args.compute_force,
+        "virials": compute_virials,
+        "stress": args.compute_stress,
+    }
+    output_args = output_dict.values()
+    logging.info(f"Selected the following outputs {output_dict}")
+
     # Build model
     logging.info("Building model")
     model_config = dict(
@@ -374,6 +385,7 @@ def main() -> None:
         max_num_epochs=args.max_num_epochs,
         logger=logger,
         patience=args.patience,
+        output_args=output_args,
         device=device,
         swa=swa,
         ema=ema,
