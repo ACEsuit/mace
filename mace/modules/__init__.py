@@ -15,7 +15,13 @@ from .blocks import (
     ResidualElementDependentInteractionBlock,
     ScaleShiftBlock,
 )
-from .loss import EnergyForcesLoss, WeightedEnergyForcesLoss, WeightedForcesLoss
+from .loss import (
+    EnergyForcesLoss,
+    WeightedEnergyForcesLoss,
+    WeightedForcesLoss,
+    WeightedEnergyForcesVirialsLoss,
+    WeightedEnergyForcesStressLoss,
+)
 from .models import MACE, BOTNet, ScaleShiftBOTNet, ScaleShiftMACE
 from .radial import BesselBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
@@ -56,6 +62,8 @@ __all__ = [
     "EnergyForcesLoss",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
+    "WeightedEnergyForcesVirialsLoss",
+    "WeightedEnergyForcesStressLoss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",

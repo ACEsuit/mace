@@ -107,7 +107,7 @@ class AtomicData(torch_geometric.data.Data):
             else None
         )
         stress = (
-            torch.tensor(config.stress, dtype=torch.get_default_dtype())
+            torch.tensor(config.stress, dtype=torch.get_default_dtype()).view(3, 3)
             if config.stress is not None
             else None
         )
