@@ -70,6 +70,7 @@ def config_from_atoms_list(
                 atoms,
                 energy_key=energy_key,
                 forces_key=forces_key,
+                stress_key=stress_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -89,6 +90,7 @@ def config_from_atoms(
 
     energy = atoms.info.get(energy_key, None)  # eV
     forces = atoms.arrays.get(forces_key, None)  # eV / Ang
+    stress = atoms.info.get(stress_key, None)  # eV / Ang
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -101,6 +103,7 @@ def config_from_atoms(
         positions=atoms.get_positions(),
         energy=energy,
         forces=forces,
+        stress=stress,
         weight=weight,
         config_type=config_type,
         pbc=pbc,
