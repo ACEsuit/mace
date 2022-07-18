@@ -128,6 +128,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=bool,
         default=True,
     )
+    parser.add_argument(
+        "--compute_stress",
+        help="Select True to compute stress",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_forces",
+        help="Select True to compute forces",
+        type=bool,
+        default=False,
+    )
 
     # Dataset
     parser.add_argument(

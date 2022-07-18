@@ -1,7 +1,7 @@
 import dataclasses
 import logging
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -36,6 +36,7 @@ def train(
     checkpoint_handler: CheckpointHandler,
     logger: MetricsLogger,
     eval_interval: int,
+    output_args: List[bool],
     device: torch.device,
     swa: Optional[SWAContainer] = None,
     ema: Optional[ExponentialMovingAverage] = None,
@@ -56,6 +57,7 @@ def train(
                 batch=batch,
                 optimizer=optimizer,
                 ema=ema,
+                output_args=output_args,
                 max_grad_norm=max_grad_norm,
                 device=device,
             )
@@ -71,6 +73,7 @@ def train(
                         model=model,
                         loss_fn=loss_fn,
                         data_loader=valid_loader,
+                        output_args=output_args,
                         device=device,
                     )
             else:
@@ -78,6 +81,7 @@ def train(
                     model=model,
                     loss_fn=loss_fn,
                     data_loader=valid_loader,
+                    output_args=output_args,
                     device=device,
                 )
             eval_metrics["mode"] = "eval"
@@ -125,6 +129,7 @@ def take_step(
     batch: torch_geometric.batch.Batch,
     optimizer: torch.optim.Optimizer,
     ema: Optional[ExponentialMovingAverage],
+    output_args: List[bool],
     max_grad_norm: Optional[float],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
@@ -132,7 +137,7 @@ def take_step(
     start_time = time.time()
     batch = batch.to(device)
     optimizer.zero_grad()
-    output = model(batch, training=True)
+    output = model(batch, training=True, *output_args)
     loss = loss_fn(pred=output, ref=batch)
     loss.backward()
     if max_grad_norm is not None:
@@ -154,6 +159,7 @@ def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     data_loader: DataLoader,
+    output_args: List[bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
     total_loss = 0.0
@@ -163,7 +169,7 @@ def evaluate(
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch, training=False)
+        output = model(batch, training=False, *output_args)
         batch = batch.cpu()
         output = tensor_dict_to_device(output, device=torch.device("cpu"))
 

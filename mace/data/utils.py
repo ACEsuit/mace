@@ -9,6 +9,7 @@ import numpy as np
 Vector = np.ndarray  # [3,]
 Positions = np.ndarray  # [..., 3]
 Forces = np.ndarray  # [..., 3]
+Stress = np.ndarray  # [..., 3]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
 
@@ -22,6 +23,7 @@ class Configuration:
     positions: Positions  # Angstrom
     energy: Optional[float] = None  # eV
     forces: Optional[Forces] = None  # eV/Angstrom
+    stress: Optional[Stress] = None  # eV/Angstrom
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -54,6 +56,7 @@ def config_from_atoms_list(
     atoms_list: List[ase.Atoms],
     energy_key="energy",
     forces_key="forces",
+    stress_key="stress",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -77,6 +80,7 @@ def config_from_atoms(
     atoms: ase.Atoms,
     energy_key="energy",
     forces_key="forces",
+    stress_key="stress",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
