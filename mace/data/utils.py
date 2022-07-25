@@ -9,7 +9,8 @@ import numpy as np
 Vector = np.ndarray  # [3,]
 Positions = np.ndarray  # [..., 3]
 Forces = np.ndarray  # [..., 3]
-Stress = np.ndarray  # [..., 3]
+Stress = np.ndarray  # [6, ]
+Virials = np.ndarray  # [3,3]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
 
@@ -23,7 +24,8 @@ class Configuration:
     positions: Positions  # Angstrom
     energy: Optional[float] = None  # eV
     forces: Optional[Forces] = None  # eV/Angstrom
-    stress: Optional[Stress] = None  # eV/Angstrom
+    stress: Optional[Stress] = None  # eV/Angstrom^4
+    virials: Optional[Virials] = None  # eV/Angstrom
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -57,6 +59,7 @@ def config_from_atoms_list(
     energy_key="energy",
     forces_key="forces",
     stress_key="stress",
+    virials_key="virials",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -71,6 +74,7 @@ def config_from_atoms_list(
                 energy_key=energy_key,
                 forces_key=forces_key,
                 stress_key=stress_key,
+                virials_key=virials_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -82,6 +86,7 @@ def config_from_atoms(
     energy_key="energy",
     forces_key="forces",
     stress_key="stress",
+    virials_key="virials",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -91,6 +96,7 @@ def config_from_atoms(
     energy = atoms.info.get(energy_key, None)  # eV
     forces = atoms.arrays.get(forces_key, None)  # eV / Ang
     stress = atoms.info.get(stress_key, None)  # eV / Ang
+    virials = atoms.info.get(virials_key, None)
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -104,6 +110,7 @@ def config_from_atoms(
         energy=energy,
         forces=forces,
         stress=stress,
+        virials=virials,
         weight=weight,
         config_type=config_type,
         pbc=pbc,
@@ -132,6 +139,8 @@ def load_from_xyz(
     config_type_weights: Dict,
     energy_key: str = "energy",
     forces_key: str = "forces",
+    stress_key: str = "stress",
+    virials_key: str = "virials",
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     assert file_path[-4:] == ".xyz", NameError("Specify file with extension .xyz")
@@ -168,5 +177,7 @@ def load_from_xyz(
         config_type_weights=config_type_weights,
         energy_key=energy_key,
         forces_key=forces_key,
+        stress_key=stress_key,
+        virials_key=virials_key,
     )
     return atomic_energies_dict, configs

@@ -179,7 +179,7 @@ def main() -> None:
         loss_fn = modules.WeightedEnergyForcesVirialsLoss(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
-            virials_weights=args.virials_weight,
+            virials_weight=args.virials_weight,
         )
     elif args.loss == "stress":
         loss_fn = modules.WeightedEnergyForcesStressLoss(
@@ -429,7 +429,7 @@ def main() -> None:
         )
 
         logging.info(f"Evaluating {name} ...")
-        _, metrics = tools.evaluate(
+        out, metrics = tools.evaluate(
             model, loss_fn=loss_fn, data_loader=data_loader, device=device
         )
         table.add_row(

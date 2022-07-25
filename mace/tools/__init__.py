@@ -9,6 +9,8 @@ from .torch_tools import (
     set_seeds,
     to_numpy,
     to_one_hot,
+    spherical_to_cartesian,
+    cartesian_to_spherical,
 )
 from .train import SWAContainer, evaluate, train
 from .utils import (
@@ -52,4 +54,6 @@ __all__ = [
     "compute_q95",
     "compute_c",
     "U_matrix_real",
+    "spherical_to_cartesian",
+    "cartesian_to_spherical",
 ]

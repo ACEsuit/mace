@@ -3,6 +3,7 @@ from typing import Dict
 
 import numpy as np
 import torch
+from e3nn.io import CartesianTensor
 
 TensorDict = Dict[str, torch.Tensor]
 
@@ -70,3 +71,15 @@ def get_complex_default_dtype():
         return torch.complex64
 
     raise NotImplementedError
+
+
+def spherical_to_cartesian(t: torch.tensor):
+    stress_cart_tensor = CartesianTensor("ij=ji")
+    stress_rtp = stress_cart_tensor.reduced_tensor_products()
+    return stress_cart_tensor.to_cartesian(t, rtp=stress_rtp)
+
+
+def cartesian_to_spherical(t: torch.tensor):
+    stress_cart_tensor = CartesianTensor("ij=ji")
+    stress_rtp = stress_cart_tensor.reduced_tensor_products()
+    return stress_cart_tensor.to_cartesian(t, rtp=stress_rtp)
