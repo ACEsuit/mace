@@ -39,7 +39,7 @@ def compute_forces_virials(
     cell: Optional[torch.Tensor],
     training=True,
     compute_stress=False,
-) -> torch.Tensor:
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
     forces, virials = torch.autograd.grad(
         outputs=energy,  # [n_graphs, ]
         inputs=[positions, displacement],  # [n_nodes, 3]
@@ -60,34 +60,18 @@ def compute_forces_virials(
         stress = virials / volume.view(-1, 1, 1)
     if forces is None and virials is None:
         logging.warning("Gradient is None, padded with zeros")
-        return torch.zeros_like(positions), torch.zeros_like(positions).expand(1, 1, 3)
-    elif forces is not None and virials is None:
+        return (
+            torch.zeros_like(positions),
+            torch.zeros_like(positions).expand(1, 1, 3),
+            None,
+        )
+    if forces is not None and virials is None:
         logging.warning("Virial is None, padded with zeros")
-        return -1 * forces, torch.zeros_like(positions).expand(1, 1, 3)
-    elif forces is None and virials is not None:
+        return -1 * forces, torch.zeros_like(positions).expand(1, 1, 3), None
+    if forces is None and virials is not None:
         logging.warning("Virial is None, padded with zeros")
-        return torch.zeros_like(positions), -1 * virials
+        return torch.zeros_like(positions), -1 * virials, None
     return -1 * forces, -1 * virials, stress
-
-
-def get_edge_vectors_and_lengths(
-    positions: torch.Tensor,  # [n_nodes, 3]
-    edge_index: torch.Tensor,  # [2, n_edges]
-    shifts: torch.Tensor,  # [n_edges, 3]
-    normalize: bool = False,
-    eps: float = 1e-9,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    sender, receiver = edge_index
-    # From ase.neighborlist:
-    # D = positions[j]-positions[i]+S.dot(cell)
-    # where shifts = S.dot(cell)
-    vectors = positions[receiver] - positions[sender] + shifts  # [n_edges, 3]
-    lengths = torch.linalg.norm(vectors, dim=-1, keepdim=True)  # [n_edges, 1]
-    if normalize:
-        vectors_normed = vectors / (lengths + eps)
-        return vectors_normed, lengths
-
-    return vectors, lengths
 
 
 def get_symmetric_displacement(

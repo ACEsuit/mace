@@ -7,6 +7,7 @@ from mace.tools import (
     atomic_numbers_to_indices,
     to_one_hot,
     torch_geometric,
+    spherical_to_cartesian,
 )
 
 from .neighborhood import get_neighborhood
@@ -27,6 +28,7 @@ class AtomicData(torch_geometric.data.Data):
     forces: torch.Tensor
     energy: torch.Tensor
     stress: torch.Tensor
+    virials: torch.Tensor
     weight: torch.Tensor
 
     def __init__(
@@ -41,6 +43,7 @@ class AtomicData(torch_geometric.data.Data):
         forces: Optional[torch.Tensor],  # [n_nodes, 3]
         energy: Optional[torch.Tensor],  # [, ]
         stress: Optional[torch.Tensor],  # [3,3]
+        virials: Optional[torch.Tensor],  # [3,3]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -55,6 +58,7 @@ class AtomicData(torch_geometric.data.Data):
         assert forces is None or forces.shape == (num_nodes, 3)
         assert energy is None or len(energy.shape) == 0
         assert stress is None or stress.shape == (3, 3)
+        assert virials is None or virials.shape == (3, 3)
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -68,6 +72,7 @@ class AtomicData(torch_geometric.data.Data):
             "forces": forces,
             "energy": energy,
             "stress": stress,
+            "virials": virials,
         }
         super().__init__(**data)
 
@@ -107,8 +112,15 @@ class AtomicData(torch_geometric.data.Data):
             else None
         )
         stress = (
-            torch.tensor(config.stress, dtype=torch.get_default_dtype()).view(3, 3)
+            spherical_to_cartesian(
+                torch.tensor(config.stress, dtype=torch.get_default_dtype())
+            )
             if config.stress is not None
+            else None
+        )
+        virials = (
+            torch.tensor(config.virials, dtype=torch.get_default_dtype())
+            if config.virials is not None
             else None
         )
 
@@ -123,6 +135,7 @@ class AtomicData(torch_geometric.data.Data):
             forces=forces,
             energy=energy,
             stress=stress,
+            virials=virials,
         )
 
 
