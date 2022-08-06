@@ -146,10 +146,12 @@ def main() -> None:
     logging.info(f"Average number of neighbors: {args.avg_num_neighbors:.3f}")
 
     # Selecting outputs
-    if args.compute_stress:
+    if args.loss == "stress" or args.loss == "virials":
         compute_virials = True
+        args.compute_stress = True
+
     output_dict = {
-        "forces": args.compute_force,
+        "forces": args.compute_forces,
         "virials": compute_virials,
         "stress": args.compute_stress,
     }

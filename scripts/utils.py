@@ -26,6 +26,8 @@ def get_dataset_from_xyz(
     seed: int = 1234,
     energy_key: str = "energy",
     forces_key: str = "forces",
+    stress_key: str = "stress",
+    virials_key: str = "virials",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
     atomic_energies_dict, all_train_configs = data.load_from_xyz(
@@ -44,6 +46,8 @@ def get_dataset_from_xyz(
             config_type_weights=config_type_weights,
             energy_key=energy_key,
             forces_key=forces_key,
+            stress_key=stress_key,
+            virials_key=virials_key,
             extract_atomic_energies=False,
         )
         logging.info(
