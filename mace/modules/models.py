@@ -43,10 +43,8 @@ class MACE(torch.nn.Module):
         atomic_numbers: List[int],
         correlation: int,
         gate: Optional[Callable],
-        device: str = "cpu",
     ):
         super().__init__()
-        self.dtype = torch.get_default_dtype()
         self.r_max = r_max
         self.atomic_numbers = atomic_numbers
         # Embedding
@@ -96,7 +94,6 @@ class MACE(torch.nn.Module):
             element_dependent=True,
             num_elements=num_elements,
             use_sc=use_sc_first,
-            device=device,
         )
         self.products = torch.nn.ModuleList([prod])
 
@@ -127,7 +124,6 @@ class MACE(torch.nn.Module):
                 element_dependent=True,
                 num_elements=num_elements,
                 use_sc=True,
-                device=device,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
@@ -281,7 +277,7 @@ class ScaleShiftMACE(MACE):
         output = {
             "energy": total_e,
             "forces": compute_forces(
-                energy=total_e, positions=data.positions, training=training
+                energy=inter_e, positions=data.positions, training=training
             ),
         }
 
@@ -470,7 +466,7 @@ class ScaleShiftBOTNet(BOTNet):
         output = {
             "energy": total_e,
             "forces": compute_forces(
-                energy=total_e, positions=data.positions, training=training
+                energy=inter_e, positions=data.positions, training=training
             ),
         }
 

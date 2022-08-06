@@ -75,7 +75,7 @@ To give a specific validation set, use the argument `--valid_file`. To set a lar
 
 To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. 
 
-It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you should set `--model=ScaleShiftMACE` and pass a dictionary of 0's, e.g., `--E0s='{1:0.0, 6:0.0}'`. 
+It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression. 
 
 If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs). This setting usually helps lower the energy errors. 
 
@@ -109,6 +109,8 @@ bash ./scripts/run_checks.sh
 We have CI set up to check this, but we _highly_ recommend that you run those commands
 before you commit (and push) to avoid accidentally committing bad code.
 
+We are happy to accept pull requests under an [MIT license](https://choosealicense.com/licenses/mit/). Please copy/paste the license text as a comment into your pull request.
+
 ## References
 
 If you use this code, please cite our papers:
@@ -140,3 +142,7 @@ If you use this code, please cite our papers:
 If you have any questions, please contact us at ilyes.batatia@ens-paris-saclay.fr.
 
 For bugs or feature requests, please use [GitHub Issues](https://github.com/ACEsuit/mace/issues).
+
+## License
+
+MACE is published and distributed under the [Academic Software License v1.0 ](ASL.md).

@@ -1,103 +1,18 @@
 import ast
-import dataclasses
 import logging
 import os
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import torch.nn.functional
 from e3nn import o3
-from prettytable import PrettyTable
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
+from utils import create_error_table, get_dataset_from_xyz
 
 import mace
 from mace import data, modules, tools
 from mace.tools import torch_geometric
-
-
-@dataclasses.dataclass
-class SubsetCollection:
-    train: data.Configurations
-    valid: data.Configurations
-    tests: List[Tuple[str, data.Configurations]]
-
-
-def get_dataset_from_xyz(
-    train_path: str,
-    valid_path: str,
-    valid_fraction: float,
-    config_type_weights: Dict,
-    test_path: str = None,
-    seed: int = 1234,
-    energy_key: str = "energy",
-    forces_key: str = "forces",
-    stress_key: str = "stress",
-    virials_key: str = "virials",
-) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
-    """Load training and test dataset from xyz file"""
-    atomic_energies_dict, all_train_configs = data.load_from_xyz(
-        file_path=train_path,
-        config_type_weights=config_type_weights,
-        energy_key=energy_key,
-        forces_key=forces_key,
-        stress_key=stress_key,
-        virials_key=virials_key,
-        extract_atomic_energies=True,
-    )
-    logging.info(
-        f"Loaded {len(all_train_configs)} training configurations from '{train_path}'"
-    )
-    if valid_path is not None:
-        _, valid_configs = data.load_from_xyz(
-            file_path=valid_path,
-            config_type_weights=config_type_weights,
-            energy_key=energy_key,
-            forces_key=forces_key,
-            stress_key=stress_key,
-            virials_key=virials_key,
-            extract_atomic_energies=False,
-        )
-        logging.info(
-            f"Loaded {len(valid_configs)} validation configurations from '{valid_path}'"
-        )
-        train_configs = all_train_configs
-    else:
-        logging.info(
-            "Using random %s%% of training set for validation", 100 * valid_fraction
-        )
-        train_configs, valid_configs = data.random_train_valid_split(
-            all_train_configs, valid_fraction, seed
-        )
-
-    test_configs = []
-    if test_path is not None:
-        _, all_test_configs = data.load_from_xyz(
-            file_path=test_path,
-            config_type_weights=config_type_weights,
-            energy_key=energy_key,
-            forces_key=forces_key,
-            stress_key=stress_key,
-            virials_key=virials_key,
-            extract_atomic_energies=False,
-        )
-        # create list of tuples (config_type, list(Atoms))
-        test_configs = data.test_config_types(all_test_configs)
-        logging.info(
-            f"Loaded {len(all_test_configs)} test configurations from '{train_path}'"
-        )
-    return (
-        SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
-        atomic_energies_dict,
-    )
-
-
-gate_dict: Dict[str, Optional[Callable]] = {
-    "abs": torch.abs,
-    "tanh": torch.tanh,
-    "silu": torch.nn.functional.silu,
-    "None": None,
-}
 
 
 def main() -> None:
@@ -115,12 +30,21 @@ def main() -> None:
     device = tools.init_device(args.device)
     tools.set_default_dtype(args.default_dtype)
 
+    try:
+        config_type_weights = ast.literal_eval(args.config_type_weights)
+        assert isinstance(config_type_weights, dict)
+    except Exception as e:  # pylint: disable=W0703
+        logging.warning(
+            f"Config type weights not specified correctly ({e}), using Default"
+        )
+        config_type_weights = {"Default": 1.0}
+
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
         train_path=args.train_file,
         valid_path=args.valid_file,
         valid_fraction=args.valid_fraction,
-        config_type_weights=ast.literal_eval(args.config_type_weights),
+        config_type_weights=config_type_weights,
         test_path=args.test_file,
         seed=args.seed,
         energy_key=args.energy_key,
@@ -149,7 +73,21 @@ def main() -> None:
             logging.info(
                 "Atomic Energies not in training file, using command line argument E0s"
             )
-            atomic_energies_dict = ast.literal_eval(args.E0s)
+            if args.E0s.lower() == "average":
+                logging.info(
+                    "Computing average Atomic Energies using least squares regression"
+                )
+                atomic_energies_dict = data.compute_average_E0s(
+                    collections.train, z_table
+                )
+            else:
+                try:
+                    atomic_energies_dict = ast.literal_eval(args.E0s)
+                    assert isinstance(atomic_energies_dict, dict)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"E0s specified invalidly, error {e} occured"
+                    ) from e
         else:
             raise RuntimeError(
                 "E0s not found in training file and not specified in command line"
@@ -247,12 +185,11 @@ def main() -> None:
         model = modules.ScaleShiftMACE(
             **model_config,
             correlation=args.correlation,
-            gate=gate_dict[args.gate],
+            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[
                 "RealAgnosticInteractionBlock"
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
-            device=args.device,
             atomic_inter_scale=std,
             atomic_inter_shift=0.0,
         )
@@ -261,10 +198,9 @@ def main() -> None:
         model = modules.ScaleShiftMACE(
             **model_config,
             correlation=args.correlation,
-            gate=gate_dict[args.gate],
+            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
-            device=args.device,
             atomic_inter_scale=std,
             atomic_inter_shift=mean,
         )
@@ -272,7 +208,7 @@ def main() -> None:
         mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
         model = modules.ScaleShiftBOTNet(
             **model_config,
-            gate=gate_dict[args.gate],
+            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=std,
@@ -281,7 +217,7 @@ def main() -> None:
     elif args.model == "BOTNet":
         model = modules.BOTNet(
             **model_config,
-            gate=gate_dict[args.gate],
+            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
         )
@@ -366,6 +302,10 @@ def main() -> None:
 
     swa: Optional[tools.SWAContainer] = None
     if args.swa:
+        if args.start_swa is None:
+            args.start_swa = (
+                args.max_num_epochs // 4 * 3
+            )  # if not set start swa at 75% of training
         if args.loss == "forces_only":
             logging.info("Can not select swa with forces only loss.")
         loss_fn_energy = modules.WeightedEnergyForcesLoss(
@@ -412,6 +352,7 @@ def main() -> None:
         swa=swa,
         ema=ema,
         max_grad_norm=args.clip_grad,
+        log_errors=args.error_table,
     )
 
     epoch = checkpoint_handler.load_latest(
@@ -422,29 +363,21 @@ def main() -> None:
     # Evaluation on test datasets
     logging.info("Computing metrics for training, validation, and test sets")
 
-    table = PrettyTable()
-    table.field_names = ["config_type", "rmse E / meV", "rmse F / meV / A"]
-    for name, subset in [
+    all_collections = [
         ("train", collections.train),
         ("valid", collections.valid),
-    ] + collections.tests:
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
-                for config in subset
-            ],
-            batch_size=args.valid_batch_size,
-            shuffle=False,
-            drop_last=False,
-        )
+    ] + collections.tests
 
-        logging.info(f"Evaluating {name} ...")
-        out, metrics = tools.evaluate(
-            model, loss_fn=loss_fn, data_loader=data_loader, device=device
-        )
-        table.add_row(
-            [name, f"{metrics['rmse_e'] * 1000:.1f}", f"{metrics['rmse_f'] * 1000:.1f}"]
-        )
+    table = create_error_table(
+        args.error_table,
+        all_collections,
+        z_table,
+        args.r_max,
+        args.valid_batch_size,
+        model,
+        loss_fn,
+        device,
+    )
 
     logging.info("\n" + str(table))
 
