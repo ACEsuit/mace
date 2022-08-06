@@ -19,9 +19,8 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         correlation: Union[int, Dict[str, int]],
         irrep_normalization: str = "component",
         path_normalization: str = "element",
-        device: str = "cpu",
         internal_weights: Optional[bool] = None,
-        shared_weights: Optional[bool] = None,
+        shared_weights: Optional[torch.Tensor] = None,
         element_dependent: Optional[bool] = None,
         num_elements: Optional[int] = None,
     ) -> None:
@@ -70,7 +69,6 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
                 element_dependent=element_dependent,
                 num_elements=num_elements,
                 weights=self.shared_weights,
-                device=device,
             )
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
@@ -90,7 +88,6 @@ class Contraction(torch.nn.Module):
         element_dependent: bool = True,
         num_elements: Optional[int] = None,
         weights: Optional[torch.Tensor] = None,
-        device: Optional[str] = "cpu",
     ) -> None:
         super().__init__()
 
@@ -99,16 +96,14 @@ class Contraction(torch.nn.Module):
         self.coupling_irreps = o3.Irreps([irrep.ir for irrep in irreps_in])
         self.correlation = correlation
         dtype = torch.get_default_dtype()
-        self.U_tensors = {
-            nu: U_matrix_real(
+        for nu in range(1, correlation + 1):
+            U_matrix = U_matrix_real(
                 irreps_in=self.coupling_irreps,
                 irreps_out=irrep_out,
                 correlation=nu,
                 dtype=dtype,
-                device=device,
             )[-1]
-            for nu in range(1, correlation + 1)
-        }
+            self.register_buffer(f"U_matrix_{nu}", U_matrix)
 
         if element_dependent:
             # Tensor contraction equations
@@ -119,7 +114,7 @@ class Contraction(torch.nn.Module):
                 # Create weight for product basis
                 self.weights = torch.nn.ParameterDict({})
                 for i in range(1, correlation + 1):
-                    num_params = self.U_tensors[i].size()[-1]
+                    num_params = self.U_tensors(i).size()[-1]
                     w = torch.nn.Parameter(
                         torch.randn(num_elements, num_params, self.num_features)
                         / num_params
@@ -137,7 +132,7 @@ class Contraction(torch.nn.Module):
                 # Create weight for product basis
                 self.weights = torch.nn.ParameterDict({})
                 for i in range(1, correlation + 1):
-                    num_params = self.U_tensors[i].size()[-1]
+                    num_params = self.U_tensors(i).size()[-1]
                     w = torch.nn.Parameter(
                         torch.randn(num_params, self.num_features) / num_params
                     )
@@ -149,7 +144,7 @@ class Contraction(torch.nn.Module):
         if self.element_dependent:
             out = contract(
                 self.equation_main,
-                self.U_tensors[self.correlation],
+                self.U_tensors(self.correlation),
                 self.weights[str(self.correlation)],
                 x,
                 y,
@@ -157,7 +152,7 @@ class Contraction(torch.nn.Module):
             for corr in range(self.correlation - 1, 0, -1):
                 c_tensor = contract(
                     self.equation_weighting,
-                    self.U_tensors[corr],
+                    self.U_tensors(corr),
                     self.weights[str(corr)],
                     y,
                 )
@@ -167,17 +162,20 @@ class Contraction(torch.nn.Module):
         else:
             out = contract(
                 self.equation_main,
-                self.U_tensors[self.correlation],
+                self.U_tensors(self.correlation),
                 self.weights[str(self.correlation)],
                 x,
             )  # TODO: use optimize library and cuTENSOR  # pylint: disable=fixme
             for corr in range(self.correlation - 1, 0, -1):
                 c_tensor = contract(
                     self.equation_weighting,
-                    self.U_tensors[corr],
+                    self.U_tensors(corr),
                     self.weights[str(corr)],
                 )
                 c_tensor = c_tensor + out
                 out = contract(self.equation_contract, c_tensor, x)
         resize_shape = torch.prod(torch.tensor(out.shape[1:]))
         return out.view(out.shape[0], resize_shape)
+
+    def U_tensors(self, nu):
+        return self._buffers[f"U_matrix_{nu}"]
