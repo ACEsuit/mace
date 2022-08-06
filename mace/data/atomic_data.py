@@ -7,7 +7,7 @@ from mace.tools import (
     atomic_numbers_to_indices,
     to_one_hot,
     torch_geometric,
-    spherical_to_cartesian,
+    voigt_to_matrix,
 )
 
 from .neighborhood import get_neighborhood
@@ -112,7 +112,7 @@ class AtomicData(torch_geometric.data.Data):
             else None
         )
         stress = (
-            spherical_to_cartesian(
+            voigt_to_matrix(
                 torch.tensor(config.stress, dtype=torch.get_default_dtype())
             )
             if config.stress is not None
