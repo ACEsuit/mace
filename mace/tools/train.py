@@ -49,7 +49,7 @@ def train(
     checkpoint_handler: CheckpointHandler,
     logger: MetricsLogger,
     eval_interval: int,
-    output_args: List[bool],
+    output_args: Dict[str, bool],
     device: torch.device,
     log_errors: str,
     swa: Optional[SWAContainer] = None,
@@ -168,7 +168,7 @@ def take_step(
     batch: torch_geometric.batch.Batch,
     optimizer: torch.optim.Optimizer,
     ema: Optional[ExponentialMovingAverage],
-    output_args: List[bool],
+    output_args: Dict[str, bool],
     max_grad_norm: Optional[float],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
@@ -176,7 +176,13 @@ def take_step(
     start_time = time.time()
     batch = batch.to(device)
     optimizer.zero_grad()
-    output = model(batch, training=True, *output_args)
+    output = model(
+            batch,
+            training=False,
+            compute_force=output_args["force"],
+            compute_virials=output_args["virials"]
+            compute_stress=output_args["stress"],
+        )    
     loss = loss_fn(pred=output, ref=batch)
     loss.backward()
     if max_grad_norm is not None:
@@ -198,7 +204,7 @@ def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     data_loader: DataLoader,
-    output_args: List[bool],
+    output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
     total_loss = 0.0
@@ -210,7 +216,13 @@ def evaluate(
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch, training=False, *output_args)
+        output = model(
+            batch,
+            training=False,
+            compute_force=output_args["force"],
+            compute_virials=output_args["virials"]
+            compute_stress=output_args["stress"],
+        )    
         batch = batch.cpu()
         output = tensor_dict_to_device(output, device=torch.device("cpu"))
 

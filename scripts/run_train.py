@@ -156,13 +156,12 @@ def main() -> None:
         compute_virials = True
         args.compute_stress = True
 
-    output_dict = {
+    output_args = {
         "forces": args.compute_forces,
         "virials": compute_virials,
         "stress": args.compute_stress,
     }
-    output_args = output_dict.values()
-    logging.info(f"Selected the following outputs {output_dict}")
+    logging.info(f"Selected the following outputs: {output_dict}")
 
     # Build model
     logging.info("Building model")
