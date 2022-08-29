@@ -1,3 +1,9 @@
+###########################################################################################
+# Statistics utilities
+# Authors: Ilyes Batatia, Gregor Simm, David Kovacs
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
 import json
 import logging
 import os
