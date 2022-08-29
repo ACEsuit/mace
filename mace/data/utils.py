@@ -1,3 +1,9 @@
+###########################################################################################
+# Data parsing utilities
+# Authors: Ilyes Batatia, Gregor Simm and David Kovacs
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
 import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
