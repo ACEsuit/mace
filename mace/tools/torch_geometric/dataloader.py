@@ -18,9 +18,7 @@ class Collater:
         elem = batch[0]
         if isinstance(elem, Data):
             return Batch.from_data_list(
-                batch,
-                follow_batch=self.follow_batch,
-                exclude_keys=self.exclude_keys,
+                batch, follow_batch=self.follow_batch, exclude_keys=self.exclude_keys,
             )
         elif isinstance(elem, torch.Tensor):
             return default_collate(batch)

@@ -1,3 +1,9 @@
+###########################################################################################
+# Neighborhood construction
+# Authors: Ilyes Batatia, Gregor Simm
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
 from typing import Optional, Tuple
 
 import ase.neighborlist

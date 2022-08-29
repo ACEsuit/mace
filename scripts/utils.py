@@ -1,3 +1,9 @@
+###########################################################################################
+# Training utils
+# Authors: David Kovacs, Ilyes Batatia
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
 import dataclasses
 import logging
 from typing import Dict, List, Optional, Tuple
