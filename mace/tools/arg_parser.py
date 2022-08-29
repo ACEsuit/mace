@@ -156,7 +156,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--compute_forces",
         help="Select True to compute forces",
         type=bool,
-        default=False,
+        default=True,
     )
 
     # Dataset
