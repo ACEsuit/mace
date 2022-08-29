@@ -1,3 +1,9 @@
+###########################################################################################
+# Radial basis and cutoff
+# Authors: Ilyes Batatia, Gregor Simm
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
 import numpy as np
 import torch
 
@@ -34,10 +40,7 @@ class BesselBasis(torch.nn.Module):
             torch.tensor(np.sqrt(2.0 / r_max), dtype=torch.get_default_dtype()),
         )
 
-    def forward(
-        self,
-        x: torch.Tensor,
-    ) -> torch.Tensor:  # [..., 1]
+    def forward(self, x: torch.Tensor,) -> torch.Tensor:  # [..., 1]
         numerator = torch.sin(self.bessel_weights * x)  # [..., num_basis]
         return self.prefactor * (numerator / x)
 

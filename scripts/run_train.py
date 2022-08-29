@@ -1,3 +1,9 @@
+###########################################################################################
+# Training script for MACE
+# Authors: Ilyes Batatia, Gregor Simm, David Kovacs
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
 import ast
 import logging
 import os

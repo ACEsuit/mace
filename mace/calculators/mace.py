@@ -1,3 +1,10 @@
+###########################################################################################
+# The ASE Calculator for MACE (based on https://github.com/mir-group/nequip)
+# Authors: Ilyes Batatia, David Kovacs
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
+
 import torch
 from ase.calculators.calculator import Calculator, all_changes
 
