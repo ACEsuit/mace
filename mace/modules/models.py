@@ -1,3 +1,9 @@
+###########################################################################################
+# Reference implementation of MACE models and other models based E(3)-Equivariant MPNNs
+# Authors: Ilyes Batatia, Gregor Simm
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
 from typing import Any, Callable, Dict, List, Optional, Type
 
 import numpy as np
@@ -182,10 +188,7 @@ class MACE(torch.nn.Module):
 
 class ScaleShiftMACE(MACE):
     def __init__(
-        self,
-        atomic_inter_scale: float,
-        atomic_inter_shift: float,
-        **kwargs,
+        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
@@ -375,10 +378,7 @@ class BOTNet(torch.nn.Module):
 
 class ScaleShiftBOTNet(BOTNet):
     def __init__(
-        self,
-        atomic_inter_scale: float,
-        atomic_inter_shift: float,
-        **kwargs,
+        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(

@@ -1,3 +1,9 @@
+###########################################################################################
+# Elementary tools for handling irreducible representations
+# Authors: Ilyes Batatia, Gregor Simm
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
 from typing import List, Tuple
 
 import torch
