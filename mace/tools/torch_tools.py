@@ -1,3 +1,9 @@
+###########################################################################################
+# Tools for torch
+# Authors: Ilyes Batatia, Gregor Simm
+# This program is distributed under the ASL License (see ASL.md)
+###########################################################################################
+
 import logging
 from typing import Dict
 
