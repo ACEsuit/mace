@@ -177,12 +177,12 @@ def take_step(
     batch = batch.to(device)
     optimizer.zero_grad()
     output = model(
-            batch,
-            training=False,
-            compute_force=output_args["force"],
-            compute_virials=output_args["virials"]
-            compute_stress=output_args["stress"],
-        )    
+        batch,
+        training=False,
+        compute_force=output_args["force"],
+        compute_virials=output_args["virials"],
+        compute_stress=output_args["stress"],
+    )
     loss = loss_fn(pred=output, ref=batch)
     loss.backward()
     if max_grad_norm is not None:
@@ -220,9 +220,9 @@ def evaluate(
             batch,
             training=False,
             compute_force=output_args["force"],
-            compute_virials=output_args["virials"]
+            compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
-        )    
+        )
         batch = batch.cpu()
         output = tensor_dict_to_device(output, device=torch.device("cpu"))
 
