@@ -228,9 +228,26 @@ class ScaleShiftMACE(MACE):
             scale=atomic_inter_scale, shift=atomic_inter_shift
         )
 
-    def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
+    def forward(
+        self,
+        data: AtomicData,
+        training=False,
+        compute_force: bool = True,
+        compute_virials: bool = False,
+        compute_stress: bool = False,
+    ) -> Dict[str, Any]:
         # Setup
         data.positions.requires_grad = True
+        displacement = None
+        if compute_virials:
+            data.positions, data.shifts, displacement = get_symmetric_displacement(
+                positions=data.positions,
+                unit_shifts=data.unit_shifts,
+                cell=data.cell,
+                edge_index=data.edge_index,
+                num_graphs=data.num_graphs,
+                batch=data.batch,
+            )
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data.node_attrs)
@@ -275,13 +292,24 @@ class ScaleShiftMACE(MACE):
         )  # [n_graphs,]
 
         # Add E_0 and (scaled) interaction energy
-        total_e = e0 + inter_e
+        total_energy = e0 + inter_e
+
+        forces, virials, stress = get_outputs(
+            energy=inter_e,
+            positions=data.positions,
+            displacement=displacement,
+            cell=data.cell,
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+        )
 
         output = {
-            "energy": total_e,
-            "forces": compute_forces(
-                energy=inter_e, positions=data.positions, training=training
-            ),
+            "energy": total_energy,
+            "forces": forces,
+            "virials": virials,
+            "stress": stress,
         }
 
         return output
