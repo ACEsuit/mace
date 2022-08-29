@@ -155,13 +155,14 @@ def main() -> None:
     if args.loss == "stress" or args.loss == "virials":
         compute_virials = True
         args.compute_stress = True
+        args.error_table = "PerAtomRMSEstressvirials"
 
     output_args = {
         "forces": args.compute_forces,
         "virials": compute_virials,
         "stress": args.compute_stress,
     }
-    logging.info(f"Selected the following outputs: {output_dict}")
+    logging.info(f"Selected the following outputs: {output_args}")
 
     # Build model
     logging.info("Building model")
