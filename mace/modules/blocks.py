@@ -10,6 +10,7 @@ from typing import Callable, Dict, Optional, Tuple, Union
 import numpy as np
 import torch.nn.functional
 from e3nn import nn, o3
+from scipy.constants import c, e
 
 from mace.tools.scatter import scatter_sum
 
@@ -543,3 +544,32 @@ class ScaleShiftBlock(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(scale={self.scale:.6f}, shift={self.shift:.6f})"
         )
+
+# water model blocks
+class FixedChargeDipoleBlock(torch.nn.Module):
+    def __init__(self,):
+        super().__init__()
+
+    def forward(
+        self,
+        charge: torch.Tensor,
+        positions: torch.Tensor,
+        batch: torch.Tensor,
+        num_graphs: int,
+    ) -> torch.Tensor:
+        mu = positions * charge.unsqueeze(-1) / (1e-11 / c / e)  # [N_atoms,3]
+        return scatter_sum(
+            src=mu, index=batch.unsqueeze(-1), dim=0, dim_size=num_graphs
+        )  # [N_graphs,3]
+
+class LinearDipoleReadoutBlock(torch.nn.Module):
+    def __init__(self, irreps_in: o3.Irreps, dipole_only: bool = False):
+        super().__init__()
+        if dipole_only:
+            self.irreps_out = o3.Irreps("1x1o")
+        else:
+            self.irreps_out = o3.Irreps("1x0e + 1x1o")
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_out)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        return self.linear(x)  # [n_nodes, 1]

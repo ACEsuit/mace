@@ -16,9 +16,11 @@ from .blocks import (
     RealAgnosticResidualInteractionBlock,
     ResidualElementDependentInteractionBlock,
     ScaleShiftBlock,
+    FixedChargeDipoleBlock,
+    LinearDipoleReadoutBlock,
 )
 from .loss import EnergyForcesLoss, WeightedEnergyForcesLoss, WeightedForcesLoss
-from .models import MACE, BOTNet, ScaleShiftBOTNet, ScaleShiftMACE
+from .models import MACE, BOTNet, ScaleShiftBOTNet, ScaleShiftMACE, AtomicDipolesMACE
 from .radial import BesselBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
@@ -54,6 +56,8 @@ __all__ = [
     "LinearReadoutBlock",
     "EquivariantProductBasisBlock",
     "ScaleShiftBlock",
+    "FixedChargeDipoleBlock",
+    "LinearDipoleReadoutBlock",
     "InteractionBlock",
     "NonLinearReadoutBlock",
     "PolynomialCutoff",
@@ -62,6 +66,7 @@ __all__ = [
     "ScaleShiftMACE",
     "BOTNet",
     "ScaleShiftBOTNet",
+    "AtomicDipolesMACE",
     "EnergyForcesLoss",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
