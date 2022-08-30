@@ -22,6 +22,7 @@ from .blocks import (
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     ScaleShiftBlock,
+    FixedChargeDipoleBlock
 )
 from .utils import compute_forces, get_edge_vectors_and_lengths
 
@@ -435,6 +436,139 @@ class ScaleShiftBOTNet(BOTNet):
             "forces": compute_forces(
                 energy=inter_e, positions=data.positions, training=training
             ),
+        }
+
+        return output
+
+class AtomicDipolesMACE(torch.nn.Module):
+    def __init__(
+        self,
+        r_max: float,
+        num_bessel: int,
+        num_polynomial_cutoff: int,
+        max_ell: int,
+        interaction_cls: Type[InteractionBlock],
+        interaction_cls_first: Type[InteractionBlock],
+        num_interactions: int,
+        num_elements: int,
+        hidden_irreps: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Callable,
+        avg_num_neighbors: float,
+    ):
+        super().__init__()
+
+        self.dipoles_baseline = FixedChargeDipoleBlock()
+        # Embedding
+        node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
+        node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
+        self.node_embedding = LinearNodeEmbeddingBlock(
+            irreps_in=node_attr_irreps, irreps_out=node_feats_irreps
+        )
+        self.radial_embedding = RadialEmbeddingBlock(
+            r_max=r_max,
+            num_bessel=num_bessel,
+            num_polynomial_cutoff=num_polynomial_cutoff,
+        )
+        edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
+
+        sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        self.spherical_harmonics = o3.SphericalHarmonics(
+            sh_irreps, normalize=True, normalization="component"
+        )
+
+        # Interactions and readouts
+
+        self.interactions = torch.nn.ModuleList()
+        self.readouts = torch.nn.ModuleList()
+
+        inter = interaction_cls_first(
+            node_attrs_irreps=node_attr_irreps,
+            node_feats_irreps=node_feats_irreps,
+            edge_attrs_irreps=sh_irreps,
+            edge_feats_irreps=edge_feats_irreps,
+            target_irreps=hidden_irreps,
+            avg_num_neighbors=avg_num_neighbors,
+        )
+        self.interactions.append(inter)
+        self.readouts.append(
+            LinearDipoleReadoutBlock(inter.irreps_out, dipole_only=True)
+        )
+
+        for i in range(num_interactions - 1):
+            inter = interaction_cls(
+                node_attrs_irreps=node_attr_irreps,
+                node_feats_irreps=inter.irreps_out,
+                edge_attrs_irreps=sh_irreps,
+                edge_feats_irreps=edge_feats_irreps,
+                target_irreps=hidden_irreps,
+                avg_num_neighbors=avg_num_neighbors,
+            )
+            self.interactions.append(inter)
+            if i == num_interactions - 2:
+                self.readouts.append(
+                    NonLinearDipoleReadoutBlock(
+                        inter.irreps_out, MLP_irreps, gate, dipole_only=True
+                    )
+                )
+            else:
+                self.readouts.append(
+                    LinearDipoleReadoutBlock(inter.irreps_out, dipole_only=True)
+                )
+
+    def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
+        # Setup
+        data.positions.requires_grad = True
+        if not training:
+            for p in self.parameters():
+                p.requires_grad = False
+        else:
+            for p in self.parameters():
+                p.requires_grad = True
+
+        # Embeddings
+        node_feats = self.node_embedding(data.node_attrs)
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
+        )
+        edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(lengths)
+
+        # Interactions
+        dipoles = []
+        for interaction, readout in zip(self.interactions, self.readouts):
+            node_feats = interaction(
+                node_attrs=data.node_attrs,
+                node_feats=node_feats,
+                edge_attrs=edge_attrs,
+                edge_feats=edge_feats,
+                edge_index=data.edge_index,
+            )
+            node_dipoles = readout(node_feats).squeeze(-1)  # [n_nodes,3]
+            dipoles.append(node_dipoles)
+
+        # Compute the dipoles
+        contributions_dipoles = torch.stack(
+            dipoles, dim=-1
+        )  # [n_nodes,3,n_contributions]
+        atomic_dipoles = torch.sum(contributions_dipoles, dim=-1)  # [n_nodes,3]
+        total_dipole = scatter_sum(
+            src=atomic_dipoles,
+            index=data.batch.unsqueeze(-1),
+            dim=0,
+            dim_size=data.num_graphs,
+        )  # [n_graphs,3]
+        baseline = self.dipoles_baseline(
+            charge=data.charge,
+            positions=data.positions,
+            batch=data.batch,
+            num_graphs=data.num_graphs,
+        )  # [n_graphs,3]
+        total_dipole = total_dipole + baseline
+
+        output = {
+            "dipole": total_dipole,
+            "atomic_dipoles": atomic_dipoles,
         }
 
         return output
