@@ -26,8 +26,8 @@ def weighted_mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Te
 
 def weighted_mean_squared_stress(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
-    configs_weight = ref.weight  # [n_graphs, ]
-    num_atoms = ref.ptr[1:] - ref.ptr[:-1]  # [n_graphs,]
+    configs_weight = ref.weight.view(-1, 1, 1)  # [n_graphs, ]
+    num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).view(-1, 1, 1)  # [n_graphs,]
     return torch.mean(
         configs_weight * torch.square((ref["stress"] - pred["stress"]) / num_atoms)
     )  # []
@@ -35,8 +35,8 @@ def weighted_mean_squared_stress(ref: Batch, pred: TensorDict) -> torch.Tensor:
 
 def weighted_mean_squared_virials(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
-    configs_weight = ref.weight  # [n_graphs, ]
-    num_atoms = ref.ptr[1:] - ref.ptr[:-1]  # [n_graphs,]
+    configs_weight = ref.weight.view(-1, 1, 1)  # [n_graphs, ]
+    num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).view(-1, 1, 1)  # [n_graphs,]
     return torch.mean(
         configs_weight * torch.square((ref["virials"] - pred["virials"]) / num_atoms)
     )  # []
