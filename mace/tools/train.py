@@ -186,7 +186,7 @@ def take_step(
     optimizer.zero_grad()
     output = model(
         batch,
-        training=False,
+        training=True,
         compute_force=output_args["forces"],
         compute_virials=output_args["virials"],
         compute_stress=output_args["stress"],
