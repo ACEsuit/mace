@@ -22,7 +22,9 @@ from .blocks import (
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     ScaleShiftBlock,
-    FixedChargeDipoleBlock
+    FixedChargeDipoleBlock,
+    LinearDipoleReadoutBlock,
+    NonLinearDipoleReadoutBlock,
 )
 from .utils import compute_forces, get_edge_vectors_and_lengths
 
@@ -453,10 +455,15 @@ class AtomicDipolesMACE(torch.nn.Module):
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
-        gate: Callable,
         avg_num_neighbors: float,
+        atomic_numbers: List[int],
+        correlation: int,
+        gate: Optional[Callable],
+        
     ):
         super().__init__()
+        self.r_max = r_max
+        self.atomic_numbers = atomic_numbers
 
         self.dipoles_baseline = FixedChargeDipoleBlock()
         # Embedding
@@ -473,47 +480,80 @@ class AtomicDipolesMACE(torch.nn.Module):
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        num_features = hidden_irreps.count(o3.Irrep(0, 1))
+        interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
 
         # Interactions and readouts
-
-        self.interactions = torch.nn.ModuleList()
-        self.readouts = torch.nn.ModuleList()
-
         inter = interaction_cls_first(
             node_attrs_irreps=node_attr_irreps,
             node_feats_irreps=node_feats_irreps,
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
             target_irreps=hidden_irreps,
+            hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
         )
-        self.interactions.append(inter)
+        self.interactions = torch.nn.ModuleList([inter])
+
+        # Use the appropriate self connection at the first layer 
+        use_sc_first = False
+        if "Residual" in str(interaction_cls_first):
+            use_sc_first = True
+
+        node_feats_irreps_out = inter.target_irreps
+        prod = EquivariantProductBasisBlock(
+            node_feats_irreps=node_feats_irreps_out,
+            target_irreps=hidden_irreps,
+            correlation=correlation,
+            element_dependent=True,
+            num_elements=num_elements,
+            use_sc=use_sc_first,
+        )
+        self.products = torch.nn.ModuleList([prod])
+
+        self.readouts = torch.nn.ModuleList()
         self.readouts.append(
-            LinearDipoleReadoutBlock(inter.irreps_out, dipole_only=True)
+            LinearDipoleReadoutBlock(hidden_irreps, dipole_only=True)
         )
 
         for i in range(num_interactions - 1):
+            # if i == num_interactions - 2:
+            #     hidden_irreps_out = str(
+            #         hidden_irreps[0]
+            #     )  # Select only scalars for last layer
+            # else:
+            #     hidden_irreps_out = hidden_irreps
             inter = interaction_cls(
                 node_attrs_irreps=node_attr_irreps,
                 node_feats_irreps=inter.irreps_out,
                 edge_attrs_irreps=sh_irreps,
                 edge_feats_irreps=edge_feats_irreps,
-                target_irreps=hidden_irreps,
+                target_irreps=interaction_irreps,
+                hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
             )
             self.interactions.append(inter)
+            prod = EquivariantProductBasisBlock(
+                node_feats_irreps=interaction_irreps,
+                target_irreps=hidden_irreps_out,
+                correlation=correlation,
+                element_dependent=True,
+                num_elements=num_elements,
+                use_sc=True,
+            )
+            self.products.append(prod)
             if i == num_interactions - 2:
                 self.readouts.append(
                     NonLinearDipoleReadoutBlock(
-                        inter.irreps_out, MLP_irreps, gate, dipole_only=True
+                        hidden_irreps_out, MLP_irreps, gate, dipole_only=True
                     )
                 )
             else:
                 self.readouts.append(
-                    LinearDipoleReadoutBlock(inter.irreps_out, dipole_only=True)
+                    LinearDipoleReadoutBlock(hidden_irreps, dipole_only=True)
                 )
 
     def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
@@ -536,13 +576,18 @@ class AtomicDipolesMACE(torch.nn.Module):
 
         # Interactions
         dipoles = []
-        for interaction, readout in zip(self.interactions, self.readouts):
-            node_feats = interaction(
+        for interaction, product, readout in zip(
+                self.interactions, self.products, self.readouts
+        ):
+            node_feats, sc = interaction(
                 node_attrs=data.node_attrs,
                 node_feats=node_feats,
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data.edge_index,
+            )
+            node_feats = product(
+                node_feats=node_feats, sc=sc, node_attrs=data.node_attrs
             )
             node_dipoles = readout(node_feats).squeeze(-1)  # [n_nodes,3]
             dipoles.append(node_dipoles)

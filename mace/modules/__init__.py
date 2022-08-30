@@ -18,6 +18,7 @@ from .blocks import (
     ScaleShiftBlock,
     FixedChargeDipoleBlock,
     LinearDipoleReadoutBlock,
+    NonLinearDipoleReadoutBlock,
 )
 from .loss import EnergyForcesLoss, WeightedEnergyForcesLoss, WeightedForcesLoss
 from .models import MACE, BOTNet, ScaleShiftBOTNet, ScaleShiftMACE, AtomicDipolesMACE
@@ -58,6 +59,7 @@ __all__ = [
     "ScaleShiftBlock",
     "FixedChargeDipoleBlock",
     "LinearDipoleReadoutBlock",
+    "NonLinearDipoleReadoutBlock",
     "InteractionBlock",
     "NonLinearReadoutBlock",
     "PolynomialCutoff",
