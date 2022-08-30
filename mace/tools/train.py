@@ -244,45 +244,74 @@ def evaluate(
             delta_es_per_atom_list.append(
                 (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
             )
-        if  output["forces"] is not None:
+        if output["forces"] is not None:
             delta_fs_list.append(batch.forces - output["forces"])
             fs_list.append(batch.forces)
-        if  output["stress"] is not None and batch.stress is not None:
+        if output["stress"] is not None and batch.stress is not None:
             delta_stress_list.append(batch.stress - output["stress"])
-        if  output["virials"] is not None and batch.virials is not None:
+        if output["virials"] is not None and batch.virials is not None:
             delta_virials_list.append(batch.virials - output["virials"])
-
 
     avg_loss = total_loss / len(data_loader)
 
-    delta_es = to_numpy(torch.cat(delta_es_list, dim=0)) if output["energy"] is not None else None
-    delta_es_per_atom = to_numpy(torch.cat(delta_es_per_atom_list, dim=0)) if  output["energy"] is not None else None
-    delta_fs = to_numpy(torch.cat(delta_fs_list, dim=0)) if output["forces"] is not None else None
+    delta_es = (
+        to_numpy(torch.cat(delta_es_list, dim=0))
+        if output["energy"] is not None
+        else None
+    )
+    delta_es_per_atom = (
+        to_numpy(torch.cat(delta_es_per_atom_list, dim=0))
+        if output["energy"] is not None
+        else None
+    )
+    delta_fs = (
+        to_numpy(torch.cat(delta_fs_list, dim=0))
+        if output["forces"] is not None
+        else None
+    )
     fs = to_numpy(torch.cat(fs_list, dim=0)) if output["forces"] is not None else None
-    delta_stress = to_numpy(torch.cat(delta_stress_list, dim=0)) if output["stress"] is not Noneelse None
-    delta_virials = to_numpy(torch.cat(delta_virials_list, dim=0)) if output["virials"] is not None else None
+    delta_stress = (
+        to_numpy(torch.cat(delta_stress_list, dim=0))
+        if output["stress"] is not None
+        else None
+    )
+    delta_virials = (
+        to_numpy(torch.cat(delta_virials_list, dim=0))
+        if output["virials"] is not None
+        else None
+    )
 
     aux = {
         "loss": avg_loss,
         # Mean absolute error
         "mae_e": compute_mae(delta_es) if delta_es is not None else None,
-        "mae_e_per_atom": compute_mae(delta_es_per_atom) if delta_es_per_atom is not None else None,
+        "mae_e_per_atom": compute_mae(delta_es_per_atom)
+        if delta_es_per_atom is not None
+        else None,
         "mae_f": compute_mae(delta_fs) if delta_fs is not None else None,
         "rel_mae_f": compute_rel_mae(delta_fs, fs) if delta_fs is not None else None,
         "mae_stress": compute_mae(delta_stress) if delta_stress is not None else None,
-        "mae_virials": compute_mae(delta_virials) if delta_virials is not None else None,
+        "mae_virials": compute_mae(delta_virials)
+        if delta_virials is not None
+        else None,
         # Root-mean-square error
         "rmse_e": compute_rmse(delta_es) if delta_es is not None else None,
-        "rmse_e_per_atom": compute_rmse(delta_es_per_atom) if delta_es_per_atom is not None else None,
+        "rmse_e_per_atom": compute_rmse(delta_es_per_atom)
+        if delta_es_per_atom is not None
+        else None,
         "rmse_f": compute_rmse(delta_fs) if delta_fs is not None else None,
         "rel_rmse_f": compute_rel_rmse(delta_fs, fs) if delta_fs is not None else None,
         "rmse_stress": compute_rmse(delta_stress) if delta_stress is not None else None,
-        "rmse_virials": compute_rmse(delta_virials) if delta_virials is not None else None,
+        "rmse_virials": compute_rmse(delta_virials)
+        if delta_virials is not None
+        else None,
         # Q_95
         "q95_e": compute_q95(delta_es) if delta_es is not None else None,
         "q95_f": compute_q95(delta_fs) if delta_fs is not None else None,
         "rmse_stress": compute_q95(delta_stress) if delta_stress is not None else None,
-        "rmse_virials": compute_q95(delta_virials) if delta_virials is not None else None,
+        "rmse_virials": compute_q95(delta_virials)
+        if delta_virials is not None
+        else None,
         # Time
         "time": time.time() - start_time,
     }
