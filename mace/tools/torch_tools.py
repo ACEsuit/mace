@@ -100,9 +100,12 @@ def cartesian_to_spherical(t: torch.Tensor):
 def voigt_to_matrix(t: torch.Tensor):
     """
     Convert voigt notation to matrix notation
-    :param t: (6,) tensor
+    :param t: (6,) tensor or (3, 3) tensor
     :return: (3, 3) tensor
     """
-    return torch.tensor(
-        [[t[0], t[5], t[4]], [t[5], t[1], t[3]], [t[4], t[3], t[2]]], dtype=t.dtype
-    )
+    if t.shape == (3, 3):
+        return t
+    else:
+        return torch.tensor(
+            [[t[0], t[5], t[4]], [t[5], t[1], t[3]], [t[4], t[3], t[2]]], dtype=t.dtype
+        )
