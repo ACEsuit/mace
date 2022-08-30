@@ -48,8 +48,8 @@ class AtomicData(torch_geometric.data.Data):
         weight: Optional[torch.Tensor],  # [,]
         forces: Optional[torch.Tensor],  # [n_nodes, 3]
         energy: Optional[torch.Tensor],  # [, ]
-        stress: Optional[torch.Tensor],  # [3,3]
-        virials: Optional[torch.Tensor],  # [3,3]
+        stress: Optional[torch.Tensor],  # [1,3,3]
+        virials: Optional[torch.Tensor],  # [1,3,3]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -63,8 +63,8 @@ class AtomicData(torch_geometric.data.Data):
         assert cell is None or cell.shape == (3, 3)
         assert forces is None or forces.shape == (num_nodes, 3)
         assert energy is None or len(energy.shape) == 0
-        assert stress is None or stress.shape == (3, 3)
-        assert virials is None or virials.shape == (3, 3)
+        assert stress is None or stress.shape == (1, 3, 3)
+        assert virials is None or virials.shape == (1, 3, 3)
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -120,12 +120,12 @@ class AtomicData(torch_geometric.data.Data):
         stress = (
             voigt_to_matrix(
                 torch.tensor(config.stress, dtype=torch.get_default_dtype())
-            )
+            ).unsqueeze(0)
             if config.stress is not None
             else None
         )
         virials = (
-            torch.tensor(config.virials, dtype=torch.get_default_dtype())
+            torch.tensor(config.virials, dtype=torch.get_default_dtype()).unsqueeze(0)
             if config.virials is not None
             else None
         )
