@@ -36,7 +36,7 @@ def count_parameters(module: torch.nn.Module) -> int:
 
 
 def tensor_dict_to_device(td: TensorDict, device: torch.device) -> TensorDict:
-    return {k: v.to(device) for k, v in td.items()}
+    return {k: v.to(device) if v is not None else None for k, v in td.items()}
 
 
 def set_seeds(seed: int) -> None:

@@ -152,6 +152,7 @@ def main() -> None:
     logging.info(f"Average number of neighbors: {args.avg_num_neighbors:.3f}")
 
     # Selecting outputs
+    compute_virials = False
     if args.loss == "stress" or args.loss == "virials":
         compute_virials = True
         args.compute_stress = True
