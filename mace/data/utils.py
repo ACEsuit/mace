@@ -30,6 +30,7 @@ class Configuration:
     positions: Positions  # Angstrom
     energy: Optional[float] = None  # eV
     forces: Optional[Forces] = None  # eV/Angstrom
+    dipole: Optional[Vector] = None  # Debye
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -62,6 +63,7 @@ def config_from_atoms_list(
     atoms_list: List[ase.Atoms],
     energy_key="energy",
     forces_key="forces",
+    dipole_key="dipole",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -75,6 +77,7 @@ def config_from_atoms_list(
                 atoms,
                 energy_key=energy_key,
                 forces_key=forces_key,
+                dipole_key=dipole_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -85,6 +88,7 @@ def config_from_atoms(
     atoms: ase.Atoms,
     energy_key="energy",
     forces_key="forces",
+    dipole_key="dipole",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -93,6 +97,7 @@ def config_from_atoms(
 
     energy = atoms.info.get(energy_key, None)  # eV
     forces = atoms.arrays.get(forces_key, None)  # eV / Ang
+    dipole = atoms.info.get(dipole_key, None)  # Debye
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -105,6 +110,7 @@ def config_from_atoms(
         positions=atoms.get_positions(),
         energy=energy,
         forces=forces,
+        dipole=dipole,
         weight=weight,
         config_type=config_type,
         pbc=pbc,
@@ -133,6 +139,7 @@ def load_from_xyz(
     config_type_weights: Dict,
     energy_key: str = "energy",
     forces_key: str = "forces",
+    dipole_key: str = "dipole",
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     assert file_path[-4:] == ".xyz", NameError("Specify file with extension .xyz")
@@ -169,6 +176,7 @@ def load_from_xyz(
         config_type_weights=config_type_weights,
         energy_key=energy_key,
         forces_key=forces_key,
+        dipole_key=dipole_key,
     )
     return atomic_energies_dict, configs
 
