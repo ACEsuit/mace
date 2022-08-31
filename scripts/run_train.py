@@ -377,14 +377,15 @@ def main() -> None:
     ] + collections.tests
 
     table = create_error_table(
-        args.error_table,
-        all_collections,
-        z_table,
-        args.r_max,
-        args.valid_batch_size,
-        model,
-        loss_fn,
-        device,
+        table_type=args.error_table,
+        all_collections=all_collections,
+        z_table=z_table,
+        r_max=args.r_max,
+        valid_batch_size=args.valid_batch_size,
+        model=model,
+        loss_fn=loss_fn,
+        output_args=output_args,
+        device=device,
     )
 
     logging.info("\n" + str(table))
