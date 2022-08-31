@@ -272,12 +272,12 @@ def evaluate(
     fs = to_numpy(torch.cat(fs_list, dim=0)) if output["forces"] is not None else None
     delta_stress = (
         to_numpy(torch.cat(delta_stress_list, dim=0))
-        if output["stress"] is not None
+        if output["stress"] is not None and batch.stress is not None
         else None
     )
     delta_virials = (
         to_numpy(torch.cat(delta_virials_list, dim=0))
-        if output["virials"] is not None
+        if output["virials"] is not None and batch.virials is not None
         else None
     )
 
