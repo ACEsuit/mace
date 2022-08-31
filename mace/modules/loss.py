@@ -143,7 +143,7 @@ class WeightedEnergyForcesStressLoss(torch.nn.Module):
     def __repr__(self):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
-            f"forces_weight={self.forces_weight:.3f}), stress_weight={self.stress_weight:.3f}"
+            f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f})"
         )
 
 
@@ -175,5 +175,5 @@ class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
     def __repr__(self):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
-            f"forces_weight={self.forces_weight:.3f}), virials_weight={self.virials_weight:.3f}"
+            f"forces_weight={self.forces_weight:.3f}, virials_weight={self.virials_weight:.3f})"
         )
