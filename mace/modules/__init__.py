@@ -20,7 +20,8 @@ from .blocks import (
     LinearDipoleReadoutBlock,
     NonLinearDipoleReadoutBlock,
 )
-from .loss import EnergyForcesLoss, WeightedEnergyForcesLoss, WeightedForcesLoss
+from .loss import (EnergyForcesLoss, WeightedEnergyForcesLoss, 
+                    WeightedForcesLoss, DipoleSingleLoss)
 from .models import MACE, BOTNet, ScaleShiftBOTNet, ScaleShiftMACE, AtomicDipolesMACE
 from .radial import BesselBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
@@ -72,6 +73,7 @@ __all__ = [
     "EnergyForcesLoss",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
+    "DipoleSingleLoss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
