@@ -37,7 +37,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--device",
         help="select device",
         type=str,
-        choices=["cpu", "cuda"],
+        choices=["cpu", "cuda", "mps"],
         default="cpu",
     )
     parser.add_argument(
@@ -62,7 +62,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--model",
         help="model type",
         default="MACE",
-        choices=["BOTNet", "MACE", "ScaleShiftMACE", "ScaleShiftBOTNet"],
+        choices=["BOTNet", "MACE", "ScaleShiftMACE", "ScaleShiftBOTNet", "AtomicDipolesMACE"],
     )
     parser.add_argument(
         "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
@@ -187,13 +187,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="forces",
     )
+    parser.add_argument(
+        "--dipole_key",
+        help="Key of reference dipoles in training xyz",
+        type=str,
+        default="dipole",
+    )
 
     # Loss and optimization
     parser.add_argument(
         "--loss",
         help="type of loss",
         default="weighted",
-        choices=["ef", "weighted", "forces_only"],
+        choices=["ef", "weighted", "forces_only", "dipole"],
     )
     parser.add_argument(
         "--forces_weight", help="weight of forces loss", type=float, default=10.0

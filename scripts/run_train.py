@@ -55,6 +55,7 @@ def main() -> None:
         seed=args.seed,
         energy_key=args.energy_key,
         forces_key=args.forces_key,
+        dipole_key=args.dipole_key,
     )
 
     logging.info(
@@ -72,34 +73,37 @@ def main() -> None:
     )
     # yapf: enable
     logging.info(z_table)
-    if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
-        if args.E0s is not None:
-            logging.info(
-                "Atomic Energies not in training file, using command line argument E0s"
-            )
-            if args.E0s.lower() == "average":
+    if args.model == "AtomicDipolesMACE":
+        pass
+    else:
+        if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
+            if args.E0s is not None:
                 logging.info(
-                    "Computing average Atomic Energies using least squares regression"
+                    "Atomic Energies not in training file, using command line argument E0s"
                 )
-                atomic_energies_dict = data.compute_average_E0s(
-                    collections.train, z_table
-                )
+                if args.E0s.lower() == "average":
+                    logging.info(
+                        "Computing average Atomic Energies using least squares regression"
+                    )
+                    atomic_energies_dict = data.compute_average_E0s(
+                        collections.train, z_table
+                    )
+                else:
+                    try:
+                        atomic_energies_dict = ast.literal_eval(args.E0s)
+                        assert isinstance(atomic_energies_dict, dict)
+                    except Exception as e:
+                        raise RuntimeError(
+                            f"E0s specified invalidly, error {e} occured"
+                        ) from e
             else:
-                try:
-                    atomic_energies_dict = ast.literal_eval(args.E0s)
-                    assert isinstance(atomic_energies_dict, dict)
-                except Exception as e:
-                    raise RuntimeError(
-                        f"E0s specified invalidly, error {e} occured"
-                    ) from e
-        else:
-            raise RuntimeError(
-                "E0s not found in training file and not specified in command line"
-            )
-    atomic_energies: np.ndarray = np.array(
-        [atomic_energies_dict[z] for z in z_table.zs]
-    )
-    logging.info(f"Atomic energies: {atomic_energies.tolist()}")
+                raise RuntimeError(
+                    "E0s not found in training file and not specified in command line"
+                )
+        atomic_energies: np.ndarray = np.array(
+            [atomic_energies_dict[z] for z in z_table.zs]
+        )
+        logging.info(f"Atomic energies: {atomic_energies.tolist()}")
 
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
@@ -127,6 +131,8 @@ def main() -> None:
         )
     elif args.loss == "forces_only":
         loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
+    elif args.loss == "dipole":
+        loss_fn = modules.DipoleSingleLoss()
     else:
         loss_fn = modules.EnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
@@ -201,6 +207,19 @@ def main() -> None:
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
+        )
+    elif args.model == "AtomicDipolesMACE":
+        # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
+        model = modules.AtomicDipolesMACE(
+            **model_config,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[
+                "RealAgnosticInteractionBlock"
+            ],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            # dipole_scale=1,
+            # dipole_shift=0,
         )
     else:
         raise RuntimeError(f"Unknown model: '{args.model}'")
