@@ -4,6 +4,7 @@
 # This program is distributed under the ASL License (see ASL.md)
 ###########################################################################################
 
+from types import NoneType
 from typing import Any, Callable, Dict, List, Optional, Type
 
 import numpy as np
@@ -459,9 +460,10 @@ class AtomicDipolesMACE(torch.nn.Module):
         atomic_numbers: List[int],
         correlation: int,
         gate: Optional[Callable],
-        
+        atomic_energies: Optional[NoneType]  # Just here to make it compatible with energy models, MUST be None
     ):
         super().__init__()
+        assert atomic_energies is None
         self.r_max = r_max
         self.atomic_numbers = atomic_numbers
 
@@ -521,6 +523,7 @@ class AtomicDipolesMACE(torch.nn.Module):
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
+                assert len(hidden_irreps) > 1, "To predict dipoles use at least l=1 hidden_irreps"
                 hidden_irreps_out = str(
                     hidden_irreps[1]
                 )  # Select only l=1 vectors for last layer

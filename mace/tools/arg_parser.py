@@ -53,7 +53,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--error_table",
         help="Type of error table produced at the end of the training",
         type=str,
-        choices=["PerAtomRMSE", "TotalRMSE", "PerAtomMAE", "TotalMAE"],
+        choices=["PerAtomRMSE", "TotalRMSE", "PerAtomMAE", "TotalMAE", "DipoleRMSE"],
         default="PerAtomRMSE",
     )
 

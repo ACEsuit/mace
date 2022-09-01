@@ -147,6 +147,7 @@ def load_from_xyz(
     energy_key: str = "energy",
     forces_key: str = "forces",
     dipole_key: str = "dipole",
+    charges_key: str = "charges",
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     assert file_path[-4:] == ".xyz", NameError("Specify file with extension .xyz")
@@ -184,6 +185,7 @@ def load_from_xyz(
         energy_key=energy_key,
         forces_key=forces_key,
         dipole_key=dipole_key,
+        charges_key=charges_key,
     )
     return atomic_energies_dict, configs
 

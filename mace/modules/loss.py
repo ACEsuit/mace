@@ -39,6 +39,7 @@ def weighted_mean_squared_error_dipole(ref: Batch, pred: TensorDict) -> torch.Te
     # dipole: [n_graphs, ]
     num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).unsqueeze(-1)  # [n_graphs,1]
     return torch.mean(torch.square((ref['dipole'] - pred['dipole']) / num_atoms))  # []
+    #return torch.mean(torch.square((torch.reshape(ref['dipole'], pred["dipole"].shape) - pred['dipole']) / num_atoms))  # []
 
 
 class EnergyForcesLoss(torch.nn.Module):
