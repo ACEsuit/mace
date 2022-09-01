@@ -54,6 +54,7 @@ def train(
     swa: Optional[SWAContainer] = None,
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
+    dipole: Optional[bool] = False,
 ):
     lowest_loss = np.inf
     patience_counter = 0
@@ -82,19 +83,35 @@ def train(
         if epoch % eval_interval == 0:
             if ema is not None:
                 with ema.average_parameters():
+                    if dipole:
+                        valid_loss, eval_metrics = evaluate_mu(
+                            model=model,
+                            loss_fn=loss_fn,
+                            data_loader=valid_loader,
+                            device=device,
+                    )
+                    else:
+                        valid_loss, eval_metrics = evaluate(
+                            model=model,
+                            loss_fn=loss_fn,
+                            data_loader=valid_loader,
+                            device=device,
+                        )
+            else:
+                if dipole:
+                    valid_loss, eval_metrics = evaluate_mu(
+                        model=model,
+                        loss_fn=loss_fn,
+                        data_loader=valid_loader,
+                        device=device,
+                )
+                else:
                     valid_loss, eval_metrics = evaluate(
                         model=model,
                         loss_fn=loss_fn,
                         data_loader=valid_loader,
                         device=device,
                     )
-            else:
-                valid_loss, eval_metrics = evaluate(
-                    model=model,
-                    loss_fn=loss_fn,
-                    data_loader=valid_loader,
-                    device=device,
-                )
             eval_metrics["mode"] = "eval"
             eval_metrics["epoch"] = epoch
             logger.log(eval_metrics)
@@ -121,6 +138,11 @@ def train(
                 error_f = eval_metrics["mae_f"] * 1e3
                 logging.info(
                     f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+                )
+            elif log_errors == "DipoleRMSE":
+                error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye"
                 )
             if valid_loss >= lowest_loss:
                 patience_counter += 1
@@ -240,6 +262,57 @@ def evaluate(
         # Q_95
         "q95_e": compute_q95(delta_es),
         "q95_f": compute_q95(delta_fs),
+        # Time
+        "time": time.time() - start_time,
+    }
+
+    return avg_loss, aux
+
+def evaluate_mu(
+    model: torch.nn.Module,
+    loss_fn: torch.nn.Module,
+    data_loader: DataLoader,
+    device: torch.device,
+) -> Tuple[float, Dict[str, Any]]:
+    total_loss = 0.0
+    delta_mus_list = []
+    delta_mus_per_atom_list = []
+    mus_list = []
+
+    start_time = time.time()
+    for batch in data_loader:
+        batch = batch.to(device)
+        output = model(batch, training=False)
+        batch = batch.cpu()
+        output = tensor_dict_to_device(output, device=torch.device("cpu"))
+
+        loss = loss_fn(pred=output, ref=batch)
+        total_loss += to_numpy(loss).item()
+
+        delta_mus_list.append(batch.dipole - output["dipole"])
+        delta_mus_per_atom_list.append(
+            (batch.dipole - output["dipole"]) / (batch.ptr[1:] - batch.ptr[:-1])
+        )
+        mus_list.append(batch.dipole)
+
+    avg_loss = total_loss / len(data_loader)
+
+    delta_mus = to_numpy(torch.cat(delta_mus_list, dim=0))
+    delta_mus_per_atom = to_numpy(torch.cat(delta_mus_per_atom_list, dim=0))
+    mus = to_numpy(torch.cat(mus_list, dim=0))
+
+    aux = {
+        "loss": avg_loss,
+        # Mean absolute error
+        "mae_mu": compute_mae(delta_mus),
+        "mae_mu_per_atom": compute_mae(delta_mus_per_atom),
+        "rel_mae_mu": compute_rel_mae(delta_mus, mus),
+        # Root-mean-square error
+        "rmse_mu": compute_rmse(delta_mus),
+        "rmse_mu_per_atom": compute_rmse(delta_mus_per_atom),
+        "rel_rmse_mu": compute_rel_rmse(delta_mus, mus),
+        # Q_95
+        "q95_mu": compute_q95(delta_mus),
         # Time
         "time": time.time() - start_time,
     }

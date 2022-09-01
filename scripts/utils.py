@@ -13,7 +13,7 @@ from prettytable import PrettyTable
 
 from mace import data
 from mace.data import AtomicData
-from mace.tools import AtomicNumberTable, evaluate, torch_geometric
+from mace.tools import AtomicNumberTable, evaluate, evaluate_mu, torch_geometric
 
 
 @dataclasses.dataclass
@@ -123,6 +123,12 @@ def create_error_table(
             "MAE F / meV / A",
             "relative F MAE %",
         ]
+    elif table_type == "DipoleRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE MU / mDebye / atom",
+            "relative MU RMSE %",
+        ]
     for name, subset in all_collections:
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
@@ -135,9 +141,14 @@ def create_error_table(
         )
 
         logging.info(f"Evaluating {name} ...")
-        _, metrics = evaluate(
-            model, loss_fn=loss_fn, data_loader=data_loader, device=device
-        )
+        if table_type == "DipoleRMSE":
+            _, metrics = evaluate_mu(
+                model, loss_fn=loss_fn, data_loader=data_loader, device=device
+            )
+        else:
+            _, metrics = evaluate(
+                model, loss_fn=loss_fn, data_loader=data_loader, device=device
+            )
         if table_type == "TotalRMSE":
             table.add_row(
                 [
@@ -172,6 +183,14 @@ def create_error_table(
                     f"{metrics['mae_e_per_atom'] * 1000:.1f}",
                     f"{metrics['mae_f'] * 1000:.1f}",
                     f"{metrics['rel_mae_f']:.2f}",
+                ]
+            )
+        elif table_type == "DipoleRMSE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_mu_per_atom'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_mu']:.2f}",
                 ]
             )
     return table

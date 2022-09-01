@@ -10,7 +10,7 @@ from .torch_tools import (
     to_numpy,
     to_one_hot,
 )
-from .train import SWAContainer, evaluate, train
+from .train import SWAContainer, evaluate, evaluate_mu, train
 from .utils import (
     AtomicNumberTable,
     MetricsLogger,
@@ -44,6 +44,7 @@ __all__ = [
     "get_atomic_number_table_from_zs",
     "train",
     "evaluate",
+    "evaluate_mu",
     "SWAContainer",
     "CheckpointHandler",
     "CheckpointIO",

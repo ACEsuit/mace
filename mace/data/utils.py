@@ -17,6 +17,7 @@ from mace.tools import AtomicNumberTable
 Vector = np.ndarray  # [3,]
 Positions = np.ndarray  # [..., 3]
 Forces = np.ndarray  # [..., 3]
+Charges = np.ndarray  # [..., 1]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
 
@@ -31,6 +32,7 @@ class Configuration:
     energy: Optional[float] = None  # eV
     forces: Optional[Forces] = None  # eV/Angstrom
     dipole: Optional[Vector] = None  # Debye
+    charges: Optional[Charges] = None  # atomic unit
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -64,6 +66,7 @@ def config_from_atoms_list(
     energy_key="energy",
     forces_key="forces",
     dipole_key="dipole",
+    charges_key="charges",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -78,6 +81,7 @@ def config_from_atoms_list(
                 energy_key=energy_key,
                 forces_key=forces_key,
                 dipole_key=dipole_key,
+                charges_key=charges_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -89,6 +93,7 @@ def config_from_atoms(
     energy_key="energy",
     forces_key="forces",
     dipole_key="dipole",
+    charges_key="charges",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -98,6 +103,7 @@ def config_from_atoms(
     energy = atoms.info.get(energy_key, None)  # eV
     forces = atoms.arrays.get(forces_key, None)  # eV / Ang
     dipole = atoms.info.get(dipole_key, None)  # Debye
+    charges = atoms.arrays.get(charges_key, None)  # atomic unit
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -111,6 +117,7 @@ def config_from_atoms(
         energy=energy,
         forces=forces,
         dipole=dipole,
+        charges=charges,
         weight=weight,
         config_type=config_type,
         pbc=pbc,

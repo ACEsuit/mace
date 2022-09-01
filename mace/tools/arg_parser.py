@@ -193,6 +193,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="dipole",
     )
+    parser.add_argument(
+        "--charges_key",
+        help="Key of atomic charges in training xyz",
+        type=str,
+        default="charges",
+    )
 
     # Loss and optimization
     parser.add_argument(

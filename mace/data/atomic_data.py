@@ -31,6 +31,8 @@ class AtomicData(torch_geometric.data.Data):
     cell: torch.Tensor
     forces: torch.Tensor
     energy: torch.Tensor
+    dipole: torch.Tensor
+    charges: torch.Tensor
     weight: torch.Tensor
 
     def __init__(
@@ -44,6 +46,7 @@ class AtomicData(torch_geometric.data.Data):
         forces: Optional[torch.Tensor],  # [n_nodes, 3]
         energy: Optional[torch.Tensor],  # [, ]
         dipole: Optional[torch.Tensor], # [, 3]
+        charges: Optional[torch.Tensor], # [n_nodes, ]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -57,6 +60,7 @@ class AtomicData(torch_geometric.data.Data):
         assert forces is None or forces.shape == (num_nodes, 3)
         assert energy is None or len(energy.shape) == 0
         assert dipole is None or dipole.shape == (1, 3)
+        assert charges is None or charges.shape == (num_nodes, )
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -69,6 +73,7 @@ class AtomicData(torch_geometric.data.Data):
             "forces": forces,
             "energy": energy,
             "dipole": dipole,
+            "charges": charges,
         }
         super().__init__(**data)
 
@@ -112,6 +117,11 @@ class AtomicData(torch_geometric.data.Data):
             if config.dipole is not None
             else None
         )
+        charges = (
+            torch.tensor(config.charges, dtype=torch.get_default_dtype())
+            if config.charges is not None
+            else None
+        )
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
@@ -123,6 +133,7 @@ class AtomicData(torch_geometric.data.Data):
             forces=forces,
             energy=energy,
             dipole=dipole,
+            charges=charges,
         )
 
 
