@@ -59,7 +59,7 @@ class AtomicData(torch_geometric.data.Data):
         assert cell is None or cell.shape == (3, 3)
         assert forces is None or forces.shape == (num_nodes, 3)
         assert energy is None or len(energy.shape) == 0
-        assert dipole is None or dipole.shape == (1, 3)
+        assert dipole is None or dipole.shape[-1] == 3
         assert charges is None or charges.shape == (num_nodes, )
         # Aggregate data
         data = {
@@ -113,7 +113,7 @@ class AtomicData(torch_geometric.data.Data):
             else None
         )
         dipole = (
-            torch.tensor(config.dipole, dtype=torch.get_default_dtype())
+            torch.tensor(config.dipole, dtype=torch.get_default_dtype()).unsqueeze(0)
             if config.dipole is not None
             else None
         )

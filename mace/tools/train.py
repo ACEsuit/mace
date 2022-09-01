@@ -291,7 +291,7 @@ def evaluate_mu(
 
         delta_mus_list.append(batch.dipole - output["dipole"])
         delta_mus_per_atom_list.append(
-            (batch.dipole - output["dipole"]) / (batch.ptr[1:] - batch.ptr[:-1])
+            (batch.dipole - output["dipole"]) / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
         )
         mus_list.append(batch.dipole)
 

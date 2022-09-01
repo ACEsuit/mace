@@ -75,6 +75,7 @@ def main() -> None:
     # yapf: enable
     logging.info(z_table)
     if args.model == "AtomicDipolesMACE":
+        atomic_energies = None
         dipole = True
     else:
         dipole = False
