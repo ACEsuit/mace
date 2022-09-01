@@ -56,6 +56,7 @@ def main() -> None:
         energy_key=args.energy_key,
         forces_key=args.forces_key,
         dipole_key=args.dipole_key,
+        charges_key=args.charges_key, 
     )
 
     logging.info(
@@ -74,8 +75,9 @@ def main() -> None:
     # yapf: enable
     logging.info(z_table)
     if args.model == "AtomicDipolesMACE":
-        pass
+        dipole = True
     else:
+        dipole = False
         if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
             if args.E0s is not None:
                 logging.info(
@@ -132,6 +134,7 @@ def main() -> None:
     elif args.loss == "forces_only":
         loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
     elif args.loss == "dipole":
+        assert dipole == True
         loss_fn = modules.DipoleSingleLoss()
     else:
         loss_fn = modules.EnergyForcesLoss(
@@ -210,6 +213,8 @@ def main() -> None:
         )
     elif args.model == "AtomicDipolesMACE":
         # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
+        assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
+        assert args.error_table == "DipoleRMSE", "Use error_table DipoleRMSE with AtomicDipolesMACE model"
         model = modules.AtomicDipolesMACE(
             **model_config,
             correlation=args.correlation,
@@ -302,6 +307,7 @@ def main() -> None:
 
     swa: Optional[tools.SWAContainer] = None
     if args.swa:
+        assert dipole == False, "swa for dipole fitting not implemented"
         if args.start_swa is None:
             args.start_swa = (
                 args.max_num_epochs // 4 * 3
@@ -352,6 +358,7 @@ def main() -> None:
         ema=ema,
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
+        dipole=dipole
     )
 
     epoch = checkpoint_handler.load_latest(

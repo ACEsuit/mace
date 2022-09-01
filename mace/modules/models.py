@@ -604,7 +604,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             dim_size=data.num_graphs,
         )  # [n_graphs,3]
         baseline = self.dipoles_baseline(
-            charge=data.charge,
+            charges=data.charges,
             positions=data.positions,
             batch=data.batch,
             num_graphs=data.num_graphs,
