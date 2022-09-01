@@ -120,8 +120,7 @@ def create_error_table(
             "RMSE E / meV / atom",
             "RMSE F / meV / A",
             "relative F RMSE %",
-            "RMSE Stress / meV / A",
-            "RMSE Virials / meV / A^3",
+            "RMSE Stress (Virials) / meV / A (A^3)",
         ]
     elif table_type == "TotalMAE":
         table.field_names = [
