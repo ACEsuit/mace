@@ -20,9 +20,9 @@ from .blocks import (
 from .loss import (
     EnergyForcesLoss,
     WeightedEnergyForcesLoss,
-    WeightedForcesLoss,
-    WeightedEnergyForcesVirialsLoss,
     WeightedEnergyForcesStressLoss,
+    WeightedEnergyForcesVirialsLoss,
+    WeightedForcesLoss,
 )
 from .models import MACE, BOTNet, ScaleShiftBOTNet, ScaleShiftMACE
 from .radial import BesselBasis, PolynomialCutoff

@@ -28,7 +28,8 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irreps_out)
 
     def forward(
-        self, node_attrs: torch.Tensor,  # [n_nodes, irreps]
+        self,
+        node_attrs: torch.Tensor,  # [n_nodes, irreps]
     ):
         return self.linear(node_attrs)
 
@@ -89,7 +90,8 @@ class RadialEmbeddingBlock(torch.nn.Module):
         self.out_dim = num_bessel
 
     def forward(
-        self, edge_lengths: torch.Tensor,  # [n_edges, 1]
+        self,
+        edge_lengths: torch.Tensor,  # [n_edges, 1]
     ):
         bessel = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
@@ -118,7 +120,10 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         )
         # Update linear
         self.linear = o3.Linear(
-            target_irreps, target_irreps, internal_weights=True, shared_weights=True,
+            target_irreps,
+            target_irreps,
+            internal_weights=True,
+            shared_weights=True,
         )
 
     def forward(
@@ -285,7 +290,8 @@ class AgnosticNonlinearInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel], torch.nn.SiLU(),
+            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
+            torch.nn.SiLU(),
         )
 
         # Linear
@@ -349,7 +355,8 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel], torch.nn.SiLU(),
+            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
+            torch.nn.SiLU(),
         )
 
         # Linear
@@ -400,7 +407,9 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         )
         # TensorProduct
         irreps_mid, instructions = tp_out_irreps_with_instructions(
-            self.node_feats_irreps, self.edge_attrs_irreps, self.target_irreps,
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
         )
         self.conv_tp = o3.TensorProduct(
             self.node_feats_irreps,
@@ -414,7 +423,8 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel], torch.nn.SiLU(),
+            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
+            torch.nn.SiLU(),
         )
 
         # Linear
@@ -469,7 +479,9 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         )
         # TensorProduct
         irreps_mid, instructions = tp_out_irreps_with_instructions(
-            self.node_feats_irreps, self.edge_attrs_irreps, self.target_irreps,
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
         )
         self.conv_tp = o3.TensorProduct(
             self.node_feats_irreps,
@@ -483,7 +495,8 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel], torch.nn.SiLU(),
+            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
+            torch.nn.SiLU(),
         )
 
         # Linear
