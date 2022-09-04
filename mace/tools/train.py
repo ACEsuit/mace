@@ -7,7 +7,7 @@
 import dataclasses
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -236,6 +236,7 @@ def evaluate(
     delta_virials_list = []
     delta_stress_per_atom_list = []
     delta_virials_per_atom_list = []
+    batch = None  # for pylint
 
     start_time = time.time()
     for batch in data_loader:
@@ -346,8 +347,8 @@ def evaluate(
         # Q_95
         "q95_e": compute_q95(delta_es) if delta_es is not None else None,
         "q95_f": compute_q95(delta_fs) if delta_fs is not None else None,
-        "rmse_stress": compute_q95(delta_stress) if delta_stress is not None else None,
-        "rmse_virials": compute_q95(delta_virials)
+        "q95_stress": compute_q95(delta_stress) if delta_stress is not None else None,
+        "q95_virials": compute_q95(delta_virials)
         if delta_virials is not None
         else None,
         # Time

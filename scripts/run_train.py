@@ -153,7 +153,7 @@ def main() -> None:
 
     # Selecting outputs
     compute_virials = False
-    if args.loss == "stress" or args.loss == "virials":
+    if args.loss in ("stress", "virials"):
         compute_virials = True
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
