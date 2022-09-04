@@ -221,7 +221,10 @@ class MACE(torch.nn.Module):
 
 class ScaleShiftMACE(MACE):
     def __init__(
-        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
+        self,
+        atomic_inter_scale: float,
+        atomic_inter_shift: float,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
@@ -439,7 +442,10 @@ class BOTNet(torch.nn.Module):
 
 class ScaleShiftBOTNet(BOTNet):
     def __init__(
-        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
+        self,
+        atomic_inter_scale: float,
+        atomic_inter_shift: float,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
