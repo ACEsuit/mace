@@ -633,7 +633,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         self,
         data: AtomicData,
         training=False,
-        compute_force: bool = True,
+        compute_force: bool = False,
         compute_virials: bool = False,
         compute_stress: bool = False,
     ) -> Dict[str, Any]:
