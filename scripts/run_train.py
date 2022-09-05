@@ -80,6 +80,9 @@ def main() -> None:
         atomic_energies = None
         dipole = True
         compute_energy = False
+        args.compute_forces = False
+        compute_virials = False
+        args.compute_stress = False
     else:
         dipole = False
         if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
