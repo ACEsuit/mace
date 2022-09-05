@@ -359,7 +359,6 @@ def main() -> None:
         ema=ema,
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
-        dipole=dipole
     )
 
     epoch = checkpoint_handler.load_latest(
