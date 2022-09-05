@@ -545,7 +545,7 @@ class ScaleShiftBlock(torch.nn.Module):
             f"{self.__class__.__name__}(scale={self.scale:.6f}, shift={self.shift:.6f})"
         )
 
-# water model blocks
+# dipole model blocks
 class FixedChargeDipoleBlock(torch.nn.Module):
     def __init__(self,):
         super().__init__()

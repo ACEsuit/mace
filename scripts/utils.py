@@ -137,6 +137,12 @@ def create_error_table(
             "RMSE MU / mDebye / atom",
             "relative MU RMSE %",
         ]
+    elif table_type == "DipoleMAE":
+        table.field_names = [
+            "config_type",
+            "MAE MU / mDebye / atom",
+            "relative MU MAE %",
+        ]
     for name, subset in all_collections:
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
@@ -194,6 +200,14 @@ def create_error_table(
                     name,
                     f"{metrics['rmse_mu_per_atom'] * 1000:.2f}",
                     f"{metrics['rel_rmse_mu']:.1f}",
+                ]
+            )
+        elif table_type == "DipoleMAE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['mae_mu_per_atom'] * 1000:.2f}",
+                    f"{metrics['rel_mae_mu']:.1f}",
                 ]
             )
     return table

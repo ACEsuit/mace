@@ -135,7 +135,7 @@ def main() -> None:
     elif args.loss == "forces_only":
         loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
     elif args.loss == "dipole":
-        assert dipole == True
+        assert dipole == True, "dipole loss can only be used with AtomicDipolesMACE model"
         loss_fn = modules.DipoleSingleLoss()
     else:
         loss_fn = modules.EnergyForcesLoss(

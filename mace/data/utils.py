@@ -103,7 +103,8 @@ def config_from_atoms(
     energy = atoms.info.get(energy_key, None)  # eV
     forces = atoms.arrays.get(forces_key, None)  # eV / Ang
     dipole = atoms.info.get(dipole_key, None)  # Debye
-    charges = atoms.arrays.get(charges_key, None)  # atomic unit
+    # Charges default to 0 instead of None if not found
+    charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
