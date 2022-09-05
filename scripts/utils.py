@@ -13,7 +13,7 @@ from prettytable import PrettyTable
 
 from mace import data
 from mace.data import AtomicData
-from mace.tools import AtomicNumberTable, evaluate, evaluate_mu, torch_geometric
+from mace.tools import AtomicNumberTable, evaluate, torch_geometric
 
 
 @dataclasses.dataclass
@@ -149,14 +149,9 @@ def create_error_table(
         )
 
         logging.info(f"Evaluating {name} ...")
-        if table_type == "DipoleRMSE":
-            _, metrics = evaluate_mu(
-                model, loss_fn=loss_fn, data_loader=data_loader, device=device
-            )
-        else:
-            _, metrics = evaluate(
-                model, loss_fn=loss_fn, data_loader=data_loader, device=device
-            )
+        _, metrics = evaluate(
+            model, loss_fn=loss_fn, data_loader=data_loader, device=device
+        )
         if table_type == "TotalRMSE":
             table.add_row(
                 [
@@ -197,8 +192,8 @@ def create_error_table(
             table.add_row(
                 [
                     name,
-                    f"{metrics['rmse_mu_per_atom'] * 1000:.1f}",
-                    f"{metrics['rel_rmse_mu']:.2f}",
+                    f"{metrics['rmse_mu_per_atom'] * 1000:.2f}",
+                    f"{metrics['rel_rmse_mu']:.1f}",
                 ]
             )
     return table
