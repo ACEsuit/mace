@@ -4,7 +4,6 @@
 # This program is distributed under the ASL License (see ASL.md)
 ###########################################################################################
 
-from types import NoneType
 from typing import Any, Callable, Dict, List, Optional, Type
 
 import numpy as np
@@ -528,9 +527,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         atomic_numbers: List[int],
         correlation: int,
         gate: Optional[Callable],
-        atomic_energies: Optional[
-            NoneType
-        ],  # Just here to make it compatible with energy models, MUST be None
+        atomic_energies: Optional[None],  # Just here to make it compatible with energy models, MUST be None
     ):
         super().__init__()
         assert atomic_energies is None
