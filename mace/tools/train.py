@@ -196,8 +196,9 @@ def take_step(
     start_time = time.time()
     batch = batch.to(device)
     optimizer.zero_grad()
+    batch_dict = batch.to_dict()
     output = model(
-        batch,
+        batch_dict,
         training=True,
         compute_force=output_args["forces"],
         compute_virials=output_args["virials"],
@@ -241,8 +242,9 @@ def evaluate(
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
+        batch_dict = batch.to_dict()
         output = model(
-            batch,
+            batch_dict,
             training=False,
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],

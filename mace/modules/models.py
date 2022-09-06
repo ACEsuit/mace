@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Type
 import numpy as np
 import torch
 from e3nn import o3
+from e3nn.util.jit import compile_mode
 
 from mace.data import AtomicData
 from mace.tools.scatter import scatter_sum
@@ -31,6 +32,7 @@ from .utils import (
 )
 
 
+@compile_mode("script")
 class MACE(torch.nn.Module):
     def __init__(
         self,
@@ -141,35 +143,42 @@ class MACE(torch.nn.Module):
 
     def forward(
         self,
-        data: AtomicData,
+        data: Dict[str, torch.Tensor],
         training=False,
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> Dict[str, torch.Tensor]:
         # Setup
-        data.positions.requires_grad = True
+        data["positions"].requires_grad_(True)
+        num_graphs = data["ptr"].numel() - 1
         displacement = None
         if compute_virials:
-            data.positions, data.shifts, displacement = get_symmetric_displacement(
-                positions=data.positions,
-                unit_shifts=data.unit_shifts,
-                cell=data.cell,
-                edge_index=data.edge_index,
-                num_graphs=data.num_graphs,
-                batch=data.batch,
+            (
+                data["positions"],
+                data["shifts"],
+                displacement,
+            ) = get_symmetric_displacement(
+                positions=data["positions"],
+                unit_shifts=data["unit_shifts"],
+                cell=data["cell"],
+                edge_index=data["edge_index"],
+                num_graphs=num_graphs,
+                batch=data["batch"],
             )
 
         # Atomic energies
-        node_e0 = self.atomic_energies_fn(data.node_attrs)
+        node_e0 = self.atomic_energies_fn(data["atomic_numbers"])
         e0 = scatter_sum(
-            src=node_e0, index=data.batch, dim=-1, dim_size=data.num_graphs
+            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
 
         # Embeddings
-        node_feats = self.node_embedding(data.node_attrs)
+        node_feats = self.node_embedding(data["node_attrs"])
         vectors, lengths = get_edge_vectors_and_lengths(
-            positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats = self.radial_embedding(lengths)
@@ -180,18 +189,18 @@ class MACE(torch.nn.Module):
             self.interactions, self.products, self.readouts
         ):
             node_feats, sc = interaction(
-                node_attrs=data.node_attrs,
+                node_attrs=data["node_attrs"],
                 node_feats=node_feats,
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
-                edge_index=data.edge_index,
+                edge_index=data["edge_index"],
             )
             node_feats = product(
-                node_feats=node_feats, sc=sc, node_attrs=data.node_attrs
+                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"],
             )
             node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             energy = scatter_sum(
-                src=node_energies, index=data.batch, dim=-1, dim_size=data.num_graphs
+                src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
             energies.append(energy)
 
@@ -201,9 +210,9 @@ class MACE(torch.nn.Module):
         # Outputs
         forces, virials, stress = get_outputs(
             energy=total_energy,
-            positions=data.positions,
+            positions=data["positions"],
             displacement=displacement,
-            cell=data.cell,
+            cell=data["cell"],
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -219,12 +228,10 @@ class MACE(torch.nn.Module):
         }
 
 
+@compile_mode("script")
 class ScaleShiftMACE(MACE):
     def __init__(
-        self,
-        atomic_inter_scale: float,
-        atomic_inter_shift: float,
-        **kwargs,
+        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
@@ -233,35 +240,42 @@ class ScaleShiftMACE(MACE):
 
     def forward(
         self,
-        data: AtomicData,
+        data: Dict[str, torch.Tensor],
         training=False,
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> Dict[str, torch.Tensor]:
         # Setup
-        data.positions.requires_grad = True
+        data["positions"].requires_grad_(True)
+        num_graphs = data["ptr"].numel() - 1
         displacement = None
         if compute_virials:
-            data.positions, data.shifts, displacement = get_symmetric_displacement(
-                positions=data.positions,
-                unit_shifts=data.unit_shifts,
-                cell=data.cell,
-                edge_index=data.edge_index,
-                num_graphs=data.num_graphs,
-                batch=data.batch,
+            (
+                data["positions"],
+                data["shifts"],
+                displacement,
+            ) = get_symmetric_displacement(
+                positions=data["positions"],
+                unit_shifts=data["unit_shifts"],
+                cell=data["cell"],
+                edge_index=data["edge_index"],
+                num_graphs=num_graphs,
+                batch=data["batch"],
             )
 
         # Atomic energies
-        node_e0 = self.atomic_energies_fn(data.node_attrs)
+        node_e0 = self.atomic_energies_fn(data["node_attrs"])
         e0 = scatter_sum(
-            src=node_e0, index=data.batch, dim=-1, dim_size=data.num_graphs
+            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
 
         # Embeddings
-        node_feats = self.node_embedding(data.node_attrs)
+        node_feats = self.node_embedding(data["node_attrs"])
         vectors, lengths = get_edge_vectors_and_lengths(
-            positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats = self.radial_embedding(lengths)
@@ -272,14 +286,14 @@ class ScaleShiftMACE(MACE):
             self.interactions, self.products, self.readouts
         ):
             node_feats, sc = interaction(
-                node_attrs=data.node_attrs,
+                node_attrs=data["node_attrs"],
                 node_feats=node_feats,
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
-                edge_index=data.edge_index,
+                edge_index=data["edge_index"],
             )
             node_feats = product(
-                node_feats=node_feats, sc=sc, node_attrs=data.node_attrs
+                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
             node_es_list.append(readout(node_feats).squeeze(-1))  # {[n_nodes, ], }
 
@@ -291,7 +305,7 @@ class ScaleShiftMACE(MACE):
 
         # Sum over nodes in graph
         inter_e = scatter_sum(
-            src=node_inter_es, index=data.batch, dim=-1, dim_size=data.num_graphs
+            src=node_inter_es, index=data["batch"], dim=-1, dim_size=data["num_graphs"]
         )  # [n_graphs,]
 
         # Add E_0 and (scaled) interaction energy
@@ -299,9 +313,9 @@ class ScaleShiftMACE(MACE):
 
         forces, virials, stress = get_outputs(
             energy=inter_e,
-            positions=data.positions,
+            positions=data["positions"],
             displacement=displacement,
-            cell=data.cell,
+            cell=data["cell"],
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -442,10 +456,7 @@ class BOTNet(torch.nn.Module):
 
 class ScaleShiftBOTNet(BOTNet):
     def __init__(
-        self,
-        atomic_inter_scale: float,
-        atomic_inter_shift: float,
-        **kwargs,
+        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
