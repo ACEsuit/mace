@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn.functional
 from e3nn import o3
+from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
@@ -10,20 +11,8 @@ from mace.tools import torch_geometric
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
     atomic_numbers=np.array([8, 1, 1]),
-    positions=np.array(
-        [
-            [0.0, -2.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ]
-    ),
-    forces=np.array(
-        [
-            [0.0, -1.3, 0.0],
-            [1.0, 0.2, 0.0],
-            [0.0, 1.1, 0.3],
-        ]
-    ),
+    positions=np.array([[0.0, -2.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],]),
+    forces=np.array([[0.0, -1.3, 0.0], [1.0, 0.2, 0.0], [0.0, 1.1, 0.3],]),
     energy=-1.5,
 )
 table = tools.AtomicNumberTable([1, 8])
@@ -54,6 +43,7 @@ def test_mace():
         correlation=3,
     )
     model = modules.MACE(**model_config)
+    model_compiled = jit.compile(model)
 
     # Created the rotated environment
     rot = R.from_euler("z", 60, degrees=True).as_matrix()
@@ -61,13 +51,7 @@ def test_mace():
     config_rotated = data.Configuration(
         atomic_numbers=np.array([8, 1, 1]),
         positions=positions_rotated,
-        forces=np.array(
-            [
-                [0.0, -1.3, 0.0],
-                [1.0, 0.2, 0.0],
-                [0.0, 1.1, 0.3],
-            ]
-        ),
+        forces=np.array([[0.0, -1.3, 0.0], [1.0, 0.2, 0.0], [0.0, 1.1, 0.3],]),
         energy=-1.5,
     )
 
@@ -84,5 +68,7 @@ def test_mace():
     )
     batch = next(iter(data_loader))
 
-    output = model(batch, training=True)
-    assert torch.allclose(output["energy"][0], output["energy"][1])
+    output1 = model(batch.to_dict(), training=True)
+    output2 = model_compiled(batch.to_dict(), training=True)
+    assert torch.allclose(output1["energy"][0], output2["energy"][0])
+    assert torch.allclose(output2["energy"][0], output2["energy"][1])
