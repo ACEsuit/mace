@@ -1,3 +1,3 @@
-from .mace import MACECalculator, DipoleMACECalculator
+from .mace import DipoleMACECalculator, MACECalculator
 
 __all__ = ["MACECalculator", "DipoleMACECalculator"]
