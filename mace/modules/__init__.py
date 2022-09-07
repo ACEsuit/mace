@@ -23,12 +23,20 @@ from .blocks import (
 from .loss import (
     DipoleSingleLoss,
     EnergyForcesLoss,
+    WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesLoss,
     WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
 )
-from .models import MACE, AtomicDipolesMACE, BOTNet, ScaleShiftBOTNet, ScaleShiftMACE
+from .models import (
+    MACE,
+    AtomicDipolesMACE,
+    BOTNet,
+    EnergyDipolesMACE,
+    ScaleShiftBOTNet,
+    ScaleShiftMACE,
+)
 from .radial import BesselBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
@@ -78,12 +86,14 @@ __all__ = [
     "BOTNet",
     "ScaleShiftBOTNet",
     "AtomicDipolesMACE",
+    "EnergyDipolesMACE",
     "EnergyForcesLoss",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
     "WeightedEnergyForcesStressLoss",
     "DipoleSingleLoss",
+    "WeightedEnergyForcesDipoleLoss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",

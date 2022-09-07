@@ -78,13 +78,22 @@ def main() -> None:
     logging.info(z_table)
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
-        dipole = True
+        dipole_only = True
+        compute_dipole = True
         compute_energy = False
         args.compute_forces = False
         compute_virials = False
         args.compute_stress = False
     else:
-        dipole = False
+        dipole_only = False
+        if args.model == "EnergyDipolesMACE":
+            compute_dipole = True
+            compute_energy = True
+            args.compute_forces = True
+            compute_virials = False
+            args.compute_stress = False
+        else:
+            compute_dipole = False
         if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
             if args.E0s is not None:
                 logging.info(
@@ -154,9 +163,18 @@ def main() -> None:
         )
     elif args.loss == "dipole":
         assert (
-            dipole is True
+            dipole_only is True
         ), "dipole loss can only be used with AtomicDipolesMACE model"
-        loss_fn = modules.DipoleSingleLoss()
+        loss_fn = modules.DipoleSingleLoss(
+            dipole_weight=args.dipole_weight,
+        )
+    elif args.loss == "energy_forces_dipole":
+        assert dipole_only is False and compute_dipole is True
+        loss_fn = modules.WeightedEnergyForcesDipoleLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            dipole_weight=args.dipole_weight,
+        )
     else:
         loss_fn = modules.EnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
@@ -179,7 +197,7 @@ def main() -> None:
         "forces": args.compute_forces,
         "virials": compute_virials,
         "stress": args.compute_stress,
-        "dipoles": dipole,
+        "dipoles": compute_dipole,
     }
     logging.info(f"Selected the following outputs: {output_args}")
 
@@ -265,6 +283,23 @@ def main() -> None:
             # dipole_scale=1,
             # dipole_shift=0,
         )
+    elif args.model == "EnergyDipolesMACE":
+        # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
+        assert (
+            args.loss == "energy_forces_dipole"
+        ), "Use energy_forces_dipole loss with EnergyDipolesMACE model"
+        assert (
+            args.error_table == "EnergyDipoleRMSE"
+        ), "Use error_table EnergyDipoleRMSE with AtomicDipolesMACE model"
+        model = modules.EnergyDipolesMACE(
+            **model_config,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[
+                "RealAgnosticInteractionBlock"
+            ],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+        )
     else:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
@@ -346,7 +381,7 @@ def main() -> None:
 
     swa: Optional[tools.SWAContainer] = None
     if args.swa:
-        assert dipole is False, "swa for dipole fitting not implemented"
+        assert compute_dipole is False, "swa for dipole fitting not implemented"
         if args.start_swa is None:
             args.start_swa = (
                 args.max_num_epochs // 4 * 3

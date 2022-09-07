@@ -61,6 +61,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "TotalMAE",
             "DipoleRMSE",
             "DipoleMAE",
+            "EnergyDipoleRMSE",
         ],
         default="PerAtomRMSE",
     )
@@ -76,6 +77,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "ScaleShiftMACE",
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
+            "EnergyDipolesMACE",
         ],
     )
     parser.add_argument(
@@ -245,7 +247,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--loss",
         help="type of loss",
         default="weighted",
-        choices=["ef", "weighted", "forces_only", "virials", "stress", "dipole"],
+        choices=[
+            "ef",
+            "weighted",
+            "forces_only",
+            "virials",
+            "stress",
+            "dipole",
+            "energy_forces_dipole",
+        ],
     )
     parser.add_argument(
         "--forces_weight", help="weight of forces loss", type=float, default=10.0
@@ -270,6 +280,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--stress_weight", help="weight of virials loss", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0
     )
     parser.add_argument(
         "--config_type_weights",

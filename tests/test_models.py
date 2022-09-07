@@ -46,11 +46,11 @@ config_rotated = data.Configuration(
     dipole=np.array([-1.5, 1.5, 2.0]),
 )
 table = tools.AtomicNumberTable([1, 8])
+atomic_energies = np.array([1.0, 3.0], dtype=float)
 
 
 def test_mace():
     # Create MACE model
-    atomic_energies = np.array([1.0, 3.0], dtype=float)
     model_config = dict(
         r_max=5,
         num_bessel=8,
@@ -134,6 +134,58 @@ def test_dipole_mace():
     )
     # sanity check of dipoles being the right shape
     assert output["dipole"][0].unsqueeze(0).shape == atomic_data.dipole.shape
+    # test equivariance of output dipoles
+    assert np.allclose(
+        np.array(rot @ output["dipole"][0].detach().numpy()),
+        output["dipole"][1].detach().numpy(),
+    )
+
+
+def test_energy_dipole_mace():
+    # create dipole MACE model
+    model_config = dict(
+        r_max=5,
+        num_bessel=8,
+        num_polynomial_cutoff=5,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("16x0e + 16x1o + 16x2e"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies,
+        avg_num_neighbors=3,
+        atomic_numbers=table.zs,
+        correlation=3,
+    )
+    model = modules.EnergyDipolesMACE(**model_config)
+
+    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
+    atomic_data2 = data.AtomicData.from_config(
+        config_rotated, z_table=table, cutoff=3.0
+    )
+
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data, atomic_data2],
+        batch_size=2,
+        shuffle=False,
+        drop_last=False,
+    )
+    batch = next(iter(data_loader))
+    output = model(
+        batch,
+        training=True,
+    )
+    # sanity check of dipoles being the right shape
+    assert output["dipole"][0].unsqueeze(0).shape == atomic_data.dipole.shape
+    # test energy is invariant
+    assert torch.allclose(output["energy"][0], output["energy"][1])
     # test equivariance of output dipoles
     assert np.allclose(
         np.array(rot @ output["dipole"][0].detach().numpy()),
