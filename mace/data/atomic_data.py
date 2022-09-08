@@ -98,7 +98,9 @@ class AtomicData(torch_geometric.data.Data):
         cell = (
             torch.tensor(config.cell, dtype=torch.get_default_dtype())
             if config.cell is not None
-            else None
+            else torch.tensor(
+                3 * [0.0, 0.0, 0.0], dtype=torch.get_default_dtype()
+            ).view(3, 3)
         )
 
         weight = (

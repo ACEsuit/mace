@@ -150,7 +150,11 @@ class MACE(torch.nn.Module):
         # Setup
         data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
-        displacement = torch.tensor([])
+        displacement = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=data["positions"].dtype,
+            device=data["positions"].device,
+        )
         if compute_virials:
             (
                 data["positions"],
@@ -247,7 +251,11 @@ class ScaleShiftMACE(MACE):
         # Setup
         data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
-        displacement = torch.tensor([])
+        displacement = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=data["positions"].dtype,
+            device=data["positions"].device,
+        )
         if compute_virials:
             (
                 data["positions"],
