@@ -86,9 +86,7 @@ class CheckpointIO:
             return None
 
         return CheckpointPathInfo(
-            path=path,
-            tag=match.group("tag"),
-            epochs=int(match.group("epochs")),
+            path=path, tag=match.group("tag"), epochs=int(match.group("epochs")),
         )
 
     def _get_latest_checkpoint_path(self) -> Optional[str]:

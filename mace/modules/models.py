@@ -99,7 +99,6 @@ class MACE(torch.nn.Module):
             node_feats_irreps=node_feats_irreps_out,
             target_irreps=hidden_irreps,
             correlation=correlation,
-            element_dependent=True,
             num_elements=num_elements,
             use_sc=use_sc_first,
         )
@@ -129,7 +128,6 @@ class MACE(torch.nn.Module):
                 node_feats_irreps=interaction_irreps,
                 target_irreps=hidden_irreps_out,
                 correlation=correlation,
-                element_dependent=True,
                 num_elements=num_elements,
                 use_sc=True,
             )
@@ -144,15 +142,15 @@ class MACE(torch.nn.Module):
     def forward(
         self,
         data: Dict[str, torch.Tensor],
-        training=False,
+        training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
-        displacement = None
+        displacement = torch.tensor([])
         if compute_virials:
             (
                 data["positions"],
@@ -168,7 +166,7 @@ class MACE(torch.nn.Module):
             )
 
         # Atomic energies
-        node_e0 = self.atomic_energies_fn(data["atomic_numbers"])
+        node_e0 = self.atomic_energies_fn(data["node_attrs"])
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
@@ -241,15 +239,15 @@ class ScaleShiftMACE(MACE):
     def forward(
         self,
         data: Dict[str, torch.Tensor],
-        training=False,
+        training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
-        displacement = None
+        displacement = torch.tensor([])
         if compute_virials:
             (
                 data["positions"],

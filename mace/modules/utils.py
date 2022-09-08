@@ -4,8 +4,7 @@
 # This program is distributed under the ASL License (see ASL.md)
 ###########################################################################################
 
-import logging
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -42,45 +41,44 @@ def compute_forces_virials(
     positions: torch.Tensor,
     displacement: torch.Tensor,
     cell: Optional[torch.Tensor],
-    training=True,
-    compute_stress=False,
+    training: bool = True,
+    compute_stress: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
     forces, virials = torch.autograd.grad(
-        outputs=energy,  # [n_graphs, ]
+        outputs=[energy],  # [n_graphs, ]
         inputs=[positions, displacement],  # [n_nodes, 3]
         grad_outputs=grad_outputs,
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
-        only_inputs=True,  # Diff only w.r.t. inputs
         allow_unused=True,
     )
-    stress = None
-    if compute_stress:
+    stress = torch.zeros_like(positions).expand(1, 1, 3)
+    if compute_stress and cell is not None and virials is not None:
         cell = cell.view(-1, 3, 3)
         volume = torch.einsum(
             "zi,zi->z", cell[:, 0, :], torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
         ).unsqueeze(-1)
         stress = virials / volume.view(-1, 1, 1)
-    if forces is None and virials is None:
-        return (
-            torch.zeros_like(positions),
-            torch.zeros_like(positions).expand(1, 1, 3),
-            None,
-        )
     if forces is not None and virials is None:
         return -1 * forces, torch.zeros_like(positions).expand(1, 1, 3), None
     if forces is None and virials is not None:
         return torch.zeros_like(positions), -1 * virials, None
-    return -1 * forces, -1 * virials, stress
+    if forces is not None and virials is not None:
+        return -1 * forces, -1 * virials, stress
+    return (
+        torch.zeros_like(positions),
+        torch.zeros_like(positions).expand(1, 1, 3),
+        None,
+    )
 
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
     unit_shifts: torch.Tensor,
-    cell: torch.Tensor,
+    cell: Optional[torch.Tensor],
     edge_index: torch.Tensor,
-    num_graphs: torch.Tensor,
+    num_graphs: int,
     batch: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if cell is None:
@@ -89,11 +87,9 @@ def get_symmetric_displacement(
         )
     sender = edge_index[0]
     displacement = torch.zeros(
-        (num_graphs, 3, 3),
-        dtype=positions.dtype,
-        device=positions.device,
-        requires_grad=True,
+        (num_graphs, 3, 3), dtype=positions.dtype, device=positions.device,
     )
+    displacement.requires_grad_(True)
     symmetric_displacement = 0.5 * (
         displacement + displacement.transpose(-1, -2)
     )  # From https://github.com/mir-group/nequip
@@ -116,7 +112,7 @@ def get_outputs(
     compute_virials: bool = True,
     compute_stress: bool = True,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-    if compute_force and compute_virials:
+    if compute_force and compute_virials and displacement is not None:
         forces, virials, stress = compute_forces_virials(
             energy=energy,
             positions=positions,

@@ -184,9 +184,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
-        "--test_file",
-        help="Test set xyz file",
-        type=str,
+        "--test_file", help="Test set xyz file", type=str,
     )
     parser.add_argument(
         "--E0s",
