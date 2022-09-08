@@ -67,7 +67,6 @@ def test_mace():
         drop_last=False,
     )
     batch = next(iter(data_loader))
-
     output1 = model(batch.to_dict(), training=True)
     output2 = model_compiled(batch.to_dict(), training=True)
     assert torch.allclose(output1["energy"][0], output2["energy"][0])

@@ -1,12 +1,7 @@
 import ase.build
 import numpy as np
 
-from mace.data import (
-    AtomicData,
-    Configuration,
-    config_from_atoms,
-    get_neighborhood,
-)
+from mace.data import AtomicData, Configuration, config_from_atoms, get_neighborhood
 from mace.tools import AtomicNumberTable, torch_geometric
 
 
