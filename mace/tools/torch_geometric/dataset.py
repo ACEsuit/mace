@@ -185,7 +185,8 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.indices())
 
     def __getitem__(
-        self, idx: Union[int, np.integer, IndexType],
+        self,
+        idx: Union[int, np.integer, IndexType],
     ) -> Union["Dataset", Data]:
         r"""In case :obj:`idx` is of type integer, will return the data object
         at index :obj:`idx` (and transforms it in case :obj:`transform` is
@@ -242,7 +243,8 @@ class Dataset(torch.utils.data.Dataset):
         return dataset
 
     def shuffle(
-        self, return_perm: bool = False,
+        self,
+        return_perm: bool = False,
     ) -> Union["Dataset", Tuple["Dataset", Tensor]]:
         r"""Randomly shuffles the examples in the dataset.
 

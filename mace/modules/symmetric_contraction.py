@@ -220,13 +220,18 @@ class Contraction(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         out = self.graph_opt_main(
-            self.U_tensors[self.correlation], self.weights_max, x, y,
+            self.U_tensors[self.correlation],
+            self.weights_max,
+            x,
+            y,
         )
         for i, (weight, contract_weights, contract_features) in enumerate(
             zip(self.weights, self.contractions_weighting, self.contractions_features)
         ):
             c_tensor = contract_weights(
-                self.U_tensors[self.correlation - i - 1], weight, y,
+                self.U_tensors[self.correlation - i - 1],
+                weight,
+                y,
             )
             c_tensor = c_tensor + out
             out = contract_features(c_tensor, x)
