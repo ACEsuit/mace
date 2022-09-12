@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia
 # This program is distributed under the ASL License (see ASL.md)
 ###########################################################################################
+
 import collections
 from typing import List, Union
 
@@ -18,7 +19,6 @@ def _wigner_nj(
     normalization: str = "component",
     filter_ir_mid=None,
     dtype=None,
-    device=None,
 ):
     irrepss = [o3.Irreps(irreps) for irreps in irrepss]
     if filter_ir_mid is not None:
@@ -27,7 +27,7 @@ def _wigner_nj(
     if len(irrepss) == 1:
         (irreps,) = irrepss
         ret = []
-        e = torch.eye(irreps.dim, dtype=dtype, device=device)
+        e = torch.eye(irreps.dim, dtype=dtype)
         i = 0
         for mul, ir in irreps:
             for _ in range(mul):
@@ -43,7 +43,6 @@ def _wigner_nj(
         normalization=normalization,
         filter_ir_mid=filter_ir_mid,
         dtype=dtype,
-        device=device,
     ):
         i = 0
         for mul, ir in irreps_right:
@@ -51,7 +50,7 @@ def _wigner_nj(
                 if filter_ir_mid is not None and ir_out not in filter_ir_mid:
                     continue
 
-                C = o3.wigner_3j(ir_out.l, ir_left.l, ir.l, dtype=dtype, device=device)
+                C = o3.wigner_3j(ir_out.l, ir_left.l, ir.l, dtype=dtype)
                 if normalization == "component":
                     C *= ir_out.dim**0.5
                 if normalization == "norm":
@@ -67,7 +66,6 @@ def _wigner_nj(
                         *(irreps.dim for irreps in irrepss_left),
                         irreps_right.dim,
                         dtype=dtype,
-                        device=device,
                     )
                     sl = slice(i + u * ir.dim, i + (u + 1) * ir.dim)
                     E[..., sl] = C
@@ -95,7 +93,6 @@ def U_matrix_real(
     normalization: str = "component",
     filter_ir_mid=None,
     dtype=None,
-    device=None,
 ):
     irreps_out = o3.Irreps(irreps_out)
     irrepss = [o3.Irreps(irreps_in)] * correlation
@@ -114,10 +111,10 @@ def U_matrix_real(
             (10, 1),
             (11, -1),
         ]
-    wigners = _wigner_nj(irrepss, normalization, filter_ir_mid, dtype, device)
+    wigners = _wigner_nj(irrepss, normalization, filter_ir_mid, dtype)
     current_ir = wigners[0][0]
     out = []
-    stack = torch.tensor([], device=device)
+    stack = torch.tensor([])
 
     for ir, _, base_o3 in wigners:
         if ir in irreps_out and ir == current_ir:
