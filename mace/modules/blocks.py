@@ -112,7 +112,6 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         target_irreps: o3.Irreps,
         correlation: int,
         use_sc: bool = True,
-        device: str = "cpu",
         num_elements: Optional[int] = None,
     ) -> None:
         super().__init__()
@@ -123,7 +122,6 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             irreps_out=target_irreps,
             correlation=correlation,
             num_elements=num_elements,
-            device=device,
         )
         # Update linear
         self.linear = o3.Linear(
