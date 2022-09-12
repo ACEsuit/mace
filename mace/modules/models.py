@@ -130,6 +130,7 @@ class MACE(torch.nn.Module):
                 correlation=correlation,
                 num_elements=num_elements,
                 use_sc=True,
+                device=device,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
@@ -316,7 +317,7 @@ class ScaleShiftMACE(MACE):
 
         # Sum over nodes in graph
         inter_e = scatter_sum(
-            src=node_inter_es, index=data["batch"], dim=-1, dim_size=data["num_graphs"]
+            src=node_inter_es, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
 
         # Add E_0 and (scaled) interaction energy
