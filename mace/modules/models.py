@@ -130,7 +130,6 @@ class MACE(torch.nn.Module):
                 correlation=correlation,
                 num_elements=num_elements,
                 use_sc=True,
-                device=device,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
