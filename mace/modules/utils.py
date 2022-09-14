@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn
 import torch.utils.data
+from scipy.constants import c, e
 
 from mace.tools import to_numpy
 from mace.tools.scatter import scatter_sum
@@ -248,3 +249,15 @@ def compute_rms_dipoles(
     dipoles = torch.cat(dipoles_list, dim=0)  # {[total_n_graphs,3], }
     rms = to_numpy(torch.sqrt(torch.mean(torch.square(dipoles)))).item()
     return rms
+
+
+def compute_fixed_charge_dipole(
+    charges: torch.Tensor,
+    positions: torch.Tensor,
+    batch: torch.Tensor,
+    num_graphs: int,
+) -> torch.Tensor:
+    mu = positions * charges.unsqueeze(-1) / (1e-11 / c / e)  # [N_atoms,3]
+    return scatter_sum(
+        src=mu, index=batch.unsqueeze(-1), dim=0, dim_size=num_graphs
+    )  # [N_graphs,3]
