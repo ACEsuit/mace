@@ -7,7 +7,6 @@ from .blocks import (
     AgnosticResidualNonlinearInteractionBlock,
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
-    FixedChargeDipoleBlock,
     InteractionBlock,
     LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
@@ -41,6 +40,7 @@ from .radial import BesselBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
     compute_avg_num_neighbors,
+    compute_fixed_charge_dipole,
     compute_mean_rms_energy_forces,
     compute_mean_std_atomic_inter_energy,
     compute_rms_dipoles,
@@ -74,7 +74,6 @@ __all__ = [
     "LinearReadoutBlock",
     "EquivariantProductBasisBlock",
     "ScaleShiftBlock",
-    "FixedChargeDipoleBlock",
     "LinearDipoleReadoutBlock",
     "NonLinearDipoleReadoutBlock",
     "InteractionBlock",
@@ -98,4 +97,5 @@ __all__ = [
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
     "compute_avg_num_neighbors",
+    "compute_fixed_charge_dipole",
 ]

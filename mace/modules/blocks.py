@@ -10,7 +10,6 @@ from typing import Callable, Dict, Optional, Tuple, Union
 import numpy as np
 import torch.nn.functional
 from e3nn import nn, o3
-from scipy.constants import c, e
 
 from mace.tools.scatter import scatter_sum
 
@@ -58,6 +57,58 @@ class NonLinearReadoutBlock(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
+        return self.linear_2(x)  # [n_nodes, 1]
+
+
+class LinearDipoleReadoutBlock(torch.nn.Module):
+    def __init__(self, irreps_in: o3.Irreps, dipole_only: bool = False):
+        super().__init__()
+        if dipole_only:
+            self.irreps_out = o3.Irreps("1x1o")
+        else:
+            self.irreps_out = o3.Irreps("1x0e + 1x1o")
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_out)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        return self.linear(x)  # [n_nodes, 1]
+
+
+class NonLinearDipoleReadoutBlock(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Callable,
+        dipole_only: bool = False,
+    ):
+        super().__init__()
+        self.hidden_irreps = MLP_irreps
+        if dipole_only:
+            self.irreps_out = o3.Irreps("1x1o")
+        else:
+            self.irreps_out = o3.Irreps("1x0e + 1x1o")
+        irreps_scalars = o3.Irreps(
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out]
+        )
+        irreps_gated = o3.Irreps(
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
+        )
+        irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
+        self.equivariant_nonlin = nn.Gate(
+            irreps_scalars=irreps_scalars,
+            act_scalars=[gate for _, ir in irreps_scalars],
+            irreps_gates=irreps_gates,
+            act_gates=[gate] * len(irreps_gates),
+            irreps_gated=irreps_gated,
+        )
+        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
+        self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_nonlin)
+        self.linear_2 = o3.Linear(
+            irreps_in=self.hidden_irreps, irreps_out=self.irreps_out
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        x = self.equivariant_nonlin(self.linear_1(x))
         return self.linear_2(x)  # [n_nodes, 1]
 
 
@@ -557,75 +608,3 @@ class ScaleShiftBlock(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(scale={self.scale:.6f}, shift={self.shift:.6f})"
         )
-
-
-# dipole model blocks
-class FixedChargeDipoleBlock(torch.nn.Module):
-    def __init__(
-        self,
-    ):
-        super().__init__()
-
-    def forward(
-        self,
-        charges: torch.Tensor,
-        positions: torch.Tensor,
-        batch: torch.Tensor,
-        num_graphs: int,
-    ) -> torch.Tensor:
-        mu = positions * charges.unsqueeze(-1) / (1e-11 / c / e)  # [N_atoms,3]
-        return scatter_sum(
-            src=mu, index=batch.unsqueeze(-1), dim=0, dim_size=num_graphs
-        )  # [N_graphs,3]
-
-
-class LinearDipoleReadoutBlock(torch.nn.Module):
-    def __init__(self, irreps_in: o3.Irreps, dipole_only: bool = False):
-        super().__init__()
-        if dipole_only:
-            self.irreps_out = o3.Irreps("1x1o")
-        else:
-            self.irreps_out = o3.Irreps("1x0e + 1x1o")
-        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_out)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
-        return self.linear(x)  # [n_nodes, 1]
-
-
-class NonLinearDipoleReadoutBlock(torch.nn.Module):
-    def __init__(
-        self,
-        irreps_in: o3.Irreps,
-        MLP_irreps: o3.Irreps,
-        gate: Callable,
-        dipole_only: bool = False,
-    ):
-        super().__init__()
-        self.hidden_irreps = MLP_irreps
-        if dipole_only:
-            self.irreps_out = o3.Irreps("1x1o")
-        else:
-            self.irreps_out = o3.Irreps("1x0e + 1x1o")
-        irreps_scalars = o3.Irreps(
-            [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out]
-        )
-        irreps_gated = o3.Irreps(
-            [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
-        )
-        irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
-        self.equivariant_nonlin = nn.Gate(
-            irreps_scalars=irreps_scalars,
-            act_scalars=[gate for _, ir in irreps_scalars],
-            irreps_gates=irreps_gates,
-            act_gates=[gate] * len(irreps_gates),
-            irreps_gated=irreps_gated,
-        )
-        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
-        self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_nonlin)
-        self.linear_2 = o3.Linear(
-            irreps_in=self.hidden_irreps, irreps_out=self.irreps_out
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
-        x = self.equivariant_nonlin(self.linear_1(x))
-        return self.linear_2(x)  # [n_nodes, 1]

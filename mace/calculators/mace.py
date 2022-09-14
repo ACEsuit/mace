@@ -147,11 +147,12 @@ class DipoleMACECalculator(Calculator):
             "dipole": dipole,
         }
 
+
 class EnergyDipoleMACECalculator(Calculator):
     """MACE ASE Calculator for predicting energies, forces and dipoles"""
 
     implemented_properties = [
-        "energy", 
+        "energy",
         "forces",
         "dipole",
     ]

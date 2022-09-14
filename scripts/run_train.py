@@ -390,19 +390,20 @@ def main() -> None:
             logging.info("Can not select swa with forces only loss.")
         elif args.loss == "energy_forces_dipole":
             loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
-                args.swa_energy_weight, 
+                args.swa_energy_weight,
                 forces_weight=args.swa_forces_weight,
                 dipole_weight=args.swa_dipole_weight,
             )
             logging.info(
-            f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
+                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
             )
         else:
             loss_fn_energy = modules.WeightedEnergyForcesLoss(
-                energy_weight=args.swa_energy_weight, forces_weight=args.swa_forces_weight
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
             )
             logging.info(
-            f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
+                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
             )
         swa = tools.SWAContainer(
             model=AveragedModel(model),

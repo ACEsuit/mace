@@ -16,7 +16,6 @@ from mace.tools.scatter import scatter_sum
 from .blocks import (
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
-    FixedChargeDipoleBlock,
     InteractionBlock,
     LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
@@ -27,6 +26,7 @@ from .blocks import (
     ScaleShiftBlock,
 )
 from .utils import (
+    compute_fixed_charge_dipole,
     compute_forces,
     get_edge_vectors_and_lengths,
     get_outputs,
@@ -536,7 +536,6 @@ class AtomicDipolesMACE(torch.nn.Module):
         self.r_max = r_max
         self.atomic_numbers = atomic_numbers
 
-        self.dipoles_baseline = FixedChargeDipoleBlock()
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -685,7 +684,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             dim=0,
             dim_size=data.num_graphs,
         )  # [n_graphs,3]
-        baseline = self.dipoles_baseline(
+        baseline = compute_fixed_charge_dipole(
             charges=data.charges,
             positions=data.positions,
             batch=data.batch,
@@ -723,7 +722,6 @@ class EnergyDipolesMACE(torch.nn.Module):
         super().__init__()
         self.r_max = r_max
         self.atomic_numbers = atomic_numbers
-        self.dipoles_baseline = FixedChargeDipoleBlock()
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -891,7 +889,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             dim=0,
             dim_size=data.num_graphs,
         )  # [n_graphs,3]
-        baseline = self.dipoles_baseline(
+        baseline = compute_fixed_charge_dipole(
             charges=data.charges,
             positions=data.positions,
             batch=data.batch,
