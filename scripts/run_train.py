@@ -93,6 +93,7 @@ def main() -> None:
             compute_virials = False
             args.compute_stress = False
         else:
+            compute_energy = True
             compute_dipole = False
         if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
             if args.E0s is not None:
