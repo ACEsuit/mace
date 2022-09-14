@@ -54,6 +54,13 @@ def mean_squared_error_forces(ref: Batch, pred: TensorDict) -> torch.Tensor:
     )  # []
 
 
+def weighted_mean_squared_error_dipole(ref: Batch, pred: TensorDict) -> torch.Tensor:
+    # dipole: [n_graphs, ]
+    num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).unsqueeze(-1)  # [n_graphs,1]
+    return torch.mean(torch.square((ref["dipole"] - pred["dipole"]) / num_atoms))  # []
+    # return torch.mean(torch.square((torch.reshape(ref['dipole'], pred["dipole"].shape) - pred['dipole']) / num_atoms))  # []
+
+
 class EnergyForcesLoss(torch.nn.Module):
     def __init__(self, energy_weight=1.0, forces_weight=1.0) -> None:
         super().__init__()
@@ -176,4 +183,51 @@ class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
             f"forces_weight={self.forces_weight:.3f}, virials_weight={self.virials_weight:.3f})"
+        )
+
+
+class DipoleSingleLoss(torch.nn.Module):
+    def __init__(self, dipole_weight=1.0) -> None:
+        super().__init__()
+        self.register_buffer(
+            "dipole_weight",
+            torch.tensor(dipole_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        return (
+            self.dipole_weight * weighted_mean_squared_error_dipole(ref, pred) * 100.0
+        )  # multiply by 100 to have the right scale for the loss
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(" f"dipole_weight={self.dipole_weight:.3f})"
+
+
+class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
+    def __init__(self, energy_weight=1.0, forces_weight=1.0, dipole_weight=1.0) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "dipole_weight",
+            torch.tensor(dipole_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        return (
+            self.energy_weight * weighted_mean_squared_error_energy(ref, pred)
+            + self.forces_weight * mean_squared_error_forces(ref, pred)
+            + self.dipole_weight * weighted_mean_squared_error_dipole(ref, pred) * 100
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}, dipole_weight={self.dipole_weight:.3f})"
         )

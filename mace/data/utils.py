@@ -19,6 +19,7 @@ Positions = np.ndarray  # [..., 3]
 Forces = np.ndarray  # [..., 3]
 Stress = np.ndarray  # [6, ]
 Virials = np.ndarray  # [3,3]
+Charges = np.ndarray  # [..., 1]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
 
@@ -34,6 +35,8 @@ class Configuration:
     forces: Optional[Forces] = None  # eV/Angstrom
     stress: Optional[Stress] = None  # eV/Angstrom^4
     virials: Optional[Virials] = None  # eV/Angstrom
+    dipole: Optional[Vector] = None  # Debye
+    charges: Optional[Charges] = None  # atomic unit
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -68,6 +71,8 @@ def config_from_atoms_list(
     forces_key="forces",
     stress_key="stress",
     virials_key="virials",
+    dipole_key="dipole",
+    charges_key="charges",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -83,6 +88,8 @@ def config_from_atoms_list(
                 forces_key=forces_key,
                 stress_key=stress_key,
                 virials_key=virials_key,
+                dipole_key=dipole_key,
+                charges_key=charges_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -95,6 +102,8 @@ def config_from_atoms(
     forces_key="forces",
     stress_key="stress",
     virials_key="virials",
+    dipole_key="dipole",
+    charges_key="charges",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -105,6 +114,9 @@ def config_from_atoms(
     forces = atoms.arrays.get(forces_key, None)  # eV / Ang
     stress = atoms.info.get(stress_key, None)  # eV / Ang
     virials = atoms.info.get(virials_key, None)
+    dipole = atoms.info.get(dipole_key, None)  # Debye
+    # Charges default to 0 instead of None if not found
+    charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -119,6 +131,8 @@ def config_from_atoms(
         forces=forces,
         stress=stress,
         virials=virials,
+        dipole=dipole,
+        charges=charges,
         weight=weight,
         config_type=config_type,
         pbc=pbc,
@@ -149,6 +163,8 @@ def load_from_xyz(
     forces_key: str = "forces",
     stress_key: str = "stress",
     virials_key: str = "virials",
+    dipole_key: str = "dipole",
+    charges_key: str = "charges",
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     assert file_path[-4:] == ".xyz", NameError("Specify file with extension .xyz")
@@ -187,6 +203,8 @@ def load_from_xyz(
         forces_key=forces_key,
         stress_key=stress_key,
         virials_key=virials_key,
+        dipole_key=dipole_key,
+        charges_key=charges_key,
     )
     return atomic_energies_dict, configs
 

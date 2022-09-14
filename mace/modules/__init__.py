@@ -8,8 +8,10 @@ from .blocks import (
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
     InteractionBlock,
+    LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
     LinearReadoutBlock,
+    NonLinearDipoleReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     RealAgnosticInteractionBlock,
@@ -18,19 +20,30 @@ from .blocks import (
     ScaleShiftBlock,
 )
 from .loss import (
+    DipoleSingleLoss,
     EnergyForcesLoss,
+    WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesLoss,
     WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
 )
-from .models import MACE, BOTNet, ScaleShiftBOTNet, ScaleShiftMACE
+from .models import (
+    MACE,
+    AtomicDipolesMACE,
+    BOTNet,
+    EnergyDipolesMACE,
+    ScaleShiftBOTNet,
+    ScaleShiftMACE,
+)
 from .radial import BesselBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
     compute_avg_num_neighbors,
+    compute_fixed_charge_dipole,
     compute_mean_rms_energy_forces,
     compute_mean_std_atomic_inter_energy,
+    compute_rms_dipoles,
 )
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {
@@ -44,6 +57,7 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
 scaling_classes: Dict[str, Callable] = {
     "std_scaling": compute_mean_std_atomic_inter_energy,
     "rms_forces_scaling": compute_mean_rms_energy_forces,
+    "rms_dipoles_scaling": compute_rms_dipoles,
 }
 
 gate_dict: Dict[str, Optional[Callable]] = {
@@ -60,6 +74,8 @@ __all__ = [
     "LinearReadoutBlock",
     "EquivariantProductBasisBlock",
     "ScaleShiftBlock",
+    "LinearDipoleReadoutBlock",
+    "NonLinearDipoleReadoutBlock",
     "InteractionBlock",
     "NonLinearReadoutBlock",
     "PolynomialCutoff",
@@ -68,13 +84,18 @@ __all__ = [
     "ScaleShiftMACE",
     "BOTNet",
     "ScaleShiftBOTNet",
+    "AtomicDipolesMACE",
+    "EnergyDipolesMACE",
     "EnergyForcesLoss",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
     "WeightedEnergyForcesStressLoss",
+    "DipoleSingleLoss",
+    "WeightedEnergyForcesDipoleLoss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
     "compute_avg_num_neighbors",
+    "compute_fixed_charge_dipole",
 ]
