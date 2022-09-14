@@ -59,6 +59,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "PerAtomRMSEstressvirials",
             "PerAtomMAE",
             "TotalMAE",
+            "DipoleRMSE",
+            "DipoleMAE",
+            "EnergyDipoleRMSE",
         ],
         default="PerAtomRMSE",
     )
@@ -68,7 +71,14 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--model",
         help="model type",
         default="MACE",
-        choices=["BOTNet", "MACE", "ScaleShiftMACE", "ScaleShiftBOTNet"],
+        choices=[
+            "BOTNet",
+            "MACE",
+            "ScaleShiftMACE",
+            "ScaleShiftBOTNet",
+            "AtomicDipolesMACE",
+            "EnergyDipolesMACE",
+        ],
     )
     parser.add_argument(
         "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
@@ -219,12 +229,33 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="stress",
     )
+    parser.add_argument(
+        "--dipole_key",
+        help="Key of reference dipoles in training xyz",
+        type=str,
+        default="dipole",
+    )
+    parser.add_argument(
+        "--charges_key",
+        help="Key of atomic charges in training xyz",
+        type=str,
+        default="charges",
+    )
+
     # Loss and optimization
     parser.add_argument(
         "--loss",
         help="type of loss",
         default="weighted",
-        choices=["ef", "weighted", "forces_only", "virials", "stress"],
+        choices=[
+            "ef",
+            "weighted",
+            "forces_only",
+            "virials",
+            "stress",
+            "dipole",
+            "energy_forces_dipole",
+        ],
     )
     parser.add_argument(
         "--forces_weight", help="weight of forces loss", type=float, default=10.0
@@ -249,6 +280,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--stress_weight", help="weight of virials loss", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--swa_dipole_weight",
+        help="weight of dipoles after starting swa",
+        type=float,
+        default=1.0,
     )
     parser.add_argument(
         "--config_type_weights",
