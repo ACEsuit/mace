@@ -123,7 +123,7 @@ def config_from_atoms(
     pbc = tuple(atoms.get_pbc())
     cell = np.array(atoms.get_cell())
     config_type = atoms.info.get("config_type", "Default")
-    weight = config_type_weights.get(config_type, 1.0)
+    weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(config_type, 1.0)
     return Configuration(
         atomic_numbers=atomic_numbers,
         positions=atoms.get_positions(),
