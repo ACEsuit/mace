@@ -33,14 +33,18 @@ class Configuration:
     positions: Positions  # Angstrom
     energy: Optional[float] = None  # eV
     forces: Optional[Forces] = None  # eV/Angstrom
-    stress: Optional[Stress] = None  # eV/Angstrom^4
-    virials: Optional[Virials] = None  # eV/Angstrom
+    stress: Optional[Stress] = None  # eV/Angstrom^3
+    virials: Optional[Virials] = None  # eV
     dipole: Optional[Vector] = None  # Debye
     charges: Optional[Charges] = None  # atomic unit
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
     weight: float = 1.0  # weight of config in loss
+    energy_weight: float = 1.0  # weight of config energy in loss
+    forces_weight: float = 1.0  # weight of config forces in loss
+    stress_weight: float = 1.0  # weight of config stress in loss
+    virials_weight: float = 1.0  # weight of config virial in loss
     config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
 
 
@@ -124,6 +128,10 @@ def config_from_atoms(
     cell = np.array(atoms.get_cell())
     config_type = atoms.info.get("config_type", "Default")
     weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(config_type, 1.0)
+    energy_weight = atoms.info.get("config_energy_weight", 1.0)
+    forces_weight = atoms.info.get("config_forces_weight", 1.0)
+    stress_weight = atoms.info.get("config_stress_weight", 1.0)
+    virials_weight = atoms.info.get("config_virials_weight", 1.0)
     return Configuration(
         atomic_numbers=atomic_numbers,
         positions=atoms.get_positions(),
@@ -134,6 +142,10 @@ def config_from_atoms(
         dipole=dipole,
         charges=charges,
         weight=weight,
+        energy_weight=energy_weight,
+        forces_weight=forces_weight,
+        stress_weight=stress_weight,
+        virials_weight=virials_weight,
         config_type=config_type,
         pbc=pbc,
         cell=cell,

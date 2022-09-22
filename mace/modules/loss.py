@@ -18,27 +18,30 @@ def mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
 def weighted_mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
     configs_weight = ref.weight  # [n_graphs, ]
+    configs_energy_weight = ref.energy_weight  # [n_graphs, ]
     num_atoms = ref.ptr[1:] - ref.ptr[:-1]  # [n_graphs,]
     return torch.mean(
-        configs_weight * torch.square((ref["energy"] - pred["energy"]) / num_atoms)
+        configs_weight * configs_energy_weight * torch.square((ref["energy"] - pred["energy"]) / num_atoms)
     )  # []
 
 
 def weighted_mean_squared_stress(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
     configs_weight = ref.weight.view(-1, 1, 1)  # [n_graphs, ]
+    configs_stress_weight = ref.stress_weight.view(-1, 1, 1)  # [n_graphs, ]
     num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).view(-1, 1, 1)  # [n_graphs,]
     return torch.mean(
-        configs_weight * torch.square((ref["stress"] - pred["stress"]) / num_atoms)
+        configs_weight * configs_stress_weight * torch.square((ref["stress"] - pred["stress"]) / num_atoms)
     )  # []
 
 
 def weighted_mean_squared_virials(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
     configs_weight = ref.weight.view(-1, 1, 1)  # [n_graphs, ]
+    configs_virials_weight = ref.virials_weight.view(-1, 1, 1)  # [n_graphs, ]
     num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).view(-1, 1, 1)  # [n_graphs,]
     return torch.mean(
-        configs_weight * torch.square((ref["virials"] - pred["virials"]) / num_atoms)
+        configs_weight * configs_virial_weight * torch.square((ref["virials"] - pred["virials"]) / num_atoms)
     )  # []
 
 
@@ -49,8 +52,13 @@ def mean_squared_error_forces(ref: Batch, pred: TensorDict) -> torch.Tensor:
     ).unsqueeze(
         -1
     )  # [n_atoms, 1]
+    configs_forces_weight = torch.repeat_interleave(
+        ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
     return torch.mean(
-        configs_weight * torch.square(ref["forces"] - pred["forces"])
+        configs_weight * configs_forces_weight * torch.square(ref["forces"] - pred["forces"])
     )  # []
 
 
