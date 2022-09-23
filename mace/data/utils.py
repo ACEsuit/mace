@@ -127,7 +127,9 @@ def config_from_atoms(
     pbc = tuple(atoms.get_pbc())
     cell = np.array(atoms.get_cell())
     config_type = atoms.info.get("config_type", "Default")
-    weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(config_type, 1.0)
+    weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(
+        config_type, 1.0
+    )
     energy_weight = atoms.info.get("config_energy_weight", 1.0)
     forces_weight = atoms.info.get("config_forces_weight", 1.0)
     stress_weight = atoms.info.get("config_stress_weight", 1.0)

@@ -93,10 +93,10 @@ class AtomicData(torch_geometric.data.Data):
             "cell": cell,
             "node_attrs": node_attrs,
             "weight": weight,
-            "weight": energy_weight,
-            "weight": forces_weight,
-            "weight": stress_weight,
-            "weight": virials_weight,
+            "energy_weight": energy_weight,
+            "forces_weight": forces_weight,
+            "stress_weight": stress_weight,
+            "virials_weight": virials_weight,
             "forces": forces,
             "energy": energy,
             "stress": stress,
@@ -210,14 +210,8 @@ class AtomicData(torch_geometric.data.Data):
 
 
 def get_data_loader(
-    dataset: Sequence[AtomicData],
-    batch_size: int,
-    shuffle=True,
-    drop_last=False,
+    dataset: Sequence[AtomicData], batch_size: int, shuffle=True, drop_last=False,
 ) -> torch.utils.data.DataLoader:
     return torch_geometric.dataloader.DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        drop_last=drop_last,
+        dataset=dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last,
     )
