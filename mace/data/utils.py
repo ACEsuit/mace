@@ -134,6 +134,21 @@ def config_from_atoms(
     forces_weight = atoms.info.get("config_forces_weight", 1.0)
     stress_weight = atoms.info.get("config_stress_weight", 1.0)
     virials_weight = atoms.info.get("config_virials_weight", 1.0)
+
+    # fill in missing quantities but set their weight to 0.0
+    if energy is None:
+        energy = 0.0
+        energy_weight = 0.0
+    if forces is None:
+        forces = np.zeros(np.shape(atoms.positions))
+        forces_weight = 0.0
+    if stress is None:
+        stress = np.zeros(6)
+        stress_weight = 0.0
+    if virials is None:
+        virials = np.zeros((3,3))
+        virials_weight = 0.0
+
     return Configuration(
         atomic_numbers=atomic_numbers,
         positions=atoms.get_positions(),
