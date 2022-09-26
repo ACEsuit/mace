@@ -20,6 +20,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--log_dir", help="directory for log files", type=str, default="logs"
     )
     parser.add_argument(
+        "--model_dir",
+        help="directory for final model",
+        type=str,
+        default="."
+    )
+    parser.add_argument(
         "--checkpoints_dir",
         help="directory for checkpoint files",
         type=str,
