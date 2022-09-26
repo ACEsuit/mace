@@ -82,6 +82,21 @@ def test_run_train(tmp_path, fitting_configs):
 
     calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
 
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    # print("Es", Es)
+    # from a run 26 Sep 2022
+    ref_Es = [0.0, 0.0, -0.0243221679243611, -0.050964520227180135, -0.03645460711829348, -0.13158361023247794,
+              -0.13741791631530648, 0.15020873105058347, -0.030994800621621084, -0.18479176224559565,
+              0.13839000814817654, 0.04717252854662944, -0.02291131231244533, -0.12120661875075517,
+              0.035278558344655306, -0.1563421040802036, 0.05209225543562558, 0.07094309874598631,
+              -0.07408468034262024, -0.35328165278550505, -0.07720689922835615, -0.005323983738854635]
+
+    assert np.allclose(Es, ref_Es)
+
 
 def test_run_train_missing_data(tmp_path, fitting_configs):
     del fitting_configs[5].info["REF_energy"]
@@ -106,3 +121,17 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    # print("Es", Es)
+    # from a run on 26 Sep 222
+    ref_Es = [0.0, 0.0, -0.03241269934827452, -0.06706228938000516, -0.022280960019864706, -0.11402406171727006,
+              -0.14275544211141886, 0.12662279750992406, -0.030731885265015732, -0.16724579641615167,
+              0.18201984746834174, 0.029183162182312886, -0.03362018353832876, -0.10270077561019852,
+              0.03382917607805694, -0.17462605914458545, 0.06035559231929699, 0.05835415392016767,
+              -0.06609346776177956, -0.3635992937364229, -0.12096310038166125, 0.0020248824148728847]
+    assert np.allclose(Es, ref_Es)

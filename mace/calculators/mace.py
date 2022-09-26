@@ -23,7 +23,7 @@ class MACECalculator(Calculator):
         device: str,
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
-        default_dtype="float32",
+        default_dtype="float64",
         **kwargs
     ):
         Calculator.__init__(self, **kwargs)
@@ -91,7 +91,7 @@ class DipoleMACECalculator(Calculator):
         model_path: str,
         device: str,
         length_units_to_A: float = 1.0,
-        default_dtype="float32",
+        default_dtype="float64",
         charges_key="Qs",
         **kwargs
     ):
@@ -163,7 +163,7 @@ class EnergyDipoleMACECalculator(Calculator):
         device: str,
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
-        default_dtype="float32",
+        default_dtype="float64",
         charges_key="Qs",
         **kwargs
     ):
