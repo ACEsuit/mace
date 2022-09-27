@@ -43,7 +43,7 @@ class MACE_openmm(torch.nn.Module):
     def forward(self, positions):
         sender, receiver, unit_shifts = primitive_neighbor_list_torch(
             quantities="ijS",
-            pbc=[False, False, False],
+            pbc=(False, False, False),
             cell=self.inp_dict["cell"],
             positions=positions,
             cutoff=self.r_max,
