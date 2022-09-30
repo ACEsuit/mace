@@ -167,9 +167,11 @@ def load_from_xyz(
     charges_key: str = "charges",
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
-    assert file_path[-4:] == ".xyz", NameError("Specify file with extension .xyz")
 
-    atoms_list = ase.io.read(file_path, format="extxyz", index=":")
+    try:
+        atoms_list = ase.io.read(file_path, index=":")
+    except: 
+        raise Exception("Invalid file format for {}".format(file_path))
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
 
