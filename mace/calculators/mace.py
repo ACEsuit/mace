@@ -15,7 +15,7 @@ from mace.tools import torch_geometric, torch_tools, utils
 class MACECalculator(Calculator):
     """MACE ASE Calculator"""
 
-    implemented_properties = ["energy", "forces"]
+    implemented_properties = ["energy", "forces", "stress"]
 
     def __init__(
         self,
@@ -67,15 +67,18 @@ class MACECalculator(Calculator):
         batch = next(iter(data_loader)).to(self.device)
 
         # predict + extract data
-        out = self.model(batch)
-        forces = out["forces"].detach().cpu().numpy()
+        out = self.model(batch, compute_stress=True)
         energy = out["energy"].detach().cpu().item()
+        forces = out["forces"].detach().cpu().numpy()
+        stress = out["stress"].detach().cpu().numpy()
 
         # store results
         self.results = {
             "energy": energy * self.energy_units_to_eV,
             # force has units eng / len:
             "forces": forces * (self.energy_units_to_eV / self.length_units_to_A),
+            # force has units eng / len^3:
+            "stress": stress * (self.energy_units_to_eV / self.length_units_to_A**3),
         }
 
 
@@ -154,6 +157,7 @@ class EnergyDipoleMACECalculator(Calculator):
     implemented_properties = [
         "energy",
         "forces",
+        "stress",
         "dipole",
     ]
 
@@ -212,9 +216,10 @@ class EnergyDipoleMACECalculator(Calculator):
         batch = next(iter(data_loader)).to(self.device)
 
         # predict + extract data
-        out = self.model(batch)
-        forces = out["forces"].detach().cpu().numpy()
+        out = self.model(batch, compute_stress=True)
         energy = out["energy"].detach().cpu().item()
+        forces = out["forces"].detach().cpu().numpy()
+        stress = out["stress"].detach().cpu().numpy()
         dipole = out["dipole"].detach().cpu().numpy()
 
         # store results
@@ -222,5 +227,7 @@ class EnergyDipoleMACECalculator(Calculator):
             "energy": energy * self.energy_units_to_eV,
             # force has units eng / len:
             "forces": forces * (self.energy_units_to_eV / self.length_units_to_A),
+            # stress has units eng / len:
+            "stress": stress * (self.energy_units_to_eV / self.length_units_to_A**3),
             "dipole": dipole,
         }
