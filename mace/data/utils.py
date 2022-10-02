@@ -168,10 +168,8 @@ def load_from_xyz(
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
 
-    try:
-        atoms_list = ase.io.read(file_path, index=":")
-    except: 
-        raise Exception("Invalid file format for {}".format(file_path))
+    atoms_list = ase.io.read(file_path, index=":")
+
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
 
