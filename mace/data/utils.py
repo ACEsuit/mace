@@ -146,7 +146,7 @@ def config_from_atoms(
         stress = np.zeros(6)
         stress_weight = 0.0
     if virials is None:
-        virials = np.zeros((3,3))
+        virials = np.zeros((3, 3))
         virials_weight = 0.0
 
     return Configuration(
