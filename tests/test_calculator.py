@@ -17,25 +17,29 @@ from ase.calculators.test import gradient_test
 
 from mace.calculators.mace import MACECalculator
 
-water = Atoms(numbers=[8, 1, 1], positions=[[0, -2.0, 0], [1, 0, 0], [0, 1, 0]], cell=[4]*3, pbc = [True]*3)
-fitting_configs = [Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6]*3),
-           Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6]*3)]
-fitting_configs[0].info["REF_energy"] = 0.0
-fitting_configs[0].info["config_type"] = "IsolatedAtom"
-fitting_configs[1].info["REF_energy"] = 0.0
-fitting_configs[1].info["config_type"] = "IsolatedAtom"
+@pytest.fixture(scope="module")
+def fitting_configs():
+    water = Atoms(numbers=[8, 1, 1], positions=[[0, -2.0, 0], [1, 0, 0], [0, 1, 0]], cell=[4]*3, pbc = [True]*3)
+    fit_configs = [Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6]*3),
+               Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6]*3)]
+    fit_configs[0].info["REF_energy"] = 0.0
+    fit_configs[0].info["config_type"] = "IsolatedAtom"
+    fit_configs[1].info["REF_energy"] = 0.0
+    fit_configs[1].info["config_type"] = "IsolatedAtom"
 
-np.random.seed(5)
-for _ in range(20):
-    c = water.copy()
-    c.positions += np.random.normal(0.1, size=c.positions.shape)
-    c.info["REF_energy"] = np.random.normal(0.1)
-    c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
-    c.info["REF_stress"] = np.random.normal(0.1, size=6)
-    fitting_configs.append(c)
+    np.random.seed(5)
+    for _ in range(20):
+        c = water.copy()
+        c.positions += np.random.normal(0.1, size=c.positions.shape)
+        c.info["REF_energy"] = np.random.normal(0.1)
+        c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
+        c.info["REF_stress"] = np.random.normal(0.1, size=6)
+        fit_configs.append(c)
 
-@pytest.fixture
-def trained_model(tmp_path):
+    return fit_configs
+
+@pytest.fixture(scope="module")
+def trained_model(tmp_path_factory, fitting_configs):
     _mace_params = {
         "name": "MACE",
         "valid_fraction": 0.05,
@@ -61,6 +65,8 @@ def trained_model(tmp_path):
         "stress_key": "REF_stress"
     }
 
+    tmp_path = tmp_path_factory.mktemp("run_")
+
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     mace_params = _mace_params.copy()
@@ -81,15 +87,22 @@ def trained_model(tmp_path):
     return MACECalculator(tmp_path / "MACE.model", device="cpu")
 
 
-def test_calculator(trained_model):
-    at = fitting_configs[0]
+def test_calculator_forces(fitting_configs, trained_model):
+    at = fitting_configs[2].copy()
     at.calc = trained_model
-    print("BOB", at.get_potential_energy())
-    print("BOB", at.get_forces())
-    print("BOB", at.get_stress())
 
-    # at_wrapped = ExpCellFilter(at)
-    # grad_qual = gradient_test(at_wrapped)
-    grad_qual = gradient_test(at)
+    # test just forces
+    grads = gradient_test(at)
 
-    print("BOB", grad_qual)
+    assert np.allclose(grads[0], grads[1])
+
+
+def test_calculator_stress(fitting_configs, trained_model):
+    at = fitting_configs[2].copy()
+    at.calc = trained_model
+
+    # test forces and stress
+    at_wrapped = ExpCellFilter(at)
+    grads = gradient_test(at_wrapped)
+
+    assert np.allclose(grads[0], grads[1])

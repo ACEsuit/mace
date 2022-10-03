@@ -57,7 +57,7 @@ def compute_forces_virials(
         allow_unused=True,
     )
     stress = None
-    if compute_stress:
+    if compute_stress and virials is not None:
         cell = cell.view(-1, 3, 3)
         volume = torch.einsum(
             "zi,zi->z",
