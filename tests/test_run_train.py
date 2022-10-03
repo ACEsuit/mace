@@ -9,7 +9,6 @@ from ase.atoms import Atoms
 
 from mace.calculators.mace import MACECalculator
 
-pytest_mace_dir = Path(__file__).parent.parent
 run_train = Path(__file__).parent.parent / "scripts" / "run_train.py"
 
 
@@ -78,11 +77,7 @@ def test_run_train(tmp_path, fitting_configs):
 
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ
-    try:
-        current_path = os.environ["PYTHONPATH"]
-    except KeyError:
-        raise KeyError("PYTHONPATH not set")
-    run_env["PYTHONPATH"] = str(pytest_mace_dir) + ":" + current_path
+    run_env["PYTHONPATH"] = ":".join(sys.path)
 
     cmd = (
         sys.executable
@@ -152,7 +147,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
 
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ
-    run_env["PYTHONPATH"] = str(pytest_mace_dir) + ":" + os.environ["PYTHONPATH"]
+    run_env["PYTHONPATH"] = ":".join(sys.path)
 
     cmd = (
         sys.executable
