@@ -77,7 +77,8 @@ def test_run_train(tmp_path, fitting_configs):
 
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ
-    run_env["PYTHONPATH"] = ":".join(sys.path)
+    sys.path.append(str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = str(Path(__file__).parent.parent)
 
     cmd = (
         sys.executable
@@ -147,7 +148,8 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
 
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ
-    run_env["PYTHONPATH"] = ":".join(sys.path)
+    sys.path.append(str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = str(Path(__file__).parent.parent)
 
     cmd = (
         sys.executable
