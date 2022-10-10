@@ -474,14 +474,17 @@ def main() -> None:
 
     logging.info("\n" + str(table))
 
+    # save both cpu and gpu versions to final location
+    torch.save(model, Path(args.model_dir) / (args.name + f".{device}.model"))
+    if "device" != "cpu":
+        torch.save(model.to("cpu"), Path(args.model_dir) / (args.name + ".cpu.model"))
+
     # Save entire model
     model_path = Path(args.checkpoints_dir) / (tag + ".model")
     logging.info(f"Saving model to {model_path}")
     if args.save_cpu:
         model = model.to("cpu")
     torch.save(model, model_path)
-
-    torch.save(model, Path(args.model_dir) / (args.name + ".model"))
 
     logging.info("Done")
 
