@@ -67,7 +67,7 @@ class MACECalculator(Calculator):
         batch = next(iter(data_loader)).to(self.device)
 
         # predict + extract data
-        out = self.model(batch)
+        out = self.model(batch.to_dict())
         forces = out["forces"].detach().cpu().numpy()
         energy = out["energy"].detach().cpu().item()
 
