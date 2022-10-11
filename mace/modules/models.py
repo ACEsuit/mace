@@ -53,7 +53,7 @@ class MACE(torch.nn.Module):
         gate: Optional[Callable],
     ):
         super().__init__()
-        self.r_max = r_max
+        self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.float64))
         self.register_buffer("atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64))
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
