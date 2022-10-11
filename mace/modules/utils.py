@@ -57,7 +57,7 @@ def compute_forces_virials(
         allow_unused=True,
     )
     stress = None
-    if compute_stress:
+    if compute_stress and virials is not None:
         cell = cell.view(-1, 3, 3)
         volume = torch.einsum(
             "zi,zi->z",
@@ -130,7 +130,8 @@ def get_outputs(
     compute_virials: bool = True,
     compute_stress: bool = True,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-    if compute_force and compute_virials:
+    if compute_virials or compute_stress:
+        # forces come for free
         forces, virials, stress = compute_forces_virials(
             energy=energy,
             positions=positions,
@@ -139,13 +140,12 @@ def get_outputs(
             compute_stress=compute_stress,
             training=training,
         )
-    elif compute_force and not compute_stress:
+    elif compute_force:
         forces, virials, stress = (
             compute_forces(energy=energy, positions=positions, training=training),
             None,
             None,
         )
-        stress = None
     else:
         forces, virials, stress = (None, None, None)
     return forces, virials, stress

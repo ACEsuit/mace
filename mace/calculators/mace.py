@@ -15,7 +15,7 @@ from mace.tools import torch_geometric, torch_tools, utils
 class MACECalculator(Calculator):
     """MACE ASE Calculator"""
 
-    implemented_properties = ["energy", "forces"]
+    implemented_properties = ["energy", "free_energy", "forces", "stress"]
 
     def __init__(
         self,
@@ -41,7 +41,7 @@ class MACECalculator(Calculator):
         torch_tools.set_default_dtype(default_dtype)
 
     # pylint: disable=dangerous-default-value
-    def calculate(self, atoms=None, properties=["energy"], system_changes=all_changes):
+    def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         """
         Calculate properties.
         :param atoms: ase.Atoms object
@@ -67,16 +67,25 @@ class MACECalculator(Calculator):
         batch = next(iter(data_loader)).to(self.device)
 
         # predict + extract data
-        out = self.model(batch)
-        forces = out["forces"].detach().cpu().numpy()
+        out = self.model(batch, compute_stress=True)
         energy = out["energy"].detach().cpu().item()
+        forces = out["forces"].detach().cpu().numpy()
 
         # store results
+        E = energy * self.energy_units_to_eV
         self.results = {
-            "energy": energy * self.energy_units_to_eV,
+            "energy": E,
+            "free_energy": E,
             # force has units eng / len:
             "forces": forces * (self.energy_units_to_eV / self.length_units_to_A),
         }
+
+        # even though compute_stress is True, stress can be none if pbc is False
+        # not sure if correct ASE thing is to have no dict key, or dict key with value None
+        if out["stress"] is not None:
+            stress = out["stress"].detach().cpu().numpy()
+            # stress has units eng / len^3:
+            self.results["stress"] = (stress * (self.energy_units_to_eV / self.length_units_to_A**3))[0]
 
 
 class DipoleMACECalculator(Calculator):
@@ -113,7 +122,7 @@ class DipoleMACECalculator(Calculator):
         torch_tools.set_default_dtype(default_dtype)
 
     # pylint: disable=dangerous-default-value
-    def calculate(self, atoms=None, properties=["dipole"], system_changes=all_changes):
+    def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         """
         Calculate properties.
         :param atoms: ase.Atoms object
@@ -153,7 +162,9 @@ class EnergyDipoleMACECalculator(Calculator):
 
     implemented_properties = [
         "energy",
+        "free_energy",
         "forces",
+        "stress",
         "dipole",
     ]
 
@@ -186,7 +197,7 @@ class EnergyDipoleMACECalculator(Calculator):
         torch_tools.set_default_dtype(default_dtype)
 
     # pylint: disable=dangerous-default-value
-    def calculate(self, atoms=None, properties=["dipole"], system_changes=all_changes):
+    def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         """
         Calculate properties.
         :param atoms: ase.Atoms object
@@ -212,15 +223,24 @@ class EnergyDipoleMACECalculator(Calculator):
         batch = next(iter(data_loader)).to(self.device)
 
         # predict + extract data
-        out = self.model(batch)
-        forces = out["forces"].detach().cpu().numpy()
+        out = self.model(batch, compute_stress=True)
         energy = out["energy"].detach().cpu().item()
+        forces = out["forces"].detach().cpu().numpy()
         dipole = out["dipole"].detach().cpu().numpy()
 
         # store results
+        E = energy * self.energy_units_to_eV
         self.results = {
-            "energy": energy * self.energy_units_to_eV,
+            "energy": E,
+            "free_energy": E,
             # force has units eng / len:
             "forces": forces * (self.energy_units_to_eV / self.length_units_to_A),
+            # stress has units eng / len:
             "dipole": dipole,
         }
+
+        # even though compute_stress is True, stress can be none if pbc is False
+        # not sure if correct ASE thing is to have no dict key, or dict key with value None
+        if out["stress"] is not None:
+            stress = out["stress"].detach().cpu().numpy()
+            self.results["stress"] = (stress * (self.energy_units_to_eV / self.length_units_to_A**3))[0]

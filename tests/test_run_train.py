@@ -2,9 +2,10 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-import pytest
+
 import ase.io
 import numpy as np
+import pytest
 from ase.atoms import Atoms
 
 from mace.calculators.mace import MACECalculator
@@ -76,7 +77,8 @@ def test_run_train(tmp_path, fitting_configs):
     mace_params["train_file"] = tmp_path / "fit.xyz"
 
     # make sure run_train.py is using the mace that is currently being tested
-    run_env = os.environ
+    run_env = os.environ.copy()
+    sys.path.append(str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
 
     cmd = (
@@ -146,7 +148,8 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
     mace_params["train_file"] = tmp_path / "fit.xyz"
 
     # make sure run_train.py is using the mace that is currently being tested
-    run_env = os.environ
+    run_env = os.environ.copy()
+    sys.path.append(str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
 
     cmd = (

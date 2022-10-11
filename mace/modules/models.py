@@ -153,7 +153,7 @@ class MACE(torch.nn.Module):
         # Setup
         data.positions.requires_grad = True
         displacement = None
-        if compute_virials:
+        if compute_virials or compute_stress:
             data.positions, data.shifts, displacement = get_symmetric_displacement(
                 positions=data.positions,
                 unit_shifts=data.unit_shifts,
@@ -245,7 +245,7 @@ class ScaleShiftMACE(MACE):
         # Setup
         data.positions.requires_grad = True
         displacement = None
-        if compute_virials:
+        if compute_virials or compute_stress:
             data.positions, data.shifts, displacement = get_symmetric_displacement(
                 positions=data.positions,
                 unit_shifts=data.unit_shifts,
