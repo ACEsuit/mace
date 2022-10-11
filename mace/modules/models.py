@@ -54,7 +54,7 @@ class MACE(torch.nn.Module):
     ):
         super().__init__()
         self.r_max = r_max
-        self.atomic_numbers = atomic_numbers
+        self.register_buffer("atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64))
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
