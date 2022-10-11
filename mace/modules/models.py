@@ -187,6 +187,7 @@ class MACE(torch.nn.Module):
 
         # Interactions
         energies = [e0]
+        node_energies_list = [node_e0]
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
         ):
@@ -198,19 +199,20 @@ class MACE(torch.nn.Module):
                 edge_index=data["edge_index"],
             )
             node_feats = product(
-                node_feats=node_feats,
-                sc=sc,
-                node_attrs=data["node_attrs"],
+                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"],
             )
             node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             energy = scatter_sum(
                 src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
             energies.append(energy)
+            node_energies_list.append(node_energies)
 
         # Sum over energy contributions
         contributions = torch.stack(energies, dim=-1)
         total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
+        node_energy_contributions = torch.stack(node_energies_list, dim=-1)
+        node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
         # Outputs
         forces, virials, stress = get_outputs(
             energy=total_energy,
@@ -225,6 +227,7 @@ class MACE(torch.nn.Module):
 
         return {
             "energy": total_energy,
+            "node_energy": node_energy,
             "contributions": contributions,
             "forces": forces,
             "virials": virials,
@@ -235,10 +238,7 @@ class MACE(torch.nn.Module):
 @compile_mode("script")
 class ScaleShiftMACE(MACE):
     def __init__(
-        self,
-        atomic_inter_scale: float,
-        atomic_inter_shift: float,
-        **kwargs,
+        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
@@ -321,6 +321,7 @@ class ScaleShiftMACE(MACE):
 
         # Add E_0 and (scaled) interaction energy
         total_energy = e0 + inter_e
+        node_energy = node_e0 + node_inter_es
 
         forces, virials, stress = get_outputs(
             energy=inter_e,
@@ -335,6 +336,7 @@ class ScaleShiftMACE(MACE):
 
         output = {
             "energy": total_energy,
+            "node_energy": node_energy,
             "forces": forces,
             "virials": virials,
             "stress": stress,
@@ -467,10 +469,7 @@ class BOTNet(torch.nn.Module):
 
 class ScaleShiftBOTNet(BOTNet):
     def __init__(
-        self,
-        atomic_inter_scale: float,
-        atomic_inter_shift: float,
-        **kwargs,
+        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
