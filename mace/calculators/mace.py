@@ -30,7 +30,7 @@ class MACECalculator(Calculator):
         self.results = {}
 
         self.model = torch.load(f=model_path, map_location=device)
-        self.r_max = self.model.r_max
+        self.r_max = self.model.r_max.item()
         self.device = torch_tools.init_device(device)
         self.energy_units_to_eV = energy_units_to_eV
         self.length_units_to_A = length_units_to_A
