@@ -78,8 +78,9 @@ def test_run_train(tmp_path, fitting_configs):
 
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
-    sys.path.append(str(Path(__file__).parent.parent))
+    sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -94,11 +95,7 @@ def test_run_train(tmp_path, fitting_configs):
         )
     )
 
-    try:
-        p = subprocess.run(cmd.split(), env=run_env, check=True)
-    except subprocess.CalledProcessError:
-        run_env["PYTHONPATH"] = str(Path(__file__).parent.parent)
-        p = subprocess.run(cmd.split(), env=run_env, check=True)
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
     calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
@@ -152,8 +149,9 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
 
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
-    sys.path.append(str(Path(__file__).parent.parent))
+    sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -168,12 +166,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
         )
     )
 
-    try:
-        p = subprocess.run(cmd.split(), env=run_env, check=True)
-    except subprocess.CalledProcessError:
-        run_env["PYTHONPATH"] = str(Path(__file__).parent.parent)
-        p = subprocess.run(cmd.split(), env=run_env, check=True)
-
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
     calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
