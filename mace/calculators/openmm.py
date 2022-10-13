@@ -56,7 +56,7 @@ class MACE_openmm(torch.nn.Module):
         )
         # Eliminate self-edges that don't cross periodic boundaries
         true_self_edge = sender == receiver
-        true_self_edge &= torch.all(unit_shifts == 0, axis=1)
+        true_self_edge &= torch.all(unit_shifts == 0, dim=1)
         keep_edge = ~true_self_edge
 
         # Note: after eliminating self-edges, it can be that no edges remain in this system
