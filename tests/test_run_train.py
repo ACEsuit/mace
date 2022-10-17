@@ -203,3 +203,73 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
         0.0020248824148728847,
     ]
     assert np.allclose(Es, ref_Es)
+
+def test_run_train_no_stress(tmp_path, fitting_configs):
+    del fitting_configs[5].info["REF_energy"]
+    del fitting_configs[6].arrays["REF_forces"]
+    del fitting_configs[7].info["REF_stress"]
+
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["loss"] = "weighted"
+
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    # print("Es", Es)
+    # from a run on 26 Sep 222
+    ref_Es = [
+        0.0,
+        0.0,
+        -0.03241269934827452,
+        -0.06706228938000516,
+        -0.022280960019864706,
+        -0.11402406171727006,
+        -0.14275544211141886,
+        0.12662279750992406,
+        -0.030731885265015732,
+        -0.16724579641615167,
+        0.18201984746834174,
+        0.029183162182312886,
+        -0.03362018353832876,
+        -0.10270077561019852,
+        0.03382917607805694,
+        -0.17462605914458545,
+        0.06035559231929699,
+        0.05835415392016767,
+        -0.06609346776177956,
+        -0.3635992937364229,
+        -0.12096310038166125,
+        0.0020248824148728847,
+    ]
+    assert np.allclose(Es, ref_Es)
