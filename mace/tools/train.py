@@ -274,31 +274,31 @@ def evaluate(
         loss = loss_fn(pred=output, ref=batch)
         total_loss += to_numpy(loss).item()
 
-        if "energy" in output.keys():
+        if output.get("energy") is not None and batch.energy is not None:
             E_computed = True
             delta_es_list.append(batch.energy - output["energy"])
             delta_es_per_atom_list.append(
                 (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
             )
-        if "forces" in output.keys():
+        if output.get("forces") is not None and batch.forces is not None:
             Fs_computed = True
             delta_fs_list.append(batch.forces - output["forces"])
             fs_list.append(batch.forces)
-        if "stress" in output.keys() and batch.stress is not None:
+        if output.get("stress") is not None and batch.stress is not None:
             stress_computed = True
             delta_stress_list.append(batch.stress - output["stress"])
             delta_stress_per_atom_list.append(
                 (batch.stress - output["stress"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
             )
-        if "virials" in output.keys() and batch.virials is not None:
+        if output.get("virials") is not None and batch.virials is not None:
             virials_computed = True
             delta_virials_list.append(batch.virials - output["virials"])
             delta_virials_per_atom_list.append(
                 (batch.virials - output["virials"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
             )
-        if "dipole" in output.keys() and batch.dipole is not None:
+        if output.get("dipole") is not None and batch.dipole is not None:
             Mus_computed = True
             delta_mus_list.append(batch.dipole - output["dipole"])
             delta_mus_per_atom_list.append(

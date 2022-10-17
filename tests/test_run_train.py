@@ -78,8 +78,9 @@ def test_run_train(tmp_path, fitting_configs):
 
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
-    sys.path.append(str(Path(__file__).parent.parent))
+    sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -95,7 +96,6 @@ def test_run_train(tmp_path, fitting_configs):
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
-
     assert p.returncode == 0
 
     calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
@@ -149,8 +149,9 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
 
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
-    sys.path.append(str(Path(__file__).parent.parent))
+    sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -166,7 +167,6 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
-
     assert p.returncode == 0
 
     calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
@@ -177,7 +177,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
         Es.append(at.get_potential_energy())
 
     # print("Es", Es)
-    # from a run on 26 Sep 222
+    # from a run on 26 Sep 2022
     ref_Es = [
         0.0,
         0.0,
@@ -202,4 +202,74 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
         -0.12096310038166125,
         0.0020248824148728847,
     ]
+    assert np.allclose(Es, ref_Es)
+
+def test_run_train_no_stress(tmp_path, fitting_configs):
+    del fitting_configs[5].info["REF_energy"]
+    del fitting_configs[6].arrays["REF_forces"]
+    del fitting_configs[7].info["REF_stress"]
+
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["loss"] = "weighted"
+
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    # print("Es", Es)
+    # from a run on 17 Oct 2022
+    ref_Es = [
+        0.0,
+        0.0,
+        -0.03239793192755687,
+        -0.06703592719450038,
+        -0.02230828686026603,
+        -0.11399504155927734,
+        -0.14272496876997182,
+        0.12657037585639888,
+        -0.030714409145905258,
+        -0.1672197837876236,
+        0.1819602070878834,
+        0.029188855007251477,
+        -0.03362109069543292,
+        -0.1026345133921372,
+        0.033824714452458965,
+        -0.1746043907212269,
+        0.060340361582254434,
+        0.058332674679485386,
+        -0.06608313576078294,
+        -0.36358220540264646,
+        -0.12097397940768086,
+        0.002021055463491156
+        ]
     assert np.allclose(Es, ref_Es)
