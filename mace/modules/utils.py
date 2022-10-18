@@ -65,21 +65,14 @@ def compute_forces_virials(
             torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
         ).unsqueeze(-1)
         stress = virials / volume.view(-1, 1, 1)
-    if forces is None and virials is None:
+    if forces is None:
         logging.warning("Gradient is None, padded with zeros")
-        return (
-            torch.zeros_like(positions),
-            torch.zeros_like(positions).expand(1, 1, 3),
-            None,
-        )
-    if forces is not None and virials is None:
+        forces = torch.zeros_like(positions)
+    if virials is None:
         logging.warning("Virial is None, padded with zeros")
-        return -1 * forces, torch.zeros_like(positions).expand(1, 1, 3), None
-    if forces is None and virials is not None:
-        logging.warning("Virial is None, padded with zeros")
-        return torch.zeros_like(positions), -1 * virials, None
-    return -1 * forces, -1 * virials, stress
+        virials = torch.zeros((1, 3, 3))
 
+    return -1 * forces, -1 * virials, stress
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
