@@ -57,7 +57,7 @@ def compute_forces_virials(
         allow_unused=True,
     )
     stress = None
-    if compute_stress:
+    if compute_stress and virials is not None:
         cell = cell.view(-1, 3, 3)
         volume = torch.einsum(
             "zi,zi->z",
@@ -65,19 +65,13 @@ def compute_forces_virials(
             torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
         ).unsqueeze(-1)
         stress = virials / volume.view(-1, 1, 1)
-    if forces is None and virials is None:
+    if forces is None:
         logging.warning("Gradient is None, padded with zeros")
-        return (
-            torch.zeros_like(positions),
-            torch.zeros_like(positions).expand(1, 1, 3),
-            None,
-        )
-    if forces is not None and virials is None:
+        forces = torch.zeros_like(positions)
+    if virials is None:
         logging.warning("Virial is None, padded with zeros")
-        return -1 * forces, torch.zeros_like(positions).expand(1, 1, 3), None
-    if forces is None and virials is not None:
-        logging.warning("Virial is None, padded with zeros")
-        return torch.zeros_like(positions), -1 * virials, None
+        virials = torch.zeros((1, 3, 3))
+
     return -1 * forces, -1 * virials, stress
 
 
@@ -130,7 +124,8 @@ def get_outputs(
     compute_virials: bool = True,
     compute_stress: bool = True,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-    if compute_force and compute_virials:
+    if compute_virials or compute_stress:
+        # forces come for free
         forces, virials, stress = compute_forces_virials(
             energy=energy,
             positions=positions,
@@ -139,13 +134,12 @@ def get_outputs(
             compute_stress=compute_stress,
             training=training,
         )
-    elif compute_force and not compute_stress:
+    elif compute_force:
         forces, virials, stress = (
             compute_forces(energy=energy, positions=positions, training=training),
             None,
             None,
         )
-        stress = None
     else:
         forces, virials, stress = (None, None, None)
     return forces, virials, stress
