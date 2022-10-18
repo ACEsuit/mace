@@ -6,7 +6,7 @@
 
 import ast
 import logging
-import os
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -14,11 +14,11 @@ import torch.nn.functional
 from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
-from utils import create_error_table, get_dataset_from_xyz
 
 import mace
 from mace import data, modules, tools
 from mace.tools import torch_geometric
+from mace.tools.scripts_utils import create_error_table, get_dataset_from_xyz
 
 
 def main() -> None:
@@ -475,11 +475,13 @@ def main() -> None:
     logging.info("\n" + str(table))
 
     # Save entire model
-    model_path = os.path.join(args.checkpoints_dir, tag + ".model")
+    model_path = Path(args.checkpoints_dir) / (tag + ".model")
     logging.info(f"Saving model to {model_path}")
     if args.save_cpu:
         model = model.to("cpu")
     torch.save(model, model_path)
+
+    torch.save(model, Path(args.model_dir) / (args.name + ".model"))
 
     logging.info("Done")
 
