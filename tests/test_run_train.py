@@ -204,6 +204,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
     ]
     assert np.allclose(Es, ref_Es)
 
+
 def test_run_train_no_stress(tmp_path, fitting_configs):
     del fitting_configs[5].info["REF_energy"]
     del fitting_configs[6].arrays["REF_forces"]
@@ -270,6 +271,6 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
         -0.06608313576078294,
         -0.36358220540264646,
         -0.12097397940768086,
-        0.002021055463491156
-        ]
+        0.002021055463491156,
+    ]
     assert np.allclose(Es, ref_Es)
