@@ -85,7 +85,9 @@ class MACECalculator(Calculator):
         if out["stress"] is not None:
             stress = out["stress"].detach().cpu().numpy()
             # stress has units eng / len^3:
-            self.results["stress"] = (stress * (self.energy_units_to_eV / self.length_units_to_A**3))[0]
+            self.results["stress"] = (
+                stress * (self.energy_units_to_eV / self.length_units_to_A**3)
+            )[0]
 
 
 class DipoleMACECalculator(Calculator):
@@ -243,4 +245,6 @@ class EnergyDipoleMACECalculator(Calculator):
         # not sure if correct ASE thing is to have no dict key, or dict key with value None
         if out["stress"] is not None:
             stress = out["stress"].detach().cpu().numpy()
-            self.results["stress"] = (stress * (self.energy_units_to_eV / self.length_units_to_A**3))[0]
+            self.results["stress"] = (
+                stress * (self.energy_units_to_eV / self.length_units_to_A**3)
+            )[0]

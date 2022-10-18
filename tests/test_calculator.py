@@ -1,27 +1,34 @@
-import sys
 import os
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
-from pathlib import Path
-pytest_mace_dir = Path(__file__).parent.parent
-run_train = Path(__file__).parent.parent / "scripts" / "run_train.py"
-
-import numpy as np
-
 import ase.io
+import numpy as np
 from ase.atoms import Atoms
-from ase.constraints import ExpCellFilter
 from ase.calculators.test import gradient_test
+from ase.constraints import ExpCellFilter
 
 from mace.calculators.mace import MACECalculator
 
-@pytest.fixture(scope="module")
-def fitting_configs():
-    water = Atoms(numbers=[8, 1, 1], positions=[[0, -2.0, 0], [1, 0, 0], [0, 1, 0]], cell=[4]*3, pbc = [True]*3)
-    fit_configs = [Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6]*3),
-               Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6]*3)]
+pytest_mace_dir = Path(__file__).parent.parent
+run_train = Path(__file__).parent.parent / "scripts" / "run_train.py"
+
+
+@pytest.fixture(scope="module", name="fitting_configs")
+def fitting_configs_fixture():
+    water = Atoms(
+        numbers=[8, 1, 1],
+        positions=[[0, -2.0, 0], [1, 0, 0], [0, 1, 0]],
+        cell=[4] * 3,
+        pbc=[True] * 3,
+    )
+    fit_configs = [
+        Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6] * 3),
+        Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6] * 3),
+    ]
     fit_configs[0].info["REF_energy"] = 0.0
     fit_configs[0].info["config_type"] = "IsolatedAtom"
     fit_configs[1].info["REF_energy"] = 0.0
@@ -38,8 +45,9 @@ def fitting_configs():
 
     return fit_configs
 
-@pytest.fixture(scope="module")
-def trained_model(tmp_path_factory, fitting_configs):
+
+@pytest.fixture(scope="module", name="trained_model")
+def trained_model_fixture(tmp_path_factory, fitting_configs):
     _mace_params = {
         "name": "MACE",
         "valid_fraction": 0.05,
@@ -62,7 +70,7 @@ def trained_model(tmp_path_factory, fitting_configs):
         "loss": "stress",
         "energy_key": "REF_energy",
         "forces_key": "REF_forces",
-        "stress_key": "REF_stress"
+        "stress_key": "REF_stress",
     }
 
     tmp_path = tmp_path_factory.mktemp("run_")
@@ -78,9 +86,20 @@ def trained_model(tmp_path_factory, fitting_configs):
     run_env = os.environ
     run_env["PYTHONPATH"] = str(pytest_mace_dir) + ":" + os.environ["PYTHONPATH"]
 
-    cmd = sys.executable + " " + str(run_train) + " " + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
 
-    p = subprocess.run(cmd.split(), env=run_env)
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
 
     assert p.returncode == 0
 

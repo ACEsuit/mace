@@ -74,6 +74,7 @@ def compute_forces_virials(
 
     return -1 * forces, -1 * virials, stress
 
+
 def get_symmetric_displacement(
     positions: torch.Tensor,
     unit_shifts: torch.Tensor,
