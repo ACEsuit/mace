@@ -57,6 +57,8 @@ def main() -> None:
         forces_key=args.forces_key,
         stress_key=args.stress_key,
         virials_key=args.virials_key,
+        dipole_key=args.dipole_key,
+        charges_key=args.charges_key,
     )
 
     logging.info(
@@ -74,34 +76,53 @@ def main() -> None:
     )
     # yapf: enable
     logging.info(z_table)
-    if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
-        if args.E0s is not None:
-            logging.info(
-                "Atomic Energies not in training file, using command line argument E0s"
-            )
-            if args.E0s.lower() == "average":
-                logging.info(
-                    "Computing average Atomic Energies using least squares regression"
-                )
-                atomic_energies_dict = data.compute_average_E0s(
-                    collections.train, z_table
-                )
-            else:
-                try:
-                    atomic_energies_dict = ast.literal_eval(args.E0s)
-                    assert isinstance(atomic_energies_dict, dict)
-                except Exception as e:
-                    raise RuntimeError(
-                        f"E0s specified invalidly, error {e} occured"
-                    ) from e
+    if args.model == "AtomicDipolesMACE":
+        atomic_energies = None
+        dipole_only = True
+        compute_dipole = True
+        compute_energy = False
+        args.compute_forces = False
+        compute_virials = False
+        args.compute_stress = False
+    else:
+        dipole_only = False
+        if args.model == "EnergyDipolesMACE":
+            compute_dipole = True
+            compute_energy = True
+            args.compute_forces = True
+            compute_virials = False
+            args.compute_stress = False
         else:
-            raise RuntimeError(
-                "E0s not found in training file and not specified in command line"
-            )
-    atomic_energies: np.ndarray = np.array(
-        [atomic_energies_dict[z] for z in z_table.zs]
-    )
-    logging.info(f"Atomic energies: {atomic_energies.tolist()}")
+            compute_energy = True
+            compute_dipole = False
+        if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
+            if args.E0s is not None:
+                logging.info(
+                    "Atomic Energies not in training file, using command line argument E0s"
+                )
+                if args.E0s.lower() == "average":
+                    logging.info(
+                        "Computing average Atomic Energies using least squares regression"
+                    )
+                    atomic_energies_dict = data.compute_average_E0s(
+                        collections.train, z_table
+                    )
+                else:
+                    try:
+                        atomic_energies_dict = ast.literal_eval(args.E0s)
+                        assert isinstance(atomic_energies_dict, dict)
+                    except Exception as e:
+                        raise RuntimeError(
+                            f"E0s specified invalidly, error {e} occured"
+                        ) from e
+            else:
+                raise RuntimeError(
+                    "E0s not found in training file and not specified in command line"
+                )
+        atomic_energies: np.ndarray = np.array(
+            [atomic_energies_dict[z] for z in z_table.zs]
+        )
+        logging.info(f"Atomic energies: {atomic_energies.tolist()}")
 
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
@@ -141,6 +162,20 @@ def main() -> None:
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
         )
+    elif args.loss == "dipole":
+        assert (
+            dipole_only is True
+        ), "dipole loss can only be used with AtomicDipolesMACE model"
+        loss_fn = modules.DipoleSingleLoss(
+            dipole_weight=args.dipole_weight,
+        )
+    elif args.loss == "energy_forces_dipole":
+        assert dipole_only is False and compute_dipole is True
+        loss_fn = modules.WeightedEnergyForcesDipoleLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            dipole_weight=args.dipole_weight,
+        )
     else:
         loss_fn = modules.EnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
@@ -159,9 +194,11 @@ def main() -> None:
         args.error_table = "PerAtomRMSEstressvirials"
 
     output_args = {
+        "energy": compute_energy,
         "forces": args.compute_forces,
         "virials": compute_virials,
         "stress": args.compute_stress,
+        "dipoles": compute_dipole,
     }
     logging.info(f"Selected the following outputs: {output_args}")
 
@@ -228,6 +265,40 @@ def main() -> None:
             **model_config,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+        )
+    elif args.model == "AtomicDipolesMACE":
+        # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
+        assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
+        assert (
+            args.error_table == "DipoleRMSE"
+        ), "Use error_table DipoleRMSE with AtomicDipolesMACE model"
+        model = modules.AtomicDipolesMACE(
+            **model_config,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[
+                "RealAgnosticInteractionBlock"
+            ],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            # dipole_scale=1,
+            # dipole_shift=0,
+        )
+    elif args.model == "EnergyDipolesMACE":
+        # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
+        assert (
+            args.loss == "energy_forces_dipole"
+        ), "Use energy_forces_dipole loss with EnergyDipolesMACE model"
+        assert (
+            args.error_table == "EnergyDipoleRMSE"
+        ), "Use error_table EnergyDipoleRMSE with AtomicDipolesMACE model"
+        model = modules.EnergyDipolesMACE(
+            **model_config,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[
+                "RealAgnosticInteractionBlock"
+            ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
         )
     else:
@@ -311,15 +382,30 @@ def main() -> None:
 
     swa: Optional[tools.SWAContainer] = None
     if args.swa:
+        assert dipole_only is False, "swa for dipole fitting not implemented"
         if args.start_swa is None:
             args.start_swa = (
                 args.max_num_epochs // 4 * 3
             )  # if not set start swa at 75% of training
         if args.loss == "forces_only":
             logging.info("Can not select swa with forces only loss.")
-        loss_fn_energy = modules.WeightedEnergyForcesLoss(
-            energy_weight=args.swa_energy_weight, forces_weight=args.swa_forces_weight
-        )
+        elif args.loss == "energy_forces_dipole":
+            loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
+                args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+                dipole_weight=args.swa_dipole_weight,
+            )
+            logging.info(
+                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
+            )
+        else:
+            loss_fn_energy = modules.WeightedEnergyForcesLoss(
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+            )
+            logging.info(
+                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
+            )
         swa = tools.SWAContainer(
             model=AveragedModel(model),
             scheduler=SWALR(
@@ -330,9 +416,6 @@ def main() -> None:
             ),
             start=args.start_swa,
             loss_fn=loss_fn_energy,
-        )
-        logging.info(
-            f"Using stochastic weight averaging (after {swa.start} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
         )
 
     ema: Optional[ExponentialMovingAverage] = None
