@@ -50,16 +50,28 @@ class CheckpointPathInfo:
 
 
 class CheckpointIO:
-    def __init__(self, directory: str, tag: str, keep: bool = False) -> None:
+    def __init__(
+        self, directory: str, tag: str, keep: bool = False, swa_start: int = None
+    ) -> None:
         self.directory = directory
         self.tag = tag
         self.keep = keep
         self.old_path: Optional[str] = None
+        self.swa_start = swa_start
 
         self._epochs_string = "_epoch-"
         self._filename_extension = "pt"
 
-    def _get_checkpoint_filename(self, epochs: int) -> str:
+    def _get_checkpoint_filename(self, epochs: int, swa_start=None) -> str:
+        if swa_start is not None and epochs > swa_start:
+            return (
+                self.tag
+                + self._epochs_string
+                + str(epochs)
+                + "_swa"
+                + "."
+                + self._filename_extension
+            )
         return (
             self.tag
             + self._epochs_string
@@ -111,12 +123,12 @@ class CheckpointIO:
         )
         return latest_checkpoint_info.path
 
-    def save(self, checkpoint: Checkpoint, epochs: int) -> None:
-        if not self.keep and self.old_path:
+    def save(self, checkpoint: Checkpoint, epochs: int, keep_last:bool=False) -> None:
+        if not self.keep and self.old_path and not keep_last:
             logging.debug(f"Deleting old checkpoint file: {self.old_path}")
             os.remove(self.old_path)
 
-        filename = self._get_checkpoint_filename(epochs)
+        filename = self._get_checkpoint_filename(epochs, self.swa_start)
         path = os.path.join(self.directory, filename)
         logging.debug(f"Saving checkpoint: {path}")
         os.makedirs(self.directory, exist_ok=True)
@@ -152,9 +164,9 @@ class CheckpointHandler:
         self.io = CheckpointIO(*args, **kwargs)
         self.builder = CheckpointBuilder()
 
-    def save(self, state: CheckpointState, epochs: int) -> None:
+    def save(self, state: CheckpointState, epochs: int, keep_last:bool=False) -> None:
         checkpoint = self.builder.create_checkpoint(state)
-        self.io.save(checkpoint, epochs)
+        self.io.save(checkpoint, epochs, keep_last)
 
     def load_latest(
         self,

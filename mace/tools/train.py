@@ -59,6 +59,7 @@ def train(
     lowest_loss = np.inf
     patience_counter = 0
     swa_start = True
+    keep_last = False
 
     if max_grad_norm is not None:
         logging.info(f"Using gradient clipping with tolerance={max_grad_norm:.3f}")
@@ -172,13 +173,15 @@ def train(
                     with ema.average_parameters():
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
-                            epochs=epoch,
+                            epochs=epoch, keep_last=keep_last,
                         )
+                        keep_last = False
                 else:
                     checkpoint_handler.save(
                         state=CheckpointState(model, optimizer, lr_scheduler),
-                        epochs=epoch,
+                        epochs=epoch, keep_last=keep_last,
                     )
+                    keep_last = False
 
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
@@ -186,7 +189,9 @@ def train(
         else:
             if swa_start:
                 logging.info("Changing loss based on SWA")
+                lowest_loss = np.inf
                 swa_start = False
+                keep_last = True
             loss_fn = swa.loss_fn
             swa.model.update_parameters(model)
             swa.scheduler.step()
