@@ -369,8 +369,10 @@ def main() -> None:
         raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 
     swa: Optional[tools.SWAContainer] = None
+    swas = [False]
     if args.swa:
         assert dipole_only is False, "swa for dipole fitting not implemented"
+        swas.append(True)
         if args.start_swa is None:
             args.start_swa = (
                 args.max_num_epochs // 4 * 3
@@ -415,9 +417,18 @@ def main() -> None:
 
     start_epoch = 0
     if args.restart_latest:
-        opt_start_epoch = checkpoint_handler.load_latest(
-            state=tools.CheckpointState(model, optimizer, lr_scheduler), device=device
-        )
+        try:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler), 
+                swa = True, 
+                device=device
+            )
+        except:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler), 
+                swa = False, 
+                device=device
+            )
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
@@ -458,14 +469,10 @@ def main() -> None:
         ("valid", collections.valid),
     ] + collections.tests
 
-    swas = [False]
-    if args.swa:
-        swas.append(True)
-
-    for swa in swas:
+    for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
             state=tools.CheckpointState(model, optimizer, lr_scheduler), 
-            swa = swa,
+            swa = swa_eval,
             device=device
         )
         logging.info(f"Loaded model from epoch {epoch}")
@@ -485,13 +492,16 @@ def main() -> None:
         logging.info("\n" + str(table))
 
         # Save entire model
-        model_path = Path(args.checkpoints_dir) / (tag + ".model")
+        if swa_eval:
+            model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
+        else:
+            model_path = Path(args.checkpoints_dir) / (tag + ".model")
         logging.info(f"Saving model to {model_path}")
         if args.save_cpu:
             model = model.to("cpu")
         torch.save(model, model_path)
 
-        torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+        # torch.save(model, Path(args.model_dir) / (args.name + ".model"))
 
     logging.info("Done")
 
