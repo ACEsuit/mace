@@ -47,6 +47,7 @@ class CheckpointPathInfo:
     path: str
     tag: str
     epochs: int
+    swa: bool
 
 
 class CheckpointIO:
@@ -93,17 +94,29 @@ class CheckpointIO:
         regex = re.compile(
             rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)\.{self._filename_extension}$"
         )
+        regex2 = re.compile(
+            rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)_swa\.{self._filename_extension}$"
+        )
+        # regex2 = re.compile(
+        #     rf"^(?P<tag>.+)_epoch-(?P<epochs>\d+)_swa\.pt$"
+        # )
         match = regex.match(filename)
+        match2 = regex2.match(filename)
+        swa = False
         if not match:
-            return None
+            if not match2:
+                return None
+            match = match2
+            swa = True
 
         return CheckpointPathInfo(
             path=path,
             tag=match.group("tag"),
             epochs=int(match.group("epochs")),
+            swa=swa,
         )
 
-    def _get_latest_checkpoint_path(self) -> Optional[str]:
+    def _get_latest_checkpoint_path(self, swa) -> Optional[str]:
         all_file_paths = self._list_file_paths()
         checkpoint_info_list = [
             self._parse_checkpoint_path(path) for path in all_file_paths
@@ -117,10 +130,22 @@ class CheckpointIO:
                 f"Cannot find checkpoint with tag '{self.tag}' in '{self.directory}'"
             )
             return None
+        selected_checkpoint_info_list_swa = []
+        selected_checkpoint_info_list_no_swa = []
 
-        latest_checkpoint_info = max(
-            selected_checkpoint_info_list, key=lambda info: info.epochs
-        )
+        for ckp in selected_checkpoint_info_list:
+            if ckp.swa:
+                selected_checkpoint_info_list_swa.append(ckp)
+            else:
+                selected_checkpoint_info_list_no_swa.append(ckp)
+        if swa:
+            latest_checkpoint_info = max(
+                selected_checkpoint_info_list_swa, key=lambda info: info.epochs
+            )
+        else:
+            latest_checkpoint_info = max(
+                selected_checkpoint_info_list_no_swa, key=lambda info: info.epochs
+            )
         return latest_checkpoint_info.path
 
     def save(self, checkpoint: Checkpoint, epochs: int, keep_last:bool=False) -> None:
@@ -136,9 +161,10 @@ class CheckpointIO:
         self.old_path = path
 
     def load_latest(
-        self, device: Optional[torch.device] = None
+        self, swa: Optional[bool] = False, 
+        device: Optional[torch.device] = None
     ) -> Optional[Tuple[Checkpoint, int]]:
-        path = self._get_latest_checkpoint_path()
+        path = self._get_latest_checkpoint_path(swa=swa)
         if path is None:
             return None
 
@@ -171,10 +197,11 @@ class CheckpointHandler:
     def load_latest(
         self,
         state: CheckpointState,
+        swa: Optional[bool] = False,
         device: Optional[torch.device] = None,
         strict=False,
     ) -> Optional[int]:
-        result = self.io.load_latest(device=device)
+        result = self.io.load_latest(swa=swa, device=device)
         if result is None:
             return None
 

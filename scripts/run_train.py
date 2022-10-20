@@ -450,11 +450,6 @@ def main() -> None:
         log_errors=args.error_table,
     )
 
-    epoch = checkpoint_handler.load_latest(
-        state=tools.CheckpointState(model, optimizer, lr_scheduler), device=device
-    )
-    logging.info(f"Loaded model from epoch {epoch}")
-
     # Evaluation on test datasets
     logging.info("Computing metrics for training, validation, and test sets")
 
@@ -463,28 +458,40 @@ def main() -> None:
         ("valid", collections.valid),
     ] + collections.tests
 
-    table = create_error_table(
-        table_type=args.error_table,
-        all_collections=all_collections,
-        z_table=z_table,
-        r_max=args.r_max,
-        valid_batch_size=args.valid_batch_size,
-        model=model,
-        loss_fn=loss_fn,
-        output_args=output_args,
-        device=device,
-    )
+    swas = [False]
+    if args.swa:
+        swas.append(True)
 
-    logging.info("\n" + str(table))
+    for swa in swas:
+        epoch = checkpoint_handler.load_latest(
+            state=tools.CheckpointState(model, optimizer, lr_scheduler), 
+            swa = swa,
+            device=device
+        )
+        logging.info(f"Loaded model from epoch {epoch}")
 
-    # Save entire model
-    model_path = Path(args.checkpoints_dir) / (tag + ".model")
-    logging.info(f"Saving model to {model_path}")
-    if args.save_cpu:
-        model = model.to("cpu")
-    torch.save(model, model_path)
+        table = create_error_table(
+            table_type=args.error_table,
+            all_collections=all_collections,
+            z_table=z_table,
+            r_max=args.r_max,
+            valid_batch_size=args.valid_batch_size,
+            model=model,
+            loss_fn=loss_fn,
+            output_args=output_args,
+            device=device,
+        )
 
-    torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+        logging.info("\n" + str(table))
+
+        # Save entire model
+        model_path = Path(args.checkpoints_dir) / (tag + ".model")
+        logging.info(f"Saving model to {model_path}")
+        if args.save_cpu:
+            model = model.to("cpu")
+        torch.save(model, model_path)
+
+        torch.save(model, Path(args.model_dir) / (args.name + ".model"))
 
     logging.info("Done")
 
