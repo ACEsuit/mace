@@ -148,7 +148,9 @@ class CheckpointIO:
             )
         return latest_checkpoint_info.path
 
-    def save(self, checkpoint: Checkpoint, epochs: int, keep_last:bool=False) -> None:
+    def save(
+        self, checkpoint: Checkpoint, epochs: int, keep_last: bool = False
+    ) -> None:
         if not self.keep and self.old_path and not keep_last:
             logging.debug(f"Deleting old checkpoint file: {self.old_path}")
             os.remove(self.old_path)
@@ -161,8 +163,7 @@ class CheckpointIO:
         self.old_path = path
 
     def load_latest(
-        self, swa: Optional[bool] = False, 
-        device: Optional[torch.device] = None
+        self, swa: Optional[bool] = False, device: Optional[torch.device] = None
     ) -> Optional[Tuple[Checkpoint, int]]:
         path = self._get_latest_checkpoint_path(swa=swa)
         if path is None:
@@ -190,7 +191,9 @@ class CheckpointHandler:
         self.io = CheckpointIO(*args, **kwargs)
         self.builder = CheckpointBuilder()
 
-    def save(self, state: CheckpointState, epochs: int, keep_last:bool=False) -> None:
+    def save(
+        self, state: CheckpointState, epochs: int, keep_last: bool = False
+    ) -> None:
         checkpoint = self.builder.create_checkpoint(state)
         self.io.save(checkpoint, epochs, keep_last)
 

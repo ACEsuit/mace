@@ -173,13 +173,15 @@ def train(
                     with ema.average_parameters():
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
-                            epochs=epoch, keep_last=keep_last,
+                            epochs=epoch,
+                            keep_last=keep_last,
                         )
                         keep_last = False
                 else:
                     checkpoint_handler.save(
                         state=CheckpointState(model, optimizer, lr_scheduler),
-                        epochs=epoch, keep_last=keep_last,
+                        epochs=epoch,
+                        keep_last=keep_last,
                     )
                     keep_last = False
 

@@ -419,15 +419,15 @@ def main() -> None:
     if args.restart_latest:
         try:
             opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler), 
-                swa = True, 
-                device=device
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=True,
+                device=device,
             )
         except:
             opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler), 
-                swa = False, 
-                device=device
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=False,
+                device=device,
             )
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
@@ -471,9 +471,9 @@ def main() -> None:
 
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
-            state=tools.CheckpointState(model, optimizer, lr_scheduler), 
-            swa = swa_eval,
-            device=device
+            state=tools.CheckpointState(model, optimizer, lr_scheduler),
+            swa=swa_eval,
+            device=device,
         )
         logging.info(f"Loaded model from epoch {epoch}")
 
@@ -501,7 +501,10 @@ def main() -> None:
             model = model.to("cpu")
         torch.save(model, model_path)
 
-        # torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+        if swa_eval:
+            torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
+        else:
+            torch.save(model, Path(args.model_dir) / (args.name + ".model"))
 
     logging.info("Done")
 
