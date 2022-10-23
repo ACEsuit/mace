@@ -6,7 +6,7 @@
 
 import ast
 import logging
-import os
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -14,11 +14,11 @@ import torch.nn.functional
 from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
-from utils import create_error_table, get_dataset_from_xyz
 
 import mace
 from mace import data, modules, tools
 from mace.tools import torch_geometric
+from mace.tools.scripts_utils import create_error_table, get_dataset_from_xyz
 
 
 def main() -> None:
@@ -368,21 +368,11 @@ def main() -> None:
     else:
         raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 
-    checkpoint_handler = tools.CheckpointHandler(
-        directory=args.checkpoints_dir, tag=tag, keep=args.keep_checkpoints
-    )
-
-    start_epoch = 0
-    if args.restart_latest:
-        opt_start_epoch = checkpoint_handler.load_latest(
-            state=tools.CheckpointState(model, optimizer, lr_scheduler), device=device
-        )
-        if opt_start_epoch is not None:
-            start_epoch = opt_start_epoch
-
     swa: Optional[tools.SWAContainer] = None
+    swas = [False]
     if args.swa:
         assert dipole_only is False, "swa for dipole fitting not implemented"
+        swas.append(True)
         if args.start_swa is None:
             args.start_swa = (
                 args.max_num_epochs // 4 * 3
@@ -418,6 +408,30 @@ def main() -> None:
             loss_fn=loss_fn_energy,
         )
 
+    checkpoint_handler = tools.CheckpointHandler(
+        directory=args.checkpoints_dir,
+        tag=tag,
+        keep=args.keep_checkpoints,
+        swa_start=args.start_swa,
+    )
+
+    start_epoch = 0
+    if args.restart_latest:
+        try:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=True,
+                device=device,
+            )
+        except:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=False,
+                device=device,
+            )
+        if opt_start_epoch is not None:
+            start_epoch = opt_start_epoch
+
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
@@ -447,11 +461,6 @@ def main() -> None:
         log_errors=args.error_table,
     )
 
-    epoch = checkpoint_handler.load_latest(
-        state=tools.CheckpointState(model, optimizer, lr_scheduler), device=device
-    )
-    logging.info(f"Loaded model from epoch {epoch}")
-
     # Evaluation on test datasets
     logging.info("Computing metrics for training, validation, and test sets")
 
@@ -460,26 +469,43 @@ def main() -> None:
         ("valid", collections.valid),
     ] + collections.tests
 
-    table = create_error_table(
-        table_type=args.error_table,
-        all_collections=all_collections,
-        z_table=z_table,
-        r_max=args.r_max,
-        valid_batch_size=args.valid_batch_size,
-        model=model,
-        loss_fn=loss_fn,
-        output_args=output_args,
-        device=device,
-    )
+    for swa_eval in swas:
+        epoch = checkpoint_handler.load_latest(
+            state=tools.CheckpointState(model, optimizer, lr_scheduler),
+            swa=swa_eval,
+            device=device,
+        )
+        model.to(device)
+        logging.info(f"Loaded model from epoch {epoch}")
 
-    logging.info("\n" + str(table))
+        table = create_error_table(
+            table_type=args.error_table,
+            all_collections=all_collections,
+            z_table=z_table,
+            r_max=args.r_max,
+            valid_batch_size=args.valid_batch_size,
+            model=model,
+            loss_fn=loss_fn,
+            output_args=output_args,
+            device=device,
+        )
 
-    # Save entire model
-    model_path = os.path.join(args.checkpoints_dir, tag + ".model")
-    logging.info(f"Saving model to {model_path}")
-    if args.save_cpu:
-        model = model.to("cpu")
-    torch.save(model, model_path)
+        logging.info("\n" + str(table))
+
+        # Save entire model
+        if swa_eval:
+            model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
+        else:
+            model_path = Path(args.checkpoints_dir) / (tag + ".model")
+        logging.info(f"Saving model to {model_path}")
+        if args.save_cpu:
+            model = model.to("cpu")
+        torch.save(model, model_path)
+
+        if swa_eval:
+            torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
+        else:
+            torch.save(model, Path(args.model_dir) / (args.name + ".model"))
 
     logging.info("Done")
 

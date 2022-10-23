@@ -38,6 +38,10 @@ class AtomicData(torch_geometric.data.Data):
     dipole: torch.Tensor
     charges: torch.Tensor
     weight: torch.Tensor
+    energy_weight: torch.Tensor
+    forces_weight: torch.Tensor
+    stress_weight: torch.Tensor
+    virials_weight: torch.Tensor
 
     def __init__(
         self,
@@ -48,6 +52,10 @@ class AtomicData(torch_geometric.data.Data):
         unit_shifts: torch.Tensor,  # [n_edges, 3]
         cell: Optional[torch.Tensor],  # [3,3]
         weight: Optional[torch.Tensor],  # [,]
+        energy_weight: Optional[torch.Tensor],  # [,]
+        forces_weight: Optional[torch.Tensor],  # [,]
+        stress_weight: Optional[torch.Tensor],  # [,]
+        virials_weight: Optional[torch.Tensor],  # [,]
         forces: Optional[torch.Tensor],  # [n_nodes, 3]
         energy: Optional[torch.Tensor],  # [, ]
         stress: Optional[torch.Tensor],  # [1,3,3]
@@ -64,6 +72,10 @@ class AtomicData(torch_geometric.data.Data):
         assert unit_shifts.shape[1] == 3
         assert len(node_attrs.shape) == 2
         assert weight is None or len(weight.shape) == 0
+        assert energy_weight is None or len(energy_weight.shape) == 0
+        assert forces_weight is None or len(forces_weight.shape) == 0
+        assert stress_weight is None or len(stress_weight.shape) == 0
+        assert virials_weight is None or len(virials_weight.shape) == 0
         assert cell is None or cell.shape == (3, 3)
         assert forces is None or forces.shape == (num_nodes, 3)
         assert energy is None or len(energy.shape) == 0
@@ -81,6 +93,10 @@ class AtomicData(torch_geometric.data.Data):
             "cell": cell,
             "node_attrs": node_attrs,
             "weight": weight,
+            "energy_weight": energy_weight,
+            "forces_weight": forces_weight,
+            "stress_weight": stress_weight,
+            "virials_weight": virials_weight,
             "forces": forces,
             "energy": energy,
             "stress": stress,
@@ -114,6 +130,30 @@ class AtomicData(torch_geometric.data.Data):
         weight = (
             torch.tensor(config.weight, dtype=torch.get_default_dtype())
             if config.weight is not None
+            else 1
+        )
+
+        energy_weight = (
+            torch.tensor(config.energy_weight, dtype=torch.get_default_dtype())
+            if config.energy_weight is not None
+            else 1
+        )
+
+        forces_weight = (
+            torch.tensor(config.forces_weight, dtype=torch.get_default_dtype())
+            if config.forces_weight is not None
+            else 1
+        )
+
+        stress_weight = (
+            torch.tensor(config.stress_weight, dtype=torch.get_default_dtype())
+            if config.stress_weight is not None
+            else 1
+        )
+
+        virials_weight = (
+            torch.tensor(config.virials_weight, dtype=torch.get_default_dtype())
+            if config.virials_weight is not None
             else 1
         )
 
@@ -158,6 +198,10 @@ class AtomicData(torch_geometric.data.Data):
             cell=cell,
             node_attrs=one_hot,
             weight=weight,
+            energy_weight=energy_weight,
+            forces_weight=forces_weight,
+            stress_weight=stress_weight,
+            virials_weight=virials_weight,
             forces=forces,
             energy=energy,
             stress=stress,

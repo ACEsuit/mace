@@ -28,7 +28,7 @@ def compute_forces(
         grad_outputs=grad_outputs,
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
-        allow_unused=False,  # For complete dissociation turn to true
+        allow_unused=True,  # For complete dissociation turn to true
     )[
         0
     ]  # [n_nodes, 3]
@@ -133,13 +133,12 @@ def get_outputs(
             compute_stress=compute_stress,
             training=training,
         )
-    elif compute_force and not compute_stress:
+    elif compute_force:
         forces, virials, stress = (
             compute_forces(energy=energy, positions=positions, training=training),
             None,
             None,
         )
-        stress = None
     else:
         forces, virials, stress = (None, None, None)
     return forces, virials, stress
