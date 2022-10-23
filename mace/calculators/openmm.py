@@ -1,8 +1,8 @@
-from e3nn.util import jit
 import torch
-import mace
-from mace.calculators.neighbour_list_torch import primitive_neighbor_list_torch
+from e3nn.util import jit
+
 from mace import data
+from mace.calculators.neighbour_list_torch import primitive_neighbor_list_torch
 from mace.tools import torch_geometric, utils
 
 torch.set_default_dtype(torch.float64)

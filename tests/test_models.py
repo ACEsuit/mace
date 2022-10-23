@@ -194,4 +194,3 @@ def test_energy_dipole_mace():
         np.array(rot @ output["dipole"][0].detach().numpy()),
         output["dipole"][1].detach().numpy(),
     )
->>>>>>> origin/develop

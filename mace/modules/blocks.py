@@ -64,7 +64,6 @@ class NonLinearReadoutBlock(torch.nn.Module):
         return self.linear_2(x)  # [n_nodes, 1]
 
 
-
 @compile_mode("script")
 class LinearDipoleReadoutBlock(torch.nn.Module):
     def __init__(self, irreps_in: o3.Irreps, dipole_only: bool = False):
@@ -77,6 +76,7 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         return self.linear(x)  # [n_nodes, 1]
+
 
 @compile_mode("script")
 class NonLinearDipoleReadoutBlock(torch.nn.Module):

@@ -1,6 +1,6 @@
 # Adapted from: https://gist.github.com/Linux-cpp-lisp
 
-from typing import Tuple, List
+from typing import List, Tuple
 
 import torch
 
@@ -22,7 +22,7 @@ def primitive_neighbor_list_torch(
     self_interaction: bool = False,
     use_scaled_positions: bool = False,
     max_nbins: int = int(1e6),
-    device: str ='cuda',
+    device: str = "cuda",
 ) -> List[torch.Tensor]:
     """Compute a neighbor list for an atomic configuration.
     Atoms outside periodic boundaries are mapped into the box. Atoms
@@ -119,12 +119,15 @@ def primitive_neighbor_list_torch(
     # Compute number of bins such that a sphere of radius cutoff fits into
     # eight neighboring bins.
     nbins_c = torch.maximum(
-        (face_dist_c / bin_size).to(dtype=torch.long), torch.ones(3, dtype=torch.long, device=device)
+        (face_dist_c / bin_size).to(dtype=torch.long),
+        torch.ones(3, dtype=torch.long, device=device),
     )
     nbins = torch.prod(nbins_c)
     # Make sure we limit the amount of memory used by the explicit bins.
     while nbins > max_nbins:
-        nbins_c = torch.maximum(nbins_c // 2, torch.ones(3, dtype=torch.long, device=device))
+        nbins_c = torch.maximum(
+            nbins_c // 2, torch.ones(3, dtype=torch.long, device=device)
+        )
         nbins = torch.prod(nbins_c)
 
     # Compute over how many bins we need to loop in the neighbor list search.
@@ -154,7 +157,9 @@ def primitive_neighbor_list_torch(
         positions = torch.dot(scaled_positions_ic, cell)
     else:
         scaled_positions_ic = torch.linalg.solve(cell.T, positions.T).T
-    bin_index_ic = torch.floor(scaled_positions_ic * nbins_c).to(dtype=torch.long).to(device)
+    bin_index_ic = (
+        torch.floor(scaled_positions_ic * nbins_c).to(dtype=torch.long).to(device)
+    )
     cell_shift_ic = torch.zeros_like(bin_index_ic, device=device)
 
     for c in range(3):
@@ -182,11 +187,16 @@ def primitive_neighbor_list_torch(
     # by its scalar bin index) a list of atoms inside that bin. This list is
     # homogeneous, i.e. has the same size *max_natoms_per_bin* for all bins.
     # The list is padded with -1 values.
-    atoms_in_bin_ba = -torch.ones(nbins, max_natoms_per_bin.item(), dtype=torch.long, device=device)
+    atoms_in_bin_ba = -torch.ones(
+        nbins, max_natoms_per_bin.item(), dtype=torch.long, device=device
+    )
     for i in range(int(max_natoms_per_bin.item())):
         # Create a mask array that identifies the first atom of each bin.
         mask = torch.cat(
-            (torch.ones(1, dtype=torch.bool, device=device), bin_index_i[:-1] != bin_index_i[1:]),
+            (
+                torch.ones(1, dtype=torch.bool, device=device),
+                bin_index_i[:-1] != bin_index_i[1:],
+            ),
             dim=0,
         )
         # Assign all first atoms.
