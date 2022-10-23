@@ -282,7 +282,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--virials_weight", help="weight of virials loss", type=float, default=1.0
     )
     parser.add_argument(
+        "--swa_virials_weight",
+        help="weight of virials loss after starting swa",
+        type=float,
+        default=10.0,
+    )
+    parser.add_argument(
         "--stress_weight", help="weight of virials loss", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--swa_stress_weight",
+        help="weight of stress loss after starting swa",
+        type=float,
+        default=10.0,
     )
     parser.add_argument(
         "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0

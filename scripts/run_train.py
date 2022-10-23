@@ -379,6 +379,18 @@ def main() -> None:
             )  # if not set start swa at 75% of training
         if args.loss == "forces_only":
             logging.info("Can not select swa with forces only loss.")
+        elif args.loss == "virials":
+            loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+                virials_weight=args.swa_virials_weight,
+            )
+        elif args.loss == "stress":
+            loss_fn_energy = modules.WeightedEnergyForcesStressLoss(
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+                stress_weight=args.swa_stress_weight,
+            )
         elif args.loss == "energy_forces_dipole":
             loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
                 args.swa_energy_weight,
