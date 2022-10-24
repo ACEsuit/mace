@@ -380,17 +380,17 @@ def main() -> None:
         if args.loss == "forces_only":
             logging.info("Can not select swa with forces only loss.")
         elif args.loss == "virials":
-             loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
-                 energy_weight=args.swa_energy_weight,
-                 forces_weight=args.swa_forces_weight,
-                 virials_weight=args.swa_virials_weight,
-             )
+            loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+                virials_weight=args.swa_virials_weight,
+            )
         elif args.loss == "stress":
-             loss_fn_energy = modules.WeightedEnergyForcesStressLoss(
-                 energy_weight=args.swa_energy_weight,
-                 forces_weight=args.swa_forces_weight,
-                 stress_weight=args.swa_stress_weight,
-             )
+            loss_fn_energy = modules.WeightedEnergyForcesStressLoss(
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+                stress_weight=args.swa_stress_weight,
+            )
         elif args.loss == "energy_forces_dipole":
             loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
                 args.swa_energy_weight,
@@ -487,6 +487,7 @@ def main() -> None:
             swa=swa_eval,
             device=device,
         )
+        model.to(device)
         logging.info(f"Loaded model from epoch {epoch}")
 
         table = create_error_table(
