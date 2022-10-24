@@ -27,7 +27,7 @@ def compute_forces(
         grad_outputs=grad_outputs,
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
-        allow_unused=False,  # For complete dissociation turn to true
+        allow_unused=True,  # For complete dissociation turn to true
     )[
         0
     ]  # [n_nodes, 3]
