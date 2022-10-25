@@ -4,7 +4,9 @@ from ase.io import read
 from mace import data
 from mace.tools import torch_geometric, utils
 from mace.calculators import MACE_openmm, MACE_openmm2
+
 torch.set_default_dtype(torch.float64)
+
 
 def test_openmm():
     at = read("test_one_mol.xyz")
@@ -14,13 +16,10 @@ def test_openmm():
     model_compiled = jit.compile(model)
 
     config = data.config_from_atoms(at)
-    z_table = utils.AtomicNumberTable(
-            [int(z) for z in model.atomic_numbers])
+    z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
-            data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=model.r_max
-            )
+            data.AtomicData.from_config(config, z_table=z_table, cutoff=model.r_max)
         ],
         batch_size=1,
         shuffle=False,
@@ -40,11 +39,11 @@ def test_openmm():
     assert torch.allclose(res_compiled["energy"], res_openmm2[0])
     assert torch.allclose(res_compiled["forces"], res_openmm2[1])
 
-
     module = jit.script(openmm_calc)
-    module.save('openmm_MACE.pt')
+    module.save("openmm_MACE.pt")
     module2 = jit.script(openmm_calc2)
-    module2.save('openmm_MACE2.pt')
+    module2.save("openmm_MACE2.pt")
+
 
 if __name__ == "__main__":
     test_openmm()

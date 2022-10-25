@@ -78,9 +78,11 @@ class MACE_openmm(torch.nn.Module):
         res = self.model(inp_dict_this_config)
         return (res["energy"], res["forces"])
 
+
 class MACE_openmm2(torch.nn.Module):
-    def __init__(self, model_path, atoms_obj):
+    def __init__(self, model_path, atoms_obj, device="cuda"):
         super().__init__()
+        self.device = torch.device(device)
         dat = compile_model(model_path)
         config = data.config_from_atoms(atoms_obj)
         data_loader = torch_geometric.dataloader.DataLoader(
@@ -93,7 +95,8 @@ class MACE_openmm2(torch.nn.Module):
             shuffle=False,
             drop_last=False,
         )
-        batch_dict = next(iter(data_loader)).to_dict()
+        batch = next(iter(data_loader)).to(self.device)
+        batch_dict = batch.to_dict()
         batch_dict.pop("edge_index")
         batch_dict.pop("energy", None)
         batch_dict.pop("forces", None)
@@ -105,15 +108,16 @@ class MACE_openmm2(torch.nn.Module):
         self.r_max = dat["r_max"]
 
     def forward(self, positions):
-        bbatch = torch.zeros(positions.shape[0], dtype=torch.long)
+        bbatch = torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
         mapping, batch_mapping, shifts_idx = compute_neighborlist(
             self.r_max,
             positions,
             self.inp_dict["cell"],
-            torch.tensor([False, False, False]), 
-            bbatch, 
-            self_interaction=True)
-        
+            torch.tensor([False, False, False], device=self.device),
+            bbatch,
+            self_interaction=True,
+        )
+
         # Eliminate self-edges that don't cross periodic boundaries
         true_self_edge = mapping[0] == mapping[1]
         true_self_edge &= torch.all(shifts_idx == 0, dim=1)
@@ -132,6 +136,8 @@ class MACE_openmm2(torch.nn.Module):
         inp_dict_this_config = self.inp_dict.copy()
         inp_dict_this_config["positions"] = positions
         inp_dict_this_config["edge_index"] = edge_index
+        inp_dict_this_config["shifts"] = shifts_idx
+
         # inp_dict_this_config["shifts"] = shifts
         # inp_dict_this_config[""] =
         res = self.model(inp_dict_this_config)
