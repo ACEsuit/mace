@@ -13,9 +13,6 @@ from openff.toolkit.topology import Molecule
 from openmmforcefields.generators import SMIRNOFFTemplateGenerator
 
 
-# we would like to parametrise a full protein ligand system
-
-
 torch.set_default_dtype(torch.float32)
 
 
@@ -26,7 +23,6 @@ def main(filename: str, model_path: str):
 
     atoms = read(filename)
 
-    # I think we have to parametrise the thing first, even if we are going to immediately replace the thing
     forcefield = ForceField(
         "amber/protein.ff14SB.xml",
         "amber/tip3p_standard.xml",
@@ -39,11 +35,10 @@ def main(filename: str, model_path: str):
     print(omm_top)
     system = forcefield.createSystem(omm_top)
     print(system)
-    # TODO: we need a better way to remove the MM forces
+    # now turn off the parameters for the small molecule
     while system.getNumForces() > 0:
         system.removeForce(0)
 
-    # now turn off the parameters for the small molecule
     # atoms = read(filename)
     model = torch.load(model_path)
     model = jit.compile(model)
