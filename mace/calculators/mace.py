@@ -7,6 +7,7 @@
 
 import torch
 from ase.calculators.calculator import Calculator, all_changes
+from ase.stress import full_3x3_to_voigt_6_stress
 
 from mace import data
 from mace.tools import torch_geometric, torch_tools, utils
@@ -88,6 +89,7 @@ class MACECalculator(Calculator):
             self.results["stress"] = (
                 stress * (self.energy_units_to_eV / self.length_units_to_A**3)
             )[0]
+            self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
 
 
 class DipoleMACECalculator(Calculator):
