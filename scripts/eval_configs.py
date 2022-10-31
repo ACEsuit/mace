@@ -51,6 +51,7 @@ def main():
 
     # Load model
     model = torch.load(f=args.model, map_location=device)
+    model.to(device)
 
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, format="extxyz", index=":")
@@ -75,7 +76,16 @@ def main():
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch, training=False)
+        batch_dict = batch.to_dict()
+        output = model(
+            batch_dict,
+            training=False,
+            compute_force=True,
+            compute_virials=False,
+            compute_stress=False,
+        )
+        batch.to("cpu")
+        output = tools.torch_tools.tensor_dict_to_device(output, device=torch.device("cpu"))
         energies_list.append(tools.to_numpy(output["energy"]))
 
         if not args.no_contributions:

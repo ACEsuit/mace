@@ -1,6 +1,6 @@
 from e3nn.util import jit
 import torch
-from torch_nl import compute_neighborlist
+from torch_nl import compute_neighborlist, compute_neighborlist_n2
 import mace
 from mace.calculators.neighbour_list_torch import primitive_neighbor_list_torch
 from mace import data
@@ -18,7 +18,7 @@ def compile_model(model_path):
     return res
 
 
-class MACE_openmm(torch.nn.Module):
+class MACE_openmm_old(torch.nn.Module):
     def __init__(self, model_path, atoms_obj):
         super().__init__()
         dat = compile_model(model_path)
@@ -79,9 +79,15 @@ class MACE_openmm(torch.nn.Module):
         return (res["energy"], res["forces"])
 
 
-class MACE_openmm2(torch.nn.Module):
-    def __init__(self, model_path, atoms_obj, device="cuda"):
+class MACE_openmm(torch.nn.Module):
+    def __init__(self, model_path, atoms_obj, nl="torch_nl", device="cuda"):
         super().__init__()
+        if nl == "torch_nl":
+            self.nl = compute_neighborlist
+        elif nl == "torch_nl_n2":
+            self.nl = compute_neighborlist_n2
+        else:
+            raise NotImplementedError
         self.device = torch.device(device)
         dat = compile_model(model_path)
         config = data.config_from_atoms(atoms_obj)
@@ -109,7 +115,7 @@ class MACE_openmm2(torch.nn.Module):
 
     def forward(self, positions):
         bbatch = torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
-        mapping, batch_mapping, shifts_idx = compute_neighborlist(
+        mapping, batch_mapping, shifts_idx = self.nl(
             self.r_max,
             positions,
             self.inp_dict["cell"],
@@ -140,5 +146,5 @@ class MACE_openmm2(torch.nn.Module):
 
         # inp_dict_this_config["shifts"] = shifts
         # inp_dict_this_config[""] =
-        res = self.model(inp_dict_this_config)
-        return (res["energy"], res["forces"])
+        res = self.model(inp_dict_this_config, compute_force=False)
+        return res["energy"]
