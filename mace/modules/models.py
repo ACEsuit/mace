@@ -53,9 +53,13 @@ class MACE(torch.nn.Module):
         gate: Optional[Callable],
     ):
         super().__init__()
-        self.register_buffer("atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64))
+        self.register_buffer(
+            "atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64)
+        )
         self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.float64))
-        self.register_buffer("num_interactions", torch.tensor(num_interactions, dtype=torch.int64))
+        self.register_buffer(
+            "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
+        )
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -146,6 +150,7 @@ class MACE(torch.nn.Module):
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
+        compute_site_virials: bool = False,
         compute_stress: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
@@ -217,6 +222,7 @@ class MACE(torch.nn.Module):
         # Outputs
         forces, virials, stress = get_outputs(
             energy=total_energy,
+            node_energy=node_energy,
             positions=data["positions"],
             displacement=displacement,
             cell=data["cell"],
@@ -224,14 +230,28 @@ class MACE(torch.nn.Module):
             compute_force=compute_force,
             compute_virials=compute_virials,
             compute_stress=compute_stress,
+            compute_site_virials=compute_site_virials,
         )
+
+        if virials is None:
+            node_virials = None
+            total_virials = None
+        elif virials.shape[0] == num_graphs:
+            total_virials = virials
+            node_virials = None
+        else:
+            node_virials = virials
+            total_virials = scatter_sum(
+                src=virials, index=data["batch"], dim=-1, dim_size=num_graphs
+            )
 
         return {
             "energy": total_energy,
             "node_energy": node_energy,
             "contributions": contributions,
             "forces": forces,
-            "virials": virials,
+            "node_virials": node_virials,
+            "virials": total_virials,
             "stress": stress,
         }
 
@@ -252,6 +272,7 @@ class ScaleShiftMACE(MACE):
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
+        compute_site_virials: bool = False,
         compute_stress: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
@@ -325,7 +346,8 @@ class ScaleShiftMACE(MACE):
         node_energy = node_e0 + node_inter_es
 
         forces, virials, stress = get_outputs(
-            energy=inter_e,
+            energy=total_energy,
+            node_energy=node_energy,
             positions=data["positions"],
             displacement=displacement,
             cell=data["cell"],
@@ -333,13 +355,27 @@ class ScaleShiftMACE(MACE):
             compute_force=compute_force,
             compute_virials=compute_virials,
             compute_stress=compute_stress,
+            compute_site_virials=compute_site_virials,
         )
+
+        if virials is None:
+            node_virials = None
+            total_virials = None
+        elif virials.shape[0] == num_graphs:
+            total_virials = virials
+            node_virials = None
+        else:
+            node_virials = virials
+            total_virials = scatter_sum(
+                src=virials, index=data["batch"], dim=-1, dim_size=num_graphs
+            )
 
         output = {
             "energy": total_energy,
             "node_energy": node_energy,
             "forces": forces,
-            "virials": virials,
+            "node_virials": node_virials,
+            "virials": total_virials,
             "stress": stress,
         }
 
