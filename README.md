@@ -14,7 +14,7 @@ Requirements:
 If you do not have CUDA pre-installed, it is **recommended** to follow the conda installation process:
 ```sh
 # Create a virtual environment and activate it
-conda create mace_env
+conda create --name mace_env
 conda activate mace_env
 
 # Install PyTorch
