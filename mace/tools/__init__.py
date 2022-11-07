@@ -1,4 +1,4 @@
-from .arg_parser import build_default_arg_parser
+from .arg_parser import build_default_arg_parser, MaceArguments
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
 from .torch_tools import (
@@ -31,6 +31,7 @@ from .utils import (
 )
 
 __all__ = [
+    "MaceArguments",
     "TensorDict",
     "AtomicNumberTable",
     "atomic_numbers_to_indices",

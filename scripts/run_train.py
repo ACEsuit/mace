@@ -21,8 +21,7 @@ from mace.tools import torch_geometric
 from mace.tools.scripts_utils import create_error_table, get_dataset_from_xyz
 
 
-def main() -> None:
-    args = tools.build_default_arg_parser().parse_args()
+def main(args: tools.MaceArguments) -> None:
     tag = tools.get_tag(name=args.name, seed=args.seed)
 
     # Setup
@@ -487,4 +486,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    args = tools.MaceArguments.parse_args()
+    main(args)

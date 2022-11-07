@@ -10,6 +10,7 @@ from mace.tools import (
     CheckpointHandler,
     CheckpointState,
     atomic_numbers_to_indices,
+    MaceArguments,
 )
 
 
@@ -46,3 +47,13 @@ def test_save_load():
 
         handler.load_latest(state=CheckpointState(model, optimizer, scheduler))
         assert np.isclose(optimizer.param_groups[0]["lr"], initial_lr)
+
+
+def test_MaceArguments():
+    args = MaceArguments.parse_args(["--name", "exp01", "--train_file", "file01"])
+    assert args.name == "exp01"
+    assert args.train_file == "file01"
+
+    args = MaceArguments(name="exp02", train_file="file02")
+    assert args.name == "exp02"
+    assert args.train_file == "file02"
