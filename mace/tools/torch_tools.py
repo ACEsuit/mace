@@ -1,7 +1,7 @@
 ###########################################################################################
 # Tools for torch
 # Authors: Ilyes Batatia, Gregor Simm
-# This program is distributed under the ASL License (see ASL.md)
+# This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
 import logging
