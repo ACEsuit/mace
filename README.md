@@ -149,4 +149,4 @@ For bugs or feature requests, please use [GitHub Issues](https://github.com/ACEs
 
 ## License
 
-MACE is published and distributed under the [Academic Software License v1.0 ](ASL.md).
+MACE is published and distributed under the [MIT](MIT.md).

@@ -1,7 +1,7 @@
 ###########################################################################################
 # Tools for torch
 # Authors: Ilyes Batatia, Gregor Simm
-# This program is distributed under the ASL License (see ASL.md)
+# This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
 import logging
@@ -56,11 +56,9 @@ def init_device(device_str: str) -> torch.device:
         )
         torch.cuda.init()
         return torch.device("cuda")
-    elif device_str == 'mps':
+    elif device_str == "mps":
         assert torch.backends.mps.is_available(), "No MPS backend is available!"
-        logging.info(
-            f"Using MPS GPU acceleration"
-        )
+        logging.info(f"Using MPS GPU acceleration")
         return torch.device("mps")
 
     logging.info("Using CPU")
