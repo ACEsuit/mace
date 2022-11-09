@@ -1,7 +1,7 @@
 ###########################################################################################
 # Parsing functionalities
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
-# This program is distributed under the ASL License (see ASL.md)
+# This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
 import argparse
