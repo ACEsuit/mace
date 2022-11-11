@@ -1,7 +1,7 @@
 ###########################################################################################
 # Parsing functionalities
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
-# This program is distributed under the ASL License (see ASL.md)
+# This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
 import argparse
@@ -171,8 +171,7 @@ class MaceArguments(ArgumentParser):
         required=False,
     )
     test_file = Argument(
-        help="Test set xyz file",
-        type=str,
+        help="Test set xyz file", type=str,
     )
     E0s = Argument(
         help="Dictionary of isolated atom energies",

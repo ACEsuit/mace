@@ -1,7 +1,7 @@
 ###########################################################################################
 # The ASE Calculator for MACE (based on https://github.com/mir-group/nequip)
 # Authors: Ilyes Batatia, David Kovacs
-# This program is distributed under the ASL License (see ASL.md)
+# This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
 
@@ -87,7 +87,7 @@ class MACECalculator(Calculator):
             stress = out["stress"].detach().cpu().numpy()
             # stress has units eng / len^3:
             self.results["stress"] = (
-                stress * (self.energy_units_to_eV / self.length_units_to_A**3)
+                stress * (self.energy_units_to_eV / self.length_units_to_A ** 3)
             )[0]
             self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
 
@@ -248,5 +248,5 @@ class EnergyDipoleMACECalculator(Calculator):
         if out["stress"] is not None:
             stress = out["stress"].detach().cpu().numpy()
             self.results["stress"] = (
-                stress * (self.energy_units_to_eV / self.length_units_to_A**3)
+                stress * (self.energy_units_to_eV / self.length_units_to_A ** 3)
             )[0]

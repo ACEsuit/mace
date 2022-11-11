@@ -1,7 +1,7 @@
 ###########################################################################################
 # Atomic Data Class for handling molecules as graphs
 # Authors: Ilyes Batatia, Gregor Simm
-# This program is distributed under the ASL License (see ASL.md)
+# This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
 from typing import Optional, Sequence
@@ -210,14 +210,8 @@ class AtomicData(torch_geometric.data.Data):
 
 
 def get_data_loader(
-    dataset: Sequence[AtomicData],
-    batch_size: int,
-    shuffle=True,
-    drop_last=False,
+    dataset: Sequence[AtomicData], batch_size: int, shuffle=True, drop_last=False,
 ) -> torch.utils.data.DataLoader:
     return torch_geometric.dataloader.DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        drop_last=drop_last,
+        dataset=dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last,
     )

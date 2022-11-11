@@ -1,7 +1,7 @@
 ###########################################################################################
 # Training script for MACE
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
-# This program is distributed under the ASL License (see ASL.md)
+# This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
 import ast
@@ -165,9 +165,7 @@ def main(args: tools.MaceArguments) -> None:
         assert (
             dipole_only is True
         ), "dipole loss can only be used with AtomicDipolesMACE model"
-        loss_fn = modules.DipoleSingleLoss(
-            dipole_weight=args.dipole_weight,
-        )
+        loss_fn = modules.DipoleSingleLoss(dipole_weight=args.dipole_weight,)
     elif args.loss == "energy_forces_dipole":
         assert dipole_only is False and compute_dipole is True
         loss_fn = modules.WeightedEnergyForcesDipoleLoss(
