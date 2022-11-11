@@ -81,6 +81,7 @@ def compute_forces_site_virials(
     training: bool = True,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+    grad_outputs_site: List[Optional[torch.Tensor]] = [torch.ones_like(node_energy)]
     forces = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions],  # [n_nodes, 3]
@@ -92,7 +93,7 @@ def compute_forces_site_virials(
     site_virials = torch.autograd.grad(
         outputs=[node_energy],  # [n_nodes, ]
         inputs=[displacement],  # [n_graphs, 3, 3]
-        grad_outputs=grad_outputs,
+        grad_outputs=grad_outputs_site,
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,

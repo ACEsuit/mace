@@ -161,7 +161,7 @@ class MACE(torch.nn.Module):
             dtype=data["positions"].dtype,
             device=data["positions"].device,
         )
-        if compute_virials:
+        if compute_virials or compute_site_virials:
             (
                 data["positions"],
                 data["shifts"],
