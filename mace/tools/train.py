@@ -64,21 +64,22 @@ def train(
     if max_grad_norm is not None:
         logging.info(f"Using gradient clipping with tolerance={max_grad_norm:.3f}")
     logging.info("Started training")
-    for epoch in range(start_epoch, max_num_epochs):
+    epoch = start_epoch
+    while epoch < max_num_epochs:
         # LR scheduler and SWA update
-         if swa is None or epoch < swa.start:
-             if epoch > start_epoch:
-                 lr_scheduler.step(valid_loss)  # Can break if exponential LR, TODO fix that!
-         else:
-             if swa_start:
-                 logging.info("Changing loss based on SWA")
-                 lowest_loss = np.inf
-                 swa_start = False
-                 keep_last = True
-             loss_fn = swa.loss_fn
-             swa.model.update_parameters(model)
-             if epoch > start_epoch:
-                 swa.scheduler.step()
+        if swa is None or epoch < swa.start:
+            if epoch > start_epoch:
+                lr_scheduler.step(valid_loss)  # Can break if exponential LR, TODO fix that!
+        else:
+            if swa_start:
+                logging.info("Changing loss based on SWA")
+                lowest_loss = np.inf
+                swa_start = False
+                keep_last = True
+            loss_fn = swa.loss_fn
+            swa.model.update_parameters(model)
+            if epoch > start_epoch:
+                swa.scheduler.step()
                  
         # Train
         for batch in train_loader:
@@ -176,7 +177,12 @@ def train(
                 )
             if valid_loss >= lowest_loss:
                 patience_counter += 1
-                if patience_counter >= patience:
+                if patience_counter >= patience and epoch < swa.start:
+                    logging.info(
+                        f"Stopping optimization after {patience_counter} epochs without improvement and starting swa"
+                    )
+                    epoch = swa.start
+                elif patience_counter >= patience:
                     logging.info(
                         f"Stopping optimization after {patience_counter} epochs without improvement"
                     )
@@ -199,7 +205,7 @@ def train(
                         keep_last=keep_last,
                     )
                     keep_last = False
-
+        epoch += 1
     logging.info("Training complete")
 
 
