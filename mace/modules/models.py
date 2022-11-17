@@ -53,9 +53,13 @@ class MACE(torch.nn.Module):
         gate: Optional[Callable],
     ):
         super().__init__()
-        self.register_buffer("atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64))
+        self.register_buffer(
+            "atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64)
+        )
         self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.float64))
-        self.register_buffer("num_interactions", torch.tensor(num_interactions, dtype=torch.int64))
+        self.register_buffer(
+            "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
+        )
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -147,6 +151,7 @@ class MACE(torch.nn.Module):
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
+        compute_displacement: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
@@ -156,7 +161,7 @@ class MACE(torch.nn.Module):
             dtype=data["positions"].dtype,
             device=data["positions"].device,
         )
-        if compute_virials:
+        if compute_virials or compute_displacement:
             (
                 data["positions"],
                 data["shifts"],
@@ -200,7 +205,9 @@ class MACE(torch.nn.Module):
                 edge_index=data["edge_index"],
             )
             node_feats = product(
-                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"],
+                node_feats=node_feats,
+                sc=sc,
+                node_attrs=data["node_attrs"],
             )
             node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             energy = scatter_sum(
@@ -233,13 +240,17 @@ class MACE(torch.nn.Module):
             "forces": forces,
             "virials": virials,
             "stress": stress,
+            "displacement": displacement,
         }
 
 
 @compile_mode("script")
 class ScaleShiftMACE(MACE):
     def __init__(
-        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
+        self,
+        atomic_inter_scale: float,
+        atomic_inter_shift: float,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
@@ -253,6 +264,7 @@ class ScaleShiftMACE(MACE):
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
+        compute_displacement: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
@@ -262,7 +274,7 @@ class ScaleShiftMACE(MACE):
             dtype=data["positions"].dtype,
             device=data["positions"].device,
         )
-        if compute_virials:
+        if compute_virials or compute_displacement:
             (
                 data["positions"],
                 data["shifts"],
@@ -341,6 +353,7 @@ class ScaleShiftMACE(MACE):
             "forces": forces,
             "virials": virials,
             "stress": stress,
+            "displacement": displacement,
         }
 
         return output
@@ -470,7 +483,10 @@ class BOTNet(torch.nn.Module):
 
 class ScaleShiftBOTNet(BOTNet):
     def __init__(
-        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
+        self,
+        atomic_inter_scale: float,
+        atomic_inter_shift: float,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
