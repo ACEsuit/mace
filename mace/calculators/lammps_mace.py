@@ -57,7 +57,9 @@ class LAMMPS_MACE(torch.nn.Module):
                 create_graph=True,
                 allow_unused=True,
             )[0]
+
             if virials is not None:
+                virials = -1 * virials
                 cell = data["cell"].view(-1, 3, 3)
                 volume = torch.einsum(
                     "zi,zi->z",

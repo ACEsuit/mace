@@ -12,20 +12,8 @@ from mace.tools import torch_geometric
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
     atomic_numbers=np.array([8, 1, 1]),
-    positions=np.array(
-        [
-            [0.0, -2.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ]
-    ),
-    forces=np.array(
-        [
-            [0.0, -1.3, 0.0],
-            [1.0, 0.2, 0.0],
-            [0.0, 1.1, 0.3],
-        ]
-    ),
+    positions=np.array([[0.0, -2.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],]),
+    forces=np.array([[0.0, -1.3, 0.0], [1.0, 0.2, 0.0], [0.0, 1.1, 0.3],]),
     energy=-1.5,
 )
 table = tools.AtomicNumberTable([1, 8])
@@ -63,13 +51,7 @@ def test_lammps_mace():
     config_rotated = data.Configuration(
         atomic_numbers=np.array([8, 1, 1]),
         positions=positions_rotated,
-        forces=np.array(
-            [
-                [0.0, -1.3, 0.0],
-                [1.0, 0.2, 0.0],
-                [0.0, 1.1, 0.3],
-            ]
-        ),
+        forces=np.array([[0.0, -1.3, 0.0], [1.0, 0.2, 0.0], [0.0, 1.1, 0.3],]),
         energy=-1.5,
     )
 
@@ -88,6 +70,13 @@ def test_lammps_mace():
     lammps_model = LAMMPS_MACE(model)
     lammps_model_compiled = jit.compile(lammps_model)
     mask_ghost = torch.ones_like(batch.batch).bool()
-    output1 = model(batch.to_dict())
-    output2 = lammps_model_compiled(batch.to_dict(), mask_ghost=mask_ghost)
+    output1 = model(batch.to_dict(), compute_force=True, compute_virials=True)
+    output2 = lammps_model_compiled(
+        batch.to_dict(),
+        mask_ghost=mask_ghost,
+        compute_force=True,
+        compute_virials=True,
+    )
     assert torch.allclose(output1["energy"][0], output2["energy"][0])
+    assert torch.allclose(output1["forces"], output2["forces"])
+    assert torch.allclose(output1["virials"], output2["virials"])
