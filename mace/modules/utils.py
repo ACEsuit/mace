@@ -53,7 +53,7 @@ def compute_forces_virials(
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,
     )
-    stress = torch.zeros_like(positions).expand(1, 1, 3)
+    stress = torch.zeros_like(displacement)
     if compute_stress and cell is not None and virials is not None:
         cell = cell.view(-1, 3, 3)
         volume = torch.einsum(
@@ -63,14 +63,14 @@ def compute_forces_virials(
         ).unsqueeze(-1)
         stress = virials / volume.view(-1, 1, 1)
     if forces is not None and virials is None:
-        return -1 * forces, torch.zeros_like(positions).expand(1, 1, 3), None
+        return -1 * forces, None, None
     if forces is None and virials is not None:
         return torch.zeros_like(positions), -1 * virials, None
     if forces is not None and virials is not None:
         return -1 * forces, -1 * virials, stress
     return (
         torch.zeros_like(positions),
-        torch.zeros_like(positions).expand(1, 1, 3),
+        None,
         None,
     )
 
