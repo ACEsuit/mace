@@ -12,6 +12,9 @@ class LAMMPS_MACE(torch.nn.Module):
     def __init__(self, model):
         super().__init__()
         self.model = model
+        self.register_buffer("atomic_numbers", model.atomic_numbers)
+        self.register_buffer("r_max", model.r_max)
+        self.register_buffer("num_interactions", model.num_interactions)
 
     def forward(
         self,
