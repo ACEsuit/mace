@@ -28,7 +28,7 @@ def compute_forces(
         grad_outputs=grad_outputs,
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
-        allow_unused=False,  # For complete dissociation turn to true
+        allow_unused=True,  # For complete dissociation turn to true
     )[
         0
     ]  # [n_nodes, 3]
@@ -41,7 +41,7 @@ def compute_forces_virials(
     energy: torch.Tensor,
     positions: torch.Tensor,
     displacement: torch.Tensor,
-    cell: Optional[torch.Tensor],
+    cell: torch.Tensor,
     training: bool = True,
     compute_stress: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
@@ -102,13 +102,13 @@ def get_outputs(
     energy: torch.Tensor,
     positions: torch.Tensor,
     displacement: Optional[torch.Tensor],
-    cell: Optional[torch.Tensor],
+    cell: torch.Tensor,
     training: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-    if compute_virials or compute_stress:
+    if (compute_virials or compute_stress) and displacement is not None:
         # forces come for free
         forces, virials, stress = compute_forces_virials(
             energy=energy,

@@ -164,7 +164,7 @@ class MACE(torch.nn.Module):
             dtype=data["positions"].dtype,
             device=data["positions"].device,
         )
-        if compute_virials or compute_displacement:
+        if compute_virials or compute_stress or compute_displacement:
             (
                 data["positions"],
                 data["shifts"],
@@ -272,7 +272,7 @@ class ScaleShiftMACE(MACE):
             dtype=data["positions"].dtype,
             device=data["positions"].device,
         )
-        if compute_virials or compute_displacement:
+        if compute_virials or compute_stress or compute_displacement:
             (
                 data["positions"],
                 data["shifts"],
