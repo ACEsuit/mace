@@ -83,6 +83,8 @@ The precision can be changed using the keyword ``--default_dtype``, the default 
 
 The keywords ``--batch_size`` and ``--max_num_epochs`` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $\text{max-num-epochs}*\frac{\text{num-configs-training}}{\text{batch-size}}$.
 
+The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules. In this example, to make the code ignore stress on molecules, append to your molecules configuration a ``config_stress_weight = 0.0``.
+
 To use Apple Silicon GPU acceleration make sure to install the latest PyTorch version and specify ``--device=mps``. 
 
 ### Evaluation
@@ -147,4 +149,4 @@ For bugs or feature requests, please use [GitHub Issues](https://github.com/ACEs
 
 ## License
 
-MACE is published and distributed under the [Academic Software License v1.0 ](ASL.md).
+MACE is published and distributed under the [MIT](MIT.md).
