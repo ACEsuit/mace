@@ -31,7 +31,7 @@ class MACECalculator(Calculator):
         self.results = {}
 
         self.model = torch.load(f=model_path, map_location=device)
-        self.r_max = self.model.r_max.item()
+        self.r_max = float(self.model.r_max)
         self.device = torch_tools.init_device(device)
         self.energy_units_to_eV = energy_units_to_eV
         self.length_units_to_A = length_units_to_A
@@ -68,7 +68,7 @@ class MACECalculator(Calculator):
         batch = next(iter(data_loader)).to(self.device)
 
         # predict + extract data
-        out = self.model(batch.to_dict())
+        out = self.model(batch.to_dict(), compute_stress=True)
         energy = out["energy"].detach().cpu().item()
         forces = out["forces"].detach().cpu().numpy()
 
