@@ -208,9 +208,7 @@ class MACE(torch.nn.Module):
                 edge_index=data["edge_index"],
             )
             node_feats = product(
-                node_feats=node_feats,
-                sc=sc,
-                node_attrs=data["node_attrs"],
+                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"],
             )
             node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             energy = scatter_sum(
@@ -613,7 +611,6 @@ class AtomicDipolesMACE(torch.nn.Module):
             node_feats_irreps=node_feats_irreps_out,
             target_irreps=hidden_irreps,
             correlation=correlation,
-            element_dependent=True,
             num_elements=num_elements,
             use_sc=use_sc_first,
         )
@@ -646,7 +643,6 @@ class AtomicDipolesMACE(torch.nn.Module):
                 node_feats_irreps=interaction_irreps,
                 target_irreps=hidden_irreps_out,
                 correlation=correlation,
-                element_dependent=True,
                 num_elements=num_elements,
                 use_sc=True,
             )
@@ -801,7 +797,6 @@ class EnergyDipolesMACE(torch.nn.Module):
             node_feats_irreps=node_feats_irreps_out,
             target_irreps=hidden_irreps,
             correlation=correlation,
-            element_dependent=True,
             num_elements=num_elements,
             use_sc=use_sc_first,
         )
@@ -834,7 +829,6 @@ class EnergyDipolesMACE(torch.nn.Module):
                 node_feats_irreps=interaction_irreps,
                 target_irreps=hidden_irreps_out,
                 correlation=correlation,
-                element_dependent=True,
                 num_elements=num_elements,
                 use_sc=True,
             )
