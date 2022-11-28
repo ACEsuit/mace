@@ -70,6 +70,8 @@ class LAMMPS_MACE(torch.nn.Module):
                     torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
                 ).unsqueeze(-1)
                 stress = virials / volume.view(-1, 1, 1)
+            else:
+                virials = torch.zeros_like(displacement)
 
         total_energy = scatter_sum(
             src=node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
