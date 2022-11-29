@@ -20,7 +20,10 @@ conda activate mace_env
 # Install PyTorch
 conda install pytorch torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia
 
-# Clone and install MACE (and all required packages), use token if still private repo
+# (optional) Install MACE's dependencies from Conda as well
+conda install numpy scipy matplotlib ase opt_einsum prettytable pandas e3nn==0.4.4
+
+# Clone and install MACE (and all required packages)
 git clone git@github.com:ACEsuit/mace.git 
 pip install ./mace
 ```
