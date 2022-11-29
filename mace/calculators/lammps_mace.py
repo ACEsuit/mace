@@ -44,7 +44,7 @@ class LAMMPS_MACE(torch.nn.Module):
         virials: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
         stress: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
         if mask_ghost is not None and displacement is not None:
-            displacement.requires_grad_(True)  # For some reason torchscript needs that.
+            #displacement.requires_grad_(True)  # For some reason torchscript needs that.
             node_energy_ghost = node_energy * mask_ghost
             total_energy_ghost = scatter_sum(
                 src=node_energy_ghost, index=data["batch"], dim=-1, dim_size=num_graphs
@@ -70,6 +70,8 @@ class LAMMPS_MACE(torch.nn.Module):
                     torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
                 ).unsqueeze(-1)
                 stress = virials / volume.view(-1, 1, 1)
+            else:
+                virials = torch.zeros_like(displacement)
 
         total_energy = scatter_sum(
             src=node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
