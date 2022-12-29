@@ -348,6 +348,7 @@ class ScaleShiftMACE(MACE):
         output = {
             "energy": total_energy,
             "node_energy": node_energy,
+            "interaction_energy": inter_e,
             "forces": forces,
             "virials": virials,
             "stress": stress,
