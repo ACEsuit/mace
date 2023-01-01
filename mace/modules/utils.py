@@ -80,7 +80,7 @@ def get_symmetric_displacement(
     edge_index: torch.Tensor,
     num_graphs: torch.Tensor,
     batch: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if cell is None:
         logging.info("Virial required but no cell provided")
         cell = torch.zeros(
