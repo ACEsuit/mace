@@ -91,9 +91,7 @@ class MACE(torch.nn.Module):
         self.interactions = torch.nn.ModuleList([inter])
 
         # Use the appropriate self connection at the first layer for proper E0
-        use_sc_first = False
-        if "Residual" in str(interaction_cls_first):
-            use_sc_first = True
+        use_sc_first = "Residual" in str(interaction_cls_first)
 
         node_feats_irreps_out = inter.target_irreps
         prod = EquivariantProductBasisBlock(
@@ -143,9 +141,37 @@ class MACE(torch.nn.Module):
                 self.readouts.append(LinearReadoutBlock(hidden_irreps))
 
     def _forward_calculate_e0(self, data: AtomicData) -> torch.Tensor:
+        """Forward pass internal - e0 calculation
+
+        Notes
+        -----
+        This is really a lookup from the e0 list we have for each node's element.
+
+        Parameters
+        ----------
+        data
+
+        Returns
+        -------
+        e0
+            shape: [n_nodes, ]
+
+        """
         return self.atomic_energies_fn(data.node_attrs)
 
     def _forward_calculate_interactions(self, data: AtomicData) -> torch.Tensor:
+        """Forward pass internal - interaction energy calculation
+
+        Parameters
+        ----------
+        data
+
+        Returns
+        -------
+        interaction_energy
+            shape: [n_nodes, ]
+
+        """
         # Embeddings
         node_feats = self.node_embedding(data.node_attrs)
         vectors, lengths = get_edge_vectors_and_lengths(
@@ -206,7 +232,7 @@ class MACE(torch.nn.Module):
             src=local_energies, index=data.batch, dim=-1, dim_size=data.num_graphs
         )  # [n_graphs,]
 
-        # Outputs
+        # Calculate derivatives if needed
         forces, virials, stress = get_outputs(
             energy=total_energy,
             positions=data.positions,
