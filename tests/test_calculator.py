@@ -3,10 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 import ase.io
 import numpy as np
+import pytest
 from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
 from ase.constraints import ExpCellFilter
