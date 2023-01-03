@@ -1,6 +1,5 @@
-from .mace import DipoleMACECalculator, EnergyDipoleMACECalculator, MACECalculator
 from .lammps_mace import LAMMPS_MACE
-
+from .mace import DipoleMACECalculator, EnergyDipoleMACECalculator, MACECalculator
 
 __all__ = [
     "MACECalculator",

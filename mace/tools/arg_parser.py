@@ -197,7 +197,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
-        "--test_file", help="Test set xyz file", type=str,
+        "--test_file",
+        help="Test set xyz file",
+        type=str,
     )
     parser.add_argument(
         "--E0s",
@@ -280,20 +282,20 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--virials_weight", help="weight of virials loss", type=float, default=1.0
     )
     parser.add_argument(
-         "--swa_virials_weight",
-         help="weight of virials loss after starting swa",
-         type=float,
-         default=10.0,
-     )
+        "--swa_virials_weight",
+        help="weight of virials loss after starting swa",
+        type=float,
+        default=10.0,
+    )
     parser.add_argument(
         "--stress_weight", help="weight of virials loss", type=float, default=1.0
     )
     parser.add_argument(
-         "--swa_stress_weight",
-         help="weight of stress loss after starting swa",
-         type=float,
-         default=10.0,
-     )
+        "--swa_stress_weight",
+        help="weight of stress loss after starting swa",
+        type=float,
+        default=10.0,
+    )
     parser.add_argument(
         "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0
     )

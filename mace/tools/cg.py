@@ -52,9 +52,9 @@ def _wigner_nj(
 
                 C = o3.wigner_3j(ir_out.l, ir_left.l, ir.l, dtype=dtype)
                 if normalization == "component":
-                    C *= ir_out.dim ** 0.5
+                    C *= ir_out.dim**0.5
                 if normalization == "norm":
-                    C *= ir_left.dim ** 0.5 * ir.dim ** 0.5
+                    C *= ir_left.dim**0.5 * ir.dim**0.5
 
                 C = torch.einsum("jk,ijl->ikl", C_left.flatten(1), C)
                 C = C.reshape(
