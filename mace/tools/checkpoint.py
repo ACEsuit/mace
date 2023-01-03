@@ -47,12 +47,12 @@ class CheckpointPathInfo:
     path: str
     tag: str
     epochs: int
-    swa : bool
+    swa: bool
 
 
 class CheckpointIO:
     def __init__(
-         self, directory: str, tag: str, keep: bool = False, swa_start: int = None
+        self, directory: str, tag: str, keep: bool = False, swa_start: int = None
     ) -> None:
         self.directory = directory
         self.tag = tag
@@ -107,9 +107,9 @@ class CheckpointIO:
             swa = True
 
         return CheckpointPathInfo(
-            path=path, 
-            tag=match.group("tag"), 
-            epochs=int(match.group("epochs")), 
+            path=path,
+            tag=match.group("tag"),
+            epochs=int(match.group("epochs")),
             swa=swa,
         )
 

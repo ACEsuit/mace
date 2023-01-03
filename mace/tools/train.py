@@ -57,6 +57,7 @@ def train(
     max_grad_norm: Optional[float] = 10.0,
 ):
     lowest_loss = np.inf
+    valid_loss = np.inf
     patience_counter = 0
     swa_start = True
     keep_last = False
@@ -69,7 +70,9 @@ def train(
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
             if epoch > start_epoch:
-                lr_scheduler.step(valid_loss)  # Can break if exponential LR, TODO fix that!
+                lr_scheduler.step(
+                    valid_loss
+                )  # Can break if exponential LR, TODO fix that!
         else:
             if swa_start:
                 logging.info("Changing loss based on SWA")
@@ -207,7 +210,6 @@ def train(
                     keep_last = False
         epoch += 1
 
-
     logging.info("Training complete")
 
 
@@ -224,7 +226,7 @@ def take_step(
 
     start_time = time.time()
     batch = batch.to(device)
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)
     batch_dict = batch.to_dict()
     output = model(
         batch_dict,
