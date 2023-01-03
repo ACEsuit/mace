@@ -58,7 +58,9 @@ def compute_forces_virials(
     if compute_stress and virials is not None:
         cell = cell.view(-1, 3, 3)
         volume = torch.einsum(
-            "zi,zi->z", cell[:, 0, :], torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
+            "zi,zi->z",
+            cell[:, 0, :],
+            torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
         ).unsqueeze(-1)
         stress = virials / volume.view(-1, 1, 1)
     if forces is None:
@@ -79,11 +81,16 @@ def get_symmetric_displacement(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if cell is None:
         cell = torch.zeros(
-            num_graphs * 3, 3, dtype=positions.dtype, device=positions.device,
+            num_graphs * 3,
+            3,
+            dtype=positions.dtype,
+            device=positions.device,
         )
     sender = edge_index[0]
     displacement = torch.zeros(
-        (num_graphs, 3, 3), dtype=positions.dtype, device=positions.device,
+        (num_graphs, 3, 3),
+        dtype=positions.dtype,
+        device=positions.device,
     )
     displacement.requires_grad_(True)
     symmetric_displacement = 0.5 * (
@@ -94,7 +101,11 @@ def get_symmetric_displacement(
     )
     cell = cell.view(-1, 3, 3)
     cell = cell + torch.matmul(cell, symmetric_displacement)
-    shifts = torch.einsum("be,bec->bc", unit_shifts, cell[batch[sender]],)
+    shifts = torch.einsum(
+        "be,bec->bc",
+        unit_shifts,
+        cell[batch[sender]],
+    )
     return positions, shifts, displacement
 
 
@@ -148,7 +159,8 @@ def get_edge_vectors_and_lengths(
 
 
 def compute_mean_std_atomic_inter_energy(
-    data_loader: torch.utils.data.DataLoader, atomic_energies: np.ndarray,
+    data_loader: torch.utils.data.DataLoader,
+    atomic_energies: np.ndarray,
 ) -> Tuple[float, float]:
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
 
@@ -172,7 +184,8 @@ def compute_mean_std_atomic_inter_energy(
 
 
 def compute_mean_rms_energy_forces(
-    data_loader: torch.utils.data.DataLoader, atomic_energies: np.ndarray,
+    data_loader: torch.utils.data.DataLoader,
+    atomic_energies: np.ndarray,
 ) -> Tuple[float, float]:
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
 

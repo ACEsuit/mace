@@ -11,8 +11,20 @@ from mace.tools import torch_geometric
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
     atomic_numbers=np.array([8, 1, 1]),
-    positions=np.array([[0.0, -2.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],]),
-    forces=np.array([[0.0, -1.3, 0.0], [1.0, 0.2, 0.0], [0.0, 1.1, 0.3],]),
+    positions=np.array(
+        [
+            [0.0, -2.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ]
+    ),
+    forces=np.array(
+        [
+            [0.0, -1.3, 0.0],
+            [1.0, 0.2, 0.0],
+            [0.0, 1.1, 0.3],
+        ]
+    ),
     energy=-1.5,
     charges=np.array([-2.0, 1.0, 1.0]),
     dipole=np.array([-1.5, 1.5, 2.0]),
@@ -23,7 +35,13 @@ positions_rotated = np.array(rot @ config.positions.T).T
 config_rotated = data.Configuration(
     atomic_numbers=np.array([8, 1, 1]),
     positions=positions_rotated,
-    forces=np.array([[0.0, -1.3, 0.0], [1.0, 0.2, 0.0], [0.0, 1.1, 0.3],]),
+    forces=np.array(
+        [
+            [0.0, -1.3, 0.0],
+            [1.0, 0.2, 0.0],
+            [0.0, 1.1, 0.3],
+        ]
+    ),
     energy=-1.5,
     charges=np.array([-2.0, 1.0, 1.0]),
     dipole=np.array([-1.5, 1.5, 2.0]),
@@ -113,7 +131,10 @@ def test_dipole_mace():
         drop_last=False,
     )
     batch = next(iter(data_loader))
-    output = model(batch, training=True,)
+    output = model(
+        batch,
+        training=True,
+    )
     # sanity check of dipoles being the right shape
     assert output["dipole"][0].unsqueeze(0).shape == atomic_data.dipole.shape
     # test equivariance of output dipoles
@@ -160,7 +181,10 @@ def test_energy_dipole_mace():
         drop_last=False,
     )
     batch = next(iter(data_loader))
-    output = model(batch, training=True,)
+    output = model(
+        batch,
+        training=True,
+    )
     # sanity check of dipoles being the right shape
     assert output["dipole"][0].unsqueeze(0).shape == atomic_data.dipole.shape
     # test energy is invariant
