@@ -31,7 +31,7 @@ class MACECalculator(Calculator):
         self.results = {}
 
         self.model = torch.load(f=model_path, map_location=device)
-        self.r_max = self.model.r_max
+        self.r_max = float(self.model.r_max)
         self.device = torch_tools.init_device(device)
         self.energy_units_to_eV = energy_units_to_eV
         self.length_units_to_A = length_units_to_A
@@ -68,7 +68,7 @@ class MACECalculator(Calculator):
         batch = next(iter(data_loader)).to(self.device)
 
         # predict + extract data
-        out = self.model(batch, compute_stress=True)
+        out = self.model(batch.to_dict(), compute_stress=True)
         energy = out["energy"].detach().cpu().item()
         forces = out["forces"].detach().cpu().numpy()
 
@@ -87,7 +87,7 @@ class MACECalculator(Calculator):
             stress = out["stress"].detach().cpu().numpy()
             # stress has units eng / len^3:
             self.results["stress"] = (
-                stress * (self.energy_units_to_eV / self.length_units_to_A ** 3)
+                stress * (self.energy_units_to_eV / self.length_units_to_A**3)
             )[0]
             self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
 
@@ -248,5 +248,5 @@ class EnergyDipoleMACECalculator(Calculator):
         if out["stress"] is not None:
             stress = out["stress"].detach().cpu().numpy()
             self.results["stress"] = (
-                stress * (self.energy_units_to_eV / self.length_units_to_A ** 3)
+                stress * (self.energy_units_to_eV / self.length_units_to_A**3)
             )[0]

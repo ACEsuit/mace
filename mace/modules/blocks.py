@@ -4,12 +4,13 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from abc import ABC, abstractmethod
-from typing import Callable, Dict, Optional, Tuple, Union
+from abc import abstractmethod
+from typing import Callable, Optional, Tuple, Union
 
 import numpy as np
 import torch.nn.functional
 from e3nn import nn, o3
+from e3nn.util.jit import compile_mode
 
 from mace.tools.scatter import scatter_sum
 
@@ -22,17 +23,20 @@ from .radial import BesselBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
 
 
+@compile_mode("script")
 class LinearNodeEmbeddingBlock(torch.nn.Module):
     def __init__(self, irreps_in: o3.Irreps, irreps_out: o3.Irreps):
         super().__init__()
         self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irreps_out)
 
     def forward(
-        self, node_attrs: torch.Tensor,  # [n_nodes, irreps]
-    ):
+        self,
+        node_attrs: torch.Tensor,
+    ) -> torch.Tensor:  # [n_nodes, irreps]
         return self.linear(node_attrs)
 
 
+@compile_mode("script")
 class LinearReadoutBlock(torch.nn.Module):
     def __init__(self, irreps_in: o3.Irreps):
         super().__init__()
@@ -42,6 +46,7 @@ class LinearReadoutBlock(torch.nn.Module):
         return self.linear(x)  # [n_nodes, 1]
 
 
+@compile_mode("script")
 class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
         self, irreps_in: o3.Irreps, MLP_irreps: o3.Irreps, gate: Optional[Callable]
@@ -59,6 +64,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         return self.linear_2(x)  # [n_nodes, 1]
 
 
+@compile_mode("script")
 class LinearDipoleReadoutBlock(torch.nn.Module):
     def __init__(self, irreps_in: o3.Irreps, dipole_only: bool = False):
         super().__init__()
@@ -72,6 +78,7 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
         return self.linear(x)  # [n_nodes, 1]
 
 
+@compile_mode("script")
 class NonLinearDipoleReadoutBlock(torch.nn.Module):
     def __init__(
         self,
@@ -111,6 +118,7 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         return self.linear_2(x)  # [n_nodes, 1]
 
 
+@compile_mode("script")
 class AtomicEnergiesBlock(torch.nn.Module):
     atomic_energies: torch.Tensor
 
@@ -133,6 +141,7 @@ class AtomicEnergiesBlock(torch.nn.Module):
         return f"{self.__class__.__name__}(energies=[{formatted_energies}])"
 
 
+@compile_mode("script")
 class RadialEmbeddingBlock(torch.nn.Module):
     def __init__(self, r_max: float, num_bessel: int, num_polynomial_cutoff: int):
         super().__init__()
@@ -141,20 +150,21 @@ class RadialEmbeddingBlock(torch.nn.Module):
         self.out_dim = num_bessel
 
     def forward(
-        self, edge_lengths: torch.Tensor,  # [n_edges, 1]
+        self,
+        edge_lengths: torch.Tensor,  # [n_edges, 1]
     ):
         bessel = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
         return bessel * cutoff  # [n_edges, n_basis]
 
 
+@compile_mode("script")
 class EquivariantProductBasisBlock(torch.nn.Module):
     def __init__(
         self,
         node_feats_irreps: o3.Irreps,
         target_irreps: o3.Irreps,
-        correlation: Union[int, Dict[str, int]],
-        element_dependent: bool = True,
+        correlation: int,
         use_sc: bool = True,
         num_elements: Optional[int] = None,
     ) -> None:
@@ -165,25 +175,31 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             irreps_in=node_feats_irreps,
             irreps_out=target_irreps,
             correlation=correlation,
-            element_dependent=element_dependent,
             num_elements=num_elements,
         )
         # Update linear
         self.linear = o3.Linear(
-            target_irreps, target_irreps, internal_weights=True, shared_weights=True,
+            target_irreps,
+            target_irreps,
+            internal_weights=True,
+            shared_weights=True,
         )
 
     def forward(
-        self, node_feats: torch.Tensor, sc: torch.Tensor, node_attrs: torch.Tensor
+        self,
+        node_feats: torch.Tensor,
+        sc: Optional[torch.Tensor],
+        node_attrs: torch.Tensor,
     ) -> torch.Tensor:
         node_feats = self.symmetric_contractions(node_feats, node_attrs)
-        if self.use_sc:
+        if self.use_sc and sc is not None:
             return self.linear(node_feats) + sc
 
         return self.linear(node_feats)
 
 
-class InteractionBlock(ABC, torch.nn.Module):
+@compile_mode("script")
+class InteractionBlock(torch.nn.Module):
     def __init__(
         self,
         node_attrs_irreps: o3.Irreps,
@@ -221,9 +237,10 @@ class InteractionBlock(ABC, torch.nn.Module):
         raise NotImplementedError
 
 
-nonlinearities = {1: torch.nn.SiLU(), -1: torch.nn.Tanh()}
+nonlinearities = {1: torch.nn.functional.silu, -1: torch.tanh}
 
 
+@compile_mode("script")
 class TensorProductWeightsBlock(torch.nn.Module):
     def __init__(self, num_elements: int, num_edge_feats: int, num_feats_out: int):
         super().__init__()
@@ -251,6 +268,7 @@ class TensorProductWeightsBlock(torch.nn.Module):
         )
 
 
+@compile_mode("script")
 class ResidualElementDependentInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         self.linear_up = o3.Linear(
@@ -298,7 +316,8 @@ class ResidualElementDependentInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> torch.Tensor:
-        sender, receiver = edge_index
+        sender = edge_index[0]
+        receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
@@ -313,6 +332,7 @@ class ResidualElementDependentInteractionBlock(InteractionBlock):
         return message + sc  # [n_nodes, irreps]
 
 
+@compile_mode("script")
 class AgnosticNonlinearInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         self.linear_up = o3.Linear(
@@ -337,7 +357,8 @@ class AgnosticNonlinearInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel], torch.nn.SiLU(),
+            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
         )
 
         # Linear
@@ -361,7 +382,8 @@ class AgnosticNonlinearInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> torch.Tensor:
-        sender, receiver = edge_index
+        sender = edge_index[0]
+        receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         tp_weights = self.conv_tp_weights(edge_feats)
         node_feats = self.linear_up(node_feats)
@@ -376,6 +398,7 @@ class AgnosticNonlinearInteractionBlock(InteractionBlock):
         return message  # [n_nodes, irreps]
 
 
+@compile_mode("script")
 class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         # First linear
@@ -401,7 +424,8 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel], torch.nn.SiLU(),
+            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
         )
 
         # Linear
@@ -425,7 +449,8 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> torch.Tensor:
-        sender, receiver = edge_index
+        sender = edge_index[0]
+        receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
@@ -441,6 +466,7 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         return message  # [n_nodes, irreps]
 
 
+@compile_mode("script")
 class RealAgnosticInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         # First linear
@@ -452,7 +478,9 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         )
         # TensorProduct
         irreps_mid, instructions = tp_out_irreps_with_instructions(
-            self.node_feats_irreps, self.edge_attrs_irreps, self.target_irreps,
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
         )
         self.conv_tp = o3.TensorProduct(
             self.node_feats_irreps,
@@ -466,7 +494,8 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel], torch.nn.SiLU(),
+            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
         )
 
         # Linear
@@ -489,10 +518,10 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        sender, receiver = edge_index
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
-
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
         mji = self.conv_tp(
@@ -509,6 +538,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         )  # [n_nodes, channels, (lmax + 1)**2]
 
 
+@compile_mode("script")
 class RealAgnosticResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
 
@@ -521,7 +551,9 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         )
         # TensorProduct
         irreps_mid, instructions = tp_out_irreps_with_instructions(
-            self.node_feats_irreps, self.edge_attrs_irreps, self.target_irreps,
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
         )
         self.conv_tp = o3.TensorProduct(
             self.node_feats_irreps,
@@ -535,7 +567,8 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel], torch.nn.SiLU(),
+            [input_dim] + 3 * [64] + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
         )
 
         # Linear
@@ -559,9 +592,9 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        sender, receiver = edge_index
+        sender = edge_index[0]
+        receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
-
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
@@ -578,6 +611,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         )  # [n_nodes, channels, (lmax + 1)**2]
 
 
+@compile_mode("script")
 class ScaleShiftBlock(torch.nn.Module):
     def __init__(self, scale: float, shift: float):
         super().__init__()

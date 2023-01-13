@@ -166,7 +166,9 @@ def main() -> None:
         assert (
             dipole_only is True
         ), "dipole loss can only be used with AtomicDipolesMACE model"
-        loss_fn = modules.DipoleSingleLoss(dipole_weight=args.dipole_weight,)
+        loss_fn = modules.DipoleSingleLoss(
+            dipole_weight=args.dipole_weight,
+        )
     elif args.loss == "energy_forces_dipole":
         assert dipole_only is False and compute_dipole is True
         loss_fn = modules.WeightedEnergyForcesDipoleLoss(
@@ -366,27 +368,29 @@ def main() -> None:
     else:
         raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 
-    checkpoint_handler = tools.CheckpointHandler(
-        directory=args.checkpoints_dir, tag=tag, keep=args.keep_checkpoints
-    )
-
-    start_epoch = 0
-    if args.restart_latest:
-        opt_start_epoch = checkpoint_handler.load_latest(
-            state=tools.CheckpointState(model, optimizer, lr_scheduler), device=device
-        )
-        if opt_start_epoch is not None:
-            start_epoch = opt_start_epoch
-
     swa: Optional[tools.SWAContainer] = None
+    swas = [False]
     if args.swa:
         assert dipole_only is False, "swa for dipole fitting not implemented"
+        swas.append(True)
         if args.start_swa is None:
             args.start_swa = (
                 args.max_num_epochs // 4 * 3
             )  # if not set start swa at 75% of training
         if args.loss == "forces_only":
             logging.info("Can not select swa with forces only loss.")
+        elif args.loss == "virials":
+            loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+                virials_weight=args.swa_virials_weight,
+            )
+        elif args.loss == "stress":
+            loss_fn_energy = modules.WeightedEnergyForcesStressLoss(
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+                stress_weight=args.swa_stress_weight,
+            )
         elif args.loss == "energy_forces_dipole":
             loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
                 args.swa_energy_weight,
@@ -415,6 +419,30 @@ def main() -> None:
             start=args.start_swa,
             loss_fn=loss_fn_energy,
         )
+
+    checkpoint_handler = tools.CheckpointHandler(
+        directory=args.checkpoints_dir,
+        tag=tag,
+        keep=args.keep_checkpoints,
+        swa_start=args.start_swa,
+    )
+
+    start_epoch = 0
+    if args.restart_latest:
+        try:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=True,
+                device=device,
+            )
+        except:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=False,
+                device=device,
+            )
+        if opt_start_epoch is not None:
+            start_epoch = opt_start_epoch
 
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
@@ -445,11 +473,6 @@ def main() -> None:
         log_errors=args.error_table,
     )
 
-    epoch = checkpoint_handler.load_latest(
-        state=tools.CheckpointState(model, optimizer, lr_scheduler), device=device
-    )
-    logging.info(f"Loaded model from epoch {epoch}")
-
     # Evaluation on test datasets
     logging.info("Computing metrics for training, validation, and test sets")
 
@@ -458,28 +481,42 @@ def main() -> None:
         ("valid", collections.valid),
     ] + collections.tests
 
-    table = create_error_table(
-        table_type=args.error_table,
-        all_collections=all_collections,
-        z_table=z_table,
-        r_max=args.r_max,
-        valid_batch_size=args.valid_batch_size,
-        model=model,
-        loss_fn=loss_fn,
-        output_args=output_args,
-        device=device,
-    )
+    for swa_eval in swas:
+        epoch = checkpoint_handler.load_latest(
+            state=tools.CheckpointState(model, optimizer, lr_scheduler),
+            swa=swa_eval,
+            device=device,
+        )
+        model.to(device)
+        logging.info(f"Loaded model from epoch {epoch}")
 
-    logging.info("\n" + str(table))
+        table = create_error_table(
+            table_type=args.error_table,
+            all_collections=all_collections,
+            z_table=z_table,
+            r_max=args.r_max,
+            valid_batch_size=args.valid_batch_size,
+            model=model,
+            loss_fn=loss_fn,
+            output_args=output_args,
+            device=device,
+        )
+        logging.info("\n" + str(table))
 
-    # Save entire model
-    model_path = Path(args.checkpoints_dir) / (tag + ".model")
-    logging.info(f"Saving model to {model_path}")
-    if args.save_cpu:
-        model = model.to("cpu")
-    torch.save(model, model_path)
+        # Save entire model
+        if swa_eval:
+            model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
+        else:
+            model_path = Path(args.checkpoints_dir) / (tag + ".model")
+        logging.info(f"Saving model to {model_path}")
+        if args.save_cpu:
+            model = model.to("cpu")
+        torch.save(model, model_path)
 
-    torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+        if swa_eval:
+            torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
+        else:
+            torch.save(model, Path(args.model_dir) / (args.name + ".model"))
 
     logging.info("Done")
 

@@ -55,6 +55,26 @@ class TestAtomicData:
             assert batch.energy.shape == (2,)
             assert batch.forces.shape == (6, 3)
 
+    def test_to_atomic_data_dict(self):
+        data1 = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
+        data2 = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
+
+        data_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[data1, data2],
+            batch_size=2,
+            shuffle=True,
+            drop_last=False,
+        )
+        for batch in data_loader:
+            batch_dict = batch.to_dict()
+            assert batch_dict["batch"].shape == (6,)
+            assert batch_dict["edge_index"].shape == (2, 8)
+            assert batch_dict["shifts"].shape == (8, 3)
+            assert batch_dict["positions"].shape == (6, 3)
+            assert batch_dict["node_attrs"].shape == (6, 2)
+            assert batch_dict["energy"].shape == (2,)
+            assert batch_dict["forces"].shape == (6, 3)
+
 
 class TestNeighborhood:
     def test_basic(self):

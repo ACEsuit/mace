@@ -57,13 +57,33 @@ def train(
     max_grad_norm: Optional[float] = 10.0,
 ):
     lowest_loss = np.inf
+    valid_loss = np.inf
     patience_counter = 0
     swa_start = True
+    keep_last = False
 
     if max_grad_norm is not None:
         logging.info(f"Using gradient clipping with tolerance={max_grad_norm:.3f}")
     logging.info("Started training")
-    for epoch in range(start_epoch, max_num_epochs):
+    epoch = start_epoch
+    while epoch < max_num_epochs:
+        # LR scheduler and SWA update
+        if swa is None or epoch < swa.start:
+            if epoch > start_epoch:
+                lr_scheduler.step(
+                    valid_loss
+                )  # Can break if exponential LR, TODO fix that!
+        else:
+            if swa_start:
+                logging.info("Changing loss based on SWA")
+                lowest_loss = np.inf
+                swa_start = False
+                keep_last = True
+            loss_fn = swa.loss_fn
+            swa.model.update_parameters(model)
+            if epoch > start_epoch:
+                swa.scheduler.step()
+
         # Train
         for batch in train_loader:
             _, opt_metrics = take_step(
@@ -116,7 +136,7 @@ def train(
                 error_f = eval_metrics["rmse_f"] * 1e3
                 error_stress = eval_metrics["rmse_stress_per_atom"] * 1e3
                 logging.info(
-                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress_per_atom={error_stress:.1f} meV / A"
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress_per_atom={error_stress:.1f} meV / A^3"
                 )
             elif (
                 log_errors == "PerAtomRMSEstressvirials"
@@ -126,7 +146,7 @@ def train(
                 error_f = eval_metrics["rmse_f"] * 1e3
                 error_virials = eval_metrics["rmse_virials_per_atom"] * 1e3
                 logging.info(
-                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_virials_per_atom={error_virials:.1f} meV / A"
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_virials_per_atom={error_virials:.1f} meV"
                 )
             elif log_errors == "TotalRMSE":
                 error_e = eval_metrics["rmse_e"] * 1e3
@@ -160,7 +180,12 @@ def train(
                 )
             if valid_loss >= lowest_loss:
                 patience_counter += 1
-                if patience_counter >= patience:
+                if patience_counter >= patience and epoch < swa.start:
+                    logging.info(
+                        f"Stopping optimization after {patience_counter} epochs without improvement and starting swa"
+                    )
+                    epoch = swa.start
+                elif patience_counter >= patience:
                     logging.info(
                         f"Stopping optimization after {patience_counter} epochs without improvement"
                     )
@@ -173,23 +198,17 @@ def train(
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
                             epochs=epoch,
+                            keep_last=keep_last,
                         )
+                        keep_last = False
                 else:
                     checkpoint_handler.save(
                         state=CheckpointState(model, optimizer, lr_scheduler),
                         epochs=epoch,
+                        keep_last=keep_last,
                     )
-
-        # LR scheduler and SWA update
-        if swa is None or epoch < swa.start:
-            lr_scheduler.step(valid_loss)  # Can break if exponential LR, TODO fix that!
-        else:
-            if swa_start:
-                logging.info("Changing loss based on SWA")
-                swa_start = False
-            loss_fn = swa.loss_fn
-            swa.model.update_parameters(model)
-            swa.scheduler.step()
+                    keep_last = False
+        epoch += 1
 
     logging.info("Training complete")
 
@@ -207,9 +226,10 @@ def take_step(
 
     start_time = time.time()
     batch = batch.to(device)
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)
+    batch_dict = batch.to_dict()
     output = model(
-        batch,
+        batch_dict,
         training=True,
         compute_force=output_args["forces"],
         compute_virials=output_args["virials"],
@@ -261,8 +281,9 @@ def evaluate(
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
+        batch_dict = batch.to_dict()
         output = model(
-            batch,
+            batch_dict,
             training=False,
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
