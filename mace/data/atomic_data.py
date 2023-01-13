@@ -122,7 +122,9 @@ class AtomicData(torch_geometric.data.Data):
         cell = (
             torch.tensor(config.cell, dtype=torch.get_default_dtype())
             if config.cell is not None
-            else None
+            else torch.tensor(
+                3 * [0.0, 0.0, 0.0], dtype=torch.get_default_dtype()
+            ).view(3, 3)
         )
 
         weight = (
@@ -210,8 +212,14 @@ class AtomicData(torch_geometric.data.Data):
 
 
 def get_data_loader(
-    dataset: Sequence[AtomicData], batch_size: int, shuffle=True, drop_last=False,
+    dataset: Sequence[AtomicData],
+    batch_size: int,
+    shuffle=True,
+    drop_last=False,
 ) -> torch.utils.data.DataLoader:
     return torch_geometric.dataloader.DataLoader(
-        dataset=dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last,
+        dataset=dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        drop_last=drop_last,
     )

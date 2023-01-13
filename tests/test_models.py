@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn.functional
 from e3nn import o3
+from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
@@ -73,6 +74,7 @@ def test_mace():
         correlation=3,
     )
     model = modules.MACE(**model_config)
+    model_compiled = jit.compile(model)
 
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
     atomic_data2 = data.AtomicData.from_config(
@@ -86,9 +88,10 @@ def test_mace():
         drop_last=False,
     )
     batch = next(iter(data_loader))
-
-    output = model(batch, training=True)
-    assert torch.allclose(output["energy"][0], output["energy"][1])
+    output1 = model(batch.to_dict(), training=True)
+    output2 = model_compiled(batch.to_dict(), training=True)
+    assert torch.allclose(output1["energy"][0], output2["energy"][0])
+    assert torch.allclose(output2["energy"][0], output2["energy"][1])
 
 
 def test_dipole_mace():

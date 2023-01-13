@@ -71,7 +71,7 @@ class TestSymmetricContract:
         )
         out = operation(features, one_hots)
         assert out.shape == (30, 64)
-        assert operation.contractions["16x0e"].weights["3"].shape == (2, 11, 16)
+        assert operation.contractions[0].weights_max.shape == (2, 11, 16)
 
 
 class TestBlocks:
