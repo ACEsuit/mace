@@ -3,6 +3,8 @@
 This repository contains the MACE reference implementation developed by
 Ilyes Batatia, Gregor Simm, and David Kovacs.
 
+**Please consider using the develop branch that contains extra functionalities (compilation, stresses, ...)**
+
 ## Installation
 
 Requirements:
