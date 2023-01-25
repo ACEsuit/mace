@@ -117,16 +117,16 @@ We are happy to accept pull requests under an [MIT license](https://choosealicen
 
 If you use this code, please cite our papers:
 ```text
-@misc{Batatia2022MACE,
-  title = {MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields},
-  author = {Batatia, Ilyes and Kov{\'a}cs, D{\'a}vid P{\'e}ter and Simm, Gregor N. C. and Ortner, Christoph and Cs{\'a}nyi, G{\'a}bor},
-  year = {2022},
-  number = {arXiv:2206.07697},
-  eprint = {2206.07697},
-  eprinttype = {arxiv},
-  doi = {10.48550/ARXIV.2206.07697},
-  archiveprefix = {arXiv}
+@inproceedings{
+Batatia2022mace,
+title={{MACE}: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields},
+author={Ilyes Batatia and David Peter Kovacs and Gregor N. C. Simm and Christoph Ortner and Gabor Csanyi},
+booktitle={Advances in Neural Information Processing Systems},
+editor={Alice H. Oh and Alekh Agarwal and Danielle Belgrave and Kyunghyun Cho},
+year={2022},
+url={https://openreview.net/forum?id=YPpSngE-ZU}
 }
+
 @misc{Batatia2022Design,
   title = {The Design Space of E(3)-Equivariant Atom-Centered Interatomic Potentials},
   author = {Batatia, Ilyes and Batzner, Simon and Kov{\'a}cs, D{\'a}vid P{\'e}ter and Musaelian, Albert and Simm, Gregor N. C. and Drautz, Ralf and Ortner, Christoph and Kozinsky, Boris and Cs{\'a}nyi, G{\'a}bor},
