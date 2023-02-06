@@ -206,14 +206,16 @@ def main() -> None:
     logging.info("Building model")
     if args.num_channels is not None and args.max_L is not None:
         assert args.num_channels > 0, "num_channels must be positive integer"
-        assert args.max_L >= 0 and args.max_L < 4, "max_L must be between 0 and 3, if you want to use larger specify it via the hidden_irrpes keyword"
-        args.hidden_irreps = "{}x0e".format(args.num_channels)
+        assert (
+            args.max_L >= 0 and args.max_L < 4
+        ), "max_L must be between 0 and 3, if you want to use larger specify it via the hidden_irrpes keyword"
+        args.hidden_irreps = f"{args.num_channels:d}x0e"
         if args.max_L > 0:
-            args.hidden_irreps += " + {}x1o".format(args.num_channels)
+            args.hidden_irreps += f" + {args.num_channels:d}x1o"
         if args.max_L > 1:
-            args.hidden_irreps += " + {}x2e".format(args.num_channels)
+            args.hidden_irreps += f" + {args.num_channels:d}x2e"
         if args.max_L > 2:
-            args.hidden_irreps += " + {}x3o".format(args.num_channels)
+            args.hidden_irreps += f" + {args.num_channels:d}x3o"
     logging.info(f"Hidden irreps: {args.hidden_irreps}")
     model_config = dict(
         r_max=args.r_max,
@@ -469,10 +471,12 @@ def main() -> None:
         args_dict = vars(args)
         for key in args.wandb_log_hypers:
             wandb_config[key] = args_dict[key]
-        tools.init_wandb(project=args.wandb_project, 
-                         entity=args.wandb_entity, 
-                         name=args.wandb_name,
-                         config=wandb_config,)
+        tools.init_wandb(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_name,
+            config=wandb_config,
+        )
 
     tools.train(
         model=model,

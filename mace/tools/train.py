@@ -55,7 +55,7 @@ def train(
     swa: Optional[SWAContainer] = None,
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
-    log_wandb:bool = False,
+    log_wandb: bool = False,
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
@@ -181,7 +181,7 @@ def train(
                 logging.info(
                     f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_Mu_per_atom={error_mu:.2f} mDebye"
                 )
-            if wandb:
+            if log_wandb:
                 wandb_log_dict = {
                     "epoch": epoch,
                     "valid_loss": valid_loss,
@@ -234,7 +234,6 @@ def take_step(
     max_grad_norm: Optional[float],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-
     start_time = time.time()
     batch = batch.to(device)
     optimizer.zero_grad(set_to_none=True)

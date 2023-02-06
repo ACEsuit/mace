@@ -200,7 +200,6 @@ class Dataset(torch.utils.data.Dataset):
             or (isinstance(idx, Tensor) and idx.dim() == 0)
             or (isinstance(idx, np.ndarray) and np.isscalar(idx))
         ):
-
             data = self.get(self.indices()[idx])
             data = data if self.transform is None else self.transform(data)
             return data

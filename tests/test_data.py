@@ -6,7 +6,6 @@ from mace.tools import AtomicNumberTable, torch_geometric
 
 
 class TestAtomicData:
-
     config = Configuration(
         atomic_numbers=np.array([8, 1, 1]),
         positions=np.array(
