@@ -8,6 +8,7 @@ import ast
 import logging
 from pathlib import Path
 from typing import Optional
+import json
 
 import numpy as np
 import torch.nn.functional
@@ -467,8 +468,10 @@ def main() -> None:
 
     if args.wandb:
         logging.info("Using Weights and Biases for logging")
+        import wandb
         wandb_config = {}
         args_dict = vars(args)
+        args_dict_json = json.dumps(args_dict)
         for key in args.wandb_log_hypers:
             wandb_config[key] = args_dict[key]
         tools.init_wandb(
@@ -477,6 +480,7 @@ def main() -> None:
             name=args.wandb_name,
             config=wandb_config,
         )
+        wandb.run.summary["params"] = args_dict_json
 
     tools.train(
         model=model,
