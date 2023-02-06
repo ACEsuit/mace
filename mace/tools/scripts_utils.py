@@ -107,8 +107,11 @@ def create_error_table(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     output_args: Dict[str, bool],
+    log_wandb: bool,
     device: str,
 ) -> PrettyTable:
+    if log_wandb:
+        import wandb
     table = PrettyTable()
     if table_type == "TotalRMSE":
         table.field_names = [
@@ -186,6 +189,15 @@ def create_error_table(
             output_args=output_args,
             device=device,
         )
+        if log_wandb:
+            wandb_log_dict = {
+                name
+                + "_final_rmse_e_per_atom": metrics["rmse_e_per_atom"]
+                * 1e3,  # meV / atom
+                name + "_final_rmse_f": metrics["rmse_f"] * 1e3,  # meV / A
+                name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
+            }
+            wandb.log(wandb_log_dict)
         if table_type == "TotalRMSE":
             table.add_row(
                 [

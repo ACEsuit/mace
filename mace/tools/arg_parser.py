@@ -139,6 +139,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="32x0e",
     )
+    # add option to specify irreps by channel number and max L
+    parser.add_argument(
+        "--num_channels",
+        help="number of embedding channels",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--max_L",
+        help="max L equivariance of the message",
+        type=int,
+        default=None,
+    )
     parser.add_argument(
         "--gate",
         help="non linearity for last readout",
@@ -411,6 +424,50 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Gradient Clipping Value",
         type=check_float_or_none,
         default=10.0,
+    )
+    # options for using Weights and Biases for experiment tracking
+    # to install see https://wandb.ai
+    parser.add_argument(
+        "--wandb",
+        help="Use Weights and Biases for experiment tracking",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--wandb_project",
+        help="Weights and Biases project name",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--wandb_entity",
+        help="Weights and Biases entity name",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--wandb_name",
+        help="Weights and Biases experiment name",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--wandb_log_hypers",
+        help="The hyperparameters to log in Weights and Biases",
+        type=list,
+        default=[
+            "num_channels",
+            "max_L",
+            "correlation",
+            "lr",
+            "swa_lr",
+            "weight_decay",
+            "batch_size",
+            "max_num_epochs",
+            "start_swa",
+            "energy_weight",
+            "forces_weight",
+        ],
     )
     return parser
 

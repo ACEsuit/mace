@@ -6,6 +6,7 @@ from .torch_tools import (
     cartesian_to_spherical,
     count_parameters,
     init_device,
+    init_wandb,
     set_default_dtype,
     set_seeds,
     spherical_to_cartesian,
@@ -62,4 +63,5 @@ __all__ = [
     "spherical_to_cartesian",
     "cartesian_to_spherical",
     "voigt_to_matrix",
+    "init_wandb",
 ]

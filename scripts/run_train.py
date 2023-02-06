@@ -8,6 +8,7 @@ import ast
 import logging
 from pathlib import Path
 from typing import Optional
+import json
 
 import numpy as np
 import torch.nn.functional
@@ -184,7 +185,7 @@ def main() -> None:
 
     if args.compute_avg_num_neighbors:
         args.avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
-    logging.info(f"Average number of neighbors: {args.avg_num_neighbors:.3f}")
+    logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
 
     # Selecting outputs
     compute_virials = False
@@ -204,6 +205,19 @@ def main() -> None:
 
     # Build model
     logging.info("Building model")
+    if args.num_channels is not None and args.max_L is not None:
+        assert args.num_channels > 0, "num_channels must be positive integer"
+        assert (
+            args.max_L >= 0 and args.max_L < 4
+        ), "max_L must be between 0 and 3, if you want to use larger specify it via the hidden_irrpes keyword"
+        args.hidden_irreps = f"{args.num_channels:d}x0e"
+        if args.max_L > 0:
+            args.hidden_irreps += f" + {args.num_channels:d}x1o"
+        if args.max_L > 1:
+            args.hidden_irreps += f" + {args.num_channels:d}x2e"
+        if args.max_L > 2:
+            args.hidden_irreps += f" + {args.num_channels:d}x3o"
+    logging.info(f"Hidden irreps: {args.hidden_irreps}")
     model_config = dict(
         r_max=args.r_max,
         num_bessel=args.num_radial_basis,
@@ -452,6 +466,22 @@ def main() -> None:
     logging.info(f"Number of parameters: {tools.count_parameters(model)}")
     logging.info(f"Optimizer: {optimizer}")
 
+    if args.wandb:
+        logging.info("Using Weights and Biases for logging")
+        import wandb
+        wandb_config = {}
+        args_dict = vars(args)
+        args_dict_json = json.dumps(args_dict)
+        for key in args.wandb_log_hypers:
+            wandb_config[key] = args_dict[key]
+        tools.init_wandb(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_name,
+            config=wandb_config,
+        )
+        wandb.run.summary["params"] = args_dict_json
+
     tools.train(
         model=model,
         loss_fn=loss_fn,
@@ -471,6 +501,7 @@ def main() -> None:
         ema=ema,
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
+        log_wandb=args.wandb,
     )
 
     # Evaluation on test datasets
@@ -499,6 +530,7 @@ def main() -> None:
             model=model,
             loss_fn=loss_fn,
             output_args=output_args,
+            log_wandb=args.wandb,
             device=device,
         )
         logging.info("\n" + str(table))
