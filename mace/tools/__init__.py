@@ -12,6 +12,7 @@ from .torch_tools import (
     to_numpy,
     to_one_hot,
     voigt_to_matrix,
+    init_wandb,
 )
 from .train import SWAContainer, evaluate, train
 from .utils import (
@@ -62,4 +63,5 @@ __all__ = [
     "spherical_to_cartesian",
     "cartesian_to_spherical",
     "voigt_to_matrix",
+    "init_wandb",
 ]

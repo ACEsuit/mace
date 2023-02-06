@@ -204,6 +204,17 @@ def main() -> None:
 
     # Build model
     logging.info("Building model")
+    if args.num_channels is not None and args.max_L is not None:
+        assert args.num_channels > 0, "num_channels must be positive integer"
+        assert args.max_L >= 0 and args.max_L < 4, "max_L must be between 0 and 3, if you want to use larger specify it via the hidden_irrpes keyword"
+        args.hidden_irreps = "{}x0e".format(args.num_channels)
+        if args.max_L > 0:
+            args.hidden_irreps += " + {}x1o".format(args.num_channels)
+        if args.max_L > 1:
+            args.hidden_irreps += " + {}x2e".format(args.num_channels)
+        if args.max_L > 2:
+            args.hidden_irreps += " + {}x3o".format(args.num_channels)
+    logging.info(f"Hidden irreps: {args.hidden_irreps}")
     model_config = dict(
         r_max=args.r_max,
         num_bessel=args.num_radial_basis,
@@ -452,6 +463,17 @@ def main() -> None:
     logging.info(f"Number of parameters: {tools.count_parameters(model)}")
     logging.info(f"Optimizer: {optimizer}")
 
+    if args.wandb:
+        logging.info("Using Weights and Biases for logging")
+        wandb_config = {}
+        args_dict = vars(args)
+        for key in args.wandb_log_hypers:
+            wandb_config[key] = args_dict[key]
+        tools.init_wandb(project=args.wandb_project, 
+                         entity=args.wandb_entity, 
+                         name=args.wandb_name,
+                         config=wandb_config,)
+
     tools.train(
         model=model,
         loss_fn=loss_fn,
@@ -471,6 +493,7 @@ def main() -> None:
         ema=ema,
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
+        log_wandb=args.wandb,
     )
 
     # Evaluation on test datasets
@@ -499,6 +522,7 @@ def main() -> None:
             model=model,
             loss_fn=loss_fn,
             output_args=output_args,
+            log_wandb=args.wandb,
             device=device,
         )
         logging.info("\n" + str(table))

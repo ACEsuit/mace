@@ -105,6 +105,16 @@ python3 ./mace/scripts/eval_configs.py \
 
 You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE.
 
+## Weights and Biases for experiment tracking
+
+If you would like to use MACE with Weights and Biases to log your experiments simply install with 
+
+```sh
+pip install ./mace[wandb]
+```
+
+And specify the necessary keyword arguments (`--wandb`, `--wandb_project`, `--wandb_entity`, `--wandb_name`, `--wandb_log_hypers`)
+
 ## Development
 
 We use `black`, `isort`, `pylint`, and `mypy`.
