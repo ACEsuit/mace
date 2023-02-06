@@ -541,7 +541,6 @@ class RealAgnosticInteractionBlock(InteractionBlock):
 @compile_mode("script")
 class RealAgnosticResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
-
         # First linear
         self.linear_up = o3.Linear(
             self.node_feats_irreps,

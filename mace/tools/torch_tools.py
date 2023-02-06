@@ -114,6 +114,8 @@ def voigt_to_matrix(t: torch.Tensor):
         [[t[0], t[5], t[4]], [t[5], t[1], t[3]], [t[4], t[3], t[2]]], dtype=t.dtype
     )
 
-def init_wandb(project:str, entity:str, name:str, config:dict):
+
+def init_wandb(project: str, entity: str, name: str, config: dict):
     import wandb
+
     wandb.init(project=project, entity=entity, name=name, config=config)
