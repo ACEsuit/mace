@@ -4,7 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, Tuple
 
 import numpy as np
 import torch
@@ -81,8 +81,8 @@ class MACE(torch.nn.Module):
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
-        num_features = hidden_irreps.count(o3.Irrep(0, 1))
-        interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
+        self._num_features = hidden_irreps.count(o3.Irrep(0, 1))
+        interaction_irreps = (sh_irreps * self._num_features).sort()[0].simplify()
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
@@ -193,14 +193,7 @@ class MACE(torch.nn.Module):
         )  # [n_graphs,]
 
         # Embeddings
-        node_feats = self.node_embedding(data["node_attrs"])
-        vectors, lengths = get_edge_vectors_and_lengths(
-            positions=data["positions"],
-            edge_index=data["edge_index"],
-            shifts=data["shifts"],
-        )
-        edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lengths)
+        node_feats, edge_attrs, edge_feats  = self._get_initial_embeddings(data)
 
         # Interactions
         energies = [e0]
@@ -254,6 +247,40 @@ class MACE(torch.nn.Module):
             "stress": stress,
             "displacement": displacement,
         }
+            
+    def _get_initial_embeddings(self, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        node_feats = self.node_embedding(data["node_attrs"])
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data["positions"], edge_index=data["edge_index"], shifts=data["shifts"]
+        )
+        edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(lengths)
+        return node_feats, edge_attrs, edge_feats
+        
+    def get_node_invariant_descriptors(self, data: Dict[str, torch.Tensor], track_gradient_on_positions=False) -> torch.Tensor:
+        # Setup
+        data["positions"].requires_grad_(track_gradient_on_positions)
+        # Embeddings
+        node_feats, edge_attrs, edge_feats  = self._get_initial_embeddings(data)
+        
+        node_feats_all = []
+        for interaction, product in zip(
+            self.interactions, self.products
+        ):
+            node_feats, sc = interaction(
+                node_attrs=data["node_attrs"],
+                node_feats=node_feats,
+                edge_attrs=edge_attrs,
+                edge_feats=edge_feats,
+                edge_index=data["edge_index"],
+            )
+            node_feats = product(
+                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
+            )
+            
+            node_feats_all.append(node_feats.detach()[:,:self._num_features])
+        node_feats_all = torch.stack(node_feats_all, dim=1) # [n_nodes, num_interactions, num_irreps]
+        return node_feats_all
 
 
 @compile_mode("script")
@@ -308,14 +335,7 @@ class ScaleShiftMACE(MACE):
         )  # [n_graphs,]
 
         # Embeddings
-        node_feats = self.node_embedding(data["node_attrs"])
-        vectors, lengths = get_edge_vectors_and_lengths(
-            positions=data["positions"],
-            edge_index=data["edge_index"],
-            shifts=data["shifts"],
-        )
-        edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lengths)
+        node_feats, edge_attrs, edge_feats  = self._get_initial_embeddings(data)
 
         # Interactions
         node_es_list = []
