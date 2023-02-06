@@ -196,7 +196,6 @@ def load_from_xyz(
     charges_key: str = "charges",
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
-
     atoms_list = ase.io.read(file_path, index=":")
 
     if not isinstance(atoms_list, list):
