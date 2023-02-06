@@ -184,7 +184,7 @@ def main() -> None:
 
     if args.compute_avg_num_neighbors:
         args.avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
-    logging.info(f"Average number of neighbors: {args.avg_num_neighbors:.3f}")
+    logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
 
     # Selecting outputs
     compute_virials = False
