@@ -193,7 +193,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
 
     # Dataset
     parser.add_argument(
-        "--train_file", help="Training set xyz file", type=str, required=True
+        "--train_file", help="Training set xyz file", type=str, 
+        required=False,
+        default=None,
     )
     parser.add_argument(
         "--valid_file",
@@ -213,6 +215,39 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--test_file",
         help="Test set xyz file",
         type=str,
+    )
+    parser.add_argument(
+        "--load_on_the_fly",
+        help="Load data one batch at a time during training",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--train_h5",
+        help="Training set h5 file",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--valid_h5",
+        help="Validation set h5 file",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--test_h5",
+        help="Test set h5 file",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--h5_prefix",
+        help="Prefix for h5 files used during online loading",
+        type=str,
+        default="",
     )
     parser.add_argument(
         "--E0s",

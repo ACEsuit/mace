@@ -9,7 +9,9 @@ from .utils import (
     load_from_xyz,
     random_train_valid_split,
     test_config_types,
+    save_dataset_as_HDF5,
 )
+from .hdf5_dataset import HDF5Dataset, HDF5DataLoader
 
 __all__ = [
     "get_neighborhood",
@@ -22,4 +24,7 @@ __all__ = [
     "config_from_atoms_list",
     "AtomicData",
     "compute_average_E0s",
+    "save_dataset_as_HDF5",
+    "HDF5Dataset",
+    "HDF5DataLoader",
 ]
