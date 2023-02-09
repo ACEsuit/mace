@@ -3,12 +3,16 @@ from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
 from .torch_tools import (
     TensorDict,
+    cartesian_to_spherical,
     count_parameters,
     init_device,
+    init_wandb,
     set_default_dtype,
     set_seeds,
+    spherical_to_cartesian,
     to_numpy,
     to_one_hot,
+    voigt_to_matrix,
 )
 from .train import SWAContainer, evaluate, train
 from .utils import (
@@ -56,4 +60,8 @@ __all__ = [
     "compute_q95",
     "compute_c",
     "U_matrix_real",
+    "spherical_to_cartesian",
+    "cartesian_to_spherical",
+    "voigt_to_matrix",
+    "init_wandb",
 ]

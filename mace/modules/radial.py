@@ -6,8 +6,10 @@
 
 import numpy as np
 import torch
+from e3nn.util.jit import compile_mode
 
 
+@compile_mode("script")
 class BesselBasis(torch.nn.Module):
     """
     Klicpera, J.; Groß, J.; Günnemann, S. Directional Message Passing for Molecular Graphs; ICLR 2020.
@@ -40,7 +42,7 @@ class BesselBasis(torch.nn.Module):
             torch.tensor(np.sqrt(2.0 / r_max), dtype=torch.get_default_dtype()),
         )
 
-    def forward(self, x: torch.Tensor,) -> torch.Tensor:  # [..., 1]
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [..., 1]
         numerator = torch.sin(self.bessel_weights * x)  # [..., num_basis]
         return self.prefactor * (numerator / x)
 
@@ -51,6 +53,7 @@ class BesselBasis(torch.nn.Module):
         )
 
 
+@compile_mode("script")
 class PolynomialCutoff(torch.nn.Module):
     """
     Klicpera, J.; Groß, J.; Günnemann, S. Directional Message Passing for Molecular Graphs; ICLR 2020.
@@ -78,7 +81,7 @@ class PolynomialCutoff(torch.nn.Module):
         # yapf: enable
 
         # noinspection PyUnresolvedReferences
-        return envelope * (x < self.r_max).type(torch.get_default_dtype())
+        return envelope * (x < self.r_max)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
