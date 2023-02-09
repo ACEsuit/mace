@@ -14,7 +14,7 @@ class HDF5Dataset(Dataset):
         return len(self.file.keys())
 
     def __getitem__(self, index):
-        grp = self.file["config_" + str(index.item())]
+        grp = self.file["config_" + str(index)] #.item())]
         edge_index = grp['edge_index'][()]
         positions = grp['positions'][()]
         shifts = grp['shifts'][()]
@@ -72,24 +72,3 @@ class HDF5Dataset(Dataset):
 #     "charges" : charges,
 # }
     
-
-class HDF5DataLoader(DataLoader):
-    def __init__(self, dataset, batch_size, shuffle=False, **kwargs):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-        self.kwargs = kwargs
-        
-        super().__init__(
-            dataset,
-            batch_size,
-            shuffle,
-            **kwargs,
-        )
-
-    def __iter__(self):
-        indices = torch.randperm(len(self.dataset)) if self.shuffle else torch.arange(len(self.dataset))
-        for i in range(0, len(self.dataset), self.batch_size):
-            batch_indices = indices[i:i + self.batch_size]
-            batch = torch_geometric.Batch.from_data_list([self.dataset[j] for j in batch_indices])
-            yield batch

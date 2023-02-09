@@ -11,7 +11,7 @@ from .utils import (
     test_config_types,
     save_dataset_as_HDF5,
 )
-from .hdf5_dataset import HDF5Dataset, HDF5DataLoader
+from .hdf5_dataset import HDF5Dataset
 
 __all__ = [
     "get_neighborhood",
@@ -26,5 +26,4 @@ __all__ = [
     "compute_average_E0s",
     "save_dataset_as_HDF5",
     "HDF5Dataset",
-    "HDF5DataLoader",
 ]

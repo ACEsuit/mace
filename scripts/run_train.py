@@ -21,7 +21,7 @@ from mace import data, modules, tools
 from mace.tools import torch_geometric
 from mace.tools.scripts_utils import create_error_table, get_dataset_from_xyz
 from mace.data.utils import save_dataset_as_HDF5
-from mace.data import HDF5Dataset, HDF5DataLoader
+from mace.data import HDF5Dataset
 
 
 def main() -> None:
@@ -155,11 +155,13 @@ def main() -> None:
             training_set_processed = HDF5Dataset(args.h5_prefix + "train.h5")
         else:
             training_set_processed = HDF5Dataset(args.train_h5)
-        train_loader = HDF5DataLoader(
+        train_loader = torch_geometric.dataloader.DataLoader(
             training_set_processed,
             batch_size=args.batch_size,
             shuffle=True,
-            drop_last=True,)
+            drop_last=True,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_memory)
         
         if args.valid_h5 is None:
             validation_set = [data.AtomicData.from_config(
@@ -169,11 +171,13 @@ def main() -> None:
             validation_set_processed = HDF5Dataset(args.h5_prefix + "valid.h5")
         else:
             validation_set_processed = HDF5Dataset(args.valid_h5)
-        valid_loader = HDF5DataLoader(
+        valid_loader = torch_geometric.dataloader.DataLoader(
             validation_set_processed,
             batch_size=args.valid_batch_size,
             shuffle=False,
-            drop_last=False)
+            drop_last=False,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_memory)
             
 
     loss_fn: torch.nn.Module
