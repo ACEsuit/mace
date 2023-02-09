@@ -12,7 +12,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
     # Name and seed
-    parser.add_argument("--name", help="experiment name", required=True)
+    parser.add_argument("--name", help="experiment name", required=False)
     parser.add_argument("--seed", help="random seed", type=int, default=123)
 
     # Directories
@@ -260,6 +260,27 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Pin memory for data loading",
         default=True, 
         type=bool,
+    )
+    parser.add_argument(
+        "--atomic_numbers",
+        help="List of atomic numbers",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--mean",
+        help="Mean energy per atom of training set",
+        type=float,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--std",
+        help="Standard deviation of force components in the training set",
+        type=float,
+        default=None,
+        required=False,
     )
     parser.add_argument(
         "--E0s",
