@@ -10,8 +10,6 @@ from typing import List, Union
 import torch
 from e3nn import o3
 
-# Based on e3nn
-
 _TP = collections.namedtuple("_TP", "op, args")
 _INPUT = collections.namedtuple("_INPUT", "tensor, start, stop")
 
@@ -54,9 +52,9 @@ def _wigner_nj(
 
                 C = o3.wigner_3j(ir_out.l, ir_left.l, ir.l, dtype=dtype)
                 if normalization == "component":
-                    C *= ir_out.dim ** 0.5
+                    C *= ir_out.dim**0.5
                 if normalization == "norm":
-                    C *= ir_left.dim ** 0.5 * ir.dim ** 0.5
+                    C *= ir_left.dim**0.5 * ir.dim**0.5
 
                 C = torch.einsum("jk,ijl->ikl", C_left.flatten(1), C)
                 C = C.reshape(

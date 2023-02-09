@@ -20,6 +20,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--log_dir", help="directory for log files", type=str, default="logs"
     )
     parser.add_argument(
+        "--model_dir", help="directory for final model", type=str, default="."
+    )
+    parser.add_argument(
         "--checkpoints_dir",
         help="directory for checkpoint files",
         type=str,
@@ -37,7 +40,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--device",
         help="select device",
         type=str,
-        choices=["cpu", "cuda"],
+        choices=["cpu", "cuda", "mps"],
         default="cpu",
     )
     parser.add_argument(
@@ -53,7 +56,16 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--error_table",
         help="Type of error table produced at the end of the training",
         type=str,
-        choices=["PerAtomRMSE", "TotalRMSE", "PerAtomMAE", "TotalMAE"],
+        choices=[
+            "PerAtomRMSE",
+            "TotalRMSE",
+            "PerAtomRMSEstressvirials",
+            "PerAtomMAE",
+            "TotalMAE",
+            "DipoleRMSE",
+            "DipoleMAE",
+            "EnergyDipoleRMSE",
+        ],
         default="PerAtomRMSE",
     )
 
@@ -62,7 +74,14 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--model",
         help="model type",
         default="MACE",
-        choices=["BOTNet", "MACE", "ScaleShiftMACE", "ScaleShiftBOTNet"],
+        choices=[
+            "BOTNet",
+            "MACE",
+            "ScaleShiftMACE",
+            "ScaleShiftBOTNet",
+            "AtomicDipolesMACE",
+            "EnergyDipolesMACE",
+        ],
     )
     parser.add_argument(
         "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
@@ -120,6 +139,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="32x0e",
     )
+    # add option to specify irreps by channel number and max L
+    parser.add_argument(
+        "--num_channels",
+        help="number of embedding channels",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--max_L",
+        help="max L equivariance of the message",
+        type=int,
+        default=None,
+    )
     parser.add_argument(
         "--gate",
         help="non linearity for last readout",
@@ -146,6 +178,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=bool,
         default=True,
     )
+    parser.add_argument(
+        "--compute_stress",
+        help="Select True to compute stress",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_forces",
+        help="Select True to compute forces",
+        type=bool,
+        default=True,
+    )
 
     # Dataset
     parser.add_argument(
@@ -166,7 +210,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
-        "--test_file", help="Test set xyz file", type=str,
+        "--test_file",
+        help="Test set xyz file",
+        type=str,
     )
     parser.add_argument(
         "--E0s",
@@ -187,13 +233,45 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="forces",
     )
+    parser.add_argument(
+        "--virials_key",
+        help="Key of reference virials in training xyz",
+        type=str,
+        default="virials",
+    )
+    parser.add_argument(
+        "--stress_key",
+        help="Key of reference stress in training xyz",
+        type=str,
+        default="stress",
+    )
+    parser.add_argument(
+        "--dipole_key",
+        help="Key of reference dipoles in training xyz",
+        type=str,
+        default="dipole",
+    )
+    parser.add_argument(
+        "--charges_key",
+        help="Key of atomic charges in training xyz",
+        type=str,
+        default="charges",
+    )
 
     # Loss and optimization
     parser.add_argument(
         "--loss",
         help="type of loss",
         default="weighted",
-        choices=["ef", "weighted", "forces_only"],
+        choices=[
+            "ef",
+            "weighted",
+            "forces_only",
+            "virials",
+            "stress",
+            "dipole",
+            "energy_forces_dipole",
+        ],
     )
     parser.add_argument(
         "--forces_weight", help="weight of forces loss", type=float, default=10.0
@@ -212,6 +290,33 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="weight of energy loss after starting swa",
         type=float,
         default=1000.0,
+    )
+    parser.add_argument(
+        "--virials_weight", help="weight of virials loss", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--swa_virials_weight",
+        help="weight of virials loss after starting swa",
+        type=float,
+        default=10.0,
+    )
+    parser.add_argument(
+        "--stress_weight", help="weight of virials loss", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--swa_stress_weight",
+        help="weight of stress loss after starting swa",
+        type=float,
+        default=10.0,
+    )
+    parser.add_argument(
+        "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--swa_dipole_weight",
+        help="weight of dipoles after starting swa",
+        type=float,
+        default=1.0,
     )
     parser.add_argument(
         "--config_type_weights",
@@ -319,6 +424,50 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Gradient Clipping Value",
         type=check_float_or_none,
         default=10.0,
+    )
+    # options for using Weights and Biases for experiment tracking
+    # to install see https://wandb.ai
+    parser.add_argument(
+        "--wandb",
+        help="Use Weights and Biases for experiment tracking",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--wandb_project",
+        help="Weights and Biases project name",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--wandb_entity",
+        help="Weights and Biases entity name",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--wandb_name",
+        help="Weights and Biases experiment name",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--wandb_log_hypers",
+        help="The hyperparameters to log in Weights and Biases",
+        type=list,
+        default=[
+            "num_channels",
+            "max_L",
+            "correlation",
+            "lr",
+            "swa_lr",
+            "weight_decay",
+            "batch_size",
+            "max_num_epochs",
+            "start_swa",
+            "energy_weight",
+            "forces_weight",
+        ],
     )
     return parser
 

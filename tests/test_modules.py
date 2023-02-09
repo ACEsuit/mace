@@ -15,8 +15,20 @@ from mace.tools import AtomicNumberTable, scatter, to_numpy, torch_geometric
 
 config = Configuration(
     atomic_numbers=np.array([8, 1, 1]),
-    positions=np.array([[0.0, -2.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],]),
-    forces=np.array([[0.0, -1.3, 0.0], [1.0, 0.2, 0.0], [0.0, 1.1, 0.3],]),
+    positions=np.array(
+        [
+            [0.0, -2.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ]
+    ),
+    forces=np.array(
+        [
+            [0.0, -1.3, 0.0],
+            [1.0, 0.2, 0.0],
+            [0.0, 1.1, 0.3],
+        ]
+    ),
     energy=-1.5,
 )
 
@@ -30,7 +42,10 @@ class TestLoss:
         loss = WeightedEnergyForcesLoss(energy_weight=1, forces_weight=10)
         data = AtomicData.from_config(config, z_table=table, cutoff=3.0)
         data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[data, data], batch_size=2, shuffle=True, drop_last=False,
+            dataset=[data, data],
+            batch_size=2,
+            shuffle=True,
+            drop_last=False,
         )
         batch = next(iter(data_loader))
         pred = {
@@ -56,7 +71,7 @@ class TestSymmetricContract:
         )
         out = operation(features, one_hots)
         assert out.shape == (30, 64)
-        assert operation.contractions["16x0e"].weights["3"].shape == (2, 11, 16)
+        assert operation.contractions[0].weights_max.shape == (2, 11, 16)
 
 
 class TestBlocks:
@@ -77,7 +92,10 @@ class TestBlocks:
 
         data = AtomicData.from_config(config, z_table=table, cutoff=3.0)
         data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[data, data], batch_size=2, shuffle=True, drop_last=False,
+            dataset=[data, data],
+            batch_size=2,
+            shuffle=True,
+            drop_last=False,
         )
         batch = next(iter(data_loader))
 

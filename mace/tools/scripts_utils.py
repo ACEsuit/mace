@@ -32,6 +32,10 @@ def get_dataset_from_xyz(
     seed: int = 1234,
     energy_key: str = "energy",
     forces_key: str = "forces",
+    stress_key: str = "stress",
+    virials_key: str = "virials",
+    dipole_key: str = "dipoles",
+    charges_key: str = "charges",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
     atomic_energies_dict, all_train_configs = data.load_from_xyz(
@@ -39,6 +43,10 @@ def get_dataset_from_xyz(
         config_type_weights=config_type_weights,
         energy_key=energy_key,
         forces_key=forces_key,
+        stress_key=stress_key,
+        virials_key=virials_key,
+        dipole_key=dipole_key,
+        charges_key=charges_key,
         extract_atomic_energies=True,
     )
     logging.info(
@@ -50,6 +58,10 @@ def get_dataset_from_xyz(
             config_type_weights=config_type_weights,
             energy_key=energy_key,
             forces_key=forces_key,
+            stress_key=stress_key,
+            virials_key=virials_key,
+            dipole_key=dipole_key,
+            charges_key=charges_key,
             extract_atomic_energies=False,
         )
         logging.info(
@@ -71,6 +83,8 @@ def get_dataset_from_xyz(
             config_type_weights=config_type_weights,
             energy_key=energy_key,
             forces_key=forces_key,
+            dipole_key=dipole_key,
+            charges_key=charges_key,
             extract_atomic_energies=False,
         )
         # create list of tuples (config_type, list(Atoms))
@@ -92,8 +106,12 @@ def create_error_table(
     valid_batch_size: int,
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
+    output_args: Dict[str, bool],
+    log_wandb: bool,
     device: str,
 ) -> PrettyTable:
+    if log_wandb:
+        import wandb
     table = PrettyTable()
     if table_type == "TotalRMSE":
         table.field_names = [
@@ -109,6 +127,14 @@ def create_error_table(
             "RMSE F / meV / A",
             "relative F RMSE %",
         ]
+    elif table_type == "PerAtomRMSEstressvirials":
+        table.field_names = [
+            "config_type",
+            "RMSE E / meV / atom",
+            "RMSE F / meV / A",
+            "relative F RMSE %",
+            "RMSE Stress (Virials) / meV / A (A^3)",
+        ]
     elif table_type == "TotalMAE":
         table.field_names = [
             "config_type",
@@ -123,6 +149,27 @@ def create_error_table(
             "MAE F / meV / A",
             "relative F MAE %",
         ]
+    elif table_type == "DipoleRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE MU / mDebye / atom",
+            "relative MU RMSE %",
+        ]
+    elif table_type == "DipoleMAE":
+        table.field_names = [
+            "config_type",
+            "MAE MU / mDebye / atom",
+            "relative MU MAE %",
+        ]
+    elif table_type == "EnergyDipoleRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE E / meV / atom",
+            "RMSE F / meV / A",
+            "rel F RMSE %",
+            "RMSE MU / mDebye / atom",
+            "rel MU RMSE %",
+        ]
     for name, subset in all_collections:
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
@@ -136,8 +183,21 @@ def create_error_table(
 
         logging.info(f"Evaluating {name} ...")
         _, metrics = evaluate(
-            model, loss_fn=loss_fn, data_loader=data_loader, device=device
+            model,
+            loss_fn=loss_fn,
+            data_loader=data_loader,
+            output_args=output_args,
+            device=device,
         )
+        if log_wandb:
+            wandb_log_dict = {
+                name
+                + "_final_rmse_e_per_atom": metrics["rmse_e_per_atom"]
+                * 1e3,  # meV / atom
+                name + "_final_rmse_f": metrics["rmse_f"] * 1e3,  # meV / A
+                name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
+            }
+            wandb.log(wandb_log_dict)
         if table_type == "TotalRMSE":
             table.add_row(
                 [
@@ -156,6 +216,32 @@ def create_error_table(
                     f"{metrics['rel_rmse_f']:.2f}",
                 ]
             )
+        elif (
+            table_type == "PerAtomRMSEstressvirials"
+            and metrics["rmse_stress"] is not None
+        ):
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['rmse_f'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_f']:.2f}",
+                    f"{metrics['rmse_stress'] * 1000:.1f}",
+                ]
+            )
+        elif (
+            table_type == "PerAtomRMSEstressvirials"
+            and metrics["rmse_virials"] is not None
+        ):
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['rmse_f'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_f']:.2f}",
+                    f"{metrics['rmse_virials'] * 1000:.1f}",
+                ]
+            )
         elif table_type == "TotalMAE":
             table.add_row(
                 [
@@ -172,6 +258,33 @@ def create_error_table(
                     f"{metrics['mae_e_per_atom'] * 1000:.1f}",
                     f"{metrics['mae_f'] * 1000:.1f}",
                     f"{metrics['rel_mae_f']:.2f}",
+                ]
+            )
+        elif table_type == "DipoleRMSE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_mu_per_atom'] * 1000:.2f}",
+                    f"{metrics['rel_rmse_mu']:.1f}",
+                ]
+            )
+        elif table_type == "DipoleMAE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['mae_mu_per_atom'] * 1000:.2f}",
+                    f"{metrics['rel_mae_mu']:.1f}",
+                ]
+            )
+        elif table_type == "EnergyDipoleRMSE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['rmse_f'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_f']:.1f}",
+                    f"{metrics['rmse_mu_per_atom'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_mu']:.1f}",
                 ]
             )
     return table

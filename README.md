@@ -20,9 +20,12 @@ conda create --name mace_env
 conda activate mace_env
 
 # Install PyTorch
-conda install pytorch torchvision torchaudio cudatoolkit=11.1 -c pytorch-lts -c conda-forge
+conda install pytorch torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia
 
-# Clone and install MACE (and all required packages), use token if still private repo
+# (optional) Install MACE's dependencies from Conda as well
+conda install numpy scipy matplotlib ase opt_einsum prettytable pandas e3nn
+
+# Clone and install MACE (and all required packages)
 git clone git@github.com:ACEsuit/mace.git 
 pip install ./mace
 ```
@@ -85,6 +88,10 @@ The precision can be changed using the keyword ``--default_dtype``, the default 
 
 The keywords ``--batch_size`` and ``--max_num_epochs`` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $\text{max-num-epochs}*\frac{\text{num-configs-training}}{\text{batch-size}}$.
 
+The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules. In this example, to make the code ignore stress on molecules, append to your molecules configuration a ``config_stress_weight = 0.0``.
+
+To use Apple Silicon GPU acceleration make sure to install the latest PyTorch version and specify ``--device=mps``. 
+
 ### Evaluation
 
 To evaluate your MACE model on an XYZ file, run the `eval_configs.py`:
@@ -99,6 +106,16 @@ python3 ./mace/scripts/eval_configs.py \
 ## Tutorial
 
 You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE.
+
+## Weights and Biases for experiment tracking
+
+If you would like to use MACE with Weights and Biases to log your experiments simply install with 
+
+```sh
+pip install ./mace[wandb]
+```
+
+And specify the necessary keyword arguments (`--wandb`, `--wandb_project`, `--wandb_entity`, `--wandb_name`, `--wandb_log_hypers`)
 
 ## Development
 
@@ -126,7 +143,6 @@ editor={Alice H. Oh and Alekh Agarwal and Danielle Belgrave and Kyunghyun Cho},
 year={2022},
 url={https://openreview.net/forum?id=YPpSngE-ZU}
 }
-
 @misc{Batatia2022Design,
   title = {The Design Space of E(3)-Equivariant Atom-Centered Interatomic Potentials},
   author = {Batatia, Ilyes and Batzner, Simon and Kov{\'a}cs, D{\'a}vid P{\'e}ter and Musaelian, Albert and Simm, Gregor N. C. and Drautz, Ralf and Ortner, Christoph and Kozinsky, Boris and Cs{\'a}nyi, G{\'a}bor},
@@ -147,4 +163,4 @@ For bugs or feature requests, please use [GitHub Issues](https://github.com/ACEs
 
 ## License
 
-MACE is published and distributed under the [MIT license](MIT.md).
+MACE is published and distributed under the [Academic Software License v1.0 ](ASL.md).
