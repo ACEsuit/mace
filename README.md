@@ -3,8 +3,6 @@
 This repository contains the MACE reference implementation developed by
 Ilyes Batatia, Gregor Simm, and David Kovacs.
 
-**Please consider using the develop branch that contains extra functionalities (compilation, stresses, ...)**
-
 ## Installation
 
 Requirements:
@@ -16,7 +14,7 @@ Requirements:
 If you do not have CUDA pre-installed, it is **recommended** to follow the conda installation process:
 ```sh
 # Create a virtual environment and activate it
-conda create --name mace_env
+conda create mace_env
 conda activate mace_env
 
 # Install PyTorch
@@ -143,6 +141,7 @@ editor={Alice H. Oh and Alekh Agarwal and Danielle Belgrave and Kyunghyun Cho},
 year={2022},
 url={https://openreview.net/forum?id=YPpSngE-ZU}
 }
+
 @misc{Batatia2022Design,
   title = {The Design Space of E(3)-Equivariant Atom-Centered Interatomic Potentials},
   author = {Batatia, Ilyes and Batzner, Simon and Kov{\'a}cs, D{\'a}vid P{\'e}ter and Musaelian, Albert and Simm, Gregor N. C. and Drautz, Ralf and Ortner, Christoph and Kozinsky, Boris and Cs{\'a}nyi, G{\'a}bor},
@@ -163,4 +162,4 @@ For bugs or feature requests, please use [GitHub Issues](https://github.com/ACEs
 
 ## License
 
-MACE is published and distributed under the [Academic Software License v1.0 ](ASL.md).
+MACE is published and distributed under the [MIT License](MIT.md).
