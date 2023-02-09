@@ -5,16 +5,19 @@ from mace.data import AtomicData
 
 from mace.tools import torch_geometric
 
-# Define the custom HDF5 dataset
 class HDF5Dataset(Dataset):
-    def __init__(self, file):
-        self.file = h5py.File(file, 'r')
+    def __init__(self, file, **kwargs):
+        super(HDF5Dataset, self).__init__()
+        # TODO this might be dangerous to open the file here
+        # maybe move it to __getitem__?
+        self.file = h5py.File(file, 'r')  
+        self.length = len(self.file.keys())
 
     def __len__(self):
         return len(self.file.keys())
 
     def __getitem__(self, index):
-        grp = self.file["config_" + str(index)] #.item())]
+        grp = self.file["config_" + str(index)] 
         edge_index = grp['edge_index'][()]
         positions = grp['positions'][()]
         shifts = grp['shifts'][()]
@@ -52,6 +55,8 @@ class HDF5Dataset(Dataset):
             charges=torch.tensor(charges, dtype=torch.get_default_dtype()),
         )
     
+# TODO maybe more efficient to just construct this dictionary directly
+# instead of the AtomicData object
 # AtomicData_dict = { 
 #         "edge_index" : torch.tensor(edge_index, dtype=torch.long),
 #     "positions" : torch.tensor(positions, dtype=torch.get_default_dtype()),

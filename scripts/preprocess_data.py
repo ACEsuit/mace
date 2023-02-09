@@ -10,7 +10,6 @@ from ase.io import read
 import mace
 from mace import tools, data
 from mace.data.utils import save_dataset_as_HDF5
-from mace.data import HDF5Dataset
 from mace.tools.scripts_utils import get_dataset_from_xyz
 
 def main():
@@ -57,18 +56,14 @@ def main():
         config, z_table=z_table, cutoff=args.r_max)
         for config in collections.train]  
     
+    save_dataset_as_HDF5(training_set, args.h5_prefix + "train.h5")
+    
     valid_set = [data.AtomicData.from_config(
         config, z_table=z_table, cutoff=args.r_max)
         for config in collections.valid]
-    
-    test_set = [data.AtomicData.from_config(
-        config, z_table=z_table, cutoff=args.r_max)
-        for config in collections.test]
 
-    save_dataset_as_HDF5(training_set, args.h5_prefix + "train.h5")
     save_dataset_as_HDF5(valid_set, args.h5_prefix + "valid.h5")
-    save_dataset_as_HDF5(test_set, args.h5_prefix + "test.h5")
 
 
-
-main()
+if __name__ == "__main__":
+    main()

@@ -275,6 +275,8 @@ def save_dataset_as_HDF5(
 ) -> None:
     with h5py.File(out_name, 'w') as f:
         for i, data in enumerate(dataset):
+            # TODO swap for loop, take collection as argument and create AtomicData object here
+            # After writing to h5 file we can delete the AtomicData object
             grp = f.create_group(f'config_{i}')
             grp["num_nodes"] = data.num_nodes
             grp["edge_index"] = data.edge_index

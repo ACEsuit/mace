@@ -49,34 +49,45 @@ def main() -> None:
         config_type_weights = {"Default": 1.0}
 
     # Data preparation
-    collections, atomic_energies_dict = get_dataset_from_xyz(
-        train_path=args.train_file,
-        valid_path=args.valid_file,
-        valid_fraction=args.valid_fraction,
-        config_type_weights=config_type_weights,
-        test_path=args.test_file,
-        seed=args.seed,
-        energy_key=args.energy_key,
-        forces_key=args.forces_key,
-        stress_key=args.stress_key,
-        virials_key=args.virials_key,
-        dipole_key=args.dipole_key,
-        charges_key=args.charges_key,
-    )
+    if args.train_file is not None:
+        collections, atomic_energies_dict = get_dataset_from_xyz(
+            train_path=args.train_file,
+            valid_path=args.valid_file,
+            valid_fraction=args.valid_fraction,
+            config_type_weights=config_type_weights,
+            test_path=args.test_file,
+            seed=args.seed,
+            energy_key=args.energy_key,
+            forces_key=args.forces_key,
+            stress_key=args.stress_key,
+            virials_key=args.virials_key,
+            dipole_key=args.dipole_key,
+            charges_key=args.charges_key,
+        )
 
-    logging.info(
-        f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
-        f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}]"
-    )
+        logging.info(
+            f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
+            f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}]"
+        )
+    else:
+        assert args.train_h5 is not None, "Must specify either train_file or train_h5"
+        atomic_energies_dict = None
 
     # Atomic number table
     # yapf: disable
-    z_table = tools.get_atomic_number_table_from_zs(
-        z
-        for configs in (collections.train, collections.valid)
-        for config in configs
-        for z in config.atomic_numbers
-    )
+    if args.atomic_numbers is None:
+        z_table = tools.get_atomic_number_table_from_zs(
+            z
+            for configs in (collections.train, collections.valid)
+            for config in configs
+            for z in config.atomic_numbers
+        )
+    else:
+        logging.info("Using atomic numbers from command line argument")
+        zs_list = ast.literal_eval(args.atomic_numbers)
+        assert isinstance(zs_list, list)
+        z_table = tools.get_atomic_number_table_from_zs(zs_list)
+
     # yapf: enable
     logging.info(z_table)
     if args.model == "AtomicDipolesMACE":
@@ -107,9 +118,15 @@ def main() -> None:
                     logging.info(
                         "Computing average Atomic Energies using least squares regression"
                     )
-                    atomic_energies_dict = data.compute_average_E0s(
-                        collections.train, z_table
-                    )
+                    # catch if colections.train not defined above
+                    try:
+                        atomic_energies_dict = data.compute_average_E0s(
+                            collections.train, z_table
+                        )
+                    except Exception as e:
+                        raise RuntimeError(
+                            f"Could not compute average E0s if no training xyz given, error {e} occured"
+                        ) from e
                 else:
                     try:
                         atomic_energies_dict = ast.literal_eval(args.E0s)
@@ -149,9 +166,10 @@ def main() -> None:
     else:
         if args.train_h5 is None:
             training_set = [data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=args.r_max)
-                for config in collections.train]  
-            save_dataset_as_HDF5(training_set, args.h5_prefix + "train.h5")
+                config, z_table=z_table, cutoff=args.r_max).to("cpu")
+                for config in collections.train] 
+            save_dataset_as_HDF5(training_set, args.h5_prefix + "train.h5") # TODO: save and delete
+            del training_set
             training_set_processed = HDF5Dataset(args.h5_prefix + "train.h5")
         else:
             training_set_processed = HDF5Dataset(args.train_h5)
@@ -168,6 +186,7 @@ def main() -> None:
                 config, z_table=z_table, cutoff=args.r_max)
                 for config in collections.valid]  
             save_dataset_as_HDF5(validation_set, args.h5_prefix + "valid.h5")
+            del validation_set
             validation_set_processed = HDF5Dataset(args.h5_prefix + "valid.h5")
         else:
             validation_set_processed = HDF5Dataset(args.valid_h5)
@@ -270,14 +289,13 @@ def main() -> None:
 
     model: torch.nn.Module
 
+    if args.scaling == "no_scaling":
+        args.std = 1.0
+        logging.info("No scaling selected")
+    elif args.mean is None or args.std is None:
+        args.mean, args.std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
+
     if args.model == "MACE":
-        if args.scaling == "no_scaling":
-            std = 1.0
-            logging.info("No scaling selected")
-        else:
-            mean, std = modules.scaling_classes[args.scaling](
-                train_loader, atomic_energies
-            )
         model = modules.ScaleShiftMACE(
             **model_config,
             correlation=args.correlation,
@@ -286,29 +304,27 @@ def main() -> None:
                 "RealAgnosticInteractionBlock"
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=std,
+            atomic_inter_scale=args.std,
             atomic_inter_shift=0.0,
         )
     elif args.model == "ScaleShiftMACE":
-        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
         model = modules.ScaleShiftMACE(
             **model_config,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=std,
-            atomic_inter_shift=mean,
+            atomic_inter_scale=args.std,
+            atomic_inter_shift=args.mean,
         )
     elif args.model == "ScaleShiftBOTNet":
-        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
         model = modules.ScaleShiftBOTNet(
             **model_config,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=std,
-            atomic_inter_shift=mean,
+            atomic_inter_scale=args.std,
+            atomic_inter_shift=args.mean,
         )
     elif args.model == "BOTNet":
         model = modules.BOTNet(
@@ -540,13 +556,14 @@ def main() -> None:
         log_wandb=args.wandb,
     )
 
-    # Evaluation on test datasets
-    logging.info("Computing metrics for training, validation, and test sets")
+    if args.train_file is not None:
+        # Evaluation on test datasets
+        logging.info("Computing metrics for training, validation, and test sets")
 
-    all_collections = [
-        ("train", collections.train),
-        ("valid", collections.valid),
-    ] + collections.tests
+        all_collections = [
+            ("train", collections.train),
+            ("valid", collections.valid),
+        ] + collections.tests
 
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
@@ -557,19 +574,21 @@ def main() -> None:
         model.to(device)
         logging.info(f"Loaded model from epoch {epoch}")
 
-        table = create_error_table(
-            table_type=args.error_table,
-            all_collections=all_collections,
-            z_table=z_table,
-            r_max=args.r_max,
-            valid_batch_size=args.valid_batch_size,
-            model=model,
-            loss_fn=loss_fn,
-            output_args=output_args,
-            log_wandb=args.wandb,
-            device=device,
-        )
-        logging.info("\n" + str(table))
+
+        if args.train_file is not None:
+            table = create_error_table(
+                table_type=args.error_table,
+                all_collections=all_collections,
+                z_table=z_table,
+                r_max=args.r_max,
+                valid_batch_size=args.valid_batch_size,
+                model=model,
+                loss_fn=loss_fn,
+                output_args=output_args,
+                log_wandb=args.wandb,
+                device=device,
+            )
+            logging.info("\n" + str(table))
 
         # Save entire model
         if swa_eval:
