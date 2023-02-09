@@ -10,7 +10,7 @@ from ase.io import read
 import mace
 from mace import tools, data
 from mace.data.utils import save_dataset_as_HDF5
-from mace.data import HDF5Dataset, HDF5DataLoader
+from mace.data import HDF5Dataset
 from mace.tools.scripts_utils import get_dataset_from_xyz
 
 def main():

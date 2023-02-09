@@ -250,6 +250,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="",
     )
     parser.add_argument(
+        "--num_workers",
+        help="Number of workers for data loading",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--pin_memory",
+        help="Pin memory for data loading",
+        default=True, 
+        type=bool,
+    )
+    parser.add_argument(
         "--E0s",
         help="Dictionary of isolated atom energies",
         type=str,
