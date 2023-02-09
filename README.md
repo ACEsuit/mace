@@ -7,7 +7,9 @@ Ilyes Batatia, Gregor Simm, and David Kovacs.
 
 Requirements:
 * Python >= 3.7
-* [PyTorch](https://pytorch.org/) >= 1.8
+* [PyTorch](https://pytorch.org/) >= 1.12
+
+(for openMM, use Python = 3.9)
 
 ### conda installation
 
@@ -36,8 +38,8 @@ To install via `pip`, follow the steps below:
 python -m venv mace-venv
 source mace-venv/bin/activate
 
-# Install PyTorch (for example, for CUDA 10.2 [cu102])
-pip install torch==1.8.2 --extra-index-url "https://download.pytorch.org/whl/lts/1.8/cu102"
+# Install PyTorch (for example, for CUDA 11.6 [cu116])
+pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 
 # Clone and install MACE (and all required packages)
 git clone git@github.com:ACEsuit/mace.git
