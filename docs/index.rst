@@ -28,7 +28,21 @@ Documentation
 
 For detailed information on how to use `MACE`, please refer to the following documentation:
 
+
 - User manual
+
+.. toctree::
+   :maxdepth: 2
+   guide/intro
+   guide/installation
+   guide/load
+   guide/training
+   guide/evaluation
+   guide/ase
+   guide/openmm
+   guide/lammps
+...
+
 - Tutorials
 - API reference
 
