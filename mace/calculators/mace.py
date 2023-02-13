@@ -256,7 +256,13 @@ class EnergyDipoleMACECalculator(Calculator):
 
 
 class MACECommitteeCalculator(Calculator):
-    """MACE ASE Committee Calculator"""
+    """MACE ASE Committee Calculator
+
+    This calculator can be used to obtain energy and force errors from a committee of
+    MACE models. To load multiple committees, either pass a list of file names or a
+    single string with a wildcard to the model_paths argument. This calculator can also
+    be used to load single models.
+    """
 
     implemented_properties = ["energy", "free_energy", "forces", "stress"]
 
@@ -273,7 +279,7 @@ class MACECommitteeCalculator(Calculator):
         self.results = {}
 
         if type(model_paths) == str:
-            # Find all models that staisfy the pattern (e.g. mace_model_*.pt)
+            # Find all models that staisfy the wildcard (e.g. mace_model_*.pt)
             model_paths_glob = glob(model_paths)
 
             if len(model_paths_glob) == 0:
