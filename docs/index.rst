@@ -36,12 +36,11 @@ For detailed information on how to use `MACE`, please refer to the following doc
     quick-start/quick-start.rst
     guide/guide.rst
 
-
 .. toctree::
     :caption: Examples
     :maxdepth: 2
 
-    examples\ase_examples.rst
+    examples/ase.rst
 
 .. toctree::
     :caption: API

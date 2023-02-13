@@ -6,6 +6,6 @@ Introduction
 
 
 
-## What is MACE ?
-
+What is MACE ?
+--------------
 
