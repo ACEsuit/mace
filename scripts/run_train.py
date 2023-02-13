@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 import json
+import os
 
 import numpy as np
 import torch.nn.functional
@@ -514,7 +515,7 @@ def main() -> None:
     else:
         # get all test paths
         test_files = get_files_with_suffix(
-            args.test_dir, "", "_test.h5"
+            args.test_dir, "_test.h5"
         )
         for test_file in test_files:
             test_set = HDF5Dataset(test_file)
@@ -525,7 +526,8 @@ def main() -> None:
                 drop_last=False,
                 num_workers=args.num_workers,
                 pin_memory=args.pin_memory)
-            all_data_loaders[test_file.stem] = test_loader
+            test_file_name = os.path.splitext(os.path.basename(test_file))[0]
+            all_data_loaders[test_file_name] = test_loader
 
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
