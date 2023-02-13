@@ -1,8 +1,9 @@
+.. _introduction:
+
 =============
 Introduction
 =============
 
-.. _introduction:
 
 
 ## What is MACE ?

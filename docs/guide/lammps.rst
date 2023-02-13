@@ -1,5 +1,6 @@
+.. _lammps:
+
 #################
 LAMMPS Interface
 #################
 
-.. _lammps:

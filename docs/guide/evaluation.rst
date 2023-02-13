@@ -1,5 +1,6 @@
+.. _evaluation:
+
 ============
 Evaluation
 ============
 
-.. _evaluation:

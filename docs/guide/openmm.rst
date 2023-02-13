@@ -1,5 +1,6 @@
+.. _openmm:
+
 =================
 OpenMM Interface
 =================
 
-.. _openmm:
