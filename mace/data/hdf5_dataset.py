@@ -1,23 +1,24 @@
 import h5py
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from mace.data import AtomicData
-
-from mace.tools import torch_geometric
 
 class HDF5Dataset(Dataset):
     def __init__(self, file, **kwargs):
         super(HDF5Dataset, self).__init__()
-        # TODO this might be dangerous to open the file here
-        # maybe move it to __getitem__?
-        self.file = h5py.File(file, 'r')  
-        self.length = len(self.file.keys())
+        # it might be dangerous to open the file here
+        # move opening of file to __getitem__?
+        # self.file = h5py.File(file, 'r')  
+        # self.length = len(self.file.keys())
+        self.file = file
+        self.length = len(h5py.File(file, 'r').keys())
 
     def __len__(self):
-        return len(self.file.keys())
+        return self.length
 
     def __getitem__(self, index):
-        grp = self.file["config_" + str(index)] 
+        file = h5py.File(self.file, 'r')  
+        grp = file["config_" + str(index)] 
         edge_index = grp['edge_index'][()]
         positions = grp['positions'][()]
         shifts = grp['shifts'][()]
@@ -54,26 +55,4 @@ class HDF5Dataset(Dataset):
             dipole=torch.tensor(dipole, dtype=torch.get_default_dtype()),
             charges=torch.tensor(charges, dtype=torch.get_default_dtype()),
         )
-    
-# TODO maybe more efficient to just construct this dictionary directly
-# instead of the AtomicData object
-# AtomicData_dict = { 
-#         "edge_index" : torch.tensor(edge_index, dtype=torch.long),
-#     "positions" : torch.tensor(positions, dtype=torch.get_default_dtype()),
-#     "shifts" : torch.tensor(shifts, dtype=torch.get_default_dtype()),
-#     "unit_shifts" :torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),
-#     "cell" : cell,
-#     "node_attrs" : node_attrs,
-#     "weight" : weight,
-#     "energy_weight" : energy_weight,
-#     "forces_weight" : forces_weight,
-#     "stress_weight" : stress_weight,
-#     "virials_weight" : virials_weight,
-#     "forces" : forces,
-#     "energy" : energy,
-#     "stress" : stress,
-#     "virials" : virials,
-#     "dipole" : dipole,
-#     "charges" : charges,
-# }
-    
+      
