@@ -11,7 +11,11 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 import os
+from pathlib import Path
 import sys
+run_env = os.environ.copy()
+sys.path.insert(0, str(Path(__file__).parent.parent))
+run_env["PYTHONPATH"] = ":".join(sys.path)
 from mace import __version__
 
 sys.path.insert(0, os.path.abspath("../"))

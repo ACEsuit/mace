@@ -3,6 +3,7 @@ myst-parser
 sphinx
 sphinx-rtd-theme
 sympy
+pathlib
 
 ipykernel
 plotly
