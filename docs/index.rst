@@ -29,7 +29,7 @@ Documentation
 For detailed information on how to use `MACE`, please refer to the following documentation:
 
 
-- User manual
+.. rubric:: User Guide
 
 .. toctree::
    :maxdepth: 2
@@ -41,10 +41,10 @@ For detailed information on how to use `MACE`, please refer to the following doc
    guide/ase
    guide/openmm
    guide/lammps
-...
 
-- Tutorials
-- API reference
+.. rubric:: Examples
+
+.. rubric:: API
 
 Support
 -------

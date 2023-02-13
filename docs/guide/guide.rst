@@ -1,4 +1,3 @@
-.. _user_guide:
 
 User Guide
 ==========
@@ -14,4 +13,3 @@ User Guide
     ase
     openmm
     lammps
-
