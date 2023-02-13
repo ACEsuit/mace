@@ -1,10 +1,11 @@
+===========
+User Guide
+===========
+
 .. _user_guide:
 
-User Guide
-==========
-
 .. toctree::
-    :maxdepth: 1
+    :maxdepth: 2
 
     intro
     installation

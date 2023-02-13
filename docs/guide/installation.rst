@@ -1,6 +1,8 @@
-.. _installation:
+==============
+Installation
+==============
 
-# Installation
+.. _installation:
 
 Requirements:
 * Python >= 3.7

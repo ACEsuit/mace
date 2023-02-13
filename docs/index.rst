@@ -29,18 +29,18 @@ Documentation
 For detailed information on how to use `MACE`, please refer to the following documentation:
 
 
-.. rubric:: User Guide :ref:`user_guide`.
+.. rubric:: :ref:`user_guide`.
 
 .. toctree::
    :maxdepth: 2
-   guide/intro
-   guide/installation
-   guide/load
-   guide/training
-   guide/evaluation
-   guide/ase
-   guide/openmm
-   guide/lammps
+   :ref:`introduction`
+   :ref:`installation`
+   :ref:`loading`
+   :ref:`training`
+   :ref:`evaluation`
+   :ref:`ase`
+   :ref:`openmm`
+   :ref:`lammps`
 
 .. rubric:: Examples
 
