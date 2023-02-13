@@ -30,21 +30,23 @@ Documentation
 For detailed information on how to use `MACE`, please refer to the following documentation:
 
 .. toctree::
-    :caption: Quick Start
-    :maxdepth: 2
-
-    quick-start/quick-start.rst
-
-.. toctree::
     :caption: User Guide
     :maxdepth: 2
 
+    quick-start/quick-start.rst
     guide/guide.rst
 
 
-.. rubric:: Examples
+.. toctree::
+    :caption: Examples
+    :maxdepth: 2
 
-.. rubric:: API
+    examples\ase_examples.rst
+
+.. toctree::
+    :caption: API
+    :maxdepth: 2
+
 
 Support
 -------
