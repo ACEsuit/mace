@@ -35,4 +35,4 @@ For detailed information on how to use `MACE`, please refer to the following doc
 Support
 -------
 
-If you need help using `MACE`, please visit the `MACE` support page. Here, you will find answers to frequently asked questions, as well as a form to contact the `MACE` support team.
+If you need help using `MACE`, please visit send a email to ilyes.batatia@ens-paris-saclay.fr
