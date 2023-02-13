@@ -109,10 +109,21 @@ def voigt_to_matrix(t: torch.Tensor):
     """
     if t.shape == (3, 3):
         return t
-
-    return torch.tensor(
-        [[t[0], t[5], t[4]], [t[5], t[1], t[3]], [t[4], t[3], t[2]]], dtype=t.dtype
-    )
+    elif t.shape == (6,):
+        return torch.tensor(
+            [
+                [t[0], t[5], t[4]],
+                [t[5], t[1], t[3]],
+                [t[4], t[3], t[2]],
+            ],
+            dtype=t.dtype,
+        )
+    else:
+        raise ValueError(
+            "Stress tensor must be of shape (6,) or (3, 3), but has shape {}.".format(
+                t.shape
+            )
+        )
 
 
 def init_wandb(project: str, entity: str, name: str, config: dict):
