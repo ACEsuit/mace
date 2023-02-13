@@ -1,13 +1,25 @@
 # MACE
+[![GitHub release](https://img.shields.io/github/release/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/releases/)
+[![License](https://img.shields.io/badge/License-MIT%202.0-blue.svg)](https://opensource.org/licenses/mit)
+[![GitHub issues](https://img.shields.io/github/issues/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/issues/)
+
+
+MACE provides fast and accurate machine learning interatomic potentials with higher order equivariant message passing.
 
 This repository contains the MACE reference implementation developed by
 Ilyes Batatia, Gregor Simm, and David Kovacs.
+
+Also available: 
+* [MACE in JAX](https://github.com/ACEsuit/mace-jax)
+* [MACE layers](https://github.com/ACEsuit/mace-layer) for constructing higher order equivariant graph neural networks for arbitrary 3D point clouds.
 
 ## Installation
 
 Requirements:
 * Python >= 3.7
-* [PyTorch](https://pytorch.org/) >= 1.8
+* [PyTorch](https://pytorch.org/) >= 1.12
+
+(for openMM, use Python = 3.9)
 
 ### conda installation
 
@@ -36,8 +48,8 @@ To install via `pip`, follow the steps below:
 python -m venv mace-venv
 source mace-venv/bin/activate
 
-# Install PyTorch (for example, for CUDA 10.2 [cu102])
-pip install torch==1.8.2 --extra-index-url "https://download.pytorch.org/whl/lts/1.8/cu102"
+# Install PyTorch (for example, for CUDA 11.6 [cu116])
+pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 
 # Clone and install MACE (and all required packages)
 git clone git@github.com:ACEsuit/mace.git
@@ -162,4 +174,4 @@ For bugs or feature requests, please use [GitHub Issues](https://github.com/ACEs
 
 ## License
 
-MACE is published and distributed under the [MIT](MIT.md).
+MACE is published and distributed under the [MIT License](MIT.md).
