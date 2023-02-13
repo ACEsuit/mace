@@ -15,7 +15,8 @@ conda installation
 
 If you do not have CUDA pre-installed, it is **recommended** to follow the conda installation process:
 
-.. code-block:: console
+.. code-block:: bash
+
     # Create a virtual environment and activate it
     conda create mace_env
     conda activate mace_env
@@ -36,7 +37,8 @@ pip installation
 
 To install via `pip`, follow the steps below:
 
-.. code-block:: console
+.. code-block:: bash
+
     # Create a virtual environment and activate it
     python -m venv mace-venv
     source mace-venv/bin/activate
