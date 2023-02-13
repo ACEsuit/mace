@@ -32,12 +32,12 @@ For detailed information on how to use `MACE`, please refer to the following doc
 .. toctree::
     :caption: Quick Start
     :maxdepth: 2
-    quick-start/quick-start.rst
+        quick-start/quick-start.rst
 
 .. toctree::
     :caption: User Guide
     :maxdepth: 2
-    guide/guide.rst
+        guide/guide.rst
 
 
 .. rubric:: Examples

@@ -72,9 +72,15 @@ default_role = "any"
 
 # -- Options for HTML output -------------------------------------------------
 
-html_show_sourcelink = True
 html_sidebars = {
-    "**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]
+    "**": ['about.html',
+        'navigation.html',
+        'relations.html',
+        'searchbox.html',
+        "logo-text.html", 
+        "globaltoc.html", 
+        "localtoc.html"
+        ]
 }
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
