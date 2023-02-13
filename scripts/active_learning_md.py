@@ -33,7 +33,12 @@ def parse_args() -> argparse.Namespace:
         "--ncheckerror", help="number of steps between saves", type=int, default=10
     )
 
-    parser.add_argument("--model", help="path to model", required=True)
+    parser.add_argument(
+        "--model",
+        help="path to model. Use wildcards to add multiple models as committe eg "
+        "(`mace_*.model` to load mace_1.model, mace_2.model) ",
+        required=True,
+    )
     parser.add_argument("--output", help="output path", required=True)
     parser.add_argument(
         "--device",
@@ -130,7 +135,6 @@ def main():
     args = parse_args()
 
     mace_fname = args.model
-    mace_fname = mace_fname.replace("STAR", "*")
     atoms_fname = args.config
     atoms_index = args.config_index
 
