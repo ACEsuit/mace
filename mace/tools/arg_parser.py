@@ -258,6 +258,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--statistics_file",
+        help="json file containing statistics of training set",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
         "--E0s",
         help="Dictionary of isolated atom energies",
         type=str,
