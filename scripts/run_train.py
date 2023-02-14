@@ -167,7 +167,7 @@ def main() -> None:
         train_loader = torch_geometric.dataloader.DataLoader(
             training_set_processed,
             batch_size=args.batch_size,
-            shuffle=True, 
+            shuffle=False, # TODO this might cause problems
             drop_last=True,
             num_workers=args.num_workers,
             pin_memory=args.pin_memory)

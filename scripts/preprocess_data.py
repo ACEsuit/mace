@@ -5,6 +5,7 @@ import logging
 import ast
 import numpy as np
 import json
+import random
 
 from ase.io import read
 import torch
@@ -36,6 +37,7 @@ def main():
 
     # Setup
     tools.set_seeds(args.seed)
+    random.seed(args.seed)
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s %(levelname)-8s %(message)s',
@@ -87,6 +89,8 @@ def main():
     training_set = [data.AtomicData.from_config(
         config, z_table=z_table, cutoff=args.r_max)
         for config in collections.train]  
+    if args.shuffle:
+        random.shuffle(training_set)
     
     save_dataset_as_HDF5(training_set, args.h5_prefix + "train.h5")
 
@@ -128,6 +132,8 @@ def main():
     valid_set = [data.AtomicData.from_config(
         config, z_table=z_table, cutoff=args.r_max)
         for config in collections.valid]
+    if args.shuffle:
+        random.shuffle(valid_set)
 
     save_dataset_as_HDF5(valid_set, args.h5_prefix + "valid.h5")
 
