@@ -20,11 +20,11 @@ def compute_statistics(train_loader: torch.utils.data.DataLoader,
                        scaling: str, 
                        atomic_energies: np.ndarray):
     """
-    Compute the average number of neighbours and the mean energy and standard
+    Compute the average number of neighbors and the mean energy and standard
     deviation of the force components"""
-    avg_num_neighbours = compute_avg_num_neighbors(train_loader)
+    avg_num_neighbors = compute_avg_num_neighbors(train_loader)
     mean, std = scaling_classes[scaling](train_loader, atomic_energies)
-    return avg_num_neighbours, mean, std
+    return avg_num_neighbors, mean, std
 
 def main():
     """
@@ -105,19 +105,21 @@ def main():
             shuffle=False,
             drop_last=False,
         )
-        avg_num_neighbours, mean, std = compute_statistics(
+        avg_num_neighbors, mean, std = compute_statistics(
             train_loader, args.scaling, atomic_energies
         )
-        logging.info(f"Average number of neighbours: {avg_num_neighbours}")
+        logging.info(f"Average number of neighbors: {avg_num_neighbors}")
         logging.info(f"Mean: {mean}")
         logging.info(f"Standard deviation: {std}")
+            
         # save the statistics as a json
         statistics = {
-            "atomic_energies": atomic_energies.tolist(),
-            "avg_num_neighbours": avg_num_neighbours,
+            "atomic_energies": atomic_energies_dict,
+            "avg_num_neighbors": avg_num_neighbors,
             "mean": mean,
             "std": std,
             "atomic_numbers": z_table.zs,
+            "r_max": args.r_max,
         }
         with open(args.h5_prefix + "statistics.json", "w") as f:
             json.dump(statistics, f)

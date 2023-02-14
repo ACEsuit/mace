@@ -45,9 +45,21 @@ def main() -> None:
 
     config_type_weights = get_config_type_weights(args.config_type_weights)
 
+    if args.statistics_file is not None:
+        with open(args.statistics_file, "r") as f:
+            statistics = json.load(f)
+        logging.info("Using statistics json file")
+        args.r_max = statistics["r_max"]
+        args.atomic_numbers = statistics["atomic_numbers"]
+        args.mean = statistics["mean"]
+        args.std = statistics["std"]
+        args.avg_num_neighbors = statistics["avg_num_neighbors"]
+        args.E0s = statistics["atomic_energies"]
+
     # Data preparation
     if args.train_file.endswith(".xyz"):
-        assert args.valid_file.endswith(".xyz") or args.valid_file is None, "valid_file if given must be same format as train_file"
+        if args.valid_file is not None:
+            assert args.valid_file.endswith(".xyz"), "valid_file if given must be same format as train_file"
         collections, atomic_energies_dict = get_dataset_from_xyz(
             train_path=args.train_file,
             valid_path=args.valid_file,
@@ -73,7 +85,7 @@ def main() -> None:
         raise RuntimeError(
             f"train_file must be either .xyz or .h5, got {args.train_file}"
         )
-
+    
     # Atomic number table
     # yapf: disable
     if args.atomic_numbers is None:
