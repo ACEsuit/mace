@@ -92,7 +92,9 @@ def main():
     if args.shuffle:
         random.shuffle(training_set)
     
-    save_dataset_as_HDF5(training_set, args.h5_prefix + "train.h5")
+    save_dataset_as_HDF5(training_set, 
+                         args.h5_prefix + "train.h5",
+                         args.num_workers)
 
     if args.compute_statistics:
         # Compute statistics
@@ -135,7 +137,9 @@ def main():
     if args.shuffle:
         random.shuffle(valid_set)
 
-    save_dataset_as_HDF5(valid_set, args.h5_prefix + "valid.h5")
+    save_dataset_as_HDF5(valid_set, 
+                         args.h5_prefix + "valid.h5",
+                         args.num_workers)
 
     if args.test_file is not None:
         logging.info("Preparing test sets")
@@ -143,7 +147,9 @@ def main():
             test_set = [data.AtomicData.from_config(
                 config, z_table=z_table, cutoff=args.r_max)
                 for config in subset]
-            save_dataset_as_HDF5(test_set, args.h5_prefix + name + "_test.h5")
+            save_dataset_as_HDF5(test_set, 
+                                 args.h5_prefix + name + "_test.h5",
+                                 args.num_workers)
 
 if __name__ == "__main__":
     main()
