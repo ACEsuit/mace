@@ -639,6 +639,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--shuffle",
+        help="Shuffle the training dataset",
+        type=bool,
+        default=True,
+    )
+    parser.add_argument(
         "--seed",
         help="Random seed for splitting training and validation sets",
         type=int,
