@@ -50,11 +50,16 @@ def main() -> None:
             statistics = json.load(f)
         logging.info("Using statistics json file")
         args.r_max = statistics["r_max"]
-        args.atomic_numbers = statistics["atomic_numbers"]
+        args.atomic_numbers = str(statistics["atomic_numbers"])
         args.mean = statistics["mean"]
         args.std = statistics["std"]
         args.avg_num_neighbors = statistics["avg_num_neighbors"]
-        args.E0s = statistics["atomic_energies"]
+        args.compute_avg_num_neighbors = False
+        parsed_atomic_energies_dict = statistics["atomic_energies"]
+        str_atomic_energies_dict = {}
+        for key, value in parsed_atomic_energies_dict.items():
+            str_atomic_energies_dict[int(key)] = value
+        args.E0s = str(str_atomic_energies_dict)
 
     # Data preparation
     if args.train_file.endswith(".xyz"):
@@ -136,6 +141,7 @@ def main() -> None:
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
 
     if args.train_file.endswith(".xyz"):
+        # TODO remove code duplication here
         train_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
                 data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
@@ -161,7 +167,7 @@ def main() -> None:
         train_loader = torch_geometric.dataloader.DataLoader(
             training_set_processed,
             batch_size=args.batch_size,
-            shuffle=True,
+            shuffle=True, 
             drop_last=True,
             num_workers=args.num_workers,
             pin_memory=args.pin_memory)
