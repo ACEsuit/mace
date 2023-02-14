@@ -6,6 +6,7 @@
 
 import logging
 import h5py
+from multiprocessing import Pool
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -271,28 +272,26 @@ def compute_average_E0s(
     return atomic_energies_dict
 
 def save_dataset_as_HDF5(
-        dataset:List, out_name: str
-) -> None:
-    with h5py.File(out_name, 'w') as f:
-        for i, data in enumerate(dataset):
-            # TODO swap for loop, take collection as argument and create AtomicData object here
-            # After writing to h5 file we can delete the AtomicData object
-            grp = f.create_group(f'config_{i}')
-            grp["num_nodes"] = data.num_nodes
-            grp["edge_index"] = data.edge_index
-            grp["positions"] = data.positions
-            grp["shifts"] = data.shifts
-            grp["unit_shifts"] = data.unit_shifts
-            grp["cell"] = data.cell
-            grp["node_attrs"] = data.node_attrs
-            grp["weight"] = data.weight
-            grp["energy_weight"] = data.energy_weight
-            grp["forces_weight"] = data.forces_weight
-            grp["stress_weight"] = data.stress_weight
-            grp["virials_weight"] = data.virials_weight
-            grp["forces"] = data.forces
-            grp["energy"] = data.energy
-            grp["stress"] = data.stress
-            grp["virials"] = data.virials
-            grp["dipole"] = data.dipole
-            grp["charges"] = data.charges
+         dataset:List, out_name: str
+ ) -> None:
+     with h5py.File(out_name, 'w') as f:
+         for i, data in enumerate(dataset):
+             grp = f.create_group(f'config_{i}')
+             grp["num_nodes"] = data.num_nodes
+             grp["edge_index"] = data.edge_index
+             grp["positions"] = data.positions
+             grp["shifts"] = data.shifts
+             grp["unit_shifts"] = data.unit_shifts
+             grp["cell"] = data.cell
+             grp["node_attrs"] = data.node_attrs
+             grp["weight"] = data.weight
+             grp["energy_weight"] = data.energy_weight
+             grp["forces_weight"] = data.forces_weight
+             grp["stress_weight"] = data.stress_weight
+             grp["virials_weight"] = data.virials_weight
+             grp["forces"] = data.forces
+             grp["energy"] = data.energy
+             grp["stress"] = data.stress
+             grp["virials"] = data.virials
+             grp["dipole"] = data.dipole
+             grp["charges"] = data.charges

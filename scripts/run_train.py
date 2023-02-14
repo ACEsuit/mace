@@ -167,7 +167,7 @@ def main() -> None:
         train_loader = torch_geometric.dataloader.DataLoader(
             training_set_processed,
             batch_size=args.batch_size,
-            shuffle=False, # TODO this might cause problems
+            shuffle=True,
             drop_last=True,
             num_workers=args.num_workers,
             pin_memory=args.pin_memory)
@@ -522,7 +522,7 @@ def main() -> None:
             test_set = [data.AtomicData.from_config(
                 config, z_table=z_table, cutoff=args.r_max)
                 for config in subset]
-            test_loader = torch.utils.data.DataLoader(
+            test_loader = torch_geometric.dataloader.DataLoader(
                 test_set,
                 batch_size=args.valid_batch_size,
                 shuffle=False,
