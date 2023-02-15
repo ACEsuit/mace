@@ -645,12 +645,6 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
-        "--num_workers",
-        help="Number of threads to use for data writing",
-        type=int,
-        default=1,
-    )
-    parser.add_argument(
         "--seed",
         help="Random seed for splitting training and validation sets",
         type=int,
