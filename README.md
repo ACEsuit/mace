@@ -105,6 +105,53 @@ python3 ./mace/scripts/eval_configs.py \
 
 You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE.
 
+## On-line data loading for large datasets
+
+If you have a large dataset that might not fit into the GPU memory it is recommended to preprocess the data on a CPU and use on-line dataloading for training the model. To preprocess your dataset specified as an xyz file run the `preprocess_data.py` script. An example is given here:
+
+```sh
+mkdir processed_data
+python ./mace/scripts/preprocess_data.py \
+    --train_file="/path/to/train_large.xyz" \
+    --valid_fraction=0.05 \
+    --test_file="/path/to/test_large.xyz" \
+    --atomic_numbers="[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]" \
+    --r_max=4.0 \
+    --h5_prefix="processed_data/" \
+    --compute_statistics \
+    --E0s="average" \
+    --num_workers=32 \
+    --seed=123 \
+```
+
+To see all options and a little description of them run `python ./mace/scripts/preprocess_data.py --help` . The script will create a number of HDF5 files in the `processed_data` folder which can be used for training. There wiull be one file for trainin, one for validation and a separate one for each `config_type` in the test set. To train the model use the `run_train.py` script as follows:
+
+```sh
+python ./mace/scripts/run_train.py \
+    --name="MACE_on_big_data" \
+    --num_workers=16 \
+    --train_file="./processed_data/train.h5" \
+    --valid_file="./processed_data/valid.h5" \
+    --test_dir="./processed_data" \
+    --statistics_file="./processed_data/statistics.json" \
+    --model="ScaleShiftMACE" \
+    --num_interactions=2 \
+    --num_channels=128 \
+    --max_L=1 \
+    --correlation=3 \
+    --batch_size=32 \
+    --valid_batch_size=32 \
+    --max_num_epochs=100 \
+    --swa \
+    --start_swa=60 \
+    --ema \
+    --ema_decay=0.99 \
+    --amsgrad \
+    --error_table='PerAtomMAE' \
+    --device=cuda \
+    --seed=123 \
+```
+
 ## Weights and Biases for experiment tracking
 
 If you would like to use MACE with Weights and Biases to log your experiments simply install with 
