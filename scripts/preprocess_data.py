@@ -6,12 +6,13 @@ import ast
 import numpy as np
 import json
 import random
+import h5py
 
 from ase.io import read
 import torch
 
 from mace import tools, data
-from mace.data.utils import save_dataset_as_HDF5
+from mace.data.utils import save_AtomicData_to_HDF5 #, save_dataset_as_HDF5
 from mace.tools.scripts_utils import (get_dataset_from_xyz, 
                                     get_atomic_energies)
 from mace.tools import torch_geometric
@@ -86,15 +87,15 @@ def main():
         z_table = tools.get_atomic_number_table_from_zs(zs_list)
 
     logging.info("Preparing training set")
-    training_set = [data.AtomicData.from_config(
-        config, z_table=z_table, cutoff=args.r_max)
-        for config in collections.train]  
     if args.shuffle:
-        random.shuffle(training_set)
-    
-    save_dataset_as_HDF5(training_set, 
-                         args.h5_prefix + "train.h5",
-                         args.num_workers)
+        random.shuffle(collections.train)
+
+    with h5py.File(args.h5_prefix + "train.h5", "w") as f:
+        for i, config in enumerate(collections.train):
+            atomic_data = data.AtomicData.from_config(
+                config, z_table=z_table, cutoff=args.r_max)
+            save_AtomicData_to_HDF5(atomic_data, i, f)
+        
 
     if args.compute_statistics:
         # Compute statistics
@@ -106,7 +107,7 @@ def main():
         )
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
         train_loader = torch_geometric.dataloader.DataLoader(
-            training_set, 
+            data.HDF5Dataset(args.h5_prefix + "train.h5"), 
             batch_size=args.batch_size, 
             shuffle=False,
             drop_last=False,
@@ -131,25 +132,24 @@ def main():
             json.dump(statistics, f)
     
     logging.info("Preparing validation set")
-    valid_set = [data.AtomicData.from_config(
-        config, z_table=z_table, cutoff=args.r_max)
-        for config in collections.valid]
     if args.shuffle:
-        random.shuffle(valid_set)
+        random.shuffle(collections.valid)
 
-    save_dataset_as_HDF5(valid_set, 
-                         args.h5_prefix + "valid.h5",
-                         args.num_workers)
+    with h5py.File(args.h5_prefix + "valid.h5", "w") as f:    
+        for i, config in enumerate(collections.valid):
+            atomic_data = data.AtomicData.from_config(
+                config, z_table=z_table, cutoff=args.r_max)
+            save_AtomicData_to_HDF5(atomic_data, i, f)
 
     if args.test_file is not None:
         logging.info("Preparing test sets")
         for name, subset in collections.tests:
-            test_set = [data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=args.r_max)
-                for config in subset]
-            save_dataset_as_HDF5(test_set, 
-                                 args.h5_prefix + name + "_test.h5",
-                                 args.num_workers)
+            with h5py.File(args.h5_prefix + name + "test.h5", "w") as f:
+                for i, config in enumerate(subset):
+                    atomic_data = data.AtomicData.from_config(
+                        config, z_table=z_table, cutoff=args.r_max)
+                    save_AtomicData_to_HDF5(atomic_data, i, f)
+
 
 if __name__ == "__main__":
     main()
