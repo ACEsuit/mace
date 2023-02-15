@@ -50,16 +50,12 @@ def main() -> None:
             statistics = json.load(f)
         logging.info("Using statistics json file")
         args.r_max = statistics["r_max"]
-        args.atomic_numbers = str(statistics["atomic_numbers"])
+        args.atomic_numbers = statistics["atomic_numbers"]
         args.mean = statistics["mean"]
         args.std = statistics["std"]
         args.avg_num_neighbors = statistics["avg_num_neighbors"]
         args.compute_avg_num_neighbors = False
-        parsed_atomic_energies_dict = statistics["atomic_energies"]
-        str_atomic_energies_dict = {}
-        for key, value in parsed_atomic_energies_dict.items():
-            str_atomic_energies_dict[int(key)] = value
-        args.E0s = str(str_atomic_energies_dict)
+        args.E0s = statistics["atomic_energies"]
 
     # Data preparation
     if args.train_file.endswith(".xyz"):
