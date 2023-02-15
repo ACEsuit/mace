@@ -120,7 +120,6 @@ python ./mace/scripts/preprocess_data.py \
     --h5_prefix="processed_data/" \
     --compute_statistics \
     --E0s="average" \
-    --num_workers=32 \
     --seed=123 \
 ```
 
