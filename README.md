@@ -10,7 +10,7 @@ This repository contains the MACE reference implementation developed by
 Ilyes Batatia, Gregor Simm, and David Kovacs.
 
 Also available: 
-* [MACE in JAX](https://github.com/ACEsuit/mace-jax)
+* [MACE in JAX](https://github.com/ACEsuit/mace-jax), currently about 2x times faster at evaluation, but training is recommended in Pytorch for optimal performances.
 * [MACE layers](https://github.com/ACEsuit/mace-layer) for constructing higher order equivariant graph neural networks for arbitrary 3D point clouds.
 
 ## Installation
