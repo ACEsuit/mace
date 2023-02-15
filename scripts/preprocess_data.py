@@ -121,11 +121,11 @@ def main():
             
         # save the statistics as a json
         statistics = {
-            "atomic_energies": atomic_energies_dict,
+            "atomic_energies": str(atomic_energies_dict),
             "avg_num_neighbors": avg_num_neighbors,
             "mean": mean,
             "std": std,
-            "atomic_numbers": z_table.zs,
+            "atomic_numbers": str(z_table.zs),
             "r_max": args.r_max,
         }
         with open(args.h5_prefix + "statistics.json", "w") as f:
