@@ -76,7 +76,7 @@ python ./mace/scripts/run_train.py \
 
 To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`. 
 
-To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. 
+To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys. 
 
 It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression. 
 
@@ -116,7 +116,7 @@ python ./mace/scripts/preprocess_data.py \
     --valid_fraction=0.05 \
     --test_file="/path/to/test_large.xyz" \
     --atomic_numbers="[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]" \
-    --r_max=4.0 \
+    --r_max=4.5 \
     --h5_prefix="processed_data/" \
     --compute_statistics \
     --E0s="average" \
