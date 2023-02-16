@@ -220,4 +220,4 @@ def test_get_local_embeddings(
         water_configuration, z_table=Z_TABLE, cutoff=3.0
     )
     embeddings = model.get_node_invariant_descriptors(atomic_data)
-    assert embeddings.shape == (*expected_shape, model._num_features)
+    assert embeddings.shape == (*expected_shape, model._num_invariant_features)
