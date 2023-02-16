@@ -124,11 +124,11 @@ class MACE(torch.nn.Module):
         self.readouts = torch.nn.ModuleList()
         invariant_irreps = o3.Irreps([(self._num_invariant_features, (0, 1))])
         self.node_extractions = torch.nn.ModuleList(
-            LinearNodeEmbeddingExtractionBlock(
+            [LinearNodeEmbeddingExtractionBlock(
                 irreps_in=hidden_irreps,
-                irreps_out=invariant_irreps),
+                irreps_out=invariant_irreps),]
             )
-        )
+        
 
         self.readouts.append(LinearReadoutBlock(hidden_irreps))
 
