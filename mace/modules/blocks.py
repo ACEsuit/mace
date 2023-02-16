@@ -34,6 +34,20 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         node_attrs: torch.Tensor,
     ) -> torch.Tensor:  # [n_nodes, irreps]
         return self.linear(node_attrs)
+    
+@compile_mode("script")
+class LinearNodeEmbeddingExtractionBlock(torch.nn.Module):
+    def __init__(self, irreps_in: o3.Irreps, irreps_out: o3.Irreps):
+        super().__init__()
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irreps_out)
+        self.linear.weight.data.fill_(1)
+        for param in self.linear.parameters():
+            param.requires_grad = False
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+    ) -> torch.Tensor:  # [n_nodes, irreps]
+        return self.linear(node_attrs)
 
 
 @compile_mode("script")

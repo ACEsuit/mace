@@ -25,6 +25,7 @@ from .blocks import (
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     ScaleShiftBlock,
+    LinearNodeEmbeddingExtractionBlock,
 )
 from .utils import (
     compute_fixed_charge_dipole,
@@ -81,8 +82,10 @@ class MACE(torch.nn.Module):
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
-        self._num_features = hidden_irreps.count(o3.Irrep(0, 1))
-        interaction_irreps = (sh_irreps * self._num_features).sort()[0].simplify()
+        self._num_invariant_features = hidden_irreps.count(o3.Irrep(0, 1))
+        interaction_irreps = (
+            (sh_irreps * self._num_invariant_features).sort()[0].simplify()
+        )
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
@@ -119,6 +122,14 @@ class MACE(torch.nn.Module):
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
+        invariant_irreps = o3.Irreps([(self._num_invariant_features, (0, 1))])
+        self.node_extractions = torch.nn.ModuleList(
+            LinearNodeEmbeddingExtractionBlock(
+                irreps_in=hidden_irreps,
+                irreps_out=invariant_irreps),
+            )
+        )
+
         self.readouts.append(LinearReadoutBlock(hidden_irreps))
 
         for i in range(num_interactions - 1):
@@ -151,8 +162,10 @@ class MACE(torch.nn.Module):
                 self.readouts.append(
                     NonLinearReadoutBlock(hidden_irreps_out, MLP_irreps, gate)
                 )
+                self.node_extractions.append(LinearNodeEmbeddingExtractionBlock(hidden_irreps_out, invariant_irreps))
             else:
                 self.readouts.append(LinearReadoutBlock(hidden_irreps))
+                self.node_extractions.append(LinearNodeEmbeddingExtractionBlock(hidden_irreps, invariant_irreps))
 
     def forward(
         self,
@@ -193,7 +206,7 @@ class MACE(torch.nn.Module):
         )  # [n_graphs,]
 
         # Embeddings
-        node_feats, edge_attrs, edge_feats  = self._get_initial_embeddings(data)
+        node_feats, edge_attrs, edge_feats = self._get_initial_embeddings(data)
 
         # Interactions
         energies = [e0]
@@ -247,26 +260,30 @@ class MACE(torch.nn.Module):
             "stress": stress,
             "displacement": displacement,
         }
-            
-    def _get_initial_embeddings(self, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+    def _get_initial_embeddings(
+        self, data: Dict[str, torch.Tensor]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         node_feats = self.node_embedding(data["node_attrs"])
         vectors, lengths = get_edge_vectors_and_lengths(
-            positions=data["positions"], edge_index=data["edge_index"], shifts=data["shifts"]
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats = self.radial_embedding(lengths)
         return node_feats, edge_attrs, edge_feats
-        
-    def get_node_invariant_descriptors(self, data: Dict[str, torch.Tensor], track_gradient_on_positions=False) -> torch.Tensor:
+
+    def get_node_invariant_descriptors(
+        self, data: Dict[str, torch.Tensor], track_gradient_on_positions=False
+    ) -> torch.Tensor:
         # Setup
         data["positions"].requires_grad_(track_gradient_on_positions)
         # Embeddings
-        node_feats, edge_attrs, edge_feats  = self._get_initial_embeddings(data)
-        
+        node_feats, edge_attrs, edge_feats = self._get_initial_embeddings(data)
+
         node_feats_all = []
-        for interaction, product in zip(
-            self.interactions, self.products
-        ):
+        for interaction, product, readout in zip(self.interactions, self.products, self.node_extractions):
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
                 node_feats=node_feats,
@@ -277,9 +294,10 @@ class MACE(torch.nn.Module):
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
-            
-            node_feats_all.append(node_feats.detach()[:,:self._num_features])
-        node_feats_all = torch.stack(node_feats_all, dim=1) # [n_nodes, num_interactions, num_irreps]
+            node_feats_all.append(readout(node_feats))
+        node_feats_all = torch.stack(
+            node_feats_all, dim=1
+        )  # [n_nodes, num_interactions, num_irreps]
         return node_feats_all
 
 
@@ -335,7 +353,7 @@ class ScaleShiftMACE(MACE):
         )  # [n_graphs,]
 
         # Embeddings
-        node_feats, edge_attrs, edge_feats  = self._get_initial_embeddings(data)
+        node_feats, edge_attrs, edge_feats = self._get_initial_embeddings(data)
 
         # Interactions
         node_es_list = []
