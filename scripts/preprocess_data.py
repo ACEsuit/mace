@@ -144,7 +144,7 @@ def main():
     if args.test_file is not None:
         logging.info("Preparing test sets")
         for name, subset in collections.tests:
-            with h5py.File(args.h5_prefix + name + "test.h5", "w") as f:
+            with h5py.File(args.h5_prefix + name + "_test.h5", "w") as f:
                 for i, config in enumerate(subset):
                     atomic_data = data.AtomicData.from_config(
                         config, z_table=z_table, cutoff=args.r_max)
