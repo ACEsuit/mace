@@ -288,6 +288,8 @@ def create_error_table(
             output_args=output_args,
             device=device,
         )
+        del data_loader
+        torch.cuda.empty_cache()
         if log_wandb:
             wandb_log_dict = {
                 name
