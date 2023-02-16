@@ -78,6 +78,10 @@ Something like this:::
 
 If you are using a single MPI process with threading (recommended for small systems), use the no_domain_decomposition option for speedups:::
 
+    # add this atom_modify command after your atom_style command
+    atom_modify map yes
+
+    # add the no_domain decomposition option to the pair_style declaration
     pair_stye mace no_domain_decomposition
 
 With no_domain_decomposition, LAMMPS builds a periodic graph rather than treating ghost atoms as independent nodes.
