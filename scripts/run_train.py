@@ -636,6 +636,8 @@ def main() -> None:
         model_to_evaluate = model if not args.distributed else distributed_model
         logging.info(f"Loaded model from epoch {epoch}")
 
+        for param in model.parameters():
+            param.requires_grad = False
         table = create_error_table(
             table_type=args.error_table,
             all_data_loaders=all_data_loaders,
