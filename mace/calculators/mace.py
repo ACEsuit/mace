@@ -40,6 +40,8 @@ class MACECalculator(Calculator):
         )
 
         torch_tools.set_default_dtype(default_dtype)
+        for param in self.model.parameters():
+            param.requires_grad = False
 
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
@@ -124,6 +126,8 @@ class DipoleMACECalculator(Calculator):
         self.charges_key = charges_key
 
         torch_tools.set_default_dtype(default_dtype)
+        for param in self.model.parameters():
+            param.requires_grad = False
 
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
@@ -199,7 +203,9 @@ class EnergyDipoleMACECalculator(Calculator):
         self.charges_key = charges_key
 
         torch_tools.set_default_dtype(default_dtype)
-
+        for param in self.model.parameters():
+            param.requires_grad = False
+            
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         """
