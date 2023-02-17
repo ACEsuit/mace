@@ -81,6 +81,9 @@ def main():
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
 
+    for param in model.parameters():
+        param.requires_grad = False
+
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, index=":")
     configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
