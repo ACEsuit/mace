@@ -40,7 +40,7 @@ class LinearNodeEmbeddingExtractionBlock(torch.nn.Module):
     def __init__(self, irreps_in: o3.Irreps, irreps_out: o3.Irreps):
         super().__init__()
         self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irreps_out)
-        self.linear.weight.data.fill_(1)
+        self.linear.weight.data = torch.eye(irreps_out.dim).flatten()
         for param in self.linear.parameters():
             param.requires_grad = False
     def forward(
