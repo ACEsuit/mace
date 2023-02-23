@@ -31,6 +31,7 @@ Running MD simulations
 Example of a MACE Langeving dynamics
 
 .. code-block:: python
+
     from openmmtools.openmm_torch.hybrid_md import PureSystem
     import torch
 
@@ -54,6 +55,7 @@ Example of a MACE Langeving dynamics
 Example of a MACE NPT simulation with periodic boundary conditions:
 
 .. code-block:: python
+    
     from openmmtools.openmm_torch.hybrid_md import PureSystem
     import torch
 
