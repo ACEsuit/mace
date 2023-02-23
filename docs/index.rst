@@ -18,12 +18,6 @@ Features
 Getting Started
 ---------------
 
-To get started with `MACE`, you will need to install the software and download the necessary data files.
-
-1. Install `MACE` by following the instructions in the `INSTALL.txt` file.
-2. Download the data files from the `MACE` website.
-3. Run the `MACE` software on your system.
-
 Documentation
 -------------
 
