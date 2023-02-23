@@ -12,7 +12,7 @@ Installation Instructions
 In order to run simulations through openMM, a custom conda environment is required.  
 
 - First, clone the openmmtools repository, which contains the command line utilities to launch simulations
-``git clone https://github.com/jharrymoore/openmmtools.git``
+``git clone --branch ommml_compat https://github.com/jharrymoore/openmmtools.git``
 
 - Ensure you have conda (or miniconda) installed on your system, and ``mamba`` installed in the base environment
 - Run the install script included in the top level of the directory.  
@@ -27,6 +27,7 @@ Once you have your environment built, the ``mace-md`` entrypoint will be availab
 
 Running MD simulations
 ----------------------
+
 Example of a MACE Langeving dynamics
 
 .. code-block:: python
@@ -78,7 +79,7 @@ Example of a MACE NPT simulation with periodic boundary conditions:
 
 to run these the necessary files are in the ``examples/example_data`` folder of the openmmtools repository.
 
-Below are more detailed instructions
+Below are more detailed instructions.
 
 Pure MD simulations
 ~~~~~~~~~~~~~~~~~~~
