@@ -136,10 +136,12 @@ class Batch(Data):
 
         ref_data = data_list[0]
         for key in batch.keys:
+            print(key)
             items = batch[key]
             item = items[0]
             cat_dim = ref_data.__cat_dim__(key, item)
             cat_dim = 0 if cat_dim is None else cat_dim
+            breakpoint()
             if isinstance(item, Tensor):
                 batch[key] = torch.cat(items, cat_dim)
             elif isinstance(item, (int, float)):

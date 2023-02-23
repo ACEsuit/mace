@@ -84,7 +84,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
+        "--r_max", help="distance cutoff (in Ang). Float or list of values for each layer", type=str, default=5.0
     )
     parser.add_argument(
         "--num_radial_basis",
@@ -122,7 +122,11 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3
     )
     parser.add_argument(
-        "--correlation", help="correlation order at each layer", type=int, default=3
+        "--correlation",
+        help="correlation order at each layer. "
+        "Can be list of values for each layer or single int ",
+        type=str,
+        default=3,
     )
     parser.add_argument(
         "--num_interactions", help="number of interactions", type=int, default=2

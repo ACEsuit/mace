@@ -7,6 +7,7 @@
 from typing import Optional, Sequence
 
 import torch.utils.data
+import numpy as np
 
 from mace.tools import (
     AtomicNumberTable,
@@ -46,6 +47,7 @@ class AtomicData(torch_geometric.data.Data):
     def __init__(
         self,
         edge_index: torch.Tensor,  # [2, n_edges]
+        edge_mask: torch.Tensor,  # [n_layers, n_edges]
         node_attrs: torch.Tensor,  # [n_nodes, n_node_feats]
         positions: torch.Tensor,  # [n_nodes, 3]
         shifts: torch.Tensor,  # [n_edges, 3],
@@ -67,6 +69,7 @@ class AtomicData(torch_geometric.data.Data):
         num_nodes = node_attrs.shape[0]
 
         assert edge_index.shape[0] == 2 and len(edge_index.shape) == 2
+        assert edge_mask.shape[1] == edge_index.shape[1]
         assert positions.shape == (num_nodes, 3)
         assert shifts.shape[1] == 3
         assert unit_shifts.shape[1] == 3
@@ -87,6 +90,7 @@ class AtomicData(torch_geometric.data.Data):
         data = {
             "num_nodes": num_nodes,
             "edge_index": edge_index,
+            'edge_mask': edge_mask,
             "positions": positions,
             "shifts": shifts,
             "unit_shifts": unit_shifts,
@@ -108,11 +112,22 @@ class AtomicData(torch_geometric.data.Data):
 
     @classmethod
     def from_config(
-        cls, config: Configuration, z_table: AtomicNumberTable, cutoff: float
+        cls, config: Configuration, z_table: AtomicNumberTable, cutoffs: list
     ) -> "AtomicData":
         edge_index, shifts, unit_shifts = get_neighborhood(
-            positions=config.positions, cutoff=cutoff, pbc=config.pbc, cell=config.cell
+            positions=config.positions,
+            cutoff=torch.max(cutoffs).item(),
+            pbc=config.pbc,
+            cell=config.cell,
         )
+
+        # edge distances
+        edge_distance = np.linalg.norm(
+            config.positions[edge_index[0]] - config.positions[edge_index[1]] - shifts,
+            axis=1,
+        )
+
+        edge_mask = torch.tensor(edge_distance) < cutoffs[:, np.newaxis]
         indices = atomic_numbers_to_indices(config.atomic_numbers, z_table=z_table)
         one_hot = to_one_hot(
             torch.tensor(indices, dtype=torch.long).unsqueeze(-1),
@@ -192,6 +207,7 @@ class AtomicData(torch_geometric.data.Data):
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
+            edge_mask=torch.tensor(edge_mask, dtype=torch.long),
             positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
             shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),
             unit_shifts=torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),

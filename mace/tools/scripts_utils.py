@@ -173,7 +173,7 @@ def create_error_table(
     for name, subset in all_collections:
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
-                AtomicData.from_config(config, z_table=z_table, cutoff=r_max)
+                AtomicData.from_config(config, z_table=z_table, cutoffs=r_max)
                 for config in subset
             ],
             batch_size=valid_batch_size,
