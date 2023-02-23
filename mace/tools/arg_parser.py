@@ -134,6 +134,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="16x0e",
     )
     parser.add_argument(
+        "--radial_MLP",
+        help="width of the radial MLP",
+        type=str,
+        default="[64, 64, 64]",
+    )
+    parser.add_argument(
         "--hidden_irreps",
         help="irreps for hidden node states",
         type=str,
