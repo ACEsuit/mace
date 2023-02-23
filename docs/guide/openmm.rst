@@ -7,8 +7,6 @@ OpenMM Interface
 MACE models can be used to run molecular dynamics through OpenMM.  A wide variety of simulations can be run in this way, and it allows for execution of the full simulation on the GPU.
 
 
-
-
 Installation Instructions
 -------------------------
 In order to run simulations through openMM, a custom conda environment is required.  
@@ -29,8 +27,58 @@ Once you have your environment built, the ``mace-md`` entrypoint will be availab
 
 Running MD simulations
 ----------------------
+Example of a MACE Langeving dynamics
 
+.. code-block:: python
+    from openmmtools.openmm_torch.hybrid_md import PureSystem
+    import torch
 
+    torch.set_default_dtype(torch.float64)
+
+    file = "peptide.xyz"
+    model_path = "../SPICE_L1_N3_swa.model"
+    temperature = 298
+
+    system=PureSystem(
+        file=file,
+        model_path=model_path,
+        potential="mace",
+        temperature=temperature,
+        output_dir="output_md"
+    )
+
+    system.run_mixed_md(
+        steps=5000, interval=25, output_file="output_md_peptide.pdb", restart=False,
+    )
+Example of a MACE NPT simulation with periodic boundary conditions:
+
+.. code-block:: python
+    from openmmtools.openmm_torch.hybrid_md import PureSystem
+    import torch
+
+    torch.set_default_dtype(torch.float64)
+
+    file = "water_box.xyz"
+    model_path = "SPICE_L1_N3_swa.model"
+    temperature = 298
+    pressure = 1
+
+    system=PureSystem(
+        file=file,
+        model_path=model_path,
+        potential="mace",
+        temperature=temperature,
+        output_dir="output_md",
+        pressure=pressure
+    )
+
+    system.run_mixed_md(
+        steps=10000, interval=50, output_file="output_md_water.pdb", restart=False
+    )
+
+to run these the necessary files are in the ``examples/example_data`` folder of the openmmtools repository.
+
+Below are more detailed instructions
 
 Pure MD simulations
 ~~~~~~~~~~~~~~~~~~~
@@ -42,7 +90,6 @@ The simplest use case is where the full system is simulated with the MACE potent
 
 For a full set of command line argument options, run 
 ``mace-md -h``
-
 
 
 Hybrid ML/MM simulations
