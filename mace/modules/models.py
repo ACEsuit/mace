@@ -54,6 +54,7 @@ class MACE(torch.nn.Module):
         atomic_numbers: List[int],
         correlation: int,
         gate: Optional[Callable],
+        radial_MLP: list[int],
     ):
         super().__init__()
         self.register_buffer(
@@ -94,6 +95,7 @@ class MACE(torch.nn.Module):
             target_irreps=interaction_irreps,
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
+            radial_MLP=radial_MLP,
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -130,6 +132,7 @@ class MACE(torch.nn.Module):
                 target_irreps=interaction_irreps,
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
+                radial_MLP=radial_MLP,
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(

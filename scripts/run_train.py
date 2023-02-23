@@ -230,6 +230,7 @@ def main() -> None:
         atomic_energies=atomic_energies,
         avg_num_neighbors=args.avg_num_neighbors,
         atomic_numbers=z_table.zs,
+        radial_MLP=ast.literal_eval(args.radial_MLP),
     )
 
     model: torch.nn.Module
