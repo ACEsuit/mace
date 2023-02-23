@@ -201,7 +201,6 @@ def main() -> None:
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
         )
     logging.info(loss_fn)
-    breakpoint()
     if args.compute_avg_num_neighbors:
         args.avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
     logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
@@ -276,7 +275,7 @@ def main() -> None:
         mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
         model = modules.ScaleShiftMACE(
             **model_config,
-            correlation=args.correlation,
+            correlations=correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),

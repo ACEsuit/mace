@@ -335,16 +335,16 @@ class ScaleShiftMACE(MACE):
         for i, (interaction, product, readout, radial_embedding) in enumerate(zip(
             self.interactions, self.products, self.readouts, self.radial_embeddings
         )):
-            edge_mask = data["edge_mask"][i, :]
-            edge_attrsi = edge_attrs[edge_mask]
-            edge_featsi = radial_embedding(lengths[edge_mask])
+            edge_index_mask = data["edge_index_mask"][i, :]
+            edge_attrsi = edge_attrs[edge_index_mask]
+            edge_featsi = radial_embedding(lengths[edge_index_mask])
 
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
                 node_feats=node_feats,
                 edge_attrs=edge_attrsi,
                 edge_feats=edge_featsi,
-                edge_index=data["edge_index"][:,edge_mask],
+                edge_index=data["edge_index"][:,edge_index_mask],
             )
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
