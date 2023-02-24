@@ -8,7 +8,7 @@ MACE models can run molecular dynamics or geometry optimisation through the ASE 
 The ASE calculator is a Python module that can be used to run MD simulations or geometry optimisations.
 
 The native ASE neighbour list being slow, it is recommended to use the matscipy `branch <https://github.com/ACEsuit/mace/tree/52-matscipy-neighbour-list-as-default>`_.
-**Note** that the matscipy branch is not compatible with periodic systems.
+**Note** that the matscipy branch is not compatible with non-periodic systems.
 
 Running MD simulations
 ----------------------
