@@ -16,12 +16,22 @@ def get_neighborhood(
 
     if cell is None or cell.any() == np.zeros((3, 3)).any():
         cell = np.identity(3, dtype=float)
-
+    
     assert len(pbc) == 3 and all(isinstance(i, (bool, np.bool_)) for i in pbc)
-    assert all(i == False for i in pbc) or all(
-        i == True for i in pbc
-    )  # matscipy nly works with fully periodic or fully non-periodic for now.
     assert cell.shape == (3, 3)
+    
+    pbc_x = pbc[0]
+    pbc_y = pbc[1]
+    pbc_z = pbc[2]
+    identity = np.identity(3, dtype=float)
+    max_positions = np.max(np.absolute(positions)) + 1
+    # Extend cell in non-periodic directions
+    if not pbc_x:
+        cell[:,0] = max_positions * 5 * cutoff * identity[:,0]
+    if not pbc_y:
+        cell[:,1] = max_positions * 5 * cutoff * identity[:,1]
+    if not pbc_z:
+        cell[:,2] = max_positions * 5 * cutoff * identity[:,2]
 
     sender, receiver, unit_shifts = neighbour_list(
         quantities="ijS",
@@ -51,4 +61,4 @@ def get_neighborhood(
     # D = positions[j]-positions[i]+S.dot(cell)
     shifts = np.dot(unit_shifts, cell)  # [n_edges, 3]
 
-    return edge_index, shifts
+    return edge_index, shifts, unit_shifts
