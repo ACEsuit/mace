@@ -1,17 +1,39 @@
-# MACE
+<span style="font-size:larger;">MACE</span>
+========
 [![GitHub release](https://img.shields.io/github/release/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/releases/)
+[![Paper](https://img.shields.io/badge/Paper-NeurIPs2022-blue)](https://openreview.net/forum?id=YPpSngE-ZU)
 [![License](https://img.shields.io/badge/License-MIT%202.0-blue.svg)](https://opensource.org/licenses/mit)
 [![GitHub issues](https://img.shields.io/github/issues/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/issues/)
+[![Documentation Status](https://readthedocs.org/projects/mace/badge/)](https://mace-docs.readthedocs.io/en/latest/)
+
+# Table of contents
+- [About MACE](#about-mace)
+- [Documentation](#documentation)
+- [Installation](#installation)
+- [Usage](#usage)
+    - [Training](#training)
+    - [Evaluation](#evaluation)
+- [Tutorial](#tutorial)
+- [Weights and Biases](#weights-and-biases-for-experiment-tracking)
+- [Development](#development)
+- [References](#references)
+- [Contact](#contact)
+- [License](#license)
 
 
+##  About MACE
 MACE provides fast and accurate machine learning interatomic potentials with higher order equivariant message passing.
 
 This repository contains the MACE reference implementation developed by
 Ilyes Batatia, Gregor Simm, and David Kovacs.
 
 Also available: 
-* [MACE in JAX](https://github.com/ACEsuit/mace-jax)
+* [MACE in JAX](https://github.com/ACEsuit/mace-jax), currently about 2x times faster at evaluation, but training is recommended in Pytorch for optimal performances.
 * [MACE layers](https://github.com/ACEsuit/mace-layer) for constructing higher order equivariant graph neural networks for arbitrary 3D point clouds.
+
+## Documentation
+
+A partial documentation is available at: https://mace-docs.readthedocs.io/en/latest/
 
 ## Installation
 
@@ -26,7 +48,7 @@ Requirements:
 If you do not have CUDA pre-installed, it is **recommended** to follow the conda installation process:
 ```sh
 # Create a virtual environment and activate it
-conda create mace_env
+conda create --name mace_env
 conda activate mace_env
 
 # Install PyTorch
