@@ -47,8 +47,9 @@ class AtomicData(torch_geometric.data.Data):
     def __init__(
         self,
         edge_index: torch.Tensor,  # [2, n_edges]
-        edge_index_mask: torch.Tensor,  # [n_layers, n_edges]
+        edge_index_mask: Optional[torch.Tensor],  # [n_layers, n_edges]
         node_attrs: torch.Tensor,  # [n_nodes, n_node_feats]
+        node_index_mask: Optional[torch.Tensor],  # [n_layers, n_nodes]
         positions: torch.Tensor,  # [n_nodes, 3]
         shifts: torch.Tensor,  # [n_edges, 3],
         unit_shifts: torch.Tensor,  # [n_edges, 3]
@@ -70,6 +71,7 @@ class AtomicData(torch_geometric.data.Data):
 
         assert edge_index.shape[0] == 2 and len(edge_index.shape) == 2
         assert edge_index_mask.shape[1] == edge_index.shape[1]
+        assert node_index_mask.shape[1] == num_nodes
         assert positions.shape == (num_nodes, 3)
         assert shifts.shape[1] == 3
         assert unit_shifts.shape[1] == 3
@@ -96,6 +98,7 @@ class AtomicData(torch_geometric.data.Data):
             "unit_shifts": unit_shifts,
             "cell": cell,
             "node_attrs": node_attrs,
+            'node_index_mask': node_index_mask,
             "weight": weight,
             "energy_weight": energy_weight,
             "forces_weight": forces_weight,
@@ -114,6 +117,8 @@ class AtomicData(torch_geometric.data.Data):
     def from_config(
         cls, config: Configuration, z_table: AtomicNumberTable, cutoffs: list
     ) -> "AtomicData":
+
+        # Get egdge index for larges cutoff
         edge_index, shifts, unit_shifts = get_neighborhood(
             positions=config.positions,
             cutoff=torch.max(cutoffs).item(),
@@ -121,7 +126,7 @@ class AtomicData(torch_geometric.data.Data):
             cell=config.cell,
         )
 
-        # edge distances
+        # Create edge mask for each cutoff distance
         edge_distance = np.linalg.norm(
             config.positions[edge_index[0]] - config.positions[edge_index[1]] - shifts,
             axis=1,
@@ -213,6 +218,7 @@ class AtomicData(torch_geometric.data.Data):
             unit_shifts=torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),
             cell=cell,
             node_attrs=one_hot,
+            node_index_mask=None,
             weight=weight,
             energy_weight=energy_weight,
             forces_weight=forces_weight,

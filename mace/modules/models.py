@@ -149,7 +149,7 @@ class MACE(torch.nn.Module):
             prod = EquivariantProductBasisBlock(
                 node_feats_irreps=interaction_irreps,
                 target_irreps=hidden_irreps_out,
-                correlation=correlations[i+1],
+                correlation=correlations[i + 1],
                 num_elements=num_elements,
                 use_sc=True,
             )
@@ -206,31 +206,27 @@ class MACE(torch.nn.Module):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(lengths)
 
         # Interactions
         energies = [e0]
         node_energies_list = [node_e0]
-        for (interaction, product, readout, radial_embedding) in zip(
-            self.interactions, self.products, self.readouts, self.radial_embeddings
+        for i, (interaction, product, readout, radial_embedding) in enumerate(
+            zip(self.interactions, self.products, self.readouts, self.radial_embeddings)
         ):
-            vectorsi, lengthsi = get_edge_vectors_and_lengths(
-                positions=data["positions"],
-                edge_index=data["edge_index"],
-                shifts=data["shifts"],
-            )
-            edge_attrsi = self.spherical_harmonics(vectors)
-            edge_feats = radial_embedding(lengths)
+            edge_index_mask = data["edge_index_mask"][i, :]
+            edge_attrsi = edge_attrs[edge_index_mask]
+            edge_featsi = radial_embedding(lengths[edge_index_mask])
+
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
                 node_feats=node_feats,
-                edge_attrs=edge_attrs,
-                edge_feats=edge_feats,
-                edge_index=data["edge_index"],
+                edge_attrs=edge_attrsi,
+                edge_feats=edge_featsi,
+                edge_index=data["edge_index"][:, edge_index_mask],
             )
             node_feats = product(
-                node_feats=node_feats,
-                sc=sc,
-                node_attrs=data["node_attrs"],
+                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"],
             )
             node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             energy = scatter_sum(
@@ -270,10 +266,7 @@ class MACE(torch.nn.Module):
 @compile_mode("script")
 class ScaleShiftMACE(MACE):
     def __init__(
-        self,
-        atomic_inter_scale: float,
-        atomic_inter_shift: float,
-        **kwargs,
+        self, atomic_inter_scale: float, atomic_inter_shift: float, **kwargs,
     ):
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
@@ -317,7 +310,6 @@ class ScaleShiftMACE(MACE):
             src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
 
-
         # Embeddings
 
         # First get all spherical harmonic
@@ -332,9 +324,9 @@ class ScaleShiftMACE(MACE):
 
         # Interactions
         node_es_list = []
-        for i, (interaction, product, readout, radial_embedding) in enumerate(zip(
-            self.interactions, self.products, self.readouts, self.radial_embeddings
-        )):
+        for i, (interaction, product, readout, radial_embedding) in enumerate(
+            zip(self.interactions, self.products, self.readouts, self.radial_embeddings)
+        ):
             edge_index_mask = data["edge_index_mask"][i, :]
             edge_attrsi = edge_attrs[edge_index_mask]
             edge_featsi = radial_embedding(lengths[edge_index_mask])
@@ -344,7 +336,7 @@ class ScaleShiftMACE(MACE):
                 node_feats=node_feats,
                 edge_attrs=edge_attrsi,
                 edge_feats=edge_featsi,
-                edge_index=data["edge_index"][:,edge_index_mask],
+                edge_index=data["edge_index"][:, edge_index_mask],
             )
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
@@ -411,25 +403,18 @@ class BOTNet(torch.nn.Module):
         super().__init__()
         self.r_max = r_max
         self.atomic_numbers = atomic_numbers
-
-        # Radial embedding, interactions and readouts
-        self.interactions = torch.nn.ModuleList()
-        self.readouts = torch.nn.ModuleList()
-        self.radial_embeddings = torch.nn.ModuleList()
-
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
         self.node_embedding = LinearNodeEmbeddingBlock(
             irreps_in=node_attr_irreps, irreps_out=node_feats_irreps
         )
-        radial_embedding_first = RadialEmbeddingBlock(
-            r_max=r_max[0],
+        self.radial_embedding = RadialEmbeddingBlock(
+            r_max=r_max,
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
         )
-
-        edge_feats_irreps_first = o3.Irreps(f"{radial_embedding_first.out_dim}x0e")
+        edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
         self.spherical_harmonics = o3.SphericalHarmonics(
@@ -439,13 +424,14 @@ class BOTNet(torch.nn.Module):
         # Interactions and readouts
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
-
+        self.interactions = torch.nn.ModuleList()
+        self.readouts = torch.nn.ModuleList()
 
         inter = interaction_cls_first(
             node_attrs_irreps=node_attr_irreps,
             node_feats_irreps=node_feats_irreps,
             edge_attrs_irreps=sh_irreps,
-            edge_feats_irreps=edge_feats_irreps_first,
+            edge_feats_irreps=edge_feats_irreps,
             target_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
         )
@@ -453,14 +439,6 @@ class BOTNet(torch.nn.Module):
         self.readouts.append(LinearReadoutBlock(inter.irreps_out))
 
         for i in range(num_interactions - 1):
-            radial_embedding = RadialEmbeddingBlock(
-                r_max=r_max[i+1],
-                num_bessel=num_bessel,
-                num_polynomial_cutoff=num_polynomial_cutoff,
-            )
-            edge_feats_irreps = o3.Irreps(f"{radial_embedding.out_dim}x0e")
-            self.radial_embeddings.append(radial_embedding)
-
             inter = interaction_cls(
                 node_attrs_irreps=node_attr_irreps,
                 node_feats_irreps=inter.irreps_out,
@@ -493,12 +471,11 @@ class BOTNet(torch.nn.Module):
             positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
         )
         edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(lengths)
 
         # Interactions
         energies = [e0]
         for interaction, readout in zip(self.interactions, self.readouts):
-            edge_feats = self.radial_embedding(lengths)
-
             node_feats = interaction(
                 node_attrs=data.node_attrs,
                 node_feats=node_feats,
