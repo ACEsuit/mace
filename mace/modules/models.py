@@ -54,7 +54,7 @@ class MACE(torch.nn.Module):
         atomic_numbers: List[int],
         correlation: int,
         gate: Optional[Callable],
-        radial_MLP: list[int],
+        radial_MLP: Optional[list[int]] = [64, 64, 64],
     ):
         super().__init__()
         self.register_buffer(
@@ -224,6 +224,7 @@ class MACE(torch.nn.Module):
 
         # Sum over energy contributions
         contributions = torch.stack(energies, dim=-1)
+        print("contributions", contributions.shape)
         total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
         node_energy_contributions = torch.stack(node_energies_list, dim=-1)
         node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
