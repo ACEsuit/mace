@@ -209,7 +209,7 @@ class InteractionBlock(torch.nn.Module):
         target_irreps: o3.Irreps,
         hidden_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        radial_MLP: Optional[list[int]] = [64, 64, 64],
+        radial_MLP: Optional[list[int]] = None,
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -219,6 +219,8 @@ class InteractionBlock(torch.nn.Module):
         self.target_irreps = target_irreps
         self.hidden_irreps = hidden_irreps
         self.avg_num_neighbors = avg_num_neighbors
+        if radial_MLP is None:
+            radial_MLP = [64, 64, 64]
         self.radial_MLP = radial_MLP
 
         self._setup()
@@ -426,7 +428,7 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] +self.radial_MLP + [self.conv_tp.weight_numel],
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
             torch.nn.functional.silu,
         )
 

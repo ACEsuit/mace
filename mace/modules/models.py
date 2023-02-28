@@ -54,7 +54,7 @@ class MACE(torch.nn.Module):
         atomic_numbers: List[int],
         correlation: int,
         gate: Optional[Callable],
-        radial_MLP: Optional[list[int]] = [64, 64, 64],
+        radial_MLP: Optional[list[int]] = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -83,7 +83,8 @@ class MACE(torch.nn.Module):
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
-
+        if radial_MLP is None:
+            radial_MLP = [64, 64, 64]
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
