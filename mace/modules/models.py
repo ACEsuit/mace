@@ -54,6 +54,7 @@ class MACE(torch.nn.Module):
         atomic_numbers: List[int],
         correlation: int,
         gate: Optional[Callable],
+        radial_MLP: Optional[list[int]] = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -82,7 +83,8 @@ class MACE(torch.nn.Module):
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
-
+        if radial_MLP is None:
+            radial_MLP = [64, 64, 64]
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
@@ -94,6 +96,7 @@ class MACE(torch.nn.Module):
             target_irreps=interaction_irreps,
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
+            radial_MLP=radial_MLP,
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -130,6 +133,7 @@ class MACE(torch.nn.Module):
                 target_irreps=interaction_irreps,
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
+                radial_MLP=radial_MLP,
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(
@@ -157,6 +161,7 @@ class MACE(torch.nn.Module):
         compute_displacement: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
+        data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
@@ -221,6 +226,7 @@ class MACE(torch.nn.Module):
 
         # Sum over energy contributions
         contributions = torch.stack(energies, dim=-1)
+        print("contributions", contributions.shape)
         total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
         node_energy_contributions = torch.stack(node_energies_list, dim=-1)
         node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
@@ -271,6 +277,7 @@ class ScaleShiftMACE(MACE):
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
+        data["node_attrs"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3),
