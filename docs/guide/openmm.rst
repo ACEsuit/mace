@@ -28,7 +28,7 @@ Once you have your environment built, the ``mace-md`` entrypoint will be availab
 Running MD simulations
 ----------------------
 
-Example of a MACE Langeving dynamics
+Run pure MACE MD simulation with Langevin dynamics:
 
 .. code-block:: python
 
