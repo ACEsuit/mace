@@ -64,7 +64,7 @@ Train the model using the latest `main` branch. Ideally with pytorch 1.13, but I
     
     model_path = sys.argv[1]  # takes model name as command-line input
     model = torch.load(model_path)
-    lammps_model = LAMMPS_MACE(model)
+    lammps_model = LAMMPS_MACE(model.to("cpu"))
     lammps_model_compiled = jit.compile(lammps_model)
     lammps_model_compiled.save(model_path+"-lammps.pt")
 
