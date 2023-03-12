@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config_index", help="index of configuration", type=int, default=-1
     )
-    parser.add_argument("--error_threshold", help="error threshold", default=0.1)
+    parser.add_argument("--error_threshold", help="error threshold",type=float, default=0.1)
     parser.add_argument("--temperature_K", help="temperature", type=float, default=300)
     parser.add_argument("--friction", help="friction", type=float, default=0.01)
     parser.add_argument("--timestep", help="timestep", type=float, default=1)
