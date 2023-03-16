@@ -211,7 +211,11 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
-            if len(atoms) == 1 and atoms.info["config_type"] == "IsolatedAtom":
+            try:
+               if atoms.info["config_type"] == "IsolatedAtom": isolated_atom_config=True
+            except:
+               isolated_atom_config=True
+            if len(atoms) == 1 and isolated_atom_config:
                 if energy_key in atoms.info.keys():
                     atomic_energies_dict[atoms.get_atomic_numbers()[0]] = atoms.info[
                         energy_key
