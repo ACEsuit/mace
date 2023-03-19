@@ -209,7 +209,7 @@ def load_from_xyz(
             try:
                if atoms.info["config_type"] == "IsolatedAtom": isolated_atom_config=True
             except:
-               isolated_atom_config=True
+               isolated_atom_config=False
             if len(atoms) == 1 and isolated_atom_config:
                 if energy_key in atoms.info.keys():
                     atomic_energies_dict[atoms.get_atomic_numbers()[0]] = atoms.info[
