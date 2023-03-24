@@ -138,6 +138,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="16x0e",
     )
     parser.add_argument(
+        "--radial_MLP",
+        help="width of the radial MLP",
+        type=str,
+        default="[64, 64, 64]",
+    )
+    parser.add_argument(
         "--hidden_irreps",
         help="irreps for hidden node states",
         type=str,
@@ -278,13 +284,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--forces_weight", help="weight of forces loss", type=float, default=10.0
+        "--forces_weight", help="weight of forces loss", type=float, default=100.0
     )
     parser.add_argument(
         "--swa_forces_weight",
         help="weight of forces loss after starting swa",
         type=float,
-        default=1.0,
+        default=100.0,
     )
     parser.add_argument(
         "--energy_weight", help="weight of energy loss", type=float, default=1.0
