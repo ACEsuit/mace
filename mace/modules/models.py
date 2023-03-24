@@ -211,7 +211,6 @@ class MACE(torch.nn.Module):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lengths)
 
         # Interactions
         energies = [e0]

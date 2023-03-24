@@ -131,8 +131,7 @@ class AtomicData(torch_geometric.data.Data):
             config.positions[edge_index[0]] - config.positions[edge_index[1]] - shifts,
             axis=1,
         )
-
-        edge_index_mask = torch.tensor(edge_distance) < cutoffs[:, np.newaxis]
+        edge_index_mask = torch.tensor(edge_distance, device=cutoffs.device) < cutoffs[:, None]
         indices = atomic_numbers_to_indices(config.atomic_numbers, z_table=z_table)
         one_hot = to_one_hot(
             torch.tensor(indices, dtype=torch.long).unsqueeze(-1),
