@@ -54,7 +54,7 @@ class MACE(torch.nn.Module):
         atomic_numbers: List[int],
         correlation: int,
         gate: Optional[Callable],
-        radial_MLP: Optional[list[int]] = None,
+        radial_MLP: Optional[List[int]] = None,
     ):
         super().__init__()
         self.register_buffer(
