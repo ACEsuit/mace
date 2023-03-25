@@ -234,6 +234,50 @@ def main() -> None:
         dipole_only,
         compute_dipole,
     )
+
+    if args.loss == "weighted":
+        loss_fn = modules.WeightedEnergyForcesLoss(
+            energy_weight=args.energy_weight, forces_weight=args.forces_weight
+        )
+    elif args.loss == "forces_only":
+        loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
+    elif args.loss == "virials":
+        loss_fn = modules.WeightedEnergyForcesVirialsLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            virials_weight=args.virials_weight,
+        )
+    elif args.loss == "stress":
+        loss_fn = modules.WeightedEnergyForcesStressLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+        )
+    elif args.loss == "huber":
+        loss_fn = modules.WeightedHuberEnergyForcesStressLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            delta=args.huber_delta,
+        )
+    elif args.loss == "dipole":
+        assert (
+            dipole_only is True
+        ), "dipole loss can only be used with AtomicDipolesMACE model"
+        loss_fn = modules.DipoleSingleLoss(
+            dipole_weight=args.dipole_weight,
+        )
+    elif args.loss == "energy_forces_dipole":
+        assert dipole_only is False and compute_dipole is True
+        loss_fn = modules.WeightedEnergyForcesDipoleLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            dipole_weight=args.dipole_weight,
+        )
+    else:
+        loss_fn = modules.EnergyForcesLoss(
+            energy_weight=args.energy_weight, forces_weight=args.forces_weight
+        )
     logging.info(loss_fn)
 
     if args.compute_avg_num_neighbors:

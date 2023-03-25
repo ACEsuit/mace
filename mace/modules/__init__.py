@@ -27,6 +27,7 @@ from .loss import (
     WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
+    WeightedHuberEnergyForcesStressLoss,
 )
 from .models import (
     MACE,
@@ -94,6 +95,7 @@ __all__ = [
     "WeightedEnergyForcesStressLoss",
     "DipoleSingleLoss",
     "WeightedEnergyForcesDipoleLoss",
+    "WeightedHuberEnergyForcesStressLoss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
