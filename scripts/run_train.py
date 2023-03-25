@@ -163,6 +163,13 @@ def main() -> None:
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
         )
+    elif args.loss == "huber":
+        loss_fn = modules.WeightedHuberEnergyForcesStressLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            delta=args.huber_delta,
+        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
@@ -253,7 +260,6 @@ def main() -> None:
             atomic_inter_scale=std,
             atomic_inter_shift=0.0,
             radial_MLP=ast.literal_eval(args.radial_MLP),
-
         )
     elif args.model == "ScaleShiftMACE":
         mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)

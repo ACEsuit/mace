@@ -170,6 +170,38 @@ class WeightedEnergyForcesStressLoss(torch.nn.Module):
         )
 
 
+class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
+    def __init__(self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01) -> None:
+        super().__init__()
+        self.huber_loss = torch.nn.HuberLoss(reduction='mean', delta=huber_delta)
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "stress_weight",
+            torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        num_atoms = ref.ptr[1:] - ref.ptr[:-1] 
+        return (
+            self.energy_weight * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
+            + self.forces_weight * self.huber_loss(ref["forces"], pred["forces"])
+            + self.stress_weight * self.huber_loss(ref["stress"], pred["stress"])
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f})"
+        )
+
+
 class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
     def __init__(
         self, energy_weight=1.0, forces_weight=1.0, virials_weight=1.0
