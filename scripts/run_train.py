@@ -258,7 +258,7 @@ def main() -> None:
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
-            delta=args.huber_delta,
+            huber_delta=args.huber_delta,
         )
     elif args.loss == "dipole":
         assert (
