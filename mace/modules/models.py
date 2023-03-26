@@ -151,6 +151,25 @@ class MACE(torch.nn.Module):
             else:
                 self.readouts.append(LinearReadoutBlock(hidden_irreps))
 
+    def _forward_calculate_e0(self, data: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Forward pass internal - e0 calculation
+
+        Notes
+        -----
+        This is really a lookup from the e0 list we have for each node's element.
+
+        Parameters
+        ----------
+        data
+
+        Returns
+        -------
+        e0
+            shape: [n_nodes, ]
+
+        """
+        return self.atomic_energies_fn(data["node_attrs"])
+
     def forward(
         self,
         data: Dict[str, torch.Tensor],
@@ -184,7 +203,7 @@ class MACE(torch.nn.Module):
             )
 
         # Atomic energies
-        node_e0 = self.atomic_energies_fn(data["node_attrs"])
+        node_e0 = self._forward_calculate_e0(data)
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
@@ -276,8 +295,8 @@ class ScaleShiftMACE(MACE):
         compute_displacement: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
-        data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
+        data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3),
