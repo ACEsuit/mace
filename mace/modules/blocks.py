@@ -5,7 +5,7 @@
 ###########################################################################################
 
 from abc import abstractmethod
-from typing import Callable, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch.nn.functional
@@ -209,7 +209,7 @@ class InteractionBlock(torch.nn.Module):
         target_irreps: o3.Irreps,
         hidden_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        radial_MLP: Optional[list[int]] = None,
+        radial_MLP: Optional[List[int]] = None,
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
