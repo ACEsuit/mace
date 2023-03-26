@@ -13,7 +13,6 @@ from e3nn.util.jit import compile_mode
 
 from mace.data import AtomicData
 from mace.tools.scatter import scatter_sum
-
 from .blocks import (
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
@@ -170,6 +169,55 @@ class MACE(torch.nn.Module):
         """
         return self.atomic_energies_fn(data["node_attrs"])
 
+    def _forward_calculate_interactions(
+        self,
+        data: Dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """Forward pass internal - interaction energy calculation
+
+        Parameters
+        ----------
+        data
+
+        Returns
+        -------
+        interaction_energy
+            shape: [n_nodes, ]
+
+        """
+        # Embeddings
+        node_feats = self.node_embedding(data["node_attrs"])
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
+        )
+        edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(lengths)
+
+        # Interactions
+        node_interaction_energies = []
+        for interaction, product, readout in zip(
+            self.interactions, self.products, self.readouts
+        ):
+            node_feats, sc = interaction(
+                node_attrs=data["node_attrs"],
+                node_feats=node_feats,
+                edge_attrs=edge_attrs,
+                edge_feats=edge_feats,
+                edge_index=data["edge_index"],
+            )
+            node_feats = product(
+                node_feats=node_feats,
+                sc=sc,
+                node_attrs=data["node_attrs"],
+            )
+            node_interaction_energies.append(
+                readout(node_feats).squeeze(-1)  # [n_nodes, ]
+            )
+
+        return torch.sum(torch.stack(node_interaction_energies, dim=0), dim=0)
+
     def forward(
         self,
         data: Dict[str, torch.Tensor],
@@ -202,54 +250,17 @@ class MACE(torch.nn.Module):
                 batch=data["batch"],
             )
 
-        # Atomic energies
+        # Calculate energy contributions
         node_e0 = self._forward_calculate_e0(data)
-        e0 = scatter_sum(
-            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
-        )  # [n_graphs,]
-
-        # Embeddings
-        node_feats = self.node_embedding(data["node_attrs"])
-        vectors, lengths = get_edge_vectors_and_lengths(
-            positions=data["positions"],
-            edge_index=data["edge_index"],
-            shifts=data["shifts"],
-        )
-        edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lengths)
-
-        # Interactions
-        energies = [e0]
-        node_energies_list = [node_e0]
-        for interaction, product, readout in zip(
-            self.interactions, self.products, self.readouts
-        ):
-            node_feats, sc = interaction(
-                node_attrs=data["node_attrs"],
-                node_feats=node_feats,
-                edge_attrs=edge_attrs,
-                edge_feats=edge_feats,
-                edge_index=data["edge_index"],
-            )
-            node_feats = product(
-                node_feats=node_feats,
-                sc=sc,
-                node_attrs=data["node_attrs"],
-            )
-            node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
-            energy = scatter_sum(
-                src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
-            )  # [n_graphs,]
-            energies.append(energy)
-            node_energies_list.append(node_energies)
+        interaction_energies = self._forward_calculate_interactions(data)
 
         # Sum over energy contributions
-        contributions = torch.stack(energies, dim=-1)
-        print("contributions", contributions.shape)
-        total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
-        node_energy_contributions = torch.stack(node_energies_list, dim=-1)
-        node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
-        # Outputs
+        local_energies = node_e0 + interaction_energies
+        total_energy = scatter_sum(
+            src=local_energies, index=data["batch"], dim=-1, dim_size=num_graphs
+        )  # [n_graphs,]
+
+        # Calculate derivatives if needed
         forces, virials, stress = get_outputs(
             energy=total_energy,
             positions=data["positions"],
@@ -263,8 +274,7 @@ class MACE(torch.nn.Module):
 
         return {
             "energy": total_energy,
-            "node_energy": node_energy,
-            "contributions": contributions,
+            "local_energies": local_energies,
             "forces": forces,
             "virials": virials,
             "stress": stress,
@@ -285,108 +295,11 @@ class ScaleShiftMACE(MACE):
             scale=atomic_inter_scale, shift=atomic_inter_shift
         )
 
-    def forward(
+    def _forward_calculate_interactions(
         self,
         data: Dict[str, torch.Tensor],
-        training: bool = False,
-        compute_force: bool = True,
-        compute_virials: bool = False,
-        compute_stress: bool = False,
-        compute_displacement: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
-        # Setup
-        data["node_attrs"].requires_grad_(True)
-        data["positions"].requires_grad_(True)
-        num_graphs = data["ptr"].numel() - 1
-        displacement = torch.zeros(
-            (num_graphs, 3, 3),
-            dtype=data["positions"].dtype,
-            device=data["positions"].device,
-        )
-        if compute_virials or compute_stress or compute_displacement:
-            (
-                data["positions"],
-                data["shifts"],
-                displacement,
-            ) = get_symmetric_displacement(
-                positions=data["positions"],
-                unit_shifts=data["unit_shifts"],
-                cell=data["cell"],
-                edge_index=data["edge_index"],
-                num_graphs=num_graphs,
-                batch=data["batch"],
-            )
-
-        # Atomic energies
-        node_e0 = self.atomic_energies_fn(data["node_attrs"])
-        e0 = scatter_sum(
-            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
-        )  # [n_graphs,]
-
-        # Embeddings
-        node_feats = self.node_embedding(data["node_attrs"])
-        vectors, lengths = get_edge_vectors_and_lengths(
-            positions=data["positions"],
-            edge_index=data["edge_index"],
-            shifts=data["shifts"],
-        )
-        edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lengths)
-
-        # Interactions
-        node_es_list = []
-        for interaction, product, readout in zip(
-            self.interactions, self.products, self.readouts
-        ):
-            node_feats, sc = interaction(
-                node_attrs=data["node_attrs"],
-                node_feats=node_feats,
-                edge_attrs=edge_attrs,
-                edge_feats=edge_feats,
-                edge_index=data["edge_index"],
-            )
-            node_feats = product(
-                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
-            )
-            node_es_list.append(readout(node_feats).squeeze(-1))  # {[n_nodes, ], }
-
-        # Sum over interactions
-        node_inter_es = torch.sum(
-            torch.stack(node_es_list, dim=0), dim=0
-        )  # [n_nodes, ]
-        node_inter_es = self.scale_shift(node_inter_es)
-
-        # Sum over nodes in graph
-        inter_e = scatter_sum(
-            src=node_inter_es, index=data["batch"], dim=-1, dim_size=num_graphs
-        )  # [n_graphs,]
-
-        # Add E_0 and (scaled) interaction energy
-        total_energy = e0 + inter_e
-        node_energy = node_e0 + node_inter_es
-
-        forces, virials, stress = get_outputs(
-            energy=inter_e,
-            positions=data["positions"],
-            displacement=displacement,
-            cell=data["cell"],
-            training=training,
-            compute_force=compute_force,
-            compute_virials=compute_virials,
-            compute_stress=compute_stress,
-        )
-
-        output = {
-            "energy": total_energy,
-            "node_energy": node_energy,
-            "interaction_energy": inter_e,
-            "forces": forces,
-            "virials": virials,
-            "stress": stress,
-            "displacement": displacement,
-        }
-
-        return output
+    ) -> torch.Tensor:
+        return self.scale_shift(super()._forward_calculate_interactions(data))
 
 
 class BOTNet(torch.nn.Module):
