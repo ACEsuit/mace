@@ -60,7 +60,9 @@ class MACE(torch.nn.Module):
         self.register_buffer(
             "atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64)
         )
-        self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.float64))
+        self.register_buffer(
+            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
+        )
         self.register_buffer(
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
