@@ -19,7 +19,7 @@ import numpy as np
 class MACECalculator(Calculator):
     """MACE ASE Calculator"""
 
-    implemented_properties = ["energy", "free_energy", "forces", "stress"]
+    implemented_properties = ["energy", "free_energy", "forces", "stress", "energies"]
 
     def __init__(
         self,
@@ -71,17 +71,21 @@ class MACECalculator(Calculator):
             drop_last=False,
         )
         batch = next(iter(data_loader)).to(self.device)
+        node_e0 = self.model.atomic_energies_fn(batch["node_attrs"])
 
         # predict + extract data
         out = self.model(batch.to_dict(), compute_stress=True)
         energy = out["energy"].detach().cpu().item()
         forces = out["forces"].detach().cpu().numpy()
+        node_energy = (out["node_energy"] - node_e0).detach().cpu().numpy()
 
         # store results
         E = energy * self.energy_units_to_eV
+        Es = node_energy * self.energy_units_to_eV
         self.results = {
             "energy": E,
             "free_energy": E,
+            "energies": Es,
             # force has units eng / len:
             "forces": forces * (self.energy_units_to_eV / self.length_units_to_A),
         }
