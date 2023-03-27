@@ -4,16 +4,15 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-
-from glob import glob
+import glob
 from pathlib import Path
 from typing import Union
 
 import numpy as np
 import torch
+
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
-
 from mace import data
 from mace.tools import torch_geometric, torch_tools, utils
 
@@ -88,7 +87,9 @@ class MACECalculator(Calculator):
         if len(model_paths) > 1:
             print(f"Running committee mace with {len(model_paths)} models")
             if model_type in ["MACE", "EnergyDipoleMACE"]:
-                self.implemented_properties.extend(["energies", "energy_var", "forces_var"])
+                self.implemented_properties.extend(
+                    ["energies", "energy_var", "forces_var"]
+                )
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
 
