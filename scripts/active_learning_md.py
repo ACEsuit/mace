@@ -1,15 +1,16 @@
 # /home/lls34/rds/hpc-work/GitHub/CarbonCaptureNMR/systems/02_KHCO3/01-First-Develop/01-Bulk/MACE/hkco3-it0-1e-5-3.model
 """Demonstrates molecular dynamics with constant temperature."""
 import argparse
+import os
+import time
+
+import ase.io
+import numpy as np
+from ase import units
 from ase.md.langevin import Langevin
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
-from ase import units
 
 from mace.calculators.mace import MACECommitteeCalculator
-import ase.io
-import os
-import numpy as np
-import time
 
 
 def parse_args() -> argparse.Namespace:
@@ -81,7 +82,7 @@ def printenergy(dyn, start_time=None):  # store a reference to atoms in the defi
     else:
         elapsed_time = time.time() - start_time
     print(
-        "%.1fs: Energy per atom: Epot = %.3feV  Ekin = %.3feV (T=%3.0fK)  "
+        "%.1fs: Energy per atom: Epot = %.3feV  Ekin = %.3feV (T=%3.0fK)  "  # pylint: disable=C0209
         "Etot = %.3feV t=%.1ffs Eerr = %.3feV Ferr = %.3feV/A"
         % (
             elapsed_time,
@@ -125,7 +126,7 @@ def stop_error(dyn, threshold, reg=0.2):
 
     if np.max(ferr_rel) > threshold:
         print(
-            "Error too large {:.3}. Stopping t={:.2} fs.".format(
+            "Error too large {:.3}. Stopping t={:.2} fs.".format(  # pylint: disable=C0209
                 np.max(ferr_rel), dyn.get_time() / units.fs
             ),
             flush=True,
