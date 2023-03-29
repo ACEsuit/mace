@@ -5,15 +5,16 @@
 ###########################################################################################
 
 
+from glob import glob
+from typing import Union
+
+import numpy as np
 import torch
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
 
 from mace import data
 from mace.tools import torch_geometric, torch_tools, utils
-from typing import Union
-from glob import glob
-import numpy as np
 
 
 class MACECalculator(Calculator):
@@ -284,17 +285,16 @@ class MACECommitteeCalculator(Calculator):
         Calculator.__init__(self, **kwargs)
         self.results = {}
 
-        if type(model_paths) == str:
+        if isinstance(model_paths, str):
             # Find all models that staisfy the wildcard (e.g. mace_model_*.pt)
             model_paths_glob = glob(model_paths)
 
             if len(model_paths_glob) == 0:
                 raise ValueError(f"Couldn't find MACE model files: {model_paths}")
-            else:
-                model_paths = model_paths_glob
+            model_paths = model_paths_glob
         if len(model_paths) == 0:
-            raise ValueError(f"No mace file neames supplied")
-        elif len(model_paths) > 1:
+            raise ValueError("No mace file neames supplied")
+        if len(model_paths) > 1:
             print(f"Running committee mace with {len(model_paths)} models")
 
         # Load models
@@ -306,7 +306,7 @@ class MACECommitteeCalculator(Calculator):
         r_maxs = np.array(r_maxs)
         assert np.all(
             r_maxs == r_maxs[0]
-        ), f"committee r_max are not all the same {' '.join(r_maxs)}"
+        ), "committee r_max are not all the same {' '.join(r_maxs)}"
         self.r_max = r_maxs[0]
 
         self.device = torch_tools.init_device(device)
@@ -347,7 +347,7 @@ class MACECommitteeCalculator(Calculator):
 
         # predict + extract data
         energies, forces = [], []
-        for i, model in enumerate(self.models):
+        for _, model in enumerate(self.models):
             # Otherwise: RuntimeError: you can only change requires_grad flags of leaf variables.
             batch = next(iter(data_loader)).to(self.device)
             out = model(batch, compute_stress=True)
