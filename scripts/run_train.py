@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import ast
+import glob
 import json
 import logging
 import os
@@ -513,7 +514,7 @@ def main() -> None:
                 swa=True,
                 device=device,
             )
-        except Exception:
+        except Exception:  # pylint: disable=W0703
             opt_start_epoch = checkpoint_handler.load_latest(
                 state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=False,
