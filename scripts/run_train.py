@@ -270,7 +270,7 @@ def main() -> None:
     logging.info("Building model")
     if args.num_channels is not None and args.max_L is not None:
         assert args.num_channels > 0, "num_channels must be positive integer"
-        assert args.max_L >= 0, "max_L must be between equal or greater to 0"
+        assert args.max_L >= 0, "max_L must be non-negative integer"
         args.hidden_irreps = o3.Irreps(
             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
             .sort()
