@@ -7,6 +7,7 @@
 
 from glob import glob
 from typing import Union
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -60,7 +61,7 @@ class MACECalculator(Calculator):
             if len(model_paths_glob) == 0:
                 raise ValueError(f"Couldn't find MACE model files: {model_paths}")
             model_paths = model_paths_glob
-        else:
+        elif isinstance(model_paths, Path):
             model_paths = [model_paths]
         if len(model_paths) == 0:
             raise ValueError("No mace file neames supplied")
