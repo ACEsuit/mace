@@ -104,6 +104,70 @@ def trained_model_fixture(tmp_path_factory, fitting_configs):
 
     return MACECalculator(tmp_path / "MACE.model", device="cpu")
 
+@pytest.fixture(scope="module", name="trained_committee")
+def trained_committee_fixture(tmp_path_factory, fitting_configs):
+    _seeds = [5, 6, 7]
+    _model_paths = []
+    for seed in _seeds:
+        _mace_params = {
+            "name": "MACE{}".format(seed),
+            "valid_fraction": 0.05,
+            "energy_weight": 1.0,
+            "forces_weight": 10.0,
+            "stress_weight": 1.0,
+            "model": "MACE",
+            "hidden_irreps": "128x0e",
+            "r_max": 3.5,
+            "batch_size": 5,
+            "max_num_epochs": 10,
+            "swa": None,
+            "start_swa": 5,
+            "ema": None,
+            "ema_decay": 0.99,
+            "amsgrad": None,
+            "restart_latest": None,
+            "device": "cpu",
+            "seed": seed,
+            "loss": "stress",
+            "energy_key": "REF_energy",
+            "forces_key": "REF_forces",
+            "stress_key": "REF_stress",
+        }
+
+        tmp_path = tmp_path_factory.mktemp("run{}_".format(seed))
+
+        ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+        mace_params = _mace_params.copy()
+        mace_params["checkpoints_dir"] = str(tmp_path)
+        mace_params["model_dir"] = str(tmp_path)
+        mace_params["train_file"] = tmp_path / "fit.xyz"
+
+        # make sure run_train.py is using the mace that is currently being tested
+        run_env = os.environ
+        run_env["PYTHONPATH"] = str(pytest_mace_dir) + ":" + os.environ["PYTHONPATH"]
+
+        cmd = (
+            sys.executable
+            + " "
+            + str(run_train)
+            + " "
+            + " ".join(
+                [
+                    (f"--{k}={v}" if v is not None else f"--{k}")
+                    for k, v in mace_params.items()
+                ]
+            )
+        )
+
+        p = subprocess.run(cmd.split(), env=run_env, check=True)
+
+        assert p.returncode == 0
+
+        _model_paths.append(tmp_path / "MACE{}.model".format(seed))
+
+    return MACECalculator(_model_paths, device="cpu")
+
 
 def test_calculator_forces(fitting_configs, trained_model):
     at = fitting_configs[2].copy()
@@ -124,3 +188,19 @@ def test_calculator_stress(fitting_configs, trained_model):
     grads = gradient_test(at_wrapped)
 
     assert np.allclose(grads[0], grads[1])
+
+
+def test_calculator_committee(fitting_configs, trained_committee):
+    at = fitting_configs[2].copy()
+    at.calc = trained_committee
+
+    # test just forces
+    grads = gradient_test(at)
+
+    assert np.allclose(grads[0], grads[1])
+
+    E = at.get_potential_energy()
+    energies = at.calc.results["energies"]
+    energies_var = at.calc.results["energy_var"]
+    assert np.allclose(E, np.mean(energies))
+    assert np.allclose(energies_var, np.var(energies))
