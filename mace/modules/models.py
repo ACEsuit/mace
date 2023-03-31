@@ -620,7 +620,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             node_feats_irreps=node_feats_irreps,
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
-            target_irreps=hidden_irreps,
+            target_irreps=interaction_irreps,
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
@@ -657,7 +657,7 @@ class AtomicDipolesMACE(torch.nn.Module):
                 hidden_irreps_out = hidden_irreps
             inter = interaction_cls(
                 node_attrs_irreps=node_attr_irreps,
-                node_feats_irreps=inter.irreps_out,
+                node_feats_irreps=hidden_irreps,
                 edge_attrs_irreps=sh_irreps,
                 edge_feats_irreps=edge_feats_irreps,
                 target_irreps=interaction_irreps,
@@ -702,12 +702,6 @@ class AtomicDipolesMACE(torch.nn.Module):
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
-        # if not training:
-        #     for p in self.parameters():
-        #         p.requires_grad = False
-        # else:
-        #     for p in self.parameters():
-        #         p.requires_grad = True
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -762,7 +756,6 @@ class AtomicDipolesMACE(torch.nn.Module):
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
         }
-
         return output
 
 
@@ -824,7 +817,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             node_feats_irreps=node_feats_irreps,
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
-            target_irreps=hidden_irreps,
+            target_irreps=interaction_irreps,
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
@@ -861,7 +854,7 @@ class EnergyDipolesMACE(torch.nn.Module):
                 hidden_irreps_out = hidden_irreps
             inter = interaction_cls(
                 node_attrs_irreps=node_attr_irreps,
-                node_feats_irreps=inter.irreps_out,
+                node_feats_irreps=hidden_irreps,
                 edge_attrs_irreps=sh_irreps,
                 edge_feats_irreps=edge_feats_irreps,
                 target_irreps=interaction_irreps,
@@ -1011,5 +1004,4 @@ class EnergyDipolesMACE(torch.nn.Module):
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
         }
-
         return output
