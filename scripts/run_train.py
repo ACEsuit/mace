@@ -214,16 +214,17 @@ def main() -> None:
     logging.info("Building model")
     if args.num_channels is not None and args.max_L is not None:
         assert args.num_channels > 0, "num_channels must be positive integer"
-        assert (
-            args.max_L >= 0 and args.max_L < 4
-        ), "max_L must be between 0 and 3, if you want to use larger specify it via the hidden_irrpes keyword"
-        args.hidden_irreps = f"{args.num_channels:d}x0e"
-        if args.max_L > 0:
-            args.hidden_irreps += f" + {args.num_channels:d}x1o"
-        if args.max_L > 1:
-            args.hidden_irreps += f" + {args.num_channels:d}x2e"
-        if args.max_L > 2:
-            args.hidden_irreps += f" + {args.num_channels:d}x3o"
+        assert args.max_L >= 0, "max_L must be non-negative integer"
+        args.hidden_irreps = o3.Irreps(
+            (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+            .sort()
+            .irreps.simplify()
+        )
+
+    assert (
+        len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+    ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+
     logging.info(f"Hidden irreps: {args.hidden_irreps}")
     model_config = dict(
         r_max=args.r_max,
@@ -458,7 +459,7 @@ def main() -> None:
                 swa=True,
                 device=device,
             )
-        except Exception as e:
+        except Exception as e:  # pylint: disable=W0703
             opt_start_epoch = checkpoint_handler.load_latest(
                 state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=False,
