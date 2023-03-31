@@ -46,6 +46,7 @@ def fitting_configs_fixture():
 
     return fit_configs
 
+
 @pytest.fixture(scope="module", name="trained_model")
 def trained_model_fixture(tmp_path_factory, fitting_configs):
     _mace_params = {
@@ -105,6 +106,7 @@ def trained_model_fixture(tmp_path_factory, fitting_configs):
 
     return MACECalculator(tmp_path / "MACE.model", device="cpu")
 
+
 @pytest.fixture(scope="module", name="trained_dipole_model")
 def trained_dipole_fixture(tmp_path_factory, fitting_configs):
     _mace_params = {
@@ -163,9 +165,10 @@ def trained_dipole_fixture(tmp_path_factory, fitting_configs):
 
     assert p.returncode == 0
 
-    return MACECalculator(tmp_path / "MACE.model", 
-                          device="cpu",
-                          model_type="DipoleMACE")
+    return MACECalculator(
+        tmp_path / "MACE.model", device="cpu", model_type="DipoleMACE"
+    )
+
 
 @pytest.fixture(scope="module", name="trained_energy_dipole_model")
 def trained_energy_dipole_fixture(tmp_path_factory, fitting_configs):
@@ -225,9 +228,10 @@ def trained_energy_dipole_fixture(tmp_path_factory, fitting_configs):
 
     assert p.returncode == 0
 
-    return MACECalculator(tmp_path / "MACE.model", 
-                          device="cpu",
-                          model_type="EnergyDipoleMACE")
+    return MACECalculator(
+        tmp_path / "MACE.model", device="cpu", model_type="EnergyDipoleMACE"
+    )
+
 
 @pytest.fixture(scope="module", name="trained_committee")
 def trained_committee_fixture(tmp_path_factory, fitting_configs):
@@ -235,7 +239,7 @@ def trained_committee_fixture(tmp_path_factory, fitting_configs):
     _model_paths = []
     for seed in _seeds:
         _mace_params = {
-            "name": "MACE{}".format(seed),
+            "name": f"MACE{seed}",
             "valid_fraction": 0.05,
             "energy_weight": 1.0,
             "forces_weight": 10.0,
@@ -259,7 +263,7 @@ def trained_committee_fixture(tmp_path_factory, fitting_configs):
             "stress_key": "REF_stress",
         }
 
-        tmp_path = tmp_path_factory.mktemp("run{}_".format(seed))
+        tmp_path = tmp_path_factory.mktemp(f"run{seed}_")
 
         ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
@@ -289,7 +293,7 @@ def trained_committee_fixture(tmp_path_factory, fitting_configs):
 
         assert p.returncode == 0
 
-        _model_paths.append(tmp_path / "MACE{}.model".format(seed))
+        _model_paths.append(tmp_path / f"MACE{seed}.model")
 
     return MACECalculator(_model_paths, device="cpu")
 
@@ -330,6 +334,7 @@ def test_calculator_committee(fitting_configs, trained_committee):
     assert np.allclose(E, np.mean(energies))
     assert np.allclose(energies_var, np.var(energies))
 
+
 def test_calculator_dipole(fitting_configs, trained_dipole_model):
     at = fitting_configs[2].copy()
     at.calc = trained_dipole_model
@@ -337,6 +342,7 @@ def test_calculator_dipole(fitting_configs, trained_dipole_model):
     dip = at.get_dipole_moment()
 
     assert len(dip) == 3
+
 
 def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model):
     at = fitting_configs[2].copy()
