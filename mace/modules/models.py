@@ -766,6 +766,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         return output
 
 
+@compile_mode("script")
 class EnergyDipolesMACE(torch.nn.Module):
     def __init__(
         self,
@@ -784,10 +785,16 @@ class EnergyDipolesMACE(torch.nn.Module):
         correlation: int,
         gate: Optional[Callable],
         atomic_energies: Optional[np.ndarray],
+        radial_MLP: Optional[List[int]] = None,
     ):
         super().__init__()
-        self.r_max = r_max
-        self.atomic_numbers = atomic_numbers
+        self.register_buffer(
+            "atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64)
+        )
+        self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.float64))
+        self.register_buffer(
+            "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
+        )
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -807,7 +814,8 @@ class EnergyDipolesMACE(torch.nn.Module):
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
-
+        if radial_MLP is None:
+            radial_MLP = [64, 64, 64]
         # Interactions and readouts
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
@@ -819,6 +827,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             target_irreps=hidden_irreps,
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
+            radial_MLP=radial_MLP,
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -858,6 +867,7 @@ class EnergyDipolesMACE(torch.nn.Module):
                 target_irreps=interaction_irreps,
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
+                radial_MLP=radial_MLP,
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(
@@ -881,91 +891,109 @@ class EnergyDipolesMACE(torch.nn.Module):
 
     def forward(
         self,
-        data: AtomicData,
-        training=False,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
-    ) -> Dict[str, Any]:
-        # dipoles and virials / stress not supported simultaneously
-        assert compute_virials is False
-        assert compute_stress is False
+        compute_displacement: bool = False,
+    ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
-        data.positions.requires_grad = True
-        if not training:
-            for p in self.parameters():
-                p.requires_grad = False
-        else:
-            for p in self.parameters():
-                p.requires_grad = True
+        data["node_attrs"].requires_grad_(True)
+        data["positions"].requires_grad_(True)
+        num_graphs = data["ptr"].numel() - 1
+        displacement = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=data["positions"].dtype,
+            device=data["positions"].device,
+        )
+        if compute_virials or compute_stress or compute_displacement:
+            (
+                data["positions"],
+                data["shifts"],
+                displacement,
+            ) = get_symmetric_displacement(
+                positions=data["positions"],
+                unit_shifts=data["unit_shifts"],
+                cell=data["cell"],
+                edge_index=data["edge_index"],
+                num_graphs=num_graphs,
+                batch=data["batch"],
+            )
 
         # Atomic energies
-        node_e0 = self.atomic_energies_fn(data.node_attrs)
+        node_e0 = self.atomic_energies_fn(data["node_attrs"])
         e0 = scatter_sum(
-            src=node_e0, index=data.batch, dim=-1, dim_size=data.num_graphs
+            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
 
         # Embeddings
-        node_feats = self.node_embedding(data.node_attrs)
+        node_feats = self.node_embedding(data["node_attrs"])
         vectors, lengths = get_edge_vectors_and_lengths(
-            positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats = self.radial_embedding(lengths)
 
         # Interactions
         energies = [e0]
+        node_energies_list = [node_e0]
         dipoles = []
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
         ):
             node_feats, sc = interaction(
-                node_attrs=data.node_attrs,
+                node_attrs=data["node_attrs"],
                 node_feats=node_feats,
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
-                edge_index=data.edge_index,
+                edge_index=data["edge_index"],
             )
             node_feats = product(
-                node_feats=node_feats, sc=sc, node_attrs=data.node_attrs
+                node_feats=node_feats,
+                sc=sc,
+                node_attrs=data["node_attrs"],
             )
             node_out = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             # node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             node_energies = node_out[:, 0]
             energy = scatter_sum(
-                src=node_energies, index=data.batch, dim=-1, dim_size=data.num_graphs
+                src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
             energies.append(energy)
-            # node_dipoles = readout(node_feats).squeeze(-1)  # [n_nodes,3]
             node_dipoles = node_out[:, 1:]
             dipoles.append(node_dipoles)
 
         # Compute the energies and dipoles
         contributions = torch.stack(energies, dim=-1)
         total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
+        node_energy_contributions = torch.stack(node_energies_list, dim=-1)
+        node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
         contributions_dipoles = torch.stack(
             dipoles, dim=-1
         )  # [n_nodes,3,n_contributions]
         atomic_dipoles = torch.sum(contributions_dipoles, dim=-1)  # [n_nodes,3]
         total_dipole = scatter_sum(
             src=atomic_dipoles,
-            index=data.batch.unsqueeze(-1),
+            index=data["batch"].unsqueeze(-1),
             dim=0,
-            dim_size=data.num_graphs,
+            dim_size=num_graphs,
         )  # [n_graphs,3]
         baseline = compute_fixed_charge_dipole(
-            charges=data.charges,
-            positions=data.positions,
-            batch=data.batch,
-            num_graphs=data.num_graphs,
+            charges=data["charges"],
+            positions=data["positions"],
+            batch=data["batch"],
+            num_graphs=num_graphs,
         )  # [n_graphs,3]
         total_dipole = total_dipole + baseline
 
-        forces, _, _ = get_outputs(
+        forces, virials, stress = get_outputs(
             energy=total_energy,
-            positions=data.positions,
-            displacement=None,
-            cell=data.cell,
+            positions=data["positions"],
+            displacement=displacement,
+            cell=data["cell"],
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -974,8 +1002,12 @@ class EnergyDipolesMACE(torch.nn.Module):
 
         output = {
             "energy": total_energy,
+            "node_energy": node_energy,
             "contributions": contributions,
             "forces": forces,
+            "virials": virials,
+            "stress": stress,
+            "displacement": displacement,
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
         }
