@@ -65,6 +65,7 @@ class MACECalculator(Calculator):
             model_paths = [model_paths]
         if len(model_paths) == 0:
             raise ValueError("No mace file neames supplied")
+        self.num_models = len(model_paths)
         if len(model_paths) > 1:
             print(f"Running committee mace with {len(model_paths)} models")
 
@@ -124,11 +125,14 @@ class MACECalculator(Calculator):
             batch = next(iter(data_loader)).to(self.device)
             node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])
             outputs["node_energies"] = []
+            compute_stress = True
+        else:
+            compute_stress = False
         
         for model in self.models:
             batch = next(iter(data_loader)).to(self.device)
 
-            out = model(batch.to_dict(), compute_stress=True)
+            out = model(batch.to_dict(), compute_stress=compute_stress)
             if self.model_type == 'MACE' or self.model_type == 'EnergyDipoleMACE':
                 outputs["energy"].append(out["energy"].detach().cpu().item())
                 outputs["free_energy"].append(out["energy"].detach().cpu().item())
@@ -137,27 +141,28 @@ class MACECalculator(Calculator):
                 if out["stress"] is not None:
                     outputs["stress"].append(out["stress"].detach().cpu().numpy())
             if self.model_type == 'DipoleMACE' or self.model_type == 'EnergyDipoleMACE':
-                outputs["dipole"].append(out["dipole"].detach().cpu().numpy())
+                outputs["dipole"].append(out["dipole"].detach().cpu().numpy()[0])
 
         self.results = {}
         # convert units
         if self.model_type == 'MACE' or self.model_type == 'EnergyDipoleMACE':
             energies = np.array(outputs["energy"]) * self.energy_units_to_eV
             self.results["energy"] = np.mean(energies)
-            self.results["energies"] = energies
-            self.results["energy_var"] = np.var(energies)
             self.results["free_energy"] = self.results["energy"]
             forces = np.array(outputs["forces"]) * (self.energy_units_to_eV / self.length_units_to_A)
             self.results["forces"] = np.mean(forces, axis=0)
-            self.results["forces_var"] = np.var(forces, axis=0)
             self.results["node_energy"] = np.mean(np.array(outputs["node_energies"]), axis=0) * self.energy_units_to_eV
             if len(outputs["stress"]) > 0:
                 stress = np.mean(np.array(outputs["stress"]), axis=0) * (self.energy_units_to_eV / self.length_units_to_A**3)
                 self.results["stress"] = full_3x3_to_voigt_6_stress(stress)[0]
+            if self.num_models > 1:
+                self.results["energies"] = energies
+                self.results["energy_var"] = np.var(energies)
+                self.results["forces_var"] = np.var(forces, axis=0)
         if self.model_type == 'DipoleMACE' or self.model_type == 'EnergyDipoleMACE':
             self.results["dipole"] = np.mean(np.array(outputs["dipole"]), axis=0)
-            self.results["dipole_var"] = np.var(np.array(outputs["dipole"]), axis=0)
-            
+            if self.num_models > 1: 
+                self.results["dipole_var"] = np.var(np.array(outputs["dipole"]), axis=0)
 
 
 class DipoleMACECalculator(Calculator):
