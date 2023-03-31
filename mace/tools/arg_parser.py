@@ -276,6 +276,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "virials",
             "stress",
             "dipole",
+            "huber",
             "energy_forces_dipole",
         ],
     )
@@ -329,6 +330,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="String of dictionary containing the weights for each config type",
         type=str,
         default='{"Default":1.0}',
+    )
+    parser.add_argument(
+        "--huber_delta",
+        help="delta parameter for huber loss",
+        type=float,
+        default=0.01,
     )
     parser.add_argument(
         "--optimizer",

@@ -163,6 +163,13 @@ def main() -> None:
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
         )
+    elif args.loss == "huber":
+        loss_fn = modules.WeightedHuberEnergyForcesStressLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            huber_delta=args.huber_delta,
+        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
@@ -189,7 +196,7 @@ def main() -> None:
 
     # Selecting outputs
     compute_virials = False
-    if args.loss in ("stress", "virials"):
+    if args.loss in ("stress", "virials", "huber"):
         compute_virials = True
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
