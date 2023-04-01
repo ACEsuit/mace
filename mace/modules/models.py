@@ -36,6 +36,8 @@ from .utils import (
 
 @compile_mode("script")
 class MACE(torch.nn.Module):
+    """MACE model"""
+
     def __init__(
         self,
         r_max: float,
@@ -227,6 +229,33 @@ class MACE(torch.nn.Module):
         compute_stress: bool = False,
         compute_displacement: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
+        """Forward pass - evaluation of model
+
+        Parameters
+        ----------
+        data
+            input graphs, as dictionary
+        training
+            If we are in training mode. Computational graphs are retained, for reuse.
+        compute_force
+            Compute forces on all nodes
+        compute_virials, compute_stress
+            Compute stress and virial, any of these two triggers calculation of both
+        compute_displacement
+            Compute symmetric displacements
+
+
+        Returns
+        -------
+        results
+            calculated results
+            - `energy`: total energy on each graph
+            - `node_energy`: energy of each node, i.e. local energy on each atom
+            - `forces`: negative gradient of total energy on each atom (node)
+            - `virials` & `stress`: same thing expressed differently
+            - `displacement`: symmetric displacement of cell used for stress
+
+        """
         # Setup
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
@@ -255,9 +284,9 @@ class MACE(torch.nn.Module):
         interaction_energies = self._forward_calculate_interactions(data)
 
         # Sum over energy contributions
-        local_energies = node_e0 + interaction_energies
+        node_energy = node_e0 + interaction_energies
         total_energy = scatter_sum(
-            src=local_energies, index=data["batch"], dim=-1, dim_size=num_graphs
+            src=node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
 
         # Calculate derivatives if needed
@@ -274,7 +303,7 @@ class MACE(torch.nn.Module):
 
         return {
             "energy": total_energy,
-            "local_energies": local_energies,
+            "node_energy": node_energy,
             "forces": forces,
             "virials": virials,
             "stress": stress,
@@ -284,6 +313,11 @@ class MACE(torch.nn.Module):
 
 @compile_mode("script")
 class ScaleShiftMACE(MACE):
+    """MACE Scaled and Shifted
+
+    Same as MACE model, but allows for constant shift and rescaling.
+    """
+
     def __init__(
         self,
         atomic_inter_scale: float,
