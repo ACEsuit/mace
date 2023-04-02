@@ -182,7 +182,7 @@ def test_energy_dipole_mace():
     )
     batch = next(iter(data_loader))
     output = model(
-        batch,
+        batch.to_dict(),
         training=True,
     )
     # sanity check of dipoles being the right shape
