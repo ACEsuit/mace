@@ -485,6 +485,68 @@ class EnergyDipolesMACE(MACE, DipoleModelMixin):
         }
 
 
+@compile_mode("script")
+class ScaleShiftEnergyDipoleMACE(EnergyDipolesMACE, ScaleShiftEnergyModelMixin):
+    """MACE model with Scaled and Shifted Energy, & Dipoles
+
+    Same as EnergyDipolesMACE model, but allows for constant shift and rescaling of
+    energy
+    """
+
+    def __init__(self, **kwargs):
+        """MACE energy & dipole model
+
+        Parameters
+        ----------
+        # ------- core model parameters
+        r_max
+            cutoff of radial embedding applied to individual atoms
+        num_bessel
+            number of Bessel functions to be used for radial embedding
+        num_polynomial_cutoff
+        max_ell
+            l_max, maximum channels for spherical harmonics
+        interaction_cls
+            class to be used for interactions blocks
+        interaction_cls_first
+            class to be used for the first layer's interaction block
+        num_interactions
+            number of interaction layers to use
+        num_elements
+            redundant parameter for the number of elements
+        hidden_irreps
+            hidden irreducible representations, basically the size of the layer features
+            and hence direct control on the size of the model
+        MLP_irreps
+        avg_num_neighbors
+        atomic_numbers
+            atomic numbers of elements the model supports
+            order & length to agree with atomic_energies
+        correlation
+        gate
+            non-linearity for non-linear readouts
+        radial_MLP
+
+        # ------- energy model specific parameters
+        atomic_energies
+            energy shift (e0) of elements
+            order & length to agree with atomic_numbers
+        atomic_inter_scale
+            scale of interaction energy
+        atomic_inter_shift
+            constant shift of interaction energy (per atom)
+
+        **kwargs
+
+        Notes
+        -----
+        Requires at least l=1 features to be used for representing dipoles.
+        `atomic_energies` parameter added for compatibility, but it's ignored
+
+        """
+        super().__init__(**kwargs)
+
+
 class BOTNet(torch.nn.Module):
     def __init__(
         self,
