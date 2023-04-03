@@ -30,6 +30,8 @@ class MACECalculator(Calculator):
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
                     Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+
+    Dipoles are returned in units of Debye
     """
 
     def __init__(
@@ -146,9 +148,9 @@ class MACECalculator(Calculator):
         else:
             compute_stress = False
 
+        batch_base = next(iter(data_loader)).to(self.device)
         for model in self.models:
-            batch = next(iter(data_loader)).to(self.device)
-
+            batch = batch_base.clone()
             out = model(batch.to_dict(), compute_stress=compute_stress)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 outputs["energy"].append(out["energy"].detach().cpu().item())
