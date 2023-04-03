@@ -363,6 +363,7 @@ def main() -> None:
             atomic_inter_scale=args.std,
             atomic_inter_shift=0.0,
             radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
         )
     elif args.model == "ScaleShiftMACE":
         model = modules.ScaleShiftMACE(
@@ -374,6 +375,7 @@ def main() -> None:
             atomic_inter_scale=args.std,
             atomic_inter_shift=args.mean,
             radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
         )
     elif args.model == "ScaleShiftBOTNet":
         model = modules.ScaleShiftBOTNet(

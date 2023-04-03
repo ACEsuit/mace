@@ -19,7 +19,7 @@ from .irreps_tools import (
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
-from .radial import BesselBasis, PolynomialCutoff
+from .radial import BesselBasis, GaussianBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
 
 
@@ -143,9 +143,18 @@ class AtomicEnergiesBlock(torch.nn.Module):
 
 @compile_mode("script")
 class RadialEmbeddingBlock(torch.nn.Module):
-    def __init__(self, r_max: float, num_bessel: int, num_polynomial_cutoff: int):
+    def __init__(
+        self,
+        r_max: float,
+        num_bessel: int,
+        num_polynomial_cutoff: int,
+        radial_type: str = "bessel",
+    ):
         super().__init__()
-        self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
+        if radial_type == "bessel":
+            self.radial_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
+        elif radial_type == "gaussian":
+            self.radial_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
         self.out_dim = num_bessel
 
@@ -153,9 +162,9 @@ class RadialEmbeddingBlock(torch.nn.Module):
         self,
         edge_lengths: torch.Tensor,  # [n_edges, 1]
     ):
-        bessel = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
+        radial = self.radial_fn(edge_lengths)  # [n_edges, n_basis]
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
-        return bessel * cutoff  # [n_edges, n_basis]
+        return radial * cutoff  # [n_edges, n_basis]
 
 
 @compile_mode("script")
