@@ -60,6 +60,7 @@ def main() -> None:
         virials_key=args.virials_key,
         dipole_key=args.dipole_key,
         charges_key=args.charges_key,
+        polarizability_key=args.polarizability_key,
     )
 
     logging.info(
@@ -81,6 +82,7 @@ def main() -> None:
         atomic_energies = None
         dipole_only = True
         compute_dipole = True
+        compute_polarizability = True
         compute_energy = False
         args.compute_forces = False
         compute_virials = False
@@ -89,6 +91,7 @@ def main() -> None:
         dipole_only = False
         if args.model == "EnergyDipolesMACE":
             compute_dipole = True
+            compute_polarizability = False
             compute_energy = True
             args.compute_forces = True
             compute_virials = False
@@ -96,6 +99,7 @@ def main() -> None:
         else:
             compute_energy = True
             compute_dipole = False
+            compute_polarizability = False
         if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
             if args.E0s is not None:
                 logging.info(
@@ -169,6 +173,7 @@ def main() -> None:
         ), "dipole loss can only be used with AtomicDipolesMACE model"
         loss_fn = modules.DipoleSingleLoss(
             dipole_weight=args.dipole_weight,
+            polarizability_weight=args.polarizability_weight,
         )
     elif args.loss == "energy_forces_dipole":
         assert dipole_only is False and compute_dipole is True
@@ -200,6 +205,7 @@ def main() -> None:
         "virials": compute_virials,
         "stress": args.compute_stress,
         "dipoles": compute_dipole,
+        "polarizability": compute_polarizability
     }
     logging.info(f"Selected the following outputs: {output_args}")
 

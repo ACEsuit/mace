@@ -76,6 +76,12 @@ def weighted_mean_squared_error_dipole(ref: Batch, pred: TensorDict) -> torch.Te
     return torch.mean(torch.square((ref["dipole"] - pred["dipole"]) / num_atoms))  # []
     # return torch.mean(torch.square((torch.reshape(ref['dipole'], pred["dipole"].shape) - pred['dipole']) / num_atoms))  # []
 
+def weighted_mean_squared_error_polarizability(ref: Batch, pred: TensorDict) -> torch.Tensor:
+    # polarizability: [n_graphs, ]
+    num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).view(-1, 1, 1)  # [n_graphs,1]
+    return torch.mean(torch.square((ref["polarizability"].view(-1, 3, 3) - pred["polarizability"]) / num_atoms))  # []
+    
+
 
 class EnergyForcesLoss(torch.nn.Module):
     def __init__(self, energy_weight=1.0, forces_weight=1.0) -> None:
@@ -203,20 +209,25 @@ class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
 
 
 class DipoleSingleLoss(torch.nn.Module):
-    def __init__(self, dipole_weight=1.0) -> None:
+    def __init__(self, dipole_weight=1.0, polarizability_weight=1.0) -> None:
         super().__init__()
         self.register_buffer(
             "dipole_weight",
             torch.tensor(dipole_weight, dtype=torch.get_default_dtype()),
         )
+        self.register_buffer(
+            "polarizability_weight",
+            torch.tensor(polarizability_weight, dtype=torch.get_default_dtype()),
+        )
 
     def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
         return (
-            self.dipole_weight * weighted_mean_squared_error_dipole(ref, pred) * 100.0
-        )  # multiply by 100 to have the right scale for the loss
+            self.dipole_weight * weighted_mean_squared_error_dipole(ref, pred) +
+            self.polarizability_weight * weighted_mean_squared_error_polarizability(ref, pred)
+        )  
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(" f"dipole_weight={self.dipole_weight:.3f})"
+        return f"{self.__class__.__name__}(" f"dipole_weight={self.dipole_weight:.3f}), polarizability_weight={self.polarizability_weight:.3f})"
 
 
 class WeightedEnergyForcesDipoleLoss(torch.nn.Module):

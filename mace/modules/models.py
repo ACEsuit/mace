@@ -13,6 +13,7 @@ from e3nn.util.jit import compile_mode
 
 from mace.data import AtomicData
 from mace.tools.scatter import scatter_sum
+from mace.tools.torch_tools import spherical_to_cartesian
 
 from .blocks import (
     AtomicEnergiesBlock,
@@ -643,7 +644,9 @@ class AtomicDipolesMACE(torch.nn.Module):
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        self.readouts.append(LinearDipoleReadoutBlock(hidden_irreps, dipole_only=True))
+        self.readouts.append(LinearDipoleReadoutBlock(hidden_irreps, 
+                                                      dipole_only=False,
+                                                      dipole_polar=True))
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
@@ -677,12 +680,17 @@ class AtomicDipolesMACE(torch.nn.Module):
             if i == num_interactions - 2:
                 self.readouts.append(
                     NonLinearDipoleReadoutBlock(
-                        hidden_irreps_out, MLP_irreps, gate, dipole_only=True
+                        hidden_irreps_out, 
+                        MLP_irreps, gate, 
+                        dipole_only=False,
+                        dipole_polar=True
                     )
                 )
             else:
                 self.readouts.append(
-                    LinearDipoleReadoutBlock(hidden_irreps, dipole_only=True)
+                    LinearDipoleReadoutBlock(hidden_irreps, 
+                                             dipole_only=False,
+                                             dipole_polar=True)
                 )
 
     def forward(
@@ -694,7 +702,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_stress: bool = False,
         compute_displacement: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
-        assert compute_force is False
+        # assert compute_force is False
         assert compute_virials is False
         assert compute_stress is False
         assert compute_displacement is False
@@ -715,6 +723,7 @@ class AtomicDipolesMACE(torch.nn.Module):
 
         # Interactions
         dipoles = []
+        polarizabilities = []
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
         ):
@@ -730,8 +739,12 @@ class AtomicDipolesMACE(torch.nn.Module):
                 sc=sc,
                 node_attrs=data["node_attrs"],
             )
-            node_dipoles = readout(node_feats).squeeze(-1)  # [n_nodes,3]
+            node_out = readout(node_feats).squeeze(-1)  # [n_nodes,]
+            node_dipoles = node_out[:, 1:4]
+            node_polarizability = torch.cat((node_out[:, 0].unsqueeze(-1), node_out[:, 4:]), dim=-1)
             dipoles.append(node_dipoles)
+            polarizabilities.append(node_polarizability)
+
 
         # Compute the dipoles
         contributions_dipoles = torch.stack(
@@ -752,9 +765,24 @@ class AtomicDipolesMACE(torch.nn.Module):
         )  # [n_graphs,3]
         total_dipole = total_dipole + baseline
 
+        # Compute the polarizabilities
+        contributions_polarizabilities = torch.stack(
+            polarizabilities, dim=-1
+        )  # [n_nodes,6,n_contributions]
+        atomic_polarizabilities = torch.sum(contributions_polarizabilities, dim=-1)  # [n_nodes,6]
+        total_polarizability_spherical = scatter_sum(
+            src=atomic_polarizabilities,
+            index=data["batch"],
+            dim=0,
+            dim_size=num_graphs,
+        )  # [n_graphs,6]
+        
+        total_polarizability = spherical_to_cartesian(total_polarizability_spherical, device=data["positions"].device)
+
         output = {
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
+            "polarizability": total_polarizability,
         }
         return output
 

@@ -172,7 +172,7 @@ def train(
             elif log_errors == "DipoleRMSE":
                 error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
                 logging.info(
-                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye"
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye, RMSE_ALPHA_per_atom={eval_metrics['rmse_alpha_per_atom']:.2f}"
                 )
             elif log_errors == "EnergyDipoleRMSE":
                 error_e = eval_metrics["rmse_e_per_atom"] * 1e3
@@ -287,6 +287,10 @@ def evaluate(
     delta_mus_list = []
     delta_mus_per_atom_list = []
     mus_list = []
+    delta_alphas_list = []
+    alphas_list = []
+    delta_alphas_per_atom_list = []
+    Alphas_computed = False
     batch = None  # for pylint
 
     start_time = time.time()
@@ -338,6 +342,14 @@ def evaluate(
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
             mus_list.append(batch.dipole)
+        if output.get("polarizability") is not None and batch.polarizability is not None:
+            Alphas_computed = True
+            delta_alphas_list.append(batch.polarizability.view(-1, 3, 3) - output["polarizability"])
+            delta_alphas_per_atom_list.append(
+                (batch.polarizability.view(-1, 3, 3) - output["polarizability"])
+                / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
+            )
+            alphas_list.append(batch.polarizability)
 
     avg_loss = total_loss / len(data_loader)
 
@@ -386,6 +398,17 @@ def evaluate(
         aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
         aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
         aux["q95_mu"] = compute_q95(delta_mus)
+    if Alphas_computed:
+        delta_alphas = to_numpy(torch.cat(delta_alphas_list, dim=0))
+        delta_alphas_per_atom = to_numpy(torch.cat(delta_alphas_per_atom_list, dim=0))
+        alphas = to_numpy(torch.cat(alphas_list, dim=0))
+        aux["mae_alpha"] = compute_mae(delta_alphas)
+        aux["mae_alpha_per_atom"] = compute_mae(delta_alphas_per_atom)
+        aux["rel_mae_alpha"] = compute_rel_mae(delta_alphas, alphas)
+        aux["rmse_alpha"] = compute_rmse(delta_alphas)
+        aux["rmse_alpha_per_atom"] = compute_rmse(delta_alphas_per_atom)
+        aux["rel_rmse_alpha"] = compute_rel_rmse(delta_alphas, alphas)
+        aux["q95_alpha"] = compute_q95(delta_alphas)
 
     aux["time"] = time.time() - start_time
 

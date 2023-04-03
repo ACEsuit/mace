@@ -83,12 +83,12 @@ def get_complex_default_dtype():
     raise NotImplementedError
 
 
-def spherical_to_cartesian(t: torch.Tensor):
+def spherical_to_cartesian(t: torch.Tensor,  device: torch.device):
     """
     Convert spherical notation to cartesian notation
     """
     stress_cart_tensor = CartesianTensor("ij=ji")
-    stress_rtp = stress_cart_tensor.reduced_tensor_products()
+    stress_rtp = stress_cart_tensor.reduced_tensor_products().to(device)
     return stress_cart_tensor.to_cartesian(t, rtp=stress_rtp)
 
 

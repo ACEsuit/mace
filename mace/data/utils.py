@@ -37,6 +37,7 @@ class Configuration:
     virials: Optional[Virials] = None  # eV
     dipole: Optional[Vector] = None  # Debye
     charges: Optional[Charges] = None  # atomic unit
+    polarizability: Optional[Vector] = None  # 
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -45,6 +46,8 @@ class Configuration:
     forces_weight: float = 1.0  # weight of config forces in loss
     stress_weight: float = 1.0  # weight of config stress in loss
     virials_weight: float = 1.0  # weight of config virial in loss
+    dipole_weight: float = 1.0  # weight of config dipole in loss
+    polarizability_weight: float = 1.0  # weight of config polarizability in loss
     config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
 
 
@@ -77,6 +80,7 @@ def config_from_atoms_list(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    polarizability_key="polarizability",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -94,6 +98,7 @@ def config_from_atoms_list(
                 virials_key=virials_key,
                 dipole_key=dipole_key,
                 charges_key=charges_key,
+                polarizability_key=polarizability_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -108,6 +113,7 @@ def config_from_atoms(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    polarizability_key="polarizability",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -119,6 +125,7 @@ def config_from_atoms(
     stress = atoms.info.get(stress_key, None)  # eV / Ang
     virials = atoms.info.get(virials_key, None)
     dipole = atoms.info.get(dipole_key, None)  # Debye
+    polarizability = atoms.info.get(polarizability_key, None)  # 
     # Charges default to 0 instead of None if not found
     charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
     atomic_numbers = np.array(
@@ -134,6 +141,8 @@ def config_from_atoms(
     forces_weight = atoms.info.get("config_forces_weight", 1.0)
     stress_weight = atoms.info.get("config_stress_weight", 1.0)
     virials_weight = atoms.info.get("config_virials_weight", 1.0)
+    dipole_weight = atoms.info.get("config_dipole_weight", 1.0)
+    polarizability_weight = atoms.info.get("config_polarizability_weight", 1.0)
 
     # fill in missing quantities but set their weight to 0.0
     if energy is None:
@@ -148,6 +157,12 @@ def config_from_atoms(
     if virials is None:
         virials = np.zeros((3, 3))
         virials_weight = 0.0
+    if dipole is None:
+        dipole = np.zeros(3)
+        dipole_weight = 0.0
+    if polarizability is None:
+        polarizability = np.zeros((3,3))
+        polarizability_weight = 0.0
 
     return Configuration(
         atomic_numbers=atomic_numbers,
@@ -158,11 +173,14 @@ def config_from_atoms(
         virials=virials,
         dipole=dipole,
         charges=charges,
+        polarizability=polarizability,
         weight=weight,
         energy_weight=energy_weight,
         forces_weight=forces_weight,
         stress_weight=stress_weight,
         virials_weight=virials_weight,
+        dipole_weight=dipole_weight,
+        polarizability_weight=polarizability_weight,
         config_type=config_type,
         pbc=pbc,
         cell=cell,
@@ -194,6 +212,7 @@ def load_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipole",
     charges_key: str = "charges",
+    polarizability_key: str = "polarizability",
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
@@ -239,6 +258,7 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        polarizability_key=polarizability_key,
     )
     return atomic_energies_dict, configs
 
