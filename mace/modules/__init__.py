@@ -37,7 +37,7 @@ from .models import (
     ScaleShiftBOTNet,
     ScaleShiftMACE,
 )
-from .radial import BesselBasis, PolynomialCutoff
+from .radial import BesselBasis, GaussianBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
     compute_avg_num_neighbors,
@@ -81,6 +81,7 @@ __all__ = [
     "NonLinearReadoutBlock",
     "PolynomialCutoff",
     "BesselBasis",
+    "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
     "BOTNet",
