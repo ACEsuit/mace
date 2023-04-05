@@ -70,6 +70,27 @@ def compute_forces_virials(
 
     return -1 * forces, -1 * virials, stress
 
+def compute_dielectric_gradients(
+        dielectric: torch.Tensor,
+        positions: torch.Tensor,
+) -> Tuple[torch.tensor, torch.tensor]:
+    d_dielectric_dr = []
+    for i in range(dielectric.shape[-1]):
+        grad_outputs: List[Optional[torch.Tensor]] = [torch.ones((dielectric.shape[0], 1))]
+        gradient = torch.autograd.grad(
+            outputs=[dielectric[:, i].unsqueeze(-1)],  # [n_graphs, 3], [n_graphs, 9]
+            inputs=[positions],  # [n_nodes, 3]
+            grad_outputs=grad_outputs,
+            retain_graph=True,  # Make sure the graph is not destroyed during training
+            create_graph=True,  # Create graph for second derivative
+            allow_unused=True,  # For complete dissociation turn to true
+        )
+        d_dielectric_dr.append(gradient[0])
+    d_dielectric_dr = torch.stack(d_dielectric_dr, dim=1)
+    if gradient[0] is None:
+        return torch.zeros((positions.shape[0], dielectric.shape[-1], 3))
+    return d_dielectric_dr
+
 
 def get_symmetric_displacement(
     positions: torch.Tensor,

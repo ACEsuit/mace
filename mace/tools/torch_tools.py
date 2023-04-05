@@ -92,12 +92,12 @@ def spherical_to_cartesian(t: torch.Tensor,  device: torch.device):
     return stress_cart_tensor.to_cartesian(t, rtp=stress_rtp)
 
 
-def cartesian_to_spherical(t: torch.Tensor):
+def cartesian_to_spherical(t: torch.Tensor, device: torch.device):
     """
     Convert cartesian notation to spherical notation
     """
     stress_cart_tensor = CartesianTensor("ij=ji")
-    stress_rtp = stress_cart_tensor.reduced_tensor_products()
+    stress_rtp = stress_cart_tensor.reduced_tensor_products().to(device)
     return stress_cart_tensor.to_cartesian(t, rtp=stress_rtp)
 
 

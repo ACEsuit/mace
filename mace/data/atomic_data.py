@@ -214,6 +214,8 @@ class AtomicData(torch_geometric.data.Data):
             if config.polarizability is not None
             else None
         )
+        if len(polarizability) == 9:
+            polarizability = polarizability.reshape(3, 3)
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),

@@ -533,19 +533,19 @@ def main() -> None:
 
         for param in model.parameters():
             param.requires_grad = False
-        table = create_error_table(
-            table_type=args.error_table,
-            all_collections=all_collections,
-            z_table=z_table,
-            r_max=args.r_max,
-            valid_batch_size=args.valid_batch_size,
-            model=model,
-            loss_fn=loss_fn,
-            output_args=output_args,
-            log_wandb=args.wandb,
-            device=device,
-        )
-        logging.info("\n" + str(table))
+        # table = create_error_table(
+        #     table_type=args.error_table,
+        #     all_collections=all_collections,
+        #     z_table=z_table,
+        #     r_max=args.r_max,
+        #     valid_batch_size=args.valid_batch_size,
+        #     model=model,
+        #     loss_fn=loss_fn,
+        #     output_args=output_args,
+        #     log_wandb=args.wandb,
+        #     device=device,
+        # )
+        # logging.info("\n" + str(table))
 
         # Save entire model
         if swa_eval:

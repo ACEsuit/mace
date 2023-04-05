@@ -33,6 +33,7 @@ from .utils import (
     get_edge_vectors_and_lengths,
     get_outputs,
     get_symmetric_displacement,
+    compute_dielectric_gradients,
 )
 
 
@@ -701,6 +702,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        compute_dielectric_derivatives: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # assert compute_force is False
         assert compute_virials is False
@@ -757,13 +759,13 @@ class AtomicDipolesMACE(torch.nn.Module):
             dim=0,
             dim_size=num_graphs,
         )  # [n_graphs,3]
-        baseline = compute_fixed_charge_dipole(
-            charges=data["charges"],
-            positions=data["positions"],
-            batch=data["batch"],
-            num_graphs=num_graphs,
-        )  # [n_graphs,3]
-        total_dipole = total_dipole + baseline
+        # baseline = compute_fixed_charge_dipole(
+        #     charges=data["charges"],
+        #     positions=data["positions"],
+        #     batch=data["batch"],
+        #     num_graphs=num_graphs,
+        # )  # [n_graphs,3]
+        total_dipole = total_dipole #+ baseline
 
         # Compute the polarizabilities
         contributions_polarizabilities = torch.stack(
@@ -778,11 +780,25 @@ class AtomicDipolesMACE(torch.nn.Module):
         )  # [n_graphs,6]
         
         total_polarizability = spherical_to_cartesian(total_polarizability_spherical, device=data["positions"].device)
+        # TODO
+        # return atomic polarizability, atomic dipole
+        if compute_dielectric_derivatives:
+            dmu_dr = compute_dielectric_gradients(
+                dielectric=total_dipole,
+                positions=data["positions"],
+            )
+            dalpha_dr = compute_dielectric_gradients(
+                dielectric=total_polarizability.flatten(-2),
+                positions=data["positions"],
+            )
 
         output = {
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
             "polarizability": total_polarizability,
+            "polarizability_sh": total_polarizability_spherical,
+            "dmu_dr": dmu_dr,
+            "dalpha_dr": dalpha_dr,
         }
         return output
 
