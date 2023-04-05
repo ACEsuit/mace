@@ -76,7 +76,7 @@ def compute_dielectric_gradients(
 ) -> Tuple[torch.tensor, torch.tensor]:
     d_dielectric_dr = []
     for i in range(dielectric.shape[-1]):
-        grad_outputs: List[Optional[torch.Tensor]] = [torch.ones((dielectric.shape[0], 1))]
+        grad_outputs: List[Optional[torch.Tensor]] = [torch.ones((dielectric.shape[0], 1)).to(dielectric.device)]
         gradient = torch.autograd.grad(
             outputs=[dielectric[:, i].unsqueeze(-1)],  # [n_graphs, 3], [n_graphs, 9]
             inputs=[positions],  # [n_nodes, 3]
