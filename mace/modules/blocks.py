@@ -152,9 +152,9 @@ class RadialEmbeddingBlock(torch.nn.Module):
     ):
         super().__init__()
         if radial_type == "bessel":
-            self.radial_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
+            self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
         elif radial_type == "gaussian":
-            self.radial_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
+            self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
         self.out_dim = num_bessel
 
@@ -162,7 +162,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         self,
         edge_lengths: torch.Tensor,  # [n_edges, 1]
     ):
-        radial = self.radial_fn(edge_lengths)  # [n_edges, n_basis]
+        radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
         return radial * cutoff  # [n_edges, n_basis]
 
