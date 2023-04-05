@@ -782,6 +782,14 @@ class AtomicDipolesMACE(torch.nn.Module):
         total_polarizability = spherical_to_cartesian(total_polarizability_spherical, device=data["positions"].device)
         # TODO
         # return atomic polarizability, atomic dipole
+
+        output = {
+            "dipole": total_dipole,
+            "atomic_dipoles": atomic_dipoles,
+            "polarizability": total_polarizability,
+            "polarizability_sh": total_polarizability_spherical,
+        }
+
         if compute_dielectric_derivatives:
             dmu_dr = compute_dielectric_gradients(
                 dielectric=total_dipole,
@@ -791,15 +799,9 @@ class AtomicDipolesMACE(torch.nn.Module):
                 dielectric=total_polarizability.flatten(-2),
                 positions=data["positions"],
             )
+            output["dmu_dr"] = dmu_dr
+            output["dalpha_dr"] = dalpha_dr
 
-        output = {
-            "dipole": total_dipole,
-            "atomic_dipoles": atomic_dipoles,
-            "polarizability": total_polarizability,
-            "polarizability_sh": total_polarizability_spherical,
-            "dmu_dr": dmu_dr,
-            "dalpha_dr": dalpha_dr,
-        }
         return output
 
 

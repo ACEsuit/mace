@@ -102,18 +102,19 @@ def main():
         mus_list.append(torch_tools.to_numpy(output["dipole"]))
         alphas_list.append(torch_tools.to_numpy(output["polarizability"]))
         alphas_sh_list.append(torch_tools.to_numpy(output["polarizability_sh"]))
-        dmu_dr = np.split(
-            torch_tools.to_numpy(output["dmu_dr"]),
-            indices_or_sections=batch.ptr[1:],
-            axis=0,
-        )
-        dmu_dr_collection.append(dmu_dr[:-1])
-        dalpha_dr = np.split(
-            torch_tools.to_numpy(output["dalpha_dr"]),
-            indices_or_sections=batch.ptr[1:],
-            axis=0,
-        )
-        dalpha_dr_collection.append(dalpha_dr[:-1])
+        if args.compute_dielectric_derivatives:
+            dmu_dr = np.split(
+                torch_tools.to_numpy(output["dmu_dr"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            dmu_dr_collection.append(dmu_dr[:-1])
+            dalpha_dr = np.split(
+                torch_tools.to_numpy(output["dalpha_dr"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            dalpha_dr_collection.append(dalpha_dr[:-1])
 
 
         # if args.return_contributions:
@@ -122,14 +123,15 @@ def main():
     mus = np.concatenate(mus_list, axis=0)
     alphas = np.concatenate(alphas_list, axis=0)
     alphas_sh = np.concatenate(alphas_sh_list, axis=0)
-    dmu_dr_list = [
-        dmu_dr for dmu_dr_list in dmu_dr_collection for dmu_dr in dmu_dr_list
-    ]
-    dalpha_dr_list = [
-        dalpha_dr for dalpha_dr_list in dalpha_dr_collection for dalpha_dr in dalpha_dr_list
-    ]
-    
     assert len(atoms_list) == mus.shape[0] == alphas.shape[0] == alphas_sh.shape[0]
+
+    if args.compute_dielectric_derivatives:
+        dmu_dr_list = [
+            dmu_dr for dmu_dr_list in dmu_dr_collection for dmu_dr in dmu_dr_list
+        ]
+        dalpha_dr_list = [
+            dalpha_dr for dalpha_dr_list in dalpha_dr_collection for dalpha_dr in dalpha_dr_list
+        ]
 
     # if args.return_contributions:
     #     contributions = np.concatenate(contributions_list, axis=0)
@@ -141,8 +143,9 @@ def main():
         atoms.info[args.info_prefix + "mu"] = mu
         atoms.info[args.info_prefix + "alpha"] = alpha
         atoms.info[args.info_prefix + "alpha_sh"] = alphas_sh[i]
-        atoms.arrays[args.info_prefix +"dmu_dr"] = dmu_dr.reshape(dmu_dr.shape[0],9)
-        atoms.arrays[args.info_prefix +"dalpha_dr"] = dalpha_dr_list[i].reshape(dalpha_dr_list[i].shape[0],27)
+        if args.compute_dielectric_derivatives:
+            atoms.arrays[args.info_prefix +"dmu_dr"] = dmu_dr.reshape(dmu_dr.shape[0],9)
+            atoms.arrays[args.info_prefix +"dalpha_dr"] = dalpha_dr_list[i].reshape(dalpha_dr_list[i].shape[0],27)
 
         # if args.return_contributions:
         #     atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
