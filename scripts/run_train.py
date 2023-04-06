@@ -19,7 +19,7 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, modules, tools
 from mace.tools import torch_geometric
-from mace.tools.scripts_utils import create_error_table, get_dataset_from_xyz
+from mace.tools.scripts_utils import create_error_table, get_dataset_from_xyz, LRScheduler
 
 
 def main() -> None:
@@ -379,18 +379,7 @@ def main() -> None:
 
     logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + "_train")
 
-    if args.scheduler == "ExponentialLR":
-        lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            optimizer=optimizer, gamma=args.lr_scheduler_gamma
-        )
-    elif args.scheduler == "ReduceLROnPlateau":
-        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer=optimizer,
-            factor=args.lr_factor,
-            patience=args.scheduler_patience,
-        )
-    else:
-        raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
+    lr_scheduler = LRScheduler(optimizer, args)
 
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
