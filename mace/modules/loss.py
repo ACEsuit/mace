@@ -188,7 +188,7 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
         )
 
     def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
-        num_atoms = ref.ptr[1:] - ref.ptr[:-1] 
+        num_atoms = ref.ptr[1:] - ref.ptr[:-1]
         return (
             self.energy_weight * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
             + self.forces_weight * self.huber_loss(ref["forces"], pred["forces"])
