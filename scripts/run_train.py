@@ -337,7 +337,7 @@ def main() -> None:
     else:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
-    if torch.cuda.device_count() > 1 and device == "cuda":
+    if torch.cuda.device_count() > 1 and args.device == "cuda":
         logging.info(f"Multi-GPUs training on {torch.cuda.device_count()} GPUs.")
         model = tools.DataParallelModel(model)
     model.to(device)
