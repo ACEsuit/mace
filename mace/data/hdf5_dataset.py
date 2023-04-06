@@ -27,7 +27,11 @@ class HDF5ChainDataset(ChainDataset):
         for i in range(self.length):
             grp = self.file["config_" + str(i)]
             datasets.append(
-                HDF5IterDataset(iter_group=grp, r_max=self.r_max, z_table=self.z_table,)
+                HDF5IterDataset(
+                    iter_group=grp,
+                    r_max=self.r_max,
+                    z_table=self.z_table,
+                )
             )
         return ChainDataset(datasets)
 
@@ -89,6 +93,10 @@ class HDF5Dataset(Dataset):
         self.length = len(self.file.keys()) * self.batch_size
         self.r_max = r_max
         self.z_table = z_table
+        try self.file.attrs["drop_last"]:
+            self.drop_last = self.file.attrs["drop_last"]
+        except KeyError:
+            self.drop_last = False
 
     def __len__(self):
         return self.length

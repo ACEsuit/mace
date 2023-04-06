@@ -185,7 +185,7 @@ def main() -> None:
             validation_set_processed,
             batch_size=args.valid_batch_size,
             shuffle=False,
-            drop_last=False,
+            drop_last=validation_set_processed.drop_last,
             num_workers=args.num_workers,
             pin_memory=args.pin_memory,
         )
@@ -555,7 +555,7 @@ def main() -> None:
                 test_set,
                 batch_size=args.valid_batch_size,
                 shuffle=False,
-                drop_last=False,
+                drop_last=test_set.drop_last,
                 num_workers=args.num_workers,
                 pin_memory=args.pin_memory,
             )
