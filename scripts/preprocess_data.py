@@ -94,7 +94,7 @@ def main():
         # split collections.train into batches and save them to hdf5
         split_train = np.array_split(collections.train, args.batch_size)
         for i, batch in enumerate(split_train):
-            save_configurations_as_HDF5(batch, f, f"batch_{i}")
+            save_configurations_as_HDF5(batch, i, f)
         
 
     if args.compute_statistics:
@@ -129,6 +129,8 @@ def main():
             "atomic_numbers": str(z_table.zs),
             "r_max": args.r_max,
         }
+        del train_dataset
+        del train_loader
         with open(args.h5_prefix + "statistics.json", "w") as f:
             json.dump(statistics, f)
     
@@ -139,7 +141,7 @@ def main():
     with h5py.File(args.h5_prefix + "valid.h5", "w") as f:    
         split_valid = np.array_split(collections.valid, args.batch_size)
         for i, batch in enumerate(split_valid):
-            save_configurations_as_HDF5(batch, f, f"batch_{i}")
+            save_configurations_as_HDF5(batch, i, f)
 
     if args.test_file is not None:
         logging.info("Preparing test sets")
@@ -147,7 +149,7 @@ def main():
             for name, subset in collections.tests:
                 split_test = np.array_split(subset, args.batch_size)
                 for i, batch in enumerate(split_test):
-                    save_configurations_as_HDF5(batch, f, f"batch_{i}")
+                    save_configurations_as_HDF5(batch, i, f)
 
 
 if __name__ == "__main__":

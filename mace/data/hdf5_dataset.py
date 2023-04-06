@@ -85,8 +85,8 @@ class HDF5Dataset(Dataset):
     def __init__(self, file, r_max, z_table, **kwargs):
         super(HDF5Dataset, self).__init__()
         self.file = h5py.File(file, "r")  # this is dangerous to open the file here
-        self.batch_size = len(self.file["config_0"].keys())
-        self.length = len(self.file.keys()) * len(self.file["config_0"].keys())
+        self.batch_size = len(self.file["config_batch_0"].keys())
+        self.length = len(self.file.keys()) * self.batch_size
         self.r_max = r_max
         self.z_table = z_table
 
@@ -97,28 +97,32 @@ class HDF5Dataset(Dataset):
         # compute the index of the batch
         batch_index = index // self.batch_size
         config_index = index % self.batch_size
-        grp = self.file["config_batch" + str(batch_index)]
+        grp = self.file["config_batch_" + str(batch_index)]
         subgrp = grp["config_" + str(config_index)]
         config = Configuration(
             atomic_numbers=subgrp["atomic_numbers"][()],
             positions=subgrp["positions"][()],
-            energy=subgrp["energy"][()],
-            forces=subgrp["forces"][()],
-            stress=subgrp["stress"][()],
-            virials=subgrp["virials"][()],
-            dipole=subgrp["dipole"][()],
-            charges=subgrp["charges"][()],
-            weight=subgrp["weight"][()],
-            energy_weight=subgrp["energy_weight"][()],
-            forces_weight=subgrp["forces_weight"][()],
-            stress_weight=subgrp["stress_weight"][()],
-            virials_weight=subgrp["virials_weight"][()],
-            config_type=subgrp["config_type"][()],
-            pbc=subgrp["pbc"][()],
-            cell=subgrp["cell"][()],
+            energy=unpack_value(subgrp["energy"][()]),
+            forces=unpack_value(subgrp["forces"][()]),
+            stress=unpack_value(subgrp["stress"][()]),
+            virials=unpack_value(subgrp["virials"][()]),
+            dipole=unpack_value(subgrp["dipole"][()]),
+            charges=unpack_value(subgrp["charges"][()]),
+            weight=unpack_value(subgrp["weight"][()]),
+            energy_weight=unpack_value(subgrp["energy_weight"][()]),
+            forces_weight=unpack_value(subgrp["forces_weight"][()]),
+            stress_weight=unpack_value(subgrp["stress_weight"][()]),
+            virials_weight=unpack_value(subgrp["virials_weight"][()]),
+            config_type=unpack_value(subgrp["config_type"][()]),
+            pbc=unpack_value(subgrp["pbc"][()]),
+            cell=unpack_value(subgrp["cell"][()]),
         )
         atomic_data = data.AtomicData.from_config(
             config, z_table=self.z_table, cutoff=self.r_max
         )
         return atomic_data
 
+
+def unpack_value(value):
+    value = value.decode("utf-8") if isinstance(value, bytes) else value
+    return None if str(value) == "None" else value
