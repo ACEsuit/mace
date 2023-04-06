@@ -12,7 +12,7 @@ from ase.io import read
 import torch
 
 from mace import tools, data
-from mace.data.utils import save_AtomicData_to_HDF5 #, save_dataset_as_HDF5
+from mace.data.utils import save_AtomicData_to_HDF5, save_configurations_as_HDF5 #, save_dataset_as_HDF5
 from mace.tools.scripts_utils import (get_dataset_from_xyz, 
                                     get_atomic_energies)
 from mace.tools import torch_geometric
@@ -91,10 +91,10 @@ def main():
         random.shuffle(collections.train)
 
     with h5py.File(args.h5_prefix + "train.h5", "w") as f:
-        for i, config in enumerate(collections.train):
-            atomic_data = data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=args.r_max)
-            save_AtomicData_to_HDF5(atomic_data, i, f)
+        # split collections.train into batches and save them to hdf5
+        split_train = np.array_split(collections.train, args.batch_size)
+        for i, batch in enumerate(split_train):
+            save_configurations_as_HDF5(batch, f, f"batch_{i}")
         
 
     if args.compute_statistics:
@@ -106,8 +106,9 @@ def main():
             [atomic_energies_dict[z] for z in z_table.zs]
         )
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
+        train_dataset = data.HDF5Dataset(args.h5_prefix + "train.h5", z_table=z_table, r_max=args.r_max)
         train_loader = torch_geometric.dataloader.DataLoader(
-            data.HDF5Dataset(args.h5_prefix + "train.h5"), 
+            dataset=train_dataset, 
             batch_size=args.batch_size, 
             shuffle=False,
             drop_last=False,
@@ -136,19 +137,17 @@ def main():
         random.shuffle(collections.valid)
 
     with h5py.File(args.h5_prefix + "valid.h5", "w") as f:    
-        for i, config in enumerate(collections.valid):
-            atomic_data = data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=args.r_max)
-            save_AtomicData_to_HDF5(atomic_data, i, f)
+        split_valid = np.array_split(collections.valid, args.batch_size)
+        for i, batch in enumerate(split_valid):
+            save_configurations_as_HDF5(batch, f, f"batch_{i}")
 
     if args.test_file is not None:
         logging.info("Preparing test sets")
-        for name, subset in collections.tests:
-            with h5py.File(args.h5_prefix + name + "_test.h5", "w") as f:
-                for i, config in enumerate(subset):
-                    atomic_data = data.AtomicData.from_config(
-                        config, z_table=z_table, cutoff=args.r_max)
-                    save_AtomicData_to_HDF5(atomic_data, i, f)
+        with h5py.File(args.h5_prefix + name + "_test.h5", "w") as f:
+            for name, subset in collections.tests:
+                split_test = np.array_split(subset, args.batch_size)
+                for i, batch in enumerate(split_test):
+                    save_configurations_as_HDF5(batch, f, f"batch_{i}")
 
 
 if __name__ == "__main__":
