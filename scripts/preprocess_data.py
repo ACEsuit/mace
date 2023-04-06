@@ -28,6 +28,29 @@ def compute_statistics(train_loader: torch.utils.data.DataLoader,
     mean, std = scaling_classes[scaling](train_loader, atomic_energies)
     return avg_num_neighbors, mean, std
 
+def split_array(array: np.ndarray, max_size: int):
+    drop_last = False
+    if len(a) % 2 == 1:
+        a = np.append(a, a[-1])
+        drop_last = True
+    factors = get_prime_factors(len(array))
+    max_factor = 1
+    for i in range(1, len(factors) + 1):
+        for j in range(0, len(factors) - i + 1):
+            if np.prod(factors[j:j + i]) <= max_size:
+                test = np.prod(factors[j:j + i])
+                if test > max_factor:
+                    max_factor = test
+    return np.array_split(array, max_factor), drop_last
+    
+def get_prime_factors(n: int):
+    factors = []
+    for i in range(2, n + 1):
+        while n % i == 0:
+            factors.append(i)
+            n = n / i 
+    return factors
+
 def main():
     """
     This script loads an xyz dataset and prepares
@@ -92,7 +115,8 @@ def main():
 
     with h5py.File(args.h5_prefix + "train.h5", "w") as f:
         # split collections.train into batches and save them to hdf5
-        split_train = np.array_split(collections.train, args.batch_size)
+        split_train, drop_last = split_array(collections.train, args.batch_size)
+        f.attrs["drop_last"] = drop_last
         for i, batch in enumerate(split_train):
             save_configurations_as_HDF5(batch, i, f)
         
@@ -139,15 +163,17 @@ def main():
         random.shuffle(collections.valid)
 
     with h5py.File(args.h5_prefix + "valid.h5", "w") as f:    
-        split_valid = np.array_split(collections.valid, args.batch_size)
+        split_valid, drop_last = split_array(collections.valid, args.batch_size)
+        f.attrs["drop_last"] = drop_last
         for i, batch in enumerate(split_valid):
             save_configurations_as_HDF5(batch, i, f)
 
     if args.test_file is not None:
         logging.info("Preparing test sets")
-        with h5py.File(args.h5_prefix + name + "_test.h5", "w") as f:
-            for name, subset in collections.tests:
-                split_test = np.array_split(subset, args.batch_size)
+        for name, subset in collections.tests:
+            with h5py.File(args.h5_prefix + name + "_test.h5", "w") as f:
+                split_test, drop_last = split_array(subset, args.batch_size)
+                f.attrs["drop_last"] = drop_last
                 for i, batch in enumerate(split_test):
                     save_configurations_as_HDF5(batch, i, f)
 
