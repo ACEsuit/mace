@@ -318,26 +318,29 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["charges"] = data.charges
 
 
-def save_configurations_as_HDF5(configurations: Configurations, out_name: str) -> None:
-    with h5py.File(out_name, "w") as f:
-        grp = f.create_group(f"config_batch{i}")
-        for i, config in enumerate(configurations):
-            subgroup_name = f"config_{i}"
-            subgroup = grp.create_group(subgroup_name)
-            subgroup["atomic_numbers"] = config.atomic_numbers
-            subgroup["positions"] = config.positions
-            subgroup["energy"] = config.energy
-            subgroup["forces"] = config.forces
-            subgroup["stress"] = config.stress
-            subgroup["virials"] = config.virials
-            subgroup["dipole"] = config.dipole
-            subgroup["charges"] = config.charges
-            subgroup["cell"] = config.cell
-            subgroup["pbc"] = config.pbc
-            subgroup["weight"] = config.weight
-            subgroup["energy_weight"] = config.energy_weight
-            subgroup["forces_weight"] = config.forces_weight
-            subgroup["stress_weight"] = config.stress_weight
-            subgroup["virials_weight"] = config.virials_weight
-            subgroup["config_type"] = config.config_type
+def save_configurations_as_HDF5(configurations: Configurations, i, h5_file) -> None:
+    grp = h5_file.create_group(f"config_batch_{i}")
+    for i, config in enumerate(configurations):
+        subgroup_name = f"config_{i}"
+        subgroup = grp.create_group(subgroup_name)
+        subgroup["atomic_numbers"] = write_value(config.atomic_numbers)
+        subgroup["positions"] = write_value(config.positions)
+        subgroup["energy"] = write_value(config.energy)
+        subgroup["forces"] = write_value(config.forces)
+        subgroup["stress"] = write_value(config.stress)
+        subgroup["virials"] = write_value(config.virials)
+        subgroup["dipole"] = write_value(config.dipole)
+        subgroup["charges"] = write_value(config.charges)
+        subgroup["cell"] = write_value(config.cell)
+        subgroup["pbc"] = write_value(config.pbc)
+        subgroup["weight"] = write_value(config.weight)
+        subgroup["energy_weight"] = write_value(config.energy_weight)
+        subgroup["forces_weight"] = write_value(config.forces_weight)
+        subgroup["stress_weight"] = write_value(config.stress_weight)
+        subgroup["virials_weight"] = write_value(config.virials_weight)
+        subgroup["config_type"] = write_value(config.config_type)
+
+
+def write_value(value):
+    return value if value is not None else "None"
 
