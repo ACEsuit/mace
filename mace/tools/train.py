@@ -83,7 +83,7 @@ def train(
         if swa is None or epoch < swa.start:
             if epoch > start_epoch:
                 lr_scheduler.step(
-                    valid_loss
+                    metrics=valid_loss
                 )  # Can break if exponential LR, TODO fix that!
         else:
             if swa_start:
