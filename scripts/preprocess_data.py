@@ -28,12 +28,12 @@ def compute_statistics(train_loader: torch.utils.data.DataLoader,
     mean, std = scaling_classes[scaling](train_loader, atomic_energies)
     return avg_num_neighbors, mean, std
 
-def split_array(array: np.ndarray, max_size: int):
+def split_array(a: np.ndarray, max_size: int):
     drop_last = False
     if len(a) % 2 == 1:
         a = np.append(a, a[-1])
         drop_last = True
-    factors = get_prime_factors(len(array))
+    factors = get_prime_factors(len(a))
     max_factor = 1
     for i in range(1, len(factors) + 1):
         for j in range(0, len(factors) - i + 1):
@@ -41,7 +41,7 @@ def split_array(array: np.ndarray, max_size: int):
                 test = np.prod(factors[j:j + i])
                 if test > max_factor:
                     max_factor = test
-    return np.array_split(array, max_factor), drop_last
+    return np.array_split(a, max_factor), drop_last
     
 def get_prime_factors(n: int):
     factors = []

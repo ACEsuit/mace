@@ -45,6 +45,9 @@ def main() -> None:
     logging.info(f"Configuration: {args}")
     device = tools.init_device(args.device)
     tools.set_default_dtype(args.default_dtype)
+    if args.num_workers > 0:
+        os.environ["OMP_NUM_THREADS"] = str(args.num_workers)
+        torch.multiprocessing.set_start_method('fork')
 
     config_type_weights = get_config_type_weights(args.config_type_weights)
 
@@ -103,7 +106,10 @@ def main() -> None:
             for z in config.atomic_numbers
         )
     else:
-        logging.info("Using atomic numbers from command line argument")
+        if args.statistics_file is None:
+            logging.info("Using atomic numbers from command line argument")
+        else:
+            logging.info("Using atomic numbers from statistics file")
         zs_list = ast.literal_eval(args.atomic_numbers)
         assert isinstance(zs_list, list)
         z_table = tools.get_atomic_number_table_from_zs(zs_list)
@@ -550,7 +556,7 @@ def main() -> None:
         # get all test paths
         test_files = get_files_with_suffix(args.test_dir, "_test.h5")
         for test_file in test_files:
-            test_set = HDF5Dataset(test_file, z_table=z_table, cutoff=args.r_max)
+            test_set = HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
             test_loader = torch_geometric.dataloader.DataLoader(
                 test_set,
                 batch_size=args.valid_batch_size,
