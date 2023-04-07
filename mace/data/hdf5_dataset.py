@@ -93,8 +93,8 @@ class HDF5Dataset(Dataset):
         self.length = len(self.file.keys()) * self.batch_size
         self.r_max = r_max
         self.z_table = z_table
-        try self.file.attrs["drop_last"]:
-            self.drop_last = self.file.attrs["drop_last"]
+        try:
+            self.drop_last = bool(self.file.attrs["drop_last"])
         except KeyError:
             self.drop_last = False
 
