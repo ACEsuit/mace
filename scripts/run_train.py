@@ -276,9 +276,7 @@ def main() -> None:
             dipole_weight=args.dipole_weight,
         )
     else:
-        loss_fn = modules.EnergyForcesLoss(
-            energy_weight=args.energy_weight, forces_weight=args.forces_weight
-        )
+        loss_fn = modules.EnergyForcesLoss()
     logging.info(loss_fn)
 
     if args.compute_avg_num_neighbors:
