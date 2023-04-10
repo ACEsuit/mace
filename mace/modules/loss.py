@@ -101,9 +101,6 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
         )
 
 
-EnergyForcesLoss = WeightedEnergyForcesLoss
-
-
 class WeightedForcesLoss(torch.nn.Module):
     def __init__(self, forces_weight=1.0) -> None:
         super().__init__()
