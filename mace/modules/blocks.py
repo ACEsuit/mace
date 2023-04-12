@@ -67,9 +67,9 @@ class NonLinearReadoutBlock(torch.nn.Module):
 @compile_mode("script")
 class LinearDipoleReadoutBlock(torch.nn.Module):
     def __init__(
-        self, 
-        irreps_in: o3.Irreps, 
-        dipole_only: bool = False, 
+        self,
+        irreps_in: o3.Irreps,
+        dipole_only: bool = False,
         dipole_polar: bool = False,
     ):
         super().__init__()

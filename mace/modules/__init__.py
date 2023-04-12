@@ -40,11 +40,11 @@ from .radial import BesselBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
     compute_avg_num_neighbors,
+    compute_dielectric_gradients,
     compute_fixed_charge_dipole,
     compute_mean_rms_energy_forces,
     compute_mean_std_atomic_inter_energy,
     compute_rms_dipoles,
-    compute_dielectric_gradients,
 )
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {

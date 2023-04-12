@@ -37,7 +37,7 @@ class Configuration:
     virials: Optional[Virials] = None  # eV
     dipole: Optional[Vector] = None  # Debye
     charges: Optional[Charges] = None  # atomic unit
-    polarizability: Optional[Vector] = None  # 
+    polarizability: Optional[Vector] = None  #
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -125,7 +125,7 @@ def config_from_atoms(
     stress = atoms.info.get(stress_key, None)  # eV / Ang
     virials = atoms.info.get(virials_key, None)
     dipole = atoms.info.get(dipole_key, None)  # Debye
-    polarizability = atoms.info.get(polarizability_key, None)  # 
+    polarizability = atoms.info.get(polarizability_key, None)  #
     # Charges default to 0 instead of None if not found
     charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
     atomic_numbers = np.array(
@@ -161,7 +161,7 @@ def config_from_atoms(
         dipole = np.zeros(3)
         dipole_weight = 0.0
     if polarizability is None:
-        polarizability = np.zeros((3,3))
+        polarizability = np.zeros((3, 3))
         polarizability_weight = 0.0
 
     return Configuration(

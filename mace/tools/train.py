@@ -342,9 +342,14 @@ def evaluate(
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
             mus_list.append(batch.dipole)
-        if output.get("polarizability") is not None and batch.polarizability is not None:
+        if (
+            output.get("polarizability") is not None
+            and batch.polarizability is not None
+        ):
             Alphas_computed = True
-            delta_alphas_list.append(batch.polarizability.view(-1, 3, 3) - output["polarizability"])
+            delta_alphas_list.append(
+                batch.polarizability.view(-1, 3, 3) - output["polarizability"]
+            )
             delta_alphas_per_atom_list.append(
                 (batch.polarizability.view(-1, 3, 3) - output["polarizability"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)

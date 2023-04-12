@@ -83,7 +83,7 @@ def get_complex_default_dtype():
     raise NotImplementedError
 
 
-def spherical_to_cartesian(t: torch.Tensor,  device: torch.device):
+def spherical_to_cartesian(t: torch.Tensor, device: torch.device):
     """
     Convert spherical notation to cartesian notation
     """

@@ -205,7 +205,7 @@ def main() -> None:
         "virials": compute_virials,
         "stress": args.compute_stress,
         "dipoles": compute_dipole,
-        "polarizability": compute_polarizability
+        "polarizability": compute_polarizability,
     }
     logging.info(f"Selected the following outputs: {output_args}")
 

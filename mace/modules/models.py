@@ -28,12 +28,12 @@ from .blocks import (
     ScaleShiftBlock,
 )
 from .utils import (
+    compute_dielectric_gradients,
     compute_fixed_charge_dipole,
     compute_forces,
     get_edge_vectors_and_lengths,
     get_outputs,
     get_symmetric_displacement,
-    compute_dielectric_gradients,
 )
 
 
@@ -645,9 +645,11 @@ class AtomicDipolesMACE(torch.nn.Module):
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        self.readouts.append(LinearDipoleReadoutBlock(hidden_irreps, 
-                                                      dipole_only=False,
-                                                      dipole_polar=True))
+        self.readouts.append(
+            LinearDipoleReadoutBlock(
+                hidden_irreps, dipole_only=False, dipole_polar=True
+            )
+        )
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
@@ -681,17 +683,18 @@ class AtomicDipolesMACE(torch.nn.Module):
             if i == num_interactions - 2:
                 self.readouts.append(
                     NonLinearDipoleReadoutBlock(
-                        hidden_irreps_out, 
-                        MLP_irreps, gate, 
+                        hidden_irreps_out,
+                        MLP_irreps,
+                        gate,
                         dipole_only=False,
-                        dipole_polar=True
+                        dipole_polar=True,
                     )
                 )
             else:
                 self.readouts.append(
-                    LinearDipoleReadoutBlock(hidden_irreps, 
-                                             dipole_only=False,
-                                             dipole_polar=True)
+                    LinearDipoleReadoutBlock(
+                        hidden_irreps, dipole_only=False, dipole_polar=True
+                    )
                 )
 
     def forward(
@@ -702,7 +705,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
-        compute_dielectric_derivatives: bool = False,
+        compute_dielectric_derivatives: bool = True,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # assert compute_force is False
         assert compute_virials is False
@@ -743,10 +746,11 @@ class AtomicDipolesMACE(torch.nn.Module):
             )
             node_out = readout(node_feats).squeeze(-1)  # [n_nodes,]
             node_dipoles = node_out[:, 1:4]
-            node_polarizability = torch.cat((node_out[:, 0].unsqueeze(-1), node_out[:, 4:]), dim=-1)
+            node_polarizability = torch.cat(
+                (node_out[:, 0].unsqueeze(-1), node_out[:, 4:]), dim=-1
+            )
             dipoles.append(node_dipoles)
             polarizabilities.append(node_polarizability)
-
 
         # Compute the dipoles
         contributions_dipoles = torch.stack(
@@ -765,21 +769,25 @@ class AtomicDipolesMACE(torch.nn.Module):
         #     batch=data["batch"],
         #     num_graphs=num_graphs,
         # )  # [n_graphs,3]
-        total_dipole = total_dipole #+ baseline
+        total_dipole = total_dipole  # + baseline
 
         # Compute the polarizabilities
         contributions_polarizabilities = torch.stack(
             polarizabilities, dim=-1
         )  # [n_nodes,6,n_contributions]
-        atomic_polarizabilities = torch.sum(contributions_polarizabilities, dim=-1)  # [n_nodes,6]
+        atomic_polarizabilities = torch.sum(
+            contributions_polarizabilities, dim=-1
+        )  # [n_nodes,6]
         total_polarizability_spherical = scatter_sum(
             src=atomic_polarizabilities,
             index=data["batch"],
             dim=0,
             dim_size=num_graphs,
         )  # [n_graphs,6]
-        
-        total_polarizability = spherical_to_cartesian(total_polarizability_spherical, device=data["positions"].device)
+
+        total_polarizability = spherical_to_cartesian(
+            total_polarizability_spherical, device=data["positions"].device
+        )
         # TODO
         # return atomic polarizability, atomic dipole
 
