@@ -1,8 +1,8 @@
 .. _lammps:
 
-================
+==================
 LAMMPS Interface
-================
+==================
 
 .. warning::
     The MACE LAMMPS interface is work in progress,
@@ -11,7 +11,7 @@ LAMMPS Interface
     If you'd like to attempt using it, here are some rough instructions.
 
 First steps if you're using CSD3
-#####
+##################################
 
 This environment is specific to the Cascade Lake compute nodes. If you want to use Ice Lake, you'll need something slightly different - see the CSD3 documentation. Moreover, you may see MPI errors if you try running on a CSD3 head node; just use the compute nodes.::
 
@@ -20,7 +20,7 @@ This environment is specific to the Cascade Lake compute nodes. If you want to u
     module load gcc/9
 
 First steps if you're using Archer2
-#####
+#####################################
 
 The default setup should be okay. But do everything in the work directory. After logging in, run the following, as recommended by their Quickstart for Developers.::
 
@@ -51,7 +51,7 @@ Install Lammps::
     make install
 
 Preparing your model
-#####
+######################
 
 Train the model using the latest `main` branch. Ideally with pytorch 1.13, but I think 1.12.1 will also work. Afterwards, use a script like this to prepare a torchscript-compiled LAMMPS_MACE model::
 
@@ -69,7 +69,7 @@ Train the model using the latest `main` branch. Ideally with pytorch 1.13, but I
     lammps_model_compiled.save(model_path+"-lammps.pt")
 
 Lammps pair_style
-#####
+###################
 
 Something like this:::
 
@@ -87,7 +87,7 @@ If you are using a single MPI process with threading (recommended for small syst
 With no_domain_decomposition, LAMMPS builds a periodic graph rather than treating ghost atoms as independent nodes.
 
 Job submission
-#####
+################
 
 Here is an example slurm script (for Cascade Lake). For now, I recommend relying mostly on threading for smaller systems. For larger systems, you'll need to experiment - multiple-node jobs will work, but I still recommend using a small number of MPI processes per node and threading for the rest. Definitely use the --exclusive option to get access to the full-node memory.::
 

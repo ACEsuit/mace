@@ -1,8 +1,8 @@
 .. _ase:
 
-=============
+================
 ASE calculator
-=============
+================
 
 MACE models can run molecular dynamics or geometry optimisation through the ASE calculator.
 The ASE calculator is a Python module that can be used to run MD simulations or geometry optimisations.
