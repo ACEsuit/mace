@@ -3,6 +3,7 @@ from typing import Callable, Dict, Optional, Type
 import torch
 
 from .blocks import (
+    SphericalHarmonics,
     AgnosticNonlinearInteractionBlock,
     AgnosticResidualNonlinearInteractionBlock,
     AtomicEnergiesBlock,

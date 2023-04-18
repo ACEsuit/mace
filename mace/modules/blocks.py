@@ -14,6 +14,11 @@ from e3nn.util.jit import compile_mode
 
 from mace.tools.scatter import scatter_sum
 
+try:
+    import sphericart_torch
+except ImportError:
+    BACKEND = "e3nn"
+    pass
 from .irreps_tools import (
     linear_out_irreps,
     reshape_irreps,
@@ -21,6 +26,33 @@ from .irreps_tools import (
 )
 from .radial import BesselBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
+
+
+@compile_mode("script")
+class SphericalHarmonics(torch.nn.Module):
+    def __init__(
+        self,
+        sh_irreps: o3.Irreps,
+        normalize=True,
+        normalization: str = "component",
+        backend: str = "opt",
+    ):
+        super().__init__()
+        self.sh_irreps = sh_irreps
+        self.lmax = self.sh_irreps.lmax
+        self.normalization = normalization
+        if backend == "e3nn" or BACKEND == "e3nn":
+            self.spherical_harmonics = o3.SphericalHarmonics(
+                self.sh_irreps, normalize=normalize, normalization=self.normalization
+            )
+        elif backend == "opt":
+            spherical_harmonics_cart = sphericart_torch.SphericalHarmonics(
+                self.lmax, normalized=normalize
+            ).compute
+            self.spherical_harmonics = lambda x: spherical_harmonics_cart(x)[0]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.spherical_harmonics(x)
 
 
 @compile_mode("script")

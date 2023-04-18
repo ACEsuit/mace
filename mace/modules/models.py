@@ -15,6 +15,7 @@ from mace.data import AtomicData
 from mace.tools.scatter import scatter_sum
 
 from .blocks import (
+    SphericalHarmonics,
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
     InteractionBlock,
@@ -80,7 +81,7 @@ class MACE(torch.nn.Module):
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
-        self.spherical_harmonics = o3.SphericalHarmonics(
+        self.spherical_harmonics = SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
         if radial_MLP is None:
@@ -405,7 +406,7 @@ class BOTNet(torch.nn.Module):
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
-        self.spherical_harmonics = o3.SphericalHarmonics(
+        self.spherical_harmonics = SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
 
@@ -601,7 +602,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
-        self.spherical_harmonics = o3.SphericalHarmonics(
+        self.spherical_harmonics = SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
 
@@ -785,7 +786,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
-        self.spherical_harmonics = o3.SphericalHarmonics(
+        self.spherical_harmonics = SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
 
