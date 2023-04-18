@@ -139,4 +139,82 @@ The training script for the smallest model is given below.
         --restart_latest \
         --save_cpu \
 
-The model can easily be transfer learned to CC level of theory. For this the preprocesing has to be repated with the CC energies. Than the training can simply be continued. Suince the CC data does not have forces it is crucial to deactivate scaling by the RMS of the forces by setting ``scaling=no_scaling``. 
+The model can easily be transfer learned to CC level of theory. For this the preprocesing has to be repated with the CC energies. Than the training can simply be continued. Suince the CC data does not have forces it is crucial to deactivate scaling by the RMS of the forces by setting ``scaling="no_scaling"``. For the fine tuning we have also reduced the learning rate. 
+
+.. code-block:: shell
+    python /PATH/TO/MACE/mace/scripts/run_train.py \
+        --name="ani500k_small" \
+        --train_file="ANI1x_cc_rc5_train.h5" \
+        --valid_file="ANI1x_cc_rc5_valid.h5" \
+        --statistics_file="ANI1x_cc_rc5_statistics.json" \
+        --E0s="{1: -13.62222753701504, 6: -1029.4130839658328, 7: -1484.8710358098756, 8: -2041.8396277138045}" \
+        --scaling="no_scaling" \
+        --model="MACE" \
+        --num_interactions=2 \
+        --num_channels=64 \
+        --max_L=0 \
+        --correlation=3 \
+        --r_max=5.0 \
+        --forces_weight=0.0 \
+        --energy_weight=10000 \
+        --lr=0.001 \
+        --weight_decay=1e-7 \
+        --clip_grad=1.0 \
+        --batch_size=128 \
+        --valid_batch_size=128 \
+        --max_num_epochs=750 \
+        --scheduler_patience=15 \
+        --patience=30 \
+        --eval_interval=1 \
+        --ema \
+        --num_workers=16 \
+        --error_table='PerAtomMAE' \
+        --default_dtype="float64"\
+        --device=cuda \
+        --seed=123 \
+        --restart_latest \
+
+The medium model had ``num_channels=96``, ``max_L=1`` and ``r_max=5.0``. It was trained for 350 epochs, with the second part of the learning rate schedule starting after 175 epochs. 
+
+The large model had ``num_channels=192``, ``max_L=2`` and ``r_max=5.0``. It was trained for 210 epochs, with the second part of the learning rate schedule starting after 60 epochs. This very long training was necessary, because we were observing some constant shifts in the energies when evaluating the model on much larger systems than in the training set as discussed in the manuscript. The shifts were reduced by training the models longer. 
+
+####################
+Liquid water
+####################
+
+The liquid water dataset was downloaded from https://github.com/BingqingCheng/ab-initio-thermodynamics-of-water/tree/master/training-set 
+
+To train the smaller MACE model used in the simulations of the paper we used the following input line:
+
+.. code-block:: shell
+    python /PATH/TO/MACE/mace/scripts/run_train.py \
+        --name="water_1k_small" \
+        --train_file="train.xyz" \
+        --valid_fraction=0.05 \
+        --test_file="test.xyz" \
+        --E0s="average" \
+        --model="MACE" \
+        --num_interactions=2 \
+        --num_channels=64 \
+        --max_L=0 \
+        --correlation=3 \
+        --r_max=6.0 \
+        --forces_weight=1000 \
+        --energy_weight=10 \
+        --energy_key="TotEnergy" \
+        --forces_key="force" \
+        --batch_size=2 \
+        --valid_batch_size=4 \
+        --max_num_epochs=800 \
+        --start_swa=400 \
+        --scheduler_patience=15 \
+        --patience=30 \
+        --eval_interval=4 \
+        --ema \
+        --swa \
+        --error_table='PerAtomMAE' \
+        --default_dtype="float64"\
+        --device=cuda \
+        --seed=123 \
+        --restart_latest \
+        --save_cpu \
