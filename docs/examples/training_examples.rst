@@ -102,8 +102,8 @@ To train MACE on large datasets one can preprocess the data and use on the fly d
         --seed=12345
 
 This produces 3 files: ANI1x_cc_DFT_rc5_train.h5, ANI1x_cc_DFT_rc5_valid.h5, ANI1x_cc_DFT_rc5_statistics.json. The statistics file contains the mean and standard deviation of the energies and forces, which are used to normalize the data as well as other statistics like the cutoff and average number of neighbours used for internal normailsation of the model. For the smallest model we used ``r_max=4.5`` and for the medium and large models ``r_max=5.0``.
-
 The training script for the smallest model is given below.
+
 .. code-block:: shell
 
     python /PATH/TO/MACE/mace/scripts/run_train.py \
@@ -139,7 +139,7 @@ The training script for the smallest model is given below.
         --device=cuda \
         --seed=123 \
         --restart_latest \
-        --save_cpu \
+        --save_cpu 
 
 The model can easily be transfer learned to CC level of theory. For this the preprocesing has to be repated with the CC energies. Than the training can simply be continued. Suince the CC data does not have forces it is crucial to deactivate scaling by the RMS of the forces by setting ``scaling="no_scaling"``. For the fine tuning we have also reduced the learning rate. 
 
@@ -223,4 +223,3 @@ To train the smaller MACE model used in the simulations of the paper we used the
         --restart_latest \
         --save_cpu \
 
-        
