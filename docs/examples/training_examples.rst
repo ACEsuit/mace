@@ -89,6 +89,7 @@ We used the subset of the ANI-1x datatset (https://www.nature.com/articles/s4159
 To train MACE on large datasets one can preprocess the data and use on the fly data loading. This option is currently available on the multi-GPU branch of MACE. 
 
 .. code-block:: shell
+
     python /PATH/TO/MACE/mace/scripts/preprocess_data.py \
         --train_file="ani1x_cc_dft.xyz" \
         --valid_fraction=0.03 \
@@ -104,6 +105,7 @@ This produces 3 files: ANI1x_cc_DFT_rc5_train.h5, ANI1x_cc_DFT_rc5_valid.h5, ANI
 
 The training script for the smallest model is given below.
 .. code-block:: shell
+
     python /PATH/TO/MACE/mace/scripts/run_train.py \
         --name="ani500k_small" \
         --train_file="ANI1x_cc_DFT_rc5_train.h5" \
@@ -142,6 +144,7 @@ The training script for the smallest model is given below.
 The model can easily be transfer learned to CC level of theory. For this the preprocesing has to be repated with the CC energies. Than the training can simply be continued. Suince the CC data does not have forces it is crucial to deactivate scaling by the RMS of the forces by setting ``scaling="no_scaling"``. For the fine tuning we have also reduced the learning rate. 
 
 .. code-block:: shell
+
     python /PATH/TO/MACE/mace/scripts/run_train.py \
         --name="ani500k_small" \
         --train_file="ANI1x_cc_rc5_train.h5" \
@@ -187,6 +190,7 @@ The liquid water dataset was downloaded from https://github.com/BingqingCheng/ab
 To train the smaller MACE model used in the simulations of the paper we used the following input line:
 
 .. code-block:: shell
+
     python /PATH/TO/MACE/mace/scripts/run_train.py \
         --name="water_1k_small" \
         --train_file="train.xyz" \
@@ -218,3 +222,5 @@ To train the smaller MACE model used in the simulations of the paper we used the
         --seed=123 \
         --restart_latest \
         --save_cpu \
+
+        
