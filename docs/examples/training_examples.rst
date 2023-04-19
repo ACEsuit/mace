@@ -181,6 +181,12 @@ The medium model had ``num_channels=96``, ``max_L=1`` and ``r_max=5.0``. It was 
 
 The large model had ``num_channels=192``, ``max_L=2`` and ``r_max=5.0``. It was trained for 210 epochs, with the second part of the learning rate schedule starting after 60 epochs. This very long training was necessary, because we were observing some constant shifts in the energies when evaluating the model on much larger systems than in the training set as discussed in the manuscript. The shifts were reduced by training the models longer. 
 
+The 6 ANI dataset trained MACE models (3 model size and DFT and CC reference data for each) is available below:
+
+.. download:: examples/ANI_trained_MACE.zip
+    :title: Download ANI trained MACE models
+    :description: This zip file contains all 6 pre-trained MACE models
+
 ####################
 Liquid water
 ####################
