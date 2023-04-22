@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 import torch.nn.functional
 from e3nn import o3
@@ -6,6 +7,7 @@ from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
+from mace.modules.models import ScaleShiftEnergyDipoleMACE
 from mace.tools import torch_geometric
 
 torch.set_default_dtype(torch.float64)
@@ -50,7 +52,49 @@ table = tools.AtomicNumberTable([1, 8])
 atomic_energies = np.array([1.0, 3.0], dtype=float)
 
 
-def test_mace():
+@pytest.fixture
+def dipole_model_config() -> dict:
+    return dict(
+        r_max=5,
+        num_bessel=8,
+        num_polynomial_cutoff=5,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("16x0e + 16x1o + 16x2e"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies,
+        avg_num_neighbors=3,
+        atomic_numbers=table.zs,
+        correlation=3,
+    )
+
+
+@pytest.fixture
+def data_batch_1() -> dict:
+    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
+    atomic_data2 = data.AtomicData.from_config(
+        config_rotated, z_table=table, cutoff=3.0
+    )
+
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data, atomic_data2],
+        batch_size=2,
+        shuffle=True,
+        drop_last=False,
+    )
+    batch = next(iter(data_loader))
+    return batch.to_dict()
+
+
+def test_mace(data_batch_1):
     # Create MACE model
     model_config = dict(
         r_max=5,
@@ -76,20 +120,8 @@ def test_mace():
     model = modules.MACE(**model_config)
     model_compiled = jit.compile(model)
 
-    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
-    atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=table, cutoff=3.0
-    )
-
-    data_loader = torch_geometric.dataloader.DataLoader(
-        dataset=[atomic_data, atomic_data2],
-        batch_size=2,
-        shuffle=True,
-        drop_last=False,
-    )
-    batch = next(iter(data_loader))
-    output1 = model(batch.to_dict(), training=True)
-    output2 = model_compiled(batch.to_dict(), training=True)
+    output1 = model(data_batch_1, training=True)
+    output2 = model_compiled(data_batch_1, training=True)
     assert torch.allclose(output1["energy"][0], output2["energy"][0])
     assert torch.allclose(output2["energy"][0], output2["energy"][1])
 
@@ -144,30 +176,9 @@ def test_dipole_mace():
     )
 
 
-def test_energy_dipole_mace():
+def test_energy_dipole_mace(dipole_model_config):
     # create dipole MACE model
-    model_config = dict(
-        r_max=5,
-        num_bessel=8,
-        num_polynomial_cutoff=5,
-        max_ell=2,
-        interaction_cls=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
-        interaction_cls_first=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
-        num_interactions=2,
-        num_elements=2,
-        hidden_irreps=o3.Irreps("16x0e + 16x1o + 16x2e"),
-        MLP_irreps=o3.Irreps("16x0e"),
-        gate=torch.nn.functional.silu,
-        atomic_energies=atomic_energies,
-        avg_num_neighbors=3,
-        atomic_numbers=table.zs,
-        correlation=3,
-    )
-    model = modules.EnergyDipolesMACE(**model_config)
+    model = modules.EnergyDipolesMACE(**dipole_model_config)
 
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
     atomic_data2 = data.AtomicData.from_config(
@@ -182,7 +193,7 @@ def test_energy_dipole_mace():
     )
     batch = next(iter(data_loader))
     output = model(
-        batch,
+        batch.to_dict(),
         training=True,
     )
     # sanity check of dipoles being the right shape
@@ -193,4 +204,39 @@ def test_energy_dipole_mace():
     assert np.allclose(
         np.array(rot @ output["dipole"][0].detach().numpy()),
         output["dipole"][1].detach().numpy(),
+    )
+
+
+def test_scale_shift_dipole_mace(dipole_model_config, data_batch_1):
+    dipole_model_config.update({"atomic_inter_scale": 2.0, "atomic_inter_shift": 1.0})
+
+    # create dipole MACE model
+    model = modules.ScaleShiftEnergyDipoleMACE(**dipole_model_config)
+
+    output = model(
+        data_batch_1,
+        training=True,
+    )
+
+    for key in ["energy", "node_energy", "forces", "dipole", "atomic_dipoles"]:
+        assert key in output
+
+
+def test_scaled_and_shifted(dipole_model_config, data_batch_1):
+    dipole_model_config.update({"atomic_inter_scale": 2.0, "atomic_inter_shift": 1.0})
+
+    # create dipole MACE model
+    model = modules.ScaleShiftEnergyDipoleMACE(**dipole_model_config)
+
+    output_scale_shift = model(
+        data_batch_1,
+        training=True,
+    )
+
+    # change the shift now
+    model.scale_shift.shift += 0.5
+    output_different_scale = modules.EnergyDipolesMACE.forward(model, data_batch_1)
+    assert torch.allclose(
+        output_different_scale["node_energy"] - 0.5,
+        output_scale_shift["node_energy"],
     )

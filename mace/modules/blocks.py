@@ -66,12 +66,20 @@ class NonLinearReadoutBlock(torch.nn.Module):
 
 @compile_mode("script")
 class LinearDipoleReadoutBlock(torch.nn.Module):
-    def __init__(self, irreps_in: o3.Irreps, dipole_only: bool = False):
+    def __init__(self, irreps_in: o3.Irreps):
         super().__init__()
-        if dipole_only:
-            self.irreps_out = o3.Irreps("1x1o")
-        else:
-            self.irreps_out = o3.Irreps("1x0e + 1x1o")
+        self.irreps_out = o3.Irreps("1x0e + 1x1o")
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_out)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        return self.linear(x)  # [n_nodes, 1]
+
+
+@compile_mode("script")
+class LinearDipoleOnlyReadoutBlock(torch.nn.Module):
+    def __init__(self, irreps_in: o3.Irreps):
+        super().__init__()
+        self.irreps_out = o3.Irreps("1x1o")
         self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_out)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
@@ -100,22 +108,36 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
             [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
         )
         irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
-        self.equivariant_nonlin = nn.Gate(
+        self.non_linearity = nn.Gate(
             irreps_scalars=irreps_scalars,
             act_scalars=[gate for _, ir in irreps_scalars],
             irreps_gates=irreps_gates,
             act_gates=[gate] * len(irreps_gates),
             irreps_gated=irreps_gated,
         )
-        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
+        self.irreps_nonlin = self.non_linearity.irreps_in.simplify()
         self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_nonlin)
         self.linear_2 = o3.Linear(
             irreps_in=self.hidden_irreps, irreps_out=self.irreps_out
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
-        x = self.equivariant_nonlin(self.linear_1(x))
+        x = self.non_linearity(self.linear_1(x))
         return self.linear_2(x)  # [n_nodes, 1]
+
+
+@compile_mode("script")
+class NonLinearDipoleOnlyReadoutBlock(NonLinearDipoleReadoutBlock):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Callable,
+    ):
+        # fixme: use more reasonable inheritance
+        super().__init__(
+            irreps_in=irreps_in, MLP_irreps=MLP_irreps, gate=gate, dipole_only=True
+        )
 
 
 @compile_mode("script")
@@ -258,7 +280,8 @@ class TensorProductWeightsBlock(torch.nn.Module):
 
     def forward(
         self,
-        sender_or_receiver_node_attrs: torch.Tensor,  # assumes that the node attributes are one-hot encoded
+        sender_or_receiver_node_attrs: torch.Tensor,
+        # assumes that the node attributes are one-hot encoded
         edge_feats: torch.Tensor,
     ):
         return torch.einsum(
