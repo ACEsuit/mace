@@ -683,12 +683,15 @@ class MatrixFunctionBlock(torch.nn.Module):
             [node_feats[sender] * node_feats[receiver] * edge_feats_weights], dim=1
         )  # TODO: add cutoff function
         H = self.matrix_mlp(symmetric_node_feats)  # [n_edges, n_features]
-        H_dense = to_dense_adj(edge_index=edge_index, batch=batch, edge_attr=H).permute(
-            0, 3, 1, 2
+        H_dense = to_dense_adj(edge_index=edge_index, batch=batch, edge_attr=H).permute(            0, 3, 1, 2
         )  # [n_graphs, n_features, n_nodes, n_nodes]
         H_dense = H_dense.repeat(1, self.num_poles, 1, 1)
+        # Make laplacian
+        # H_laplace = H_dense - torch.diag_embed(H_dense.sum(dim=-1))
+        H_laplace = torch.diag_embed(torch.sum(torch.abs(H_dense), axis=-1)) - H_dense
+        H_dense  = H_laplace
         z_k = torch.view_as_complex(
-            torch.stack([self.z_k_real, self.z_k_complex], dim=-1)
+            torch.stack([torch.exp(self.z_k_real), torch.exp(self.z_k_complex)], dim=-1)
         )
         z_k = z_k.expand(H_dense.shape[0], H_dense.shape[1], H_dense.shape[-1])
         D_z = torch.diag_embed(z_k)
@@ -707,6 +710,8 @@ class MatrixFunctionBlock(torch.nn.Module):
             .reshape(features.shape[0] * features.shape[2], features.shape[1])
         )
         node_features = self.normalize(node_features[mask, :]) / self.avg_num_neighbors
+        breakpoint()
+
         return self.linear_out(node_features)
 
 
