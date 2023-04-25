@@ -307,10 +307,9 @@ def main() -> None:
             num_poles=args.num_poles,
             num_features_matrix=args.num_features_matrix,
             device=args.device,
-            atomic_inter_scale=std,
-            atomic_inter_shift=0.0,
         )
     elif args.model == "ScaleShiftEigenvalues_MACE":
+        mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
         model = modules.ScaleShiftEigenvalues_MACE(
             **model_config,
             correlation=args.correlation,

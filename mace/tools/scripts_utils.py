@@ -98,7 +98,7 @@ def get_dataset_from_xyz(
     )
 
 
-class LRScheduler(torch.optim.lr_scheduler.LRScheduler):
+class LRScheduler(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, args) -> None:
         self.scheduler = args.scheduler
         if args.scheduler == "ExponentialLR":

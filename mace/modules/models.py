@@ -985,6 +985,7 @@ class Eigenvalues_MACE(torch.nn.Module):
         correlation: int,
         gate: Optional[Callable],
         radial_MLP: Optional[List[int]] = None,
+        device: Optional[torch.device] = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -1178,6 +1179,7 @@ class Eigenvalues_MACE(torch.nn.Module):
                 src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
             energies.append(energy)
+            node_energies_list.append(node_energies)
 
         # Sum over energy contributions
         contributions = torch.stack(energies, dim=-1)
