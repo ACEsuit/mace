@@ -54,9 +54,9 @@ class MACECalculator(Calculator):
             self.implemented_properties = [
                 "energy",
                 "free_energy",
+                "node_energy",
                 "forces",
                 "stress",
-                "energies",
             ]
         elif model_type == "DipoleMACE":
             self.implemented_properties = ["dipole"]
@@ -64,9 +64,9 @@ class MACECalculator(Calculator):
             self.implemented_properties = [
                 "energy",
                 "free_energy",
+                "node_energy",
                 "forces",
                 "stress",
-                "energies",
                 "dipole",
             ]
         else:
@@ -87,6 +87,10 @@ class MACECalculator(Calculator):
         self.num_models = len(model_paths)
         if len(model_paths) > 1:
             print(f"Running committee mace with {len(model_paths)} models")
+            if model_type in ["MACE", "EnergyDipoleMACE"]:
+                self.implemented_properties.extend(["energies", "energy_var", "forces_var"])
+            elif model_type == "DipoleMACE":
+                self.implemented_properties.extend(["dipole_var"])
 
         self.models = [
             torch.load(f=model_path, map_location=device) for model_path in model_paths
