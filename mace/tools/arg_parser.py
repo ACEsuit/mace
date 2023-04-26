@@ -58,6 +58,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         choices=[
             "PerAtomRMSE",
+            "LocalEnergyForcesRMSE",
             "TotalRMSE",
             "PerAtomRMSEstressvirials",
             "PerAtomMAE",
@@ -278,6 +279,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="type of loss",
         default="weighted",
         choices=[
+            "local", # read in local energy from cahrges_key
             "ef",
             "weighted",
             "forces_only",
@@ -290,6 +292,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--forces_weight", help="weight of forces loss", type=float, default=100.0
+    )
+    parser.add_argument(
+        "--local_energy_weight", help="weight of local energy loss", type=float, default=0.0
     )
     parser.add_argument(
         "--swa_forces_weight",

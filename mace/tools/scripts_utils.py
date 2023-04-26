@@ -156,6 +156,15 @@ def create_error_table(
             "RMSE F / meV / A",
             "relative F RMSE %",
         ]
+    elif table_type == "LocalPerAtomRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE E / meV / atom",
+            "RMSE F / meV / A",
+            "relative F RMSE %",
+            "RMSE E local",
+        ]
+
     elif table_type == "PerAtomRMSEstressvirials":
         table.field_names = [
             "config_type",
@@ -243,6 +252,16 @@ def create_error_table(
                     f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
                     f"{metrics['rmse_f'] * 1000:.1f}",
                     f"{metrics['rel_rmse_f']:.2f}",
+                ]
+            )
+        elif table_type == "LocalPerAtomRMSE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['rmse_f'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_f']:.2f}",
+                    f"{metrics['rmse_charges'] * 1000:.1f}",
                 ]
             )
         elif (

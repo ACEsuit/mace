@@ -42,6 +42,8 @@ class AtomicData(torch_geometric.data.Data):
     forces_weight: torch.Tensor
     stress_weight: torch.Tensor
     virials_weight: torch.Tensor
+    local_energy_weight: torch.Tensor
+
 
     def __init__(
         self,
@@ -56,6 +58,7 @@ class AtomicData(torch_geometric.data.Data):
         forces_weight: Optional[torch.Tensor],  # [,]
         stress_weight: Optional[torch.Tensor],  # [,]
         virials_weight: Optional[torch.Tensor],  # [,]
+        local_energy_weight: Optional[torch.Tensor],  # [,]
         forces: Optional[torch.Tensor],  # [n_nodes, 3]
         energy: Optional[torch.Tensor],  # [, ]
         stress: Optional[torch.Tensor],  # [1,3,3]
@@ -76,6 +79,7 @@ class AtomicData(torch_geometric.data.Data):
         assert forces_weight is None or len(forces_weight.shape) == 0
         assert stress_weight is None or len(stress_weight.shape) == 0
         assert virials_weight is None or len(virials_weight.shape) == 0
+        assert local_energy_weight is None or len(local_energy_weight.shape) == 0
         assert cell is None or cell.shape == (3, 3)
         assert forces is None or forces.shape == (num_nodes, 3)
         assert energy is None or len(energy.shape) == 0
@@ -97,6 +101,7 @@ class AtomicData(torch_geometric.data.Data):
             "forces_weight": forces_weight,
             "stress_weight": stress_weight,
             "virials_weight": virials_weight,
+            "local_energy_weight": local_energy_weight,
             "forces": forces,
             "energy": energy,
             "stress": stress,
@@ -156,6 +161,11 @@ class AtomicData(torch_geometric.data.Data):
             if config.virials_weight is not None
             else 1
         )
+        local_energy_weight = (
+            torch.tensor(config.local_energy_weight, dtype=torch.get_default_dtype())
+            if config.local_energy_weight is not None
+            else 1
+        )
 
         forces = (
             torch.tensor(config.forces, dtype=torch.get_default_dtype())
@@ -202,6 +212,7 @@ class AtomicData(torch_geometric.data.Data):
             forces_weight=forces_weight,
             stress_weight=stress_weight,
             virials_weight=virials_weight,
+            local_energy_weight=local_energy_weight,
             forces=forces,
             energy=energy,
             stress=stress,

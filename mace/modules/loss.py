@@ -69,6 +69,26 @@ def mean_squared_error_forces(ref: Batch, pred: TensorDict) -> torch.Tensor:
         * torch.square(ref["forces"] - pred["forces"])
     )  # []
 
+def mean_squared_error_local_energies(ref: Batch, pred: TensorDict) -> torch.Tensor:
+    # local_energies: [n_atoms, 1]
+    configs_weight = torch.repeat_interleave(
+        ref.weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+    breakpoint()
+    configs_local_energies_weight = torch.repeat_interleave(
+        ref.local_energy_weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+
+    return torch.mean(
+        configs_weight
+        * configs_local_energies_weight
+        * torch.square(ref["charges"] - pred["node_energy"])
+    )  # []
+
 
 def weighted_mean_squared_error_dipole(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # dipole: [n_graphs, ]
@@ -122,6 +142,35 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
             f"forces_weight={self.forces_weight:.3f})"
+        )
+class WeightedLocalEnergyForcesLoss(torch.nn.Module):
+    def __init__(self, energy_weight=1.0, forces_weight=1.0, local_energy_weight=1.0) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "local_energy_weight",
+            torch.tensor(local_energy_weight, dtype=torch.get_default_dtype()),
+        )
+
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        return (
+            self.energy_weight * weighted_mean_squared_error_energy(ref, pred)
+            + self.forces_weight * mean_squared_error_forces(ref, pred)
+            + self.local_energy_weight * mean_squared_error_local_energies(ref, pred)
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}, local_energy_weight={self.local_energy_weight:.3f})"
         )
 
 

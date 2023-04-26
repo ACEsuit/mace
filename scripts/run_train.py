@@ -150,8 +150,14 @@ def main() -> None:
 
     loss_fn: torch.nn.Module
     if args.loss == "weighted":
-        loss_fn = modules.WeightedEnergyForcesLoss(
+        loss_fn = modules.WeightedweEnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
+        )
+    elif args.loss == "local":
+        loss_fn = modules.WeightedLocalEnergyForcesLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            local_energy_weight=args.local_energy_weight,
         )
     elif args.loss == "forces_only":
         loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)

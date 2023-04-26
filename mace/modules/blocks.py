@@ -652,10 +652,10 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         z_k_real = torch.randn(
             1, num_features * num_poles, 1, dtype=torch.get_default_dtype()
-        )  # TODO: for each feature, create several poles, think about initialization
+        ) - 8 # TODO: for each feature, create several poles, think about initialization
         z_k_complex = torch.randn(
             1, num_features * num_poles, 1, dtype=torch.get_default_dtype()
-        )
+        ) - 2 # TODO: HACK need to think about loss function a bit + initialization
         self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
         self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
         self.normalize = SwitchNorm1d(num_features * num_poles)
@@ -687,9 +687,12 @@ class MatrixFunctionBlock(torch.nn.Module):
         )  # [n_graphs, n_features, n_nodes, n_nodes]
         H_dense = H_dense.repeat(1, self.num_poles, 1, 1)
         # Make laplacian
-        # H_laplace = H_dense - torch.diag_embed(H_dense.sum(dim=-1))
         H_laplace = torch.diag_embed(torch.sum(torch.abs(H_dense), axis=-1)) - H_dense
         H_dense  = H_laplace
+        eigv = torch.sort(torch._linalg_eigh(H_laplace[0,0])[0])[0]
+        # eigenvalues
+        # print(eigv[:10])
+        # print(f'Range: {eigv[-1]- eigv[0]}')
         z_k = torch.view_as_complex(
             torch.stack([torch.exp(self.z_k_real), torch.exp(self.z_k_complex)], dim=-1)
         )
@@ -710,7 +713,6 @@ class MatrixFunctionBlock(torch.nn.Module):
             .reshape(features.shape[0] * features.shape[2], features.shape[1])
         )
         node_features = self.normalize(node_features[mask, :]) / self.avg_num_neighbors
-        breakpoint()
 
         return self.linear_out(node_features)
 

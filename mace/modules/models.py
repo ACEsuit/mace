@@ -1206,6 +1206,7 @@ class Eigenvalues_MACE(torch.nn.Module):
             "virials": virials,
             "stress": stress,
             "displacement": displacement,
+            'matrix_features': matrix_features,
         }
 
 

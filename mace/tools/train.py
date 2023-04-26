@@ -288,7 +288,9 @@ def evaluate(
     delta_mus_per_atom_list = []
     mus_list = []
     batch = None  # for pylint
-
+    charges_computed = False
+    delta_charges_list = []
+    charges_list  = []
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
@@ -338,6 +340,13 @@ def evaluate(
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
             mus_list.append(batch.dipole)
+        # same for charges
+        if output.get("charges") is not None and batch.charges is not None:
+            charges_computed = True
+            delta_charges_list.append(batch.charges - output["charges"])
+            charges_list.append(batch.charges)
+
+
 
     avg_loss = total_loss / len(data_loader)
 
@@ -386,6 +395,14 @@ def evaluate(
         aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
         aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
         aux["q95_mu"] = compute_q95(delta_mus)
+    if charges_computed:
+        delta_charges = to_numpy(torch.cat(delta_charges_list, dim=0))
+        charges = to_numpy(torch.cat(charges_list, dim=0))
+        aux["mae_charges"] = compute_mae(delta_charges)
+        aux["rel_mae_charges"] = compute_rel_mae(delta_charges, charges)
+        aux["rmse_charges"] = compute_rmse(delta_charges)
+        aux["rel_rmse_charges"] = compute_rel_rmse(delta_charges, charges)
+        aux["q95_charges"] = compute_q95(delta_charges)
 
     aux["time"] = time.time() - start_time
 
