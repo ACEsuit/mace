@@ -17,9 +17,21 @@ from mace.tools import torch_geometric, torch_tools, utils
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--configs", help="path to XYZ configurations", required=True)
-    parser.add_argument("--model", help="path to model", required=True)
-    parser.add_argument("--output", help="output path", required=True)
+    parser.add_argument(
+        "--configs", 
+        help="path to XYZ configurations", 
+        required=True
+    )
+    parser.add_argument(
+        "--model", 
+        help="path to model", 
+        required=True
+    )
+    parser.add_argument(
+        "--output", 
+        help="output path", 
+        required=True
+    )
     parser.add_argument(
         "--device",
         help="select device",
@@ -34,7 +46,12 @@ def parse_args() -> argparse.Namespace:
         choices=["float32", "float64"],
         default="float64",
     )
-    parser.add_argument("--batch_size", help="batch size", type=int, default=64)
+    parser.add_argument(
+        "--batch_size", 
+        help="batch size", 
+        type=int, 
+        default=64
+    )
     parser.add_argument(
         "--compute_stress",
         help="compute stress",
@@ -63,6 +80,7 @@ def main():
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+    model.to(device)
 
     for param in model.parameters():
         param.requires_grad = False

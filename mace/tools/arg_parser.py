@@ -84,7 +84,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
+        "--r_max", help="distance cutoff (in Ang)", 
+        type=float, 
+        default=5.0
     )
     parser.add_argument(
         "--num_radial_basis",
@@ -199,11 +201,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
 
     # Dataset
     parser.add_argument(
-        "--train_file", help="Training set xyz file", type=str, required=True
+        "--train_file", help="Training set file, format is .xyz or .h5", type=str, 
+        required=True,
     )
     parser.add_argument(
         "--valid_file",
-        help="Validation set xyz file",
+        help="Validation set .xyz or .h5 file",
         default=None,
         type=str,
         required=False,
@@ -217,8 +220,55 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--test_file",
-        help="Test set xyz file",
+        help="Test set .xyz pt .h5 file",
         type=str,
+    )
+    parser.add_argument(
+        "--test_dir",
+        help="Path to directory with test files named as test_*.h5",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--num_workers",
+        help="Number of workers for data loading",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--pin_memory",
+        help="Pin memory for data loading",
+        default=True, 
+        type=bool,
+    )
+    parser.add_argument(
+        "--atomic_numbers",
+        help="List of atomic numbers",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--mean",
+        help="Mean energy per atom of training set",
+        type=float,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--std",
+        help="Standard deviation of force components in the training set",
+        type=float,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--statistics_file",
+        help="json file containing statistics of training set",
+        type=str,
+        default=None,
+        required=False,
     )
     parser.add_argument(
         "--E0s",
@@ -286,13 +336,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--forces_weight", help="weight of forces loss", type=float, default=100.0
+        "--forces_weight", help="weight of forces loss", type=float, default=10.0
     )
     parser.add_argument(
         "--swa_forces_weight",
         help="weight of forces loss after starting swa",
         type=float,
-        default=100.0,
+        default=1.0,
     )
     parser.add_argument(
         "--energy_weight", help="weight of energy loss", type=float, default=1.0
@@ -486,6 +536,149 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "energy_weight",
             "forces_weight",
         ],
+    )
+    return parser
+
+def build_preprocess_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--train_file",
+        help="Training set h5 file",
+        type=str,
+        default=None,
+        required=True,
+    )
+    parser.add_argument(
+        "--valid_file",
+        help="Training set xyz file",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--valid_fraction",
+        help="Fraction of training set used for validation",
+        type=float,
+        default=0.1,
+        required=False,
+    )
+    parser.add_argument(
+        "--test_file",
+        help="Test set xyz file",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--h5_prefix",
+        help="Prefix for h5 files when saving",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--preprocess_for_evaluation",
+        help="Preprocess for evaluation",
+        action="store_true",
+        default=False,
+    )     
+    parser.add_argument(
+        "--r_max", help="distance cutoff (in Ang)", 
+        type=float, 
+        default=5.0
+    )
+    parser.add_argument(
+        "--config_type_weights",
+        help="String of dictionary containing the weights for each config type",
+        type=str,
+        default='{"Default":1.0}',
+    )
+    parser.add_argument(
+        "--energy_key",
+        help="Key of reference energies in training xyz",
+        type=str,
+        default="energy",
+    )
+    parser.add_argument(
+        "--forces_key",
+        help="Key of reference forces in training xyz",
+        type=str,
+        default="forces",
+    )
+    parser.add_argument(
+        "--virials_key",
+        help="Key of reference virials in training xyz",
+        type=str,
+        default="virials",
+    )
+    parser.add_argument(
+        "--stress_key",
+        help="Key of reference stress in training xyz",
+        type=str,
+        default="stress",
+    )
+    parser.add_argument(
+        "--dipole_key",
+        help="Key of reference dipoles in training xyz",
+        type=str,
+        default="dipole",
+    )
+    parser.add_argument(
+        "--polarizability_key",
+        help="Key of polarizability in training xyz",
+        type=str,
+        default="polarizability",
+    )
+    parser.add_argument(
+        "--charges_key",
+        help="Key of atomic charges in training xyz",
+        type=str,
+        default="charges",
+    )
+    parser.add_argument(
+        "--atomic_numbers",
+        help="List of atomic numbers",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--compute_statistics",
+        help="Compute statistics for the dataset",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--batch_size", 
+        help="batch size to compute average number of neighbours", 
+        type=int, 
+        default=16,
+    )
+
+    parser.add_argument(
+        "--scaling",
+        help="type of scaling to the output",
+        type=str,
+        default="rms_forces_scaling",
+        choices=["std_scaling", "rms_forces_scaling", "no_scaling"],
+    )
+    parser.add_argument(
+        "--E0s",
+        help="Dictionary of isolated atom energies",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--shuffle",
+        help="Shuffle the training dataset",
+        type=bool,
+        default=True,
+    )
+    parser.add_argument(
+        "--seed",
+        help="Random seed for splitting training and validation sets",
+        type=int,
+        default=123,
     )
     return parser
 

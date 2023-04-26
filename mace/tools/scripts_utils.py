@@ -6,12 +6,14 @@
 
 import dataclasses
 import logging
+import ast
+import os
 from typing import Dict, List, Optional, Tuple
 
 import torch
 from prettytable import PrettyTable
 
-from mace import data
+from mace import data, modules
 from mace.data import AtomicData
 from mace.tools import AtomicNumberTable, evaluate, torch_geometric
 

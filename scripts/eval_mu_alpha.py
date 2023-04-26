@@ -4,7 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-import argparse
+import argparse, ast
 
 import ase.data
 import ase.io
@@ -12,14 +12,24 @@ import numpy as np
 import torch
 
 from mace import data
-from mace.tools import torch_geometric, torch_tools, utils
+from mace.tools import torch_geometric, torch_tools, utils, tools
+from mace.data import HDF5Dataset
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--configs", help="path to XYZ configurations", required=True)
-    parser.add_argument("--model", help="path to model", required=True)
-    parser.add_argument("--output", help="output path", required=True)
+    parser.add_argument("--configs", 
+        help="path to XYZ or .h5 configurations", 
+        required=True
+    )
+    parser.add_argument("--model", 
+        help="path to model", 
+        required=True
+    )
+    parser.add_argument("--output", 
+        help="output path", 
+        required=True
+    )
     parser.add_argument(
         "--device",
         help="select device",
@@ -34,7 +44,11 @@ def parse_args() -> argparse.Namespace:
         choices=["float32", "float64"],
         default="float64",
     )
-    parser.add_argument("--batch_size", help="batch size", type=int, default=64)
+    parser.add_argument("--batch_size", 
+        help="batch size", 
+        type=int, 
+        default=64
+    )
     parser.add_argument(
         "--compute_dielectric_derivatives",
         help="compute derivatives of mu and alpha",
@@ -81,24 +95,43 @@ def main():
         param.requires_grad = False
 
     # Load data and prepare input
-    atoms_list = ase.io.read(args.configs, index=":")
-    if args.output_SFG:
-        velocities = np.array([atoms.arrays[args.velocity_key] for atoms in atoms_list])
-    configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
+    if args.configs.endswith(".xyz"):
+        atoms_list = ase.io.read(args.configs, index=":")
+        if args.output_SFG:
+            velocities = np.array([atoms.arrays[args.velocity_key] for atoms in atoms_list])
+        configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
 
-    z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
+        z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
-    data_loader = torch_geometric.dataloader.DataLoader(
-        dataset=[
-            data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=float(model.r_max)
-            )
-            for config in configs
-        ],
-        batch_size=args.batch_size,
-        shuffle=False,
-        drop_last=False,
-    )
+        data_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[
+                data.AtomicData.from_config(
+                    config, z_table=z_table, cutoff=float(model.r_max)
+                )
+                for config in configs
+            ],
+            batch_size=args.batch_size,
+            shuffle=False,
+            drop_last=False,
+        )
+    elif args.configs.endswith(".h5"):
+        assert args.atomic_numbers is not None
+        zs_list = ast.literal_eval(args.atomic_numbers)
+        assert isinstance(zs_list, list)
+        z_table = tools.get_atomic_number_table_from_zs(zs_list)
+        configs_preprocessed = HDF5Dataset(
+            args.train_file, r_max=args.r_max, z_table=z_table
+        )
+        data_loader = torch_geometric.dataloader.DataLoader(
+            configs_preprocessed,
+            batch_size=args.batch_size,
+            shuffle=False,
+            drop_last=False,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_memory,
+        )
+    else:
+        raise ValueError("configs must be either .xyz or .h5")
 
     if args.output_SFG or args.compute_dielectric_derivatives:
         compute_dielectrics = True
@@ -244,18 +277,29 @@ def main():
         #     assert len(atoms_list) == contributions.shape[0]
 
         # Store data in atoms objects
-        for i, (atoms, dmu_dr, dalpha_dr) in enumerate(
-            zip(atoms_list, dmu_dr_list, dalpha_dr_list)
-        ):
-            atoms.calc = None  # crucial
-            if args.velocity_key in atoms.arrays.keys():
-                atoms.arrays.pop(args.velocity_key)
-            atoms.arrays[args.info_prefix + "dmu_dr"] = dmu_dr.reshape(
-                dmu_dr.shape[0], 9
-            )
-            atoms.arrays[args.info_prefix + "dalpha_dr"] = dalpha_dr_list[i].reshape(
-                dalpha_dr_list[i].shape[0], 27
-            )
+        if args.configs.endswith(".xyz"):
+            for i, (atoms, dmu_dr, dalpha_dr) in enumerate(
+                zip(atoms_list, dmu_dr_list, dalpha_dr_list)
+            ):
+                atoms.calc = None  # crucial
+                if args.velocity_key in atoms.arrays.keys():
+                    atoms.arrays.pop(args.velocity_key)
+                atoms.arrays[args.info_prefix + "dmu_dr"] = dmu_dr.reshape(
+                    dmu_dr.shape[0], 9
+                )
+                atoms.arrays[args.info_prefix + "dalpha_dr"] = dalpha_dr_list[i].reshape(
+                    dalpha_dr_list[i].shape[0], 27
+                )
+        else:
+            dmu_dr_array = np.array(dmu_dr_list)
+            dalpha_dr_array = np.array(dalpha_dr_list)
+
+            dmu_dr_array = dmu_dr_array.reshape(dmu_dr_array.shape[0], -1)
+            dalpha_dr_array = dalpha_dr_array.reshape(dalpha_dr_array.shape[0], -1)
+
+            np.savez_compressed("dmu_dr.npz", dmu_dr_array)
+            np.savez_compressed("dalpha_dr.npz", dalpha_dr_array)
+
 
         # if args.return_contributions:
         #     atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
