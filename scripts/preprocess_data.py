@@ -13,8 +13,7 @@ import torch
 
 from mace import tools, data
 from mace.data.utils import save_AtomicData_to_HDF5, save_configurations_as_HDF5 #, save_dataset_as_HDF5
-from mace.tools.scripts_utils import (get_dataset_from_xyz, 
-                                    get_atomic_energies)
+from mace.tools.scripts_utils import (get_dataset_from_xyz, )
 from mace.tools import torch_geometric
 from mace.modules import compute_avg_num_neighbors, scaling_classes
 
@@ -86,7 +85,6 @@ def main():
             logging.warning("Statistics computation is not necessary for evaluation, setting it to False")
         args.compute_statistics = False
         config_type_weights = {"Default": 1.0}
-        assert args.valid_fraction == 0.0, "valid_fraction must be 0.0 for evaluation preprocessing"
         assert args.valid_file is None, "valid_file must be None for evaluation preprocessing"
         assert args.test_file is None, "test_file must be None for evaluation preprocessing"
 
@@ -105,28 +103,34 @@ def main():
         dipole_key=args.dipole_key,
         polarizability_key=args.polarizability_key,
         charges_key=args.charges_key,
+        preprocess_for_evaluation=args.preprocess_for_evaluation,
     )
 
     # Atomic number table
     # yapf: disable
-    if args.atomic_numbers is None:
-        z_table = tools.get_atomic_number_table_from_zs(
-            z
-            for configs in (collections.train, collections.valid)
-            for config in configs
-            for z in config.atomic_numbers
-        )
-    else:
-        logging.info("Using atomic numbers from command line argument")
-        zs_list = ast.literal_eval(args.atomic_numbers)
-        assert isinstance(zs_list, list)
-        z_table = tools.get_atomic_number_table_from_zs(zs_list)
+    if not args.preprocess_for_evaluation:
+        if args.atomic_numbers is None:
+            z_table = tools.get_atomic_number_table_from_zs(
+                z
+                for configs in (collections.train, collections.valid)
+                for config in configs
+                for z in config.atomic_numbers
+            )
+        else:
+            logging.info("Using atomic numbers from command line argument")
+            zs_list = ast.literal_eval(args.atomic_numbers)
+            assert isinstance(zs_list, list)
+            z_table = tools.get_atomic_number_table_from_zs(zs_list)
 
     logging.info("Preparing training set")
     if args.shuffle:
         random.shuffle(collections.train)
 
-    with h5py.File(args.h5_prefix + "train.h5", "w") as f:
+    if args.preprocess_for_evaluation:
+        save_name = args.h5_prefix + "configs.h5"
+    else:
+        save_name = args.h5_prefix + "train.h5"
+    with h5py.File(save_name, "w") as f:
         # split collections.train into batches and save them to hdf5
         split_train, drop_last = split_array(collections.train, args.batch_size)
         f.attrs["drop_last"] = drop_last
@@ -135,42 +139,42 @@ def main():
     if args.preprocess_for_evaluation:
         return
 
-    if args.compute_statistics:
-        # Compute statistics
-        logging.info("Computing statistics")
-        if len(atomic_energies_dict) == 0:
-            atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
-        atomic_energies: np.ndarray = np.array(
-            [atomic_energies_dict[z] for z in z_table.zs]
-        )
-        logging.info(f"Atomic energies: {atomic_energies.tolist()}")
-        train_dataset = data.HDF5Dataset(args.h5_prefix + "train.h5", z_table=z_table, r_max=args.r_max)
-        train_loader = torch_geometric.dataloader.DataLoader(
-            dataset=train_dataset, 
-            batch_size=args.batch_size, 
-            shuffle=False,
-            drop_last=False,
-        )
-        avg_num_neighbors, mean, std = compute_statistics(
-            train_loader, args.scaling, atomic_energies
-        )
-        logging.info(f"Average number of neighbors: {avg_num_neighbors}")
-        logging.info(f"Mean: {mean}")
-        logging.info(f"Standard deviation: {std}")
+    # if args.compute_statistics:
+    #     # Compute statistics
+    #     logging.info("Computing statistics")
+    #     if len(atomic_energies_dict) == 0:
+    #         atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
+    #     atomic_energies: np.ndarray = np.array(
+    #         [atomic_energies_dict[z] for z in z_table.zs]
+    #     )
+    #     logging.info(f"Atomic energies: {atomic_energies.tolist()}")
+    #     train_dataset = data.HDF5Dataset(args.h5_prefix + "train.h5", z_table=z_table, r_max=args.r_max)
+    #     train_loader = torch_geometric.dataloader.DataLoader(
+    #         dataset=train_dataset, 
+    #         batch_size=args.batch_size, 
+    #         shuffle=False,
+    #         drop_last=False,
+    #     )
+    #     avg_num_neighbors, mean, std = compute_statistics(
+    #         train_loader, args.scaling, atomic_energies
+    #     )
+    #     logging.info(f"Average number of neighbors: {avg_num_neighbors}")
+    #     logging.info(f"Mean: {mean}")
+    #     logging.info(f"Standard deviation: {std}")
             
-        # save the statistics as a json
-        statistics = {
-            "atomic_energies": str(atomic_energies_dict),
-            "avg_num_neighbors": avg_num_neighbors,
-            "mean": mean,
-            "std": std,
-            "atomic_numbers": str(z_table.zs),
-            "r_max": args.r_max,
-        }
-        del train_dataset
-        del train_loader
-        with open(args.h5_prefix + "statistics.json", "w") as f:
-            json.dump(statistics, f)
+    #     # save the statistics as a json
+    #     statistics = {
+    #         "atomic_energies": str(atomic_energies_dict),
+    #         "avg_num_neighbors": avg_num_neighbors,
+    #         "mean": mean,
+    #         "std": std,
+    #         "atomic_numbers": str(z_table.zs),
+    #         "r_max": args.r_max,
+    #     }
+    #     del train_dataset
+    #     del train_loader
+    #     with open(args.h5_prefix + "statistics.json", "w") as f:
+    #         json.dump(statistics, f)
     
     logging.info("Preparing validation set")
     if args.shuffle:

@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 from mace import data
-from mace.tools import torch_geometric, torch_tools, utils, tools
+from mace.tools import torch_geometric, torch_tools, utils, get_atomic_number_table_from_zs
 from mace.data import HDF5Dataset
 
 
@@ -68,16 +68,22 @@ def parse_args() -> argparse.Namespace:
         default="velocities",
     )
     parser.add_argument(
-        "--return_contributions",
-        help="model outputs energy contributions for each body order, only suppported for MACE, not ScaleShiftMACE",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
         "--info_prefix",
         help="prefix for energy, forces and stress keys",
         type=str,
         default="MACE_",
+    )
+    parser.add_argument(
+        "--num_workers",
+        help="Number of workers for data loading",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--pin_memory",
+        help="Pin memory for data loading",
+        default=True, 
+        type=bool,
     )
     return parser.parse_args()
 
@@ -94,14 +100,14 @@ def main():
     for param in model.parameters():
         param.requires_grad = False
 
+    z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
+
     # Load data and prepare input
     if args.configs.endswith(".xyz"):
         atoms_list = ase.io.read(args.configs, index=":")
         if args.output_SFG:
             velocities = np.array([atoms.arrays[args.velocity_key] for atoms in atoms_list])
         configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
-
-        z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
@@ -115,12 +121,8 @@ def main():
             drop_last=False,
         )
     elif args.configs.endswith(".h5"):
-        assert args.atomic_numbers is not None
-        zs_list = ast.literal_eval(args.atomic_numbers)
-        assert isinstance(zs_list, list)
-        z_table = tools.get_atomic_number_table_from_zs(zs_list)
         configs_preprocessed = HDF5Dataset(
-            args.train_file, r_max=args.r_max, z_table=z_table
+            args.configs, r_max=float(model.r_max), z_table=z_table
         )
         data_loader = torch_geometric.dataloader.DataLoader(
             configs_preprocessed,
@@ -272,10 +274,6 @@ def main():
             for dalpha_dr in dalpha_dr_list
         ]
 
-        # if args.return_contributions:
-        #     contributions = np.concatenate(contributions_list, axis=0)
-        #     assert len(atoms_list) == contributions.shape[0]
-
         # Store data in atoms objects
         if args.configs.endswith(".xyz"):
             for i, (atoms, dmu_dr, dalpha_dr) in enumerate(
@@ -290,6 +288,8 @@ def main():
                 atoms.arrays[args.info_prefix + "dalpha_dr"] = dalpha_dr_list[i].reshape(
                     dalpha_dr_list[i].shape[0], 27
                 )
+            # Write atoms to output path
+            ase.io.write(args.output, images=atoms_list, format="extxyz")
         else:
             dmu_dr_array = np.array(dmu_dr_list)
             dalpha_dr_array = np.array(dalpha_dr_list)
@@ -297,15 +297,7 @@ def main():
             dmu_dr_array = dmu_dr_array.reshape(dmu_dr_array.shape[0], -1)
             dalpha_dr_array = dalpha_dr_array.reshape(dalpha_dr_array.shape[0], -1)
 
-            np.savez_compressed("dmu_dr.npz", dmu_dr_array)
-            np.savez_compressed("dalpha_dr.npz", dalpha_dr_array)
-
-
-        # if args.return_contributions:
-        #     atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
-
-        # Write atoms to output path
-        ase.io.write(args.output, images=atoms_list, format="extxyz")
+            np.savez_compressed("dielectric_derivatives.npz", dmu_dr=dmu_dr_array, dalpha_dr=dalpha_dr_array)
 
 
 if __name__ == "__main__":
