@@ -652,10 +652,10 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         z_k_real = torch.randn(
             1, num_features * num_poles, 1, dtype=torch.get_default_dtype()
-        ) - 8 # TODO: for each feature, create several poles, think about initialization
+        )*2 - 8 # TODO: for each feature, create several poles, think about initialization
         z_k_complex = torch.randn(
             1, num_features * num_poles, 1, dtype=torch.get_default_dtype()
-        ) - 2 # TODO: HACK need to think about loss function a bit + initialization
+        )*2 - 2 # TODO: HACK need to think about loss function a bit + initialization
         self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
         self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
         self.normalize = SwitchNorm1d(num_features * num_poles)
@@ -689,7 +689,7 @@ class MatrixFunctionBlock(torch.nn.Module):
         # Make laplacian
         H_laplace = torch.diag_embed(torch.sum(torch.abs(H_dense), axis=-1)) - H_dense
         H_dense  = H_laplace
-        eigv = torch.sort(torch._linalg_eigh(H_laplace[0,0])[0])[0]
+        # eigv = torch.sort(torch._linalg_eigh(H_laplace[0,0])[0])[0]
         # eigenvalues
         # print(eigv[:10])
         # print(f'Range: {eigv[-1]- eigv[0]}')
@@ -713,6 +713,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             .reshape(features.shape[0] * features.shape[2], features.shape[1])
         )
         node_features = self.normalize(node_features[mask, :]) / self.avg_num_neighbors
+
 
         return self.linear_out(node_features)
 

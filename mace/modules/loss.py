@@ -76,7 +76,6 @@ def mean_squared_error_local_energies(ref: Batch, pred: TensorDict) -> torch.Ten
     ).unsqueeze(
         -1
     )  # [n_atoms, 1]
-    breakpoint()
     configs_local_energies_weight = torch.repeat_interleave(
         ref.local_energy_weight, ref.ptr[1:] - ref.ptr[:-1]
     ).unsqueeze(

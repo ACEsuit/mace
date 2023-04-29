@@ -58,7 +58,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         choices=[
             "PerAtomRMSE",
-            "LocalEnergyForcesRMSE",
+            "LocalPerAtomRMSE",
             "TotalRMSE",
             "PerAtomRMSEstressvirials",
             "PerAtomMAE",

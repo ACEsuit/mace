@@ -150,7 +150,7 @@ def main() -> None:
 
     loss_fn: torch.nn.Module
     if args.loss == "weighted":
-        loss_fn = modules.WeightedweEnergyForcesLoss(
+        loss_fn = modules.WeightedEnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
         )
     elif args.loss == "local":
@@ -367,6 +367,9 @@ def main() -> None:
 
     model.to(device)
 
+
+
+
     # Optimizer
     decay_interactions = {}
     no_decay_interactions = {}
@@ -518,6 +521,8 @@ def main() -> None:
             config=wandb_config,
         )
         wandb.run.summary["params"] = args_dict_json
+
+        wandb.watch(model, log="all")
 
     tools.train(
         model=model,

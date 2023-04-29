@@ -131,6 +131,13 @@ def train(
                 logging.info(
                     f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
                 )
+            elif log_errors == "LocalPerAtomRMSE":
+                error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+                error_f = eval_metrics["rmse_f"] * 1e3
+                error_local_e = eval_metrics["rmse_charges"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_local_E_per_atom={error_local_e:.1f} meV"
+                )
             elif (
                 log_errors == "PerAtomRMSEstressvirials"
                 and eval_metrics["rmse_stress_per_atom"] is not None
@@ -341,9 +348,9 @@ def evaluate(
             )
             mus_list.append(batch.dipole)
         # same for charges
-        if output.get("charges") is not None and batch.charges is not None:
+        if output.get("node_energy") is not None and batch.charges is not None:
             charges_computed = True
-            delta_charges_list.append(batch.charges - output["charges"])
+            delta_charges_list.append(batch.charges - output["node_energy"])
             charges_list.append(batch.charges)
 
 
