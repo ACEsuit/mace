@@ -666,7 +666,7 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
         self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
-        self.normalize = SwitchNorm1d(2*num_features * num_poles)
+        self.normalize = SwitchNorm1d(num_features * num_poles)
         self.linear_out = o3.Linear(
             o3.Irreps(f"{2*num_features * num_poles}x0e"), # 2* for real and imaginary
             self.node_feats_irreps,
@@ -723,21 +723,31 @@ class MatrixFunctionBlock(torch.nn.Module):
         # [n_graphs, n_features, n_nodes, n_nodes]
         features_real = features.real
         features_imag = features.imag
-        features = features.real
-        features = torch.cat([features_real, features_imag], dim=1)
-        # [n_graphs, 2*n_features, n_nodes, n_nodes]
 
-
-        node_features = (
-            features.diagonal(dim1=-2, dim2=-1) # [n_graphs, 2*n_features, n_nodes]
+        node_features_real = (
+            features_real.diagonal(dim1=-2, dim2=-1) # [n_graphs, 2*n_features, n_nodes]
             .permute(0, 2, 1) # [n_graphs, n_nodes, 2*n_features]
-            .reshape(features.shape[0] * features.shape[2], features.shape[1])
+            .reshape(features_real.shape[0] * features_real.shape[2], features_real.shape[1])
             #  [n_graphs * n_nodes, 2*n_features]
         )
-        breakpoint()
-        node_features = self.normalize(node_features[mask, :]) / self.avg_num_neighbors
-        breakpoint()
-        return self.linear_out(node_features) # [n_graphs * n_nodes, irreps]
+        node_features_imag = (
+            features_imag.diagonal(dim1=-2, dim2=-1) # [n_graphs, 2*n_features, n_nodes]
+            .permute(0, 2, 1) # [n_graphs, n_nodes, 2*n_features]
+            .reshape(features_imag.shape[0] * features_imag.shape[2], features_imag.shape[1])
+            #  [n_graphs * n_nodes, 2*n_features]
+        )
+
+        # Normalise node features (imaginary/real separately)
+        node_features_imag = (
+            self.normalize(node_features_imag[mask, :]) / self.avg_num_neighbors
+        )
+        node_features_real = (
+            self.normalize(node_features_real[mask, :]) / self.avg_num_neighbors
+        )
+
+        node_features = torch.cat([node_features_real, node_features_imag], dim=1)
+        #  [n_graphs * n_nodes, 2*n_features]
+        return self.linear_out(node_features)  # [n_graphs * n_nodes, irreps]
 
 
 class SwitchNorm1d(torch.nn.Module):
