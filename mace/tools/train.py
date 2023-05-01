@@ -71,7 +71,6 @@ def train(
     epoch = start_epoch
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
-        print({'z_k_real': model.state_dict()['bond_interactions.0.z_k_real'].detach().cpu().numpy()}, flush=True)
         if swa is None or epoch < swa.start:
             if epoch > start_epoch:
                 lr_scheduler.step(

@@ -406,6 +406,13 @@ def main() -> None:
                 "params": model.readouts.parameters(),
                 "weight_decay": 0.0,
             },
+            {
+                "name": "bond_interactions",
+                "params": model.bond_interactions.parameters(),
+                "weight_decay": 0.0,
+
+            }
+
         ],
         lr=args.lr,
         amsgrad=args.amsgrad,
@@ -523,6 +530,17 @@ def main() -> None:
         wandb.run.summary["params"] = args_dict_json
 
         wandb.watch(model, log="all")
+
+        try:
+            import git
+            mace_dir = mace.__path__[0]
+            repo = git.Repo(mace_dir, search_parent_directories=True)
+            sha = repo.head.object.hexsha
+            wandb.run.summary["git_sha"] = sha
+            logger.log(f"Git SHA: {sha}, for {mace_dir}")
+
+        except Exception as e:
+            logger.log(f"Could print git SHA: {str(e)}")
 
     tools.train(
         model=model,
