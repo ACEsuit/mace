@@ -651,7 +651,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             [irreps_scalar.num_irreps] + [64] + [64] + [num_features],
             torch.nn.functional.silu,
         )
-        self.Normalize_laplacian = normalize_laplacian
+        self.normalize_laplacian = normalize_laplacian
 
         z_k_real = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
@@ -666,9 +666,9 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
         self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
-        self.normalize = SwitchNorm1d(num_features * num_poles)
+        self.normalize = SwitchNorm1d(2*num_features * num_poles)
         self.linear_out = o3.Linear(
-            o3.Irreps(f"{2 * num_features * num_poles}x0e"),
+            o3.Irreps(f"{2*num_features * num_poles}x0e"), # 2* for real and imaginary
             self.node_feats_irreps,
             internal_weights=True,
             shared_weights=True,
@@ -720,21 +720,24 @@ class MatrixFunctionBlock(torch.nn.Module):
             .repeat(R_dense.shape[0], R_dense.shape[1], 1, 1)
         )
         features = torch.linalg.lu_solve(LU, P, self.identity) * self.g_scaling(z_k)
-
+        # [n_graphs, n_features, n_nodes, n_nodes]
         features_real = features.real
         features_imag = features.imag
+        features = features.real
+        features = torch.cat([features_real, features_imag], dim=1)
+        # [n_graphs, 2*n_features, n_nodes, n_nodes]
 
-        features = torch.cat(features, dim=-1)
 
         node_features = (
-            features.diagonal(dim1=-2, dim2=-1)
-            .permute(0, 2, 1)
+            features.diagonal(dim1=-2, dim2=-1) # [n_graphs, 2*n_features, n_nodes]
+            .permute(0, 2, 1) # [n_graphs, n_nodes, 2*n_features]
             .reshape(features.shape[0] * features.shape[2], features.shape[1])
+            #  [n_graphs * n_nodes, 2*n_features]
         )
-
+        breakpoint()
         node_features = self.normalize(node_features[mask, :]) / self.avg_num_neighbors
-
-        return self.linear_out(node_features)
+        breakpoint()
+        return self.linear_out(node_features) # [n_graphs * n_nodes, irreps]
 
 
 class SwitchNorm1d(torch.nn.Module):
