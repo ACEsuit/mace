@@ -741,7 +741,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             self.normalize_complex(node_features_imag[mask, :]) / self.avg_num_neighbors
         )
         node_features_real = (
-            self.normalize(node_features_real[mask, :]) / self.avg_num_neighbors
+            self.normalize_real(node_features_real[mask, :]) / self.avg_num_neighbors
         )
 
         node_features = torch.cat([node_features_real, node_features_imag], dim=1)
