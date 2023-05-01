@@ -666,7 +666,8 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
         self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
-        self.normalize = SwitchNorm1d(num_features * num_poles)
+        self.normalize_real = SwitchNorm1d(num_features * num_poles)
+        self.normalize_complex = SwitchNorm1d(num_features * num_poles)
         self.linear_out = o3.Linear(
             o3.Irreps(f"{2*num_features * num_poles}x0e"), # 2* for real and imaginary
             self.node_feats_irreps,
@@ -737,7 +738,7 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         # Normalise node features (imaginary/real separately)
         node_features_imag = (
-            self.normalize(node_features_imag[mask, :]) / self.avg_num_neighbors
+            self.normalize_complex(node_features_imag[mask, :]) / self.avg_num_neighbors
         )
         node_features_real = (
             self.normalize(node_features_real[mask, :]) / self.avg_num_neighbors
