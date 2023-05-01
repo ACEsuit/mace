@@ -624,6 +624,8 @@ class MatrixFunctionBlock(torch.nn.Module):
         num_basis,
         num_poles,
         avg_num_neighbors,
+        g_scaling = "1",
+        normalize_laplacian = False
     ):
         super().__init__()
         # First linear
@@ -649,23 +651,25 @@ class MatrixFunctionBlock(torch.nn.Module):
             [irreps_scalar.num_irreps] + [64] + [64] + [num_features],
             torch.nn.functional.silu,
         )
+        self.Normalize_laplacian = normalize_laplacian
 
         z_k_real = torch.randn(
             1, num_features * num_poles, 1, dtype=torch.get_default_dtype()
-        )*2 - 8 # TODO: for each feature, create several poles, think about initialization
+        )*2 - 0 # TODO: for each feature, create several poles, think about initialization
         z_k_complex = torch.randn(
             1, num_features * num_poles, 1, dtype=torch.get_default_dtype()
-        )*2 - 2 # TODO: HACK need to think about loss function a bit + initialization
+        )*1 - 0 # TODO: HACK need to think about loss function a bit + initialization
+
         self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
         self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
         self.normalize = SwitchNorm1d(num_features * num_poles)
         self.linear_out = o3.Linear(
-            o3.Irreps(f"{num_features * num_poles}x0e"),
+            o3.Irreps(f"{2 * num_features * num_poles}x0e"),
             self.node_feats_irreps,
             internal_weights=True,
             shared_weights=True,
         )
-
+        self.g_scaling = eval(f"lambda x: {g_scaling}")
     def forward(
         self,
         node_feats: torch.Tensor,
@@ -686,13 +690,18 @@ class MatrixFunctionBlock(torch.nn.Module):
         H_dense = to_dense_adj(edge_index=edge_index, batch=batch, edge_attr=H).permute(            0, 3, 1, 2
         )  # [n_graphs, n_features, n_nodes, n_nodes]
         H_dense = H_dense.repeat(1, self.num_poles, 1, 1)
-        # Make laplacian
-        H_laplace = torch.diag_embed(torch.sum(torch.abs(H_dense), axis=-1)) - H_dense
-        H_dense  = H_laplace
-        # eigv = torch.sort(torch._linalg_eigh(H_laplace[0,0])[0])[0]
-        # eigenvalues
-        # print(eigv[:10])
-        # print(f'Range: {eigv[-1]- eigv[0]}')
+        # Create Laplacian from weighted adjacency matrix
+        degree = torch.sum(torch.abs(H_dense), axis=-1)
+        H_laplace = torch.diag_embed(degree) - H_dense
+
+        # allow for normalisation of laplacian
+        if self.normalize_laplacian:
+            degree_inv = (degree + 1e-9)**(-0.5)[...,None]
+            H_laplace = (H_laplace * degree_inv).T * degree_inv
+
+
+        H_dense = H_laplace
+
         z_k = torch.view_as_complex(
             torch.stack([torch.exp(self.z_k_real), torch.exp(self.z_k_complex)], dim=-1)
         )
@@ -706,17 +715,24 @@ class MatrixFunctionBlock(torch.nn.Module):
             .unsqueeze(0)
             .repeat(R_dense.shape[0], R_dense.shape[1], 1, 1)
         )
-        features = 2 * torch.linalg.lu_solve(LU, P, self.identity).real
+        features = torch.linalg.lu_solve(LU, P, self.identity) * self.g_scaling(z_k)
+
+        features_real = features.real
+        features_imag = features.imag
+
+        features = torch.cat(features, dim=-1)
+
         node_features = (
             features.diagonal(dim1=-2, dim2=-1)
             .permute(0, 2, 1)
             .reshape(features.shape[0] * features.shape[2], features.shape[1])
         )
+
+
         node_features = self.normalize(node_features[mask, :]) / self.avg_num_neighbors
 
 
         return self.linear_out(node_features)
-
 
 class SwitchNorm1d(torch.nn.Module):
     def __init__(
