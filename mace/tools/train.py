@@ -71,6 +71,7 @@ def train(
     epoch = start_epoch
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
+        print({'z_k_real': model.state_dict()['bond_interactions.0.z_k_real'].detach().cpu().numpy()}, flush=True)
         if swa is None or epoch < swa.start:
             if epoch > start_epoch:
                 lr_scheduler.step(
@@ -196,6 +197,10 @@ def train(
                     "valid_rmse_f": eval_metrics["rmse_f"],
                 }
                 wandb.log(wandb_log_dict)
+                wandb.log({"lr": optimizer.param_groups[0]["lr"]})
+
+
+
             if valid_loss >= lowest_loss:
                 patience_counter += 1
                 if swa is not None:

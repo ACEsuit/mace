@@ -656,12 +656,12 @@ class MatrixFunctionBlock(torch.nn.Module):
         z_k_real = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
             * 2
-            - 0
+            - 4
         )  # TODO: for each feature, create several poles, think about initialization
         z_k_complex = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
             * 1
-            - 0
+            - 2
         )  # TODO: HACK need to think about loss function a bit + initialization
 
         self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
@@ -721,20 +721,18 @@ class MatrixFunctionBlock(torch.nn.Module):
         )
         features = torch.linalg.lu_solve(LU, P, self.identity) * self.g_scaling(z_k)
         # [n_graphs, n_features, n_nodes, n_nodes]
-        features_real = features.real
-        features_imag = features.imag
 
         node_features_real = (
-            features_real.diagonal(dim1=-2, dim2=-1) # [n_graphs, 2*n_features, n_nodes]
-            .permute(0, 2, 1) # [n_graphs, n_nodes, 2*n_features]
-            .reshape(features_real.shape[0] * features_real.shape[2], features_real.shape[1])
-            #  [n_graphs * n_nodes, 2*n_features]
+            features.real.diagonal(dim1=-2, dim2=-1) # [n_graphs, n_features, n_nodes]
+            .permute(0, 2, 1) # [n_graphs, n_nodes, n_features]
+            .reshape(features.real.shape[0] * features.real.shape[2], features.real.shape[1])
+            #  [n_graphs * n_nodes, n_features]
         )
         node_features_imag = (
-            features_imag.diagonal(dim1=-2, dim2=-1) # [n_graphs, 2*n_features, n_nodes]
-            .permute(0, 2, 1) # [n_graphs, n_nodes, 2*n_features]
-            .reshape(features_imag.shape[0] * features_imag.shape[2], features_imag.shape[1])
-            #  [n_graphs * n_nodes, 2*n_features]
+            features.imag.diagonal(dim1=-2, dim2=-1) # [n_graphs, n_features, n_nodes]
+            .permute(0, 2, 1) # [n_graphs, n_nodes, n_features]
+            .reshape(features.imag.shape[0] * features.imag.shape[2], features.imag.shape[1])
+            #  [n_graphs * n_nodes, n_features]
         )
 
         # Normalise node features (imaginary/real separately)
