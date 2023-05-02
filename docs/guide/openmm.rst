@@ -32,7 +32,7 @@ Testing your Installation
 
 Run the unit tests for mace-md with the following:
 
-`pytest -s openmmtools/tests/test_mace-md.py `
+``pytest -s openmmtools/tests/test_mace-md.py ``
 
 
 
@@ -40,7 +40,7 @@ Running MD simulations
 ----------------------
 
 
-The following snippets use files from the `examples/example_data` folder of the openmmtools repository.
+The following snippets use files from the ``examples/example_data`` folder of the openmmtools repository.
 
 Run pure MACE MD simulation with Langevin dynamics:
 
@@ -107,7 +107,6 @@ Example of a hybrid ML-MM simulation where the small molecule is parametrised by
     file = "ejm_31.sdf"
     model_path = "MACE_SPICE_larger.model"
     temperature = 298
-    pressure = 1
 
     system = MixedSystem(
         file=file,
@@ -122,10 +121,11 @@ Example of a hybrid ML-MM simulation where the small molecule is parametrised by
     )
 
     system.run_mixed_md(
-        steps=10000, interval=50, output_file="output_md_water.pdb", restart=False
+        steps=10000, interval=50, output_file="output_md_mlmm.pdb", restart=False
     )
 
-Below are more detailed instructions.
+
+Alternatively, simulations can also be run through the mace-md interface, which exposes exactly the same functionality.
 
 Pure MD simulations
 ~~~~~~~~~~~~~~~~~~~
