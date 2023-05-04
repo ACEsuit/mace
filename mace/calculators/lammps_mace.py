@@ -21,7 +21,7 @@ class LAMMPS_MACE(torch.nn.Module):
     def forward(
         self,
         data: Dict[str, torch.Tensor],
-        mask_ghost: torch.Tensor,
+        mask_ghost: Optional[torch.Tensor],
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
@@ -43,25 +43,26 @@ class LAMMPS_MACE(torch.nn.Module):
         if node_energy is None:
             return {"energy": None, "forces": None, "virials": None, "stress": None}
         displacement = out["displacement"]
+        positions = data["positions"]
+        forces: Optional[torch.Tensor] = torch.zeros_like(positions)
         virials: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
         stress: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
         if mask_ghost is not None and displacement is not None:
-            # displacement.requires_grad_(True)  # For some reason torchscript needs that.
-            node_energy_ghost = node_energy * mask_ghost
-            total_energy_ghost = scatter_sum(
-                src=node_energy_ghost, index=data["batch"], dim=-1, dim_size=num_graphs
+            node_energy_local = node_energy * mask_ghost
+            total_energy_local = scatter_sum(
+                src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs
             )
             grad_outputs: List[Optional[torch.Tensor]] = [
-                torch.ones_like(total_energy_ghost)
+                torch.ones_like(total_energy_local)
             ]
-            virials = torch.autograd.grad(
-                outputs=[total_energy_ghost],
-                inputs=[displacement],
+            forces, virials = torch.autograd.grad(
+                outputs=[total_energy_local],
+                inputs=[positions, displacement],
                 grad_outputs=grad_outputs,
-                retain_graph=True,
-                create_graph=True,
+                retain_graph=False,
+                create_graph=False,
                 allow_unused=True,
-            )[0]
+            )
 
             if virials is not None:
                 virials = -1 * virials
@@ -74,24 +75,28 @@ class LAMMPS_MACE(torch.nn.Module):
                 stress = virials / volume.view(-1, 1, 1)
             else:
                 virials = torch.zeros_like(displacement)
-
-        total_energy = scatter_sum(
-            src=node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
-        )
-
-        forces, _, _ = get_outputs(
-            energy=total_energy,
-            positions=data["positions"],
-            displacement=displacement,
-            cell=data["cell"],
-            training=False,
-            compute_force=compute_force,
-            compute_virials=False,
-            compute_stress=False,
-        )
+        elif compute_force:
+            total_energy_local = scatter_sum(
+                src=node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
+            )
+            grad_outputs: List[Optional[torch.Tensor]] = [
+                torch.ones_like(total_energy_local)
+            ]
+            forces = torch.autograd.grad(
+                outputs=[total_energy_local],
+                inputs=[positions],
+                grad_outputs=grad_outputs,
+                retain_graph=False,
+                create_graph=False,
+                allow_unused=True,
+            )[0]
+        else:
+            total_energy_local = scatter_sum(
+                src=node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
+            )
 
         return {
-            "energy": total_energy,
+            "energy": total_energy_local,
             "node_energy": node_energy,
             "forces": forces,
             "virials": virials,
