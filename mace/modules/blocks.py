@@ -640,6 +640,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             irreps_scalar,
             internal_weights=True,
             shared_weights=True,
+            biases=True, # TODO: check
         )
 
         # Edge features
@@ -655,12 +656,12 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         z_k_real = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
-            * 2
-            - 4
+            * 5
+            - 2
         )  # TODO: for each feature, create several poles, think about initialization
         z_k_complex = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
-            * 1
+            * 5
             - 2
         )  # TODO: HACK need to think about loss function a bit + initialization
 
@@ -702,8 +703,9 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         # allow for normalisation of laplacian
         if self.normalize_laplacian:
-            degree_inv = (degree + 1e-9) ** (-0.5)[..., None]
-            H_laplace = (H_laplace * degree_inv).T * degree_inv
+            raise NotImplementedError()
+            # degree_inv = (degree + 1e-9) ** (-0.5)[..., None]
+            # H_laplace = (H_laplace * degree_inv).T * degree_inv
 
         H_dense = H_laplace
 

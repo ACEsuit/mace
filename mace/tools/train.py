@@ -64,7 +64,6 @@ def train(
     keep_last = False
     if log_wandb:
         import wandb
-
     if max_grad_norm is not None:
         logging.info(f"Using gradient clipping with tolerance={max_grad_norm:.3f}")
     logging.info("Started training")
@@ -195,7 +194,11 @@ def train(
                     "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
                     "valid_rmse_f": eval_metrics["rmse_f"],
                 }
+                eval_metrics_valid_prefix = {
+                    f"all-data/valid_{k}": v for k, v in eval_metrics.items()
+                }
                 wandb.log(wandb_log_dict)
+                wandb.log(eval_metrics_valid_prefix)
                 wandb.log({"lr": optimizer.param_groups[0]["lr"]})
 
 

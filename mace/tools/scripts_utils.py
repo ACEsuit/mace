@@ -229,11 +229,23 @@ def create_error_table(
         )
         if log_wandb:
             wandb_log_dict = {
-                name
+                "final-models/"
+                + name
                 + "_final_rmse_e_per_atom": metrics["rmse_e_per_atom"]
                 * 1e3,  # meV / atom
-                name + "_final_rmse_f": metrics["rmse_f"] * 1e3,  # meV / A
-                name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
+                "final-models/"
+                + name
+                + "_final_rmse_f": metrics["rmse_f"] * 1e3,  # meV / A
+                "final-models/" + name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
+                # Also add all mae metrics
+                "final-models/"
+                + name
+                + "_final_mae_e_per_atom": metrics["mae_e_per_atom"]
+                * 1e3,  # meV / atom
+                "final-models/"
+                + name
+                + "_final_mae_f": metrics["mae_f"] * 1e3,  # meV / A
+                "final-models/" + name + "_final_rel_mae_f": metrics["rel_mae_f"],
             }
             wandb.log(wandb_log_dict)
         if table_type == "TotalRMSE":
