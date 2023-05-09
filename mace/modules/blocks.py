@@ -625,10 +625,11 @@ class MatrixFunctionBlock(torch.nn.Module):
         num_poles,
         avg_num_neighbors,
         g_scaling="1",
-        normalize_laplacian=False,
+        diagonal="laplacian",
     ):
         super().__init__()
         # First linear
+        self.diagonal = diagonal
         self.node_feats_irreps = node_feats_irreps
         self.avg_num_neighbors = avg_num_neighbors
         self.num_poles = num_poles
@@ -640,7 +641,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             irreps_scalar,
             internal_weights=True,
             shared_weights=True,
-            biases=True, # TODO: check
+            biases=True,  # TODO: check
         )
 
         # Edge features
@@ -652,7 +653,11 @@ class MatrixFunctionBlock(torch.nn.Module):
             [irreps_scalar.num_irreps] + [64] + [64] + [num_features],
             torch.nn.functional.silu,
         )
-        self.normalize_laplacian = normalize_laplacian
+        if diagonal == "learnable":
+            self.diag_matrix_mlp =  nn.FullyConnectedNet(
+                [irreps_scalar.num_irreps] + [64] + [64] + [num_features],
+                torch.nn.functional.silu,
+            )
 
         z_k_real = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
@@ -668,7 +673,7 @@ class MatrixFunctionBlock(torch.nn.Module):
         self.normalize_real = SwitchNorm1d(num_features * num_poles)
         self.normalize_complex = SwitchNorm1d(num_features * num_poles)
         self.linear_out = o3.Linear(
-            o3.Irreps(f"{2*num_features * num_poles}x0e"), # 2* for real and imaginary
+            o3.Irreps(f"{2*num_features * num_poles}x0e"),  # 2* for real and imaginary
             self.node_feats_irreps,
             internal_weights=True,
             shared_weights=True,
@@ -679,35 +684,60 @@ class MatrixFunctionBlock(torch.nn.Module):
         self,
         node_feats: torch.Tensor,
         edge_feats: torch.Tensor,
+        matrix_feats: torch.Tensor,
         edge_index: torch.Tensor,
         batch: torch.Tensor,
         ptr: torch.Tensor,
     ) -> Tuple[torch.Tensor]:
         sender, receiver = edge_index
         mask = get_mask(ptr[1:] - ptr[:-1])
+        mask_matrix = mask.reshape(
+            (ptr[1:] - ptr[:-1]).shape[0],
+            (ptr[1:] - ptr[:-1]).max())
+        node_feats_org = node_feats
         node_feats = self.linear_scalar(node_feats)
         edge_feats_weights = self.edge_feats_mlp(edge_feats)
         symmetric_node_feats = torch.cat(
             [node_feats[sender] * node_feats[receiver] * edge_feats_weights], dim=1
         )  # TODO: add cutoff function
-        H = self.matrix_mlp(symmetric_node_feats)  # [n_edges, n_features] # TODO: Add residual with matrix_functions
-        H_dense = to_dense_adj(edge_index=edge_index, batch=batch, edge_attr=H).permute(
-            0, 3, 1, 2
-        )  # [n_graphs, n_features, n_nodes, n_nodes]
+        H = self.matrix_mlp(
+            symmetric_node_feats
+        )  # [n_edges, n_features]
+
+
+        H_dense = to_dense_adj(edge_index=edge_index, batch=batch, edge_attr=H).permute(0, 3, 1, 2)  # [n_graphs, n_features, n_nodes, n_nodes]
         H_dense = H_dense.repeat(1, self.num_poles, 1, 1)
-        # Create Laplacian from weighted adjacency matrix
-        degree = torch.sum(torch.abs(H_dense), axis=-1)
-        H_laplace = torch.diag_embed(degree) - H_dense
 
-        # allow for normalisation of laplacian
-        if self.normalize_laplacian:
-            raise NotImplementedError()
-            # degree_inv = (degree + 1e-9) ** (-0.5)[..., None]
-            # H_laplace = (H_laplace * degree_inv).T * degree_inv
+        # Set diagonal elemetns of matrix
+        if self.diagonal == "learnable":
+            diag_H = self.diag_matrix_mlp(node_feats)
+            diag_H = to_dense_batch(diag_H, batch)[0].permute(0, 2, 1)
+            diag_H = diag_H.repeat(1, self.num_poles, 1)
+            H_dense = H_dense + torch.diag_embed(diag_H)
+        elif self.diagonal == "laplacian":
+            # Create Laplacian from weighted adjacency matrix
+            degree = torch.sum(torch.abs(H_dense), axis=-1)
+            H_dense = torch.diag_embed(degree) - H_dense
+        elif self.diagonal == "normalised_laplacian":
+            raise NotImplementedError()  # TODO: add normalised laplacian
+            # Create Laplacian from weighted adjacency matrix
+            degree = torch.sum(torch.abs(H_dense), axis=-1)
+            degree_inv = (degree + 1e-9) ** (-0.5)[..., None]
+            H_dense = (H_dense * degree_inv).T * degree_inv
 
-        # add small number to diagonal to avoid padded regions to have zeros
+        # Adding small number to diagonal to avoid padded regions to have zeros
+        H_dense = (
+            H_dense
+            + torch.diag_embed(torch.ones(H_dense.shape[:-1]), dim1=-2, dim2=-1).to(
+                H_dense.device
+            )
+            * 1e-9
+        )
 
-        H_dense = H_laplace + torch.diag_embed(torch.ones(H_dense.shape[:-1]), dim1=-2, dim2=-1).to(H_dense.device) * 1e-9
+        # Add matrix features from previous layer
+        
+        if matrix_feats is not None:
+            H_dense = H_dense + matrix_feats
         '''
         z_k = torch.view_as_complex(
             torch.stack([torch.exp(self.z_k_real), torch.exp(self.z_k_complex)], dim=-1)
@@ -718,8 +748,9 @@ class MatrixFunctionBlock(torch.nn.Module):
         )
         z_k = z_k.expand(H_dense.shape[0], H_dense.shape[1], H_dense.shape[-1])
         D_z = torch.diag_embed(z_k)
+        H_dense = self.matrix_norm(H_dense,mask_matrix)
         R_dense = D_z - H_dense
-        R_dense = self.matrix_norm(R_dense,mask)
+
 
         LUP = torch.linalg.lu_factor_ex(R_dense)
         LU, P = LUP.LU, LUP.pivots
@@ -732,15 +763,19 @@ class MatrixFunctionBlock(torch.nn.Module):
         # [n_graphs, n_features, n_nodes, n_nodes]
 
         node_features_real = (
-            features.real.diagonal(dim1=-2, dim2=-1) # [n_graphs, n_features, n_nodes]
-            .permute(0, 2, 1) # [n_graphs, n_nodes, n_features]
-            .reshape(features.real.shape[0] * features.real.shape[2], features.real.shape[1])
+            features.real.diagonal(dim1=-2, dim2=-1)  # [n_graphs, n_features, n_nodes]
+            .permute(0, 2, 1)  # [n_graphs, n_nodes, n_features]
+            .reshape(
+                features.real.shape[0] * features.real.shape[2], features.real.shape[1]
+            )
             #  [n_graphs * n_nodes, n_features]
         )
         node_features_imag = (
-            features.imag.diagonal(dim1=-2, dim2=-1) # [n_graphs, n_features, n_nodes]
-            .permute(0, 2, 1) # [n_graphs, n_nodes, n_features]
-            .reshape(features.imag.shape[0] * features.imag.shape[2], features.imag.shape[1])
+            features.imag.diagonal(dim1=-2, dim2=-1)  # [n_graphs, n_features, n_nodes]
+            .permute(0, 2, 1)  # [n_graphs, n_nodes, n_features]
+            .reshape(
+                features.imag.shape[0] * features.imag.shape[2], features.imag.shape[1]
+            )
             #  [n_graphs * n_nodes, n_features]
         )
 
@@ -754,7 +789,15 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         node_features = torch.cat([node_features_real, node_features_imag], dim=1)
         #  [n_graphs * n_nodes, 2*n_features]
-        return self.linear_out(node_features), H_dense  # [n_graphs * n_nodes, irreps]
+
+        # breakpoint()
+        if matrix_feats is None:
+            return self.linear_out(node_features), None  # [n_graphs * n_nodes, irreps]
+        else:
+            return (
+                self.linear_out(node_features),
+                features.real,
+            )  # [n_graphs * n_nodes, irreps]
 
 
 class SwitchNorm1d(torch.nn.Module):

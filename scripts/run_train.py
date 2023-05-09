@@ -312,6 +312,8 @@ def main() -> None:
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             num_poles=args.num_poles,
             num_features_matrix=args.num_features_matrix,
+            diagonal= args.eigen_diag,
+            use_matrix_feats=args.eigen_use_matrix_feats,
             device=args.device,
         )
     elif args.model == "ScaleShiftEigenvalues_MACE":
@@ -607,6 +609,7 @@ def main() -> None:
         if args.save_cpu:
             model = model.to("cpu")
         # Have to remove wandb hooks before saving models (pickel error)
+        breakpoint()
         if hasattr(model, "_wandb_hook_names"):
             wandb.unwatch(model)
         torch.save(model, model_path)
