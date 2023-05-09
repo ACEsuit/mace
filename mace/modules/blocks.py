@@ -694,6 +694,7 @@ class MatrixFunctionBlock(torch.nn.Module):
         mask_matrix = mask.reshape(
             (ptr[1:] - ptr[:-1]).shape[0],
             (ptr[1:] - ptr[:-1]).max())
+        mask_matrix = mask_matrix.to(node_feats.device)
         node_feats_org = node_feats
         node_feats = self.linear_scalar(node_feats)
         edge_feats_weights = self.edge_feats_mlp(edge_feats)
