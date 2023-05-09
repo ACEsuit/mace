@@ -367,9 +367,6 @@ def main() -> None:
 
     model.to(device)
 
-
-
-
     # Optimizer
     decay_interactions = {}
     no_decay_interactions = {}
@@ -379,41 +376,45 @@ def main() -> None:
         else:
             no_decay_interactions[name] = param
 
-    param_options = dict(
-        params=[
-            {
-                "name": "embedding",
-                "params": model.node_embedding.parameters(),
-                "weight_decay": 0.0,
-            },
-            {
-                "name": "interactions_decay",
-                "params": list(decay_interactions.values()),
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "name": "interactions_no_decay",
-                "params": list(no_decay_interactions.values()),
-                "weight_decay": 0.0,
-            },
-            {
-                "name": "products",
-                "params": model.products.parameters(),
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "name": "readouts",
-                "params": model.readouts.parameters(),
-                "weight_decay": 0.0,
-            },
+    params_for_dict = [
+        {
+            "name": "embedding",
+            "params": model.node_embedding.parameters(),
+            "weight_decay": 0.0,
+        },
+        {
+            "name": "interactions_decay",
+            "params": list(decay_interactions.values()),
+            "weight_decay": args.weight_decay,
+        },
+        {
+            "name": "interactions_no_decay",
+            "params": list(no_decay_interactions.values()),
+            "weight_decay": 0.0,
+        },
+        {
+            "name": "products",
+            "params": model.products.parameters(),
+            "weight_decay": args.weight_decay,
+        },
+        {
+            "name": "readouts",
+            "params": model.readouts.parameters(),
+            "weight_decay": 0.0,
+        },
+    ]
+
+    if hasattr(model, "bond_interactions"):
+        params_for_dict.append(
             {
                 "name": "bond_interactions",
                 "params": model.bond_interactions.parameters(),
                 "weight_decay": 0.0,
-
             }
+        )
 
-        ],
+    param_options = dict(
+        params=params_for_dict,
         lr=args.lr,
         amsgrad=args.amsgrad,
     )
@@ -605,6 +606,9 @@ def main() -> None:
         logging.info(f"Saving model to {model_path}")
         if args.save_cpu:
             model = model.to("cpu")
+        # Have to remove wandb hooks before saving models (pickel error)
+        if hasattr(model, "_wandb_hook_names"):
+            wandb.unwatch(model)
         torch.save(model, model_path)
 
         if swa_eval:

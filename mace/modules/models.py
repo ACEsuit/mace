@@ -1166,7 +1166,7 @@ class Eigenvalues_MACE(torch.nn.Module):
                 sc=sc,
                 node_attrs=data["node_attrs"],
             )
-            matrix_features = bond_interaction(
+            matrix_features, H_dense = bond_interaction(
                 node_feats=node_feats,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
@@ -1207,6 +1207,7 @@ class Eigenvalues_MACE(torch.nn.Module):
             "stress": stress,
             "displacement": displacement,
             'matrix_features': matrix_features,
+            'H_dense': H_dense, # HACK: usefull output for debugging
         }
 
 

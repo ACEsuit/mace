@@ -692,7 +692,7 @@ class MatrixFunctionBlock(torch.nn.Module):
         symmetric_node_feats = torch.cat(
             [node_feats[sender] * node_feats[receiver] * edge_feats_weights], dim=1
         )  # TODO: add cutoff function
-        H = self.matrix_mlp(symmetric_node_feats)  # [n_edges, n_features]
+        H = self.matrix_mlp(symmetric_node_feats)  # [n_edges, n_features] # TODO: Add residual with matrix_functions
         H_dense = to_dense_adj(edge_index=edge_index, batch=batch, edge_attr=H).permute(
             0, 3, 1, 2
         )  # [n_graphs, n_features, n_nodes, n_nodes]
@@ -707,7 +707,9 @@ class MatrixFunctionBlock(torch.nn.Module):
             # degree_inv = (degree + 1e-9) ** (-0.5)[..., None]
             # H_laplace = (H_laplace * degree_inv).T * degree_inv
 
-        H_dense = H_laplace
+        # add small number to diagonal to avoid padded regions to have zeros
+
+        H_dense = H_laplace + torch.diag_embed(torch.ones(H_dense.shape[:-1]), dim1=-2, dim2=-1).to(H_dense.device) * 1e-9
 
         z_k = torch.view_as_complex(
             torch.stack([torch.exp(self.z_k_real), torch.exp(self.z_k_complex)], dim=-1)
@@ -748,7 +750,7 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         node_features = torch.cat([node_features_real, node_features_imag], dim=1)
         #  [n_graphs * n_nodes, 2*n_features]
-        return self.linear_out(node_features)  # [n_graphs * n_nodes, irreps]
+        return self.linear_out(node_features), H_dense  # [n_graphs * n_nodes, irreps]
 
 
 class SwitchNorm1d(torch.nn.Module):
