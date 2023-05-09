@@ -104,13 +104,13 @@ class LRScheduler(torch.optim.lr_scheduler.LRScheduler):
         if args.scheduler == "ExponentialLR":
             self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
                 optimizer=optimizer, gamma=args.lr_scheduler_gamma
-                )
+            )
         elif args.scheduler == "ReduceLROnPlateau":
             self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer=optimizer,
                 factor=args.lr_factor,
                 patience=args.scheduler_patience,
-                )
+            )
         else:
             raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 
@@ -123,8 +123,7 @@ class LRScheduler(torch.optim.lr_scheduler.LRScheduler):
     def __getattr__(self, name):
         if name == "step":
             return self.step
-        else:
-            return getattr(self.lr_scheduler, name)
+        return getattr(self.lr_scheduler, name)
 
 
 def create_error_table(

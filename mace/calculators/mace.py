@@ -88,7 +88,9 @@ class MACECalculator(Calculator):
         if len(model_paths) > 1:
             print(f"Running committee mace with {len(model_paths)} models")
             if model_type in ["MACE", "EnergyDipoleMACE"]:
-                self.implemented_properties.extend(["energies", "energy_var", "forces_var"])
+                self.implemented_properties.extend(
+                    ["energies", "energy_var", "forces_var", "stress_var"]
+                )
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
 
@@ -113,6 +115,29 @@ class MACECalculator(Calculator):
         for model in self.models:
             for param in model.parameters():
                 param.requires_grad = False
+
+    def _create_result_tensors(
+        self, model_type: str, num_models: int, num_atoms: int
+    ) -> dict:
+        """
+        Create tensors to store the results of the committee
+        :param model_type: str, type of model to load
+                    Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+        :param num_models: int, number of models in the committee
+        :return: tuple of torch tensors
+        """
+        if model_type in ["MACE", "EnergyDipoleMACE"]:
+            energies = torch.zeros(num_models, device=self.device)
+            energy_var = torch.zeros(1, device=self.device)
+            node_energy = torch.zeros(num_models, num_atoms, device=self.device)
+            forces = torch.zeros(num_models, num_atoms, 3, device=self.device)
+            forces_var = torch.zeros(num_models, num_atoms, 3, device=self.device)
+            stress = torch.zeros(num_models, 3, 3, device=self.device)
+            stress_var = torch.zeros(num_models, 3, 3, device=self.device)
+        if model_type in ["EnergyDipoleMACE", "DipoleMACE"]:
+            dipole = torch.zeros(num_models, 3, device=self.device)
+            dipole_var = torch.zeros(num_models, 3, device=self.device)
+        return locals()
 
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
@@ -139,59 +164,73 @@ class MACECalculator(Calculator):
             drop_last=False,
         )
 
-        # predict + extract data
-        outputs = {}
-        for prop in self.implemented_properties:
-            outputs[prop] = []
-
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
             batch = next(iter(data_loader)).to(self.device)
             node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])
-            outputs["node_energies"] = []
             compute_stress = True
         else:
             compute_stress = False
 
         batch_base = next(iter(data_loader)).to(self.device)
-        for model in self.models:
+        ret_tensors = self._create_result_tensors(
+            self.model_type, self.num_models, len(atoms)
+        )
+        for i, model in enumerate(self.models):
             batch = batch_base.clone()
             out = model(batch.to_dict(), compute_stress=compute_stress)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
-                outputs["energy"].append(out["energy"].detach().cpu().item())
-                outputs["free_energy"].append(out["energy"].detach().cpu().item())
-                outputs["forces"].append(out["forces"].detach().cpu().numpy())
-                outputs["node_energies"].append(
-                    (out["node_energy"] - node_e0).detach().cpu().numpy()
-                )
+                ret_tensors["energies"][i] = out["energy"].detach()
+                ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
+                ret_tensors["forces"][i] = out["forces"].detach()
                 if out["stress"] is not None:
-                    outputs["stress"].append(out["stress"].detach().cpu().numpy())
+                    ret_tensors["stress"][i] = out["stress"].detach()
             if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
-                outputs["dipole"].append(out["dipole"].detach().cpu().numpy()[0])
+                ret_tensors["dipole"][i] = out["dipole"].detach()
 
         self.results = {}
-        # convert units
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
-            energies = np.array(outputs["energy"]) * self.energy_units_to_eV
-            self.results["energy"] = np.mean(energies)
-            self.results["free_energy"] = self.results["energy"]
-            forces = np.array(outputs["forces"]) * (
-                self.energy_units_to_eV / self.length_units_to_A
+            self.results["energies"] = (
+                ret_tensors["energies"].cpu().numpy() * self.energy_units_to_eV
             )
-            self.results["forces"] = np.mean(forces, axis=0)
-            self.results["node_energy"] = (
-                np.mean(np.array(outputs["node_energies"]), axis=0)
+            self.results["energy"] = (
+                torch.mean(ret_tensors["energies"], dim=0).cpu().item()
                 * self.energy_units_to_eV
             )
-            if len(outputs["stress"]) > 0:
-                stress = np.mean(np.array(outputs["stress"]), axis=0) * (
-                    self.energy_units_to_eV / self.length_units_to_A**3
+            self.results["free_energy"] = self.results["energy"]
+            self.results["energy_var"] = (
+                torch.var(ret_tensors["energies"], dim=0, unbiased=False).cpu().item()
+                * self.energy_units_to_eV
+            )
+            self.results["node_energy"] = (
+                torch.mean(ret_tensors["node_energy"] - node_e0, dim=0).cpu().numpy()
+            )
+            self.results["forces"] = (
+                torch.mean(ret_tensors["forces"], dim=0).cpu().numpy()
+                * self.energy_units_to_eV
+                / self.length_units_to_A
+            )
+            self.results["forces_var"] = (
+                torch.var(ret_tensors["forces"], dim=0, unbiased=False).cpu().numpy()
+                * self.energy_units_to_eV
+                / self.length_units_to_A
+            )
+            if out["stress"] is not None:
+                self.results["stress"] = full_3x3_to_voigt_6_stress(
+                    torch.mean(ret_tensors["stress"], dim=0).cpu().numpy()
+                    * self.energy_units_to_eV
+                    / self.length_units_to_A**3
                 )
-                self.results["stress"] = full_3x3_to_voigt_6_stress(stress)[0]
-            if self.num_models > 1:
-                self.results["energies"] = energies
-                self.results["energy_var"] = np.var(energies)
-                self.results["forces_var"] = np.var(forces, axis=0)
+                self.results["stress_var"] = full_3x3_to_voigt_6_stress(
+                    torch.var(ret_tensors["stress"], dim=0, unbiased=False)
+                    .cpu()
+                    .numpy()
+                    * self.energy_units_to_eV
+                    / self.length_units_to_A**3
+                )
         if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
-            self.results["dipole"] = np.mean(np.array(outputs["dipole"]), axis=0)
-            if self.num_models > 1:
-                self.results["dipole_var"] = np.var(np.array(outputs["dipole"]), axis=0)
+            self.results["dipole"] = (
+                torch.mean(ret_tensors["dipole"], dim=0).cpu().numpy()
+            )
+            self.results["dipole_var"] = (
+                torch.var(ret_tensors["dipole"], dim=0, unbiased=False).cpu().numpy()
+            )
