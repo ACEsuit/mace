@@ -653,6 +653,11 @@ class MatrixFunctionBlock(torch.nn.Module):
             [irreps_scalar.num_irreps] + [64] + [64] + [num_features],
             torch.nn.functional.silu,
         )
+        if diagonal == "learnable":
+            self.diag_matrix_mlp =  nn.FullyConnectedNet(
+                [irreps_scalar.num_irreps] + [64] + [64] + [num_features],
+                torch.nn.functional.silu,
+            )
 
         z_k_real = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
@@ -688,6 +693,7 @@ class MatrixFunctionBlock(torch.nn.Module):
     ) -> Tuple[torch.Tensor]:
         sender, receiver = edge_index
         mask = get_mask(ptr[1:] - ptr[:-1])
+        node_feats_org = node_feats
         node_feats = self.linear_scalar(node_feats)
         edge_feats_weights = self.edge_feats_mlp(edge_feats)
         symmetric_node_feats = torch.cat(
@@ -696,14 +702,17 @@ class MatrixFunctionBlock(torch.nn.Module):
         H = self.matrix_mlp(
             symmetric_node_feats
         )  # [n_edges, n_features]
-        H_dense = to_dense_adj(edge_index=edge_index, batch=batch, edge_attr=H).permute(
-            0, 3, 1, 2
-        )  # [n_graphs, n_features, n_nodes, n_nodes]
+
+
+        H_dense = to_dense_adj(edge_index=edge_index, batch=batch, edge_attr=H).permute(0, 3, 1, 2)  # [n_graphs, n_features, n_nodes, n_nodes]
         H_dense = H_dense.repeat(1, self.num_poles, 1, 1)
 
         # Set diagonal elemetns of matrix
         if self.diagonal == "learnable":
-            raise NotImplementedError()  # TODO: add learnable diagonal
+            diag_H = self.diag_matrix_mlp(node_feats)
+            diag_H = to_dense_batch(diag_H, batch)[0].permute(0, 2, 1)
+            diag_H = diag_H.repeat(1, self.num_poles, 1)
+            H_dense = H_dense + torch.diag_embed(diag_H)
         elif self.diagonal == "laplacian":
             # Create Laplacian from weighted adjacency matrix
             degree = torch.sum(torch.abs(H_dense), axis=-1)

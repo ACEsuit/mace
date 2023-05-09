@@ -86,6 +86,22 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "ScaleShiftEigenvalues_MACE",
         ],
     )
+
+    # options for eigenvalue mace
+    parser.add_argument(
+        "--eigen_diag",
+        help="Eigenvalue mace: what to palace on diagonal of feature matrix",
+        type=str,
+        default="laplace",
+        choices=["laplace", 'learnable'],
+    )
+    parser.add_argument(
+        '--eigen_use_matrix_feats',
+        help='Eigenvalue mace: whether to use off diagona matrix features in consecutive layers',
+        type=bool,
+        default=False,
+    )
+
     parser.add_argument(
         "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
     )
@@ -495,6 +511,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "forces_weight",
         ],
     )
+
+
+
     return parser
 
 

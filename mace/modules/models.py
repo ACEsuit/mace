@@ -985,7 +985,7 @@ class Eigenvalues_MACE(torch.nn.Module):
         correlation: int,
         gate: Optional[Callable],
         radial_MLP: Optional[List[int]] = None,
-        diagonal: Optional[str] = 'laplace',
+        diagonal: Optional[str] = 'learnable',
         use_matrix_feats: Optional[bool] = False,
         device: Optional[torch.device] = None,
     ):
@@ -1227,7 +1227,6 @@ class Eigenvalues_MACE(torch.nn.Module):
             "stress": stress,
             "displacement": displacement,
             'diag_matrix_feats': diag_matrix_feats,
-            # 'H_dense': H_dense, # HACK: usefull output for debugging
         }
 
 
