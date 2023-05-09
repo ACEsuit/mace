@@ -15,6 +15,8 @@ class LAMMPS_MACE(torch.nn.Module):
         self.register_buffer("atomic_numbers", model.atomic_numbers)
         self.register_buffer("r_max", model.r_max)
         self.register_buffer("num_interactions", model.num_interactions)
+        for param in self.model.parameters():
+            param.requires_grad = False
 
     def forward(
         self,
