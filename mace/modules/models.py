@@ -985,6 +985,8 @@ class Eigenvalues_MACE(torch.nn.Module):
         correlation: int,
         gate: Optional[Callable],
         radial_MLP: Optional[List[int]] = None,
+        diagonal: Optional[str] = 'laplace',
+        use_matrix_feats: Optional[bool] = False,
         device: Optional[torch.device] = None,
     ):
         super().__init__()
@@ -995,6 +997,10 @@ class Eigenvalues_MACE(torch.nn.Module):
         self.register_buffer(
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
+
+        self.use_matrix_feats = use_matrix_feats
+        self.num_poles = num_poles
+        self.num_features_matrix = num_features_matrix
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -1053,6 +1059,7 @@ class Eigenvalues_MACE(torch.nn.Module):
             num_poles=num_poles,
             num_basis=num_bessel,
             avg_num_neighbors=avg_num_neighbors,
+            diagonal=diagonal,
         )
         self.bond_interactions.append(bond_inter)
 
@@ -1093,10 +1100,12 @@ class Eigenvalues_MACE(torch.nn.Module):
                 node_feats_irreps=o3.Irreps(hidden_irreps_out)
                 if i == num_interactions - 2
                 else hidden_irreps,
-                num_features=num_features_matrix,
-                num_poles=num_poles,
+                num_features=self.num_features_matrix,
+                num_poles=self.num_poles,
                 num_basis=num_bessel,
                 avg_num_neighbors=avg_num_neighbors,
+                diagonal=diagonal,
+
             )
             self.bond_interactions.append(bond_inter)
 
@@ -1147,6 +1156,16 @@ class Eigenvalues_MACE(torch.nn.Module):
         )
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats = self.radial_embedding(lengths)
+        if self.use_matrix_feats:
+            # [n_graphs, n_features, n_nodes, n_nodes]
+            unique, count = torch.unique(data['batch'], return_counts=True)
+            matrix_feats = torch.zeros(
+                (len(unique), self.num_poles * self.num_features_matrix, torch.max(count), torch.max(count)),
+                dtype=node_feats.dtype,
+                device=node_feats.device,
+            )
+        else:
+            matrix_feats = None
 
         # Interactions
         energies = [e0]
@@ -1166,14 +1185,15 @@ class Eigenvalues_MACE(torch.nn.Module):
                 sc=sc,
                 node_attrs=data["node_attrs"],
             )
-            matrix_features, H_dense = bond_interaction(
+            diag_matrix_feats, matrix_feats = bond_interaction(
                 node_feats=node_feats,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
                 batch=data["batch"],
                 ptr=data["ptr"],
+                matrix_feats=matrix_feats,
             )
-            node_feats = node_feats + matrix_features
+            node_feats = node_feats + diag_matrix_feats
             node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             energy = scatter_sum(
                 src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
@@ -1206,8 +1226,8 @@ class Eigenvalues_MACE(torch.nn.Module):
             "virials": virials,
             "stress": stress,
             "displacement": displacement,
-            'matrix_features': matrix_features,
-            'H_dense': H_dense, # HACK: usefull output for debugging
+            'diag_matrix_feats': diag_matrix_feats,
+            # 'H_dense': H_dense, # HACK: usefull output for debugging
         }
 
 
@@ -1286,14 +1306,14 @@ class ScaleShiftEigenvalues_MACE(Eigenvalues_MACE):
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=data.node_attrs
             )
-            matrix_features = bond_interaction(
+            diag_matrix_feats = bond_interaction(
                 node_feats=node_feats,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
                 batch=data["batch"],
                 ptr=data["ptr"],
             ).squeeze(-1)
-            node_feats = node_feats + matrix_features
+            node_feats = node_feats + diag_matrix_feats
             node_es_list.append(readout(node_feats).squeeze(-1))  # {[n_nodes, ], }
 
         # Sum over interactions
