@@ -656,13 +656,13 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         z_k_real = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
-            * 5
-            - 2
+            * 2
+            - 8
         )  # TODO: for each feature, create several poles, think about initialization
         z_k_complex = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
-            * 5
-            - 5
+            * 2
+            - 2
         )  # TODO: HACK need to think about loss function a bit + initialization
 
         self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
