@@ -609,7 +609,6 @@ def main() -> None:
         if args.save_cpu:
             model = model.to("cpu")
         # Have to remove wandb hooks before saving models (pickel error)
-        breakpoint()
         if hasattr(model, "_wandb_hook_names"):
             wandb.unwatch(model)
         torch.save(model, model_path)

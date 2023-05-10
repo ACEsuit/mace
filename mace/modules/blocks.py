@@ -624,12 +624,13 @@ class MatrixFunctionBlock(torch.nn.Module):
         num_basis,
         num_poles,
         avg_num_neighbors,
-        g_scaling="1",
+        g_scaling_expr="1",
         diagonal="laplacian",
     ):
         super().__init__()
         # First linear
         self.diagonal = diagonal
+        self.g_scaling_expr = g_scaling_expr
         self.node_feats_irreps = node_feats_irreps
         self.avg_num_neighbors = avg_num_neighbors
         self.num_poles = num_poles
@@ -680,7 +681,10 @@ class MatrixFunctionBlock(torch.nn.Module):
             internal_weights=True,
             shared_weights=True,
         )
-        self.g_scaling = eval(f"lambda x: {g_scaling}")
+
+    def g_scaling(self, x):
+        x = x
+        return eval(self.g_scaling_expr)
 
     def forward(
         self,
@@ -750,7 +754,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             .unsqueeze(0)
             .repeat(R_dense.shape[0], R_dense.shape[1], 1, 1)
         )
-        features = torch.linalg.lu_solve(LU, P, self.identity) * self.g_scaling(z_k)
+        features = torch.linalg.lu_solve(LU, P, self.identity) # * self.g_scaling(z_k)
         # [n_graphs, n_features, n_nodes, n_nodes]
 
         node_features_real = (
@@ -781,7 +785,6 @@ class MatrixFunctionBlock(torch.nn.Module):
         node_features = torch.cat([node_features_real, node_features_imag], dim=1)
         #  [n_graphs * n_nodes, 2*n_features]
 
-        # breakpoint()
         if matrix_feats is None:
             return self.linear_out(node_features), None  # [n_graphs * n_nodes, irreps]
         else:
