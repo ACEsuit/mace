@@ -626,6 +626,7 @@ class MatrixFunctionBlock(torch.nn.Module):
         avg_num_neighbors,
         g_scaling="1",
         diagonal="laplacian",
+        learnable_resolvent = False,
     ):
         super().__init__()
         # First linear
@@ -633,6 +634,7 @@ class MatrixFunctionBlock(torch.nn.Module):
         self.node_feats_irreps = node_feats_irreps
         self.avg_num_neighbors = avg_num_neighbors
         self.num_poles = num_poles
+        self.learnable_resolvent = learnable_resolvent
         irreps_scalar = o3.Irreps(
             [(self.node_feats_irreps.count(o3.Irrep(0, 1)), (0, 1))]
         )
@@ -643,7 +645,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             shared_weights=True,
             biases=True,  # TODO: check
         )
-
+        
         # Edge features
         self.edge_feats_mlp = nn.FullyConnectedNet(
             [num_basis] + 3 * [64] + [irreps_scalar.num_irreps],
@@ -658,19 +660,20 @@ class MatrixFunctionBlock(torch.nn.Module):
                 [irreps_scalar.num_irreps] + [64] + [64] + [num_features],
                 torch.nn.functional.silu,
             )
-        '''
-        z_k_real = (
-            torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
-            * 1
-        )  # TODO: for each feature, create several poles, think about initialization
-        '''
-        z_k_complex = (
-            torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
-            * 1
-        )  # TODO: HACK need to think about loss function a bit + initialization
+        if learnable_resolvent:
+            z_k_real = (
+                torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
+                * 1
+            )  # TODO: for each feature, create several poles, think about initialization
+            z_k_complex = (
+                torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
+                * 1
+            )  # TODO: HACK need to think about loss function a bit + initialization
+            
+            self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
+            self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
+        
         self.matrix_norm = EigenvalueNorm(num_features * num_poles)
-        #self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
-        self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
         self.normalize_real = SwitchNorm1d(num_features * num_poles)
         self.normalize_complex = SwitchNorm1d(num_features * num_poles)
         self.linear_out = o3.Linear(
@@ -740,11 +743,15 @@ class MatrixFunctionBlock(torch.nn.Module):
         
         if matrix_feats is not None:
             H_dense = H_dense + matrix_feats
-
-        z_k = torch.view_as_complex(
-            torch.stack([torch.zeros_like(self.z_k_complex), torch.exp(self.z_k_complex)], dim=-1)
-        )
-        z_k = z_k.expand(H_dense.shape[0], H_dense.shape[1], H_dense.shape[-1])
+        if self.learnable_resolvent:
+            z_k = torch.view_as_complex(
+                torch.stack([self.z_k_real, torch.exp(self.z_k_complex)], dim=-1)
+            )
+            z_k = z_k.expand(H_dense.shape[0], H_dense.shape[1], H_dense.shape[-1])
+        else:
+            z_k = torch.view_as_complex(
+                torch.stack([torch.zeros_like(H_dense[...,0]), torch.ones_like(H_dense[...,0])], dim=-1) 
+            ) 
         D_z = torch.diag_embed(z_k)
         H_dense = self.matrix_norm(H_dense,mask_matrix)
         R_dense = D_z - H_dense
