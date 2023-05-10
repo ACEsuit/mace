@@ -658,11 +658,12 @@ class MatrixFunctionBlock(torch.nn.Module):
                 [irreps_scalar.num_irreps] + [64] + [64] + [num_features],
                 torch.nn.functional.silu,
             )
-
+        '''
         z_k_real = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
             * 1
         )  # TODO: for each feature, create several poles, think about initialization
+        '''
         z_k_complex = (
             torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
             * 1
