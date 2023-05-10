@@ -624,7 +624,6 @@ class MatrixFunctionBlock(torch.nn.Module):
         num_basis,
         num_poles,
         avg_num_neighbors,
-        g_scaling="1",
         diagonal="laplacian",
         learnable_resolvent = False,
         skip_connection = False
@@ -685,7 +684,6 @@ class MatrixFunctionBlock(torch.nn.Module):
             internal_weights=True,
             shared_weights=True,
         )
-        self.g_scaling = eval(f"lambda x: {g_scaling}")
 
     def forward(
         self,
@@ -767,9 +765,9 @@ class MatrixFunctionBlock(torch.nn.Module):
             .unsqueeze(0)
             .repeat(R_dense.shape[0], R_dense.shape[1], 1, 1)
         )
-        features = torch.linalg.lu_solve(LU, P, self.identity) 
+        features = torch.linalg.lu_solve(LU, P, self.identity)
         # [n_graphs, n_features, n_nodes, n_nodes]
-        features = features.diagonal(dim1=-2, dim2=-1) * self.g_scaling(z_k)# * z_k.imag
+        features = features.diagonal(dim1=-2, dim2=-1) 
         
         node_features_real = (
             features.real  # [n_graphs, n_features, n_nodes]
@@ -869,14 +867,22 @@ class SwitchNorm1d(torch.nn.Module):
 
 # Eigenvalue normalization layer
 class EigenvalueNorm(torch.nn.Module):
-    def __init__(self,num_features, eps=1e-5, momentum=0.997, using_moving_average=True):
+    def __init__(self,num_features, eps=1e-5, momentum=0.997, using_moving_average=True,random_weights = True):
         super(EigenvalueNorm, self).__init__()
         self.eps = eps  # Small constant for numerical stability
         self.momentum = momentum  # Momentum for moving average
         self.using_moving_average = using_moving_average  # Whether to use moving average or not
         self.num_features = num_features  # Number of feature channels
-        self.weight = torch.nn.Parameter(torch.ones(1, num_features,1,1))  # Learnable weight for scaling
-        self.bias = torch.nn.Parameter(torch.zeros(1, num_features,1))  # Learnable bias for shifting
+
+        if random_weights:
+            weight = torch.randn(1, num_features,1,1)
+            bias   = torch.randn(1, num_features,1)
+        else:
+            weight = torch.ones(1, num_features,1,1)
+            bias   = torch.zeros(1, num_features,1)
+        
+        self.weight = torch.nn.Parameter(weight)# Learnable weight for scaling
+        self.bias = torch.nn.Parameter(bias) # Learnable bias for shifting
         self.register_buffer("running_mean", torch.zeros(num_features))  # Running mean of eigenvalues
         self.register_buffer("running_var", torch.ones(num_features))  # Running variance of eigenvalues
         self.reset_parameters()
@@ -885,8 +891,6 @@ class EigenvalueNorm(torch.nn.Module):
     def reset_parameters(self):
         self.running_mean.zero_()
         self.running_var.fill_(1)
-        self.bias.data.zero_()
-        self.weight.data.fill_(1)
 
     # Check the dimensions of the input tensor
     def _check_input_dim(self, input):
