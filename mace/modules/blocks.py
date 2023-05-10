@@ -743,7 +743,7 @@ class MatrixFunctionBlock(torch.nn.Module):
         z_k = torch.view_as_complex(
             torch.stack([torch.exp(self.z_k_real), torch.exp(self.z_k_complex)], dim=-1)
         )
-        '''
+        ''' 
         z_k = torch.view_as_complex(
             torch.stack([self.z_k_real, torch.exp(self.z_k_complex)], dim=-1)
         )
@@ -760,11 +760,12 @@ class MatrixFunctionBlock(torch.nn.Module):
             .unsqueeze(0)
             .repeat(R_dense.shape[0], R_dense.shape[1], 1, 1)
         )
-        features = torch.linalg.lu_solve(LU, P, self.identity) * self.g_scaling(z_k)
+        features = torch.linalg.lu_solve(LU, P, self.identity) 
         # [n_graphs, n_features, n_nodes, n_nodes]
-
+        features = features.diagonal(dim1=-2, dim2=-1) * self.g_scaling(z_k) * z_k.imag
+        
         node_features_real = (
-            features.real.diagonal(dim1=-2, dim2=-1)  # [n_graphs, n_features, n_nodes]
+            features.real  # [n_graphs, n_features, n_nodes]
             .permute(0, 2, 1)  # [n_graphs, n_nodes, n_features]
             .reshape(
                 features.real.shape[0] * features.real.shape[2], features.real.shape[1]
@@ -772,7 +773,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             #  [n_graphs * n_nodes, n_features]
         )
         node_features_imag = (
-            features.imag.diagonal(dim1=-2, dim2=-1)  # [n_graphs, n_features, n_nodes]
+            features.imag  # [n_graphs, n_features, n_nodes]
             .permute(0, 2, 1)  # [n_graphs, n_nodes, n_features]
             .reshape(
                 features.imag.shape[0] * features.imag.shape[2], features.imag.shape[1]
