@@ -769,7 +769,7 @@ class MatrixFunctionBlock(torch.nn.Module):
         )
         features = torch.linalg.lu_solve(LU, P, self.identity) 
         # [n_graphs, n_features, n_nodes, n_nodes]
-        features = features.diagonal(dim1=-2, dim2=-1) * self.g_scaling(z_k) * z_k.imag
+        features = features.diagonal(dim1=-2, dim2=-1) * self.g_scaling(z_k)# * z_k.imag
         
         node_features_real = (
             features.real  # [n_graphs, n_features, n_nodes]
