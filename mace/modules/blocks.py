@@ -668,7 +668,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             * 1
         )  # TODO: HACK need to think about loss function a bit + initialization
         self.matrix_norm = EigenvalueNorm(num_features * num_poles)
-        self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
+        #self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
         self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
         self.normalize_real = SwitchNorm1d(num_features * num_poles)
         self.normalize_complex = SwitchNorm1d(num_features * num_poles)
@@ -739,13 +739,9 @@ class MatrixFunctionBlock(torch.nn.Module):
         
         if matrix_feats is not None:
             H_dense = H_dense + matrix_feats
-        '''
+
         z_k = torch.view_as_complex(
-            torch.stack([torch.exp(self.z_k_real), torch.exp(self.z_k_complex)], dim=-1)
-        )
-        ''' 
-        z_k = torch.view_as_complex(
-            torch.stack([self.z_k_real, torch.exp(self.z_k_complex)], dim=-1)
+            torch.stack([torch.zeros_like(self.z_k_complex), torch.exp(self.z_k_complex)], dim=-1)
         )
         z_k = z_k.expand(H_dense.shape[0], H_dense.shape[1], H_dense.shape[-1])
         D_z = torch.diag_embed(z_k)
