@@ -626,7 +626,6 @@ class MatrixFunctionBlock(torch.nn.Module):
         avg_num_neighbors,
         diagonal="laplacian",
         learnable_resolvent = False,
-        skip_connection = False
     ):
         super().__init__()
         # First linear
@@ -635,7 +634,6 @@ class MatrixFunctionBlock(torch.nn.Module):
         self.avg_num_neighbors = avg_num_neighbors
         self.num_poles = num_poles
         self.learnable_resolvent = learnable_resolvent
-        self.skip_connection     = skip_connection
         irreps_scalar = o3.Irreps(
             [(self.node_feats_irreps.count(o3.Irrep(0, 1)), (0, 1))]
         )
@@ -673,8 +671,6 @@ class MatrixFunctionBlock(torch.nn.Module):
             
             self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
             self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
-        if skip_connection:
-            self.normalize_out = nn.BatchNorm(node_feats_irreps,momentum = 0.003)
         self.matrix_norm = EigenvalueNorm(num_features * num_poles)
         self.normalize_real = SwitchNorm1d(num_features * num_poles)
         self.normalize_complex = SwitchNorm1d(num_features * num_poles)
@@ -797,8 +793,6 @@ class MatrixFunctionBlock(torch.nn.Module):
         node_features = torch.cat([node_features_real, node_features_imag], dim=1)
         #  [n_graphs * n_nodes, 2*n_features]
         out = self.linear_out(node_features)
-        if self.skip_connection:
-            out = self.normalize_out(out + node_feats_org)
         # breakpoint()
         if matrix_feats is None:
             return out, None  # [n_graphs * n_nodes, irreps]
