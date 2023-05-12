@@ -4,6 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import logging
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -158,6 +159,15 @@ def get_edge_vectors_and_lengths(
     return vectors, lengths
 
 
+def _check_non_zero(std):
+    if std == 0.0:
+        logging.warning(
+            "Standard deviation of the scaling is zero, Changing to no scaling"
+        )
+        std = 1.0
+    return std
+
+
 def compute_mean_std_atomic_inter_energy(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
@@ -179,6 +189,7 @@ def compute_mean_std_atomic_inter_energy(
     avg_atom_inter_es = torch.cat(avg_atom_inter_es_list)  # [total_n_graphs]
     mean = to_numpy(torch.mean(avg_atom_inter_es)).item()
     std = to_numpy(torch.std(avg_atom_inter_es)).item()
+    std = _check_non_zero(std)
 
     return mean, std
 
@@ -208,6 +219,7 @@ def compute_mean_rms_energy_forces(
 
     mean = to_numpy(torch.mean(atom_energies)).item()
     rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
+    rms = _check_non_zero(rms)
 
     return mean, rms
 
@@ -235,6 +247,7 @@ def compute_rms_dipoles(
 
     dipoles = torch.cat(dipoles_list, dim=0)  # {[total_n_graphs,3], }
     rms = to_numpy(torch.sqrt(torch.mean(torch.square(dipoles)))).item()
+    rms = _check_non_zero(rms)
     return rms
 
 
