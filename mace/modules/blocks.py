@@ -5,6 +5,7 @@
 ###########################################################################################
 
 from abc import abstractmethod
+import math
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -16,6 +17,8 @@ from mace.tools.scatter import scatter_sum
 
 try:
     import sphericart.torch
+
+    BACKEND = "sphericat"
 except ImportError:
     BACKEND = "e3nn"
     pass
@@ -50,10 +53,15 @@ class SphericalHarmonics(torch.nn.Module):
             spherical_harmonics_cart = sphericart.torch.SphericalHarmonics(
                 self.lmax, normalized=normalize
             ).compute
-            self.spherical_harmonics = lambda x: spherical_harmonics_cart(x)[0]
+            self.spherical_harmonics = (
+                lambda x: math.sqrt(4 * math.pi) * spherical_harmonics_cart(x)[0]
+            )
         self.backend = backend
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.index_select(
+            x, 1, torch.tensor([2, 0, 1], dtype=torch.long, device=x.device)
+        )
         return self.spherical_harmonics(x)
 
 
