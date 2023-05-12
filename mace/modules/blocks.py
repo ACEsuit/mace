@@ -15,7 +15,7 @@ from e3nn.util.jit import compile_mode
 from mace.tools.scatter import scatter_sum
 
 try:
-    import sphericart_torch
+    import sphericart.torch
 except ImportError:
     BACKEND = "e3nn"
     pass
@@ -47,7 +47,7 @@ class SphericalHarmonics(torch.nn.Module):
                 self.sh_irreps, normalize=normalize, normalization=self.normalization
             )
         elif backend == "opt":
-            spherical_harmonics_cart = sphericart_torch.SphericalHarmonics(
+            spherical_harmonics_cart = sphericart.torch.SphericalHarmonics(
                 self.lmax, normalized=normalize
             ).compute
             self.spherical_harmonics = lambda x: spherical_harmonics_cart(x)[0]
