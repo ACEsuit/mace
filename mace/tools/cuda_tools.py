@@ -6,6 +6,25 @@ from mace.modules.models import MACE
 from mace.modules.symmetric_contraction import SymmetricContraction
 
 
+def parser():
+    """
+    Create a parser for the command line tool.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Optimize a MACE model for CUDA inference."
+    )
+    parser.add_argument("--model", type=str, help="Path to the MACE model.")
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="optimized_model.pt",
+        help="Path to the output file.",
+    )
+    return parser
+
+
 def optimize_cuda_mace(model: MACE) -> None:
     """
     Optimize the MACE model for CUDA inference.
@@ -36,3 +55,15 @@ def optimize_cuda_mace(model: MACE) -> None:
         )
         model.products[i].symmetric_contractions = symmetric_contractions
     return model
+
+
+def main(args=None):
+    """
+    Optimize a MACE model for CUDA inference.
+    """
+    parser = parser()
+    args = parser.parse_args(args)
+    model = torch.load(args.model)
+    model = optimize_cuda_mace(model)
+    torch.save(model, args.output)
+    return None
