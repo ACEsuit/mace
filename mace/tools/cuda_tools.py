@@ -3,6 +3,7 @@ import ase
 import torch
 from e3nn import o3
 from mace import data, tools
+from mace.modules.blocks import SphericalHarmonics
 from mace.modules.models import MACE
 from torch.profiler import profile, record_function, ProfilerActivity
 
@@ -54,13 +55,22 @@ def optimize_cuda_mace(model: MACE) -> None:
     for param in model.parameters():
         param.requires_grad = False
     n_layers = len(model.num_interactions)
+    sh_irreps = o3.Irreps.spherical_harmonics(3)
+    spherical_harmonics = SphericalHarmonics(
+        sh_irreps=sh_irreps,
+        normalize=True,
+        normalization="component",
+        backend="opt",
+    )
+    model.spherical_harmonics = spherical_harmonics
+    num_elements = model.node_embedding.linear.irreps_in.num_irreps
     for i in range(n_layers):
         symmetric_contractions = SymmetricContraction(
             irreps_in=o3.Irreps(model.products[i].symmetric_contractions.irreps_in),
             irreps_out=o3.Irreps(model.product[i].symmetric_contractions.irreps_out),
             correlation=o3.Irreps(model.products[i].symmetric_contractions.correlation),
             cuda_optimized=True,
-            num_elements=model.num_elements,
+            num_elements=num_elements,
         )
         symmetric_contractions.contractions[0].weights["3"] = deepcopy(
             model.products[i].symmetric_contractions.contractions[0].weights_max.data
