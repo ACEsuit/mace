@@ -53,9 +53,9 @@ class SphericalHarmonics(torch.nn.Module):
             spherical_harmonics_cart = sphericart.torch.SphericalHarmonics(
                 self.lmax, normalized=normalize
             ).compute
-            self.spherical_harmonics = (
-                lambda x: math.sqrt(4 * math.pi) * spherical_harmonics_cart(x)[0]
-            )
+            self.spherical_harmonics = lambda x: math.sqrt(
+                4 * math.pi
+            ) * spherical_harmonics_cart(x)
         self.backend = backend
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
