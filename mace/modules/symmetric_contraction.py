@@ -293,7 +293,7 @@ class CUDAContraction(torch.nn.Module):
                 )
                 self.weights[f"{i}"] = w
         self.symm_contract = SymmetricContraction(
-            dict(self.named_buffers()), self.weights, device="cuda", dtype=dtype
+            dict(self.named_buffers()), self.weights, dtype=dtype
         )
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
