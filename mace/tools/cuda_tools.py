@@ -54,7 +54,7 @@ def optimize_cuda_mace(model: MACE) -> None:
     """
     for param in model.parameters():
         param.requires_grad = False
-    n_layers = len(model.num_interactions)
+    n_layers = int(model.num_interactions)
     sh_irreps = o3.Irreps.spherical_harmonics(3)
     spherical_harmonics = SphericalHarmonics(
         sh_irreps=sh_irreps,
