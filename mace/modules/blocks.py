@@ -55,11 +55,11 @@ class SphericalHarmonics(torch.nn.Module):
             ).compute
             self.spherical_harmonics = lambda x: math.sqrt(
                 4 * math.pi
-            ) * spherical_harmonics_cart(x)
+            ) * spherical_harmonics_cart(x[:, [2, 0, 1]])
         self.backend = backend
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.spherical_harmonics(x[:, [2, 0, 1]])
+        return self.spherical_harmonics(x)
 
 
 @compile_mode("script")
