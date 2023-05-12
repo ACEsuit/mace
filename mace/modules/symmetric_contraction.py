@@ -31,6 +31,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         path_normalization: str = "element",
         internal_weights: Optional[bool] = None,
         shared_weights: Optional[bool] = None,
+        cuda_optimized: Optional[bool] = False,
         num_elements: Optional[int] = None,
     ) -> None:
         super().__init__()
@@ -66,9 +67,9 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         del internal_weights, shared_weights
 
         self.contractions = torch.nn.ModuleList()
-        for irrep_out in self.irreps_out:
+        if cuda_optimized and str(irrep_out.ir) == "0e":
             self.contractions.append(
-                Contraction(
+                CUDAContraction(
                     irreps_in=self.irreps_in,
                     irrep_out=o3.Irreps(str(irrep_out.ir)),
                     correlation=correlation[irrep_out],
@@ -77,6 +78,18 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
                     weights=self.shared_weights,
                 )
             )
+        else:
+            for irrep_out in self.irreps_out:
+                self.contractions.append(
+                    Contraction(
+                        irreps_in=self.irreps_in,
+                        irrep_out=o3.Irreps(str(irrep_out.ir)),
+                        correlation=correlation[irrep_out],
+                        internal_weights=self.internal_weights,
+                        num_elements=num_elements,
+                        weights=self.shared_weights,
+                    )
+                )
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         outs = [contraction(x, y) for contraction in self.contractions]
@@ -231,3 +244,63 @@ class Contraction(torch.nn.Module):
 
     def U_tensors(self, nu: int):
         return dict(self.named_buffers())[f"U_matrix_{nu}"]
+
+
+class CUDAContraction(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        irrep_out: o3.Irreps,
+        correlation: int,
+        internal_weights: bool = True,
+        num_elements: Optional[int] = None,
+        weights: Optional[torch.Tensor] = None,
+    ) -> None:
+        super().__init__()
+
+        self.num_features = irreps_in.count((0, 1))
+        self.coupling_irreps = o3.Irreps([irrep.ir for irrep in irreps_in])
+        self.correlation = correlation
+        dtype = torch.get_default_dtype()
+        for nu in range(1, correlation + 1):
+            U_matrix = U_matrix_real(
+                irreps_in=self.coupling_irreps,
+                irreps_out=irrep_out,
+                correlation=nu,
+                dtype=dtype,
+            )[-1]
+            self.register_buffer(f"{nu}", U_matrix)
+
+        # Create weight for product basis
+        self.weights = {}
+
+        for i in range(correlation, 0, -1):
+            # Shapes definying
+            num_params = self.U_tensors(i).size()[-1]
+
+            if i == correlation:
+                # Parameters for the product basis
+                w = torch.nn.Parameter(
+                    torch.randn((num_elements, num_params, self.num_features))
+                    / num_params
+                )
+                self.weights[f"{i}"] = w
+            else:
+                # Generate optimized contractions equations
+                w = torch.nn.Parameter(
+                    torch.randn((num_elements, num_params, self.num_features))
+                    / num_params
+                )
+                self.weights[f"{i}"] = w
+        self.symm_contract = SymmetricContraction(
+            dict(self.named_buffers()), self.weights, device="cuda", dtype=dtype
+        )
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        out = self.symm_contract.forward(
+            x.permute(0, 2, 1).contiguous(), torch.argmax(y, dim=1).to(torch.int32)
+        )
+        return out
+
+    def U_tensors(self, nu: int):
+        return dict(self.named_buffers())[f"{nu}"]
