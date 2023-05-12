@@ -42,6 +42,7 @@ class SphericalHarmonics(torch.nn.Module):
         self.lmax = self.sh_irreps.lmax
         self.normalization = normalization
         if backend == "e3nn" or BACKEND == "e3nn":
+            backend = "e3nn"
             self.spherical_harmonics = o3.SphericalHarmonics(
                 self.sh_irreps, normalize=normalize, normalization=self.normalization
             )
@@ -50,6 +51,7 @@ class SphericalHarmonics(torch.nn.Module):
                 self.lmax, normalized=normalize
             ).compute
             self.spherical_harmonics = lambda x: spherical_harmonics_cart(x)[0]
+        self.backend = backend
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.spherical_harmonics(x)
