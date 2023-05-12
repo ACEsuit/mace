@@ -59,7 +59,7 @@ class SphericalHarmonics(torch.nn.Module):
         self.backend = backend
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.spherical_harmonics(x[:, [1, 0, 2]])
+        return self.spherical_harmonics(x[:, [2, 0, 1]])
 
 
 @compile_mode("script")
