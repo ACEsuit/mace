@@ -13,6 +13,7 @@ import torch.fx
 from e3nn import o3
 from e3nn.util.codegen import CodeGenMixin
 from e3nn.util.jit import compile_mode
+from mace_ops.cuda import SymmetricContraction as CUDAContraction
 
 from mace.tools.cg import U_matrix_real
 
@@ -292,7 +293,7 @@ class CUDAContraction(torch.nn.Module):
                     / num_params
                 )
                 self.weights[f"{i}"] = w
-        self.symm_contract = SymmetricContraction(
+        self.symm_contract = CUDAContraction(
             dict(self.named_buffers()), self.weights, dtype=dtype
         )
 
