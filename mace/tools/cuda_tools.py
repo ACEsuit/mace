@@ -67,25 +67,19 @@ def optimize_cuda_mace(model: MACE) -> None:
     for i in range(n_layers):
         symmetric_contractions = SymmetricContraction(
             irreps_in=o3.Irreps(model.products[i].symmetric_contractions.irreps_in),
-            irreps_out=o3.Irreps(model.product[i].symmetric_contractions.irreps_out),
-            correlation=o3.Irreps(model.products[i].symmetric_contractions.correlation),
+            irreps_out=o3.Irreps(model.products[i].symmetric_contractions.irreps_out),
+            correlation=3,
             cuda_optimized=True,
             num_elements=num_elements,
         )
-        symmetric_contractions.contractions[0].weights["3"] = deepcopy(
+        symmetric_contractions.contractions[0].symm_contract.__dict__["W3"] = deepcopy(
             model.products[i].symmetric_contractions.contractions[0].weights_max.data
         )
-        symmetric_contractions.contractions[0].weights["2"] = deepcopy(
-            model.products[i]
-            .symmetric_contractions.contractions[0]
-            .weights._parameters.values()[0]
-            .data
+        symmetric_contractions.contractions[0].symm_contract.__dict__["W2"] = deepcopy(
+            model.products[i].symmetric_contractions.contractions[0].weights[0].data
         )
-        symmetric_contractions.contractions[0].weights["1"] = deepcopy(
-            model.products[i]
-            .symmetric_contractions.contractions[0]
-            .weights._parameters.values()[1]
-            .data
+        symmetric_contractions.contractions[0].symm_contract.__dict__["W1"] = deepcopy(
+            model.products[i].symmetric_contractions.contractions[0].weights[-1].data
         )
         model.products[i].symmetric_contractions = symmetric_contractions
     return model

@@ -294,12 +294,12 @@ class CUDAContraction(torch.nn.Module):
                 )
                 self.weights[f"{i}"] = w
         self.symm_contract = CUDAContraction_(
-            dict(self.named_buffers()), self.weights, dtype=dtype
+            dict(self.named_buffers()), self.weights, dtype=dtype, device="cuda"
         )
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         out = self.symm_contract.forward(
-            x.permute(0, 2, 1).contiguous(), torch.argmax(y, dim=1).to(torch.int32)
+            x.transpose(-1, -2).contiguous(), torch.argmax(y, dim=1).int()
         )
         return out
 
