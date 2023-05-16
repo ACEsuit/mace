@@ -32,6 +32,20 @@ from .symmetric_contraction import SymmetricContraction
 
 
 @compile_mode("script")
+class CUDASphericalHarmonics(torch.nn.Module):
+    def __init__(self, lmax: int, normalized: bool):
+        super().__init__()
+        self.spherical_harmonics = sphericart.torch.SphericalHarmonics(
+            lmax, normalized=normalized
+        )
+
+    def forward(self, x: torch.Tensor):
+        return math.sqrt(4 * math.pi) * self.spherical_harmonics.compute(
+            x[:, [2, 0, 1]]
+        )
+
+
+@compile_mode("script")
 class SphericalHarmonics(torch.nn.Module):
     def __init__(
         self,
@@ -49,13 +63,10 @@ class SphericalHarmonics(torch.nn.Module):
             self.spherical_harmonics = o3.SphericalHarmonics(
                 self.sh_irreps, normalize=normalize, normalization=self.normalization
             )
-        elif backend == "opt":
-            spherical_harmonics_cart = sphericart.torch.SphericalHarmonics(
+        if backend == "opt":
+            self.spherical_harmonics = CUDASphericalHarmonics(
                 self.lmax, normalized=normalize
-            ).compute
-            self.spherical_harmonics = lambda x: math.sqrt(
-                4 * math.pi
-            ) * spherical_harmonics_cart(x[:, [2, 0, 1]])
+            )
         self.backend = backend
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
