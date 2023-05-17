@@ -18,7 +18,7 @@ from mace.tools.scatter import scatter_sum
 try:
     import sphericart.torch
 
-    BACKEND = "sphericat"
+    BACKEND = "sphericart"
 except ImportError:
     BACKEND = "e3nn"
     pass

@@ -13,7 +13,11 @@ import torch.fx
 from e3nn import o3
 from e3nn.util.codegen import CodeGenMixin
 from e3nn.util.jit import compile_mode
-from mace_ops.cuda import SymmetricContraction as CUDAContraction_
+
+try:
+    from mace_ops.cuda import SymmetricContraction as CUDAContraction_
+except ImportError:
+    pass
 
 from mace.tools.cg import U_matrix_real
 
