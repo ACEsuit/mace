@@ -15,6 +15,10 @@ from torch.optim.swa_utils import SWALR, AveragedModel
 from torch.utils.data import DataLoader
 from torch_ema import ExponentialMovingAverage
 
+import torch.distributed
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data.distributed import DistributedSampler
+
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
 from .torch_tools import tensor_dict_to_device, to_numpy
@@ -56,6 +60,10 @@ def train(
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
     log_wandb: bool = False,
+    distributed: bool = False,
+    distributed_model: Optional[DistributedDataParallel] = None,
+    train_sampler: Optional[DistributedSampler] = None,
+    rank: Optional[int] = 0,
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
@@ -88,23 +96,30 @@ def train(
                 swa.scheduler.step()
 
         # Train
-        for batch in train_loader:
-            _, opt_metrics = take_step(
-                model=model,
-                loss_fn=loss_fn,
-                batch=batch,
-                optimizer=optimizer,
-                ema=ema,
-                output_args=output_args,
-                max_grad_norm=max_grad_norm,
-                device=device,
-            )
-            opt_metrics["mode"] = "opt"
-            opt_metrics["epoch"] = epoch
-            logger.log(opt_metrics)
+        
+        if distributed:
+            train_sampler.set_epoch(epoch)
+        
+        train_one_epoch(
+            model=model,
+            loss_fn=loss_fn,
+            data_loader=train_loader,
+            optimizer=optimizer,
+            epoch=epoch,
+            output_args=output_args,
+            max_grad_norm=max_grad_norm,
+            ema=ema,
+            logger=logger,
+            device=device,
+            distributed_model=distributed_model,
+            rank=rank,
+        )
+        if distributed:
+            torch.distributed.barrier()
 
         # Validate
-        if epoch % eval_interval == 0:
+        
+        if (epoch % eval_interval == 0) and (rank == 0):
             if ema is not None:
                 with ema.average_parameters():
                     valid_loss, eval_metrics = evaluate(
@@ -219,9 +234,43 @@ def train(
                         keep_last=keep_last,
                     )
                     keep_last = False
+        if distributed:
+            torch.distributed.barrier()
         epoch += 1
 
     logging.info("Training complete")
+
+
+def train_one_epoch(
+    model: torch.nn.Module,
+    loss_fn: torch.nn.Module,
+    data_loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    epoch: int,
+    output_args: Dict[str, bool],
+    max_grad_norm: Optional[float],
+    ema: Optional[ExponentialMovingAverage],
+    logger: MetricsLogger,
+    device: torch.device,
+    distributed_model: Optional[DistributedDataParallel] = None,
+    rank: Optional[int] = 0,
+) -> None:
+    model_to_train = model if distributed_model is None else distributed_model
+    for batch in data_loader:
+        _, opt_metrics = take_step(
+            model=model_to_train,
+            loss_fn=loss_fn,
+            batch=batch,
+            optimizer=optimizer,
+            ema=ema,
+            output_args=output_args,
+            max_grad_norm=max_grad_norm,
+            device=device,
+        )
+        opt_metrics["mode"] = "opt"
+        opt_metrics["epoch"] = epoch
+        if rank == 0:
+            logger.log(opt_metrics)
 
 
 def take_step(
@@ -250,7 +299,7 @@ def take_step(
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
     optimizer.step()
-
+    
     if ema is not None:
         ema.update()
 
@@ -288,6 +337,9 @@ def evaluate(
     mus_list = []
     batch = None  # for pylint
 
+    for param in model.parameters():
+        param.requires_grad = False
+    
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
@@ -387,5 +439,8 @@ def evaluate(
         aux["q95_mu"] = compute_q95(delta_mus)
 
     aux["time"] = time.time() - start_time
+    
+    for param in model.parameters():
+        param.requires_grad = True
 
     return avg_loss, aux
