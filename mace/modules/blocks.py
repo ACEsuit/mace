@@ -624,16 +624,16 @@ class MatrixFunctionBlock(torch.nn.Module):
         num_basis,
         num_poles,
         avg_num_neighbors,
-        g_scaling_expr="1",
         diagonal="laplacian",
+        learnable_resolvent = False,
     ):
         super().__init__()
         # First linear
         self.diagonal = diagonal
-        self.g_scaling_expr = g_scaling_expr
         self.node_feats_irreps = node_feats_irreps
         self.avg_num_neighbors = avg_num_neighbors
         self.num_poles = num_poles
+        self.learnable_resolvent = learnable_resolvent
         irreps_scalar = o3.Irreps(
             [(self.node_feats_irreps.count(o3.Irrep(0, 1)), (0, 1))]
         )
@@ -644,7 +644,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             shared_weights=True,
             biases=True,  # TODO: check
         )
-
+        
         # Edge features
         self.edge_feats_mlp = nn.FullyConnectedNet(
             [num_basis] + 3 * [64] + [irreps_scalar.num_irreps],
@@ -659,20 +659,19 @@ class MatrixFunctionBlock(torch.nn.Module):
                 [irreps_scalar.num_irreps] + [64] + [64] + [num_features],
                 torch.nn.functional.silu,
             )
-
-        z_k_real = (
-            torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
-            * 2
-            - 8
-        )  # TODO: for each feature, create several poles, think about initialization
-        z_k_complex = (
-            torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
-            * 2
-            - 2
-        )  # TODO: HACK need to think about loss function a bit + initialization
-
-        self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
-        self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
+        if learnable_resolvent:
+            z_k_real = (
+                torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
+                * 1
+            )  # TODO: for each feature, create several poles, think about initialization
+            z_k_complex = (
+                torch.randn(1, num_features * num_poles, 1, dtype=torch.get_default_dtype())
+                * 1
+            )  # TODO: HACK need to think about loss function a bit + initialization
+            
+            self.z_k_real = torch.nn.Parameter(z_k_real, requires_grad=True)
+            self.z_k_complex = torch.nn.Parameter(z_k_complex, requires_grad=True)
+        self.matrix_norm = EigenvalueBatchNorm(num_features * num_poles)
         self.normalize_real = SwitchNorm1d(num_features * num_poles)
         self.normalize_complex = SwitchNorm1d(num_features * num_poles)
         self.linear_out = o3.Linear(
@@ -681,10 +680,6 @@ class MatrixFunctionBlock(torch.nn.Module):
             internal_weights=True,
             shared_weights=True,
         )
-
-    def g_scaling(self, x):
-        x = x
-        return eval(self.g_scaling_expr)
 
     def forward(
         self,
@@ -697,6 +692,10 @@ class MatrixFunctionBlock(torch.nn.Module):
     ) -> Tuple[torch.Tensor]:
         sender, receiver = edge_index
         mask = get_mask(ptr[1:] - ptr[:-1])
+        mask_matrix = mask.reshape(
+            (ptr[1:] - ptr[:-1]).shape[0],
+            (ptr[1:] - ptr[:-1]).max())
+        mask_matrix = mask_matrix.to(node_feats.device)
         node_feats_org = node_feats
         node_feats = self.linear_scalar(node_feats)
         edge_feats_weights = self.edge_feats_mlp(edge_feats)
@@ -738,15 +737,23 @@ class MatrixFunctionBlock(torch.nn.Module):
         )
 
         # Add matrix features from previous layer
+        
         if matrix_feats is not None:
             H_dense = H_dense + matrix_feats
-
-        z_k = torch.view_as_complex(
-            torch.stack([torch.exp(self.z_k_real), torch.exp(self.z_k_complex)], dim=-1)
-        )
-        z_k = z_k.expand(H_dense.shape[0], H_dense.shape[1], H_dense.shape[-1])
+        if self.learnable_resolvent:
+            z_k = torch.view_as_complex(
+                torch.stack([self.z_k_real, torch.exp(self.z_k_complex)], dim=-1)
+            )
+            z_k = z_k.expand(H_dense.shape[0], H_dense.shape[1], H_dense.shape[-1])
+        else:
+            z_k = torch.view_as_complex(
+                torch.stack([torch.zeros_like(H_dense[...,0]), torch.ones_like(H_dense[...,0])], dim=-1) 
+            ) 
         D_z = torch.diag_embed(z_k)
+        H_dense = self.matrix_norm(H_dense,mask_matrix)
         R_dense = D_z - H_dense
+
+
         LUP = torch.linalg.lu_factor_ex(R_dense)
         LU, P = LUP.LU, LUP.pivots
         self.identity = (
@@ -754,11 +761,12 @@ class MatrixFunctionBlock(torch.nn.Module):
             .unsqueeze(0)
             .repeat(R_dense.shape[0], R_dense.shape[1], 1, 1)
         )
-        features = torch.linalg.lu_solve(LU, P, self.identity) # * self.g_scaling(z_k)
+        features = torch.linalg.lu_solve(LU, P, self.identity)
         # [n_graphs, n_features, n_nodes, n_nodes]
-
+        features = features.diagonal(dim1=-2, dim2=-1) 
+        
         node_features_real = (
-            features.real.diagonal(dim1=-2, dim2=-1)  # [n_graphs, n_features, n_nodes]
+            features.real  # [n_graphs, n_features, n_nodes]
             .permute(0, 2, 1)  # [n_graphs, n_nodes, n_features]
             .reshape(
                 features.real.shape[0] * features.real.shape[2], features.real.shape[1]
@@ -766,7 +774,7 @@ class MatrixFunctionBlock(torch.nn.Module):
             #  [n_graphs * n_nodes, n_features]
         )
         node_features_imag = (
-            features.imag.diagonal(dim1=-2, dim2=-1)  # [n_graphs, n_features, n_nodes]
+            features.imag  # [n_graphs, n_features, n_nodes]
             .permute(0, 2, 1)  # [n_graphs, n_nodes, n_features]
             .reshape(
                 features.imag.shape[0] * features.imag.shape[2], features.imag.shape[1]
@@ -784,12 +792,13 @@ class MatrixFunctionBlock(torch.nn.Module):
 
         node_features = torch.cat([node_features_real, node_features_imag], dim=1)
         #  [n_graphs * n_nodes, 2*n_features]
-
+        out = self.linear_out(node_features)
+        # breakpoint()
         if matrix_feats is None:
-            return self.linear_out(node_features), None  # [n_graphs * n_nodes, irreps]
+            return out, None  # [n_graphs * n_nodes, irreps]
         else:
             return (
-                self.linear_out(node_features),
+                out,
                 features.real,
             )  # [n_graphs * n_nodes, irreps]
 
@@ -850,6 +859,148 @@ class SwitchNorm1d(torch.nn.Module):
         x = (x - mean) / (var + self.eps).sqrt()
         return x * self.weight + self.bias
 
+# Eigenvalue batch normalization
+class EigenvalueBatchNorm(torch.nn.Module):
+    def __init__(self,num_features, eps=1e-5, momentum=0.997, using_moving_average=True,random_weights = True):
+        super(EigenvalueBatchNorm, self).__init__()
+        self.eps = eps  # Small constant for numerical stability
+        self.momentum = momentum  # Momentum for moving average
+        self.using_moving_average = using_moving_average  # Whether to use moving average or not
+        self.num_features = num_features  # Number of feature channels
+
+        if random_weights:
+            weight = torch.randn(1, num_features,1,1)
+            bias   = torch.randn(1, num_features,1)
+        else:
+            weight = torch.ones(1, num_features,1,1)
+            bias   = torch.zeros(1, num_features,1)
+        
+        self.weight = torch.nn.Parameter(weight)# Learnable weight for scaling
+        self.bias = torch.nn.Parameter(bias) # Learnable bias for shifting
+        self.register_buffer("running_mean", torch.zeros(num_features))  # Running mean of eigenvalues
+        self.register_buffer("running_var", torch.ones(num_features))  # Running variance of eigenvalues
+        self.reset_parameters()
+
+    # Reset parameters (running mean and variance)
+    def reset_parameters(self):
+        self.running_mean.zero_()
+        self.running_var.fill_(1)
+
+    # Check the dimensions of the input tensor
+    def _check_input_dim(self, input):
+        if input.dim() != 4:
+            raise ValueError("expected input 4 dimensions (got {}D input)".format(input.dim()))
+        if input.shape[1] != self.num_features:
+            raise ValueError(f"expected num_features to be {self.num_features}, got {input.shape[1]}")
+
+    # Compute the mean and variance using the trace method
+    def _mean_and_variance_trace(self,matrix,mask):
+        n = torch.einsum('bfii->bf', mask)
+        n2 = torch.clamp(n - 1,1)# Clamp at n - 1 = 1 to avoid division by zero
+        matrix_squared = torch.linalg.matrix_power(matrix,2)*mask
+        trace = torch.einsum('bfii->bf', matrix*mask)
+        trace_square = torch.einsum('bfii->bf', matrix_squared*mask)
+        mean = trace / n
+        variance = trace_square / n2 - trace ** 2/ (n*n2)
+        return mean.mean(0), variance.mean(0)
+
+    # Reformat the mask tensor to match the input tensor shape
+    def _reformat_mask(self,mask):
+        mask = mask[:,None,:,None] * mask[:,None,None,:]
+        mask = mask.expand(-1,self.num_features,-1,-1)
+        return mask
+
+    # Forward function for the normalization layer
+    def forward(self, x,mask = None):
+        # x: [batch_size, num_features, N, N]
+        # mask: [batch_size, N]
+        self._check_input_dim(x)  # Check input dimensions
+        if mask is None:
+            mask = torch.ones(x.shape)  # Create a mask with all ones if no mask is provided
+        else:
+            mask = self._reformat_mask(mask)  # Reformat the mask tensor to match the input tensor shape
+
+        if self.training:
+            mean, variance = self._mean_and_variance_trace(x, mask)  # Compute mean and variance using the trace method
+
+            if self.using_moving_average:
+                self.running_mean.mul_(self.momentum)  # Update running mean with momentum
+                self.running_mean.add_((1 - self.momentum) * mean.data)  # Update running mean with new mean
+                self.running_var.mul_(self.momentum)  # Update running variance with momentum
+                self.running_var.add_((1 - self.momentum) * variance.data)  # Update running variance with new variance
+            else:
+                self.running_mean.add_(mean.data)  # Update running mean without momentum
+                self.running_var.add_(variance.data)  # Update running variance without momentum
+
+        m = torch.autograd.Variable(self.running_mean)  # Running mean variable
+        v = torch.autograd.Variable(self.running_var)  # Running variance variable
+
+        m_t = torch.diag_embed(m[None, :, None].expand_as(x[..., 0]), offset=0, dim1=-2, dim2=-1)  # Diagonal matrix of the running mean
+        x_centered = (x - m_t) * mask  # Subtract the running mean from the input tensor
+        x_normalized = x_centered / (v[None, :, None, None].expand_as(x) + self.eps).sqrt()  # Normalize the centered tensor
+
+        return x_normalized * self.weight + torch.diag_embed(self.bias.expand_as(x[..., 0]), offset=0, dim1=-2, dim2=-1)  # Return the normalized tensor scaled by the learned weight and shifted by the learned bias
+
+# Eigenvalue layer normalization
+class EigenvalueLayerNorm(torch.nn.Module):
+    def __init__(self, num_features, eps=1e-5, random_weights=True):
+        super(EigenvalueLayerNorm, self).__init__()
+        self.eps = eps  # Small constant for numerical stability
+        self.num_features = num_features  # Number of feature channels
+
+        if random_weights:
+            weight = torch.randn(1, num_features, 1, 1)
+            bias   = torch.randn(1, num_features, 1)
+        else:
+            weight = torch.ones(1, num_features, 1, 1)
+            bias   = torch.zeros(1, num_features, 1)
+        
+        self.weight = torch.nn.Parameter(weight)  # Learnable weight for scaling
+        self.bias = torch.nn.Parameter(bias)  # Learnable bias for shifting
+
+    # Check the dimensions of the input tensor
+    def _check_input_dim(self, input):
+        if input.dim() != 4:
+            raise ValueError("expected input 4 dimensions (got {}D input)".format(input.dim()))
+        if input.shape[1] != self.num_features:
+            raise ValueError(f"expected num_features to be {self.num_features}, got {input.shape[1]}")
+
+    # Compute the mean and variance using the trace method
+    def _mean_and_variance_trace(self, matrix, mask):
+        n = torch.einsum('bfii->bf', mask)
+        n2 = torch.clamp(n - 1, 1)  # Clamp at n - 1 = 1 to avoid division by zero
+        matrix_squared = torch.linalg.matrix_power(matrix, 2) * mask
+        trace = torch.einsum('bfii->bf', matrix * mask)
+        trace_square = torch.einsum('bfii->bf', matrix_squared * mask)
+        mean = trace / n
+        variance = trace_square / n2 - trace ** 2 / (n * n2)
+        return mean.mean(1), variance.mean(1)
+
+    # Reformat the mask tensor to match the input tensor shape
+    def _reformat_mask(self, mask):
+        mask = mask[:, None, :, None] * mask[:, None, None, :]
+        mask = mask.expand(-1, self.num_features, -1, -1)
+        return mask
+
+    # Forward function for the normalization layer
+    def forward(self, x, mask=None):
+        # x: [batch_size, num_features, N, N]
+        # mask: [batch_size, N]
+        self._check_input_dim(x)  # Check input dimensions
+        if mask is None:
+            mask = torch.ones(x.shape)  # Create a mask with all ones if no mask is provided
+        else:
+            mask = self._reformat_mask(mask)  # Reformat the mask tensor to match the input tensor shape
+
+        mean, variance = self._mean_and_variance_trace(x, mask)  # Compute mean and variance using the trace method
+
+        m = mean.unsqueeze(1).unsqueeze(-1)  # Add dimensions to match x
+        v = variance.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # Add dimensions to match x
+
+        m_t = torch.diag_embed(m.expand_as(x[..., 0]), offset=0, dim1=-2, dim2=-1)  # Diagonal matrix of the running mean
+        x_centered = (x - m_t) * mask  # Subtract the running mean from the input tensor
+        x_normalized = x_centered / (v.expand_as(x) + self.eps).sqrt()  # Normalize the centered tensor
+        return x_normalized * self.weight + torch.diag_embed(self.bias.expand_as(x[..., 0]), offset=0, dim1=-2, dim2=-1)  # Return the normalized tensor scaled by the learned weight and shifted by the learned bias       
 
 @compile_mode("script")
 class ScaleShiftBlock(torch.nn.Module):

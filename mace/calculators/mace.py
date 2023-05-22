@@ -28,6 +28,7 @@ class MACECalculator(Calculator):
         device: str,
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
+        r_max = 2.5,
         default_dtype="float64",
         **kwargs,
     ):
@@ -35,6 +36,7 @@ class MACECalculator(Calculator):
         self.results = {}
 
         self.model = torch.load(f=model_path, map_location=device)
+        #self.r_max = float(self.model.r_max)
         self.r_max = float(self.model.r_max)
         self.device = torch_tools.init_device(device)
         self.energy_units_to_eV = energy_units_to_eV
