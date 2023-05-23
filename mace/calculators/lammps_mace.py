@@ -63,7 +63,10 @@ class LAMMPS_MACE(torch.nn.Module):
                 create_graph=False,
                 allow_unused=True,
             )
-
+            if forces is not None:
+                forces = -1 * forces
+            else:
+                forces = torch.zeros_like(positions)
             if virials is not None:
                 virials = -1 * virials
                 cell = data["cell"].view(-1, 3, 3)
