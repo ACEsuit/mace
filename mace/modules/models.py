@@ -34,6 +34,7 @@ from .utils import (
     get_symmetric_displacement,
 )
 
+# pylint: disable=C0302
 
 @compile_mode("script")
 class MACE(torch.nn.Module):
@@ -60,7 +61,9 @@ class MACE(torch.nn.Module):
         self.register_buffer(
             "atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64)
         )
-        self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.get_default_dtype()))
+        self.register_buffer(
+            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
+        )
         self.register_buffer(
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
@@ -688,7 +691,7 @@ class AtomicDipolesMACE(torch.nn.Module):
     def forward(
         self,
         data: Dict[str, torch.Tensor],
-        training: bool = False,
+        training: bool = False, # pylint: disable=W0613
         compute_force: bool = False,
         compute_virials: bool = False,
         compute_stress: bool = False,

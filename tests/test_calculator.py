@@ -84,8 +84,10 @@ def trained_model_fixture(tmp_path_factory, fitting_configs):
     mace_params["train_file"] = tmp_path / "fit.xyz"
 
     # make sure run_train.py is using the mace that is currently being tested
-    run_env = os.environ
-    run_env["PYTHONPATH"] = str(pytest_mace_dir) + ":" + os.environ["PYTHONPATH"]
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -145,8 +147,10 @@ def trained_dipole_fixture(tmp_path_factory, fitting_configs):
     mace_params["train_file"] = tmp_path / "fit.xyz"
 
     # make sure run_train.py is using the mace that is currently being tested
-    run_env = os.environ
-    run_env["PYTHONPATH"] = str(pytest_mace_dir) + ":" + os.environ["PYTHONPATH"]
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -208,8 +212,10 @@ def trained_energy_dipole_fixture(tmp_path_factory, fitting_configs):
     mace_params["train_file"] = tmp_path / "fit.xyz"
 
     # make sure run_train.py is using the mace that is currently being tested
-    run_env = os.environ
-    run_env["PYTHONPATH"] = str(pytest_mace_dir) + ":" + os.environ["PYTHONPATH"]
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -273,8 +279,10 @@ def trained_committee_fixture(tmp_path_factory, fitting_configs):
         mace_params["train_file"] = tmp_path / "fit.xyz"
 
         # make sure run_train.py is using the mace that is currently being tested
-        run_env = os.environ
-        run_env["PYTHONPATH"] = str(pytest_mace_dir) + ":" + os.environ["PYTHONPATH"]
+        run_env = os.environ.copy()
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        run_env["PYTHONPATH"] = ":".join(sys.path)
+        print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
         cmd = (
             sys.executable
