@@ -5,10 +5,10 @@
 ###########################################################################################
 
 import ast
+import json
 import logging
 from pathlib import Path
 from typing import Optional
-import json
 
 import numpy as np
 import torch.nn.functional
@@ -179,9 +179,7 @@ def main() -> None:
         )
     else:
         # Unweighted Energy and Forces loss by default
-        loss_fn = modules.WeightedEnergyForcesLoss(
-            energy_weight=1.0, forces_weight=1.0
-        )
+        loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
     logging.info(loss_fn)
 
     if args.compute_avg_num_neighbors:
@@ -470,6 +468,7 @@ def main() -> None:
     if args.wandb:
         logging.info("Using Weights and Biases for logging")
         import wandb
+
         wandb_config = {}
         args_dict = vars(args)
         args_dict_json = json.dumps(args_dict)
