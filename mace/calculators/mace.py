@@ -127,14 +127,24 @@ class MACECalculator(Calculator):
         :param num_models: int, number of models in the committee
         :return: tuple of torch tensors
         """
+        dict_of_tensors = {}
         if model_type in ["MACE", "EnergyDipoleMACE"]:
             energies = torch.zeros(num_models, device=self.device)
             node_energy = torch.zeros(num_models, num_atoms, device=self.device)
             forces = torch.zeros(num_models, num_atoms, 3, device=self.device)
             stress = torch.zeros(num_models, 3, 3, device=self.device)
+            dict_of_tensors.update(
+                {
+                    "energies": energies,
+                    "node_energy": node_energy,
+                    "forces": forces,
+                    "stress": stress,
+                }
+            )
         if model_type in ["EnergyDipoleMACE", "DipoleMACE"]:
             dipole = torch.zeros(num_models, 3, device=self.device)
-        return locals()
+            dict_of_tensors.update({"dipole": dipole})
+        return dict_of_tensors
 
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):

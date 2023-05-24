@@ -209,7 +209,7 @@ def custom_key(key):
     else:
         return (2, key)
 
-class LRScheduler(torch.optim.lr_scheduler.LRScheduler):
+class LRScheduler():
     def __init__(self, optimizer, args) -> None:
         self.scheduler = args.scheduler
         if args.scheduler == "ExponentialLR":
@@ -229,7 +229,7 @@ class LRScheduler(torch.optim.lr_scheduler.LRScheduler):
         if self.scheduler == "ExponentialLR":
             self.lr_scheduler.step(epoch=epoch)
         elif self.scheduler == "ReduceLROnPlateau":
-            self.lr_scheduler.step(metrics=metrics, epoch=epoch)
+            self.lr_scheduler.step(metrics=metrics, epoch=epoch) # pylint: disable=E1123
 
     def __getattr__(self, name):
         if name == "step":
