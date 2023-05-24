@@ -21,7 +21,6 @@ from .blocks import (
 )
 from .loss import (
     DipoleSingleLoss,
-    EnergyForcesLoss,
     WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesLoss,
     WeightedEnergyForcesStressLoss,
@@ -88,7 +87,6 @@ __all__ = [
     "ScaleShiftBOTNet",
     "AtomicDipolesMACE",
     "EnergyDipolesMACE",
-    "EnergyForcesLoss",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
