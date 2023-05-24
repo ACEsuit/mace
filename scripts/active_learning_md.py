@@ -1,5 +1,4 @@
-# /home/lls34/rds/hpc-work/GitHub/CarbonCaptureNMR/systems/02_KHCO3/01-First-Develop/01-Bulk/MACE/hkco3-it0-1e-5-3.model
-"""Demonstrates molecular dynamics with constant temperature."""
+"""Demonstrates active learning molecular dynamics with constant temperature."""
 import argparse
 import os
 import time
@@ -10,7 +9,7 @@ from ase import units
 from ase.md.langevin import Langevin
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 
-from mace.calculators.mace import MACECommitteeCalculator
+from mace.calculators.mace import MACECalculator
 
 
 def parse_args() -> argparse.Namespace:
@@ -141,7 +140,7 @@ def main():
     atoms_fname = args.config
     atoms_index = args.config_index
 
-    mace_calc = MACECommitteeCalculator(
+    mace_calc = MACECalculator(
         mace_fname,
         args.device,
         default_dtype=args.default_dtype,

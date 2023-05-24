@@ -171,9 +171,11 @@ class WeightedEnergyForcesStressLoss(torch.nn.Module):
 
 
 class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
-    def __init__(self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01) -> None:
+    def __init__(
+        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01
+    ) -> None:
         super().__init__()
-        self.huber_loss = torch.nn.HuberLoss(reduction='mean', delta=huber_delta)
+        self.huber_loss = torch.nn.HuberLoss(reduction="mean", delta=huber_delta)
         self.register_buffer(
             "energy_weight",
             torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
@@ -190,7 +192,8 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
     def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
         return (
-            self.energy_weight * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
+            self.energy_weight
+            * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
             + self.forces_weight * self.huber_loss(ref["forces"], pred["forces"])
             + self.stress_weight * self.huber_loss(ref["stress"], pred["stress"])
         )
