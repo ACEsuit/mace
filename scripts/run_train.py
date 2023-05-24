@@ -277,9 +277,7 @@ def main() -> None:
         )
     else:
         # Unweighted Energy and Forces loss by default
-        loss_fn = modules.WeightedEnergyForcesLoss(
-            energy_weight=1.0, forces_weight=1.0
-        )
+        loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
     logging.info(loss_fn)
 
     if args.compute_avg_num_neighbors:
