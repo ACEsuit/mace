@@ -10,6 +10,7 @@ from mace.modules import (
     PolynomialCutoff,
     SymmetricContraction,
     WeightedEnergyForcesLoss,
+    LinearNodeEmbeddingExtractionBlock,
 )
 from mace.tools import AtomicNumberTable, scatter, to_numpy, torch_geometric
 
@@ -103,3 +104,12 @@ class TestBlocks:
         out = scatter.scatter_sum(src=energies, index=batch.batch, dim=-1, reduce="sum")
         out = to_numpy(out)
         assert np.allclose(out, np.array([5.0, 5.0]))
+
+    def test_node_extraction_block(self):
+        irrep_in = o3.Irreps("17x0e + 5x1o + 3x2e")
+        irrep_out = o3.Irreps("17x0e")
+        extraction_block = LinearNodeEmbeddingExtractionBlock(irrep_in, irrep_out)
+        test_input = irrep_in.randn(10, -1)
+        out = extraction_block(test_input)
+        assert out.shape == (10, 17)
+        np.testing.assert_array_almost_equal(out, test_input[:, :17] / np.sqrt(17))

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import ase.io
 import numpy as np
+import torch
 import pytest
 from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
@@ -361,3 +362,28 @@ def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model):
 
     assert np.allclose(grads[0], grads[1])
     assert len(dip) == 3
+
+
+def test_calculator_descriptors(fitting_configs, trained_model):
+    at: ase.Atoms = fitting_configs[2].copy()
+    calc = trained_model
+    num_interactions = len(calc.models[0].readouts)
+    invariant_dim = calc.models[0]._num_invariant_features
+    descriptors = calc.get_invariant_descriptors(at)
+    assert descriptors.shape == (len(at), num_interactions, invariant_dim)
+
+    # check training doesn't change extraction block weights
+    weights = calc.models[0].node_extractions[0].linear.weight.data
+    expected_weights = torch.eye(invariant_dim).flatten()
+    assert torch.allclose(weights, expected_weights)
+
+
+def test_calculator_descriptors_comittee(fitting_configs, trained_committee):
+    at: ase.Atoms = fitting_configs[2].copy()
+    calc = trained_committee
+    num_interactions = len(calc.models[0].readouts)
+    invariant_dim = calc.models[0]._num_invariant_features
+    descriptors = calc.get_invariant_descriptors(at)
+    assert len(descriptors) == calc.num_models
+    for desc in descriptors:
+        assert desc.shape == (len(at), num_interactions, invariant_dim)

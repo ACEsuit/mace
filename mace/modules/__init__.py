@@ -10,6 +10,7 @@ from .blocks import (
     InteractionBlock,
     LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
+    LinearNodeEmbeddingExtractionBlock,
     LinearReadoutBlock,
     NonLinearDipoleReadoutBlock,
     NonLinearReadoutBlock,

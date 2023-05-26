@@ -210,14 +210,31 @@ def test_energy_dipole_mace(
         ),
     ],
 )
-def test_get_local_embeddings(
+def test_get_local_embeddings_has_correct_shape(
     default_params, water_configuration, param_changes, expected_shape
 ):
     default_params = default_params.copy()
     default_params.update(param_changes)
     model = modules.MACE(**default_params)
     atomic_data = data.AtomicData.from_config(
-        water_configuration, z_table=Z_TABLE, cutoff=3.0
+        water_configuration, z_table=Z_TABLE, cutoff=default_params["r_max"]
     )
     embeddings = model.get_node_invariant_descriptors(atomic_data)
     assert embeddings.shape == (*expected_shape, model._num_invariant_features)
+
+
+def test_invariant_descripotrs_are_invariant(
+    default_params, water_configuration, rotated_water
+):
+    model = modules.MACE(**default_params)
+    atomic_data = data.AtomicData.from_config(
+        water_configuration, z_table=Z_TABLE, cutoff=default_params["r_max"]
+    )
+    atomic_data_rotated = data.AtomicData.from_config(
+        rotated_water, z_table=Z_TABLE, cutoff=default_params["r_max"]
+    )
+    embeddings = model.get_node_invariant_descriptors(atomic_data).detach().numpy()
+    embeddings_rotated = (
+        model.get_node_invariant_descriptors(atomic_data_rotated).detach().numpy()
+    )
+    np.testing.assert_array_almost_equal(embeddings, embeddings_rotated)

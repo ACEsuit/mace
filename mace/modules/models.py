@@ -37,6 +37,7 @@ from .utils import (
 
 # pylint: disable=C0302
 
+
 @compile_mode("script")
 class MACE(torch.nn.Module):
     def __init__(
@@ -124,11 +125,12 @@ class MACE(torch.nn.Module):
         self.readouts = torch.nn.ModuleList()
         invariant_irreps = o3.Irreps([(self._num_invariant_features, (0, 1))])
         self.node_extractions = torch.nn.ModuleList(
-            [LinearNodeEmbeddingExtractionBlock(
-                irreps_in=hidden_irreps,
-                irreps_out=invariant_irreps),]
-            )
-        
+            [
+                LinearNodeEmbeddingExtractionBlock(
+                    irreps_in=hidden_irreps, irreps_out=invariant_irreps
+                ),
+            ]
+        )
 
         self.readouts.append(LinearReadoutBlock(hidden_irreps))
 
@@ -162,10 +164,16 @@ class MACE(torch.nn.Module):
                 self.readouts.append(
                     NonLinearReadoutBlock(hidden_irreps_out, MLP_irreps, gate)
                 )
-                self.node_extractions.append(LinearNodeEmbeddingExtractionBlock(hidden_irreps_out, invariant_irreps))
+                self.node_extractions.append(
+                    LinearNodeEmbeddingExtractionBlock(
+                        hidden_irreps_out, invariant_irreps
+                    )
+                )
             else:
                 self.readouts.append(LinearReadoutBlock(hidden_irreps))
-                self.node_extractions.append(LinearNodeEmbeddingExtractionBlock(hidden_irreps, invariant_irreps))
+                self.node_extractions.append(
+                    LinearNodeEmbeddingExtractionBlock(hidden_irreps, invariant_irreps)
+                )
 
     def forward(
         self,
@@ -283,7 +291,9 @@ class MACE(torch.nn.Module):
         node_feats, edge_attrs, edge_feats = self._get_initial_embeddings(data)
 
         node_feats_all = []
-        for interaction, product, readout in zip(self.interactions, self.products, self.node_extractions):
+        for interaction, product, readout in zip(
+            self.interactions, self.products, self.node_extractions
+        ):
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
                 node_feats=node_feats,
@@ -297,7 +307,7 @@ class MACE(torch.nn.Module):
             node_feats_all.append(readout(node_feats))
         node_feats_all = torch.stack(
             node_feats_all, dim=1
-        )  # [n_nodes, num_interactions, num_irreps]
+        )  # [n_nodes, num_interactions, num_invariant_irreps]
         return node_feats_all
 
 
@@ -729,7 +739,7 @@ class AtomicDipolesMACE(torch.nn.Module):
     def forward(
         self,
         data: Dict[str, torch.Tensor],
-        training: bool = False, # pylint: disable=W0613
+        training: bool = False,  # pylint: disable=W0613
         compute_force: bool = False,
         compute_virials: bool = False,
         compute_stress: bool = False,
