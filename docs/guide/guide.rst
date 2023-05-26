@@ -15,3 +15,4 @@ User Guide
     ase
     openmm
     lammps
+    descriptors
