@@ -11,11 +11,13 @@ Installation Instructions
 -------------------------
 In order to run simulations through openMM, a custom conda environment is required.  
 
-- First, clone the openmmtools repository, which contains the command line utilities to launch simulations
-``git clone --branch ommml_compat https://github.com/jharrymoore/openmmtools.git``
+- First, clone our fork of openmmtools, which contains the command line utilities to launch MACE md simulations
+
+``git clone --branch development https://github.com/jharrymoore/openmmtools.git``
 
 - Ensure you have conda (or miniconda) installed on your system, and ``mamba`` installed in the base environment
 - Run the install script included in the top level of the directory.  
+
 ``./mace-install.sh``
 
 This will build the conda environment and install all required packages.
@@ -25,8 +27,20 @@ Once you have your environment built, the ``mace-md`` entrypoint will be availab
 
 
 
+Testing your Installation
+-------------------------
+
+Run the unit tests for mace-md with the following:
+
+``pytest -s openmmtools/tests/test_mace-md.py ``
+
+
+
 Running MD simulations
 ----------------------
+
+
+The following snippets use files from the ``examples/example_data`` folder of the openmmtools repository.
 
 Run pure MACE MD simulation with Langevin dynamics:
 
@@ -37,21 +51,23 @@ Run pure MACE MD simulation with Langevin dynamics:
 
     torch.set_default_dtype(torch.float64)
 
-    file = "peptide.xyz"
-    model_path = "../SPICE_L1_N3_swa.model"
+    file = "ejm_31.sdf"
+    model_path = "MACE_SPICE_larger.model"
     temperature = 298
 
     system=PureSystem(
-        file=file,
-        model_path=model_path,
-        potential="mace",
-        temperature=temperature,
+      	ml_mol=file
+        model_path=model_path
+        potential="mace"
         output_dir="output_md"
+        temperature=298,
+        nl="torch"
     )
 
     system.run_mixed_md(
-        steps=5000, interval=25, output_file="output_md_peptide.pdb", restart=False,
+        steps=5000, interval=25, output_file="output.pdb", restart=False,
     )
+    
 Example of a MACE NPT simulation with periodic boundary conditions:
 
 .. code-block:: python
@@ -61,10 +77,10 @@ Example of a MACE NPT simulation with periodic boundary conditions:
 
     torch.set_default_dtype(torch.float64)
 
-    file = "water_box.xyz"
-    model_path = "SPICE_L1_N3_swa.model"
+    file = "waterbox.xyz"
+    model_path = "MACE_SPICE_larger.model"
     temperature = 298
-    pressure = 1
+    pressure = 1.0
 
     system=PureSystem(
         file=file,
@@ -72,23 +88,51 @@ Example of a MACE NPT simulation with periodic boundary conditions:
         potential="mace",
         temperature=temperature,
         output_dir="output_md",
-        pressure=pressure
+		pressure = pressure
     )
 
     system.run_mixed_md(
         steps=10000, interval=50, output_file="output_md_water.pdb", restart=False
     )
 
-to run these the necessary files are in the ``examples/example_data`` folder of the openmmtools repository.
+Example of a hybrid ML-MM simulation where the small molecule is parametrised by MACE, whilst the solvent and ions are modelled with a classical FF
 
-Below are more detailed instructions.
+.. code-block:: python
+    
+    from openmmtools.openmm_torch.hybrid_md import HybridSystem
+    import torch
+
+    torch.set_default_dtype(torch.float64)
+
+    file = "ejm_31.sdf"
+    model_path = "MACE_SPICE_larger.model"
+    temperature = 298
+
+    system = MixedSystem(
+        file=file,
+        ml_mol=file,
+        model_path=model_path,
+        potential="mace",
+        output_dir="output_hybrid",
+        temperature=298,
+        nl="nnpops",
+        nnpify_type="resname",
+        resname="UNK",
+    )
+
+    system.run_mixed_md(
+        steps=10000, interval=50, output_file="output_md_mlmm.pdb", restart=False
+    )
+
+
+Alternatively, simulations can also be run through the mace-md interface, which exposes exactly the same functionality.
 
 Pure MD simulations
 ~~~~~~~~~~~~~~~~~~~
 
 The simplest use case is where the full system is simulated with the MACE potential.  The simulation can be started from a ``.xyz`` file as follows, which will run the simulation for 1000 steps, reporting structures and run information every 100 steps
 
-``mace-md -f molecule.xyz --model_path /path/to/my-mace.model --steps 1000 --timestep 1.0 --integrator langevin --interval 100 --output_dir ./test_output``
+``mace-md -f molecule.xyz --ml_mol molecule.xyz --model_path /path/to/my-mace.model --steps 1000 --timestep 1.0 --integrator langevin --interval 100 --output_dir ./test_output``
 
 
 For a full set of command line argument options, run 
