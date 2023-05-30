@@ -21,16 +21,13 @@ class LAMMPS_MACE(torch.nn.Module):
     def forward(
         self,
         data: Dict[str, torch.Tensor],
-        mask_ghost: Optional[torch.Tensor],
-        compute_force: bool = True,
+        local_or_ghost: torch.Tensor,
         compute_virials: bool = False,
-        compute_stress: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         num_graphs = data["ptr"].numel() - 1
         compute_displacement = False
-        if compute_virials or compute_stress:
+        if compute_virials:
             compute_displacement = True
-
         out = self.model(
             data,
             training=False,
@@ -41,20 +38,26 @@ class LAMMPS_MACE(torch.nn.Module):
         )
         node_energy = out["node_energy"]
         if node_energy is None:
-            return {"energy": None, "forces": None, "virials": None, "stress": None}
-        displacement = out["displacement"]
+            return {
+                "total_energy_local": None,
+                "node_energy": None,
+                "forces": None,
+                "virials": None,
+            }
         positions = data["positions"]
-        forces: Optional[torch.Tensor] = torch.zeros_like(positions)
+        displacement = out["displacement"]
+        forces = torch.zeros_like(positions)
         virials: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
-        stress: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
-        if mask_ghost is not None and displacement is not None:
-            node_energy_local = node_energy * mask_ghost
-            total_energy_local = scatter_sum(
-                src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs
-            )
-            grad_outputs: List[Optional[torch.Tensor]] = [
-                torch.ones_like(total_energy_local)
-            ]
+        # accumulate energies of local atoms
+        node_energy_local = node_energy * local_or_ghost
+        total_energy_local = scatter_sum(
+            src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs
+        )
+        # compute partial forces and (possibly) partial virials
+        grad_outputs: List[Optional[torch.Tensor]] = [
+            torch.ones_like(total_energy_local)
+        ]
+        if compute_virials:
             forces, virials = torch.autograd.grad(
                 outputs=[total_energy_local],
                 inputs=[positions, displacement],
@@ -69,22 +72,9 @@ class LAMMPS_MACE(torch.nn.Module):
                 forces = torch.zeros_like(positions)
             if virials is not None:
                 virials = -1 * virials
-                cell = data["cell"].view(-1, 3, 3)
-                volume = torch.einsum(
-                    "zi,zi->z",
-                    cell[:, 0, :],
-                    torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
-                ).unsqueeze(-1)
-                stress = virials / volume.view(-1, 1, 1)
             else:
                 virials = torch.zeros_like(displacement)
-        elif compute_force:
-            total_energy_local = scatter_sum(
-                src=node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
-            )
-            grad_outputs: List[Optional[torch.Tensor]] = [
-                torch.ones_like(total_energy_local)
-            ]
+        else:
             forces = torch.autograd.grad(
                 outputs=[total_energy_local],
                 inputs=[positions],
@@ -93,15 +83,13 @@ class LAMMPS_MACE(torch.nn.Module):
                 create_graph=False,
                 allow_unused=True,
             )[0]
-        else:
-            total_energy_local = scatter_sum(
-                src=node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
-            )
-
+            if forces is not None:
+                forces = -1 * forces
+            else:
+                forces = torch.zeros_like(positions)
         return {
-            "energy": total_energy_local,
+            "total_energy_local": total_energy_local,
             "node_energy": node_energy,
             "forces": forces,
             "virials": virials,
-            "stress": stress,
         }
