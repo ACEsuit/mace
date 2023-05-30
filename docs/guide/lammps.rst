@@ -38,7 +38,6 @@ First steps::
 
     mkdir lammps-mace-gpu
     cd lammps-mace-gpu
-    git clone https://github.com/ACEsuit/mace
     git clone --depth=1 https://github.com/ACEsuit/lammps
     wget https://download.pytorch.org/libtorch/cu117/libtorch-cxx11-abi-shared-with-deps-1.13.1%2Bcu117.zip
     unzip libtorch-cxx11-abi-shared-with-deps-1.13.1+cu117.zip
