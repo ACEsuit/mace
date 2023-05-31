@@ -19,7 +19,7 @@ MUCH better performance (at least at present).
 Preparing your model
 ====================
 
-Train the model using the `main` branch. Afterwards, use the `create_lammps_model.py` script to prepare a torchscript-compiled LAMMPS_MACE model::
+Train the model using the `develop` branch. Afterwards, use the `create_lammps_model.py` script to prepare a torchscript-compiled LAMMPS_MACE model::
 
     python [mace_dir]/scripts/create_lammps_model.py my_mace.model
 
