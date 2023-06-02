@@ -46,7 +46,7 @@ class LAMMPS_MACE(torch.nn.Module):
             }
         positions = data["positions"]
         displacement = out["displacement"]
-        forces = torch.zeros_like(positions)
+        forces: Optional[torch.Tensor] = torch.zeros_like(positions)
         virials: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
         # accumulate energies of local atoms
         node_energy_local = node_energy * local_or_ghost
@@ -57,7 +57,7 @@ class LAMMPS_MACE(torch.nn.Module):
         grad_outputs: List[Optional[torch.Tensor]] = [
             torch.ones_like(total_energy_local)
         ]
-        if compute_virials:
+        if compute_virials and displacement is not None:
             forces, virials = torch.autograd.grad(
                 outputs=[total_energy_local],
                 inputs=[positions, displacement],
