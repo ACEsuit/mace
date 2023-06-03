@@ -41,6 +41,11 @@ def train_mace_model(args: Namespace) -> None:
     args
         command line arguments, parsed by the argument parser from tools
 
+    Returns
+    -------
+    model
+        the final trained MACE model
+
     """
     tag = tools.get_tag(name=args.name, seed=args.seed)
 
@@ -570,3 +575,5 @@ def train_mace_model(args: Namespace) -> None:
             torch.save(model, Path(args.model_dir) / (args.name + ".model"))
 
     logging.info("Done")
+
+    return model
