@@ -1,25 +1,33 @@
 import h5py
 import torch
-from torch.utils.data import Dataset
-from mace import data
-from mace.data import AtomicData
-from mace.data.utils import Configuration
-
-import h5py
-import torch
 from torch.utils.data import Dataset, IterableDataset, ChainDataset
 from mace import data
-from mace.data import AtomicData
 from mace.data.utils import Configuration
 
 
 class HDF5ChainDataset(ChainDataset):
-    def __init__(self, file, r_max, z_table, **kwargs):
+    def __init__(self, file_path, r_max, z_table, **kwargs):
         super(HDF5ChainDataset, self).__init__()
-        self.file = file
-        self.length = len(h5py.File(file, "r").keys())
+        self.file_path = file_path
+        self._file = None
+
+        self.length = len(self.file.keys())
         self.r_max = r_max
         self.z_table = z_table
+
+    @property
+    def file(self):
+        if self._file is None:
+            # If a file has not already been opened, open one here
+            self._file = h5py.File(self.file_path, "r")
+        return self._file
+
+    def __getstate__(self):
+        _d = dict(self.__dict__)
+        
+        # An opened h5py.File cannot be pickled, so we must exclude it from the state
+        _d["_file"] = None
+        return _d
 
     def __call__(self):
         self.file = h5py.File(self.file, "r")
@@ -86,10 +94,12 @@ class HDF5IterDataset(IterableDataset):
 
 
 class HDF5Dataset(Dataset):
-    def __init__(self, file, r_max, z_table, **kwargs):
+    def __init__(self, file_path, r_max, z_table, **kwargs):
         super(HDF5Dataset, self).__init__()
-        self.file = h5py.File(file, "r")  # this is dangerous to open the file here
-        self.batch_size = len(self.file["config_batch_0"].keys())
+        self.file_path = file_path
+        self._file = None
+        batch_key = list(self.file.keys())[0]
+        self.batch_size = len(self.file[batch_key].keys())
         self.length = len(self.file.keys()) * self.batch_size
         self.r_max = r_max
         self.z_table = z_table
@@ -97,6 +107,20 @@ class HDF5Dataset(Dataset):
             self.drop_last = bool(self.file.attrs["drop_last"])
         except KeyError:
             self.drop_last = False
+
+    @property
+    def file(self):
+        if self._file is None:
+            # If a file has not already been opened, open one here
+            self._file = h5py.File(self.file_path, "r")
+        return self._file
+
+    def __getstate__(self):
+        _d = dict(self.__dict__)
+
+        # An opened h5py.File cannot be pickled, so we must exclude it from the state
+        _d["_file"] = None
+        return _d
 
     def __len__(self):
         return self.length
