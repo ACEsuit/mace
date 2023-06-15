@@ -30,7 +30,6 @@ class HDF5ChainDataset(ChainDataset):
         return _d
 
     def __call__(self):
-        self.file = h5py.File(self.file, "r")
         datasets = []
         for i in range(self.length):
             grp = self.file["config_" + str(i)]
