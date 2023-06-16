@@ -44,10 +44,12 @@ def main() -> None:
         except Exception as e:
             logging.info(f'Error specifying environment for distributed training: {e}')
             return
-        torch.distributed.init_process_group(backend='nccl')
         world_size = distr_env.world_size
         local_rank = distr_env.local_rank
         rank = distr_env.rank
+        if rank == 0:
+            print(distr_env)
+        torch.distributed.init_process_group(backend='nccl')
     else:
         rank = int(0)
         
@@ -195,7 +197,14 @@ def main() -> None:
             drop_last=True,
             seed=args.seed,
         )
-        # TODO: valid_sampler - currently validation is carried out on only one GPU
+        valid_sampler = torch.utils.data.distributed.DistributedSampler(
+            valid_set, 
+            num_replicas=world_size, 
+            rank=rank,
+            shuffle=True,
+            drop_last=True,
+            seed=args.seed,
+        )
         
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
@@ -561,61 +570,70 @@ def main() -> None:
 
     logging.info("Computing metrics for training, validation, and test sets")
     
-    if rank == 0:
-        all_data_loaders = {
-            "train": train_loader,
-            "valid": valid_loader,
-        }
-        if args.train_file.endswith(".xyz"):
-            for name, subset in collections.tests:
-                test_set = [
-                    data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
-                    for config in subset
-                ]
-                test_loader = torch_geometric.dataloader.DataLoader(
-                    test_set,
-                    batch_size=args.valid_batch_size,
-                    shuffle=False,
-                    num_workers=args.num_workers,
-                    drop_last=False,
-                )
-                all_data_loaders[name] = test_loader
-        else:
-            # get all test paths
-            test_files = get_files_with_suffix(args.test_dir, "_test.h5")
-            for test_file in test_files:
-                test_set = HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
-                test_loader = torch_geometric.dataloader.DataLoader(
-                    test_set,
-                    batch_size=args.valid_batch_size,
-                    shuffle=False,
-                    drop_last=test_set.drop_last,
-                    num_workers=args.num_workers,
-                    pin_memory=args.pin_memory,
-                )
-                test_file_name = os.path.splitext(os.path.basename(test_file))[0]
-                all_data_loaders[test_file_name] = test_loader
-
-        for swa_eval in swas:
-            epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
-                swa=swa_eval,
-                device=device,
+    all_data_loaders = {
+        "train": train_loader,
+        "valid": valid_loader,
+    }
+    
+    test_sets = {}
+    if args.train_file.endswith(".xyz"):
+        for name, subset in collections.tests:
+            test_sets[name] = [
+                data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+                for config in subset
+            ]
+    else:
+        test_files = get_files_with_suffix(args.test_dir, "_test.h5")
+        for test_file in test_files:
+            name = os.path.splitext(os.path.basename(test_file))[0]
+            test_sets[name] = HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
+            
+    for test_name, test_set in test_sets.items():
+        test_sampler = None
+        if args.distributed:
+            test_sampler = torch.utils.data.distributed.DistributedSampler(
+                test_set, 
+                num_replicas=world_size, 
+                rank=rank,
+                shuffle=True,
+                drop_last=True,
+                seed=args.seed,
             )
-            model.to(device)
-            logging.info(f"Loaded model from epoch {epoch}")
+        test_loader = torch_geometric.dataloader.DataLoader(
+            test_set,
+            batch_size=args.valid_batch_size,
+            shuffle=(test_sampler is None),
+            drop_last=test_set.drop_last,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_memory,
+        )
+        all_data_loaders[test_name] = test_loader
+                        
+    for swa_eval in swas:
+        epoch = checkpoint_handler.load_latest(
+            state=tools.CheckpointState(model, optimizer, lr_scheduler),
+            swa=swa_eval,
+            device=device,
+        )
+        model.to(device)
+        if args.distributed:
+            distributed_model = DDP(model, device_ids=[local_rank])
+        model_to_evaluate = model if not args.distributed else distributed_model
+        logging.info(f"Loaded model from epoch {epoch}")
 
-            table = create_error_table(
-                table_type=args.error_table,
-                all_data_loaders=all_data_loaders,
-                model=model,
-                loss_fn=loss_fn,
-                output_args=output_args,
-                log_wandb=args.wandb,
-                device=device,
-            )
-            logging.info("\n" + str(table))
-
+        table = create_error_table(
+            table_type=args.error_table,
+            all_data_loaders=all_data_loaders,
+            model=model_to_evaluate,
+            loss_fn=loss_fn,
+            output_args=output_args,
+            log_wandb=args.wandb,
+            device=device,
+            distributed=args.distributed,
+        )
+        logging.info("\n" + str(table))
+        
+        if rank == 0:
             # Save entire model
             if swa_eval:
                 model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
@@ -630,6 +648,9 @@ def main() -> None:
                 torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
             else:
                 torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+                
+        if args.distributed:
+            torch.distributed.barrier()
 
     logging.info("Done")    
     if args.distributed:
