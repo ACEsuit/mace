@@ -624,6 +624,99 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
 
 
 @compile_mode("script")
+class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        self.node_feats_down_irreps = o3.Irreps("64x0e")
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        self.linear_down = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_down_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        input_dim = (
+            self.edge_feats_irreps.num_irreps
+            + 2 * self.node_feats_down_irreps.num_irreps
+        )
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + 3 * [256] + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid,
+            self.irreps_out,
+            internal_weights=True,
+            shared_weights=True,
+        )
+
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # Skip connection.
+        self.skip_linear = o3.Linear(self.node_feats_irreps, self.hidden_irreps)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_linear(node_feats)
+        node_feats_up = self.linear_up(node_feats)
+        node_feats_down = self.linear_down(node_feats)
+        augmented_edge_feats = torch.cat(
+            [
+                edge_feats,
+                node_feats_down[sender],
+                node_feats_down[receiver],
+            ],
+            dim=-1,
+        )
+        tp_weights = self.conv_tp_weights(augmented_edge_feats)
+        mji = self.conv_tp(
+            node_feats_up[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / self.avg_num_neighbors
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+
+@compile_mode("script")
 class ScaleShiftBlock(torch.nn.Module):
     def __init__(self, scale: float, shift: float):
         super().__init__()
