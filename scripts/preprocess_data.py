@@ -78,7 +78,7 @@ def compute_stats_target(file, z_table, scaling, r_max, atomic_energies, batch_s
 # def pool_compute_stats(path_to_files):
 def pool_compute_stats(inputs): #inputs = (path_to_files, z_table, scaling, r_max, atomic_energies, batch_size)
     path_to_files, z_table, scaling, r_max, atomic_energies, batch_size = inputs
-    pool = mp.Pool(processes=os.cpu_count())
+    pool = mp.Pool(processes=int(os.cpu_count()/4))
     
     # loaders = pool.map(compute_stats_target, glob(path_to_files+'/*'))
     # for file in glob(path_to_files+'/*'):
@@ -196,7 +196,7 @@ def main():
     #         save_configurations_as_HDF5(batch, i, f)
 
     # split collections.train into batches and save them to hdf5
-    split_train = np.array_split(collections.train,os.cpu_count())
+    split_train = np.array_split(collections.train,int(os.cpu_count()/4))
     drop_last = False
     if len(collections.train) % 2 == 1:
         drop_last = True
@@ -206,13 +206,9 @@ def main():
         with h5py.File(args.h5_prefix + "train_" + str(process)+".h5", "w") as f:
             f.attrs["drop_last"] = drop_last
             save_configurations_as_HDF5(split_train[process], process, f)
-    
-    
-# #     #joblib
-# #     # p = Parallel(n_jobs=os.cpu_count())(delayed(multi_train_hdf5)(i) for i in tqdm.tqdm(range(os.cpu_count())))
-    
+      
     processes = []
-    for i in range(os.cpu_count()):
+    for i in range(int(os.cpu_count()/4)):
         p = mp.Process(target=multi_train_hdf5, args=[i])
         p.start()
         processes.append(p)
