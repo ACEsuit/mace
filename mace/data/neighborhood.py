@@ -32,6 +32,7 @@ def get_neighborhood(
     identity = np.identity(3, dtype=float)
     max_positions = np.max(np.absolute(positions)) + 1
     # Extend cell in non-periodic directions
+    # For models with more than 5 layers, the multiplicative constant needs to be increased.
     if not pbc_x:
         cell[:, 0] = max_positions * 5 * cutoff * identity[:, 0]
     if not pbc_y:
