@@ -58,7 +58,7 @@ conda install pytorch torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvi
 conda install numpy scipy matplotlib ase opt_einsum prettytable pandas e3nn
 
 # Clone and install MACE (and all required packages)
-git clone git@github.com:ACEsuit/mace.git 
+git clone https://github.com/ACEsuit/mace.git
 pip install ./mace
 ```
 
@@ -74,7 +74,7 @@ source mace-venv/bin/activate
 pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 
 # Clone and install MACE (and all required packages)
-git clone git@github.com:ACEsuit/mace.git
+git clone https://github.com/ACEsuit/mace.git
 pip install ./mace
 ```
 
