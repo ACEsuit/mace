@@ -429,8 +429,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--save_cpu",
         help="Save a model to be loaded on cpu",
-        action="store_true",
-        default=False,
+        action="store_false",
+        default=True,
     )
     parser.add_argument(
         "--clip_grad",
