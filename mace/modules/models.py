@@ -581,6 +581,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         atomic_energies: Optional[
             None
         ],  # Just here to make it compatible with energy models, MUST be None
+        radial_type: Optional[str] = "bessel",
     ):
         super().__init__()
         assert atomic_energies is None
@@ -597,6 +598,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             r_max=r_max,
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
+            radial_type=radial_type,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
