@@ -69,7 +69,7 @@ class GaussianBasis(torch.nn.Module):
                 gaussian_weights, requires_grad=True
             )
         else:
-            self.register_buffer("offset", gaussian_weights)
+            self.register_buffer("gaussian_weights", gaussian_weights)
         self.coeff = -0.5 / (r_max / (num_basis - 1)) ** 2
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [..., 1]
