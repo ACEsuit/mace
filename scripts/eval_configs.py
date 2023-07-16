@@ -63,6 +63,9 @@ def main():
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+    model = model.to(
+        args.device
+    )  # shouldn't be necessary but seems to help wtih CUDA problems
 
     for param in model.parameters():
         param.requires_grad = False
