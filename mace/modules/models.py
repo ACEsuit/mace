@@ -36,6 +36,7 @@ from .utils import (
 
 # pylint: disable=C0302
 
+
 @compile_mode("script")
 class MACE(torch.nn.Module):
     def __init__(
@@ -585,6 +586,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         atomic_energies: Optional[
             None
         ],  # Just here to make it compatible with energy models, MUST be None
+        radial_type: Optional[str] = "bessel",
         radial_MLP: Optional[List[int]] = None,
     ):
         super().__init__()
@@ -607,6 +609,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             r_max=r_max,
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
+            radial_type=radial_type,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
@@ -693,7 +696,7 @@ class AtomicDipolesMACE(torch.nn.Module):
     def forward(
         self,
         data: Dict[str, torch.Tensor],
-        training: bool = False, # pylint: disable=W0613
+        training: bool = False,  # pylint: disable=W0613
         compute_force: bool = False,
         compute_virials: bool = False,
         compute_stress: bool = False,
