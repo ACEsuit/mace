@@ -19,9 +19,11 @@ import torch
 from mace.tools import to_numpy
 
 from mace import tools, data
-from mace.data.utils import save_AtomicData_to_HDF5, save_configurations_as_HDF5 #, save_dataset_as_HDF5
-from mace.tools.scripts_utils import (get_dataset_from_xyz, 
-                                    get_atomic_energies)
+from mace.data.utils import (
+    save_AtomicData_to_HDF5,
+    save_configurations_as_HDF5,
+)
+from mace.tools.scripts_utils import get_dataset_from_xyz, get_atomic_energies
 from mace.tools import torch_geometric
 from mace.modules import compute_avg_num_neighbors, scaling_classes
 from mace.modules import scaling_classes
@@ -110,18 +112,19 @@ def split_array(a: np.ndarray, max_size: int):
     max_factor = 1
     for i in range(1, len(factors) + 1):
         for j in range(0, len(factors) - i + 1):
-            if np.prod(factors[j:j + i]) <= max_size:
-                test = np.prod(factors[j:j + i])
+            if np.prod(factors[j : j + i]) <= max_size:
+                test = np.prod(factors[j : j + i])
                 if test > max_factor:
                     max_factor = test
     return np.array_split(a, max_factor), drop_last
-    
+
+
 def get_prime_factors(n: int):
     factors = []
     for i in range(2, n + 1):
         while n % i == 0:
             factors.append(i)
-            n = n / i 
+            n = n / i
     return factors
 
 
@@ -139,9 +142,9 @@ def main():
     random.seed(args.seed)
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s %(levelname)-8s %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[logging.StreamHandler()]
+        format="%(asctime)s %(levelname)-8s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler()],
     )
 
     try:
@@ -159,7 +162,7 @@ def main():
         valid_path=args.valid_file,
         valid_fraction=args.valid_fraction,
         config_type_weights=config_type_weights,
-        test_path=args.test_file, 
+        test_path=args.test_file,
         seed=args.seed,
         energy_key=args.energy_key,
         forces_key=args.forces_key,
@@ -269,6 +272,7 @@ def main():
     # del train_loader
     with open(args.h5_prefix + "statistics.json", "w") as f:
         json.dump(statistics, f)
+
     
 #     logging.info("Preparing validation set")
 #     if args.shuffle:
@@ -309,4 +313,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
