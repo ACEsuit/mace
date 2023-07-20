@@ -26,7 +26,8 @@ from mace.data.utils import (
 from mace.tools.scripts_utils import get_dataset_from_xyz, get_atomic_energies
 from mace.tools import torch_geometric
 from mace.modules import compute_avg_num_neighbors, scaling_classes
-from mace.modules import scaling_classes
+from mace.modules import compute_statistics
+
 
 import concurrent.futures
 import multiprocessing as mp
@@ -73,7 +74,9 @@ def compute_stats_target(file, z_table, scaling, r_max, atomic_energies, batch_s
         drop_last=False,
     )
     
-    avg_num_neighbors, mean, std = compute_statistics(train_loader, scaling, atomic_energies)
+    # avg_num_neighbors, mean, std = compute_statistics(train_loader, scaling, atomic_energies)
+    avg_num_neighbors, mean, std = compute_statistics(train_loader, atomic_energies)
+
     output = [avg_num_neighbors, mean, std]
     return output
 
@@ -92,15 +95,15 @@ def pool_compute_stats(inputs): #inputs = (path_to_files, z_table, scaling, r_ma
     results = [r.get() for r in tqdm.tqdm(re)]
     return np.average(results, axis=0)
     
-def compute_statistics(train_loader: torch.utils.data.DataLoader, 
-                       scaling: str, 
-                       atomic_energies: np.ndarray):
-    """
-    Compute the average number of neighbors and the mean energy and standard
-    deviation of the force components"""
-    avg_num_neighbors = compute_avg_num_neighbors(train_loader)
-    mean, std = scaling_classes[scaling](train_loader, atomic_energies)
-    return avg_num_neighbors, mean, std
+# def compute_statistics(train_loader: torch.utils.data.DataLoader, 
+#                        scaling: str, 
+#                        atomic_energies: np.ndarray):
+#     """
+#     Compute the average number of neighbors and the mean energy and standard
+#     deviation of the force components"""
+#     avg_num_neighbors = compute_avg_num_neighbors(train_loader)
+#     mean, std = scaling_classes[scaling](train_loader, atomic_energies)
+#     return avg_num_neighbors, mean, std
 
 
 def split_array(a: np.ndarray, max_size: int):
