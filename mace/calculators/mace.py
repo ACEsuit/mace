@@ -103,7 +103,7 @@ class MACECalculator(Calculator):
         assert np.all(
             r_maxs == r_maxs[0]
         ), "committee r_max are not all the same {' '.join(r_maxs)}"
-        self.r_max = r_maxs[0]
+        self.r_max = float(r_maxs[0])
 
         self.device = torch_tools.init_device(device)
         self.energy_units_to_eV = energy_units_to_eV
