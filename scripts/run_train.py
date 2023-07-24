@@ -17,6 +17,10 @@ from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
 
+import torch.distributed
+from torch.nn.parallel import DistributedDataParallel as DDP
+from mace.tools.slurm_distributed import DistributedEnvironment
+
 import mace
 from mace import data, modules, tools
 from mace.tools import torch_geometric
@@ -34,22 +38,38 @@ from mace.data import HDF5Dataset
 def main() -> None:
     args = tools.build_default_arg_parser().parse_args()
     tag = tools.get_tag(name=args.name, seed=args.seed)
-
+    if args.distributed:
+        try:
+            distr_env = DistributedEnvironment()
+        except Exception as e:
+            logging.info(f'Error specifying environment for distributed training: {e}')
+            return
+        world_size = distr_env.world_size
+        local_rank = distr_env.local_rank
+        rank = distr_env.rank
+        if rank == 0:
+            print(distr_env)
+        torch.distributed.init_process_group(backend='nccl')
+    else:
+        rank = int(0)
+        
     # Setup
     tools.set_seeds(args.seed)
-    tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir)
+    tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
+    
+    if args.distributed:
+        torch.cuda.set_device(local_rank)
+        logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
+        logging.info(f"Processes: {world_size}")
+    
     try:
         logging.info(f"MACE version: {mace.__version__}")
     except AttributeError:
         logging.info("Cannot find MACE version, please install MACE via pip")
     logging.info(f"Configuration: {args}")
-    device = tools.init_device(args.device)
+    
     tools.set_default_dtype(args.default_dtype)
-    if args.num_workers > 0:
-        os.environ["OMP_NUM_THREADS"] = str(args.num_workers)
-        torch.multiprocessing.set_start_method('fork')
-
-    config_type_weights = get_config_type_weights(args.config_type_weights)
+    device = tools.init_device(args.device)
 
     if args.statistics_file is not None:
         with open(args.statistics_file, "r") as f:
@@ -69,6 +89,7 @@ def main() -> None:
             assert args.valid_file.endswith(
                 ".xyz"
             ), "valid_file if given must be same format as train_file"
+        config_type_weights = get_config_type_weights(args.config_type_weights)
         collections, atomic_energies_dict = get_dataset_from_xyz(
             train_path=args.train_file,
             valid_path=args.valid_file,
@@ -150,52 +171,60 @@ def main() -> None:
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
 
     if args.train_file.endswith(".xyz"):
-        # TODO remove code duplication here
-        train_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
-                for config in collections.train
-            ],
-            batch_size=args.batch_size,
-            shuffle=True,
-            drop_last=True,
-            num_workers=args.num_workers,
-        )
-        valid_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
-                for config in collections.valid
-            ],
-            batch_size=args.valid_batch_size,
-            shuffle=False,
-            drop_last=False,
-            num_workers=args.num_workers,
-        )
+        train_set = [
+            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+            for config in collections.train
+        ]
+        valid_set = [
+            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+            for config in collections.valid
+        ]
     else:
-        training_set_processed = HDF5Dataset(
+        train_set = HDF5Dataset(
             args.train_file, r_max=args.r_max, z_table=z_table
         )
-        train_loader = torch_geometric.dataloader.DataLoader(
-            training_set_processed,
-            batch_size=args.batch_size,
-            shuffle=True,
-            drop_last=True,
-            num_workers=args.num_workers,
-            pin_memory=args.pin_memory,
-        )
-
-        validation_set_processed = HDF5Dataset(
+        valid_set = HDF5Dataset(
             args.valid_file, r_max=args.r_max, z_table=z_table
         )
-        valid_loader = torch_geometric.dataloader.DataLoader(
-            validation_set_processed,
-            batch_size=args.valid_batch_size,
-            shuffle=False,
-            drop_last=validation_set_processed.drop_last,
-            num_workers=args.num_workers,
-            pin_memory=args.pin_memory,
+        
+    train_sampler, valid_sampler = None, None
+    if args.distributed:
+        train_sampler = torch.utils.data.distributed.DistributedSampler(
+            train_set, 
+            num_replicas=world_size, 
+            rank=rank,
+            shuffle=True,
+            drop_last=True,
+            seed=args.seed,
         )
-
+        valid_sampler = torch.utils.data.distributed.DistributedSampler(
+            valid_set, 
+            num_replicas=world_size, 
+            rank=rank,
+            shuffle=True,
+            drop_last=True,
+            seed=args.seed,
+        )
+        
+    train_loader = torch_geometric.dataloader.DataLoader(
+        dataset=train_set,
+        batch_size=args.batch_size,        
+        sampler=train_sampler,
+        shuffle=(train_sampler is None),
+        drop_last=False,
+        pin_memory=args.pin_memory,
+        num_workers=args.num_workers,
+    )
+    valid_loader = torch_geometric.dataloader.DataLoader(
+        dataset=valid_set,
+        batch_size=args.valid_batch_size,
+        sampler=valid_sampler,
+        shuffle=(valid_sampler is None),
+        drop_last=False,
+        pin_memory=args.pin_memory,
+        num_workers=args.num_workers,
+    )
+    
     loss_fn: torch.nn.Module = get_loss_fn(
         args.loss,
         args.energy_weight,
@@ -343,9 +372,6 @@ def main() -> None:
     else:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
-    if torch.cuda.device_count() > 1 and args.device == "cuda":
-        logging.info(f"Multi-GPUs training on {torch.cuda.device_count()} GPUs.")
-        model = tools.DataParallelModel(model)
     model.to(device)
 
     # Optimizer
@@ -511,6 +537,11 @@ def main() -> None:
         )
         wandb.run.summary["params"] = args_dict_json
 
+    if args.distributed:
+        distributed_model = DDP(model, device_ids=[local_rank])
+    else:
+        distributed_model = None
+
     tools.train(
         model=model,
         loss_fn=loss_fn,
@@ -531,43 +562,53 @@ def main() -> None:
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
         log_wandb=args.wandb,
+        distributed=args.distributed,
+        distributed_model=distributed_model,
+        train_sampler=train_sampler,
+        rank=rank,
     )
 
     logging.info("Computing metrics for training, validation, and test sets")
+    
     all_data_loaders = {
         "train": train_loader,
         "valid": valid_loader,
     }
+    
+    test_sets = {}
     if args.train_file.endswith(".xyz"):
         for name, subset in collections.tests:
-            test_set = [
+            test_sets[name] = [
                 data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
                 for config in subset
             ]
-            test_loader = torch_geometric.dataloader.DataLoader(
-                test_set,
-                batch_size=args.valid_batch_size,
-                shuffle=False,
-                num_workers=args.num_workers,
-                drop_last=False,
-            )
-            all_data_loaders[name] = test_loader
     else:
-        # get all test paths
         test_files = get_files_with_suffix(args.test_dir, "_test.h5")
         for test_file in test_files:
-            test_set = HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
-            test_loader = torch_geometric.dataloader.DataLoader(
-                test_set,
-                batch_size=args.valid_batch_size,
-                shuffle=False,
-                drop_last=test_set.drop_last,
-                num_workers=args.num_workers,
-                pin_memory=args.pin_memory,
+            name = os.path.splitext(os.path.basename(test_file))[0]
+            test_sets[name] = HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
+            
+    for test_name, test_set in test_sets.items():
+        test_sampler = None
+        if args.distributed:
+            test_sampler = torch.utils.data.distributed.DistributedSampler(
+                test_set, 
+                num_replicas=world_size, 
+                rank=rank,
+                shuffle=True,
+                drop_last=True,
+                seed=args.seed,
             )
-            test_file_name = os.path.splitext(os.path.basename(test_file))[0]
-            all_data_loaders[test_file_name] = test_loader
-
+        test_loader = torch_geometric.dataloader.DataLoader(
+            test_set,
+            batch_size=args.valid_batch_size,
+            shuffle=(test_sampler is None),
+            drop_last=test_set.drop_last,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_memory,
+        )
+        all_data_loaders[test_name] = test_loader
+                        
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
             state=tools.CheckpointState(model, optimizer, lr_scheduler),
@@ -575,35 +616,45 @@ def main() -> None:
             device=device,
         )
         model.to(device)
+        if args.distributed:
+            distributed_model = DDP(model, device_ids=[local_rank])
+        model_to_evaluate = model if not args.distributed else distributed_model
         logging.info(f"Loaded model from epoch {epoch}")
 
         table = create_error_table(
             table_type=args.error_table,
             all_data_loaders=all_data_loaders,
-            model=model,
+            model=model_to_evaluate,
             loss_fn=loss_fn,
             output_args=output_args,
             log_wandb=args.wandb,
             device=device,
+            distributed=args.distributed,
         )
         logging.info("\n" + str(table))
+        
+        if rank == 0:
+            # Save entire model
+            if swa_eval:
+                model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
+            else:
+                model_path = Path(args.checkpoints_dir) / (tag + ".model")
+            logging.info(f"Saving model to {model_path}")
+            if args.save_cpu:
+                model = model.to("cpu")
+            torch.save(model, model_path)
 
-        # Save entire model
-        if swa_eval:
-            model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
-        else:
-            model_path = Path(args.checkpoints_dir) / (tag + ".model")
-        logging.info(f"Saving model to {model_path}")
-        if args.save_cpu:
-            model = model.to("cpu")
-        torch.save(model, model_path)
+            if swa_eval:
+                torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
+            else:
+                torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+                
+        if args.distributed:
+            torch.distributed.barrier()
 
-        if swa_eval:
-            torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
-        else:
-            torch.save(model, Path(args.model_dir) / (args.name + ".model"))
-
-    logging.info("Done")
+    logging.info("Done")    
+    if args.distributed:
+        torch.distributed.destroy_process_group()
 
 
 if __name__ == "__main__":

@@ -50,6 +50,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=["float32", "float64"],
         default="float64",
     )
+    parser.add_argument(
+        "--distributed",
+        help="train in multi-GPU data parallel mode",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
     parser.add_argument(
