@@ -233,8 +233,11 @@ def main():
     logging.info("Preparing validation set")
     if args.shuffle:
         random.shuffle(collections.valid)
-    
-    split_valid, drop_last = split_array(collections.valid, args.batch_size)
+    # breakpoint()
+    split_valid = np.array_split(collections.valid, int(os.cpu_count()/4)) 
+    drop_last = False
+    if len(collections.valid) % 2 == 1:
+        drop_last = True
 
     def multi_valid_hdf5(process):
         with h5py.File(args.h5_prefix + "valid_" + str(process)+".h5", "w") as f:
@@ -243,21 +246,34 @@ def main():
     
     processes = []
     for i in range(int(os.cpu_count()/4)):
-        p = mp.Process(target=multi_train_hdf5, args=[i])
+        p = mp.Process(target=multi_valid_hdf5, args=[i])
         p.start()
         processes.append(p)
         
     for i in processes:
         i.join()
 
-    # if args.test_file is not None:
-    #     logging.info("Preparing test sets")
-    #     for name, subset in collections.tests:
-#             with h5py.File(args.h5_prefix + name + "_test.h5", "w") as f:
-#                 split_test, drop_last = split_array(subset, args.batch_size)
-#                 f.attrs["drop_last"] = drop_last
-#                 for i, batch in enumerate(split_test):
-#                     save_configurations_as_HDF5(batch, i, f)
+    if args.test_file is not None:
+        def multi_test_hdf5(process, name):
+            with h5py.File(args.h5_prefix + name + str(process) + "_test.h5", "w") as f:                    
+                f.attrs["drop_last"] = drop_last
+                save_configurations_as_HDF5(split_test[process], process, f)
+            
+        logging.info("Preparing test sets")
+        for name, subset in collections.tests:
+            drop_last = False
+            if len(subset) % 2 == 1:
+                drop_last = True
+            split_test = np.array_split(subset, int(os.cpu_count()/4)) 
+
+            processes = []
+            for i in range(int(os.cpu_count()/4)):
+                p = mp.Process(target=multi_test_hdf5, args=[i, name])
+                p.start()
+                processes.append(p)
+
+            for i in processes:
+                i.join()
     finish = time.perf_counter()
     print(f'Finished in {round(finish-start, 2)} second(s)')
 
