@@ -233,7 +233,6 @@ def main():
     logging.info("Preparing validation set")
     if args.shuffle:
         random.shuffle(collections.valid)
-    # breakpoint()
     split_valid = np.array_split(collections.valid, int(os.cpu_count()/4)) 
     drop_last = False
     if len(collections.valid) % 2 == 1:

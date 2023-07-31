@@ -6,6 +6,7 @@
 
 import argparse
 from typing import Optional
+import os
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -536,6 +537,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         required=False,
+    )
+    parser.add_argument(
+        "--num_process",
+        help="The user defined number of processes to use", 
+        type=int, 
+        default=int(os.cpu_count()/4)
     )
     parser.add_argument(
         "--valid_fraction",
