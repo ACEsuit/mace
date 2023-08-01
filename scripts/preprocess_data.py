@@ -78,8 +78,8 @@ def compute_stats_target(file, z_table, r_max, atomic_energies, batch_size):
 
 
 def pool_compute_stats(inputs): #inputs = (path_to_files, z_table, r_max, atomic_energies, batch_size)
-    path_to_files, z_table, r_max, atomic_energies, batch_size = inputs
-    pool = mp.Pool(processes=int(os.cpu_count()/4))
+    path_to_files, z_table, r_max, atomic_energies, batch_size, num_process = inputs
+    pool = mp.Pool(processes=num_process)
     
     re=[pool.apply_async(compute_stats_target, args=(file, z_table, r_max, atomic_energies, batch_size,)) for file in glob(path_to_files+'*')]
     
@@ -177,7 +177,7 @@ def main():
         random.shuffle(collections.train)
 
     # split collections.train into batches and save them to hdf5
-    split_train = np.array_split(collections.train,int(os.cpu_count()/4))
+    split_train = np.array_split(collections.train,args.num_process)
     drop_last = False
     if len(collections.train) % 2 == 1:
         drop_last = True
@@ -189,7 +189,7 @@ def main():
             save_configurations_as_HDF5(split_train[process], process, f)
       
     processes = []
-    for i in range(int(os.cpu_count()/4)):
+    for i in range(args.num_process):
         p = mp.Process(target=multi_train_hdf5, args=[i])
         p.start()
         processes.append(p)
@@ -204,7 +204,7 @@ def main():
         [atomic_energies_dict[z] for z in z_table.zs]
     )
     logging.info(f"Atomic energies: {atomic_energies.tolist()}")
-    _inputs = [args.h5_prefix, z_table, args.r_max, atomic_energies, args.batch_size]
+    _inputs = [args.h5_prefix, z_table, args.r_max, atomic_energies, args.batch_size, args.num_process]
     avg_num_neighbors, mean, std=pool_compute_stats(_inputs)
     logging.info(f"Average number of neighbors: {avg_num_neighbors}")
     logging.info(f"Mean: {mean}")
@@ -229,7 +229,7 @@ def main():
     logging.info("Preparing validation set")
     if args.shuffle:
         random.shuffle(collections.valid)
-    split_valid = np.array_split(collections.valid, int(os.cpu_count()/4)) 
+    split_valid = np.array_split(collections.valid, args.num_process) 
     drop_last = False
     if len(collections.valid) % 2 == 1:
         drop_last = True
@@ -240,7 +240,7 @@ def main():
             save_configurations_as_HDF5(split_valid[process], process, f)
     
     processes = []
-    for i in range(int(os.cpu_count()/4)):
+    for i in range(args.num_process):
         p = mp.Process(target=multi_valid_hdf5, args=[i])
         p.start()
         processes.append(p)
@@ -259,10 +259,10 @@ def main():
             drop_last = False
             if len(subset) % 2 == 1:
                 drop_last = True
-            split_test = np.array_split(subset, int(os.cpu_count()/4)) 
+            split_test = np.array_split(subset, args.num_process) 
 
             processes = []
-            for i in range(int(os.cpu_count()/4)):
+            for i in range(args.num_process):
                 p = mp.Process(target=multi_test_hdf5, args=[i, name])
                 p.start()
                 processes.append(p)
