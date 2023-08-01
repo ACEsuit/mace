@@ -122,7 +122,7 @@ def main():
     """
 
     args = build_preprocess_arg_parser().parse_args()
-    breakpoint()
+
     # Setup
     tools.set_seeds(args.seed)
     random.seed(args.seed)
