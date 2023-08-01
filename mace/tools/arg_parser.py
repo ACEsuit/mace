@@ -546,7 +546,7 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--num_process",
-        help="The user defined number of processes to use", 
+        help="The user defined number of processes to use, as well as the number of files created.", 
         type=int, 
         default=int(os.cpu_count()/4)
     )

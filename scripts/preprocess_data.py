@@ -11,14 +11,12 @@ from glob import glob
 
 import h5py
 
-from joblib import Parallel, delayed
-
-
 from ase.io import read
 import torch
 from mace.tools import to_numpy
 
 from mace import tools, data
+from mace.tools import build_preprocess_arg_parser
 from mace.data.utils import (
     save_AtomicData_to_HDF5,
     save_configurations_as_HDF5,
@@ -83,7 +81,7 @@ def pool_compute_stats(inputs): #inputs = (path_to_files, z_table, r_max, atomic
     path_to_files, z_table, r_max, atomic_energies, batch_size = inputs
     pool = mp.Pool(processes=int(os.cpu_count()/4))
     
-    re=[pool.apply_async(compute_stats_target, args=(file, z_table, r_max, atomic_energies, batch_size,)) for file in glob(path_to_files+'/*')]
+    re=[pool.apply_async(compute_stats_target, args=(file, z_table, r_max, atomic_energies, batch_size,)) for file in glob(path_to_files+'*')]
     
     pool.close()
     pool.join()
@@ -123,8 +121,8 @@ def main():
     new hdf5 file that is ready for training with on-the-fly dataloading
     """
 
-    args = tools.build_preprocess_arg_parser().parse_args()
-
+    args = build_preprocess_arg_parser().parse_args()
+    breakpoint()
     # Setup
     tools.set_seeds(args.seed)
     random.seed(args.seed)
@@ -207,7 +205,7 @@ def main():
         [atomic_energies_dict[z] for z in z_table.zs]
     )
     logging.info(f"Atomic energies: {atomic_energies.tolist()}")
-    _inputs = ['/pscratch/sd/m/mavaylon/processed_chem', z_table, args.r_max, atomic_energies, args.batch_size]
+    _inputs = [args.h5_prefix, z_table, args.r_max, atomic_energies, args.batch_size]
     avg_num_neighbors, mean, std=pool_compute_stats(_inputs)
     logging.info(f"Average number of neighbors: {avg_num_neighbors}")
     logging.info(f"Mean: {mean}")
