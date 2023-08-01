@@ -115,7 +115,6 @@ def get_prime_factors(n: int):
 
 
 def main():
-    start = time.perf_counter()
     """
     This script loads an xyz dataset and prepares
     new hdf5 file that is ready for training with on-the-fly dataloading
@@ -270,8 +269,7 @@ def main():
 
             for i in processes:
                 i.join()
-    finish = time.perf_counter()
-    print(f'Finished in {round(finish-start, 2)} second(s)')
+
 
 if __name__ == "__main__":
     main()
