@@ -25,7 +25,6 @@ from mace.data.utils import (
 )
 from mace.tools.scripts_utils import get_dataset_from_xyz, get_atomic_energies
 from mace.tools import torch_geometric
-from mace.modules import compute_avg_num_neighbors
 from mace.modules import compute_statistics
 
 import concurrent.futures
@@ -254,7 +253,7 @@ def main():
 
     if args.test_file is not None:
         def multi_test_hdf5(process, name):
-            with h5py.File(args.h5_prefix + name + str(process) + "_test.h5", "w") as f:                    
+            with h5py.File(args.h5_prefix + "_" + name + "_" + str(process)+ "_" + ".h5", "w") as f:                    
                 f.attrs["drop_last"] = drop_last
                 save_configurations_as_HDF5(split_test[process], process, f)
             
