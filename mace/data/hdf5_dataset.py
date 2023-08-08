@@ -3,6 +3,8 @@ import torch
 from torch.utils.data import Dataset, IterableDataset, ChainDataset
 from mace import data
 from mace.data.utils import Configuration
+from torch.utils.data import ConcatDataset
+from glob import glob
 
 
 class HDF5ChainDataset(ChainDataset):
@@ -153,6 +155,13 @@ class HDF5Dataset(Dataset):
         )
         return atomic_data
 
+def dataset_from_sharded_hdf5(files, z_table, r_max):
+    files = glob(files+'/*')
+    datasets = []
+    for file in files:
+        datasets.append(data.HDF5Dataset(file, z_table=z_table, r_max=r_max))
+    full_dataset = ConcatDataset(datasets)
+    return full_dataset
 
 def unpack_value(value):
     value = value.decode("utf-8") if isinstance(value, bytes) else value
