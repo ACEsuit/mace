@@ -585,13 +585,15 @@ def main() -> None:
                 data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
                 for config in subset
             ]
-    else:
+    elif not args.multi_processed_test:
         test_files = get_files_with_suffix(args.test_dir, "_test.h5")
         for test_file in test_files:
             name = os.path.splitext(os.path.basename(test_file))[0]
             test_sets[name] = HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
     else:
-        test_folders = glob(args
+        test_folders = glob(args.test_dir + "/*")
+        for folder in test_folders:
+            test_sets[name] = dataset_from_sharded_hdf5(folder, r_max=args.r_max, z_table=z_table)
             
     for test_name, test_set in test_sets.items():
         test_sampler = None
