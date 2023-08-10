@@ -36,6 +36,7 @@ from .utils import (
 
 # pylint: disable=C0302
 
+
 @compile_mode("script")
 class MACE(torch.nn.Module):
     def __init__(
@@ -695,7 +696,7 @@ class AtomicDipolesMACE(torch.nn.Module):
     def forward(
         self,
         data: Dict[str, torch.Tensor],
-        training: bool = False, # pylint: disable=W0613
+        training: bool = False,  # pylint: disable=W0613
         compute_force: bool = False,
         compute_virials: bool = False,
         compute_stress: bool = False,
