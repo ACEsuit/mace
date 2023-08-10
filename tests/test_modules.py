@@ -10,7 +10,7 @@ from mace.modules import (
     PolynomialCutoff,
     SymmetricContraction,
     WeightedEnergyForcesLoss,
-    WeightedHuberEnergyForcesStressLoss
+    WeightedHuberEnergyForcesStressLoss,
 )
 from mace.tools import AtomicNumberTable, scatter, to_numpy, torch_geometric
 
@@ -32,9 +32,7 @@ config = Configuration(
     ),
     energy=-1.5,
     # stress if voigt 6 notation
-    stress=np.array(
-        [1.0, 0.0, 0.5, 0.0, -1.0, 0.0]
-    ),
+    stress=np.array([1.0, 0.0, 0.5, 0.0, -1.0, 0.0]),
 )
 
 table = AtomicNumberTable([1, 8])

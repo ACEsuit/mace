@@ -14,9 +14,9 @@ from .blocks import (
     NonLinearDipoleReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
+    RealAgnosticAttResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
-    RealAgnosticAttResidualInteractionBlock,
     ResidualElementDependentInteractionBlock,
     ScaleShiftBlock,
 )
