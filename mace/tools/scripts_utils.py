@@ -209,7 +209,7 @@ def custom_key(key):
     else:
         return (2, key)
 
-class LRScheduler():
+class LRScheduler:
     def __init__(self, optimizer, args) -> None:
         self.scheduler = args.scheduler
         if args.scheduler == "ExponentialLR":
@@ -225,11 +225,11 @@ class LRScheduler():
         else:
             raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 
-    def step(self, metrics=None, epoch=None):
+    def step(self, metrics=None, epoch=None):  # pylint: disable=E1123
         if self.scheduler == "ExponentialLR":
             self.lr_scheduler.step(epoch=epoch)
         elif self.scheduler == "ReduceLROnPlateau":
-            self.lr_scheduler.step(metrics=metrics, epoch=epoch) # pylint: disable=E1123
+            self.lr_scheduler.step(metrics=metrics, epoch=epoch)
 
     def __getattr__(self, name):
         if name == "step":
