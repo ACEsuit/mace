@@ -54,6 +54,30 @@ class BesselBasis(torch.nn.Module):
 
 
 @compile_mode("script")
+class GaussianBasis(torch.nn.Module):
+    """
+    Gaussian basis functions
+    """
+
+    def __init__(self, r_max: float, num_basis=128, trainable=False):
+        super().__init__()
+        gaussian_weights = torch.linspace(
+            start=0.0, end=r_max, steps=num_basis, dtype=torch.get_default_dtype()
+        )
+        if trainable:
+            self.gaussian_weights = torch.nn.Parameter(
+                gaussian_weights, requires_grad=True
+            )
+        else:
+            self.register_buffer("gaussian_weights", gaussian_weights)
+        self.coeff = -0.5 / (r_max / (num_basis - 1)) ** 2
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [..., 1]
+        x = x - self.gaussian_weights
+        return torch.exp(self.coeff * torch.pow(x, 2))
+
+
+@compile_mode("script")
 class PolynomialCutoff(torch.nn.Module):
     """
     Klicpera, J.; Groß, J.; Günnemann, S. Directional Message Passing for Molecular Graphs; ICLR 2020.

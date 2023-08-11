@@ -72,6 +72,7 @@ def test_mace():
         avg_num_neighbors=8,
         atomic_numbers=table.zs,
         correlation=3,
+        radial_type="bessel",
     )
     model = modules.MACE(**model_config)
     model_compiled = jit.compile(model)
@@ -116,6 +117,7 @@ def test_dipole_mace():
         avg_num_neighbors=3,
         atomic_numbers=table.zs,
         correlation=3,
+        radial_type="gaussian",
     )
     model = modules.AtomicDipolesMACE(**model_config)
 

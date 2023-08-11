@@ -264,6 +264,7 @@ def main() -> None:
             atomic_inter_scale=std,
             atomic_inter_shift=0.0,
             radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
         )
     elif args.model == "ScaleShiftMACE":
         mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
@@ -276,6 +277,7 @@ def main() -> None:
             atomic_inter_scale=std,
             atomic_inter_shift=mean,
             radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
         )
     elif args.model == "ScaleShiftBOTNet":
         mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)

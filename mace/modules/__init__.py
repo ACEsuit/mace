@@ -14,6 +14,7 @@ from .blocks import (
     NonLinearDipoleReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
+    RealAgnosticAttResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
     ResidualElementDependentInteractionBlock,
@@ -36,7 +37,7 @@ from .models import (
     ScaleShiftBOTNet,
     ScaleShiftMACE,
 )
-from .radial import BesselBasis, PolynomialCutoff
+from .radial import BesselBasis, GaussianBasis, PolynomialCutoff
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
     compute_avg_num_neighbors,
@@ -51,6 +52,7 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "ResidualElementDependentInteractionBlock": ResidualElementDependentInteractionBlock,
     "AgnosticResidualNonlinearInteractionBlock": AgnosticResidualNonlinearInteractionBlock,
     "RealAgnosticResidualInteractionBlock": RealAgnosticResidualInteractionBlock,
+    "RealAgnosticAttResidualInteractionBlock": RealAgnosticAttResidualInteractionBlock,
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
 }
 
@@ -80,6 +82,7 @@ __all__ = [
     "NonLinearReadoutBlock",
     "PolynomialCutoff",
     "BesselBasis",
+    "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
     "BOTNet",
