@@ -87,6 +87,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
     )
     parser.add_argument(
+        "--radial_type",
+        help="type of radial basis functions",
+        type=str,
+        default="bessel",
+        choices=["bessel", "gaussian"],
+    )
+    parser.add_argument(
         "--num_radial_basis",
         help="number of radial basis functions",
         type=int,
