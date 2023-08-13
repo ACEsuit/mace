@@ -182,11 +182,15 @@ def train(
                     f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_Mu_per_atom={error_mu:.2f} mDebye"
                 )
             if log_wandb:
+                eval_metrics_valid_prefix = {
+                    f"valid_{k}": v for k, v in eval_metrics.items()
+                }
                 wandb_log_dict = {
                     "epoch": epoch,
                     "valid_loss": valid_loss,
                     "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
                     "valid_rmse_f": eval_metrics["rmse_f"],
+                    **eval_metrics_valid_prefix,
                 }
                 wandb.log(wandb_log_dict)
             if valid_loss >= lowest_loss:

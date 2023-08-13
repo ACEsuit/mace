@@ -116,6 +116,7 @@ class Batch(Data):
                             torch.full((size,), i, dtype=torch.long, device=device)
                         )
 
+
             if hasattr(data, "__num_nodes__"):
                 num_nodes_list.append(data.__num_nodes__)
             else:
@@ -138,6 +139,7 @@ class Batch(Data):
         for key in batch.keys:
             items = batch[key]
             item = items[0]
+            # currently checks if index or face in key. If true -1, else 0
             cat_dim = ref_data.__cat_dim__(key, item)
             cat_dim = 0 if cat_dim is None else cat_dim
             if isinstance(item, Tensor):
