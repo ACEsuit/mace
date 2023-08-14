@@ -250,7 +250,7 @@ class MACECalculator(Calculator):
                     .numpy()
                 )
 
-    def get_invariant_descriptors(
+    def get_descriptors(
         self, atoms=None, invariants_only=True
     ) -> np.ndarray | list[np.ndarray]:
         """Extracts the invariant part from the node features after each interaction block in the MACE model.
