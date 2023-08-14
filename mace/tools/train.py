@@ -66,6 +66,7 @@ def train(
     distributed_model: Optional[DistributedDataParallel] = None,
     train_sampler: Optional[DistributedSampler] = None,
     rank: Optional[int] = 0,
+    accelerator: Optional["Accelerator"] = None,
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
@@ -114,6 +115,7 @@ def train(
             device=device,
             distributed_model=distributed_model,
             rank=rank,
+            accelerator=accelerator,
         )
         if distributed:
             torch.distributed.barrier()
@@ -249,6 +251,7 @@ def train_one_epoch(
     device: torch.device,
     distributed_model: Optional[DistributedDataParallel] = None,
     rank: Optional[int] = 0,
+    accelerator: Optional["Accelerator"] = None,
 ) -> None:
     model_to_train = model if distributed_model is None else distributed_model
     for batch in data_loader:
@@ -261,6 +264,7 @@ def train_one_epoch(
             output_args=output_args,
             max_grad_norm=max_grad_norm,
             device=device,
+            accelerator=accelerator,
         )
         opt_metrics["mode"] = "opt"
         opt_metrics["epoch"] = epoch
@@ -277,9 +281,11 @@ def take_step(
     output_args: Dict[str, bool],
     max_grad_norm: Optional[float],
     device: torch.device,
+    accelerator: Optional["Accelerator"],
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
-    batch = batch.to(device)
+    if accelerator is None:
+        batch = batch.to(device)
     optimizer.zero_grad(set_to_none=True)
     batch_dict = batch.to_dict()
     output = model(
@@ -290,7 +296,10 @@ def take_step(
         compute_stress=output_args["stress"],
     )
     loss = loss_fn(pred=output, ref=batch)
-    loss.backward()
+    if accelerator is None:
+        loss.backward()
+    else:
+        accelerator.backward(loss)
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
     optimizer.step()

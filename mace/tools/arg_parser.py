@@ -56,6 +56,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--accelerate",
+        help="train with Huggingface/Accelerate library",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
     parser.add_argument(

@@ -10,12 +10,14 @@ from pathlib import Path
 from typing import Optional
 import json
 import os
+import sys
 
 import numpy as np
 import torch.nn.functional
 from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
+from accelerate import Accelerator
 
 import torch.distributed
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -36,6 +38,7 @@ from mace.data import HDF5Dataset
 
 
 def main() -> None:
+    accelerator = None
     args = tools.build_default_arg_parser().parse_args()
     tag = tools.get_tag(name=args.name, seed=args.seed)
     if args.distributed:
@@ -56,7 +59,18 @@ def main() -> None:
     # Setup
     tools.set_seeds(args.seed)
     tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
-    
+
+    if args.accelerate and args.distributed:
+        print("Arguments --distributed and --accelerate are mutually exclusive")
+        sys.exit(2)
+
+    if args.accelerate:
+        from accelerate import Accelerator
+        accelerator = Accelerator()
+        device = accelerator.device
+    else:
+        device = tools.init_device(args.device)
+
     if args.distributed:
         torch.cuda.set_device(local_rank)
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
@@ -69,7 +83,6 @@ def main() -> None:
     logging.info(f"Configuration: {args}")
     
     tools.set_default_dtype(args.default_dtype)
-    device = tools.init_device(args.device)
 
     if args.statistics_file is not None:
         with open(args.statistics_file, "r") as f:
@@ -372,7 +385,8 @@ def main() -> None:
     else:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
-    model.to(device)
+    if accelerator is None:
+        model.to(device)
 
     # Optimizer
     decay_interactions = {}
@@ -488,11 +502,17 @@ def main() -> None:
             loss_fn=loss_fn_energy,
         )
 
+    if accelerator is not None:
+        model, optimizer, train_loader, lr_scheduler = accelerator.prepare(
+            model, optimizer, train_loader, lr_scheduler
+        )
+
     checkpoint_handler = tools.CheckpointHandler(
         directory=args.checkpoints_dir,
         tag=tag,
         keep=args.keep_checkpoints,
         swa_start=args.start_swa,
+        accelerator=accelerator,
     )
 
     start_epoch = 0
@@ -566,6 +586,7 @@ def main() -> None:
         distributed_model=distributed_model,
         train_sampler=train_sampler,
         rank=rank,
+        accelerator=accelerator,
     )
 
     logging.info("Computing metrics for training, validation, and test sets")
@@ -615,7 +636,8 @@ def main() -> None:
             swa=swa_eval,
             device=device,
         )
-        model.to(device)
+        if accelerator is None:
+            model.to(device)
         if args.distributed:
             distributed_model = DDP(model, device_ids=[local_rank])
         model_to_evaluate = model if not args.distributed else distributed_model

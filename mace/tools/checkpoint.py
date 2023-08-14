@@ -52,13 +52,14 @@ class CheckpointPathInfo:
 
 class CheckpointIO:
     def __init__(
-        self, directory: str, tag: str, keep: bool = False, swa_start: int = None
+        self, directory: str, tag: str, keep: bool = False, swa_start: int = None, accelerator = None,
     ) -> None:
         self.directory = directory
         self.tag = tag
         self.keep = keep
         self.old_path: Optional[str] = None
         self.swa_start = swa_start
+        self.accelerator = accelerator
 
         self._epochs_string = "_epoch-"
         self._filename_extension = "pt"
@@ -149,15 +150,25 @@ class CheckpointIO:
     def save(
         self, checkpoint: Checkpoint, epochs: int, keep_last: bool = False
     ) -> None:
-        if not self.keep and self.old_path and not keep_last:
-            logging.debug(f"Deleting old checkpoint file: {self.old_path}")
-            os.remove(self.old_path)
+        if self.accelerator is None:
+            if not self.keep and self.old_path and not keep_last:
+                logging.debug(f"Deleting old checkpoint file: {self.old_path}")
+                os.remove(self.old_path)
+        else:
+            from accelerate import PartialState
+            if PartialState().local_process_index == 0:
+                if not self.keep and self.old_path and not keep_last:
+                    logging.debug(f"Deleting old checkpoint file: {self.old_path}")
+                    os.remove(self.old_path)
 
         filename = self._get_checkpoint_filename(epochs, self.swa_start)
         path = os.path.join(self.directory, filename)
         logging.debug(f"Saving checkpoint: {path}")
         os.makedirs(self.directory, exist_ok=True)
-        torch.save(obj=checkpoint, f=path)
+        if self.accelerator is None:
+            torch.save(obj=checkpoint, f=path)
+        else:
+            self.accelerator.save(obj=checkpoint, f=path)
         self.old_path = path
 
     def load_latest(
