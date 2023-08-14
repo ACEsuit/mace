@@ -248,3 +248,36 @@ class MACECalculator(Calculator):
                     .cpu()
                     .numpy()
                 )
+
+    def get_invariant_descriptors(self, atoms=None) -> np.ndarray | list[np.ndarray]:
+        """Extracts the invariant part from the node features after each interaction block in the MACE model.
+        :param atoms: ase.Atoms object
+        :return: np.ndarray (num_atoms, num_interactions, invariant_features) of invariant descriptors if num_models is 1 or list[np.ndarray] otherwise
+        """
+        if atoms is None and self.atoms is None:
+            raise ValueError("atoms not set")
+        elif atoms is None:
+            atoms = self.atoms
+
+        if self.model_type != "MACE":
+            raise NotImplementedError("Only implemented for MACE models")
+
+        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
+        data_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[
+                data.AtomicData.from_config(
+                    config, z_table=self.z_table, cutoff=self.r_max
+                )
+            ],
+            batch_size=1,
+            shuffle=False,
+            drop_last=False,
+        )
+        batch = next(iter(data_loader)).to(self.device)
+        descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+        descriptors = [descriptor.detach().cpu().numpy() for descriptor in descriptors]
+
+        if self.num_models == 1:
+            return descriptors[0]
+        else:
+            return descriptors

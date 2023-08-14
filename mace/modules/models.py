@@ -208,6 +208,7 @@ class MACE(torch.nn.Module):
         # Interactions
         energies = [e0]
         node_energies_list = [node_e0]
+        node_feats_list = []
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
         ):
@@ -223,6 +224,7 @@ class MACE(torch.nn.Module):
                 sc=sc,
                 node_attrs=data["node_attrs"],
             )
+            node_feats_list.append(node_feats)
             node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             energy = scatter_sum(
                 src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
@@ -230,12 +232,15 @@ class MACE(torch.nn.Module):
             energies.append(energy)
             node_energies_list.append(node_energies)
 
+        # Concatenate node features
+        node_feats_out = torch.cat(node_feats_list, dim=-1)
+
         # Sum over energy contributions
         contributions = torch.stack(energies, dim=-1)
-        print("contributions", contributions.shape)
         total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
         node_energy_contributions = torch.stack(node_energies_list, dim=-1)
         node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
+
         # Outputs
         forces, virials, stress = get_outputs(
             energy=total_energy,
@@ -256,6 +261,7 @@ class MACE(torch.nn.Module):
             "virials": virials,
             "stress": stress,
             "displacement": displacement,
+            "node_feats": node_feats_out,
         }
 
 
@@ -322,6 +328,7 @@ class ScaleShiftMACE(MACE):
 
         # Interactions
         node_es_list = []
+        node_feats_list = []
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
         ):
@@ -335,7 +342,11 @@ class ScaleShiftMACE(MACE):
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
+            node_feats_list.append(node_feats)
             node_es_list.append(readout(node_feats).squeeze(-1))  # {[n_nodes, ], }
+
+        # Concatenate node features
+        node_feats_out = torch.cat(node_feats_list, dim=-1)
 
         # Sum over interactions
         node_inter_es = torch.sum(
@@ -371,6 +382,7 @@ class ScaleShiftMACE(MACE):
             "virials": virials,
             "stress": stress,
             "displacement": displacement,
+            "node_feats": node_feats_out,
         }
 
         return output
