@@ -249,7 +249,9 @@ class MACECalculator(Calculator):
                     .numpy()
                 )
 
-    def get_invariant_descriptors(self, atoms=None) -> np.ndarray | list[np.ndarray]:
+    def get_invariant_descriptors(
+        self, atoms=None, invariants_only=True
+    ) -> np.ndarray | list[np.ndarray]:
         """Extracts the invariant part from the node features after each interaction block in the MACE model.
         :param atoms: ase.Atoms object
         :return: np.ndarray (num_atoms, num_interactions, invariant_features) of invariant descriptors if num_models is 1 or list[np.ndarray] otherwise
@@ -275,6 +277,11 @@ class MACECalculator(Calculator):
         )
         batch = next(iter(data_loader)).to(self.device)
         descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+        if invariants_only:
+            num_features = self.models[0].node_embedding.linear.__dict__[
+                "weight_numel"
+            ] // len(self.z_table)
+            descriptors = [descriptors[:, :, :num_features]]
         descriptors = [descriptor.detach().cpu().numpy() for descriptor in descriptors]
 
         if self.num_models == 1:
