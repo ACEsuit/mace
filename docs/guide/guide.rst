@@ -13,5 +13,6 @@ User Guide
     training
     evaluation
     ase
+    descriptors
     openmm
     lammps
