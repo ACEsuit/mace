@@ -253,8 +253,10 @@ class MACECalculator(Calculator):
     def get_descriptors(
         self, atoms=None, invariants_only=True, num_layers=-1
     ) -> np.ndarray | list[np.ndarray]:
-        """Extracts the invariant part from the node features after each interaction block in the MACE model.
+        """Extracts the descriptors from MACE model.
         :param atoms: ase.Atoms object
+        :param invariants_only: bool, if True only the invariant descriptors are returned
+        :param num_layers: int, number of layers to extract descriptors from, if -1 all layers are used
         :return: np.ndarray (num_atoms, num_interactions, invariant_features) of invariant descriptors if num_models is 1 or list[np.ndarray] otherwise
         """
         if atoms is None and self.atoms is None:
