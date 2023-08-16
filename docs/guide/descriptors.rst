@@ -11,6 +11,7 @@ To extract these descriptors directly from an ase.Atoms object, you can use the 
 Here is a simple example:
 
 .. code-block:: python
+
     from ase.io import read
     import numpy as np
     from mace.calculators import MACECalculator
@@ -26,8 +27,13 @@ Also, by default, the descriptors for each layer are returned.
 To get the descriptors of the first `n` layers, you can set the `num_layers` argument to `n`.
 
 .. note::
-    The descriptors are returned as numpy arrays.
-    The first dimension of each array corresponds to the number of atoms in the system.
-    The second dimension corresponds to the number of descriptors. This number depends on the model used. 
-    If you set the `invariants_only` argument to `True`, the equation for the number of descriptors is given by :math:`N_{descriptors} = num_channels * num_layers`.
-    If you set the `invariants_only` argument to `False`, the equation for the number of descriptors is given by :math:`N_{descriptors} = num_channels * (num_layers - 1) * (L_{max} + 1)^{2} + num_channels`.
+
+   The descriptors are returned in the form of numpy arrays, structured as follows:
+
+   - **First Dimension**: Corresponds to the number of atoms in the system.
+   - **Second Dimension**: Relates to the number of descriptors, dependent on the model used.
+
+   Depending on the value of the `invariants_only` argument, the number of descriptors, :math:`N_{\text{{descriptors}}}`, is calculated as follows:
+
+   - If `invariants_only=True`: :math:`N_{\text{{descriptors}}} = \text{{num\_channels}} \times \text{{num\_layers}}`.
+   - If `invariants_only=False`: :math:`N_{\text{{descriptors}}} = \text{{num\_channels}} \times (\text{{num\_layers}} - 1) \times (\text{{L_{\text{{max}}}}} + 1)^{2} + \text{{num\_channels}}`.
