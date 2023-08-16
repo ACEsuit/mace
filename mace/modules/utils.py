@@ -168,6 +168,22 @@ def _check_non_zero(std):
     return std
 
 
+def extract_invariant(x: torch.Tensor, num_layers: int, num_features: int, l_max: int):
+    out = []
+    for i in range(num_layers - 1):
+        out.append(
+            x[
+                :,
+                i
+                * (l_max + 1) ** 2
+                * num_features : (i * (l_max + 1) ** 2 + 1)
+                * num_features,
+            ]
+        )
+    out.append(x[:, -num_features:])
+    return torch.cat(out, dim=-1)
+
+
 def compute_mean_std_atomic_inter_energy(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
