@@ -15,6 +15,7 @@ from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
 
 from mace import data
+from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 
 
@@ -249,3 +250,52 @@ class MACECalculator(Calculator):
                     .cpu()
                     .numpy()
                 )
+
+    def get_descriptors(
+        self, atoms=None, invariants_only=True, num_layers=-1
+    ) -> np.ndarray | list[np.ndarray]:
+        """Extracts the descriptors from MACE model.
+        :param atoms: ase.Atoms object
+        :param invariants_only: bool, if True only the invariant descriptors are returned
+        :param num_layers: int, number of layers to extract descriptors from, if -1 all layers are used
+        :return: np.ndarray (num_atoms, num_interactions, invariant_features) of invariant descriptors if num_models is 1 or list[np.ndarray] otherwise
+        """
+        if atoms is None and self.atoms is None:
+            raise ValueError("atoms not set")
+        if atoms is None:
+            atoms = self.atoms
+        if self.model_type != "MACE":
+            raise NotImplementedError("Only implemented for MACE models")
+        if num_layers == -1:
+            num_layers = int(self.models[0].num_interactions)
+        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
+        data_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[
+                data.AtomicData.from_config(
+                    config, z_table=self.z_table, cutoff=self.r_max
+                )
+            ],
+            batch_size=1,
+            shuffle=False,
+            drop_last=False,
+        )
+        batch = next(iter(data_loader)).to(self.device)
+        descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+        if invariants_only:
+            irreps_out = self.models[0].products[0].linear.__dict__["irreps_out"]
+            l_max = irreps_out.lmax
+            num_features = irreps_out.dim // (l_max + 1) ** 2
+            descriptors = [
+                extract_invariant(
+                    descriptor,
+                    num_layers=num_layers,
+                    num_features=num_features,
+                    l_max=l_max,
+                )
+                for descriptor in descriptors
+            ]
+        descriptors = [descriptor.detach().cpu().numpy() for descriptor in descriptors]
+
+        if self.num_models == 1:
+            return descriptors[0]
+        return descriptors
