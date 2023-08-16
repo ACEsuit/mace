@@ -35,5 +35,5 @@ To get the descriptors of the first `n` layers, you can set the `num_layers` arg
 
    Depending on the value of the `invariants_only` argument, the number of descriptors, :math:`N_{\text{descriptors}}`, is calculated as follows:
 
-   - If `invariants_only=True`: :math:`N_{\text{descriptors}} = \text{num\textunderscore hannels} \times \text{num\textunderscore layers}`.
-   - If `invariants_only=False`: :math:`N_{\text{descriptors}} = \text{num\textunderscore channels} \times (\text{num\textunderscore layers} - 1) \times (\text{L_{\text{max}}} + 1)^{2} + \text{num\textunderscore channels}`.
+   - If `invariants_only=True`: :math:`N_{\text{descriptors}} = \text{nchannels} \times \text{nlayers}`.
+   - If `invariants_only=False`: :math:`N_{\text{descriptors}} = \text{nchannels} \times (\text{nlayers} - 1) \times (\text{L_{max}} + 1)^{2} + \text{nchannels}`.
