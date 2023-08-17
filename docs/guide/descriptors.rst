@@ -15,7 +15,7 @@ Here is a simple example:
     from ase.io import read
     import numpy as np
     from mace.calculators import MACECalculator
-    calculator = MACECalculator(model_path='/content/checkpoints/MACE_model_run-123.model', device='cuda')
+    calculator = MACECalculator(model_paths='/content/checkpoints/MACE_model_run-123.model', device='cuda')
     init_conf = read('BOTNet-datasets/dataset_3BPA/test_300K.xyz', '0')
     descriptors = calculator.get_descriptors(init_conf)
 
