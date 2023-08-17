@@ -137,7 +137,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--hidden_irreps",
         help="irreps for hidden node states",
         type=str,
-        default="32x0e",
+        default="128x0e + 128x1o",
     )
     # add option to specify irreps by channel number and max L
     parser.add_argument(
