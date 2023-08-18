@@ -11,6 +11,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 import torch
+from accelerate import Accelerator
 
 from .torch_tools import TensorDict
 
@@ -52,7 +53,7 @@ class CheckpointPathInfo:
 
 class CheckpointIO:
     def __init__(
-        self, directory: str, tag: str, keep: bool = False, swa_start: int = None, accelerator = None,
+        self, accelerator: Accelerator, directory: str, tag: str, keep: bool = False, swa_start: int = None,
     ) -> None:
         self.directory = directory
         self.tag = tag
@@ -150,26 +151,21 @@ class CheckpointIO:
     def save(
         self, checkpoint: Checkpoint, epochs: int, keep_last: bool = False
     ) -> None:
-        if self.accelerator is None:
-            if not self.keep and self.old_path and not keep_last:
-                logging.debug(f"Deleting old checkpoint file: {self.old_path}")
-                os.remove(self.old_path)
-        else:
-            from accelerate import PartialState
-            if PartialState().local_process_index == 0:
-                if not self.keep and self.old_path and not keep_last:
-                    logging.debug(f"Deleting old checkpoint file: {self.old_path}")
-                    os.remove(self.old_path)
+
+        if self.accelerator.process_index == 0 and not self.keep and self.old_path and not keep_last:
+            logging.debug(f"Deleting old checkpoint file: {self.old_path}")
+            os.remove(self.old_path)
 
         filename = self._get_checkpoint_filename(epochs, self.swa_start)
         path = os.path.join(self.directory, filename)
+        self.old_path = path
+
+        if self.accelerator.process_index != 0:
+            return
+
         logging.debug(f"Saving checkpoint: {path}")
         os.makedirs(self.directory, exist_ok=True)
-        if self.accelerator is None:
-            torch.save(obj=checkpoint, f=path)
-        else:
-            self.accelerator.save(obj=checkpoint, f=path)
-        self.old_path = path
+        torch.save(obj=checkpoint, f=path)
 
     def load_latest(
         self, swa: Optional[bool] = False, device: Optional[torch.device] = None

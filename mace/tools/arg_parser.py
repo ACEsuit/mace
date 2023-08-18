@@ -35,14 +35,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--downloads_dir", help="directory for downloads", type=str, default="downloads"
     )
 
-    # Device and logging
-    parser.add_argument(
-        "--device",
-        help="select device",
-        type=str,
-        choices=["cpu", "cuda", "mps"],
-        default="cpu",
-    )
     parser.add_argument(
         "--default_dtype",
         help="set default dtype",
@@ -50,18 +42,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=["float32", "float64"],
         default="float64",
     )
-    parser.add_argument(
-        "--distributed",
-        help="train in multi-GPU data parallel mode",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
-        "--accelerate",
-        help="train with Huggingface/Accelerate library",
-        action="store_true",
-        default=False,
-    )
+
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
     parser.add_argument(

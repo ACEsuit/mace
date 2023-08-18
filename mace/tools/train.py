@@ -16,10 +16,7 @@ from torch.optim.swa_utils import SWALR, AveragedModel
 from torch.utils.data import DataLoader
 from torch_ema import ExponentialMovingAverage
 from torchmetrics import Metric
-
-import torch.distributed
-from torch.nn.parallel import DistributedDataParallel
-from torch.utils.data.distributed import DistributedSampler
+from accelerate import Accelerator
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
@@ -43,6 +40,7 @@ class SWAContainer:
 
 
 def train(
+    accelerator: Accelerator,
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     train_loader: DataLoader,
@@ -56,17 +54,11 @@ def train(
     logger: MetricsLogger,
     eval_interval: int,
     output_args: Dict[str, bool],
-    device: torch.device,
     log_errors: str,
     swa: Optional[SWAContainer] = None,
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
     log_wandb: bool = False,
-    distributed: bool = False,
-    distributed_model: Optional[DistributedDataParallel] = None,
-    train_sampler: Optional[DistributedSampler] = None,
-    rank: Optional[int] = 0,
-    accelerator: Optional["Accelerator"] = None,
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
@@ -97,12 +89,9 @@ def train(
             swa.model.update_parameters(model)
             if epoch > start_epoch:
                 swa.scheduler.step()
-
-        # Train
-        if distributed:
-            train_sampler.set_epoch(epoch)
         
         train_one_epoch(
+            accelerator=accelerator,
             model=model,
             loss_fn=loss_fn,
             data_loader=train_loader,
@@ -112,28 +101,21 @@ def train(
             max_grad_norm=max_grad_norm,
             ema=ema,
             logger=logger,
-            device=device,
-            distributed_model=distributed_model,
-            rank=rank,
-            accelerator=accelerator,
         )
-        if distributed:
-            torch.distributed.barrier()
 
         # Validate
         if epoch % eval_interval == 0:
-            model_to_evaluate = model if distributed_model is None else distributed_model
             param_context = ema.average_parameters() if ema is not None else nullcontext()
             with param_context:
                 valid_loss, eval_metrics = evaluate(
-                    model=model_to_evaluate,
+                    model=model,
                     loss_fn=loss_fn,
                     data_loader=valid_loader,
                     output_args=output_args,
-                    device=device,
+                    device=accelerator.device,
                 )
             
-            if rank == 0:
+            if accelerator.process_index == 0:
                 eval_metrics["mode"] = "eval"
                 eval_metrics["epoch"] = epoch
                 logger.log(eval_metrics)
@@ -231,14 +213,14 @@ def train(
                             keep_last=keep_last,
                         )
                         keep_last = False
-        if distributed:
-            torch.distributed.barrier()
+
         epoch += 1
 
     logging.info("Training complete")
 
 
 def train_one_epoch(
+    accelerator: Accelerator,
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     data_loader: DataLoader,
@@ -248,31 +230,26 @@ def train_one_epoch(
     max_grad_norm: Optional[float],
     ema: Optional[ExponentialMovingAverage],
     logger: MetricsLogger,
-    device: torch.device,
-    distributed_model: Optional[DistributedDataParallel] = None,
-    rank: Optional[int] = 0,
-    accelerator: Optional["Accelerator"] = None,
 ) -> None:
-    model_to_train = model if distributed_model is None else distributed_model
+
     for batch in data_loader:
         _, opt_metrics = take_step(
-            model=model_to_train,
+            accelerator=accelerator,
+            model=model,
             loss_fn=loss_fn,
             batch=batch,
             optimizer=optimizer,
             ema=ema,
             output_args=output_args,
             max_grad_norm=max_grad_norm,
-            device=device,
-            accelerator=accelerator,
         )
         opt_metrics["mode"] = "opt"
         opt_metrics["epoch"] = epoch
-        if rank == 0:
-            logger.log(opt_metrics)
+        logger.log(opt_metrics)
 
 
 def take_step(
+    accelerator: Accelerator,
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     batch: torch_geometric.batch.Batch,
@@ -280,12 +257,8 @@ def take_step(
     ema: Optional[ExponentialMovingAverage],
     output_args: Dict[str, bool],
     max_grad_norm: Optional[float],
-    device: torch.device,
-    accelerator: Optional["Accelerator"],
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
-    if accelerator is None:
-        batch = batch.to(device)
     optimizer.zero_grad(set_to_none=True)
     batch_dict = batch.to_dict()
     output = model(
@@ -296,10 +269,8 @@ def take_step(
         compute_stress=output_args["stress"],
     )
     loss = loss_fn(pred=output, ref=batch)
-    if accelerator is None:
-        loss.backward()
-    else:
-        accelerator.backward(loss)
+    accelerator.backward(loss)
+
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
     optimizer.step()

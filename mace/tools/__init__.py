@@ -5,7 +5,6 @@ from .torch_tools import (
     TensorDict,
     cartesian_to_spherical,
     count_parameters,
-    init_device,
     init_wandb,
     set_default_dtype,
     set_seeds,
