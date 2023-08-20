@@ -9,7 +9,6 @@ import random
 import tqdm
 from glob import glob
 import h5py
-from joblib import Parallel, delayed
 from ase.io import read
 import torch
 import concurrent.futures
@@ -32,6 +31,7 @@ compute_stats_results = []
 def compute_stats_callback(result):
     compute_stats_results.append(result)
 
+
 def compute_stats_target(file, z_table, r_max, atomic_energies, batch_size):
     train_dataset = data.HDF5Dataset(file, z_table=z_table, r_max=r_max)
     train_loader = torch_geometric.dataloader.DataLoader(
@@ -45,7 +45,8 @@ def compute_stats_target(file, z_table, r_max, atomic_energies, batch_size):
     output = [avg_num_neighbors, mean, std]
     return output
 
-def pool_compute_stats(inputs): #inputs = (path_to_files, z_table, r_max, atomic_energies, batch_size, num_process)
+
+def pool_compute_stats(inputs): 
     path_to_files, z_table, r_max, atomic_energies, batch_size, num_process = inputs
     pool = mp.Pool(processes=num_process)
     
@@ -87,7 +88,6 @@ def main():
     This script loads an xyz dataset and prepares
     new hdf5 file that is ready for training with on-the-fly dataloading
     """
-
     args = tools.build_preprocess_arg_parser().parse_args()
     
     # Setup
@@ -194,8 +194,6 @@ def main():
         "r_max": args.r_max,
     }
     
-    # del train_dataset
-    # del train_loader
     with open(args.h5_prefix + "statistics.json", "w") as f:
         json.dump(statistics, f)
     
@@ -242,7 +240,6 @@ def main():
 
             for i in processes:
                 i.join()
-    finish = time.perf_counter()
 
 if __name__ == "__main__":
     main()
