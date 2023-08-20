@@ -5,6 +5,8 @@ from mace import data
 from mace.data.utils import Configuration
 from torch.utils.data import ConcatDataset
 from glob import glob
+from typing import List
+from mace.tools.utils import AtomicNumberTable
 
 
 class HDF5ChainDataset(ChainDataset):
@@ -155,7 +157,7 @@ class HDF5Dataset(Dataset):
         )
         return atomic_data
 
-def dataset_from_sharded_hdf5(files, z_table, r_max):
+def dataset_from_sharded_hdf5(files: List, z_table: AtomicNumberTable, r_max: float):
     files = glob(files+'/*')
     datasets = []
     for file in files:
