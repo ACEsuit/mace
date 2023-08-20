@@ -14,6 +14,8 @@ import torch
 import concurrent.futures
 import multiprocessing as mp
 import os
+from typing import List, Tuple
+
 
 from mace.tools import to_numpy
 from mace import tools, data
@@ -22,17 +24,12 @@ from mace.data.utils import (
     save_configurations_as_HDF5,
 )
 from mace.tools.scripts_utils import get_dataset_from_xyz, get_atomic_energies
+from mace.tools.utils import AtomicNumberTable
 from mace.tools import torch_geometric
 from mace.modules import compute_statistics
 
 
-compute_stats_results = []
-
-def compute_stats_callback(result):
-    compute_stats_results.append(result)
-
-
-def compute_stats_target(file, z_table, r_max, atomic_energies, batch_size):
+def compute_stats_target(file: str, z_table: AtomicNumberTable, r_max: float, atomic_energies: Tuple, batch_size: int):
     train_dataset = data.HDF5Dataset(file, z_table=z_table, r_max=r_max)
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_dataset, 
@@ -46,7 +43,7 @@ def compute_stats_target(file, z_table, r_max, atomic_energies, batch_size):
     return output
 
 
-def pool_compute_stats(inputs): 
+def pool_compute_stats(inputs: List): 
     path_to_files, z_table, r_max, atomic_energies, batch_size, num_process = inputs
     pool = mp.Pool(processes=num_process)
     
