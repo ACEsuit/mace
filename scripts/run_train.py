@@ -5,11 +5,10 @@
 ###########################################################################################
 
 import ast
+import json
 import logging
 from pathlib import Path
 from typing import Optional
-import json
-import os
 
 import numpy as np
 import torch.nn.functional
@@ -33,6 +32,10 @@ from mace.tools.scripts_utils import (
     get_files_with_suffix,
 )
 from mace.data import HDF5Dataset
+    LRScheduler,
+    create_error_table,
+    get_dataset_from_xyz,
+)
 
 
 def main() -> None:
@@ -234,6 +237,7 @@ def main() -> None:
         args.dipole_weight,
         dipole_only,
         compute_dipole,
+        args.huber_delta,
     )
     logging.info(loss_fn)
 
@@ -243,7 +247,7 @@ def main() -> None:
 
     # Selecting outputs
     compute_virials = False
-    if args.loss in ("stress", "virials"):
+    if args.loss in ("stress", "virials", "huber"):
         compute_virials = True
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
@@ -261,16 +265,17 @@ def main() -> None:
     logging.info("Building model")
     if args.num_channels is not None and args.max_L is not None:
         assert args.num_channels > 0, "num_channels must be positive integer"
-        assert (
-            args.max_L >= 0 and args.max_L < 4
-        ), "max_L must be between 0 and 3, if you want to use larger specify it via the hidden_irrpes keyword"
-        args.hidden_irreps = f"{args.num_channels:d}x0e"
-        if args.max_L > 0:
-            args.hidden_irreps += f" + {args.num_channels:d}x1o"
-        if args.max_L > 1:
-            args.hidden_irreps += f" + {args.num_channels:d}x2e"
-        if args.max_L > 2:
-            args.hidden_irreps += f" + {args.num_channels:d}x3o"
+        assert args.max_L >= 0, "max_L must be non-negative integer"
+        args.hidden_irreps = o3.Irreps(
+            (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+            .sort()
+            .irreps.simplify()
+        )
+
+    assert (
+        len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+    ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+
     logging.info(f"Hidden irreps: {args.hidden_irreps}")
 
     model_config = dict(
@@ -289,13 +294,14 @@ def main() -> None:
 
     model: torch.nn.Module
 
-    if args.scaling == "no_scaling":
-        args.std = 1.0
-        logging.info("No scaling selected")
-    elif args.mean is None or args.std is None:
-        args.mean, args.std = modules.scaling_classes[args.scaling](
-            train_loader, atomic_energies
-        )
+    if args.model == "MACE":
+        if args.scaling == "no_scaling":
+            std = 1.0
+            logging.info("No scaling selected")
+        else:
+            mean, std = modules.scaling_classes[args.scaling](
+                train_loader, atomic_energies
+            )
 
     if args.model == "MACE":
         model = modules.ScaleShiftMACE(
@@ -308,6 +314,8 @@ def main() -> None:
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
             atomic_inter_shift=0.0,
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
         )
     elif args.model == "ScaleShiftMACE":
         model = modules.ScaleShiftMACE(
@@ -316,8 +324,10 @@ def main() -> None:
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=args.std,
-            atomic_inter_shift=args.mean,
+            atomic_inter_scale=std,
+            atomic_inter_shift=mean,
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
         )
     elif args.model == "ScaleShiftBOTNet":
         model = modules.ScaleShiftBOTNet(
@@ -423,18 +433,7 @@ def main() -> None:
 
     logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + "_train")
 
-    if args.scheduler == "ExponentialLR":
-        lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            optimizer=optimizer, gamma=args.lr_scheduler_gamma
-        )
-    elif args.scheduler == "ReduceLROnPlateau":
-        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer=optimizer,
-            factor=args.lr_factor,
-            patience=args.scheduler_patience,
-        )
-    else:
-        raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
+    lr_scheduler = LRScheduler(optimizer, args)
 
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
@@ -503,7 +502,7 @@ def main() -> None:
                 swa=True,
                 device=device,
             )
-        except:
+        except Exception as e:  # pylint: disable=W0703
             opt_start_epoch = checkpoint_handler.load_latest(
                 state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=False,
@@ -621,6 +620,8 @@ def main() -> None:
         model_to_evaluate = model if not args.distributed else distributed_model
         logging.info(f"Loaded model from epoch {epoch}")
 
+        for param in model.parameters():
+            param.requires_grad = False
         table = create_error_table(
             table_type=args.error_table,
             all_data_loaders=all_data_loaders,

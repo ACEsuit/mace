@@ -211,16 +211,22 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
-            if len(atoms) == 1 and atoms.info["config_type"] == "IsolatedAtom":
-                if energy_key in atoms.info.keys():
-                    atomic_energies_dict[atoms.get_atomic_numbers()[0]] = atoms.info[
-                        energy_key
-                    ]
-                else:
-                    logging.warning(
-                        f"Configuration '{idx}' is marked as 'IsolatedAtom' "
-                        "but does not contain an energy."
-                    )
+            if len(atoms) == 1:
+                try:
+                    if atoms.info["config_type"] == "IsolatedAtom":
+                        isolated_atom_config = True
+                except Exception:  # pylint: disable=W0703
+                    isolated_atom_config = False
+                if isolated_atom_config:
+                    if energy_key in atoms.info.keys():
+                        atomic_energies_dict[
+                            atoms.get_atomic_numbers()[0]
+                        ] = atoms.info[energy_key]
+                    else:
+                        logging.warning(
+                            f"Configuration '{idx}' is marked as 'IsolatedAtom' "
+                            "but does not contain an energy."
+                        )
             else:
                 atoms_without_iso_atoms.append(atoms)
 

@@ -109,9 +109,18 @@ def voigt_to_matrix(t: torch.Tensor):
     """
     if t.shape == (3, 3):
         return t
+    if t.shape == (6,):
+        return torch.tensor(
+            [
+                [t[0], t[5], t[4]],
+                [t[5], t[1], t[3]],
+                [t[4], t[3], t[2]],
+            ],
+            dtype=t.dtype,
+        )
 
-    return torch.tensor(
-        [[t[0], t[5], t[4]], [t[5], t[1], t[3]], [t[4], t[3], t[2]]], dtype=t.dtype
+    raise ValueError(
+        f"Stress tensor must be of shape (6,) or (3, 3), but has shape {t.shape}"
     )
 
 
