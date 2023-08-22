@@ -12,26 +12,14 @@ import numpy as np
 import torch
 
 from mace import data
-from mace.tools import torch_geometric, utils, torch_tools
+from mace.tools import torch_geometric, torch_tools, utils
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--configs", 
-        help="path to XYZ configurations", 
-        required=True
-    )
-    parser.add_argument(
-        "--model", 
-        help="path to model", 
-        required=True
-    )
-    parser.add_argument(
-        "--output", 
-        help="output path", 
-        required=True
-    )
+    parser.add_argument("--configs", help="path to XYZ configurations", required=True)
+    parser.add_argument("--model", help="path to model", required=True)
+    parser.add_argument("--output", help="output path", required=True)
     parser.add_argument(
         "--device",
         help="select device",
@@ -46,12 +34,7 @@ def parse_args() -> argparse.Namespace:
         choices=["float32", "float64"],
         default="float64",
     )
-    parser.add_argument(
-        "--batch_size", 
-        help="batch size", 
-        type=int, 
-        default=64
-    )
+    parser.add_argument("--batch_size", help="batch size", type=int, default=64)
     parser.add_argument(
         "--compute_stress",
         help="compute stress",
@@ -80,6 +63,12 @@ def main():
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+    model = model.to(
+        args.device
+    )  # shouldn't be necessary but seems to help wtih CUDA problems
+
+    for param in model.parameters():
+        param.requires_grad = False
 
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, index=":")
@@ -89,7 +78,9 @@ def main():
 
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
-            data.AtomicData.from_config(config, z_table=z_table, cutoff=float(model.r_max))
+            data.AtomicData.from_config(
+                config, z_table=z_table, cutoff=float(model.r_max)
+            )
             for config in configs
         ],
         batch_size=args.batch_size,
@@ -114,7 +105,9 @@ def main():
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
 
         forces = np.split(
-            torch_tools.to_numpy(output["forces"]), indices_or_sections=batch.ptr[1:], axis=0
+            torch_tools.to_numpy(output["forces"]),
+            indices_or_sections=batch.ptr[1:],
+            axis=0,
         )
         forces_collection.append(forces[:-1])  # drop last as its emtpy
 
@@ -122,7 +115,7 @@ def main():
     forces_list = [
         forces for forces_list in forces_collection for forces in forces_list
     ]
-    assert len(atoms_list) == len(energies) == len(forces_list) 
+    assert len(atoms_list) == len(energies) == len(forces_list)
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)
         assert len(atoms_list) == stresses.shape[0]

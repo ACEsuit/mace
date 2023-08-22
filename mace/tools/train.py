@@ -84,7 +84,7 @@ def train(
         if swa is None or epoch < swa.start:
             if epoch > start_epoch:
                 lr_scheduler.step(
-                    valid_loss
+                    metrics=valid_loss
                 )  # Can break if exponential LR, TODO fix that!
         else:
             if swa_start:
@@ -100,7 +100,7 @@ def train(
         # Train
         if distributed:
             train_sampler.set_epoch(epoch)
-        
+
         train_one_epoch(
             model=model,
             loss_fn=loss_fn,
@@ -120,8 +120,12 @@ def train(
 
         # Validate
         if epoch % eval_interval == 0:
-            model_to_evaluate = model if distributed_model is None else distributed_model
-            param_context = ema.average_parameters() if ema is not None else nullcontext()
+            model_to_evaluate = (
+                model if distributed_model is None else distributed_model
+            )
+            param_context = (
+                ema.average_parameters() if ema is not None else nullcontext()
+            )
             with param_context:
                 valid_loss, eval_metrics = evaluate(
                     model=model_to_evaluate,
@@ -130,34 +134,88 @@ def train(
                     output_args=output_args,
                     device=device,
                 )
-            
+
             if rank == 0:
                 eval_metrics["mode"] = "eval"
                 eval_metrics["epoch"] = epoch
                 logger.log(eval_metrics)
                 if log_errors == "PerAtomRMSE":
-                    error_e = eval_metrics["rmse_e_per_atom"] * 1e3
-                    error_f = eval_metrics["rmse_f"] * 1e3
-                    logging.info(
-                        f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
-                    )
-                elif (
-                    log_errors == "PerAtomRMSEstressvirials"
-                    and eval_metrics["rmse_stress_per_atom"] is not None
-                ):
-                    error_e = eval_metrics["rmse_e_per_atom"] * 1e3
-                    error_f = eval_metrics["rmse_f"] * 1e3
-                    error_stress = eval_metrics["rmse_stress_per_atom"] * 1e3
-                    logging.info(
-                        f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress_per_atom={error_stress:.1f} meV / A^3"
-                    )
-                elif (
-                    log_errors == "PerAtomRMSEstressvirials"
-                    and eval_metrics["rmse_virials_per_atom"] is not None
-                ):
-                    error_e = eval_metrics["rmse_e_per_atom"] * 1e3
-                    error_f = eval_metrics["rmse_f"] * 1e3
-                    error_virials = eval_metrics["rmse_virials_per_atom"] * 1e3
+                    eval_metrics["mode"] = "eval"
+                    eval_metrics["epoch"] = epoch
+                    logger.log(eval_metrics)
+                    if log_errors == "PerAtomRMSE":
+                        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+                        error_f = eval_metrics["rmse_f"] * 1e3
+                        logging.info(
+                            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
+                        )
+                    elif (
+                        log_errors == "PerAtomRMSEstressvirials"
+                        and eval_metrics["rmse_stress_per_atom"] is not None
+                    ):
+                        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+                        error_f = eval_metrics["rmse_f"] * 1e3
+                        error_stress = eval_metrics["rmse_stress_per_atom"] * 1e3
+                        logging.info(
+                            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress_per_atom={error_stress:.1f} meV / A^3"
+                        )
+                    elif (
+                        log_errors == "PerAtomRMSEstressvirials"
+                        and eval_metrics["rmse_virials_per_atom"] is not None
+                    ):
+                        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+                        error_f = eval_metrics["rmse_f"] * 1e3
+                        error_virials = eval_metrics["rmse_virials_per_atom"] * 1e3
+                        logging.info(
+                            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_virials_per_atom={error_virials:.1f} meV"
+                        )
+                    elif log_errors == "TotalRMSE":
+                        error_e = eval_metrics["rmse_e"] * 1e3
+                        error_f = eval_metrics["rmse_f"] * 1e3
+                        logging.info(
+                            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
+                        )
+                    elif log_errors == "PerAtomMAE":
+                        error_e = eval_metrics["mae_e_per_atom"] * 1e3
+                        error_f = eval_metrics["mae_f"] * 1e3
+                        logging.info(
+                            f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E_per_atom={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+                        )
+                    elif log_errors == "TotalMAE":
+                        error_e = eval_metrics["mae_e"] * 1e3
+                        error_f = eval_metrics["mae_f"] * 1e3
+                        logging.info(
+                            f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+                        )
+                    elif log_errors == "DipoleRMSE":
+                        error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
+                        logging.info(
+                            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye"
+                        )
+                    elif log_errors == "EnergyDipoleRMSE":
+                        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+                        error_f = eval_metrics["rmse_f"] * 1e3
+                        error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
+                        logging.info(
+                            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_Mu_per_atom={error_mu:.2f} mDebye"
+                        )
+                    if log_wandb:
+                        wandb_log_dict = {
+                            "epoch": epoch,
+                            "valid_loss": valid_loss,
+                            "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
+                            "valid_rmse_f": eval_metrics["rmse_f"],
+                        }
+                        wandb.log(wandb_log_dict)
+            if valid_loss >= lowest_loss:
+                patience_counter += 1
+                if swa is not None:
+                    if patience_counter >= patience and epoch < swa.start:
+                        logging.info(
+                            f"Stopping optimization after {patience_counter} epochs without improvement and starting swa"
+                        )
+                        epoch = swa.start
+                elif patience_counter >= patience:
                     logging.info(
                         f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_virials_per_atom={error_virials:.1f} meV"
                     )
@@ -294,7 +352,7 @@ def take_step(
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
     optimizer.step()
-    
+
     if ema is not None:
         ema.update()
 
@@ -313,12 +371,11 @@ def evaluate(
     output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-
     for param in model.parameters():
         param.requires_grad = False
-        
+
     metrics = MACELoss(loss_fn=loss_fn).to(device)
-    
+
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
@@ -335,10 +392,10 @@ def evaluate(
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time
     metrics.reset()
-    
+
     for param in model.parameters():
         param.requires_grad = True
-    
+
     return avg_loss, aux
 
 
@@ -354,10 +411,14 @@ class MACELoss(Metric):
         self.add_state("Fs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("fs", default=[], dist_reduce_fx="cat")
         self.add_state("delta_fs", default=[], dist_reduce_fx="cat")
-        self.add_state("stress_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "stress_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
         self.add_state("delta_stress", default=[], dist_reduce_fx="cat")
         self.add_state("delta_stress_per_atom", default=[], dist_reduce_fx="cat")
-        self.add_state("virials_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "virials_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
         self.add_state("delta_virials", default=[], dist_reduce_fx="cat")
         self.add_state("delta_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("Mus_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
@@ -402,7 +463,7 @@ class MACELoss(Metric):
                 (batch.dipole - output["dipole"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
-    
+
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):
             delta = torch.cat(delta)
@@ -452,6 +513,5 @@ class MACELoss(Metric):
             aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
             aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
             aux["q95_mu"] = compute_q95(delta_mus)
-            
+
         return aux["loss"], aux
-    
