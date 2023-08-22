@@ -458,15 +458,11 @@ def main() -> None:
     if args.restart_latest:
         try:
             opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=True,
-                device=accelerator.device,
             )
         except:
             opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=False,
-                device=accelerator.device,
             )
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
@@ -552,9 +548,7 @@ def main() -> None:
 
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
-            state=tools.CheckpointState(model, optimizer, lr_scheduler),
             swa=swa_eval,
-            device=accelerator.device,
         )
 
         logging.info(f"Loaded model from epoch {epoch}")

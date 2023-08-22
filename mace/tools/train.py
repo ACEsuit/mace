@@ -19,7 +19,7 @@ from torchmetrics import Metric
 from accelerate import Accelerator
 
 from . import torch_geometric
-from .checkpoint import CheckpointHandler, CheckpointState
+from .checkpoint import CheckpointHandler
 from .torch_tools import to_numpy
 from .utils import (
     MetricsLogger,
@@ -201,14 +201,12 @@ def train(
                     if ema is not None:
                         with ema.average_parameters():
                             checkpoint_handler.save(
-                                state=CheckpointState(model, optimizer, lr_scheduler),
                                 epochs=epoch,
                                 keep_last=keep_last,
                             )
                             keep_last = False
                     else:
                         checkpoint_handler.save(
-                            state=CheckpointState(model, optimizer, lr_scheduler),
                             epochs=epoch,
                             keep_last=keep_last,
                         )

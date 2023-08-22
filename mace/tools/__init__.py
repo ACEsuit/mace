@@ -1,6 +1,6 @@
 from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
 from .cg import U_matrix_real
-from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
+from .checkpoint import CheckpointHandler
 from .torch_tools import (
     TensorDict,
     cartesian_to_spherical,
@@ -50,8 +50,6 @@ __all__ = [
     "evaluate",
     "SWAContainer",
     "CheckpointHandler",
-    "CheckpointIO",
-    "CheckpointState",
     "set_default_dtype",
     "compute_mae",
     "compute_rel_mae",
