@@ -11,7 +11,6 @@ from glob import glob
 import h5py
 from ase.io import read
 import torch
-import concurrent.futures
 import multiprocessing as mp
 import os
 from typing import List, Tuple
