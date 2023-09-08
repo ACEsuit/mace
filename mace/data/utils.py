@@ -207,11 +207,12 @@ def load_from_xyz(
 
         for idx, atoms in enumerate(atoms_list):
             if len(atoms) == 1:
+                isolated_atom_config = False
                 try:
                     if atoms.info["config_type"] == "IsolatedAtom":
                         isolated_atom_config = True
                 except Exception:  # pylint: disable=W0703
-                    isolated_atom_config = False
+                    pass
                 if isolated_atom_config:
                     if energy_key in atoms.info.keys():
                         atomic_energies_dict[
