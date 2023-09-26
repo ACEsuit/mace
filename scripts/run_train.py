@@ -50,10 +50,6 @@ def main() -> None:
         )
         config_type_weights = {"Default": 1.0}
 
-    if args.train_atomic_target is not None:
-        logging.info(f"Training atomic target model on {args.atomic_target_key}")
-        args.error_table = "PerAtomTargetRMSE"
-
 
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
@@ -76,6 +72,17 @@ def main() -> None:
         f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
         f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}]"
     )
+
+    if args.atomic_target_key is not None:
+        logging.info(f"Training atomic target model on {args.atomic_target_key}")
+        args.error_table = "PerAtomTargetRMSE"
+        compute_per_node_target = True
+        args.compute_forces = False  # no forces for atomic target pred
+        args.compute_stress = False
+        args.loss = "atomic_target_loss"
+        atomic_energies_dict = None
+    else:
+        compute_per_node_target = False
 
     # Atomic number table
     # yapf: disable
@@ -118,14 +125,6 @@ def main() -> None:
                     atomic_energies_dict = data.compute_average_E0s(
                         collections.train, z_table
                     )
-                elif args.atomic_target_key is not None:
-                    logging.info(
-                        "Computing average Atomic Target for scaling"
-                    )
-                    atomic_energies_dict, atomic_scale = data.compute_average_node_target(
-                        collections.train, z_table
-                    )
-                    args.compute_forces = False  # no forces for atomic target pred
                 else:
                     try:
                         atomic_energies_dict = ast.literal_eval(args.E0s)
@@ -135,9 +134,17 @@ def main() -> None:
                             f"E0s specified invalidly, error {e} occured"
                         ) from e
             else:
-                raise RuntimeError(
-                    "E0s not found in training file and not specified in command line"
-                )
+                if compute_per_node_target:
+                    logging.info(
+                        "Computing average Atomic Target for scaling"
+                    )
+                    atomic_energies_dict, atomic_scale = data.compute_average_node_target(
+                        collections.train, z_table
+                    )
+                else:
+                    raise RuntimeError(
+                        "E0s not found in training file and not specified in command line"
+                    )
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
@@ -202,6 +209,8 @@ def main() -> None:
             forces_weight=args.forces_weight,
             dipole_weight=args.dipole_weight,
         )
+    elif args.loss == "atomic_target_loss":
+        loss_fn = modules.PerNodesLoss()
     else:
         # Unweighted Energy and Forces loss by default
         loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
@@ -224,6 +233,7 @@ def main() -> None:
         "virials": compute_virials,
         "stress": args.compute_stress,
         "dipoles": compute_dipole,
+        "per_node_output": compute_per_node_target,
     }
     logging.info(f"Selected the following outputs: {output_args}")
 
@@ -263,7 +273,7 @@ def main() -> None:
         if args.scaling == "no_scaling":
             std = 1.0
             logging.info("No scaling selected")
-        elif args.atomic_target_key is not None:
+        elif compute_per_node_target:
             mean = 0.0
             std = atomic_scale
         else:
@@ -435,7 +445,7 @@ def main() -> None:
             logging.info(
                 f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
             )
-        elif args.atomic_target_key is not None:
+        elif args.loss == "atomic_target_loss":
             loss_fn_energy = modules.PerNodesLoss()
         else:
             loss_fn_energy = modules.WeightedEnergyForcesLoss(

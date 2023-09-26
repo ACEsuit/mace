@@ -26,7 +26,6 @@ from .utils import (
     compute_rel_rmse,
     compute_rmse,
 )
-from mace.modules import PerNodesLoss
 
 
 @dataclasses.dataclass
@@ -182,6 +181,11 @@ def train(
                 logging.info(
                     f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_Mu_per_atom={error_mu:.2f} mDebye"
                 )
+            elif log_errors == "PerAtomTargetRMSE":
+                error_target = eval_metrics["rmse_per_nodes_target"] * 1e3
+                logging.info(
+                    f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_target={error_target:.1f}"
+                )
             if log_wandb:
                 wandb_log_dict = {
                     "epoch": epoch,
@@ -277,6 +281,7 @@ def evaluate(
     delta_es_per_atom_list = []
     per_node_targets_list = []
     delta_per_nodes_target_list = []
+    per_target_output_computed = False
     delta_fs_list = []
     Fs_computed = False
     fs_list = []
@@ -310,7 +315,7 @@ def evaluate(
         total_loss += to_numpy(loss).item()
 
         if output.get("energy") is not None and batch.energy is not None:
-            if not isinstance(loss_fn, PerNodesLoss):
+            if output_args["per_node_output"] is False:
                 E_computed = True
                 delta_es_list.append(batch.energy - output["energy"])
                 delta_es_per_atom_list.append(
@@ -368,14 +373,15 @@ def evaluate(
         delta_per_nodes_target = to_numpy(
             torch.cat(delta_per_nodes_target_list, dim=0)
         )
+        per_node_targets = to_numpy(torch.cat(per_node_targets_list, dim=0))
         aux["mae_per_nodes_target"] = compute_mae(delta_per_nodes_target)
         aux["rmse_per_nodes_target"] = compute_rmse(delta_per_nodes_target)
         aux["q95_per_nodes_target"] = compute_q95(delta_per_nodes_target)
         aux["rel_mae_nodes_target"] = compute_rel_mae(
-            delta_per_nodes_target, per_node_targets_list
+            delta_per_nodes_target, per_node_targets
         )
         aux["rel_rmse_nodes_target"] = compute_rel_rmse(
-            delta_per_nodes_target, per_node_targets_list
+            delta_per_nodes_target, per_node_targets
         )
     if Fs_computed:
         delta_fs = to_numpy(torch.cat(delta_fs_list, dim=0))

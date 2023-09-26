@@ -37,7 +37,7 @@ class Configuration:
     virials: Optional[Virials] = None  # eV
     dipole: Optional[Vector] = None  # Debye
     charges: Optional[Charges] = None  # atomic unit
-    atomic_target: Optional[Charges] = None
+    node_target: Optional[Charges] = None
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -163,7 +163,7 @@ def config_from_atoms(
         virials=virials,
         dipole=dipole,
         charges=charges,
-        atomic_target=atomic_target,
+        node_target=atomic_target,
         weight=weight,
         energy_weight=energy_weight,
         forces_weight=forces_weight,
@@ -295,7 +295,7 @@ def compute_average_node_target(
             z = collections_train[i].atomic_numbers[j]
             if z not in elementwise_targets.keys():
                 elementwise_targets[z] = []
-            elementwise_targets[z].append(collections_train[i].atomic_target[j])
+            elementwise_targets[z].append(collections_train[i].node_target[j])
 
     atomic_energies_dict = {}
     atomic_scales = []
