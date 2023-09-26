@@ -77,6 +77,7 @@ def main() -> None:
         logging.info(f"Training atomic target model on {args.atomic_target_key}")
         args.error_table = "PerAtomTargetRMSE"
         compute_per_node_target = True
+        args.E0s = None
         args.compute_forces = False  # no forces for atomic target pred
         args.compute_stress = False
         args.loss = "atomic_target_loss"
@@ -118,7 +119,7 @@ def main() -> None:
                 logging.info(
                     "Atomic Energies not in training file, using command line argument E0s"
                 )
-                if args.E0s.lower() == "average" and args.atomic_target_key is None:
+                if args.E0s.lower() == "average":
                     logging.info(
                         "Computing average Atomic Energies using least squares regression"
                     )

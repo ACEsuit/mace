@@ -301,5 +301,7 @@ def compute_average_node_target(
     atomic_scales = []
     for i, z in enumerate(z_table.zs):
         atomic_energies_dict[z] = np.mean(elementwise_targets[z])
-        atomic_scales.append(np.std(elementwise_targets[z]))
-    return atomic_energies_dict, np.mean(np.array(atomic_scales))
+        atomic_scales.append((len(elementwise_targets[z]), np.std(elementwise_targets[z])))
+    # compute weighted average of scales with tuple element 0 ebing the weight and element 1 the value to average
+    scale = np.average([x[1] for x in atomic_scales], weights=[x[0] for x in atomic_scales])
+    return atomic_energies_dict, scale
