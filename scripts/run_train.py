@@ -50,6 +50,11 @@ def main() -> None:
         )
         config_type_weights = {"Default": 1.0}
 
+    if args.train_atomic_target is not None:
+        logging.info(f"Training atomic target model on {args.atomic_target_key}")
+        args.error_table = "PerAtomTargetRMSE"
+
+
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
         train_path=args.train_file,
@@ -64,6 +69,7 @@ def main() -> None:
         virials_key=args.virials_key,
         dipole_key=args.dipole_key,
         charges_key=args.charges_key,
+        atomic_target_key=args.atomic_target_key,
     )
 
     logging.info(
@@ -105,13 +111,21 @@ def main() -> None:
                 logging.info(
                     "Atomic Energies not in training file, using command line argument E0s"
                 )
-                if args.E0s.lower() == "average":
+                if args.E0s.lower() == "average" and args.atomic_target_key is None:
                     logging.info(
                         "Computing average Atomic Energies using least squares regression"
                     )
                     atomic_energies_dict = data.compute_average_E0s(
                         collections.train, z_table
                     )
+                elif args.atomic_target_key is not None:
+                    logging.info(
+                        "Computing average Atomic Target for scaling"
+                    )
+                    atomic_energies_dict, atomic_scale = data.compute_average_node_target(
+                        collections.train, z_table
+                    )
+                    args.compute_forces = False  # no forces for atomic target pred
                 else:
                     try:
                         atomic_energies_dict = ast.literal_eval(args.E0s)
@@ -249,6 +263,9 @@ def main() -> None:
         if args.scaling == "no_scaling":
             std = 1.0
             logging.info("No scaling selected")
+        elif args.atomic_target_key is not None:
+            mean = 0.0
+            std = atomic_scale
         else:
             mean, std = modules.scaling_classes[args.scaling](
                 train_loader, atomic_energies
@@ -418,6 +435,8 @@ def main() -> None:
             logging.info(
                 f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
             )
+        elif args.atomic_target_key is not None:
+            loss_fn_energy = modules.PerNodesLoss()
         else:
             loss_fn_energy = modules.WeightedEnergyForcesLoss(
                 energy_weight=args.swa_energy_weight,

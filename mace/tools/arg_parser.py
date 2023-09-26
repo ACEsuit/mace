@@ -271,6 +271,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="charges",
     )
+    parser.add_argument(
+        "--atomic_target_key",
+        help="Key of atomic target in training xyz",
+        type=str,
+        default=None,
+    )
 
     # Loss and optimization
     parser.add_argument(
@@ -286,6 +292,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "dipole",
             "huber",
             "energy_forces_dipole",
+            "atomic_target_loss",
         ],
     )
     parser.add_argument(

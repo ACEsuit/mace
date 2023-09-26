@@ -36,6 +36,7 @@ def get_dataset_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
+    atomic_target_key: str = 'hirshfeld_volumes',
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
     atomic_energies_dict, all_train_configs = data.load_from_xyz(
@@ -47,6 +48,7 @@ def get_dataset_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        atomic_target_key=atomic_target_key,
         extract_atomic_energies=True,
     )
     logging.info(
@@ -62,6 +64,7 @@ def get_dataset_from_xyz(
             virials_key=virials_key,
             dipole_key=dipole_key,
             charges_key=charges_key,
+            atomic_target_key=atomic_target_key,
             extract_atomic_energies=False,
         )
         logging.info(
@@ -85,6 +88,7 @@ def get_dataset_from_xyz(
             forces_key=forces_key,
             dipole_key=dipole_key,
             charges_key=charges_key,
+            atomic_target_key=atomic_target_key,
             extract_atomic_energies=False,
         )
         # create list of tuples (config_type, list(Atoms))
@@ -197,6 +201,12 @@ def create_error_table(
             "rel F RMSE %",
             "RMSE MU / mDebye / atom",
             "rel MU RMSE %",
+        ]
+    elif table_type == "PerAtomTargetRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE Target / atom",
+            "rel Target RMSE %",
         ]
     for name, subset in all_collections:
         data_loader = torch_geometric.dataloader.DataLoader(
@@ -313,6 +323,14 @@ def create_error_table(
                     f"{metrics['rel_rmse_f']:.1f}",
                     f"{metrics['rmse_mu_per_atom'] * 1000:.1f}",
                     f"{metrics['rel_rmse_mu']:.1f}",
+                ]
+            )
+        elif table_type == "PerAtomTargetRMSE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_per_nodes_target']:.1f}",
+                    f"{metrics['rel_rmse_nodes_target']:.1f}",
                 ]
             )
     return table
