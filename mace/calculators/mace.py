@@ -70,6 +70,8 @@ class MACECalculator(Calculator):
                 "stress",
                 "dipole",
             ]
+        elif model_type == "AtomicTargetMACE":
+            self.implemented_properties = ["atomic_target"]
         else:
             raise ValueError(
                 f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
@@ -146,6 +148,9 @@ class MACECalculator(Calculator):
         if model_type in ["EnergyDipoleMACE", "DipoleMACE"]:
             dipole = torch.zeros(num_models, 3, device=self.device)
             dict_of_tensors.update({"dipole": dipole})
+        if model_type == "AtomicTargetMACE":
+            atomic_target = torch.zeros(num_models, num_atoms, device=self.device)
+            dict_of_tensors.update({"atomic_target": atomic_target})
         return dict_of_tensors
 
     # pylint: disable=dangerous-default-value
@@ -195,6 +200,8 @@ class MACECalculator(Calculator):
                     ret_tensors["stress"][i] = out["stress"].detach()
             if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
                 ret_tensors["dipole"][i] = out["dipole"].detach()
+            if self.model_type == "AtomicTargetMACE":
+                ret_tensors["atomic_target"][i] = out["node_energy"].detach()
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
@@ -247,6 +254,16 @@ class MACECalculator(Calculator):
             if self.num_models > 1:
                 self.results["dipole_var"] = (
                     torch.var(ret_tensors["dipole"], dim=0, unbiased=False)
+                    .cpu()
+                    .numpy()
+                )
+        if self.model_type == "AtomicTargetMACE":
+            self.results["atomic_target"] = (
+                torch.mean(ret_tensors["atomic_target"], dim=0).cpu().numpy()
+            )
+            if self.num_models > 1:
+                self.results["atomic_target_var"] = (
+                    torch.var(ret_tensors["atomic_target"], dim=0, unbiased=False)
                     .cpu()
                     .numpy()
                 )

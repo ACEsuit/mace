@@ -211,7 +211,7 @@ def main() -> None:
             dipole_weight=args.dipole_weight,
         )
     elif args.loss == "atomic_target_loss":
-        loss_fn = modules.PerNodesLoss()
+        loss_fn = modules.PerNodesLoss(args.atomic_target_loss_scale)
     else:
         # Unweighted Energy and Forces loss by default
         loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
@@ -447,7 +447,7 @@ def main() -> None:
                 f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
             )
         elif args.loss == "atomic_target_loss":
-            loss_fn_energy = modules.PerNodesLoss()
+            loss_fn_energy = modules.PerNodesLoss(args.atomic_target_loss_scale)
         else:
             loss_fn_energy = modules.WeightedEnergyForcesLoss(
                 energy_weight=args.swa_energy_weight,

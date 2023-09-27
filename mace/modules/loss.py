@@ -265,11 +265,12 @@ class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
 
 
 class PerNodesLoss(torch.nn.Module):
-    def __init__(self, ) -> None:
+    def __init__(self, loss_scale=100) -> None:
         super().__init__()
-
+        self.loss_scale = loss_scale
+        
     def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
-        return  mean_squared_error_per_atom(ref, pred)
+        return  self.loss_scale * mean_squared_error_per_atom(ref, pred)
 
     def __repr__(self):
         return (

@@ -277,6 +277,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "--atomic_target_loss_scale",
+        help="Prefactor of loss function for atomic target",
+        type=float,
+        default=100,
+    )
 
     # Loss and optimization
     parser.add_argument(
