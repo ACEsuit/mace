@@ -37,8 +37,10 @@ def fixture_fitting_configs():
         c.info["REF_energy"] = np.random.normal(0.1)
         c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
         c.info["REF_stress"] = np.random.normal(0.1, size=6)
-        c.new_array("REF_atomic_target", np.random.normal(0.1, size=len(c)))
         fit_configs.append(c)
+
+    for c in fit_configs:
+        c.new_array("REF_atomic_target", np.random.normal(0.1, size=len(c)))
 
     return fit_configs
 
