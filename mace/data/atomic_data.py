@@ -37,6 +37,7 @@ class AtomicData(torch_geometric.data.Data):
     virials: torch.Tensor
     dipole: torch.Tensor
     charges: torch.Tensor
+    node_target: torch.Tensor
     weight: torch.Tensor
     energy_weight: torch.Tensor
     forces_weight: torch.Tensor
@@ -62,6 +63,7 @@ class AtomicData(torch_geometric.data.Data):
         virials: Optional[torch.Tensor],  # [1,3,3]
         dipole: Optional[torch.Tensor],  # [, 3]
         charges: Optional[torch.Tensor],  # [n_nodes, ]
+        node_target: Optional[torch.Tensor],  # [n_nodes, ]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -83,6 +85,7 @@ class AtomicData(torch_geometric.data.Data):
         assert virials is None or virials.shape == (1, 3, 3)
         assert dipole is None or dipole.shape[-1] == 3
         assert charges is None or charges.shape == (num_nodes,)
+        assert node_target is None or node_target.shape == (num_nodes,)
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -103,6 +106,7 @@ class AtomicData(torch_geometric.data.Data):
             "virials": virials,
             "dipole": dipole,
             "charges": charges,
+            "node_target": node_target,
         }
         super().__init__(**data)
 
@@ -189,7 +193,11 @@ class AtomicData(torch_geometric.data.Data):
             if config.charges is not None
             else None
         )
-
+        node_target = (
+            torch.tensor(config.node_target, dtype=torch.get_default_dtype())
+            if config.node_target is not None
+            else None
+        )
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
             positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
@@ -208,6 +216,7 @@ class AtomicData(torch_geometric.data.Data):
             virials=virials,
             dipole=dipole,
             charges=charges,
+            node_target=node_target,
         )
 
 

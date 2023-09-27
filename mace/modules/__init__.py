@@ -28,6 +28,7 @@ from .loss import (
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
+    PerNodesLoss,
 )
 from .models import (
     MACE,
@@ -101,4 +102,5 @@ __all__ = [
     "compute_mean_std_atomic_inter_energy",
     "compute_avg_num_neighbors",
     "compute_fixed_charge_dipole",
+    "PerNodesLoss",
 ]

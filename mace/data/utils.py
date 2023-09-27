@@ -37,6 +37,7 @@ class Configuration:
     virials: Optional[Virials] = None  # eV
     dipole: Optional[Vector] = None  # Debye
     charges: Optional[Charges] = None  # atomic unit
+    node_target: Optional[Charges] = None
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -77,6 +78,7 @@ def config_from_atoms_list(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    atomic_target_key="hirshfeld_volumes",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -94,6 +96,7 @@ def config_from_atoms_list(
                 virials_key=virials_key,
                 dipole_key=dipole_key,
                 charges_key=charges_key,
+                atomic_target_key=atomic_target_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -108,6 +111,7 @@ def config_from_atoms(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    atomic_target_key="hirshfeld_volumes",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -121,6 +125,7 @@ def config_from_atoms(
     dipole = atoms.info.get(dipole_key, None)  # Debye
     # Charges default to 0 instead of None if not found
     charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
+    atomic_target = atoms.arrays.get(atomic_target_key, None)  
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -158,6 +163,7 @@ def config_from_atoms(
         virials=virials,
         dipole=dipole,
         charges=charges,
+        node_target=atomic_target,
         weight=weight,
         energy_weight=energy_weight,
         forces_weight=forces_weight,
@@ -194,6 +200,7 @@ def load_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipole",
     charges_key: str = "charges",
+    atomic_target_key: str = 'hirshfeld_volumes',
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
@@ -239,6 +246,7 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        atomic_target_key=atomic_target_key,
     )
     return atomic_energies_dict, configs
 
@@ -271,3 +279,29 @@ def compute_average_E0s(
         for i, z in enumerate(z_table.zs):
             atomic_energies_dict[z] = 0.0
     return atomic_energies_dict
+
+def compute_average_node_target(
+    collections_train: Configurations, z_table: AtomicNumberTable, 
+) -> Tuple[Dict[int, float], float]:
+    """
+    Function to compute the average node target and node std of each chemical element
+    returns two dictionaries with average and scale
+    """
+    len_train = len(collections_train)
+    len_zs = len(z_table)
+    elementwise_targets = {}
+    for i in range(len_train):
+        for j in range(len(collections_train[i].atomic_numbers)):
+            z = collections_train[i].atomic_numbers[j]
+            if z not in elementwise_targets.keys():
+                elementwise_targets[z] = []
+            elementwise_targets[z].append(collections_train[i].node_target[j])
+
+    atomic_energies_dict = {}
+    atomic_scales = []
+    for i, z in enumerate(z_table.zs):
+        atomic_energies_dict[z] = np.mean(elementwise_targets[z])
+        atomic_scales.append((len(elementwise_targets[z]), np.std(elementwise_targets[z])))
+    # compute weighted average of scales with tuple element 0 ebing the weight and element 1 the value to average
+    scale = np.average([x[1] for x in atomic_scales], weights=[x[0] for x in atomic_scales])
+    return atomic_energies_dict, scale

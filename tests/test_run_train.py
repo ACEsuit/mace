@@ -39,6 +39,9 @@ def fixture_fitting_configs():
         c.info["REF_stress"] = np.random.normal(0.1, size=6)
         fit_configs.append(c)
 
+    for c in fit_configs:
+        c.new_array("REF_atomic_target", np.random.normal(0.1, size=len(c)))
+
     return fit_configs
 
 
@@ -274,3 +277,37 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
         -0.02801561982433547,
     ]
     assert np.allclose(Es, ref_Es)
+
+def test_run_train_node_target(tmp_path, fitting_configs):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["atomic_target_key"] = "REF_atomic_target"
+
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+

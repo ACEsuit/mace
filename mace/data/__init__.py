@@ -9,6 +9,7 @@ from .utils import (
     load_from_xyz,
     random_train_valid_split,
     test_config_types,
+    compute_average_node_target,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "config_from_atoms_list",
     "AtomicData",
     "compute_average_E0s",
+    "compute_average_node_target",
 ]
