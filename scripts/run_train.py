@@ -32,7 +32,7 @@ from mace.tools.scripts_utils import (
     get_loss_fn,
     get_files_with_suffix,
 )
-from mace.data import HDF5Dataset
+from mace.data import HDF5Dataset, dataset_from_sharded_hdf5
 
 
 def main() -> None:
@@ -109,13 +109,9 @@ def main() -> None:
             f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
             f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}]"
         )
-    elif args.train_file.endswith(".h5"):
-        atomic_energies_dict = None
     else:
-        raise RuntimeError(
-            f"train_file must be either .xyz or .h5, got {args.train_file}"
-        )
-
+        atomic_energies_dict = None
+    
     # Atomic number table
     # yapf: disable
     if args.atomic_numbers is None:
@@ -179,11 +175,18 @@ def main() -> None:
             data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
             for config in collections.valid
         ]
-    else:
+    elif args.train_file.endswith(".h5"):
         train_set = HDF5Dataset(
             args.train_file, r_max=args.r_max, z_table=z_table
         )
         valid_set = HDF5Dataset(
+            args.valid_file, r_max=args.r_max, z_table=z_table
+        )
+    else: # This case would be for when the file path is to a directory of multiple .h5 files
+        train_set = dataset_from_sharded_hdf5(
+            args.train_file, r_max=args.r_max, z_table=z_table
+        )
+        valid_set = dataset_from_sharded_hdf5(
             args.valid_file, r_max=args.r_max, z_table=z_table
         )
         
@@ -582,11 +585,15 @@ def main() -> None:
                 data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
                 for config in subset
             ]
-    else:
+    elif not args.multi_processed_test:
         test_files = get_files_with_suffix(args.test_dir, "_test.h5")
         for test_file in test_files:
             name = os.path.splitext(os.path.basename(test_file))[0]
             test_sets[name] = HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
+    else:
+        test_folders = glob(args.test_dir + "/*")
+        for folder in test_folders:
+            test_sets[name] = dataset_from_sharded_hdf5(folder, r_max=args.r_max, z_table=z_table)
             
     for test_name, test_set in test_sets.items():
         test_sampler = None
