@@ -13,7 +13,7 @@ from .utils import (
     save_dataset_as_HDF5,
     save_AtomicData_to_HDF5,
 )
-from .hdf5_dataset import HDF5Dataset
+from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
 
 __all__ = [
     "get_neighborhood",
