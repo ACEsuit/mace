@@ -128,3 +128,9 @@ def init_wandb(project: str, entity: str, name: str, config: dict):
     import wandb
 
     wandb.init(project=project, entity=entity, name=name, config=config)
+
+
+def apply_mask(x: torch.Tensor, mask: torch.Tensor):
+    if mask == torch.tensor(float("inf")):
+        return x
+    return x[mask]

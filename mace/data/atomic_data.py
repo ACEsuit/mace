@@ -46,7 +46,9 @@ class AtomicData(torch_geometric.data.Data):
     def __init__(
         self,
         edge_index: torch.Tensor,  # [2, n_edges]
+        edge_index_mask: Optional[torch.Tensor],  # [n_layers, n_edges]
         node_attrs: torch.Tensor,  # [n_nodes, n_node_feats]
+        node_index_mask: Optional[torch.Tensor],  # [n_layers, n_nodes]
         positions: torch.Tensor,  # [n_nodes, 3]
         shifts: torch.Tensor,  # [n_edges, 3],
         unit_shifts: torch.Tensor,  # [n_edges, 3]
@@ -65,8 +67,11 @@ class AtomicData(torch_geometric.data.Data):
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
+        num_edges = edge_index.shape[1]
 
         assert edge_index.shape[0] == 2 and len(edge_index.shape) == 2
+        assert edge_index_mask is None or edge_index_mask[0].shape[1] == num_edges
+        assert node_index_mask is None or len(node_index_mask) == len(edge_index_mask)
         assert positions.shape == (num_nodes, 3)
         assert shifts.shape[1] == 3
         assert unit_shifts.shape[1] == 3
@@ -87,11 +92,13 @@ class AtomicData(torch_geometric.data.Data):
         data = {
             "num_nodes": num_nodes,
             "edge_index": edge_index,
+            "edge_index_mask": edge_index_mask,
             "positions": positions,
             "shifts": shifts,
             "unit_shifts": unit_shifts,
             "cell": cell,
             "node_attrs": node_attrs,
+            "node_index_mask": node_index_mask,
             "weight": weight,
             "energy_weight": energy_weight,
             "forces_weight": forces_weight,
@@ -108,7 +115,7 @@ class AtomicData(torch_geometric.data.Data):
 
     @classmethod
     def from_config(
-        cls, config: Configuration, z_table: AtomicNumberTable, cutoff: float
+        cls, config: Configuration, z_table: AtomicNumberTable, cutoff: float, **kwargs
     ) -> "AtomicData":
         edge_index, shifts, unit_shifts = get_neighborhood(
             positions=config.positions, cutoff=cutoff, pbc=config.pbc, cell=config.cell
@@ -189,9 +196,23 @@ class AtomicData(torch_geometric.data.Data):
             if config.charges is not None
             else None
         )
+        edge_index_mask = kwargs.get("edge_index_mask", None)
+        edge_index_mask = (
+            [torch.tensor(edge_mask, dtype=torch.bool) for edge_mask in edge_index_mask]
+            if edge_index_mask is not None
+            else None
+        )
+        node_index_mask = kwargs.get("node_index_mask", None)
+        node_index_mask = (
+            [torch.tensor(node_mask, dtype=torch.bool) for node_mask in node_index_mask]
+            if node_index_mask is not None
+            else None
+        )
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
+            node_index_mask=node_index_mask,
+            edge_index_mask=edge_index_mask,
             positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
             shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),
             unit_shifts=torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),

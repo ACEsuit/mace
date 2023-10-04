@@ -13,6 +13,7 @@ from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
 
 from mace.tools.scatter import scatter_sum
+from mace.tools.torch_tools import apply_mask
 
 from .irreps_tools import (
     linear_out_irreps,
@@ -246,6 +247,7 @@ class InteractionBlock(torch.nn.Module):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        node_mask: torch.Tensor,
     ) -> torch.Tensor:
         raise NotImplementedError
 
@@ -328,6 +330,7 @@ class ResidualElementDependentInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        node_mask: torch.Tensor,
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -394,6 +397,7 @@ class AgnosticNonlinearInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        node_mask: torch.Tensor,
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -461,11 +465,14 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        node_mask: torch.Tensor,
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
-        sc = self.skip_tp(node_feats, node_attrs)
+        sc = self.skip_tp(
+            apply_mask(node_feats, node_mask), apply_mask(node_attrs, node_mask)
+        )
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
         mji = self.conv_tp(
@@ -474,7 +481,7 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         message = scatter_sum(
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
-        message = self.linear(message) / self.avg_num_neighbors
+        message = self.linear(apply_mask(message, node_mask)) / self.avg_num_neighbors
         message = message + sc
         return message  # [n_nodes, irreps]
 
@@ -531,6 +538,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        node_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -543,8 +551,8 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         message = scatter_sum(
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
-        message = self.linear(message) / self.avg_num_neighbors
-        message = self.skip_tp(message, node_attrs)
+        message = self.linear(apply_mask(message, node_mask)) / self.avg_num_neighbors
+        message = self.skip_tp(message, apply_mask(node_attrs, node_mask))
         return (
             self.reshape(message),
             None,
@@ -603,11 +611,14 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        node_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
-        sc = self.skip_tp(node_feats, node_attrs)
+        sc = self.skip_tp(
+            apply_mask(node_feats, node_mask), apply_mask(node_attrs, node_mask)
+        )
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
         mji = self.conv_tp(
@@ -616,7 +627,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         message = scatter_sum(
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
-        message = self.linear(message) / self.avg_num_neighbors
+        message = self.linear(apply_mask(message, node_mask)) / self.avg_num_neighbors
         return (
             self.reshape(message),
             sc,
@@ -687,6 +698,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        node_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
