@@ -457,6 +457,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--restart_lr",
+        help="restart optimizer with given learning rate",
+        action="store_true",
+        default=None,
+    )
+    parser.add_argument(
         "--save_cpu",
         help="Save a model to be loaded on cpu",
         action="store_true",

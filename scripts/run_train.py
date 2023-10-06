@@ -467,6 +467,11 @@ def main() -> None:
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
+        # Allow the user to manually adjust the learning rate
+        if args.restart_lr is not None:
+            for g in optimizer.param_groups:
+                g['lr'] = args.restart_lr
+
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
