@@ -241,7 +241,15 @@ def main() -> None:
     logging.info(loss_fn)
 
     if args.compute_avg_num_neighbors:
-        args.avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
+        avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
+        if args.distributed:
+            num_graphs = torch.tensor(len(train_loader.dataset)).to(device)
+            num_neighbors = num_graphs * torch.tensor(avg_num_neighbors).to(device)
+            torch.distributed.all_reduce(num_graphs, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.all_reduce(num_neighbors, op=torch.distributed.ReduceOp.SUM)
+            args.avg_num_neighbors = (num_neighbors / num_graphs).item()
+        else:
+            args.avg_num_neighbors = avg_num_neighbors
     logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
 
     # Selecting outputs
