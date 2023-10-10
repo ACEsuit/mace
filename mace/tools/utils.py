@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, Optional, Sequence, Union
 
 import numpy as np
 import torch
+from accelerate import Accelerator
 
 from .torch_tools import to_numpy
 
@@ -45,12 +46,11 @@ def compute_c(delta: np.ndarray, eta: float) -> float:
 def get_tag(name: str, seed: int) -> str:
     return f"{name}_run-{seed}"
 
-
 def setup_logger(
+    accelerator: Accelerator,
     level: Union[int, str] = logging.INFO,
     tag: Optional[str] = None,
     directory: Optional[str] = None,
-    rank: Optional[int] = 0,
 ):
     logger = logging.getLogger()
     logger.setLevel(level)
@@ -64,7 +64,7 @@ def setup_logger(
     ch.setFormatter(formatter)
     logger.addHandler(ch)
     
-    logger.addFilter(lambda _ : (rank == 0))
+    logger.addFilter(lambda _ : (accelerator.process_index == 0))
 
     if (directory is not None) and (tag is not None):
         os.makedirs(name=directory, exist_ok=True)

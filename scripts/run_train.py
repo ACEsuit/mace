@@ -16,10 +16,7 @@ import torch.nn.functional
 from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
-
-import torch.distributed
-from torch.nn.parallel import DistributedDataParallel as DDP
-from mace.tools.slurm_distributed import DistributedEnvironment
+from accelerate import Accelerator
 
 import mace
 from mace import data, modules, tools
@@ -34,33 +31,14 @@ from mace.tools.scripts_utils import (
 )
 from mace.data import HDF5Dataset, dataset_from_sharded_hdf5
 
-
 def main() -> None:
+    accelerator = Accelerator()
     args = tools.build_default_arg_parser().parse_args()
     tag = tools.get_tag(name=args.name, seed=args.seed)
-    if args.distributed:
-        try:
-            distr_env = DistributedEnvironment()
-        except Exception as e:
-            logging.info(f'Error specifying environment for distributed training: {e}')
-            return
-        world_size = distr_env.world_size
-        local_rank = distr_env.local_rank
-        rank = distr_env.rank
-        if rank == 0:
-            print(distr_env)
-        torch.distributed.init_process_group(backend='nccl')
-    else:
-        rank = int(0)
-        
+
     # Setup
     tools.set_seeds(args.seed)
-    tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
-    
-    if args.distributed:
-        torch.cuda.set_device(local_rank)
-        logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
-        logging.info(f"Processes: {world_size}")
+    tools.setup_logger(accelerator, level=args.log_level, tag=tag, directory=args.log_dir)
     
     try:
         logging.info(f"MACE version: {mace.__version__}")
@@ -69,7 +47,6 @@ def main() -> None:
     logging.info(f"Configuration: {args}")
     
     tools.set_default_dtype(args.default_dtype)
-    device = tools.init_device(args.device)
 
     if args.statistics_file is not None:
         with open(args.statistics_file, "r") as f:
@@ -190,30 +167,10 @@ def main() -> None:
             args.valid_file, r_max=args.r_max, z_table=z_table
         )
         
-    train_sampler, valid_sampler = None, None
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(
-            train_set, 
-            num_replicas=world_size, 
-            rank=rank,
-            shuffle=True,
-            drop_last=True,
-            seed=args.seed,
-        )
-        valid_sampler = torch.utils.data.distributed.DistributedSampler(
-            valid_set, 
-            num_replicas=world_size, 
-            rank=rank,
-            shuffle=True,
-            drop_last=True,
-            seed=args.seed,
-        )
-        
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
-        batch_size=args.batch_size,        
-        sampler=train_sampler,
-        shuffle=(train_sampler is None),
+        batch_size=args.batch_size,   
+        shuffle=True,
         drop_last=False,
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
@@ -221,8 +178,7 @@ def main() -> None:
     valid_loader = torch_geometric.dataloader.DataLoader(
         dataset=valid_set,
         batch_size=args.valid_batch_size,
-        sampler=valid_sampler,
-        shuffle=(valid_sampler is None),
+        shuffle=True,
         drop_last=False,
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
@@ -383,8 +339,6 @@ def main() -> None:
     else:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
-    model.to(device)
-
     # Optimizer
     decay_interactions = {}
     no_decay_interactions = {}
@@ -499,29 +453,35 @@ def main() -> None:
             loss_fn=loss_fn_energy,
         )
 
+    model, optimizer, train_loader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_loader, lr_scheduler
+    )
+
     checkpoint_handler = tools.CheckpointHandler(
         directory=args.checkpoints_dir,
         tag=tag,
         keep=args.keep_checkpoints,
         swa_start=args.start_swa,
+        accelerator=accelerator,
     )
 
     start_epoch = 0
     if args.restart_latest:
         try:
             opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=True,
-                device=device,
             )
         except:
             opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=False,
-                device=device,
             )
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
+
+        # Allow the user to manually adjust the learning rate
+        if args.restart_lr is not None:
+            for g in optimizer.param_groups:
+                g['lr'] = args.restart_lr
 
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
@@ -548,12 +508,8 @@ def main() -> None:
         )
         wandb.run.summary["params"] = args_dict_json
 
-    if args.distributed:
-        distributed_model = DDP(model, device_ids=[local_rank])
-    else:
-        distributed_model = None
-
     tools.train(
+        accelerator=accelerator,
         model=model,
         loss_fn=loss_fn,
         train_loader=train_loader,
@@ -567,16 +523,11 @@ def main() -> None:
         logger=logger,
         patience=args.patience,
         output_args=output_args,
-        device=device,
         swa=swa,
         ema=ema,
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
         log_wandb=args.wandb,
-        distributed=args.distributed,
-        distributed_model=distributed_model,
-        train_sampler=train_sampler,
-        rank=rank,
     )
 
     logging.info("Computing metrics for training, validation, and test sets")
@@ -585,7 +536,7 @@ def main() -> None:
         "train": train_loader,
         "valid": valid_loader,
     }
-    
+
     test_sets = {}
     if args.train_file.endswith(".xyz"):
         for name, subset in collections.tests:
@@ -604,73 +555,57 @@ def main() -> None:
             test_sets[name] = dataset_from_sharded_hdf5(folder, r_max=args.r_max, z_table=z_table)
             
     for test_name, test_set in test_sets.items():
-        test_sampler = None
-        if args.distributed:
-            test_sampler = torch.utils.data.distributed.DistributedSampler(
-                test_set, 
-                num_replicas=world_size, 
-                rank=rank,
-                shuffle=True,
-                drop_last=True,
-                seed=args.seed,
-            )
         test_loader = torch_geometric.dataloader.DataLoader(
             test_set,
             batch_size=args.valid_batch_size,
-            shuffle=(test_sampler is None),
+            shuffle=True,
             drop_last=test_set.drop_last,
             num_workers=args.num_workers,
             pin_memory=args.pin_memory,
         )
         all_data_loaders[test_name] = test_loader
-                        
+
+
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
-            state=tools.CheckpointState(model, optimizer, lr_scheduler),
             swa=swa_eval,
-            device=device,
         )
-        model.to(device)
-        if args.distributed:
-            distributed_model = DDP(model, device_ids=[local_rank])
-        model_to_evaluate = model if not args.distributed else distributed_model
+
         logging.info(f"Loaded model from epoch {epoch}")
 
         table = create_error_table(
             table_type=args.error_table,
             all_data_loaders=all_data_loaders,
-            model=model_to_evaluate,
+            model=model,
             loss_fn=loss_fn,
             output_args=output_args,
             log_wandb=args.wandb,
-            device=device,
-            distributed=args.distributed,
+            device=accelerator.device,
         )
         logging.info("\n" + str(table))
-        
-        if rank == 0:
-            # Save entire model
-            if swa_eval:
-                model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
-            else:
-                model_path = Path(args.checkpoints_dir) / (tag + ".model")
-            logging.info(f"Saving model to {model_path}")
+    
+        # Save entire model
+        if swa_eval:
+            model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
+        else:
+            model_path = Path(args.checkpoints_dir) / (tag + ".model")
+
+        logging.info(f"Saving model to {model_path}")
+
+        if accelerator.process_index == 0:
+
             if args.save_cpu:
                 model = model.to("cpu")
-            torch.save(model, model_path)
+
+            torch.save(accelerator.unwrap_model(model), model_path)
 
             if swa_eval:
-                torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
+                torch.save(accelerator.unwrap_model(model), Path(args.model_dir) / (args.name + "_swa.model"))
             else:
-                torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+                torch.save(accelerator.unwrap_model(model), Path(args.model_dir) / (args.name + ".model"))
                 
-        if args.distributed:
-            torch.distributed.barrier()
 
-    logging.info("Done")    
-    if args.distributed:
-        torch.distributed.destroy_process_group()
-
+    logging.info("Done")
 
 if __name__ == "__main__":
     main()

@@ -71,7 +71,6 @@ python ./mace/scripts/run_train.py \
     --ema_decay=0.99 \
     --amsgrad \
     --restart_latest \
-    --device=cuda \
 ```
 
 To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`. 
@@ -120,13 +119,13 @@ python ./mace/scripts/preprocess_data.py \
     --h5_prefix="processed_data/" \
     --compute_statistics \
     --E0s="average" \
-    --seed=123 \
+    --seed=42 \
 ```
 
 To see all options and a little description of them run `python ./mace/scripts/preprocess_data.py --help` . The script will create a number of HDF5 files in the `processed_data` folder which can be used for training. There wiull be one file for trainin, one for validation and a separate one for each `config_type` in the test set. To train the model use the `run_train.py` script as follows:
 
 ```sh
-python ./mace/scripts/run_train.py \
+accelerate launch --multi_gpu ./mace/scripts/run_train.py \
     --name="MACE_on_big_data" \
     --num_workers=16 \
     --train_file="./processed_data/train.h5" \
@@ -147,8 +146,7 @@ python ./mace/scripts/run_train.py \
     --ema_decay=0.99 \
     --amsgrad \
     --error_table='PerAtomMAE' \
-    --device=cuda \
-    --seed=123 \
+    --seed=42 \
 ```
 
 ## Weights and Biases for experiment tracking
