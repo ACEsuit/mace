@@ -1,51 +1,60 @@
-<span style="font-size:larger;">MACE</span>
-========
+# <span style="font-size:larger;">MACE</span>
+
 [![GitHub release](https://img.shields.io/github/release/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/releases/)
 [![Paper](https://img.shields.io/badge/Paper-NeurIPs2022-blue)](https://openreview.net/forum?id=YPpSngE-ZU)
 [![License](https://img.shields.io/badge/License-MIT%202.0-blue.svg)](https://opensource.org/licenses/mit)
 [![GitHub issues](https://img.shields.io/github/issues/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/issues/)
 [![Documentation Status](https://readthedocs.org/projects/mace/badge/)](https://mace-docs.readthedocs.io/en/latest/)
 
-# Table of contents
-- [About MACE](#about-mace)
-- [Documentation](#documentation)
-- [Installation](#installation)
-- [Usage](#usage)
+## Table of contents
+
+- [MACE](#mace)
+  - [Table of contents](#table-of-contents)
+  - [About MACE](#about-mace)
+  - [Documentation](#documentation)
+  - [Installation](#installation)
+    - [conda installation](#conda-installation)
+    - [pip installation](#pip-installation)
+  - [Usage](#usage)
     - [Training](#training)
     - [Evaluation](#evaluation)
-- [Tutorial](#tutorial)
-- [Weights and Biases](#weights-and-biases-for-experiment-tracking)
-- [Development](#development)
-- [References](#references)
-- [Contact](#contact)
-- [License](#license)
+  - [Tutorial](#tutorial)
+  - [On-line data loading for large datasets](#on-line-data-loading-for-large-datasets)
+  - [Weights and Biases for experiment tracking](#weights-and-biases-for-experiment-tracking)
+  - [Development](#development)
+  - [References](#references)
+  - [Contact](#contact)
+  - [License](#license)
 
+## About MACE
 
-##  About MACE
 MACE provides fast and accurate machine learning interatomic potentials with higher order equivariant message passing.
 
 This repository contains the MACE reference implementation developed by
 Ilyes Batatia, Gregor Simm, and David Kovacs.
 
-Also available: 
-* [MACE in JAX](https://github.com/ACEsuit/mace-jax), currently about 2x times faster at evaluation, but training is recommended in Pytorch for optimal performances.
-* [MACE layers](https://github.com/ACEsuit/mace-layer) for constructing higher order equivariant graph neural networks for arbitrary 3D point clouds.
+Also available:
+
+- [MACE in JAX](https://github.com/ACEsuit/mace-jax), currently about 2x times faster at evaluation, but training is recommended in Pytorch for optimal performances.
+- [MACE layers](https://github.com/ACEsuit/mace-layer) for constructing higher order equivariant graph neural networks for arbitrary 3D point clouds.
 
 ## Documentation
 
-A partial documentation is available at: https://mace-docs.readthedocs.io/en/latest/
+A partial documentation is available at: https://mace-docs.readthedocs.io
 
 ## Installation
 
 Requirements:
-* Python >= 3.7
-* [PyTorch](https://pytorch.org/) >= 1.12
+
+- Python >= 3.7
+- [PyTorch](https://pytorch.org/) >= 1.12
 
 (for openMM, use Python = 3.9)
 
 ### conda installation
 
 If you do not have CUDA pre-installed, it is **recommended** to follow the conda installation process:
+
 ```sh
 # Create a virtual environment and activate it
 conda create --name mace_env
@@ -65,6 +74,7 @@ pip install ./mace
 ### pip installation
 
 To install via `pip`, follow the steps below:
+
 ```sh
 # Create a virtual environment and activate it
 python -m venv mace-venv
@@ -82,7 +92,7 @@ pip install ./mace
 
 ## Usage
 
-### Training 
+### Training
 
 To train a MACE model, you can use the `mace_run_train` script, which should be in the usual place that pip places binaries (or you can explicitly run `python3 <path_to_cloned_dir>/mace/cli/run_train.py`)
 
@@ -108,21 +118,21 @@ mace_run_train \
     --device=cuda \
 ```
 
-To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`. 
+To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`.
 
-To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys. 
+To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`.It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys. 
 
-It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression. 
+It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression.
 
-If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs). This setting usually helps lower the energy errors. 
+If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs). This setting usually helps lower the energy errors.
 
-The precision can be changed using the keyword ``--default_dtype``, the default is `float64` but `float32` gives a significant speed-up (usually a factor of x2 in training).
+The precision can be changed using the keyword `--default_dtype`, the default is `float64` but `float32` gives a significant speed-up (usually a factor of x2 in training).
 
-The keywords ``--batch_size`` and ``--max_num_epochs`` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $\text{max-num-epochs}*\frac{\text{num-configs-training}}{\text{batch-size}}$.
+The keywords `--batch_size` and `--max_num_epochs` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $\text{max-num-epochs}*\frac{\text{num-configs-training}}{\text{batch-size}}$.
 
-The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules. In this example, to make the code ignore stress on molecules, append to your molecules configuration a ``config_stress_weight = 0.0``.
+The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules. In this example, to make the code ignore stress on molecules, append to your molecules configuration a `config_stress_weight = 0.0`.
 
-To use Apple Silicon GPU acceleration make sure to install the latest PyTorch version and specify ``--device=mps``. 
+To use Apple Silicon GPU acceleration make sure to install the latest PyTorch version and specify `--device=mps`.
 
 ### Evaluation
 
@@ -187,7 +197,7 @@ python ./mace/scripts/run_train.py \
 
 ## Weights and Biases for experiment tracking
 
-If you would like to use MACE with Weights and Biases to log your experiments simply install with 
+If you would like to use MACE with Weights and Biases to log your experiments simply install with
 
 ```sh
 pip install ./mace[wandb]
@@ -199,6 +209,7 @@ And specify the necessary keyword arguments (`--wandb`, `--wandb_project`, `--wa
 
 We use `black`, `isort`, `pylint`, and `mypy`.
 Run the following to format and check your code:
+
 ```sh
 bash ./scripts/run_checks.sh
 ```
@@ -211,15 +222,15 @@ We are happy to accept pull requests under an [MIT license](https://choosealicen
 ## References
 
 If you use this code, please cite our papers:
+
 ```text
-@inproceedings{
-Batatia2022mace,
-title={{MACE}: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields},
-author={Ilyes Batatia and David Peter Kovacs and Gregor N. C. Simm and Christoph Ortner and Gabor Csanyi},
-booktitle={Advances in Neural Information Processing Systems},
-editor={Alice H. Oh and Alekh Agarwal and Danielle Belgrave and Kyunghyun Cho},
-year={2022},
-url={https://openreview.net/forum?id=YPpSngE-ZU}
+@inproceedings{Batatia2022mace,
+  title={{MACE}: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields},
+  author={Ilyes Batatia and David Peter Kovacs and Gregor N. C. Simm and Christoph Ortner and Gabor Csanyi},
+  booktitle={Advances in Neural Information Processing Systems},
+  editor={Alice H. Oh and Alekh Agarwal and Danielle Belgrave and Kyunghyun Cho},
+  year={2022},
+  url={https://openreview.net/forum?id=YPpSngE-ZU}
 }
 
 
