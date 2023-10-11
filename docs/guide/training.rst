@@ -138,7 +138,3 @@ Checkpoints
 -----------
 
 For trainings that require restarting, you can continue the fitting from the last checkpoint by using the flag `--restart_latest`. The checkpoint saves the best model that currently has been trained. All checkpoints are saved in ./checkpoints folder. We can also continue from a restart when extending the dataset or changing any hyperparameters that do not affect the model size.
-
-~~~ Pretrained Universal Checkpoints ~~~
-
-We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the `MPTrj dataset <https://figshare.com/articles/dataset/23713842>`_. These pretrained models were used for materials stability prediction in `Matbench Discovery <https://matbench-discovery.materialsproject.org>`_ and the corresponding `preprint <https://arxiv.org/abs/2308.14920>`_. For easy reuse, these checkpoints were published on `Hugging Face <https://huggingface.co/cyrusyc/mace-universal>`_.

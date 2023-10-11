@@ -8,11 +8,11 @@ This page collects various training scripts for training MACE models in the pape
 MD22: large molecules
 ######################
 
-The MD22 dataset (http://www.sgdml.org) contains configurations with energies and forces computed at the DFT level of QM for 7 different large molecular systems. In the paper we used a very large MACE model to showcase primarily the achievable accuracy with a model that is still usefully fast. 
+The MD22 dataset (http://www.sgdml.org) contains configurations with energies and forces computed at the DFT level of QM for 7 different large molecular systems. In the paper we used a very large MACE model to showcase primarily the achievable accuracy with a model that is still usefully fast.
 
 An example script for training the 2-layer model on the carbon nanotube (largest) system is given below
 
-.. code-block:: shell 
+.. code-block:: shell
 
     python /PATH/TO/MACE/mace/scripts/run_train.py \
         --name="nanotube_large_r55" \
@@ -43,9 +43,9 @@ An example script for training the 2-layer model on the carbon nanotube (largest
         --device=cuda \
         --seed=123 \
         --restart_latest \
-        --save_cpu 
+        --save_cpu
 
-In comparison, the single layer model uses ``max_L=0``, because there is no equivariant message to be passed. this model is considerably (ca 10x) faster, and somewhat less accurate as shown in the paper. 
+In comparison, the single layer model uses ``max_L=0``, because there is no equivariant message to be passed. this model is considerably (ca 10x) faster, and somewhat less accurate as shown in the paper.
 
 .. code-block:: shell
 
@@ -84,9 +84,9 @@ In comparison, the single layer model uses ``max_L=0``, because there is no equi
 ANI-1x dataset: H, C, N, O transferable FF
 ###########################################
 
-We used the subset of the ANI-1x datatset (https://www.nature.com/articles/s41597-020-0473-z) that also has couple cluster reference data to train 3 transferable MACE models of increaing accuracy. 
+We used the subset of the ANI-1x datatset (https://www.nature.com/articles/s41597-020-0473-z) that also has couple cluster reference data to train 3 transferable MACE models of increaing accuracy.
 
-To train MACE on large datasets one can preprocess the data and use on the fly data loading. This option is currently available on the multi-GPU branch of MACE. 
+To train MACE on large datasets one can preprocess the data and use on the fly data loading. This option is currently available on the multi-GPU branch of MACE.
 
 .. code-block:: shell
 
@@ -139,9 +139,9 @@ The training script for the smallest model is given below.
         --device=cuda \
         --seed=123 \
         --restart_latest \
-        --save_cpu 
+        --save_cpu
 
-The model can easily be transfer learned to CC level of theory. For this the preprocesing has to be repated with the CC energies. Than the training can simply be continued. Suince the CC data does not have forces it is crucial to deactivate scaling by the RMS of the forces by setting ``scaling="no_scaling"``. For the fine tuning we have also reduced the learning rate. 
+The model can easily be transfer learned to CC level of theory. For this the preprocesing has to be repated with the CC energies. Than the training can simply be continued. Suince the CC data does not have forces it is crucial to deactivate scaling by the RMS of the forces by setting ``scaling="no_scaling"``. For the fine tuning we have also reduced the learning rate.
 
 .. code-block:: shell
 
@@ -177,17 +177,17 @@ The model can easily be transfer learned to CC level of theory. For this the pre
         --seed=123 \
         --restart_latest \
 
-The medium model had ``num_channels=96``, ``max_L=1`` and ``r_max=5.0``. It was trained for 350 epochs, with the second part of the learning rate schedule starting after 175 epochs. 
+The medium model had ``num_channels=96``, ``max_L=1`` and ``r_max=5.0``. It was trained for 350 epochs, with the second part of the learning rate schedule starting after 175 epochs.
 
-The large model had ``num_channels=192``, ``max_L=2`` and ``r_max=5.0``. It was trained for 210 epochs, with the second part of the learning rate schedule starting after 60 epochs. This very long training was necessary, because we were observing some constant shifts in the energies when evaluating the model on much larger systems than in the training set as discussed in the manuscript. The shifts were reduced by training the models longer. 
+The large model had ``num_channels=192``, ``max_L=2`` and ``r_max=5.0``. It was trained for 210 epochs, with the second part of the learning rate schedule starting after 60 epochs. This very long training was necessary, because we were observing some constant shifts in the energies when evaluating the model on much larger systems than in the training set as discussed in the manuscript. The shifts were reduced by training the models longer.
 
-The 6 ANI dataset trained MACE models (3 model size and DFT and CC reference data for each) is available at https://github.com/ACEsuit/mace/blob/docs/docs/examples/ANI_trained_MACE.zip 
+The 6 ANI dataset trained MACE models (3 model size and DFT and CC reference data for each) is available at https://github.com/ACEsuit/mace/blob/docs/docs/examples/ANI_trained_MACE.zip
 
 ####################
 Liquid water
 ####################
 
-The liquid water dataset was downloaded from https://github.com/BingqingCheng/ab-initio-thermodynamics-of-water/tree/master/training-set 
+The liquid water dataset was downloaded from https://github.com/BingqingCheng/ab-initio-thermodynamics-of-water/tree/master/training-set
 
 To train the smaller MACE model used in the simulations of the paper we used the following input line:
 
@@ -224,4 +224,3 @@ To train the smaller MACE model used in the simulations of the paper we used the
         --seed=123 \
         --restart_latest \
         --save_cpu \
-
