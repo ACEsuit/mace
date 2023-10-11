@@ -22,6 +22,8 @@
   - [On-line data loading for large datasets](#on-line-data-loading-for-large-datasets)
   - [Weights and Biases for experiment tracking](#weights-and-biases-for-experiment-tracking)
   - [Development](#development)
+  - [Pretrained Universal MACE Checkpoints](#pretrained-universal-mace-checkpoints)
+    - [Materials Project](#materials-project)
   - [References](#references)
   - [Contact](#contact)
   - [License](#license)
@@ -219,6 +221,12 @@ before you commit (and push) to avoid accidentally committing bad code.
 
 We are happy to accept pull requests under an [MIT license](https://choosealicense.com/licenses/mit/). Please copy/paste the license text as a comment into your pull request.
 
+## Pretrained Universal MACE Checkpoints
+
+### Materials Project 
+
+We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories. These pretrained models were used for materials stability prediction in [Matbench Discovery](https://matbench-discovery.materialsproject.org) and the corresponding [preprint](https://arxiv.org/abs/2308.14920). For easy reuse, these checkpoints were published on [Hugging Face](https://huggingface.co/cyrusyc/mace-universal).
+
 ## References
 
 If you use this code, please cite our papers:
@@ -245,10 +253,6 @@ If you use this code, please cite our papers:
   archiveprefix = {arXiv}
  }
 ```
-
-## Pretrained Universal MACE Checkpoints
-### Materials Project 
-We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories. These pretrained models were used for materials stability prediction in [Matbench Discovery](https://matbench-discovery.materialsproject.org) and the corresponding [preprint](https://arxiv.org/abs/2308.14920). For easy reuse, these checkpoints were published on [Hugging Face](https://huggingface.co/cyrusyc/mace-universal).
 
 ## Contact
 
