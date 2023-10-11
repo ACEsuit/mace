@@ -38,8 +38,8 @@ To train a MACE model, you will use the `run_train.py`command which takes the fo
 
 First specify the name of your model and final log file using the `--name` flag.
 
-You can specify the training file with the `--train_file` flag. 
-The validation set can either be specified as a separate file using the `--valid_file` keyword, or it can be specified as a fraction of the training set using the `--valid_fraction` keyword. 
+You can specify the training file with the `--train_file` flag.
+The validation set can either be specified as a separate file using the `--valid_file` keyword, or it can be specified as a fraction of the training set using the `--valid_fraction` keyword.
 The validation set is not used for optimizing the model but to estimate the model accuracy during training.
 
 It is also possible to provide a test set using the `--test_file` keyword. This set is entirely independent and only gets evaluated at the end of the training process.
@@ -51,7 +51,7 @@ Model
 Model options
 ^^^^^^^^^^^^^^
 
-The `--model` flag specifies the type of model to be trained. The vanilla MACE model is specified by `--model="MACE"`. 
+The `--model` flag specifies the type of model to be trained. The vanilla MACE model is specified by `--model="MACE"`.
 The `--model="ScaleShiftMACE"` model includes a residual connection at first, which will usually improve the model's accuracy but will make the model output incorrect isolated atoms energies.
 Use this model if you are not interested in bond-breaking energies.
 To train a model on dipole moments, use `--model="AtomicDipolesMACE"`. If you want to also train simultaneously on energies, use `--model="EnergyDipolesMACE"`.
@@ -59,7 +59,7 @@ To train a model on dipole moments, use `--model="AtomicDipolesMACE"`. If you wa
 The Messages
 ^^^^^^^^^^^^
 
-Change `-hidden_irreps` to control the model size. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'` (meaning 128 equivariant messages). If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. 
+Change `-hidden_irreps` to control the model size. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'` (meaning 128 equivariant messages). If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`.
 The number of message passing layers can be controlled via the `--num_ineractions` parameter. **Increasing the model size and the number of layers will lead to more accurate but slower models.**
 
 Correlation order
@@ -84,15 +84,15 @@ The cutoff radius controls the locality of the model. A `--r_max=3.0` means that
 Reference energies
 ------------------
 
-It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. 
-To label them in the training set, set `config_type=IsolatedAtom` in their info fields. 
-If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression. 
+It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above.
+To label them in the training set, set `config_type=IsolatedAtom` in their info fields.
+If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression.
 
 SWA and EMA
 -----------
 
-If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs). 
-This setting usually helps lower the energy errors. 
+If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs).
+This setting usually helps lower the energy errors.
 
 
 Data keys
@@ -110,8 +110,8 @@ The precision can be changed using the keyword ``--default_dtype``, the default 
 Set batch size
 --------------
 
-The keywords ``--batch_size`` and ``--max_num_epochs`` should be adapted based on the size of the training set. 
-The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. 
+The keywords ``--batch_size`` and ``--max_num_epochs`` should be adapted based on the size of the training set.
+The batch size should be increased when the number of training data increases, and the number of epochs should be decreased.
 An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $\text{max-num-epochs}*\frac{\text{num-configs-training}}{\text{batch-size}}$.
 
 Validation parameters
@@ -123,7 +123,7 @@ The validation set controls the stopping of the training. At each `--eval_interv
 Heterogeneous labels
 --------------------
 
-The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules. 
+The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules.
 In this example, to make the code ignore stress on molecules, append to your molecules configuration a ``config_stress_weight = 0.0``.
 
 
@@ -132,9 +132,13 @@ Devices
 
 To use GPUs, specify ``--device=cuda``.
 To use CPUs, specify ``--device=cpu``.
-To use Apple Silicon GPU acceleration make sure to install the latest PyTorch version and specify ``--device=mps``. 
+To use Apple Silicon GPU acceleration make sure to install the latest PyTorch version and specify ``--device=mps``.
 
 Checkpoints
 -----------
 
 For trainings that require restarting, you can continue the fitting from the last checkpoint by using the flag `--restart_latest`. The checkpoint saves the best model that currently has been trained. All checkpoints are saved in ./checkpoints folder. We can also continue from a restart when extending the dataset or changing any hyperparameters that do not affect the model size.
+
+~~~ Pretrained Universal Checkpoints ~~~
+
+We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the `MPTrj dataset <https://figshare.com/articles/dataset/23713842>`_. These pretrained models were used for materials stability prediction in `Matbench Discovery <https://matbench-discovery.materialsproject.org>`_ and the corresponding `preprint <https://arxiv.org/abs/2308.14920>`_. For easy reuse, these checkpoints were published on `Hugging Face <https://huggingface.co/cyrusyc/mace-universal>`_.
