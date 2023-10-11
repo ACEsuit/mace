@@ -194,6 +194,10 @@ If you use this code, please cite our papers:
  }
 ```
 
+## Pretrained Universal MACE Checkpoints
+
+We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories. These pretrained models were used for materials stability prediction in [Matbench Discovery](https://matbench-discovery.materialsproject.org) and the corresponding [preprint](https://arxiv.org/abs/2308.14920). For easy reuse, these checkpoints were published on [Hugging Face](https://huggingface.co/cyrusyc/mace-universal).
+
 ## Contact
 
 If you have any questions, please contact us at ilyes.batatia@ens-paris-saclay.fr.
