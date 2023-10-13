@@ -26,4 +26,3 @@ sphinx:
 python:
   install:
     - requirements: docs/requirements.txt
-  system_packages: true  # added following nbsphinx instructions
