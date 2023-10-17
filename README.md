@@ -84,10 +84,10 @@ pip install ./mace
 
 ### Training 
 
-To train a MACE model, you can use the `run_train.py` script:
+To train a MACE model, you can use the `mace_run_train` script, which should be in the usual place that pip places binaries (or you can explicitly run `python3 <path_to_cloned_dir>/mace/cli/run_train.py`)
 
 ```sh
-python ./mace/scripts/run_train.py \
+mace_run_train \
     --name="MACE_model" \
     --train_file="train.xyz" \
     --valid_fraction=0.05 \
@@ -126,10 +126,10 @@ To use Apple Silicon GPU acceleration make sure to install the latest PyTorch ve
 
 ### Evaluation
 
-To evaluate your MACE model on an XYZ file, run the `eval_configs.py`:
+To evaluate your MACE model on an XYZ file, run the `mace_eval_configs`:
 
 ```sh
-python3 ./mace/scripts/eval_configs.py \
+mace_eval_configs \
     --configs="your_configs.xyz" \
     --model="your_model.model" \
     --output="./your_output.xyz"
