@@ -21,7 +21,7 @@ Preparing your model
 
 Train the model using the `develop` branch. Afterwards, use the `create_lammps_model.py` script to prepare a torchscript-compiled LAMMPS_MACE model::
 
-    python [mace_dir]/scripts/create_lammps_model.py my_mace.model
+    python <mace_repo_dir>/mace/cli/create_lammps_model.py my_mace.model
 
 Instructions for GPU
 ====================
