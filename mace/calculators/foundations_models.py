@@ -28,9 +28,7 @@ def mace_mp(
         print(
             "Using Materials Project model for MACECalculator, see https://huggingface.co/cyrusyc/mace-universal"
         )
-    return MACECalculator(
-        model_path, device=device, model_path=model_path, default_dtype="float32"
-    )
+    return MACECalculator(model_path, device=device, default_dtype="float32")
 
 
 def mace_anicc(
@@ -38,7 +36,7 @@ def mace_anicc(
     model_path=None,
 ) -> MACECalculator:
     """
-    Constructs a MACECalculator with a pretrained model based on the ANI.
+    Constructs a MACECalculator with a pretrained model based on the ANI (H, C, N, O).
     The model is released under the MIT license.
     Note:
         If you are using this function, please cite the relevant paper associated with the MACE model, ANI dataset, and also the following:
@@ -49,6 +47,4 @@ def mace_anicc(
         print(
             "Using ANI couple cluster model for MACECalculator, see https://doi.org/10.1063/5.0155322"
         )
-    return MACECalculator(
-        model_path, device=device, model_path=model_path, default_dtype="float64"
-    )
+    return MACECalculator(model_path, device=device, default_dtype="float64")
