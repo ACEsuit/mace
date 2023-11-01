@@ -333,6 +333,25 @@ def main() -> None:
     else:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
+    if args.foundation_model is not None:
+        if args.foundation_model == "use_mp":
+            args.foundation_model = (
+                Path(__file__).parent.parent
+                / "calculators"
+                / "foundations_models"
+                / "2023-08-14-mace-universal.model"
+            )
+        logging.info(
+            f"Using foundation model as initial checkpoint from path : {args.foundation_model}"
+        )
+        model_path = Path(args.foundation_model)
+        model_foundation = torch.load(model_path, map_location=device)
+        model = load_foundations(
+            model,
+            model_foundation,
+            z_table,
+            load_readout=True,
+        )
     model.to(device)
 
     # Optimizer
@@ -486,23 +505,6 @@ def main() -> None:
             config=wandb_config,
         )
         wandb.run.summary["params"] = args_dict_json
-
-    if args.foundation_model is not None and start_epoch == 0:
-        if args.foundation_model == "use_mp":
-            args.foundation_model = (
-                Path(__file__).parent.parent
-                / "calculators"
-                / "foundations_models"
-                / "2023-08-14-mace-universal.model"
-            )
-        logging.info(
-            f"Using foundation model as initial checkpoint from path : {args.foundation_model}"
-        )
-        model_path = Path(args.foundation_model)
-        model_foundation = torch.load(model_path, map_location=device)
-        model = load_foundations(
-            model, model_foundation, z_table, load_readout=args.foundation_model_readout
-        )
 
     tools.train(
         model=model,
