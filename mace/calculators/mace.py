@@ -75,6 +75,10 @@ class MACECalculator(Calculator):
                 f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
+        if "model_path" in kwargs:
+            print("model_path argument deprecated, use model_paths")
+            model_paths = kwargs["model_path"]
+
         if isinstance(model_paths, str):
             # Find all models that staisfy the wildcard (e.g. mace_model_*.pt)
             model_paths_glob = glob(model_paths)
