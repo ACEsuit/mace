@@ -130,7 +130,7 @@ def train(
                     output_args=output_args,
                     device=device,
                 )
-            
+
             if rank == 0:
                 eval_metrics["mode"] = "eval"
                 eval_metrics["epoch"] = epoch

@@ -91,9 +91,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--r_max", help="distance cutoff (in Ang)", 
-        type=float, 
-        default=5.0
+        "--r_max", help="distance cutoff (in Ang). Float or list of values for each layer", type=str, default=5.0
     )
     parser.add_argument(
         "--num_radial_basis",
@@ -131,7 +129,11 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3
     )
     parser.add_argument(
-        "--correlation", help="correlation order at each layer", type=int, default=3
+        "--correlation",
+        help="correlation order at each layer. "
+        "Can be list of values for each layer or single int ",
+        type=str,
+        default=3,
     )
     parser.add_argument(
         "--num_interactions", help="number of interactions", type=int, default=2
@@ -141,6 +143,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="hidden irreps of the MLP in last readout",
         type=str,
         default="16x0e",
+    )
+    parser.add_argument(
+        "--radial_MLP",
+        help="width of the radial MLP",
+        type=str,
+        default="[64, 64, 64]",
     )
     parser.add_argument(
         "--hidden_irreps",
@@ -338,13 +346,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--forces_weight", help="weight of forces loss", type=float, default=10.0
+        "--forces_weight", help="weight of forces loss", type=float, default=100.0
     )
     parser.add_argument(
         "--swa_forces_weight",
         help="weight of forces loss after starting swa",
         type=float,
-        default=1.0,
+        default=100.0,
     )
     parser.add_argument(
         "--energy_weight", help="weight of energy loss", type=float, default=1.0

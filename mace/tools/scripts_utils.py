@@ -279,7 +279,6 @@ def create_error_table(
             "RMSE MU / mDebye / atom",
             "rel MU RMSE %",
         ]
-    
     for name in sorted(all_data_loaders, key=custom_key):
         data_loader = all_data_loaders[name]
         logging.info(f"Evaluating {name} ...")

@@ -5,10 +5,10 @@
 ###########################################################################################
 
 import ast
+import json
 import logging
 from pathlib import Path
 from typing import Optional
-import json
 import os
 
 import numpy as np
@@ -165,6 +165,25 @@ def main() -> None:
             [atomic_energies_dict[z] for z in z_table.zs]
         )
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
+    # Support different settings for each layer
+    r_max = ast.literal_eval(args.r_max)
+    correlation = ast.literal_eval(args.correlation)
+    print(type(r_max), type(correlation))
+
+    if isinstance(r_max, (list, tuple, np.ndarray)):
+        r_max = torch.tensor(r_max, dtype=torch.get_default_dtype())
+    else:
+        r_max = torch.tensor(
+            [r_max] * args.num_interactions, dtype=torch.get_default_dtype()
+        )
+    if isinstance(correlation, (list, tuple, np.ndarray)):
+        correlation = torch.tensor(correlation, dtype=torch.int)
+    else:
+        correlation = torch.tensor(
+            [correlation] * args.num_interactions, dtype=torch.int
+        )
+    assert r_max.shape == correlation.shape
+    assert r_max.shape[0] == args.num_interactions
 
     if args.train_file.endswith(".xyz"):
         train_set = [
@@ -239,7 +258,6 @@ def main() -> None:
         compute_dipole,
     )
     logging.info(loss_fn)
-
     if args.compute_avg_num_neighbors:
         avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
         if args.distributed:
@@ -285,7 +303,7 @@ def main() -> None:
     logging.info(f"Hidden irreps: {args.hidden_irreps}")
 
     model_config = dict(
-        r_max=args.r_max,
+        r_max=r_max,
         num_bessel=args.num_radial_basis,
         num_polynomial_cutoff=args.num_cutoff_basis,
         max_ell=args.max_ell,
@@ -311,7 +329,7 @@ def main() -> None:
     if args.model == "MACE":
         model = modules.ScaleShiftMACE(
             **model_config,
-            correlation=args.correlation,
+            correlations=correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[
                 "RealAgnosticInteractionBlock"
@@ -319,11 +337,13 @@ def main() -> None:
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
             atomic_inter_shift=0.0,
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+
         )
     elif args.model == "ScaleShiftMACE":
         model = modules.ScaleShiftMACE(
             **model_config,
-            correlation=args.correlation,
+            correlations=correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
@@ -514,7 +534,7 @@ def main() -> None:
                 swa=True,
                 device=device,
             )
-        except:
+        except Exception as e:
             opt_start_epoch = checkpoint_handler.load_latest(
                 state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=False,
@@ -636,6 +656,8 @@ def main() -> None:
         model_to_evaluate = model if not args.distributed else distributed_model
         logging.info(f"Loaded model from epoch {epoch}")
 
+        for param in model.parameters():
+            param.requires_grad = False
         table = create_error_table(
             table_type=args.error_table,
             all_data_loaders=all_data_loaders,
