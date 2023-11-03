@@ -110,7 +110,7 @@ python ./mace/scripts/run_train.py \
 
 To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`. 
 
-To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. 
+To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys. 
 
 It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression. 
 
@@ -138,6 +138,52 @@ python3 ./mace/scripts/eval_configs.py \
 ## Tutorial
 
 You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE.
+
+## On-line data loading for large datasets
+
+If you have a large dataset that might not fit into the GPU memory it is recommended to preprocess the data on a CPU and use on-line dataloading for training the model. To preprocess your dataset specified as an xyz file run the `preprocess_data.py` script. An example is given here:
+
+```sh
+mkdir processed_data
+python ./mace/scripts/preprocess_data.py \
+    --train_file="/path/to/train_large.xyz" \
+    --valid_fraction=0.05 \
+    --test_file="/path/to/test_large.xyz" \
+    --atomic_numbers="[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]" \
+    --r_max=4.5 \
+    --h5_prefix="processed_data/" \
+    --compute_statistics \
+    --E0s="average" \
+    --seed=123 \
+```
+
+To see all options and a little description of them run `python ./mace/scripts/preprocess_data.py --help` . The script will create a number of HDF5 files in the `processed_data` folder which can be used for training. There wiull be one file for trainin, one for validation and a separate one for each `config_type` in the test set. To train the model use the `run_train.py` script as follows:
+
+```sh
+python ./mace/scripts/run_train.py \
+    --name="MACE_on_big_data" \
+    --num_workers=16 \
+    --train_file="./processed_data/train.h5" \
+    --valid_file="./processed_data/valid.h5" \
+    --test_dir="./processed_data" \
+    --statistics_file="./processed_data/statistics.json" \
+    --model="ScaleShiftMACE" \
+    --num_interactions=2 \
+    --num_channels=128 \
+    --max_L=1 \
+    --correlation=3 \
+    --batch_size=32 \
+    --valid_batch_size=32 \
+    --max_num_epochs=100 \
+    --swa \
+    --start_swa=60 \
+    --ema \
+    --ema_decay=0.99 \
+    --amsgrad \
+    --error_table='PerAtomMAE' \
+    --device=cuda \
+    --seed=123 \
+```
 
 ## Weights and Biases for experiment tracking
 

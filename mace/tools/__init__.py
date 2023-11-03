@@ -1,4 +1,4 @@
-from .arg_parser import build_default_arg_parser
+from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
 from .torch_tools import (
@@ -13,6 +13,7 @@ from .torch_tools import (
     to_numpy,
     to_one_hot,
     voigt_to_matrix,
+    DataParallelModel,
 )
 from .train import SWAContainer, evaluate, train
 from .utils import (
@@ -64,4 +65,6 @@ __all__ = [
     "cartesian_to_spherical",
     "voigt_to_matrix",
     "init_wandb",
+    "build_preprocess_arg_parser",
+    "DataParallelModel",
 ]
