@@ -14,7 +14,7 @@ An example script for training the 2-layer model on the carbon nanotube (largest
 
 .. code-block:: shell
 
-    python /PATH/TO/MACE/mace/scripts/run_train.py \
+    python <mace_repo_dir>/mace/cli/run_train.py \
         --name="nanotube_large_r55" \
         --train_file="nanotube_large.xyz" \
         --valid_fraction=0.05 \
@@ -49,7 +49,7 @@ In comparison, the single layer model uses ``max_L=0``, because there is no equi
 
 .. code-block:: shell
 
-    python /PATH/TO/MACE/mace/scripts/run_train.py \
+    python <mace_repo_dir>/mace/cli/run_train.py \
         --name="nano_large_r6" \
         --train_file="nanotube_large.xyz" \
         --valid_fraction=0.05 \
@@ -90,7 +90,7 @@ To train MACE on large datasets one can preprocess the data and use on the fly d
 
 .. code-block:: shell
 
-    python /PATH/TO/MACE/mace/scripts/preprocess_data.py \
+    python <mace_repo_dir>/mace/cli/preprocess_data.py \
         --train_file="ani1x_cc_dft.xyz" \
         --valid_fraction=0.03 \
         --energy_key="DFT_energy" \
@@ -106,7 +106,7 @@ The training script for the smallest model is given below.
 
 .. code-block:: shell
 
-    python /PATH/TO/MACE/mace/scripts/run_train.py \
+    python <mace_repo_dir>/mace/cli/run_train.py \
         --name="ani500k_small" \
         --train_file="ANI1x_cc_DFT_rc5_train.h5" \
         --valid_file="ANI1x_cc_DFT_rc5_valid.h5" \
@@ -145,7 +145,7 @@ The model can easily be transfer learned to CC level of theory. For this the pre
 
 .. code-block:: shell
 
-    python /PATH/TO/MACE/mace/scripts/run_train.py \
+    python <mace_repo_dir>/mace/cli/run_train.py \
         --name="ani500k_small" \
         --train_file="ANI1x_cc_rc5_train.h5" \
         --valid_file="ANI1x_cc_rc5_valid.h5" \
@@ -193,7 +193,7 @@ To train the smaller MACE model used in the simulations of the paper we used the
 
 .. code-block:: shell
 
-    python /PATH/TO/MACE/mace/scripts/run_train.py \
+    python <mace_repo_dir>/mace/cli/run_train.py \
         --name="water_1k_small" \
         --train_file="train.xyz" \
         --valid_fraction=0.05 \

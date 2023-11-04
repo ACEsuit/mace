@@ -53,7 +53,7 @@ pip install ./mace
 To train a MACE model, you can use the `run_train.py` script:
 
 ```sh
-python ./mace/scripts/run_train.py \
+python <mace_repo_dir>/mace/cli/run_train.py \
     --name="MACE_model" \
     --train_file="train.xyz" \
     --valid_fraction=0.05 \
