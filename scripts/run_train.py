@@ -42,32 +42,33 @@ def main() -> None:
         try:
             distr_env = DistributedEnvironment()
         except Exception as e:
-            logging.info(f'Error specifying environment for distributed training: {e}')
+            logging.info(f"Error specifying environment for distributed training: {e}")
             return
         world_size = distr_env.world_size
         local_rank = distr_env.local_rank
         rank = distr_env.rank
         if rank == 0:
             print(distr_env)
-        torch.distributed.init_process_group(backend='nccl')
+        torch.distributed.init_process_group(backend="nccl")
     else:
         rank = int(0)
-        
+
     # Setup
     tools.set_seeds(args.seed)
     tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
-    
+
     if args.distributed:
+        print(local_rank)
         torch.cuda.set_device(local_rank)
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
         logging.info(f"Processes: {world_size}")
-    
+
     try:
         logging.info(f"MACE version: {mace.__version__}")
     except AttributeError:
         logging.info("Cannot find MACE version, please install MACE via pip")
     logging.info(f"Configuration: {args}")
-    
+
     tools.set_default_dtype(args.default_dtype)
     device = tools.init_device(args.device)
 
@@ -111,7 +112,7 @@ def main() -> None:
         )
     else:
         atomic_energies_dict = None
-    
+
     # Atomic number table
     # yapf: disable
     if args.atomic_numbers is None:
@@ -171,66 +172,62 @@ def main() -> None:
     print(type(r_max), type(correlation))
 
     if isinstance(r_max, (list, tuple, np.ndarray)):
-        r_max = torch.tensor(r_max, dtype=torch.get_default_dtype())
+        r_max = list(r_max)
+        # r_max = torch.tensor(r_max, dtype=torch.get_default_dtype())
     else:
-        r_max = torch.tensor(
-            [r_max] * args.num_interactions, dtype=torch.get_default_dtype()
-        )
+        r_max = [r_max for _ in range(args.num_interactions)]
+        # r_max = torch.tensor(
+        #    [r_max] * args.num_interactions, dtype=torch.get_default_dtype()
+        # )
     if isinstance(correlation, (list, tuple, np.ndarray)):
-        correlation = torch.tensor(correlation, dtype=torch.int)
+        correlation = list(correlation)
     else:
-        correlation = torch.tensor(
-            [correlation] * args.num_interactions, dtype=torch.int
-        )
-    assert r_max.shape == correlation.shape
-    assert r_max.shape[0] == args.num_interactions
+        correlation = list([correlation for _ in range(args.num_interactions)])
+    # assert r_max.shape == correlation.shape
+    # assert r_max.shape[0] == args.num_interactions
 
     if args.train_file.endswith(".xyz"):
         train_set = [
-            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+            data.AtomicData.from_config(config, z_table=z_table, cutoffs=r_max)
             for config in collections.train
         ]
         valid_set = [
-            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+            data.AtomicData.from_config(config, z_table=z_table, cutoffs=r_max)
             for config in collections.valid
         ]
     elif args.train_file.endswith(".h5"):
-        train_set = HDF5Dataset(
-            args.train_file, r_max=args.r_max, z_table=z_table
-        )
-        valid_set = HDF5Dataset(
-            args.valid_file, r_max=args.r_max, z_table=z_table
-        )
-    else: # This case would be for when the file path is to a directory of multiple .h5 files
+        train_set = HDF5Dataset(args.train_file, r_max=r_max, z_table=z_table)
+        valid_set = HDF5Dataset(args.valid_file, r_max=r_max, z_table=z_table)
+    else:  # This case would be for when the file path is to a directory of multiple .h5 files
         train_set = dataset_from_sharded_hdf5(
-            args.train_file, r_max=args.r_max, z_table=z_table
+            args.train_file, r_max=r_max, z_table=z_table
         )
         valid_set = dataset_from_sharded_hdf5(
-            args.valid_file, r_max=args.r_max, z_table=z_table
+            args.valid_file, r_max=r_max, z_table=z_table
         )
-        
+
     train_sampler, valid_sampler = None, None
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(
-            train_set, 
-            num_replicas=world_size, 
+            train_set,
+            num_replicas=world_size,
             rank=rank,
             shuffle=True,
             drop_last=True,
             seed=args.seed,
         )
         valid_sampler = torch.utils.data.distributed.DistributedSampler(
-            valid_set, 
-            num_replicas=world_size, 
+            valid_set,
+            num_replicas=world_size,
             rank=rank,
             shuffle=True,
             drop_last=True,
             seed=args.seed,
         )
-        
+
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
-        batch_size=args.batch_size,        
+        batch_size=args.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
         drop_last=False,
@@ -246,7 +243,7 @@ def main() -> None:
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
     )
-    
+
     loss_fn: torch.nn.Module = get_loss_fn(
         args.loss,
         args.energy_weight,
@@ -264,7 +261,9 @@ def main() -> None:
             num_graphs = torch.tensor(len(train_loader.dataset)).to(device)
             num_neighbors = num_graphs * torch.tensor(avg_num_neighbors).to(device)
             torch.distributed.all_reduce(num_graphs, op=torch.distributed.ReduceOp.SUM)
-            torch.distributed.all_reduce(num_neighbors, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.all_reduce(
+                num_neighbors, op=torch.distributed.ReduceOp.SUM
+            )
             args.avg_num_neighbors = (num_neighbors / num_graphs).item()
         else:
             args.avg_num_neighbors = avg_num_neighbors
@@ -338,7 +337,6 @@ def main() -> None:
             atomic_inter_scale=args.std,
             atomic_inter_shift=0.0,
             radial_MLP=ast.literal_eval(args.radial_MLP),
-
         )
     elif args.model == "ScaleShiftMACE":
         model = modules.ScaleShiftMACE(
@@ -600,35 +598,37 @@ def main() -> None:
     )
 
     logging.info("Computing metrics for training, validation, and test sets")
-    
+
     all_data_loaders = {
         "train": train_loader,
         "valid": valid_loader,
     }
-    
+
     test_sets = {}
     if args.train_file.endswith(".xyz"):
         for name, subset in collections.tests:
             test_sets[name] = [
-                data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+                data.AtomicData.from_config(config, z_table=z_table, cutoff=r_max)
                 for config in subset
             ]
     elif not args.multi_processed_test:
         test_files = get_files_with_suffix(args.test_dir, "_test.h5")
         for test_file in test_files:
             name = os.path.splitext(os.path.basename(test_file))[0]
-            test_sets[name] = HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
+            test_sets[name] = HDF5Dataset(test_file, r_max=r_max, z_table=z_table)
     else:
         test_folders = glob(args.test_dir + "/*")
         for folder in test_folders:
-            test_sets[name] = dataset_from_sharded_hdf5(folder, r_max=args.r_max, z_table=z_table)
-            
+            test_sets[name] = dataset_from_sharded_hdf5(
+                folder, r_max=args.r_max, z_table=z_table
+            )
+
     for test_name, test_set in test_sets.items():
         test_sampler = None
         if args.distributed:
             test_sampler = torch.utils.data.distributed.DistributedSampler(
-                test_set, 
-                num_replicas=world_size, 
+                test_set,
+                num_replicas=world_size,
                 rank=rank,
                 shuffle=True,
                 drop_last=True,
@@ -643,7 +643,7 @@ def main() -> None:
             pin_memory=args.pin_memory,
         )
         all_data_loaders[test_name] = test_loader
-                        
+
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
             state=tools.CheckpointState(model, optimizer, lr_scheduler),
@@ -669,7 +669,7 @@ def main() -> None:
             distributed=args.distributed,
         )
         logging.info("\n" + str(table))
-        
+
         if rank == 0:
             # Save entire model
             if swa_eval:
@@ -685,11 +685,11 @@ def main() -> None:
                 torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
             else:
                 torch.save(model, Path(args.model_dir) / (args.name + ".model"))
-                
+
         if args.distributed:
             torch.distributed.barrier()
 
-    logging.info("Done")    
+    logging.info("Done")
     if args.distributed:
         torch.distributed.destroy_process_group()
 

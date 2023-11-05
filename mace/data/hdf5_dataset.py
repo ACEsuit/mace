@@ -28,7 +28,7 @@ class HDF5ChainDataset(ChainDataset):
 
     def __getstate__(self):
         _d = dict(self.__dict__)
-        
+
         # An opened h5py.File cannot be pickled, so we must exclude it from the state
         _d["_file"] = None
         return _d
@@ -89,7 +89,7 @@ class HDF5IterDataset(IterableDataset):
                 cell=subgrp["cell"][()],
             )
             atomic_data = data.AtomicData.from_config(
-                config, z_table=self.z_table, cutoff=self.r_max
+                config, z_table=self.z_table, cutoffs=self.r_max
             )
             grp_list.append(atomic_data)
 
@@ -153,17 +153,19 @@ class HDF5Dataset(Dataset):
             cell=unpack_value(subgrp["cell"][()]),
         )
         atomic_data = data.AtomicData.from_config(
-            config, z_table=self.z_table, cutoff=self.r_max
+            config, z_table=self.z_table, cutoffs=self.r_max
         )
         return atomic_data
 
+
 def dataset_from_sharded_hdf5(files: List, z_table: AtomicNumberTable, r_max: float):
-    files = glob(files+'/*')
+    files = glob(files + "/*")
     datasets = []
     for file in files:
         datasets.append(data.HDF5Dataset(file, z_table=z_table, r_max=r_max))
     full_dataset = ConcatDataset(datasets)
     return full_dataset
+
 
 def unpack_value(value):
     value = value.decode("utf-8") if isinstance(value, bytes) else value
