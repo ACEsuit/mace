@@ -28,26 +28,44 @@ from mace.tools import torch_geometric
 from mace.modules import compute_statistics
 
 
-def compute_stats_target(file: str, z_table: AtomicNumberTable, r_max: float, atomic_energies: Tuple, batch_size: int):
+def compute_stats_target(
+    file: str,
+    z_table: AtomicNumberTable,
+    r_max: float,
+    atomic_energies: Tuple,
+    batch_size: int,
+):
     train_dataset = data.HDF5Dataset(file, z_table=z_table, r_max=r_max)
     train_loader = torch_geometric.dataloader.DataLoader(
-        dataset=train_dataset, 
-        batch_size=batch_size, 
+        dataset=train_dataset,
+        batch_size=batch_size,
         shuffle=False,
         drop_last=False,
     )
-    
+
     avg_num_neighbors, mean, std = compute_statistics(train_loader, atomic_energies)
     output = [avg_num_neighbors, mean, std]
     return output
 
 
-def pool_compute_stats(inputs: List): 
+def pool_compute_stats(inputs: List):
     path_to_files, z_table, r_max, atomic_energies, batch_size, num_process = inputs
     pool = mp.Pool(processes=num_process)
-    
-    re=[pool.apply_async(compute_stats_target, args=(file, z_table, r_max, atomic_energies, batch_size,)) for file in glob(path_to_files+'/*')]
-    
+
+    re = [
+        pool.apply_async(
+            compute_stats_target,
+            args=(
+                file,
+                z_table,
+                r_max,
+                atomic_energies,
+                batch_size,
+            ),
+        )
+        for file in glob(path_to_files + "/*")
+    ]
+
     pool.close()
     pool.join()
     results = [r.get() for r in tqdm.tqdm(re)]
@@ -85,7 +103,8 @@ def main():
     new hdf5 file that is ready for training with on-the-fly dataloading
     """
     args = tools.build_preprocess_arg_parser().parse_args()
-    
+
+    args.r_max = ast.literal_eval(args.r_max)
     # Setup
     tools.set_seeds(args.seed)
     random.seed(args.seed)
@@ -95,7 +114,7 @@ def main():
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler()],
     )
-    
+
     try:
         config_type_weights = ast.literal_eval(args.config_type_weights)
         assert isinstance(config_type_weights, dict)
@@ -104,12 +123,12 @@ def main():
             f"Config type weights not specified correctly ({e}), using Default"
         )
         config_type_weights = {"Default": 1.0}
-    
-    folders = ['train', 'val','test']
+
+    folders = ["train", "val", "test"]
     for sub_dir in folders:
-        if not os.path.exists(args.h5_prefix+sub_dir):
-                os.makedirs(args.h5_prefix+sub_dir)
-    
+        if not os.path.exists(args.h5_prefix + sub_dir):
+            os.makedirs(args.h5_prefix + sub_dir)
+
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
         train_path=args.train_file,
@@ -236,6 +255,7 @@ def main():
 
             for i in processes:
                 i.join()
+
 
 if __name__ == "__main__":
     main()

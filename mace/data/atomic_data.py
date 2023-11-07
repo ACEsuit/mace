@@ -4,7 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 import torch.utils.data
 import numpy as np
@@ -115,7 +115,7 @@ class AtomicData(torch_geometric.data.Data):
 
     @classmethod
     def from_config(
-        cls, config: Configuration, z_table: AtomicNumberTable, cutoffs: list
+        cls, config: Configuration, z_table: AtomicNumberTable, cutoffs: List[float]
     ) -> "AtomicData":
         # Get egdge index for larges cutoff
         edge_index, shifts, unit_shifts = get_neighborhood(
