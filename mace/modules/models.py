@@ -218,7 +218,7 @@ class MACE(torch.nn.Module):
         for i, (interaction, product, readout, radial_embedding) in enumerate(
             zip(self.interactions, self.products, self.readouts, self.radial_embeddings)
         ):
-            edge_index_mask = data["edge_index_mask"][i, :]
+            edge_index_mask = data["edge_mask"][i, :]
             edge_attrsi = edge_attrs[edge_index_mask]
             edge_featsi = radial_embedding(lengths[edge_index_mask])
 
@@ -241,7 +241,6 @@ class MACE(torch.nn.Module):
 
         # Sum over energy contributions
         contributions = torch.stack(energies, dim=-1)
-        print("contributions", contributions.shape)
         total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
         node_energy_contributions = torch.stack(node_energies_list, dim=-1)
         node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
@@ -333,7 +332,7 @@ class ScaleShiftMACE(MACE):
         for i, (interaction, product, readout, radial_embedding) in enumerate(
             zip(self.interactions, self.products, self.readouts, self.radial_embeddings)
         ):
-            edge_index_mask = data["edge_index_mask"][i, :]
+            edge_index_mask = data["edge_mask"][:,i]
             edge_attrsi = edge_attrs[edge_index_mask]
             edge_featsi = radial_embedding(lengths[edge_index_mask])
 
