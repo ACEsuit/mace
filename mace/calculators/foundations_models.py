@@ -1,9 +1,6 @@
-"""
-"""
-
-import logging
-from .mace import MACECalculator
 import os
+
+from .mace import MACECalculator
 
 path = os.path.dirname(__file__)
 
