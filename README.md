@@ -149,7 +149,7 @@ mace_eval_configs \
 
 ## Tutorial
 
-You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE.
+You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE. We also have a more detailed user and developer tutorial at https://github.com/ilyes319/mace-tutorials 
 
 ## On-line data loading for large datasets
 
