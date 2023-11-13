@@ -401,8 +401,10 @@ def test_calculator_committee(fitting_configs, trained_committee):
     E = at.get_potential_energy()
     energies = at.calc.results["energies"]
     energies_var = at.calc.results["energy_var"]
+    forces_var = np.var(at.calc.results["forces_comm"], axis=0)
     assert np.allclose(E, np.mean(energies))
     assert np.allclose(energies_var, np.var(energies))
+    assert forces_var.shape == at.calc.results["forces"].shape
 
 
 def test_calculator_dipole(fitting_configs, trained_dipole_model):
