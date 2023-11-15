@@ -111,7 +111,10 @@ def save_config(dyn, fname):
         }
     )
     atomsi.arrays.update(
-        {"mlff_forces": frcs, "mlff_forces_var": np.var(atomsi.calc.results["forces_comm"], axis=0)}
+        {
+            "mlff_forces": frcs,
+            "mlff_forces_var": np.var(atomsi.calc.results["forces_comm"], axis=0),
+        }
     )
 
     ase.io.write(fname, atomsi, append=True)
