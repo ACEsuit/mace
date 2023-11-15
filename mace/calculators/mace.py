@@ -19,6 +19,16 @@ from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 
 
+def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
+    """Get the dtype of the model"""
+    mode_dtype = next(model.parameters()).dtype
+    if mode_dtype == torch.float64:
+        return "float64"
+    if mode_dtype == torch.float32:
+        return "float32"
+    raise ValueError(f"Unknown dtype {mode_dtype}")
+
+
 class MACECalculator(Calculator):
     """MACE ASE Calculator
     args:
@@ -99,9 +109,7 @@ class MACECalculator(Calculator):
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
 
-        self.models = [
-            torch.load(f=model_path, map_location=device) for model_path in model_paths
-        ]
+        self.models = [torch.load(f=model_path) for model_path in model_paths]
         for model in self.models:
             model.to(device)  # shouldn't be necessary but seems to help with GPU
         r_maxs = [model.r_max.cpu() for model in self.models]
@@ -118,6 +126,12 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+        model_dtype = get_model_dtype(self.models[0])
+        if model_dtype != default_dtype:
+            print(
+                f"Changing default dtype to {model_dtype} to match model dtype, save a new version of the model to overload the type."
+            )
+            default_dtype = model_dtype
         torch_tools.set_default_dtype(default_dtype)
         for model in self.models:
             for param in model.parameters():
