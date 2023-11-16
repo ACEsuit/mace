@@ -6,8 +6,9 @@ path = os.path.dirname(__file__)
 
 
 def mace_mp(
-    device="cuda",
-    model_path=None,
+    device: str = "cuda",
+    model_path: str = None,
+    default_dtype: str = "float32",
 ) -> MACECalculator:
     """
     Constructs a MACECalculator with a pretrained model based on the Materials Project (89 elements).
@@ -25,7 +26,7 @@ def mace_mp(
         print(
             "Using Materials Project model for MACECalculator, see https://huggingface.co/cyrusyc/mace-universal"
         )
-    return MACECalculator(model_path, device=device, default_dtype="float32")
+    return MACECalculator(model_path, device=device, default_dtype=default_dtype)
 
 
 def mace_anicc(
