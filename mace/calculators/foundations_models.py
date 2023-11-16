@@ -3,13 +3,15 @@ import urllib.request
 from pathlib import Path
 from typing import Union
 
+import torch
+
 from .mace import MACECalculator
 
 path = os.path.dirname(__file__)
 
 
 def mace_mp(
-    device: str = "cuda",
+    device: str = "",
     model_path: Union[str, Path] = None,
     default_dtype: str = "float32",
     **kwargs,
@@ -46,6 +48,8 @@ def mace_mp(
         print(
             "Using Materials Project model for MACECalculator, see https://figshare.com/articles/dataset/22715158"
         )
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
     return MACECalculator(
         model_path, device=device, default_dtype=default_dtype, **kwargs
