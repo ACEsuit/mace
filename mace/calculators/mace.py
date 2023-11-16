@@ -108,7 +108,9 @@ class MACECalculator(Calculator):
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
 
-        self.models = [torch.load(f=model_path) for model_path in model_paths]
+        self.models = [
+            torch.load(f=model_path, map_location=device) for model_path in model_paths
+        ]
         for model in self.models:
             model.to(device)  # shouldn't be necessary but seems to help with GPU
         r_maxs = [model.r_max.cpu() for model in self.models]
