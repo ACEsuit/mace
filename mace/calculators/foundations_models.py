@@ -12,6 +12,7 @@ def mace_mp(
     device: str = "cuda",
     model_path: Union[str, Path] = "https://figshare.com/ndownloader/files/43117273",
     default_dtype: str = "float32",
+    **kwargs,
 ) -> MACECalculator:
     """
     Constructs a MACECalculator with a pretrained model based on the Materials Project (89 elements).
@@ -26,6 +27,7 @@ def mace_mp(
         device (str, optional): Device to use for the model. Defaults to "cuda".
         model_path (str, optional): Path to the model. Defaults to "https://figshare.com/ndownloader/files/43117273".
         default_dtype (str, optional): Default dtype for the model. Defaults to "float32".
+        **kwargs: Passed to MACECalculator.
 
     Returns:
         MACECalculator: trained on the MPtrj dataset (unless model_path otherwise specified).
@@ -44,7 +46,9 @@ def mace_mp(
             "Using Materials Project model for MACECalculator, see https://figshare.com/articles/dataset/22715158"
         )
 
-    return MACECalculator(model_path, device=device, default_dtype=default_dtype)
+    return MACECalculator(
+        model_path, device=device, default_dtype=default_dtype, **kwargs
+    )
 
 
 def mace_anicc(
