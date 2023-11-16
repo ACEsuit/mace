@@ -10,7 +10,7 @@ path = os.path.dirname(__file__)
 
 def mace_mp(
     device: str = "cuda",
-    model_path: Union[str, Path] = "https://figshare.com/ndownloader/files/43117273",
+    model_path: Union[str, Path] = None,
     default_dtype: str = "float32",
     **kwargs,
 ) -> MACECalculator:
@@ -33,6 +33,7 @@ def mace_mp(
         MACECalculator: trained on the MPtrj dataset (unless model_path otherwise specified).
     """
     if model_path is None or str(model_path).startswith("https:"):
+        model_path = model_path or "https://figshare.com/ndownloader/files/43117273"
         cache_dir = os.path.expanduser("~/.cache/mace")
         cached_model_path = f"{cache_dir}/{os.path.basename(model_path)}"
         if not os.path.exists(cached_model_path):
