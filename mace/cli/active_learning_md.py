@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--model",
-        help="path to model. Use wildcards to add multiple models as committe eg "
+        help="path to model. Use wildcards to add multiple models as committee eg "
         "(`mace_*.model` to load mace_1.model, mace_2.model) ",
         required=True,
     )
