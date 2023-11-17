@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--return_contributions",
-        help="model outputs energy contributions for each body order, only suppported for MACE, not ScaleShiftMACE",
+        help="model outputs energy contributions for each body order, only supported for MACE, not ScaleShiftMACE",
         action="store_true",
         default=False,
     )
@@ -65,7 +65,7 @@ def main():
     model = torch.load(f=args.model, map_location=args.device)
     model = model.to(
         args.device
-    )  # shouldn't be necessary but seems to help wtih CUDA problems
+    )  # shouldn't be necessary but seems to help with CUDA problems
 
     for param in model.parameters():
         param.requires_grad = False
@@ -109,7 +109,7 @@ def main():
             indices_or_sections=batch.ptr[1:],
             axis=0,
         )
-        forces_collection.append(forces[:-1])  # drop last as its emtpy
+        forces_collection.append(forces[:-1])  # drop last as its empty
 
     energies = np.concatenate(energies_list, axis=0)
     forces_list = [

@@ -118,7 +118,7 @@ def main() -> None:
                         assert isinstance(atomic_energies_dict, dict)
                     except Exception as e:
                         raise RuntimeError(
-                            f"E0s specified invalidly, error {e} occured"
+                            f"E0s specified invalidly, error {e} occurred"
                         ) from e
             else:
                 raise RuntimeError(
@@ -453,7 +453,7 @@ def main() -> None:
                 swa=True,
                 device=device,
             )
-        except Exception as e:  # pylint: disable=W0703
+        except Exception:  # pylint: disable=W0703
             opt_start_epoch = checkpoint_handler.load_latest(
                 state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=False,
