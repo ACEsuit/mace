@@ -41,6 +41,9 @@ def mace_mp(
     )
     if model in (None, "medium") and os.path.isfile(local_model_path):
         model = local_model_path
+        print(
+            f"Using local medium Materials Project MACE model for MACECalculator {model=}"
+        )
     elif model in (None, "medium", "large") or str(model).startswith("https:"):
         try:
             urls = dict(
@@ -62,9 +65,13 @@ def mace_mp(
                 urllib.request.urlretrieve(model, cached_model_path)
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
-            print(
-                "Using Materials Project model for MACECalculator, see https://figshare.com/articles/dataset/22715158"
-            )
+            msg = f"Using Materials Project MACE for MACECalculator with {model=}"
+            if "checkpoint_url" in locals():
+                msg += f" (downloaded from {checkpoint_url=})"
+            print(msg)
+            # print(
+            #     f"Using Materials Project MACE model for MACECalculator, see https://figshare.com/articles/dataset/22715158"
+            # )
         except Exception as exc:
             raise RuntimeError(
                 "Model download failed and no local model found"
