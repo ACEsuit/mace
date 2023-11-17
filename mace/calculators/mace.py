@@ -51,7 +51,7 @@ class MACECalculator(Calculator):
         device: str,
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
-        default_dtype="float64",
+        default_dtype="",
         charges_key="Qs",
         model_type="MACE",
         **kwargs,
@@ -127,11 +127,19 @@ class MACECalculator(Calculator):
         )
         self.charges_key = charges_key
         model_dtype = get_model_dtype(self.models[0])
-        if model_dtype != default_dtype:
+        if default_dtype == "":
             print(
-                f"Changing default dtype to {model_dtype} to match model dtype, save a new version of the model to overload the type."
+                f"No dtype selected, switching to {model_dtype} to match model dtype."
             )
             default_dtype = model_dtype
+        if model_dtype != default_dtype:
+            print(
+                f"Default dtype {default_dtype} does not match model dtype {model_dtype}, converting models to {default_dtype}."
+            )
+            if default_dtype == "float64":
+                self.models = [model.double() for model in self.models]
+            elif default_dtype == "float32":
+                self.models = [model.float() for model in self.models]
         torch_tools.set_default_dtype(default_dtype)
         for model in self.models:
             for param in model.parameters():
