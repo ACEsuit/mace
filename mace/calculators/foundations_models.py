@@ -7,12 +7,12 @@ import torch
 
 from .mace import MACECalculator
 
-path = os.path.dirname(__file__)
+module_dir = os.path.dirname(__file__)
 
 
 def mace_mp(
-    device: str = "",
     model_path: Union[str, Path] = None,
+    device: str = "",
     default_dtype: str = "float32",
     **kwargs,
 ) -> MACECalculator:
@@ -27,7 +27,7 @@ def mace_mp(
 
     Args:
         device (str, optional): Device to use for the model. Defaults to "cuda".
-        model_path (str, optional): Path to the model. Defaults to "https://figshare.com/ndownloader/files/43117273".
+        model_path (str, optional): Path to the model. Defaults to "https://figshare.com/ndownloader/files/42374049".
         default_dtype (str, optional): Default dtype for the model. Defaults to "float32".
         **kwargs: Passed to MACECalculator.
 
@@ -35,19 +35,26 @@ def mace_mp(
         MACECalculator: trained on the MPtrj dataset (unless model_path otherwise specified).
     """
     if model_path is None or str(model_path).startswith("https:"):
-        model_path = model_path or "https://figshare.com/ndownloader/files/43117273"
-        cache_dir = os.path.expanduser("~/.cache/mace")
-        cached_model_path = f"{cache_dir}/{os.path.basename(model_path)}"
-        if not os.path.exists(cached_model_path):
-            os.makedirs(cache_dir, exist_ok=True)
-            # download and save to disk
-            print(f"Downloading MACE model from {model_path!r}")
-            urllib.request.urlretrieve(model_path, cached_model_path)
-            print(f"Cached MACE model to {cached_model_path}")
-        model_path = cached_model_path
-        print(
-            "Using Materials Project model for MACECalculator, see https://figshare.com/articles/dataset/22715158"
-        )
+        try:
+            # default URL points to 2023-08-14-mace-yuan-trained-mptrj-04.model (16 MB, 2M params)
+            model_path = model_path or "https://figshare.com/ndownloader/files/42374049"
+            cache_dir = os.path.expanduser("~/.cache/mace")
+            cached_model_path = f"{cache_dir}/{os.path.basename(model_path)}"
+            if not os.path.exists(cached_model_path):
+                os.makedirs(cache_dir, exist_ok=True)
+                # download and save to disk
+                print(f"Downloading MACE model from {model_path!r}")
+                urllib.request.urlretrieve(model_path, cached_model_path)
+                print(f"Cached MACE model to {cached_model_path}")
+            model_path = cached_model_path
+            print(
+                "Using Materials Project model for MACECalculator, see https://figshare.com/articles/dataset/22715158"
+            )
+        except Exception:
+            # if download fails, use the default model in the repo
+            model_path = os.path.join(
+                module_dir, "foundations_models/2023-08-14-mace-universal.model"
+            )
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -68,7 +75,9 @@ def mace_anicc(
         - "Evaluation of the MACE Force Field Architecture by Dávid Péter Kovács, Ilyes Batatia, Eszter Sára Arany, and Gábor Csányi, The Journal of Chemical Physics, 2023, URL: https://doi.org/10.1063/5.0155322
     """
     if model_path is None:
-        model_path = os.path.join(path, "foundations_models/ani500k_large_CC.model")
+        model_path = os.path.join(
+            module_dir, "foundations_models/ani500k_large_CC.model"
+        )
         print(
             "Using ANI couple cluster model for MACECalculator, see https://doi.org/10.1063/5.0155322"
         )
