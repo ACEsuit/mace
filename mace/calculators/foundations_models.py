@@ -51,7 +51,9 @@ def mace_mp(
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-    return MACECalculator(model_path, device=device, **kwargs)
+    return MACECalculator(
+        model_path, device=device, default_dtype=default_dtype, **kwargs
+    )
 
 
 def mace_anicc(
