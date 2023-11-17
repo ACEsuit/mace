@@ -11,7 +11,7 @@ module_dir = os.path.dirname(__file__)
 
 
 def mace_mp(
-    model_path: Union[str, Path] = None,
+    model: Union[str, Path] = None,
     device: str = "",
     default_dtype: str = "float32",
     **kwargs,
@@ -27,22 +27,21 @@ def mace_mp(
 
     Args:
         device (str, optional): Device to use for the model. Defaults to "cuda".
-        model_path (str, optional): Path to the model. Defaults to None which first checks for
-            a local model and then downloads the default model from figshare. Specify "medium" or "large" to download a smaller or larger model from figshare.
+        model (str, optional): Path to the model. Defaults to None which first checks for
+            a local model and then downloads the default model from figshare. Specify "medium"
+            or "large" to download a smaller or larger model from figshare.
         default_dtype (str, optional): Default dtype for the model. Defaults to "float32".
         **kwargs: Passed to MACECalculator.
 
     Returns:
-        MACECalculator: trained on the MPtrj dataset (unless model_path otherwise specified).
+        MACECalculator: trained on the MPtrj dataset (unless model otherwise specified).
     """
     local_model_path = os.path.join(
         module_dir, "foundations_models/2023-08-14-mace-universal.model"
     )
-    if model_path in (None, "medium") and os.path.exists(local_model_path):
-        model_path = local_model_path
-    elif model_path in (None, "medium", "large") or str(model_path).startswith(
-        "https:"
-    ):
+    if model in (None, "medium") and os.path.exists(local_model_path):
+        model = local_model_path
+    elif model in (None, "medium", "large") or str(model).startswith("https:"):
         try:
             urls = dict(
                 medium="https://figshare.com/ndownloader/files/42374049",
@@ -50,19 +49,19 @@ def mace_mp(
             )
             # default URL points to 2023-08-14-mace-yuan-trained-mptrj-04.model (16 MB, 2M params)
             checkpoint_url = (
-                urls.get(model_path, urls["medium"])
-                if model_path in (None, "medium", "large")
-                else model_path
+                urls.get(model, urls["medium"])
+                if model in (None, "medium", "large")
+                else model
             )
             cache_dir = os.path.expanduser("~/.cache/mace")
             cached_model_path = f"{cache_dir}/{os.path.basename(checkpoint_url)}"
             if not os.path.exists(cached_model_path):
                 os.makedirs(cache_dir, exist_ok=True)
                 # download and save to disk
-                print(f"Downloading MACE model from {model_path!r}")
-                urllib.request.urlretrieve(model_path, cached_model_path)
+                print(f"Downloading MACE model from {model!r}")
+                urllib.request.urlretrieve(model, cached_model_path)
                 print(f"Cached MACE model to {cached_model_path}")
-            model_path = cached_model_path
+            model = cached_model_path
             print(
                 "Using Materials Project model for MACECalculator, see https://figshare.com/articles/dataset/22715158"
             )
@@ -73,9 +72,7 @@ def mace_mp(
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-    return MACECalculator(
-        model_path, device=device, default_dtype=default_dtype, **kwargs
-    )
+    return MACECalculator(model, device=device, default_dtype=default_dtype, **kwargs)
 
 
 def mace_anicc(
