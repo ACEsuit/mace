@@ -39,7 +39,7 @@ def mace_mp(
     local_model_path = os.path.join(
         module_dir, "foundations_models/2023-08-14-mace-universal.model"
     )
-    if model in (None, "medium") and os.path.exists(local_model_path):
+    if model in (None, "medium") and os.path.isfile(local_model_path):
         model = local_model_path
     elif model in (None, "medium", "large") or str(model).startswith("https:"):
         try:
@@ -55,7 +55,7 @@ def mace_mp(
             )
             cache_dir = os.path.expanduser("~/.cache/mace")
             cached_model_path = f"{cache_dir}/{os.path.basename(checkpoint_url)}"
-            if not os.path.exists(cached_model_path):
+            if not os.path.isfile(cached_model_path):
                 os.makedirs(cache_dir, exist_ok=True)
                 # download and save to disk
                 print(f"Downloading MACE model from {model!r}")
