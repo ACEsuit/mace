@@ -110,7 +110,7 @@ class MACECalculator(Calculator):
                 self.implemented_properties.extend(["dipole_var"])
 
         self.models = [
-            torch.load(f=model_path, map_location=device) for model_path in model_paths
+            torch.load(f=model_path, map_location="cpu") for model_path in model_paths
         ]
         for model in self.models:
             model.to(device)  # shouldn't be necessary but seems to help with GPU
