@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Union
 
 import torch
-
+from ase import units
+from ase.calculators.mixing import SumCalculator
 from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
@@ -14,6 +15,9 @@ def mace_mp(
     model: Union[str, Path] = None,
     device: str = "",
     default_dtype: str = "float32",
+    dispersion: bool = False,
+    dispersion_xc="pbe",
+    dispersion_cutoff=95.0 * units.Bohr,
     **kwargs,
 ) -> MACECalculator:
     """
@@ -31,7 +35,10 @@ def mace_mp(
             a local model and then downloads the default model from figshare. Specify "medium"
             or "large" to download a smaller or larger model from figshare.
         default_dtype (str, optional): Default dtype for the model. Defaults to "float32".
-        **kwargs: Passed to MACECalculator.
+        dispersion (bool, optional): Whether to use D3 dispersion corrections. Defaults to False.
+        dispersion_xc (str, optional): Exchange-correlation functional for D3 dispersion corrections.
+        dispersion_cutoff (float, optional): Cutoff radius in Bhor for D3 dispersion corrections.
+        **kwargs: Passed to MACECalculator and TorchDFTD3Calculator.
 
     Returns:
         MACECalculator: trained on the MPtrj dataset (unless model otherwise specified).
@@ -78,8 +85,30 @@ def mace_mp(
             ) from exc
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-
-    return MACECalculator(model, device=device, default_dtype=default_dtype, **kwargs)
+    mace_calc = MACECalculator(
+        model, device=device, default_dtype=default_dtype, **kwargs
+    )
+    if dispersion:
+        try:
+            from torch_dftd.torch_dftd3_calculator import TorchDFTD3Calculator
+        except ImportError:
+            raise RuntimeError(
+                "Please install torch-dftd to use dispersion corrections (see https://github.com/pfnet-research/torch-dftd)"
+            )
+        print(
+            "Using D3 dispersion corrections for with TorchDFTD3Calculator (see https://github.com/pfnet-research/torch-dftd)"
+        )
+        dtype = torch.float32 if default_dtype == "float32" else torch.float64
+        d3_calc = TorchDFTD3Calculator(
+            device=device,
+            damping="bj",
+            dtype=dtype,
+            xc=dispersion_xc,
+            cutoff=dispersion_cutoff,
+            **kwargs,
+        )
+    calc = mace_calc if not dispersion else SumCalculator([mace_calc, d3_calc])
+    return calc
 
 
 def mace_anicc(
