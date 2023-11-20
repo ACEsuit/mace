@@ -6,6 +6,7 @@ from typing import Union
 import torch
 from ase import units
 from ase.calculators.mixing import SumCalculator
+
 from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
@@ -32,10 +33,10 @@ def mace_mp(
             Alpha A Lee, Anubhav Jain, Kristin A Persson, 2023, arXiv:2308.14920
 
     Args:
-        device (str, optional): Device to use for the model. Defaults to "cuda".
         model (str, optional): Path to the model. Defaults to None which first checks for
             a local model and then downloads the default model from figshare. Specify "medium"
             or "large" to download a smaller or larger model from figshare.
+        device (str, optional): Device to use for the model. Defaults to "cuda".
         default_dtype (str, optional): Default dtype for the model. Defaults to "float32".
         dispersion (bool, optional): Whether to use D3 dispersion corrections. Defaults to False.
         dispersion_xc (str, optional): Exchange-correlation functional for D3 dispersion corrections.
@@ -88,7 +89,7 @@ def mace_mp(
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     mace_calc = MACECalculator(
-        model, device=device, default_dtype=default_dtype, **kwargs
+        models_paths=model, device=device, default_dtype=default_dtype, **kwargs
     )
     if dispersion:
         try:
