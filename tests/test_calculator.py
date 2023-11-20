@@ -10,7 +10,9 @@ from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
 from ase.constraints import ExpCellFilter
 
+from mace.calculators import mace_mp
 from mace.calculators.mace import MACECalculator
+from mace.modules.models import ScaleShiftMACE
 
 pytest_mace_dir = Path(__file__).parent.parent
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
@@ -441,3 +443,14 @@ def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
     assert desc_single_layer.shape[1] == 16
     assert desc.shape[0] == 3
     assert desc.shape[1] == 80
+
+
+def test_mace_mp():
+    import torch
+
+    mp_mace = mace_mp()
+    assert isinstance(mp_mace, MACECalculator)
+    assert mp_mace.model_type == "MACE"
+    assert mp_mace.device == "cuda" if torch.cuda.is_available() else "cpu"
+    assert len(mp_mace.models) == 1
+    assert isinstance(mp_mace.models[0], ScaleShiftMACE)
