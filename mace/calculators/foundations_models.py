@@ -26,8 +26,10 @@ def mace_mp(
     Note:
         If you are using this function, please cite the relevant paper for the Materials Project,
         any paper associated with the MACE model, and also the following:
-        - "MACE-Universal by Yuan Chiang, 2023, Hugging Face, Revision e5ebd9b, DOI: 10.57967/hf/1202, URL: https://huggingface.co/cyrusyc/mace-universal"
-        - "Matbench Discovery by Janosh Riebesell, Rhys EA Goodall, Anubhav Jain, Philipp Benner, Kristin A Persson, Alpha A Lee, 2023, arXiv:2308.14920"
+        - MACE-Universal by Yuan Chiang, 2023, Hugging Face, Revision e5ebd9b,
+            DOI: 10.57967/hf/1202, URL: https://huggingface.co/cyrusyc/mace-universal
+        - Matbench Discovery by Janosh Riebesell, Rhys EA Goodall, Philipp Benner, Yuan Chiang,
+            Alpha A Lee, Anubhav Jain, Kristin A Persson, 2023, arXiv:2308.14920
 
     Args:
         device (str, optional): Device to use for the model. Defaults to "cuda".
