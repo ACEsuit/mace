@@ -43,9 +43,9 @@ First steps::
     unzip libtorch-cxx11-abi-shared-with-deps-1.13.1+cu117.zip
     mv libtorch libtorch-gpu
 
-Request interactive node::
+Request an interactive job to obtain a GPU node for the installation::
 
-    sintr -t 1:0:0 -A MY-ACCOUNT-GPU -p ampere
+    sintr -A YOUR-ACCOUNT-GPU -p ampere -N 1 --gres=gpu:1 -t 1:00:00
 
 Prepare the environment::
 
