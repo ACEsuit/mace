@@ -89,17 +89,18 @@ def mace_mp(
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     mace_calc = MACECalculator(
-        models_paths=model, device=device, default_dtype=default_dtype, **kwargs
+        model_paths=model, device=device, default_dtype=default_dtype, **kwargs
     )
     if dispersion:
+        gh_url = "https://github.com/pfnet-research/torch-dftd"
         try:
             from torch_dftd.torch_dftd3_calculator import TorchDFTD3Calculator
         except ImportError:
             raise RuntimeError(
-                "Please install torch-dftd to use dispersion corrections (see https://github.com/pfnet-research/torch-dftd)"
+                f"Please install torch-dftd to use dispersion corrections (see {gh_url})"
             )
         print(
-            "Using D3 dispersion corrections for with TorchDFTD3Calculator (see https://github.com/pfnet-research/torch-dftd)"
+            f"Using TorchDFTD3Calculator for D3 dispersion corrections (see {gh_url})"
         )
         dtype = torch.float32 if default_dtype == "float32" else torch.float64
         d3_calc = TorchDFTD3Calculator(
