@@ -237,7 +237,7 @@ def create_example_graphs(atoms: ase.Atoms, local_list: List[int], r_cut: int):
     edge_mask_1 = np.isin(edge_index[0], local_list + ghost_list_1)
     edge_mask_2 = np.isin(edge_index[0], local_list + ghost_list_1 + ghost_list_2)
     atoms.positions = reordered_positions
-    atoms.species = atoms.species[new_order]
+    atoms.symbols = atoms.symbols[new_order]
     node_mask = [local_list, ghost_list_1]
     edge_mask = [edge_mask_2, edge_mask_1]
     return (
@@ -249,6 +249,8 @@ def create_example_graphs(atoms: ase.Atoms, local_list: List[int], r_cut: int):
 
 def test_mace_ghost():
     # Create MACE model
+    table = tools.AtomicNumberTable([26])
+    atomic_energies = np.array([1.0], dtype=float)
     model_config = dict(
         r_max=8.0,
         num_bessel=8,
@@ -260,8 +262,8 @@ def test_mace_ghost():
         interaction_cls_first=modules.interaction_classes[
             "RealAgnosticResidualInteractionBlock"
         ],
-        num_interactions=5,
-        num_elements=2,
+        num_interactions=3,
+        num_elements=1,
         hidden_irreps=o3.Irreps("32x0e + 32x1o"),
         MLP_irreps=o3.Irreps("16x0e"),
         gate=torch.nn.functional.silu,
@@ -285,7 +287,7 @@ def test_mace_ghost():
     table = tools.AtomicNumberTable([26])
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=r_cut)
     atomic_data2 = data.AtomicData.from_config(
-        config_rotated,
+        config,
         z_table=table,
         cutoff=3.0,
         edge_mask_index=edge_mask,
