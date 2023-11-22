@@ -31,7 +31,6 @@ from mace.tools.scripts_utils import (
     get_config_type_weights,
     get_dataset_from_xyz,
     get_files_with_suffix,
-    get_loss_fn,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 
@@ -248,16 +247,16 @@ def main() -> None:
         num_workers=args.num_workers,
     )
 
-    loss_fn: torch.nn.Module = get_loss_fn(
-        args.loss,
-        args.energy_weight,
-        args.forces_weight,
-        args.stress_weight,
-        args.virials_weight,
-        args.dipole_weight,
-        dipole_only,
-        compute_dipole,
-    )
+    # loss_fn: torch.nn.Module = get_loss_fn(
+    #     args.loss,
+    #     args.energy_weight,
+    #     args.forces_weight,
+    #     args.stress_weight,
+    #     args.virials_weight,
+    #     args.dipole_weight,
+    #     dipole_only,
+    #     compute_dipole,
+    # )
 
     if args.loss == "weighted":
         loss_fn = modules.WeightedEnergyForcesLoss(
@@ -279,6 +278,13 @@ def main() -> None:
         )
     elif args.loss == "huber":
         loss_fn = modules.WeightedHuberEnergyForcesStressLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            huber_delta=args.huber_delta,
+        )
+    elif args.loss == "universal":
+        loss_fn = modules.UniversalLoss(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
