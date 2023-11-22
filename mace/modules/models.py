@@ -307,6 +307,16 @@ class ScaleShiftMACE(MACE):
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
+        edge_index_mask: List[torch.Tensor] = (
+            list(data["edge_index_mask"])
+            if "edge_index_mask" in data
+            else [torch.tensor([float("inf")])] * len(self.interactions)
+        )
+        node_index_mask: List[torch.Tensor] = (
+            list(data["node_index_mask"])
+            if "node_index_mask" in data
+            else [torch.tensor([float("inf")])] * len(self.interactions)
+        )
         displacement = torch.zeros(
             (num_graphs, 3, 3),
             dtype=data["positions"].dtype,
@@ -345,15 +355,20 @@ class ScaleShiftMACE(MACE):
         # Interactions
         node_es_list = []
         node_feats_list = []
-        for interaction, product, readout in zip(
-            self.interactions, self.products, self.readouts
+        for i, (interaction, product, readout) in enumerate(
+            zip(
+                self.interactions,
+                self.products,
+                self.readouts,
+            )
         ):
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
                 node_feats=node_feats,
-                edge_attrs=edge_attrs,
-                edge_feats=edge_feats,
-                edge_index=data["edge_index"],
+                edge_attrs=apply_mask(edge_attrs, edge_index_mask[i]),
+                edge_feats=apply_mask(edge_feats, edge_index_mask[i]),
+                edge_index=apply_mask(data["edge_index"], edge_index_mask[i]),
+                node_mask=node_index_mask[i],
             )
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
@@ -504,6 +519,7 @@ class BOTNet(torch.nn.Module):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data.edge_index,
+                node_mask=torch.tensor([float("inf")]),
             )
             node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             energy = scatter_sum(
@@ -565,6 +581,7 @@ class ScaleShiftBOTNet(BOTNet):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data.edge_index,
+                node_mask=torch.tensor([float("inf")]),
             )
 
             node_es_list.append(readout(node_feats).squeeze(-1))  # {[n_nodes, ], }
@@ -760,6 +777,7 @@ class AtomicDipolesMACE(torch.nn.Module):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                node_mask=torch.tensor([float("inf")]),
             )
             node_feats = product(
                 node_feats=node_feats,
@@ -979,6 +997,7 @@ class EnergyDipolesMACE(torch.nn.Module):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                node_mask=torch.tensor([float("inf")]),
             )
             node_feats = product(
                 node_feats=node_feats,
