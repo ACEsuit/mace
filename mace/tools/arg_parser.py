@@ -5,8 +5,8 @@
 ###########################################################################################
 
 import argparse
-from typing import Optional
 import os
+from typing import Optional
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -91,9 +91,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--r_max", help="distance cutoff (in Ang)", 
-        type=float, 
-        default=5.0
+        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
     )
     parser.add_argument(
         "--radial_type",
@@ -216,7 +214,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
 
     # Dataset
     parser.add_argument(
-        "--train_file", help="Training set file, format is .xyz or .h5", type=str, 
+        "--train_file",
+        help="Training set file, format is .xyz or .h5",
+        type=str,
         required=True,
     )
     parser.add_argument(
@@ -261,7 +261,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pin_memory",
         help="Pin memory for data loading",
-        default=True, 
+        default=True,
         type=bool,
     )
     parser.add_argument(
@@ -349,6 +349,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "stress",
             "dipole",
             "huber",
+            "universal",
             "energy_forces_dipole",
         ],
     )
@@ -556,6 +557,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     return parser
 
+
 def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -574,9 +576,9 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--num_process",
-        help="The user defined number of processes to use, as well as the number of files created.", 
-        type=int, 
-        default=int(os.cpu_count()/4)
+        help="The user defined number of processes to use, as well as the number of files created.",
+        type=int,
+        default=int(os.cpu_count() / 4),
     )
     parser.add_argument(
         "--valid_fraction",
@@ -599,9 +601,7 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         default="",
     )
     parser.add_argument(
-        "--r_max", help="distance cutoff (in Ang)", 
-        type=float, 
-        default=5.0
+        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
     )
     parser.add_argument(
         "--config_type_weights",
@@ -659,9 +659,9 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
-        "--batch_size", 
-        help="batch size to compute average number of neighbours", 
-        type=int, 
+        "--batch_size",
+        help="batch size to compute average number of neighbours",
+        type=int,
         default=16,
     )
 
