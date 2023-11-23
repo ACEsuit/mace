@@ -163,6 +163,7 @@ class CheckpointIO:
         logging.debug(f"Saving checkpoint: {path}")
         os.makedirs(self.directory, exist_ok=True)
         torch.save(obj=checkpoint, f=path)
+        torch.save(obj=checkpoint["model"].to("cpu"), f=path + ".model")
         self.old_path = path
 
     def load_latest(
