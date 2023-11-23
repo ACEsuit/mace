@@ -91,7 +91,7 @@ def conditional_mse_forces(ref: Batch, pred: TensorDict) -> torch.Tensor:
     )  # [n_atoms, 1]
 
     # Define the multiplication factors for each condition
-    factors = [1, 0.7, 0.4, 0.1]
+    factors = torch.tensor([1.0, 0.7, 0.4, 0.1])
 
     # Apply multiplication factors based on conditions
     c1 = torch.norm(ref["forces"], dim=-1) < 100
@@ -118,7 +118,7 @@ def conditional_huber_forces(
     ref: Batch, pred: TensorDict, huber_delta: float
 ) -> torch.Tensor:
     # Define the multiplication factors for each condition
-    factors = huber_delta * [1, 0.7, 0.4, 0.1]
+    factors = huber_delta * torch.tensor([1.0, 0.7, 0.4, 0.1])
 
     # Apply multiplication factors based on conditions
     c1 = torch.norm(ref["forces"], dim=-1) < 100
@@ -130,9 +130,7 @@ def conditional_huber_forces(
     )
     c4 = ~(c1 | c2 | c3)
 
-    err = ref["forces"] - pred["forces"]
-
-    se = torch.zeros_like(err)
+    se = torch.zeros_like(pred["forces"])
 
     se[c1] = torch.nn.functional.huber_loss(
         ref["forces"][c1], pred["forces"][c1], reduction="none", delta=factors[0]
@@ -280,9 +278,7 @@ class UniversalLoss(torch.nn.Module):
             self.energy_weight
             * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
             + self.forces_weight
-            * conditional_huber_forces(
-                ref["forces"], pred["forces"], huber_delta=self.huber_delta
-            )
+            * conditional_huber_forces(ref, pred, huber_delta=self.huber_delta)
             + self.stress_weight * self.huber_loss(ref["stress"], pred["stress"])
         )
 
