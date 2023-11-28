@@ -71,8 +71,8 @@ def mace_mp(
             if not os.path.isfile(cached_model_path):
                 os.makedirs(cache_dir, exist_ok=True)
                 # download and save to disk
-                print(f"Downloading MACE model from {model!r}")
-                urllib.request.urlretrieve(model, cached_model_path)
+                print(f"Downloading MACE model from {checkpoint_url!r}")
+                urllib.request.urlretrieve(checkpoint_url, cached_model_path)
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
             msg = f"Using Materials Project MACE for MACECalculator with {model=}"
