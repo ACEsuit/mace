@@ -10,6 +10,9 @@ from ase.calculators.mixing import SumCalculator
 from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
+local_model_path = os.path.join(
+    module_dir, "foundations_models/2023-08-14-mace-universal.model"
+)
 
 
 def mace_mp(
@@ -46,9 +49,6 @@ def mace_mp(
     Returns:
         MACECalculator: trained on the MPtrj dataset (unless model otherwise specified).
     """
-    local_model_path = os.path.join(
-        module_dir, "foundations_models/2023-08-14-mace-universal.model"
-    )
     if model in (None, "medium") and os.path.isfile(local_model_path):
         model = local_model_path
         print(
@@ -76,8 +76,6 @@ def mace_mp(
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
             msg = f"Using Materials Project MACE for MACECalculator with {model=}"
-            if "checkpoint_url" in locals():
-                msg += f" (downloaded from {checkpoint_url=})"
             print(msg)
             # print(
             #     f"Using Materials Project MACE model for MACECalculator, see https://figshare.com/articles/dataset/22715158"
