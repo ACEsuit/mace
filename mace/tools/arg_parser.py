@@ -5,7 +5,7 @@
 ###########################################################################################
 
 import argparse
-from typing import Optional
+from typing import List, Optional, Union
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -130,7 +130,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3
     )
     parser.add_argument(
-        "--correlation", help="correlation order at each layer", type=int, default=3
+        "--correlation",
+        help="correlation order at each layer",
+        type=listint_or_int,
+        default=3,
     )
     parser.add_argument(
         "--num_interactions", help="number of interactions", type=int, default=2
@@ -502,3 +505,9 @@ def check_float_or_none(value: str) -> Optional[float]:
                 f"{value} is an invalid value (float or None)"
             ) from None
         return None
+
+
+def listint_or_int(value: Union[str, int]) -> Union[List[int], int]:
+    if isinstance(value, str):
+        return [int(v) for v in value.split(",")]
+    return int(value)

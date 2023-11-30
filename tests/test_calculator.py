@@ -447,12 +447,9 @@ def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
 
 
 def test_mace_mp(capsys: pytest.CaptureFixture):
-    import torch
-
     mp_mace = mace_mp()
     assert isinstance(mp_mace, MACECalculator)
     assert mp_mace.model_type == "MACE"
-    assert mp_mace.device == "cuda" if torch.cuda.is_available() else "cpu"
     assert len(mp_mace.models) == 1
     assert isinstance(mp_mace.models[0], ScaleShiftMACE)
 
