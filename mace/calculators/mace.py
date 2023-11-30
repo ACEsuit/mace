@@ -90,7 +90,7 @@ class MACECalculator(Calculator):
             model_paths = kwargs["model_path"]
 
         if isinstance(model_paths, str):
-            # Find all models that staisfy the wildcard (e.g. mace_model_*.pt)
+            # Find all models that satisfy the wildcard (e.g. mace_model_*.pt)
             model_paths_glob = glob(model_paths)
             if len(model_paths_glob) == 0:
                 raise ValueError(f"Couldn't find MACE model files: {model_paths}")
@@ -98,7 +98,7 @@ class MACECalculator(Calculator):
         elif isinstance(model_paths, Path):
             model_paths = [model_paths]
         if len(model_paths) == 0:
-            raise ValueError("No mace file neames supplied")
+            raise ValueError("No mace file names supplied")
         self.num_models = len(model_paths)
         if len(model_paths) > 1:
             print(f"Running committee mace with {len(model_paths)} models")
@@ -153,7 +153,7 @@ class MACECalculator(Calculator):
         """
         Create tensors to store the results of the committee
         :param model_type: str, type of model to load
-                    Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+            Options: [MACE, DipoleMACE, EnergyDipoleMACE]
         :param num_models: int, number of models in the committee
         :return: tuple of torch tensors
         """

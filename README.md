@@ -143,7 +143,7 @@ mace_eval_configs \
 
 ## Tutorial
 
-You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE. We also have a more detailed user and developer tutorial at https://github.com/ilyes319/mace-tutorials 
+You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE. We also have a more detailed user and developer tutorial at https://github.com/ilyes319/mace-tutorials
 
 ## Weights and Biases for experiment tracking
 
@@ -171,9 +171,9 @@ We are happy to accept pull requests under an [MIT license](https://choosealicen
 
 ## Pretrained Universal MACE Checkpoints
 
-### Materials Project 
+### Materials Project
 
-We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories. These pretrained models were used for materials stability prediction in [Matbench Discovery](https://matbench-discovery.materialsproject.org) and the corresponding [preprint](https://arxiv.org/abs/2308.14920). For easy reuse, these checkpoints were published on [Hugging Face](https://huggingface.co/cyrusyc/mace-universal).
+We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories. These pretrained models were used for materials stability prediction in [Matbench Discovery](https://matbench-discovery.materialsproject.org) and the corresponding [preprint](https://arxiv.org/abs/2308.14920). For easy reuse, these checkpoints were published on [Hugging Face](https://huggingface.co/cyrusyc/mace-universal) and [Figshare](https://figshare.com/articles/dataset/22715158) with direct download links for the [`medium`](https://figshare.com/ndownloader/files/42374049) and [`large`](https://figshare.com/ndownloader/files/43117273) checkpoints.
 
 ## References
 
