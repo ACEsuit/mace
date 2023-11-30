@@ -10,7 +10,10 @@ from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
 from ase.constraints import ExpCellFilter
 
+from mace.calculators import mace_mp
+from mace.calculators.foundations_models import local_model_path
 from mace.calculators.mace import MACECalculator
+from mace.modules.models import ScaleShiftMACE
 
 pytest_mace_dir = Path(__file__).parent.parent
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
@@ -441,3 +444,24 @@ def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
     assert desc_single_layer.shape[1] == 16
     assert desc.shape[0] == 3
     assert desc.shape[1] == 80
+
+
+def test_mace_mp(capsys: pytest.CaptureFixture):
+    mp_mace = mace_mp()
+    assert isinstance(mp_mace, MACECalculator)
+    assert mp_mace.model_type == "MACE"
+    assert len(mp_mace.models) == 1
+    assert isinstance(mp_mace.models[0], ScaleShiftMACE)
+
+    stdout, stderr = capsys.readouterr()
+    if os.path.isfile(local_model_path):
+        assert (
+            "Using local medium Materials Project MACE model for MACECalculator "
+            f"model={local_model_path!r}\n" in stdout
+        )
+    else:
+        assert (
+            f"Using Materials Project MACE for MACECalculator with model='{os.path.expanduser('~')}/.cache/mace/42374049'"
+            in stdout
+        )
+    assert stderr == ""
