@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import argparse
+import ast
 from typing import List, Optional, Union
 
 
@@ -509,5 +510,5 @@ def check_float_or_none(value: str) -> Optional[float]:
 
 def listint_or_int(value: Union[str, int]) -> Union[List[int], int]:
     if isinstance(value, str):
-        return [int(v) for v in value.split(",")]
+        return ast.literal_eval(value)
     return int(value)
