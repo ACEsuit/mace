@@ -87,7 +87,17 @@ class MACE(torch.nn.Module):
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
-        interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
+
+        # check if hidden_irreps contains pseudo scalars
+        def generate_irreps(l):
+            str_irrep = "+".join([f"1x{i}e+1x{i}o" for i in range(l + 1)])
+            return o3.Irreps(str_irrep)
+
+        sh_irreps_inter = sh_irreps
+        if hidden_irreps.count(o3.Irrep(0, -1)) > 0:
+            sh_irreps_inter = generate_irreps(max_ell)
+        interaction_irreps = (sh_irreps_inter * num_features).sort()[0].simplify()
+        interaction_irreps_first = (sh_irreps * num_features).sort()[0].simplify()
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
@@ -101,7 +111,7 @@ class MACE(torch.nn.Module):
             node_feats_irreps=node_feats_irreps,
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
-            target_irreps=interaction_irreps,
+            target_irreps=interaction_irreps_first,
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,

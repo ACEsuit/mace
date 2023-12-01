@@ -94,6 +94,7 @@ def U_matrix_real(
     filter_ir_mid=None,
     dtype=None,
 ):
+    print(irreps_in, irreps_out)
     irreps_out = o3.Irreps(irreps_out)
     irrepss = [o3.Irreps(irreps_in)] * correlation
     if correlation == 4:
@@ -127,5 +128,11 @@ def U_matrix_real(
             current_ir, last_ir = ir, ir
         else:
             current_ir = ir
-    out += [last_ir, stack]
+    try:
+        out += [last_ir, stack]
+        print(stack.shape)
+    except:
+        size = [irreps_out.dim] + [o3.Irreps(irreps_in).dim] * correlation
+        print(str(irreps_in), size)
+        out = [str(irreps_out), torch.zeros(size, dtype=dtype)]
     return out
