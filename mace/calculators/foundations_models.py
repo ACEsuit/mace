@@ -21,7 +21,7 @@ def mace_mp(
     default_dtype: str = "float32",
     dispersion: bool = False,
     dispersion_xc="pbe",
-    dispersion_cutoff=95.0 * units.Bohr,
+    dispersion_cutoff=40.0 * units.Bohr,
     **kwargs,
 ) -> MACECalculator:
     """
