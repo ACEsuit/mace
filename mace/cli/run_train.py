@@ -591,6 +591,9 @@ def main() -> None:
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
+    else:
+        for group in optimizer.param_groups:
+            group["lr"] = args.lr
 
     logging.info(model)
     logging.info(f"Number of parameters: {tools.count_parameters(model)}")
