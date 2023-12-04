@@ -60,7 +60,7 @@ def mace_mp(
                 medium="https://tinyurl.com/y7uhwpje",
                 large="https://figshare.com/ndownloader/files/43117273",
             )
-            # default URL points to 2023-08-14-mace-yuan-trained-mptrj-04.model (16 MB, 2M params)
+            # default URL points to 2023-12-03-mace-128-L1_epoch-199.model
             checkpoint_url = (
                 urls.get(model, urls["medium"])
                 if model in (None, "medium", "large")
