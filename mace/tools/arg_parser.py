@@ -5,7 +5,8 @@
 ###########################################################################################
 
 import argparse
-from typing import Optional
+import ast
+from typing import List, Optional, Union
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -87,6 +88,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
     )
     parser.add_argument(
+        "--radial_type",
+        help="type of radial basis functions",
+        type=str,
+        default="bessel",
+        choices=["bessel", "gaussian"],
+    )
+    parser.add_argument(
         "--num_radial_basis",
         help="number of radial basis functions",
         type=int,
@@ -105,6 +113,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="RealAgnosticResidualInteractionBlock",
         choices=[
             "RealAgnosticResidualInteractionBlock",
+            "RealAgnosticAttResidualInteractionBlock",
             "RealAgnosticInteractionBlock",
         ],
     )
@@ -122,7 +131,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3
     )
     parser.add_argument(
-        "--correlation", help="correlation order at each layer", type=int, default=3
+        "--correlation",
+        help="correlation order at each layer",
+        type=listint_or_int,
+        default=3,
     )
     parser.add_argument(
         "--num_interactions", help="number of interactions", type=int, default=2
@@ -143,7 +155,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--hidden_irreps",
         help="irreps for hidden node states",
         type=str,
-        default="32x0e",
+        default="128x0e + 128x1o",
     )
     # add option to specify irreps by channel number and max L
     parser.add_argument(
@@ -494,3 +506,9 @@ def check_float_or_none(value: str) -> Optional[float]:
                 f"{value} is an invalid value (float or None)"
             ) from None
         return None
+
+
+def listint_or_int(value: Union[str, int]) -> Union[List[int], int]:
+    if isinstance(value, str):
+        return ast.literal_eval(value)
+    return int(value)

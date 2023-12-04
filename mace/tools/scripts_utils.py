@@ -98,23 +98,23 @@ def get_dataset_from_xyz(
     )
 
 
-class LRScheduler(torch.optim.lr_scheduler.LRScheduler):
+class LRScheduler:
     def __init__(self, optimizer, args) -> None:
         self.scheduler = args.scheduler
         if args.scheduler == "ExponentialLR":
             self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
                 optimizer=optimizer, gamma=args.lr_scheduler_gamma
-                )
+            )
         elif args.scheduler == "ReduceLROnPlateau":
             self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer=optimizer,
                 factor=args.lr_factor,
                 patience=args.scheduler_patience,
-                )
+            )
         else:
             raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 
-    def step(self, metrics=None, epoch=None):
+    def step(self, metrics=None, epoch=None):  # pylint: disable=E1123
         if self.scheduler == "ExponentialLR":
             self.lr_scheduler.step(epoch=epoch)
         elif self.scheduler == "ReduceLROnPlateau":
@@ -123,8 +123,7 @@ class LRScheduler(torch.optim.lr_scheduler.LRScheduler):
     def __getattr__(self, name):
         if name == "step":
             return self.step
-        else:
-            return getattr(self.lr_scheduler, name)
+        return getattr(self.lr_scheduler, name)
 
 
 def create_error_table(
