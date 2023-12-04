@@ -43,4 +43,4 @@ To access the pretrained checkpoints as an ASE calculator, you can use the follo
     n_steps = 200 # Number of steps to run
     dyn.run(n_steps)
 
-Please cite the relevent papers if you use these checkpoints (see `mace_mp docstrings for a list`).
+Please cite the relevent papers if you use these checkpoints (see mace_mp docstrings for a list).
