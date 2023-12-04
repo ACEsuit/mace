@@ -11,7 +11,7 @@ from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
 local_model_path = os.path.join(
-    module_dir, "foundations_models/2023-08-14-mace-universal.model"
+    module_dir, "foundations_models/2023-12-03-mace-mp.model"
 )
 
 
@@ -57,17 +57,20 @@ def mace_mp(
     elif model in (None, "medium", "large") or str(model).startswith("https:"):
         try:
             urls = dict(
-                medium="https://figshare.com/ndownloader/files/42374049",
+                medium="https://tinyurl.com/y7uhwpje",
                 large="https://figshare.com/ndownloader/files/43117273",
             )
-            # default URL points to 2023-08-14-mace-yuan-trained-mptrj-04.model (16 MB, 2M params)
+            # default URL points to 2023-12-03-mace-128-L1_epoch-199.model
             checkpoint_url = (
                 urls.get(model, urls["medium"])
                 if model in (None, "medium", "large")
                 else model
             )
             cache_dir = os.path.expanduser("~/.cache/mace")
-            cached_model_path = f"{cache_dir}/{os.path.basename(checkpoint_url)}"
+            checkpoint_url_name = "".join(
+                c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
+            )
+            cached_model_path = f"{cache_dir}/{checkpoint_url_name}"
             if not os.path.isfile(cached_model_path):
                 os.makedirs(cache_dir, exist_ok=True)
                 # download and save to disk
@@ -77,9 +80,6 @@ def mace_mp(
             model = cached_model_path
             msg = f"Using Materials Project MACE for MACECalculator with {model=}"
             print(msg)
-            # print(
-            #     f"Using Materials Project MACE model for MACECalculator, see https://figshare.com/articles/dataset/22715158"
-            # )
         except Exception as exc:
             raise RuntimeError(
                 "Model download failed and no local model found"

@@ -461,7 +461,7 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
         )
     else:
         assert (
-            f"Using Materials Project MACE for MACECalculator with model='{os.path.expanduser('~')}/.cache/mace/42374049'"
+            f"Using Materials Project MACE for MACECalculator with model='{os.path.expanduser('~')}/.cache/mace/y7uhwpje'"
             in stdout
         )
     assert stderr == ""
