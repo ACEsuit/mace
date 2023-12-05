@@ -10,7 +10,7 @@ from ase.atoms import Atoms
 
 from mace.calculators.mace import MACECalculator
 
-run_train = Path(__file__).parent.parent / "scripts" / "run_train.py"
+run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
 
 @pytest.fixture(name="fitting_configs")

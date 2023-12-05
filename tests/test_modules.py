@@ -10,6 +10,7 @@ from mace.modules import (
     PolynomialCutoff,
     SymmetricContraction,
     WeightedEnergyForcesLoss,
+    WeightedHuberEnergyForcesStressLoss,
 )
 from mace.tools import AtomicNumberTable, scatter, to_numpy, torch_geometric
 
@@ -30,6 +31,8 @@ config = Configuration(
         ]
     ),
     energy=-1.5,
+    # stress if voigt 6 notation
+    stress=np.array([1.0, 0.0, 0.5, 0.0, -1.0, 0.0]),
 )
 
 table = AtomicNumberTable([1, 8])
@@ -39,7 +42,8 @@ torch.set_default_dtype(torch.float64)
 
 class TestLoss:
     def test_weighted_loss(self):
-        loss = WeightedEnergyForcesLoss(energy_weight=1, forces_weight=10)
+        loss1 = WeightedEnergyForcesLoss(energy_weight=1, forces_weight=10)
+        loss2 = WeightedHuberEnergyForcesStressLoss(energy_weight=1, forces_weight=10)
         data = AtomicData.from_config(config, z_table=table, cutoff=3.0)
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[data, data],
@@ -51,9 +55,12 @@ class TestLoss:
         pred = {
             "energy": batch.energy,
             "forces": batch.forces,
+            "stress": batch.stress,
         }
-        out = loss(batch, pred)
-        assert out == 0.0
+        out1 = loss1(batch, pred)
+        assert out1 == 0.0
+        out2 = loss2(batch, pred)
+        assert out2 == 0.0
 
 
 class TestSymmetricContract:

@@ -74,7 +74,7 @@ def train(
         if swa is None or epoch < swa.start:
             if epoch > start_epoch:
                 lr_scheduler.step(
-                    valid_loss
+                    metrics=valid_loss
                 )  # Can break if exponential LR, TODO fix that!
         else:
             if swa_start:
@@ -191,11 +191,12 @@ def train(
                 wandb.log(wandb_log_dict)
             if valid_loss >= lowest_loss:
                 patience_counter += 1
-                if patience_counter >= patience and epoch < swa.start:
-                    logging.info(
-                        f"Stopping optimization after {patience_counter} epochs without improvement and starting swa"
-                    )
-                    epoch = swa.start
+                if swa is not None:
+                    if patience_counter >= patience and epoch < swa.start:
+                        logging.info(
+                            f"Stopping optimization after {patience_counter} epochs without improvement and starting swa"
+                        )
+                        epoch = swa.start
                 elif patience_counter >= patience:
                     logging.info(
                         f"Stopping optimization after {patience_counter} epochs without improvement"
