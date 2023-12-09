@@ -5,6 +5,7 @@
 ###########################################################################################
 
 
+import warnings
 from glob import glob
 from pathlib import Path
 from typing import Union
@@ -37,7 +38,7 @@ class MACECalculator(Calculator):
         device: str, device to run on (cuda or cpu)
         energy_units_to_eV: float, conversion factor from model energy units to eV
         length_units_to_A: float, conversion factor from model length units to Angstroms
-        default_dtype: str, default dtype of model
+        dtype: str, default dtype of model
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
                     Options: [MACE, DipoleMACE, EnergyDipoleMACE]
@@ -51,11 +52,16 @@ class MACECalculator(Calculator):
         device: str,
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
-        default_dtype="",
+        dtype="",
         charges_key="Qs",
         model_type="MACE",
         **kwargs,
     ):
+        if "dtype" in kwargs:
+            warnings.warn(
+                "dtype is deprecated, use default_dtype instead!", DeprecationWarning
+            )
+            dtype = kwargs.pop("dtype")
         Calculator.__init__(self, **kwargs)
         self.results = {}
 
@@ -129,20 +135,20 @@ class MACECalculator(Calculator):
         )
         self.charges_key = charges_key
         model_dtype = get_model_dtype(self.models[0])
-        if default_dtype == "":
+        if dtype == "":
             print(
                 f"No dtype selected, switching to {model_dtype} to match model dtype."
             )
-            default_dtype = model_dtype
-        if model_dtype != default_dtype:
+            dtype = model_dtype
+        if model_dtype != dtype:
             print(
-                f"Default dtype {default_dtype} does not match model dtype {model_dtype}, converting models to {default_dtype}."
+                f"Default dtype {dtype} does not match model dtype {model_dtype}, converting models to {dtype}."
             )
-            if default_dtype == "float64":
+            if dtype == "float64":
                 self.models = [model.double() for model in self.models]
-            elif default_dtype == "float32":
+            elif dtype == "float32":
                 self.models = [model.float() for model in self.models]
-        torch_tools.set_default_dtype(default_dtype)
+        torch_tools.set_default_dtype(dtype)
         for model in self.models:
             for param in model.parameters():
                 param.requires_grad = False
