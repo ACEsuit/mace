@@ -52,7 +52,7 @@ def mace_mp(
     if model in (None, "medium") and os.path.isfile(local_model_path):
         model = local_model_path
         print(
-            f"Using local medium Materials Project MACE model for MACECalculator {model=}"
+            f"Using local medium Materials Project MACE model for MACECalculator {model}"
         )
     elif model in (None, "small", "medium", "large") or str(model).startswith("https:"):
         try:
@@ -79,7 +79,7 @@ def mace_mp(
                 urllib.request.urlretrieve(checkpoint_url, cached_model_path)
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
-            msg = f"Using Materials Project MACE for MACECalculator with {model=}"
+            msg = f"Using Materials Project MACE for MACECalculator with {model}"
             print(msg)
         except Exception as exc:
             raise RuntimeError(
