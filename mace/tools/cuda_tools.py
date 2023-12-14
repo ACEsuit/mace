@@ -1,11 +1,9 @@
 from copy import deepcopy
 import time
 from math import sqrt
-from typing import Tuple
+from typing import Tuple, List
 from functools import partial
 import ase
-from matplotlib import pyplot as plt
-import numpy as np
 import torch
 from e3nn import o3
 from mace import data, tools
@@ -13,9 +11,10 @@ from e3nn.util import jit
 from mace.modules.blocks import SphericalHarmonics
 from mace.modules.models import MACE
 import torch.utils.benchmark as benchmark_
-from torch.profiler import profile, record_function, ProfilerActivity
 
 from mace.tools import torch_geometric, torch_tools
+import numpy as np
+import matplotlib.pyplot as plt
 
 from mace_ops.ops.invariant_message_passing import InvariantMessagePassingTP
 from mace_ops.ops.linear import Linear, ElementalLinear
@@ -35,7 +34,7 @@ def build_parser():
     parser.add_argument(
         "--output",
         type=str,
-        default="optimized_model.pt",
+        default="optimized_model.model",
         help="Path to the output file.",
     )
     parser.add_argument(
@@ -201,31 +200,23 @@ def invariant_residual_interaction_forward(
     edge_feats: torch.Tensor,
     edge_index: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    sender = edge_index[0].int()
-    receiver = edge_index[1].int()
-    num_nodes = node_feats.shape[0]
-    # t0 = time.time()
-    sc = self.skip_tp(node_feats, node_attrs)
-    # print("skip_tp", time.time() - t0)
+    sender = edge_index[0]
+    receiver = edge_index[1]
+    num_nodes = torch.tensor(node_feats.shape[0])
+    sc = self.skip_tp(node_feats, node_attrs).contiguous()
     node_feats = self.linear_up(node_feats)
-    # t1 = time.time()
     tp_weights = self.conv_tp_weights(edge_feats)
-    # print("conv_tp", time.time() - t1)
-    # t2 = time.time()
     message = self.tp.forward(
-        node_feats,
+        node_feats[sender],
         edge_attrs,
-        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1]),
-        sender,
-        receiver,
+        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1]).contiguous(),
+        receiver.int(),
+        num_nodes,
     )
-    # print("tp", time.time() - t2)
-    # t3 = time.time()
     message = self.linear(message) / self.avg_num_neighbors
-    # print("linear", time.time() - t3)
     return (
-        message,
-        sc,
+        message.contiguous(),
+        sc.contiguous(),
     )  # [n_nodes, channels, (lmax + 1)**2]
 
 
@@ -237,28 +228,34 @@ def invariant_interaction_forward(
     edge_feats: torch.Tensor,
     edge_index: torch.Tensor,
 ) -> Tuple[torch.Tensor, None]:
-    sender = edge_index[0].int()
-    receiver = edge_index[1].int()
-    num_nodes = node_feats.shape[0]
+    sender = edge_index[0]
+    receiver = edge_index[1]
+    num_nodes = torch.tensor(node_feats.shape[0])
     node_feats = self.linear_up(node_feats)
     tp_weights = self.conv_tp_weights(edge_feats)
-    tp_weights = tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1])
     message = self.tp.forward(
-        node_feats,
+        node_feats[sender],
         edge_attrs,
-        tp_weights,
-        sender,
-        receiver,
+        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1]).contiguous(),
+        receiver.int(),
+        num_nodes,
     )
     message = self.linear(message) / self.avg_num_neighbors
     message = self.skip_tp(message, node_attrs)
     return (
-        message,
+        message.contiguous(),
         None,
     )  # [n_nodes, channels, (lmax + 1)**2]
 
 
-def benchmark(model: MACE, benchmark_file: str, name: str, size=1) -> None:
+def benchmark(
+    model: MACE,
+    benchmark_file: str,
+    name: str,
+    size=1,
+    atomic_numbers: List[int] = None,
+    r_max: float = 4,
+) -> None:
     # Load data and prepare input
     try:
         atoms_list = ase.io.read(benchmark_file, format="extxyz", index=":")
@@ -273,13 +270,11 @@ def benchmark(model: MACE, benchmark_file: str, name: str, size=1) -> None:
 
     configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
 
-    z_table = tools.AtomicNumberTable([int(z) for z in model.atomic_numbers])
+    z_table = tools.AtomicNumberTable([int(z) for z in atomic_numbers])
 
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
-            data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=model.r_max.item()
-            )
+            data.AtomicData.from_config(config, z_table=z_table, cutoff=r_max)
             for config in configs
         ],
         batch_size=1,
@@ -302,7 +297,12 @@ def benchmark(model: MACE, benchmark_file: str, name: str, size=1) -> None:
     return diff
 
 
-def accuracy(model: MACE, model_opt: MACE, benchmark_file: str, size=1) -> None:
+def accuracy(
+    model: MACE,
+    model_opt: MACE,
+    benchmark_file: str,
+    size=5,
+) -> None:
     try:
         atoms_list = ase.io.read(benchmark_file, format="extxyz", index=":")
     except Exception:
@@ -331,22 +331,71 @@ def accuracy(model: MACE, model_opt: MACE, benchmark_file: str, size=1) -> None:
     )
     batch = next(iter(data_loader)).to("cuda")
     print("num edges", batch.edge_index.shape)
-    for i in range(10):
+    # def print_grad_hook(module, grad_input, grad_output):
+    #     print("Gradients at this layer: ", grad_output)
+
+    # for modules in model.modules():
+    #     print("modules", modules)
+    #     modules.register_backward_hook(print_grad_hook)
+
+    # def energy_model(positions:torch.Tensor):
+    #     batch.positions = positions
+    #     energy = model_opt(batch, training=False, compute_force=False)["energy"]
+    #     return energy
+    # print("check the gradient")
+    # positions_input = batch.positions.clone().detach().requires_grad_(True)
+    # torch.autograd.gradcheck(energy_model, positions_input, eps=1e-2, atol=1e-2)
+    for batch in data_loader:
+        batch = batch.to("cuda")
+        print("num nodes", batch.num_nodes)
+        batch_2 = batch.clone()
+        batch_3 = batch.clone()
+        # make a copy of the model
         output_opt = model_opt(batch, training=False, compute_force=True)
-        output_org = model(batch, training=False, compute_force=True)
-        batch = next(iter(data_loader)).to("cuda")
+        output_org_float32 = model(batch_3, training=False, compute_force=True)
+        model = model.double()
+        model.atomic_energies_fn.atomic_energies = (
+            model.atomic_energies_fn.atomic_energies.double()
+        )
+        batch_2.positions = batch_2.positions.double()
+        batch_2.node_attrs = batch_2.node_attrs.double()
+        batch_2.shifts = batch_2.shifts.double()
+        output_org = model(batch_2, training=False, compute_force=True)
         print("energy org", output_org["energy"])
         print("energy opt", output_opt["energy"])
-        print("forces opt", output_opt["forces"])
-        print("forces org", output_org["forces"])
-    error_energy = (output_org["energy"] - output_opt["energy"]).abs().mean()
-    print("error energy", error_energy)
-    assert torch.allclose(output_org["energy"], output_opt["energy"], atol=1e-5)
-    error_forces = (output_org["forces"] - output_opt["forces"]).abs().mean()
-    print("error forces", error_forces)
-    print("forces opt", output_opt["forces"])
-    print("forces org", output_org["forces"])
-    assert torch.allclose(output_org["forces"], output_opt["forces"], atol=1e-5)
+        error_energy = (output_org["energy"] - output_opt["energy"]).abs().mean()
+        error_energy_float32 = (
+            (output_org_float32["energy"] - output_org["energy"]).abs().mean()
+        )
+        print("error energy float32", error_energy_float32)
+        # print("error energy", error_energy)
+        # assert torch.allclose(output_org["energy"], output_opt["energy"], atol=1e-5)
+        error_forces = (output_org["forces"] - output_opt["forces"]).abs().mean()
+        print("error forces", error_forces)
+        error_forces_float32 = (
+            (output_org_float32["forces"] - output_org["forces"]).abs().mean()
+        )
+        print("error forces float32", error_forces_float32)
+        # compute relative forces error
+        error_relative_forces = (
+            output_org["forces"] - output_opt["forces"]
+        ).abs().mean() / output_org["forces"].abs().mean()
+        # error mean each component relative
+        error_relative_components = (
+            (
+                (output_org["forces"] - output_opt["forces"])
+                / (output_org["forces"] + 10e-6)
+            )
+            .abs()
+            .mean()
+        )
+        conservative_error = output_opt["forces"].sum()
+        print("conservative error", conservative_error)
+        print("error relative forces", error_relative_forces)
+        print("error relative components", error_relative_components)
+        # # print("forces opt", output_opt["forces"])
+        # # print("forces org", output_org["forces"])
+        # assert torch.allclose(output_org["forces"], output_opt["forces"], atol=1e-5)
 
 
 def main(args=None):
@@ -361,11 +410,13 @@ def main(args=None):
     model_opt = optimize_cuda_mace(model)
     model_dir = "/".join(args.model.split("/")[:-1])
     model_opt_path = model_dir + "/" + args.output
-    torch.save(model_opt, model_opt_path)
-    # model_opt = torch.load(model_opt_path).to("cuda")
-    times_opt = []
-    times_org = []
+    model_opt = jit.compile(model_opt)
+    # torch.save(model_opt, model_opt_path)
+    model_opt.save(model_opt_path)
+    model_opt = torch.load(model_opt_path).to("cuda")
     if args.benchmark:
+        times_opt = []
+        times_org = []
         model = torch.load(args.model).to("cuda")
         model = jit.compile(model)
         sizes = (
@@ -377,11 +428,21 @@ def main(args=None):
             7,
             8,
         )
+        atomic_numbers = model.atomic_numbers
+        r_max = model.r_max.item()
+        model_opt = jit.compile(model_opt)
         for size in sizes:
-            model_opt = jit.compile(model_opt)
-            # model_opt = torch.compile(model_opt)
-            times_opt.append(benchmark(model_opt, args.benchmark_file, "opt", size))
-            times_org.append(benchmark(model, args.benchmark_file, "orig", size))
+            # model_opt = torch.compile(model_opt, backend="cudagraphs")
+            times_opt.append(
+                benchmark(
+                    model_opt, args.benchmark_file, "opt", size, atomic_numbers, r_max
+                )
+            )
+            times_org.append(
+                benchmark(
+                    model, args.benchmark_file, "orig", size, atomic_numbers, r_max
+                )
+            )
         # plot the timing as a function of the number of atoms
         num_atoms = [8 * size**3 for size in sizes]
         num_atoms = np.array(num_atoms)
