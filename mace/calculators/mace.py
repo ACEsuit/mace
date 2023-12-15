@@ -61,7 +61,7 @@ class MACECalculator(Calculator):
         self.results = {}
 
         self.model_type = model_type
-        self.dispersion = kwargs["dispersion"] if "dispersion" in kwargs else False
+
         if model_type == "MACE":
             self.implemented_properties = [
                 "energy",
@@ -216,11 +216,6 @@ class MACECalculator(Calculator):
         for i, model in enumerate(self.models):
             batch = batch_base.clone()
             batch_dict = batch.to_dict()
-            if self.dispersion:
-                batch_dict["atomic_numbers"] = torch.tensor(
-                    atoms.get_atomic_numbers(), device="cuda"
-                )
-                batch_dict["pbc"] = torch.tensor(atoms.get_pbc(), device="cuda")
             out = model(batch_dict, compute_stress=compute_stress)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()

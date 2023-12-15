@@ -44,6 +44,9 @@ class MACED3Wrapper(torch.nn.Module):
         )
         self.dftd3.to(self.device)
         self.mace_model = self.mace_model.to(self.device)
+        self.r_max = self.mace_model.r_max
+        self.atomic_numbers = self.mace_model.atomic_numbers
+        self.atomic_energies_fn = self.mace_model.atomic_energies_fn
 
     def voigt_6_to_full_3x3_stress(self, stress_vector):
         s1, s2, s3, s4, s5, s6 = np.transpose(stress_vector)
@@ -53,9 +56,13 @@ class MACED3Wrapper(torch.nn.Module):
         self, data: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
         pos = data["positions"].clone().detach().to(self.device)
-        Z = data["atomic_numbers"].clone().detach().to(self.device)
+        _, indices_species = torch.where(data["node_attrs"].squeeze() == 1)
+        Z = self.atomic_numbers[indices_species]
         cell = data["cell"].clone().detach().to(self.device)
-        pbc = data["pbc"].clone().detach().to(self.device)
+        pbc_x = (cell[0] == torch.zeros_like(cell[0])).any()
+        pbc_y = (cell[1] == torch.zeros_like(cell[0])).any()
+        pbc_z = (cell[2] == torch.zeros_like(cell[0])).any()
+        pbc = torch.tensor([pbc_x, pbc_y, pbc_z]).to(self.device)
         edge_index_d3, batch_mapping, shifts_idx = compute_neighborlist(
             torch.tensor(self.cutoff), pos, cell, pbc, data["batch"], False
         )
@@ -71,11 +78,11 @@ class MACED3Wrapper(torch.nn.Module):
             pos=pos, Z=Z, cell=cell, pbc=pbc, edge_index=edge_index, shift_pos=shift_pos
         )
 
-    def __getattr__(self, name):
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.mace_model, name)
+    # def __getattr__(self, name):
+    #     try:
+    #         return super().__getattr__(name)
+    #     except AttributeError:
+    #         return getattr(self.mace_model, name)
 
     def forward(
         self,
@@ -96,7 +103,13 @@ class MACED3Wrapper(torch.nn.Module):
             compute_displacement=compute_displacement,
         )
         output_dftd3 = self.dftd3.calc_energy_and_forces(
-            **input_dicts, damping=self.damping
+            Z=input_dicts["Z"],
+            pos=input_dicts["pos"],
+            edge_index=input_dicts["edge_index"],
+            cell=input_dicts["cell"],
+            pbc=input_dicts["pbc"],
+            shift_pos=input_dicts["shift_pos"],
+            damping=self.damping,
         )[0]
         output_mace["energy"] += torch.tensor(
             output_dftd3["energy"], device=self.device
