@@ -7,6 +7,8 @@ import torch
 from ase import units
 from ase.calculators.mixing import SumCalculator
 
+from mace.calculators.dispersion_mace import MACED3Wrapper
+
 from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
@@ -22,6 +24,7 @@ def mace_mp(
     dispersion: bool = False,
     dispersion_xc="pbe",
     dispersion_cutoff=40.0 * units.Bohr,
+    use_d3_calc=False,
     **kwargs,
 ) -> MACECalculator:
     """
@@ -109,15 +112,39 @@ def mace_mp(
             f"Using TorchDFTD3Calculator for D3 dispersion corrections (see {gh_url})"
         )
         dtype = torch.float32 if default_dtype == "float32" else torch.float64
-        d3_calc = TorchDFTD3Calculator(
-            device=device,
-            damping="bj",
-            dtype=dtype,
-            xc=dispersion_xc,
-            cutoff=dispersion_cutoff,
-            **kwargs,
-        )
-    calc = mace_calc if not dispersion else SumCalculator([mace_calc, d3_calc])
+        if use_d3_calc:
+            d3_calc = TorchDFTD3Calculator(
+                device=device,
+                damping="bj",
+                dtype=dtype,
+                xc=dispersion_xc,
+                cutoff=dispersion_cutoff,
+                **kwargs,
+            )
+        else:
+            model_mace = torch.load(model, map_location=device)
+            model_d3 = MACED3Wrapper(
+                model_mace,
+                damping="bj",
+                dtype=dtype,
+                xc=dispersion_xc,
+                cutoff=dispersion_cutoff,
+                device=device,
+            )
+            # write model_d3 to same file as model but with _d3 suffix, change the orignal model path to remove .model
+            model_d3_path = model.replace(".model", "_d3.model")
+            torch.save(model_d3, model_d3_path)
+            mace_calc = MACECalculator(
+                model_paths=model_d3_path,
+                device=device,
+                default_dtype=default_dtype,
+                dispersion=True,
+            )
+            d3_calc = None
+    if dispersion and use_d3_calc:
+        calc = SumCalculator([mace_calc, d3_calc])
+    else:
+        calc = mace_calc
     return calc
 
 

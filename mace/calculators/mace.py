@@ -17,6 +17,7 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from mace import data
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
+from mace.data import get_neighborhood
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
@@ -60,7 +61,7 @@ class MACECalculator(Calculator):
         self.results = {}
 
         self.model_type = model_type
-
+        self.dispersion = kwargs["dispersion"] if "dispersion" in kwargs else False
         if model_type == "MACE":
             self.implemented_properties = [
                 "energy",
@@ -84,7 +85,7 @@ class MACECalculator(Calculator):
             raise ValueError(
                 f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
             )
-
+        # check if D3 is model name
         if "model_path" in kwargs:
             print("model_path argument deprecated, use model_paths")
             model_paths = kwargs["model_path"]
@@ -214,7 +215,13 @@ class MACECalculator(Calculator):
         )
         for i, model in enumerate(self.models):
             batch = batch_base.clone()
-            out = model(batch.to_dict(), compute_stress=compute_stress)
+            batch_dict = batch.to_dict()
+            if self.dispersion:
+                batch_dict["atomic_numbers"] = torch.tensor(
+                    atoms.get_atomic_numbers(), device="cuda"
+                )
+                batch_dict["pbc"] = torch.tensor(atoms.get_pbc(), device="cuda")
+            out = model(batch_dict, compute_stress=compute_stress)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
