@@ -85,7 +85,7 @@ class MACECalculator(Calculator):
             raise ValueError(
                 f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
             )
-        # check if D3 is model name
+
         if "model_path" in kwargs:
             print("model_path argument deprecated, use model_paths")
             model_paths = kwargs["model_path"]
@@ -215,8 +215,7 @@ class MACECalculator(Calculator):
         )
         for i, model in enumerate(self.models):
             batch = batch_base.clone()
-            batch_dict = batch.to_dict()
-            out = model(batch_dict, compute_stress=compute_stress)
+            out = model(batch.to_dict(), compute_stress=compute_stress)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
