@@ -17,7 +17,6 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from mace import data
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
-from mace.data import get_neighborhood
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
