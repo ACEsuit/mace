@@ -4,7 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-import glob
+from glob import glob
 from pathlib import Path
 from typing import Union
 
