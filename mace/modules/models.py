@@ -232,7 +232,7 @@ class MACE(torch.nn.Module):
             energy = scatter_sum(
                 src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
-            energies.append(energy)
+            energies.append(energy.double())
             node_energies_list.append(node_energies)
 
         # Concatenate node features
@@ -355,7 +355,7 @@ class ScaleShiftMACE(MACE):
         node_inter_es = torch.sum(
             torch.stack(node_es_list, dim=0), dim=0
         )  # [n_nodes, ]
-        node_inter_es = self.scale_shift(node_inter_es)
+        node_inter_es = self.scale_shift(node_inter_es).double()
 
         # Sum over nodes in graph
         inter_e = scatter_sum(
