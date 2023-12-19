@@ -206,13 +206,16 @@ def invariant_residual_interaction_forward(
     sc = self.skip_tp(node_feats, node_attrs).contiguous()
     node_feats = self.linear_up(node_feats)
     tp_weights = self.conv_tp_weights(edge_feats)
+    node_feats_sender = node_feats.double()[sender]
     message = self.tp.forward(
-        node_feats[sender],
-        edge_attrs,
-        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1]).contiguous(),
+        node_feats_sender,
+        edge_attrs.double(),
+        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1])
+        .contiguous()
+        .double(),
         receiver.int(),
         num_nodes,
-    )
+    ).float()
     message = self.linear(message) / self.avg_num_neighbors
     return (
         message.contiguous(),
@@ -233,13 +236,16 @@ def invariant_interaction_forward(
     num_nodes = torch.tensor(node_feats.shape[0])
     node_feats = self.linear_up(node_feats)
     tp_weights = self.conv_tp_weights(edge_feats)
+    node_feats_sender = node_feats.double()[sender]
     message = self.tp.forward(
-        node_feats[sender],
-        edge_attrs,
-        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1]).contiguous(),
+        node_feats_sender,
+        edge_attrs.double(),
+        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1])
+        .contiguous()
+        .double(),
         receiver.int(),
         num_nodes,
-    )
+    ).float()
     message = self.linear(message) / self.avg_num_neighbors
     message = self.skip_tp(message, node_attrs)
     return (
