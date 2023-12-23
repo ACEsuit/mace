@@ -21,8 +21,8 @@ def mace_mp(
     default_dtype: str = "float32",
     dispersion: bool = False,
     damping: Literal["zero", "bj", "zerom", "bjm"] = "bj",
-    dispersion_xc="pbe",
-    dispersion_cutoff=40.0 * units.Bohr,
+    dispersion_xc: str = "pbe",
+    dispersion_cutoff: float = 40.0 * units.Bohr,
     **kwargs,
 ) -> MACECalculator:
     """
@@ -124,8 +124,8 @@ def mace_mp(
 
 
 def mace_anicc(
-    device="cuda",
-    model_path=None,
+    device: str ="cuda",
+    model_path: str | Path = None,
 ) -> MACECalculator:
     """
     Constructs a MACECalculator with a pretrained model based on the ANI (H, C, N, O).
