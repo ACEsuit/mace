@@ -37,7 +37,7 @@ from .models import (
     ScaleShiftBOTNet,
     ScaleShiftMACE,
 )
-from .radial import BesselBasis, GaussianBasis, PolynomialCutoff
+from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
     compute_avg_num_neighbors,
@@ -72,6 +72,7 @@ gate_dict: Dict[str, Optional[Callable]] = {
 __all__ = [
     "AtomicEnergiesBlock",
     "RadialEmbeddingBlock",
+    "ZBLBasis",
     "LinearNodeEmbeddingBlock",
     "LinearReadoutBlock",
     "EquivariantProductBasisBlock",
