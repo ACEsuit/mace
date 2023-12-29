@@ -107,6 +107,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=5,
     )
     parser.add_argument(
+        "--pair_repulsion",
+        help="use amsgrad variant of optimizer",
+        action="store_true",
+        default=True,
+    )
+    parser.add_argument(
         "--interaction",
         help="name of interaction block",
         type=str,
