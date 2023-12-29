@@ -8,6 +8,8 @@ import numpy as np
 import torch
 from e3nn.util.jit import compile_mode
 
+from mace.tools.scatter import scatter_sum
+
 
 @compile_mode("script")
 class BesselBasis(torch.nn.Module):
@@ -109,3 +111,57 @@ class PolynomialCutoff(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
+
+
+@compile_mode("script")
+class ZBLBasis(torch.nn.Module):
+    """
+    Implementation of the Ziegler-Biersack-Littmark (ZBL) potential
+    """
+
+    p: torch.Tensor
+    r_max: torch.Tensor
+
+    def __init__(self, r_max: float, p=6):
+        super().__init__()
+        self.register_buffer(
+            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
+        )
+        # Pre-calculate the p coefficients for the ZBL potential
+        self.register_buffer(
+            "c",
+            torch.tensor(
+                [0.1818, 0.5099, 0.2802, 0.02817], dtype=torch.get_default_dtype()
+            ),
+        )
+        self.cutoff = PolynomialCutoff(p, r_max)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        node_attrs: torch.Tensor,
+        edge_index: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+    ) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        node_atomic_numbers = atomic_numbers[
+            torch.where(node_attrs.int() == 1)[1]
+        ].unsqueeze(-1)
+        Z_u = node_atomic_numbers[sender]
+        Z_v = node_atomic_numbers[receiver]
+        a = 0.8854 * 0.529 / (torch.pow(Z_u, 0.23) + torch.pow(Z_v, 0.23))
+        r_over_a = x / a
+        phi = (
+            self.c[0] * torch.exp(-3.2 * r_over_a)
+            + self.c[1] * torch.exp(-0.9423 * r_over_a)
+            + self.c[2] * torch.exp(-0.4028 * r_over_a)
+            + self.c[3] * torch.exp(-0.2016 * r_over_a)
+        )
+        v_edges = (14.3996 * Z_u * Z_v) / x * phi
+        v_edges = v_edges * self.cutoff(x)
+        V_ZBL = scatter_sum(v_edges, receiver, dim=0, dim_size=node_attrs.size(0))
+        return V_ZBL.squeeze(-1)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(r_max={self.r_max}, c={self.c})"
