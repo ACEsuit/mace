@@ -43,7 +43,7 @@ A partial documentation is available at: https://mace-docs.readthedocs.io
 Requirements:
 
 - Python >= 3.7
-- [PyTorch](https://pytorch.org/) >= 1.12 (2.1 is not supported, 2.0 is recommended)
+- [PyTorch](https://pytorch.org/) >= 1.12
 
 (for openMM, use Python = 3.9)
 
