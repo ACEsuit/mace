@@ -157,6 +157,7 @@ def load_foundations(
     load_readout=False,
     use_shift=False,
     use_scale=True,
+    max_L=2,
 ):
     """
     Load the foundations of a model into a model for fine-tuning.
@@ -230,7 +231,7 @@ def load_foundations(
 
     # Transferring products
     for i in range(2):  # Assuming 2 products modules
-        max_range = 3 if i == 0 else 1
+        max_range = max_L + 1 if i == 0 else 1
         for j in range(max_range):  # Assuming 3 contractions in symmetric_contractions
             model.products[i].symmetric_contractions.contractions[
                 j
