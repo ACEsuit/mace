@@ -351,6 +351,7 @@ def main() -> None:
             model_foundation,
             z_table,
             load_readout=True,
+            max_L=args.max_L,
         )
     model.to(device)
 
