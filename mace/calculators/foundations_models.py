@@ -146,9 +146,9 @@ def mace_off(
     """
     try:
         urls = dict(
-            small="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model",
-            medium="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model",  
-            large="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model",
+            small="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true",
+            medium="https://github.com/ACEsuit/mace-off/raw/main/mace_off23/MACE-OFF23_medium.model?raw=true",  
+            large="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model?raw=true",
         )
         checkpoint_url = (
             urls.get(model, urls["medium"])
@@ -156,9 +156,7 @@ def mace_off(
             else model
         )
         cache_dir = os.path.expanduser("~/.cache/mace")
-        checkpoint_url_name = "".join(
-            c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
-        )
+        checkpoint_url_name = os.path.basename(checkpoint_url).split("?")[0]
         cached_model_path = f"{cache_dir}/{checkpoint_url_name}"
         if not os.path.isfile(cached_model_path):
             os.makedirs(cache_dir, exist_ok=True)
@@ -167,11 +165,11 @@ def mace_off(
             urllib.request.urlretrieve(checkpoint_url, cached_model_path)
             print(f"Cached MACE model to {cached_model_path}")
         model = cached_model_path
-        msg = f"Using MACE-OFF23 MACE MODEL for MACECalculator with {model}"
+        msg = f"Using MACE-OFF23 MODEL for MACECalculator with {model}"
         print(msg)
     except Exception as exc:
         raise RuntimeError(
-            "Model download failed and no local model found"
+            "Model download failed"
         ) from exc
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
