@@ -143,7 +143,9 @@ mace_eval_configs \
 
 ## Tutorial
 
-You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE. We also have a more detailed user and developer tutorial at https://github.com/ilyes319/mace-tutorials
+You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE. 
+
+We also have a more detailed user and developer tutorial at https://github.com/ilyes319/mace-tutorials
 
 ## Weights and Biases for experiment tracking
 
@@ -155,19 +157,6 @@ pip install ./mace[wandb]
 
 And specify the necessary keyword arguments (`--wandb`, `--wandb_project`, `--wandb_entity`, `--wandb_name`, `--wandb_log_hypers`)
 
-## Development
-
-We use `black`, `isort`, `pylint`, and `mypy`.
-Run the following to format and check your code:
-
-```sh
-bash ./scripts/run_checks.sh
-```
-
-We have CI set up to check this, but we _highly_ recommend that you run those commands
-before you commit (and push) to avoid accidentally committing bad code.
-
-We are happy to accept pull requests under an [MIT license](https://choosealicense.com/licenses/mit/). Please copy/paste the license text as a comment into your pull request.
 
 ## Pretrained Foundation Models
 
@@ -189,6 +178,20 @@ calc = mace_off(model="medium", device='cuda')
 atoms.set_calculator(calc)
 print(atoms.get_potential_energy())
 ```
+
+## Development
+
+We use `black`, `isort`, `pylint`, and `mypy`.
+Run the following to format and check your code:
+
+```sh
+bash ./scripts/run_checks.sh
+```
+
+We have CI set up to check this, but we _highly_ recommend that you run those commands
+before you commit (and push) to avoid accidentally committing bad code.
+
+We are happy to accept pull requests under an [MIT license](https://choosealicense.com/licenses/mit/). Please copy/paste the license text as a comment into your pull request.
 
 ## References
 

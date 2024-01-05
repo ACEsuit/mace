@@ -125,6 +125,7 @@ def mace_off(
     model: Union[str, Path] = None,
     device: str = "",
     default_dtype: str = "float32",
+    return_raw_model: bool = False,
     **kwargs,
 ) -> MACECalculator:
     """
@@ -139,6 +140,7 @@ def mace_off(
             Specify "small", "medium" or "large" to download a smaller or larger model.
         device (str, optional): Device to use for the model. Defaults to "cuda".
         default_dtype (str, optional): Default dtype for the model. Defaults to "float64".
+        return_raw_model (bool, optional): Whether to return the raw model or an ASE calculator. Defaults to False.
         **kwargs: Passed to MACECalculator.
 
     Returns:
@@ -162,6 +164,7 @@ def mace_off(
             os.makedirs(cache_dir, exist_ok=True)
             # download and save to disk
             print(f"Downloading MACE model from {checkpoint_url!r}")
+            print(f"By downloading the model you accept the ASL license, see https://github.com/gabor1/ASL")
             urllib.request.urlretrieve(checkpoint_url, cached_model_path)
             print(f"Cached MACE model to {cached_model_path}")
         model = cached_model_path
@@ -181,6 +184,8 @@ def mace_off(
         print(
             "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization."
         )
+    if return_raw_model:
+        return torch.load(model, map_location=device)
     mace_calc = MACECalculator(
         model_paths=model, device=device, default_dtype=default_dtype, **kwargs
     )
