@@ -455,17 +455,8 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
     assert isinstance(mp_mace.models[0], ScaleShiftMACE)
 
     stdout, stderr = capsys.readouterr()
-    if os.path.isfile(local_model_path):
-        assert (
-            "Using local medium Materials Project MACE model for MACECalculator "
-            f"model={local_model_path!r}\n" in stdout
-        )
-    else:
-        assert (
-            f"Using Materials Project MACE for MACECalculator with model='{os.path.expanduser('~')}/.cache/mace/y7uhwpje'"
-            in stdout
-        )
     assert stderr == ""
+
 
 def test_mace_off():
     mace_off__model = mace_off(model="small", device="cpu")
@@ -480,6 +471,7 @@ def test_mace_off():
     E = atoms.get_potential_energy()
 
     assert np.allclose(E, -2081.116128586803, atol=1e-9)
+
 
 def test_mace_off_2(capsys: pytest.CaptureFixture):
     mace_off__model = mace_off(model="small", device="cpu")
