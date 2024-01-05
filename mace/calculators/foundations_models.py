@@ -124,7 +124,7 @@ def mace_mp(
 def mace_off(
     model: Union[str, Path] = None,
     device: str = "",
-    default_dtype: str = "float32",
+    default_dtype: str = "float64",
     return_raw_model: bool = False,
     **kwargs,
 ) -> MACECalculator:
@@ -176,6 +176,10 @@ def mace_off(
         ) from exc
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    
+    if return_raw_model:
+        return torch.load(model, map_location=device)
+    
     if default_dtype == "float64":
         print(
             "Using float64 for MACECalculator, which is slower but more accurate. Recommended for geometry optimization."
@@ -184,8 +188,6 @@ def mace_off(
         print(
             "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization."
         )
-    if return_raw_model:
-        return torch.load(model, map_location=device)
     mace_calc = MACECalculator(
         model_paths=model, device=device, default_dtype=default_dtype, **kwargs
     )
