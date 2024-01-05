@@ -169,11 +169,26 @@ before you commit (and push) to avoid accidentally committing bad code.
 
 We are happy to accept pull requests under an [MIT license](https://choosealicense.com/licenses/mit/). Please copy/paste the license text as a comment into your pull request.
 
-## Pretrained Universal MACE Checkpoints
+## Pretrained Foundation Models
 
 ### Materials Project
 
 We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories. These pretrained models were used for materials stability prediction in [Matbench Discovery](https://matbench-discovery.materialsproject.org) and the corresponding [preprint](https://arxiv.org/abs/2308.14920). For easy reuse, these checkpoints were published on [Hugging Face](https://huggingface.co/cyrusyc/mace-universal) and [Figshare](https://figshare.com/articles/dataset/22715158) with direct download links for the [`medium`](https://figshare.com/ndownloader/files/42374049) and [`large`](https://figshare.com/ndownloader/files/43117273) checkpoints.
+
+### MACE-OFF: Transferable Organic Force Fields
+
+There is a series (small, medium, large) transferable organic force fields. These can be used for the simulation of organic molecules, crystals and molecular liquids, or as a starting point for fine-tuning on a new dataset. The models are released under the [ASL license](https://github.com/gabor1/ASL). If you use them please cite [our paper](https://arxiv.org/abs/2312.15211) which also contains detailed benchmarks and example applications.
+
+#### Example usage in ASE
+```py
+from mace.calculators import mace_off
+from ase import build
+
+atoms = build.molecule('H2O')
+calc = mace_off(model="medium", device='cuda')
+atoms.set_calculator(calc)
+print(atoms.get_potential_energy())
+```
 
 ## References
 
