@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Union
 
 import torch
+
 from ase import units
 from ase.calculators.mixing import SumCalculator
 
@@ -30,6 +31,8 @@ def mace_mp(
     Note:
         If you are using this function, please cite the relevant paper for the Materials Project,
         any paper associated with the MACE model, and also the following:
+        - MACE-MP by Ilyes Batatia, Philipp Benner, Yuan Chiang, Alin M. Elena,
+            Dávid P. Kovács, Janosh Riebesell, et al., 2023, arXiv:2401.00096
         - MACE-Universal by Yuan Chiang, 2023, Hugging Face, Revision e5ebd9b,
             DOI: 10.57967/hf/1202, URL: https://huggingface.co/cyrusyc/mace-universal
         - Matbench Discovery by Janosh Riebesell, Rhys EA Goodall, Philipp Benner, Yuan Chiang,
@@ -57,9 +60,9 @@ def mace_mp(
     elif model in (None, "small", "medium", "large") or str(model).startswith("https:"):
         try:
             urls = dict(
-                small="https://tinyurl.com/2jmmb8b7",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
-                medium="https://tinyurl.com/y7uhwpje",  # 2023-12-03-mace-128-L1_epoch-199.model
-                large="https://figshare.com/ndownloader/files/43117273",
+                small="https://tinyurl.com/2jmmb8b7",  # 2023-12-10-mace-128-L0_energy_epoch-249.model (31M, 3.8M params)
+                medium="http://tinyurl.com/24z8czmf",  # 2023-12-12-mace-128-L1_epoch-199.model (42M, 4.7M params)
+                large="http://tinyurl.com/3a637wz2",  # 2024-01-07-mace-128-L2_epoch-199.model (61M, 5.7M params)
             )
             checkpoint_url = (
                 urls.get(model, urls["medium"])
@@ -165,7 +168,7 @@ def mace_off(
             # download and save to disk
             print(f"Downloading MACE model from {checkpoint_url!r}")
             print(
-                f"By downloading the model you accept the ASL license, see https://github.com/gabor1/ASL"
+                "By downloading the model you accept the ASL license, see https://github.com/gabor1/ASL"
             )
             urllib.request.urlretrieve(checkpoint_url, cached_model_path)
             print(f"Cached MACE model to {cached_model_path}")
