@@ -12,7 +12,7 @@ from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
 local_model_path = os.path.join(
-    module_dir, "foundations_models/2023-12-03-mace-mp.model"
+    module_dir, "foundations_models/2023-12-12-mace-mp.model"
 )
 
 
