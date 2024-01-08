@@ -101,9 +101,7 @@ def mace_mp(
         print(
             "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization."
         )
-    mace_calc = MACECalculator(
-      model_paths=model, device=device, dtype=dtype, **kwargs
-    )
+    mace_calc = MACECalculator(model_paths=model, device=device, dtype=dtype, **kwargs)
     if dispersion:
         gh_url = "https://github.com/pfnet-research/torch-dftd"
         try:
@@ -130,7 +128,7 @@ def mace_mp(
 def mace_off(
     model: Union[str, Path] = None,
     device: str = "",
-    default_dtype: str = "float64",
+    dtype: str = "float64",
     return_raw_model: bool = False,
     **kwargs,
 ) -> MACECalculator:
@@ -145,13 +143,18 @@ def mace_off(
             a local model and then downloads the default medium model from https://github.com/ACEsuit/mace-off.
             Specify "small", "medium" or "large" to download a smaller or larger model.
         device (str, optional): Device to use for the model. Defaults to "cuda".
-        default_dtype (str, optional): Default dtype for the model. Defaults to "float64".
+        dtype (str, optional): Default dtype for the model. Defaults to "float64".
         return_raw_model (bool, optional): Whether to return the raw model or an ASE calculator. Defaults to False.
         **kwargs: Passed to MACECalculator.
 
     Returns:
         MACECalculator: trained on the MACE-OFF23 dataset
     """
+    if "default_dtype" in kwargs:
+        dtype = kwargs.pop("default_dtype")
+        warnings.warn(
+            "default_dtype is deprecated, use dtype instead!", DeprecationWarning
+        )
     try:
         urls = dict(
             small="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true",
@@ -171,7 +174,7 @@ def mace_off(
             # download and save to disk
             print(f"Downloading MACE model from {checkpoint_url!r}")
             print(
-                f"By downloading the model you accept the ASL license, see https://github.com/gabor1/ASL"
+                "By downloading the model you accept the ASL license, see https://github.com/gabor1/ASL"
             )
             urllib.request.urlretrieve(checkpoint_url, cached_model_path)
             print(f"Cached MACE model to {cached_model_path}")
@@ -186,17 +189,15 @@ def mace_off(
     if return_raw_model:
         return torch.load(model, map_location=device)
 
-    if default_dtype == "float64":
+    if dtype == "float64":
         print(
             "Using float64 for MACECalculator, which is slower but more accurate. Recommended for geometry optimization."
         )
-    if default_dtype == "float32":
+    if dtype == "float32":
         print(
             "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization."
         )
-    mace_calc = MACECalculator(
-        model_paths=model, device=device, default_dtype=default_dtype, **kwargs
-    )
+    mace_calc = MACECalculator(model_paths=model, device=device, dtype=dtype, **kwargs)
     return mace_calc
 
 
