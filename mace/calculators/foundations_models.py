@@ -165,8 +165,9 @@ def mace_off(
             # download and save to disk
             print(f"Downloading MACE model from {checkpoint_url!r}")
             print(
-                f"By downloading the model you accept the ASL license, see https://github.com/gabor1/ASL"
+                f"The model is distributed under the Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use the model you accept the terms of the license."
             )
+            print("ASL is based on the Gnu Public License, but does not permit commercial use")
             urllib.request.urlretrieve(checkpoint_url, cached_model_path)
             print(f"Cached MACE model to {cached_model_path}")
         model = cached_model_path
