@@ -57,9 +57,9 @@ class MACECalculator(Calculator):
         model_type="MACE",
         **kwargs,
     ):
-        if "dtype" in kwargs:
+        if "default_dtype" in kwargs:
             warnings.warn(
-                "dtype is deprecated, use default_dtype instead!", DeprecationWarning
+                "default_dtype is deprecated, use dtype instead!", DeprecationWarning
             )
             dtype = kwargs.pop("dtype")
         Calculator.__init__(self, **kwargs)
