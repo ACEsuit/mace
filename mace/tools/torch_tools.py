@@ -60,7 +60,7 @@ def init_device(device_str: str) -> torch.device:
         torch.cuda.init()
         return torch.device(device_str)
     if device_str == "mps":
-        assert torch.backends.mps.is_available(), "No MPS backend is available!"
+        assert torch.backends.mps.is_built(), "No MPS backend is available!"
         logging.info("Using MPS GPU acceleration")
         return torch.device("mps")
 

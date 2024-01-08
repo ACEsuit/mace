@@ -147,7 +147,7 @@ def main():
     mace_calc = MACECalculator(
         mace_fname,
         args.device,
-        default_dtype=args.default_dtype,
+        dtype=args.default_dtype,
     )
 
     NSTEPS = args.nsteps
