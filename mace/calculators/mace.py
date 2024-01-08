@@ -61,7 +61,7 @@ class MACECalculator(Calculator):
             warnings.warn(
                 "default_dtype is deprecated, use dtype instead!", DeprecationWarning
             )
-            dtype = kwargs.pop("dtype")
+            dtype = kwargs.pop("default_dtype")
         Calculator.__init__(self, **kwargs)
         self.results = {}
 
