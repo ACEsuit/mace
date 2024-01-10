@@ -198,7 +198,7 @@ class MACE(torch.nn.Module):
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])
         e0 = scatter_sum(
-            src=node_e0.double(), index=data["batch"], dim=-1, dim_size=num_graphs
+            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -328,7 +328,7 @@ class ScaleShiftMACE(MACE):
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])
         e0 = scatter_sum(
-            src=node_e0.double(), index=data["batch"], dim=-1, dim_size=num_graphs
+            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs,]
 
         # Embeddings
@@ -383,7 +383,6 @@ class ScaleShiftMACE(MACE):
         # Add E_0 and (scaled) interaction energy
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
-
         forces, virials, stress = get_outputs(
             energy=inter_e,
             positions=data["positions"],
@@ -394,7 +393,6 @@ class ScaleShiftMACE(MACE):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
         )
-
         output = {
             "energy": total_energy,
             "node_energy": node_energy,
