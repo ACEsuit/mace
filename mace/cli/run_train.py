@@ -174,6 +174,13 @@ def main() -> None:
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
         )
+    elif args.loss == "universal":
+        loss_fn = modules.UniversalLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            huber_delta=args.huber_delta,
+        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
