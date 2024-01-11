@@ -26,10 +26,12 @@ def mace_mp(
 ) -> MACECalculator:
     """
     Constructs a MACECalculator with a pretrained model based on the Materials Project (89 elements).
-    The model is released under the MIT license.
+    The model is released under the MIT license. See https://github.com/ACEsuit/mace-mp for all models.
     Note:
         If you are using this function, please cite the relevant paper for the Materials Project,
         any paper associated with the MACE model, and also the following:
+        - MACE-MP by Ilyes Batatia, Philipp Benner, Yuan Chiang, Alin M. Elena,
+            Dávid P. Kovács, Janosh Riebesell, et al., 2023, arXiv:2401.00096
         - MACE-Universal by Yuan Chiang, 2023, Hugging Face, Revision e5ebd9b,
             DOI: 10.57967/hf/1202, URL: https://huggingface.co/cyrusyc/mace-universal
         - Matbench Discovery by Janosh Riebesell, Rhys EA Goodall, Philipp Benner, Yuan Chiang,
@@ -57,9 +59,9 @@ def mace_mp(
     elif model in (None, "small", "medium", "large") or str(model).startswith("https:"):
         try:
             urls = dict(
-                small="https://tinyurl.com/2jmmb8b7",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
-                medium="https://tinyurl.com/y7uhwpje",  # 2023-12-03-mace-128-L1_epoch-199.model
-                large="https://figshare.com/ndownloader/files/43117273",
+                small="http://tinyurl.com/46jrkm3v",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
+                medium="http://tinyurl.com/5yyxdm76",  # 2023-12-03-mace-128-L1_epoch-199.model
+                large="http://tinyurl.com/5f5yavf3",  # MACE_MPtrj_2022.9.model
             )
             checkpoint_url = (
                 urls.get(model, urls["medium"])
@@ -75,7 +77,13 @@ def mace_mp(
                 os.makedirs(cache_dir, exist_ok=True)
                 # download and save to disk
                 print(f"Downloading MACE model from {checkpoint_url!r}")
-                urllib.request.urlretrieve(checkpoint_url, cached_model_path)
+                _, http_msg = urllib.request.urlretrieve(
+                    checkpoint_url, cached_model_path
+                )
+                if "Content-Type: text/html" in http_msg:
+                    raise RuntimeError(
+                        f"Model download failed, please check the URL {checkpoint_url}"
+                    )
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
             msg = f"Using Materials Project MACE for MACECalculator with {model}"
@@ -165,9 +173,11 @@ def mace_off(
             # download and save to disk
             print(f"Downloading MACE model from {checkpoint_url!r}")
             print(
-                f"The model is distributed under the Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use the model you accept the terms of the license."
+                "The model is distributed under the Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use the model you accept the terms of the license."
             )
-            print("ASL is based on the Gnu Public License, but does not permit commercial use")
+            print(
+                "ASL is based on the Gnu Public License, but does not permit commercial use"
+            )
             urllib.request.urlretrieve(checkpoint_url, cached_model_path)
             print(f"Cached MACE model to {cached_model_path}")
         model = cached_model_path
