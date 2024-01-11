@@ -57,8 +57,8 @@ def mace_mp(
     elif model in (None, "small", "medium", "large") or str(model).startswith("https:"):
         try:
             urls = dict(
-                small="https://tinyurl.com/2jmmb8b7",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
-                medium="https://tinyurl.com/y7uhwpje",  # 2023-12-03-mace-128-L1_epoch-199.model
+                small="https://tinyurl.com/2jmmb8b7?confirm=yTib",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
+                medium="https://tinyurl.com/y7uhwpje?confirm=yTib",  # 2023-12-03-mace-128-L1_epoch-199.model
                 large="https://figshare.com/ndownloader/files/43117273",
             )
             checkpoint_url = (
@@ -75,7 +75,14 @@ def mace_mp(
                 os.makedirs(cache_dir, exist_ok=True)
                 # download and save to disk
                 print(f"Downloading MACE model from {checkpoint_url!r}")
-                urllib.request.urlretrieve(checkpoint_url, cached_model_path)
+                _, http_msg = urllib.request.urlretrieve(
+                    checkpoint_url, cached_model_path
+                )
+                # make sure download was successful
+                if "Content-Type: application/octet-stream" not in http_msg:
+                    raise RuntimeError(
+                        f"Model download failed, please check {checkpoint_url}"
+                    )
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
             msg = f"Using Materials Project MACE for MACECalculator with {model}"
@@ -165,9 +172,11 @@ def mace_off(
             # download and save to disk
             print(f"Downloading MACE model from {checkpoint_url!r}")
             print(
-                f"The model is distributed under the Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use the model you accept the terms of the license."
+                "The model is distributed under the Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use the model you accept the terms of the license."
             )
-            print("ASL is based on the Gnu Public License, but does not permit commercial use")
+            print(
+                "ASL is based on the Gnu Public License, but does not permit commercial use"
+            )
             urllib.request.urlretrieve(checkpoint_url, cached_model_path)
             print(f"Cached MACE model to {cached_model_path}")
         model = cached_model_path
