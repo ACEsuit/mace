@@ -20,7 +20,7 @@ In order to run simulations through openMM, a custom conda environment is requir
 
 ``./mace-install.sh``
 
-This will build the conda environment and install all required packages.
+This will build the conda environment and install all required packages. There are additional installation instructions contained within the openmmtools repository.
 
 
 Once you have your environment built, the ``mace-md`` entrypoint will be available.
