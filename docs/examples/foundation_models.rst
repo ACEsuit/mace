@@ -9,10 +9,11 @@ Currently available pretrained MACE models:
 3. MACE-ANI-CC: MACE model trained on the coupled cluster accurate ANI training set of organic molecules, parameterised for H, C, N, O elements. 
 
 ###########################
-Pretrained MPtrj Checkpoint
+Pretrained MACE-MP-0 models
 ###########################
 
-We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the `MPTrj dataset <https://figshare.com/articles/dataset/23713842>`_. These pretrained models were used for materials stability prediction in `Matbench Discovery <https://matbench-discovery.materialsproject.org>`_ and the corresponding `preprint <https://arxiv.org/abs/2308.14920>`_. For easy reuse, these checkpoints were published on `Hugging Face <https://huggingface.co/cyrusyc/mace-universal>`_.
+We have collaborated with the Materials Project (MP) to train a universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the `MPTrj dataset <https://figshare.com/articles/dataset/23713842>`_.
+The model are releaed on GitHub at https://github.com/ACEsuit/mace-mp.
 
 To access the pretrained checkpoints as an ASE calculator, you can use the following code snippets:
 
@@ -49,7 +50,22 @@ To access the pretrained checkpoints as an ASE calculator, you can use the follo
     n_steps = 200 # Number of steps to run
     dyn.run(n_steps)
 
-Please cite the relevent papers if you use these checkpoints (see mace_mp docstrings for a list).
+A full benchmark of the MACE-MP-0 models across more than 30 applications can be found in the `paper <https://arxiv.org/abs/2103.01965>`_.
+
+Please cite,
+
+.. code-block:: latex
+
+    @misc{batatia2023foundation,
+        title={A foundation model for atomistic materials chemistry}, 
+        author={Ilyes Batatia and Philipp Benner and Yuan Chiang and Alin M. Elena and Dávid P. Kovács and Janosh Riebesell and Xavier R. Advincula and Mark Asta and William J. Baldwin and Noam Bernstein and Arghya Bhowmik and Samuel M. Blau and Vlad Cărare and James P. Darby and Sandip De and Flaviano Della Pia and Volker L. Deringer and Rokas Elijošius and Zakariya El-Machachi and Edvin Fako and Andrea C. Ferrari and Annalena Genreith-Schriever and Janine George and Rhys E. A. Goodall and Clare P. Grey and Shuang Han and Will Handley and Hendrik H. Heenen and Kersti Hermansson and Christian Holm and Jad Jaafar and Stephan Hofmann and Konstantin S. Jakob and Hyunwook Jung and Venkat Kapil and Aaron D. Kaplan and Nima Karimitari and Namu Kroupa and Jolla Kullgren and Matthew C. Kuner and Domantas Kuryla and Guoda Liepuoniute and Johannes T. Margraf and Ioan-Bogdan Magdău and Angelos Michaelides and J. Harry Moore and Aakash A. Naik and Samuel P. Niblett and Sam Walton Norwood and Niamh O'Neill and Christoph Ortner and Kristin A. Persson and Karsten Reuter and Andrew S. Rosen and Lars L. Schaaf and Christoph Schran and Eric Sivonxay and Tamás K. Stenczel and Viktor Svahn and Christopher Sutton and Cas van der Oord and Eszter Varga-Umbrich and Tejs Vegge and Martin Vondrák and Yangshuai Wang and William C. Witt and Fabian Zills and Gábor Csányi},
+        year={2023},
+        eprint={2401.00096},
+        archivePrefix={arXiv},
+        primaryClass={physics.chem-ph}
+    }
+
+and the relevent papers if you use these checkpoints (see mace_mp docstrings for a list).
 
 ###########################
 MACE-OFF23: Transferable Organic Force Fields
