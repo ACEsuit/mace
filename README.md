@@ -172,13 +172,28 @@ And specify the necessary keyword arguments (`--wandb`, `--wandb_project`, `--wa
 
 ## Pretrained Foundation Models
 
-### Materials Project
+### MACE-MP: Materials Project Force Fields
 
-We have collaborated with the Materials Project (MP) who trained universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories. These pretrained models were used for materials stability prediction in [Matbench Discovery](https://matbench-discovery.materialsproject.org) and the corresponding [preprint](https://arxiv.org/abs/2308.14920). For easy reuse, these checkpoints were published on [Hugging Face](https://huggingface.co/cyrusyc/mace-universal) and [Figshare](https://figshare.com/articles/dataset/22715158) with direct download links for the [`medium`](https://figshare.com/ndownloader/files/42374049) and [`large`](https://figshare.com/ndownloader/files/43117273) checkpoints.
+We have collaborated with the Materials Project (MP) to train a universal MACE potential covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories.
+The models are releaed on GitHub at https://github.com/ACEsuit/mace-mp.
+If you use them please cite [our paper](https://arxiv.org/abs/2401.00096) which also contains an large range of example applications and benchmarks.
+
+#### Example usage in ASE
+```py
+from mace.calculators import mace_mp
+from ase import build
+
+atoms = build.molecule('H2O')
+calc = mace_mp(model="medium", device='cuda')
+atoms.set_calculator(calc)
+print(atoms.get_potential_energy())
+```
 
 ### MACE-OFF: Transferable Organic Force Fields
 
-There is a series (small, medium, large) transferable organic force fields. These can be used for the simulation of organic molecules, crystals and molecular liquids, or as a starting point for fine-tuning on a new dataset. The models are released under the [ASL license](https://github.com/gabor1/ASL). If you use them please cite [our paper](https://arxiv.org/abs/2312.15211) which also contains detailed benchmarks and example applications.
+There is a series (small, medium, large) transferable organic force fields. These can be used for the simulation of organic molecules, crystals and molecular liquids, or as a starting point for fine-tuning on a new dataset. The models are released under the [ASL license](https://github.com/gabor1/ASL). 
+The models are releaed on GitHub at https://github.com/ACEsuit/mace-off.
+If you use them please cite [our paper](https://arxiv.org/abs/2312.15211) which also contains detailed benchmarks and example applications.
 
 #### Example usage in ASE
 ```py
