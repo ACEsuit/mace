@@ -50,7 +50,7 @@ To access the pretrained checkpoints as an ASE calculator, you can use the follo
     n_steps = 200 # Number of steps to run
     dyn.run(n_steps)
 
-A full benchmark of the MACE-MP-0 models across more than 30 applications can be found in the `paper <https://arxiv.org/abs/2103.01965>`_.
+A full benchmark of the MACE-MP-0 models across more than 30 applications can be found in the `paper <https://arxiv.org/abs/2401.00096>`_.
 
 Please cite,
 
