@@ -10,6 +10,20 @@ Requirements:
 
 (for openMM, use Python = 3.9)
 
+
+pip installation
+----------------
+
+To install via `pip`, follow the steps below:
+
+.. code-block:: bash
+
+    pip install --upgrade pip
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+    pip install mace-torch
+
+For CPU or MPS (Apple Silicon) installation, use `pip install torch torchvision torchaudio` instead.
+
 conda installation
 -------------------
 
@@ -32,8 +46,8 @@ If you do not have CUDA pre-installed, it is **recommended** to follow the conda
     pip install ./mace
 
 
-pip installation
--------------------
+pip installation from source
+----------------------------
 
 To install via `pip`, follow the steps below:
 
