@@ -357,7 +357,7 @@ def accuracy(
         batch_2 = batch.clone()
         batch_3 = batch.clone()
         # make a copy of the model
-        output_opt = model_opt(batch, training=False, compute_force=True)
+        output_opt = model_opt(batch.to_dict(), training=False, compute_force=True)
         output_org_float32 = model(batch_3, training=False, compute_force=True)
         model = model.double()
         model.atomic_energies_fn.atomic_energies = (
