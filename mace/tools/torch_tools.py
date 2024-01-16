@@ -107,7 +107,7 @@ def cartesian_to_spherical(t: torch.Tensor):
 def voigt_to_matrix(t: torch.Tensor):
     """
     Convert voigt notation to matrix notation
-    :param t: (6,) tensor or (3, 3) tensor
+    :param t: (6,) tensor or (3, 3) tensor or (9,) tensor
     :return: (3, 3) tensor
     """
     if t.shape == (3, 3):
@@ -121,9 +121,11 @@ def voigt_to_matrix(t: torch.Tensor):
             ],
             dtype=t.dtype,
         )
+    if t.shape == (9,):
+        return t.view(3, 3)
 
     raise ValueError(
-        f"Stress tensor must be of shape (6,) or (3, 3), but has shape {t.shape}"
+        f"Stress tensor must be of shape (6,) or (3, 3), or (9,) but has shape {t.shape}"
     )
 
 
