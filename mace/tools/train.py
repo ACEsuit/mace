@@ -7,19 +7,18 @@
 import dataclasses
 import logging
 import time
-from typing import Any, Dict, Optional, Tuple, Union, List
 from contextlib import nullcontext
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from torch.optim.swa_utils import SWALR, AveragedModel
-from torch.utils.data import DataLoader
-from torch_ema import ExponentialMovingAverage
-from torchmetrics import Metric
-
 import torch.distributed
 from torch.nn.parallel import DistributedDataParallel
+from torch.optim.swa_utils import SWALR, AveragedModel
+from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
+from torch_ema import ExponentialMovingAverage
+from torchmetrics import Metric
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
@@ -66,12 +65,12 @@ def train(
     distributed_model: Optional[DistributedDataParallel] = None,
     train_sampler: Optional[DistributedSampler] = None,
     rank: Optional[int] = 0,
+    keep_last=True,
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
     patience_counter = 0
     swa_start = True
-    keep_last = False
     if log_wandb:
         import wandb
 
@@ -84,7 +83,7 @@ def train(
         if swa is None or epoch < swa.start:
             if epoch > start_epoch:
                 lr_scheduler.step(
-                    valid_loss
+                    metrics=valid_loss
                 )  # Can break if exponential LR, TODO fix that!
         else:
             if swa_start:
@@ -100,7 +99,7 @@ def train(
         # Train
         if distributed:
             train_sampler.set_epoch(epoch)
-        
+
         train_one_epoch(
             model=model,
             loss_fn=loss_fn,
@@ -120,8 +119,12 @@ def train(
 
         # Validate
         if epoch % eval_interval == 0:
-            model_to_evaluate = model if distributed_model is None else distributed_model
-            param_context = ema.average_parameters() if ema is not None else nullcontext()
+            model_to_evaluate = (
+                model if distributed_model is None else distributed_model
+            )
+            param_context = (
+                ema.average_parameters() if ema is not None else nullcontext()
+            )
             with param_context:
                 valid_loss, eval_metrics = evaluate(
                     model=model_to_evaluate,
@@ -130,7 +133,7 @@ def train(
                     output_args=output_args,
                     device=device,
                 )
-            
+
             if rank == 0:
                 eval_metrics["mode"] = "eval"
                 eval_metrics["epoch"] = epoch
@@ -170,8 +173,9 @@ def train(
                 elif log_errors == "PerAtomMAE":
                     error_e = eval_metrics["mae_e_per_atom"] * 1e3
                     error_f = eval_metrics["mae_f"] * 1e3
+                    error_stress = eval_metrics.get("mae_stress_per_atom", 0) * 1e3
                     logging.info(
-                        f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E_per_atom={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+                        f"Epoch {epoch}: loss={valid_loss:.4e}, MAE_E_per_atom={error_e:.4f} meV, MAE_F={error_f:.4f} meV / A, MAE_stress_per_atom={error_stress:.4f} meV / A^3"
                     )
                 elif log_errors == "TotalMAE":
                     error_e = eval_metrics["mae_e"] * 1e3
@@ -211,6 +215,11 @@ def train(
                             f"Stopping optimization after {patience_counter} epochs without improvement"
                         )
                         break
+                    checkpoint_handler.save(
+                        state=CheckpointState(model, optimizer, lr_scheduler),
+                        epochs=epoch,
+                        keep_last=keep_last,
+                    )
                 else:
                     lowest_loss = valid_loss
                     patience_counter = 0
@@ -221,14 +230,14 @@ def train(
                                 epochs=epoch,
                                 keep_last=keep_last,
                             )
-                            keep_last = False
+                            # keep_last = False
                     else:
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
                             epochs=epoch,
                             keep_last=keep_last,
                         )
-                        keep_last = False
+                        # keep_last = False
         if distributed:
             torch.distributed.barrier()
         epoch += 1
@@ -294,7 +303,7 @@ def take_step(
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
     optimizer.step()
-    
+
     if ema is not None:
         ema.update()
 
@@ -313,12 +322,11 @@ def evaluate(
     output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-
     for param in model.parameters():
         param.requires_grad = False
-        
+
     metrics = MACELoss(loss_fn=loss_fn).to(device)
-    
+
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
@@ -335,10 +343,10 @@ def evaluate(
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time
     metrics.reset()
-    
+
     for param in model.parameters():
         param.requires_grad = True
-    
+
     return avg_loss, aux
 
 
@@ -354,10 +362,14 @@ class MACELoss(Metric):
         self.add_state("Fs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("fs", default=[], dist_reduce_fx="cat")
         self.add_state("delta_fs", default=[], dist_reduce_fx="cat")
-        self.add_state("stress_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "stress_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
         self.add_state("delta_stress", default=[], dist_reduce_fx="cat")
         self.add_state("delta_stress_per_atom", default=[], dist_reduce_fx="cat")
-        self.add_state("virials_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "virials_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
         self.add_state("delta_virials", default=[], dist_reduce_fx="cat")
         self.add_state("delta_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("Mus_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
@@ -402,7 +414,7 @@ class MACELoss(Metric):
                 (batch.dipole - output["dipole"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
-    
+
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):
             delta = torch.cat(delta)
@@ -432,6 +444,7 @@ class MACELoss(Metric):
             delta_stress_per_atom = self.convert(self.delta_stress_per_atom)
             aux["mae_stress"] = compute_mae(delta_stress)
             aux["rmse_stress"] = compute_rmse(delta_stress)
+            aux["mae_stress_per_atom"] = compute_mae(delta_stress_per_atom)
             aux["rmse_stress_per_atom"] = compute_rmse(delta_stress_per_atom)
             aux["q95_stress"] = compute_q95(delta_stress)
         if self.virials_computed:
@@ -452,6 +465,5 @@ class MACELoss(Metric):
             aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
             aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
             aux["q95_mu"] = compute_q95(delta_mus)
-            
+
         return aux["loss"], aux
-    
