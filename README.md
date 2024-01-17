@@ -213,24 +213,24 @@ print(atoms.get_potential_energy())
 To finetune one of the mace-mp-0 foundation model, you can use the `mace_run_train` script with the extra argument `--foundation_model=model_type`. For example to finetune the small model on a new dataset, you can use:
 
 ```sh
-mace_run_train ^
-  --name="MACE" ^
-  --foundation_model="small" ^
+mace_run_train \
+  --name="MACE" \
+  --foundation_model="small" \
   --train_file="train.xyz" \
   --valid_fraction=0.05 \
   --test_file="test.xyz" \
-  --energy_weight=1.0 ^
-  --forces_weight=1.0 ^
-  --E0s="average" ^
-  --lr=0.01 ^
-  --scaling="rms_forces_scaling" ^
-  --batch_size=2 ^
-  --max_num_epochs=6 ^
-  --ema ^
-  --ema_decay=0.99 ^
-  --amsgrad ^
-  --default_dtype="float32"^
-  --device=cuda ^
+  --energy_weight=1.0 \
+  --forces_weight=1.0 \
+  --E0s="average" \
+  --lr=0.01 \
+  --scaling="rms_forces_scaling" \
+  --batch_size=2 \
+  --max_num_epochs=6 \
+  --ema \
+  --ema_decay=0.99 \
+  --amsgrad \
+  --default_dtype="float32" \
+  --device=cuda \
   --seed=3 
 ```
 Other options are "medium" and "large", or the path to a foundation model. For the latter, the model will be loaded from the path, but you will need to provide the full set of hyperparameters (hidden irreps, r_max, etc.) matching the model.
