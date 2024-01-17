@@ -11,8 +11,9 @@ from mace import data, modules, tools
 from ase.build import molecule
 from mace.tools import torch_geometric
 from mace.tools.utils import load_foundations
+from mace.calculators import mace_mp
 
-torch.set_default_dtype(torch.float32)
+torch.set_default_dtype(torch.float64)
 config = data.Configuration(
     atomic_numbers=molecule("H2COH").numbers,
     positions=molecule("H2COH").positions,
@@ -42,7 +43,7 @@ def test_foundations():
     model_config = dict(
         r_max=6,
         num_bessel=10,
-        num_polynomial_cutoff=10,
+        num_polynomial_cutoff=5,
         max_ell=3,
         interaction_cls=modules.interaction_classes[
             "RealAgnosticResidualInteractionBlock"
@@ -52,8 +53,8 @@ def test_foundations():
         ],
         num_interactions=2,
         num_elements=3,
-        hidden_irreps=o3.Irreps("64x0e + 64x1o + 64x2e"),
-        MLP_irreps=o3.Irreps("64x0e"),
+        hidden_irreps=o3.Irreps("128x0e"),
+        MLP_irreps=o3.Irreps("16x0e"),
         gate=torch.nn.functional.silu,
         atomic_energies=atomic_energies,
         avg_num_neighbors=3,
@@ -64,16 +65,19 @@ def test_foundations():
         atomic_inter_shift=0.0,
     )
     model = modules.ScaleShiftMACE(**model_config)
-    foundation_path = (
-        Path(__file__).parent.parent
-        / "mace"
-        / "calculators"
-        / "foundations_models"
-        / "2023-08-14-mace-universal.model"
+    calc = mace_mp(
+        model="small",
+        device="cpu",
+        default_dtype="float64",
     )
-    model_foundations = torch.load(foundation_path)
+    model_foundations = calc.models[0]
     model_loaded = load_foundations(
-        model, model_foundations, table=table, load_readout=True, use_shift=False
+        model,
+        model_foundations,
+        table=table,
+        load_readout=True,
+        use_shift=False,
+        max_L=0,
     )
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=6.0)
     atomic_data2 = data.AtomicData.from_config(

@@ -269,7 +269,6 @@ def load_foundations(
         model.readouts[1].linear_2.weight = torch.nn.Parameter(
             model_foundations.readouts[1].linear_2.weight.clone()
         )
-
     if model_foundations.scale_shift is not None:
         if use_scale:
             model.scale_shift.scale = model_foundations.scale_shift.scale.clone()
