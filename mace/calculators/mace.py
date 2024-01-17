@@ -19,6 +19,16 @@ from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 
 
+def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
+    """Get the dtype of the model"""
+    mode_dtype = next(model.parameters()).dtype
+    if mode_dtype == torch.float64:
+        return "float64"
+    if mode_dtype == torch.float32:
+        return "float32"
+    raise ValueError(f"Unknown dtype {mode_dtype}")
+
+
 class MACECalculator(Calculator):
     """MACE ASE Calculator
     args:
@@ -41,7 +51,7 @@ class MACECalculator(Calculator):
         device: str,
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
-        default_dtype="float64",
+        default_dtype="",
         charges_key="Qs",
         model_type="MACE",
         **kwargs,
@@ -75,8 +85,12 @@ class MACECalculator(Calculator):
                 f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
+        if "model_path" in kwargs:
+            print("model_path argument deprecated, use model_paths")
+            model_paths = kwargs["model_path"]
+
         if isinstance(model_paths, str):
-            # Find all models that staisfy the wildcard (e.g. mace_model_*.pt)
+            # Find all models that satisfy the wildcard (e.g. mace_model_*.pt)
             model_paths_glob = glob(model_paths)
             if len(model_paths_glob) == 0:
                 raise ValueError(f"Couldn't find MACE model files: {model_paths}")
@@ -84,7 +98,7 @@ class MACECalculator(Calculator):
         elif isinstance(model_paths, Path):
             model_paths = [model_paths]
         if len(model_paths) == 0:
-            raise ValueError("No mace file neames supplied")
+            raise ValueError("No mace file names supplied")
         self.num_models = len(model_paths)
         if len(model_paths) > 1:
             print(f"Running committee mace with {len(model_paths)} models")
@@ -114,6 +128,20 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+        model_dtype = get_model_dtype(self.models[0])
+        if default_dtype == "":
+            print(
+                f"No dtype selected, switching to {model_dtype} to match model dtype."
+            )
+            default_dtype = model_dtype
+        if model_dtype != default_dtype:
+            print(
+                f"Default dtype {default_dtype} does not match model dtype {model_dtype}, converting models to {default_dtype}."
+            )
+            if default_dtype == "float64":
+                self.models = [model.double() for model in self.models]
+            elif default_dtype == "float32":
+                self.models = [model.float() for model in self.models]
         torch_tools.set_default_dtype(default_dtype)
         for model in self.models:
             for param in model.parameters():
@@ -125,7 +153,7 @@ class MACECalculator(Calculator):
         """
         Create tensors to store the results of the committee
         :param model_type: str, type of model to load
-                    Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+            Options: [MACE, DipoleMACE, EnergyDipoleMACE]
         :param num_models: int, number of models in the committee
         :return: tuple of torch tensors
         """

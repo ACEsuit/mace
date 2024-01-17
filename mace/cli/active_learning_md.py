@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--model",
-        help="path to model. Use wildcards to add multiple models as committe eg "
+        help="path to model. Use wildcards to add multiple models as committee eg "
         "(`mace_*.model` to load mace_1.model, mace_2.model) ",
         required=True,
     )
@@ -80,6 +80,7 @@ def printenergy(dyn, start_time=None):  # store a reference to atoms in the defi
         elapsed_time = 0
     else:
         elapsed_time = time.time() - start_time
+    forces_var = np.var(a.calc.results["forces_comm"], axis=0)
     print(
         "%.1fs: Energy per atom: Epot = %.3feV  Ekin = %.3feV (T=%3.0fK)  "  # pylint: disable=C0209
         "Etot = %.3feV t=%.1ffs Eerr = %.3feV Ferr = %.3feV/A"
@@ -91,7 +92,7 @@ def printenergy(dyn, start_time=None):  # store a reference to atoms in the defi
             epot + ekin,
             dyn.get_time() / units.fs,
             a.calc.results["energy_var"],
-            np.max(np.linalg.norm(a.calc.results["forces_var"], axis=1)),
+            np.max(np.linalg.norm(forces_var, axis=1)),
         ),
         flush=True,
     )
@@ -110,7 +111,10 @@ def save_config(dyn, fname):
         }
     )
     atomsi.arrays.update(
-        {"mlff_forces": frcs, "mlff_forces_var": atomsi.calc.results["forces_var"]}
+        {
+            "mlff_forces": frcs,
+            "mlff_forces_var": np.var(atomsi.calc.results["forces_comm"], axis=0),
+        }
     )
 
     ase.io.write(fname, atomsi, append=True)
@@ -118,7 +122,7 @@ def save_config(dyn, fname):
 
 def stop_error(dyn, threshold, reg=0.2):
     atomsi = dyn.atoms
-    force_var = atomsi.calc.results["forces_var"]
+    force_var = np.var(atomsi.calc.results["forces_comm"], axis=0)
     force = atomsi.get_forces()
     ferr = np.sqrt(np.sum(force_var, axis=1))
     ferr_rel = ferr / (np.linalg.norm(force, axis=1) + reg)

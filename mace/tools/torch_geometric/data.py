@@ -54,7 +54,7 @@ class Data(object):
         face (LongTensor, optional): Face adjacency matrix with shape
             :obj:`[3, num_faces]`. (default: :obj:`None`)
 
-    The data object is not restricted to these attributes and can be extented
+    The data object is not restricted to these attributes and can be extended
     by any other additional data.
 
     Example::
