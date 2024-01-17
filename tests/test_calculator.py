@@ -9,8 +9,12 @@ import pytest
 from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
 from ase.constraints import ExpCellFilter
+from ase import build
 
+from mace.calculators import mace_mp, mace_off
+from mace.calculators.foundations_models import local_model_path
 from mace.calculators.mace import MACECalculator
+from mace.modules.models import ScaleShiftMACE
 
 pytest_mace_dir = Path(__file__).parent.parent
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
@@ -401,8 +405,10 @@ def test_calculator_committee(fitting_configs, trained_committee):
     E = at.get_potential_energy()
     energies = at.calc.results["energies"]
     energies_var = at.calc.results["energy_var"]
+    forces_var = np.var(at.calc.results["forces_comm"], axis=0)
     assert np.allclose(E, np.mean(energies))
     assert np.allclose(energies_var, np.var(energies))
+    assert forces_var.shape == at.calc.results["forces"].shape
 
 
 def test_calculator_dipole(fitting_configs, trained_dipole_model):
@@ -439,3 +445,35 @@ def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
     assert desc_single_layer.shape[1] == 16
     assert desc.shape[0] == 3
     assert desc.shape[1] == 80
+
+
+def test_mace_mp(capsys: pytest.CaptureFixture):
+    mp_mace = mace_mp()
+    assert isinstance(mp_mace, MACECalculator)
+    assert mp_mace.model_type == "MACE"
+    assert len(mp_mace.models) == 1
+    assert isinstance(mp_mace.models[0], ScaleShiftMACE)
+
+    stdout, stderr = capsys.readouterr()
+    assert stderr == ""
+
+
+def test_mace_off():
+    mace_off__model = mace_off(model="small", device="cpu")
+    assert isinstance(mace_off__model, MACECalculator)
+    assert mace_off__model.model_type == "MACE"
+    assert len(mace_off__model.models) == 1
+    assert isinstance(mace_off__model.models[0], ScaleShiftMACE)
+
+    atoms = build.molecule("H2O")
+    atoms.calc = mace_off__model
+
+    E = atoms.get_potential_energy()
+
+    assert np.allclose(E, -2081.116128586803, atol=1e-9)
+
+
+def test_mace_off_2(capsys: pytest.CaptureFixture):
+    mace_off__model = mace_off(model="small", device="cpu")
+    stdout, stderr = capsys.readouterr()
+    assert "Downloading" not in stdout
