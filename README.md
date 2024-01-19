@@ -216,8 +216,9 @@ We recommend setting up your development environment by installing the `dev` pac
 into your python environment:
 ```bash
 pip install -e ".[dev]"
+pre-commit install
 ```
-
+The second line will initialise `pre-commit` to automaticaly run code checks on commit.
 We have CI set up to check this, but we _highly_ recommend that you run those commands
 before you commit (and push) to avoid accidentally committing bad code.
 
