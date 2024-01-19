@@ -162,6 +162,7 @@ def load_foundations(
     """
     Load the foundations of a model into a model for fine-tuning.
     """
+    print(model_foundations.r_max, model.r_max)
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
     new_z_table = table
@@ -213,6 +214,7 @@ def load_foundations(
         model.interactions[i].linear.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear.weight.clone()
         )
+        print(model.interactions[i].__class__.__name__)
         if (
             model.interactions[i].__class__.__name__
             == "RealAgnosticResidualInteractionBlock"

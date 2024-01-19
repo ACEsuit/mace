@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from mace.calculators.foundations_models import mace_off
 import torch.nn.functional
 from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
@@ -245,27 +246,52 @@ def main() -> None:
             atomic_numbers=z_table.zs,
         )
     else:
-        args.model = "ScaleShiftMACE"
-        if args.foundation_model == "small":
+        if "mace-mp" in args.foundation_model:
+            args.model = "ScaleShiftMACE"
+            args.num_channels = 128
+            args.r_max = 6.0
+            args.num_bessel = 10
+            args.interaction_first = "RealAgnosticResidualInteractionBlock"
+            args.interaction = "RealAgnosticResidualInteractionBlock"
+        elif "mace-off" in args.foundation_model:
+            args.model = "MACE"
+            args.num_bessel = 8
+            args.r_max = 5.0
+            args.interaction = "RealAgnosticResidualInteractionBlock"
+
+        if args.foundation_model == "mace-mp-small":
             args.max_L = 0
-        elif args.foundation_model == "medium":
+        elif args.foundation_model == "mace-mp-medium":
             args.max_L = 1
-        elif args.foundation_model == "large":
+        elif args.foundation_model == "mace-mp-large":
             args.max_L = 2
-        args.num_channels = 128
+
+        # now handle mace-off models
+        elif args.foundation_model == "mace-off-small":
+            args.max_L = 0
+            args.num_channels = 96
+            args.r_max = 4.5
+        elif args.foundation_model == "mace-off-medium":
+            args.max_L = 1
+            args.num_channels = 128
+        elif args.foundation_model == "mace-off-large":
+            args.max_L = 2
+            args.num_channels = 192
+
         args.hidden_irreps = o3.Irreps(
             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
             .sort()
             .irreps.simplify()
         )
-        args.interaction_first = "RealAgnosticResidualInteractionBlock"
-        args.interaction = "RealAgnosticResidualInteractionBlock"
+
+
+
         logging.info(
-            f"Using {args.foundation_model} mace-mp-0 settings. Hidden irreps: {args.hidden_irreps}"
+            f"Using {args.foundation_model} foundation_model settings. Hidden irreps: {args.hidden_irreps}"
         )
         model_config = dict(
-            r_max=6.0,
-            num_bessel=10,
+            r_max=args.r_max,
+            num_bessel=args.num_bessel,
             num_polynomial_cutoff=5,
             max_ell=3,
             interaction_cls=modules.interaction_classes[args.interaction],
@@ -368,11 +394,20 @@ def main() -> None:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
     if args.foundation_model is not None:
-        calc = mace_mp(
-            model=args.foundation_model,
-            device=args.device,
-            default_dtype=args.default_dtype,
-        )
+        if "mace-mp" in args.foundation_model:
+            calc = mace_mp(
+                model=args.foundation_model,
+                device=args.device,
+                default_dtype=args.default_dtype,
+            )
+        elif "mace-off" in args.foundation_model:
+            calc = mace_off(
+                model=args.foundation_model,
+                device=args.device,
+                default_dtype=args.default_dtype,
+            )
+        else:
+            raise ValueError("Unknown foundation model")
         logging.info(
             f"Using foundation model {args.foundation_model} as initial checkpoint."
         )
@@ -384,6 +419,11 @@ def main() -> None:
             load_readout=True,
             max_L=args.max_L,
         )
+        if args.freeze_weights:
+            logging.info("Freezing weights")
+            for name, param in model.named_parameters():
+                if "readout" in name:
+                    param.requires_grad = False
     model.to(device)
 
     # Optimizer

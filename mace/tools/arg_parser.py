@@ -429,6 +429,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
     )
+    parser.add_argument("--freeze_weights", help="Freeze weights", action="store_true")
     parser.add_argument(
         "--foundation_model_readout",
         help="Use readout of foundation model for transfer learning",
