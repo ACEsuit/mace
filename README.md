@@ -210,13 +210,12 @@ print(atoms.get_potential_energy())
 
 ## Development
 
-This project uses [ruff](https://docs.astral.sh/ruff/) for lint checking and code formatting.
-
-We use `black`, `isort`, `pylint`, and `mypy`.
-Run the following to format and check your code:
-
-```sh
-bash ./scripts/run_checks.sh
+This project uses [pre-commit](https://pre-commit.com/) to execute code formatting and linting on commit.
+We also use `black`, `isort`, `pylint`, and `mypy`.
+We recommend setting up your development environment by installing the `dev` packages
+into your python environment:
+```bash
+pip install -e ".[dev]"
 ```
 
 We have CI set up to check this, but we _highly_ recommend that you run those commands
