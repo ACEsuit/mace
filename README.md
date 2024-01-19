@@ -157,7 +157,7 @@ mace_eval_configs \
 
 ## Tutorial
 
-You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE. 
+You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE.
 
 We also have a more detailed user and developer tutorial at https://github.com/ilyes319/mace-tutorials
 
@@ -193,7 +193,7 @@ print(atoms.get_potential_energy())
 
 ### MACE-OFF: Transferable Organic Force Fields
 
-There is a series (small, medium, large) transferable organic force fields. These can be used for the simulation of organic molecules, crystals and molecular liquids, or as a starting point for fine-tuning on a new dataset. The models are released under the [ASL license](https://github.com/gabor1/ASL). 
+There is a series (small, medium, large) transferable organic force fields. These can be used for the simulation of organic molecules, crystals and molecular liquids, or as a starting point for fine-tuning on a new dataset. The models are released under the [ASL license](https://github.com/gabor1/ASL).
 The models are releaed on GitHub at https://github.com/ACEsuit/mace-off.
 If you use them please cite [our paper](https://arxiv.org/abs/2312.15211) which also contains detailed benchmarks and example applications.
 
@@ -209,6 +209,8 @@ print(atoms.get_potential_energy())
 ```
 
 ## Development
+
+This project uses [ruff](https://docs.astral.sh/ruff/) for lint checking and code formatting.
 
 We use `black`, `isort`, `pylint`, and `mypy`.
 Run the following to format and check your code:

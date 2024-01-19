@@ -6,10 +6,10 @@ from pathlib import Path
 import ase.io
 import numpy as np
 import pytest
+from ase import build
 from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
 from ase.constraints import ExpCellFilter
-from ase import build
 
 from mace.calculators import mace_mp, mace_off
 from mace.calculators.foundations_models import local_model_path
