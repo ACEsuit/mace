@@ -55,9 +55,7 @@ atomic_energies = np.array([1.0, 3.0], dtype=float)
 
 
 def create_mace(device: str, seed: int = 1702):
-    from torch_geometric import seed_everything
-
-    seed_everything(seed)
+    torch_geometric.seed_everything(seed)
 
     model_config = {
         "r_max": 5,
