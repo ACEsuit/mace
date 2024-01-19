@@ -154,3 +154,15 @@ def test_inference_speedup():
     print(f"\n\n{df.to_string(index=False)}\n\n")
 
     assert np.median(df["speedup"][-4:]) > 1, "Median compile speedup is less than 1"
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
+def test_graph_breaks():
+    # Ideally we would have as few graph breaks as possible...
+    import torch._dynamo as dynamo
+
+    set_optimization_defaults(jit_script_fx=False)
+    model = create_mace("cuda")
+    batch = create_batch("cuda")
+    explanation = dynamo.explain(model)(batch, training=False)
+    assert explanation.graph_break_count == 18
