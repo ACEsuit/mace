@@ -165,4 +165,4 @@ def test_graph_breaks():
     model = create_mace("cuda")
     batch = create_batch("cuda")
     explanation = dynamo.explain(model)(batch, training=False)
-    assert explanation.graph_break_count == 18
+    assert explanation.graph_break_count == 15
