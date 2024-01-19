@@ -4,6 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import ase
 import numpy as np
 import torch
 from e3nn.util.jit import compile_mode
@@ -114,6 +115,7 @@ class PolynomialCutoff(torch.nn.Module):
 
 
 @compile_mode("script")
+@compile_mode("script")
 class ZBLBasis(torch.nn.Module):
     """
     Implementation of the Ziegler-Biersack-Littmark (ZBL) potential
@@ -122,7 +124,7 @@ class ZBLBasis(torch.nn.Module):
     p: torch.Tensor
     r_max: torch.Tensor
 
-    def __init__(self, r_max: float, p=6):
+    def __init__(self, r_max: float, p=6, trainable=False):
         super().__init__()
         self.register_buffer(
             "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
@@ -134,7 +136,23 @@ class ZBLBasis(torch.nn.Module):
                 [0.1818, 0.5099, 0.2802, 0.02817], dtype=torch.get_default_dtype()
             ),
         )
+        self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
+        self.register_buffer(
+            "covalent_radii",
+            torch.tensor(
+                ase.data.covalent_radii,
+                dtype=torch.get_default_dtype(),
+            ),
+        )
         self.cutoff = PolynomialCutoff(p, r_max)
+        if trainable:
+            self.a_exp = torch.nn.Parameter(torch.tensor(0.23, requires_grad=True))
+            self.a_prefactor = torch.nn.Parameter(
+                torch.tensor(0.46850, requires_grad=True)
+            )
+        else:
+            self.register_buffer("a_exp", torch.tensor(0.23))
+            self.register_buffer("a_prefactor", torch.tensor(0.46850))
 
     def forward(
         self,
@@ -150,7 +168,11 @@ class ZBLBasis(torch.nn.Module):
         ].unsqueeze(-1)
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
-        a = 0.8854 * 0.529 / (torch.pow(Z_u, 0.23) + torch.pow(Z_v, 0.23))
+        a = (
+            self.a_prefactor
+            * 0.529
+            / (torch.pow(Z_u, self.a_exp) + torch.pow(Z_v, self.a_exp))
+        )
         r_over_a = x / a
         phi = (
             self.c[0] * torch.exp(-3.2 * r_over_a)
@@ -159,7 +181,14 @@ class ZBLBasis(torch.nn.Module):
             + self.c[3] * torch.exp(-0.2016 * r_over_a)
         )
         v_edges = (14.3996 * Z_u * Z_v) / x * phi
-        v_edges = v_edges * self.cutoff(x)
+        r_max = self.covalent_radii[Z_u] + self.covalent_radii[Z_v]
+        envelope = (
+            1.0
+            - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / r_max, self.p)
+            + self.p * (self.p + 2.0) * torch.pow(x / r_max, self.p + 1)
+            - (self.p * (self.p + 1.0) / 2) * torch.pow(x / r_max, self.p + 2)
+        ) * (x < r_max)
+        v_edges = 0.5 * v_edges * envelope
         V_ZBL = scatter_sum(v_edges, receiver, dim=0, dim_size=node_attrs.size(0))
         return V_ZBL.squeeze(-1)
 
