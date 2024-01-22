@@ -238,4 +238,4 @@ class AgnesiTransform(torch.nn.Module):
         ) ** (-1)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(r_max={self.r_max})"
+        return f"{self.__class__.__name__}(a={self.a}, q={self.q}, p={self.p})"
