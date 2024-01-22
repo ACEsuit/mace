@@ -232,7 +232,6 @@ class AgnesiTransform(torch.nn.Module):
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 2
-        print("self.a", self.a, "self.q", self.q, "self.p", self.p)
         return (
             1 + (self.a * ((x / r_0) ** self.q) / (1 + (x / r_0) ** (self.q - self.p)))
         ) ** (-1)
