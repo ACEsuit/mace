@@ -5,7 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
-import torch.nn.functional
+import torch.nn as nn
+import torch.nn.functional as F
 from e3nn import o3, set_optimization_defaults
 from scipy.spatial.transform import Rotation as R
 
@@ -61,7 +62,7 @@ def create_mace(device: str, seed: int = 1702):
         "r_max": 5,
         "num_bessel": 8,
         "num_polynomial_cutoff": 6,
-        "max_ell": 2,
+        "max_ell": 3,
         "interaction_cls": modules.interaction_classes[
             "RealAgnosticResidualInteractionBlock"
         ],
@@ -70,9 +71,9 @@ def create_mace(device: str, seed: int = 1702):
         ],
         "num_interactions": 2,
         "num_elements": 2,
-        "hidden_irreps": o3.Irreps("32x0e + 32x1o"),
+        "hidden_irreps": o3.Irreps("128x0e + 128x1o"),
         "MLP_irreps": o3.Irreps("16x0e"),
-        "gate": torch.nn.functional.silu,
+        "gate": F.silu,
         "atomic_energies": atomic_energies,
         "avg_num_neighbors": 8,
         "atomic_numbers": table.zs,
@@ -80,6 +81,7 @@ def create_mace(device: str, seed: int = 1702):
         "radial_type": "bessel",
     }
     model = modules.MACE(**model_config)
+    model = transform(model)
     return model.to(device)
 
 
@@ -165,4 +167,18 @@ def test_graph_breaks():
     model = create_mace("cuda")
     batch = create_batch("cuda")
     explanation = dynamo.explain(model)(batch, training=False)
-    assert explanation.graph_break_count == 15
+    print(explanation.break_reasons)
+    assert explanation.graph_break_count == 2
+
+
+def transform(module: nn.Module) -> nn.Module:
+    from torch.fx import symbolic_trace
+
+    for name, child in module.named_children():
+        if isinstance(child, modules.blocks.NonLinearReadoutBlock):
+            traced = symbolic_trace(child)
+            setattr(module, name, traced)
+        else:
+            transform(child)
+
+    return module
