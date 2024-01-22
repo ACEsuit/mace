@@ -112,6 +112,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--distance_transform",
+        help="use amsgrad variant of optimizer",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--interaction",
         help="name of interaction block",
         type=str,

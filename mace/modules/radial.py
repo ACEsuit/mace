@@ -4,9 +4,9 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-import ase
 import numpy as np
 import torch
+import ase
 from e3nn.util.jit import compile_mode
 
 from mace.tools.scatter import scatter_sum
@@ -15,7 +15,6 @@ from mace.tools.scatter import scatter_sum
 @compile_mode("script")
 class BesselBasis(torch.nn.Module):
     """
-    Klicpera, J.; Groß, J.; Günnemann, S. Directional Message Passing for Molecular Graphs; ICLR 2020.
     Equation (7)
     """
 
@@ -83,7 +82,6 @@ class GaussianBasis(torch.nn.Module):
 @compile_mode("script")
 class PolynomialCutoff(torch.nn.Module):
     """
-    Klicpera, J.; Groß, J.; Günnemann, S. Directional Message Passing for Molecular Graphs; ICLR 2020.
     Equation (8)
     """
 
@@ -115,7 +113,6 @@ class PolynomialCutoff(torch.nn.Module):
 
 
 @compile_mode("script")
-@compile_mode("script")
 class ZBLBasis(torch.nn.Module):
     """
     Implementation of the Ziegler-Biersack-Littmark (ZBL) potential
@@ -146,13 +143,13 @@ class ZBLBasis(torch.nn.Module):
         )
         self.cutoff = PolynomialCutoff(p, r_max)
         if trainable:
-            self.a_exp = torch.nn.Parameter(torch.tensor(0.23, requires_grad=True))
+            self.a_exp = torch.nn.Parameter(torch.tensor(0.300, requires_grad=True))
             self.a_prefactor = torch.nn.Parameter(
-                torch.tensor(0.46850, requires_grad=True)
+                torch.tensor(0.4543, requires_grad=True)
             )
         else:
-            self.register_buffer("a_exp", torch.tensor(0.23))
-            self.register_buffer("a_prefactor", torch.tensor(0.46850))
+            self.register_buffer("a_exp", torch.tensor(0.300))
+            self.register_buffer("a_prefactor", torch.tensor(0.4543))
 
     def forward(
         self,
@@ -194,3 +191,51 @@ class ZBLBasis(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(r_max={self.r_max}, c={self.c})"
+
+
+class AgnesiTransform(torch.nn.Module):
+    """
+    Agnesi transform see ACEpotentials.jl, JCP 2023, p. 160
+    """
+
+    def __init__(
+        self, q: float = 0.9183, p: float = 4.5791, a: float = 1.0805, trainable=True
+    ):
+        super().__init__()
+        self.register_buffer("q", torch.tensor(q, dtype=torch.get_default_dtype()))
+        self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
+        self.register_buffer("a", torch.tensor(a, dtype=torch.get_default_dtype()))
+        self.register_buffer(
+            "covalent_radii",
+            torch.tensor(
+                ase.data.covalent_radii,
+                dtype=torch.get_default_dtype(),
+            ),
+        )
+        if trainable:
+            self.a = torch.nn.Parameter(torch.tensor(1.0, requires_grad=True))
+            self.q = torch.nn.Parameter(torch.tensor(1.0, requires_grad=True))
+            self.p = torch.nn.Parameter(torch.tensor(4.0, requires_grad=True))
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        node_attrs: torch.Tensor,
+        edge_index: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+    ) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        node_atomic_numbers = atomic_numbers[
+            torch.where(node_attrs.int() == 1)[1]
+        ].unsqueeze(-1)
+        Z_u = node_atomic_numbers[sender]
+        Z_v = node_atomic_numbers[receiver]
+        r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 2
+        print("self.a", self.a, "self.q", self.q, "self.p", self.p)
+        return (
+            1 + (self.a * ((x / r_0) ** self.q) / (1 + (x / r_0) ** (self.q - self.p)))
+        ) ** (-1)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(r_max={self.r_max})"

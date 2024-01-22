@@ -263,6 +263,7 @@ def main() -> None:
         model = modules.ScaleShiftMACE(
             **model_config,
             pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[
@@ -279,6 +280,7 @@ def main() -> None:
         model = modules.ScaleShiftMACE(
             **model_config,
             pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
@@ -378,6 +380,11 @@ def main() -> None:
             {
                 "name": "readouts",
                 "params": model.readouts.parameters(),
+                "weight_decay": 0.0,
+            },
+            {
+                "name": "radial_embedding",
+                "params": model.radial_embedding.parameters(),
                 "weight_decay": 0.0,
             },
         ],
