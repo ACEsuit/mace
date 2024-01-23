@@ -5,13 +5,12 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from e3nn import o3, set_optimization_defaults
+from e3nn import o3
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
-from mace.tools import torch_geometric
+from mace.tools import torch_geometric, compile
 
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
@@ -81,7 +80,6 @@ def create_mace(device: str, seed: int = 1702):
         "radial_type": "bessel",
     }
     model = modules.MACE(**model_config)
-    model = transform(model)
     return model.to(device)
 
 
@@ -122,36 +120,40 @@ def test_mace(device):
     if device == "cuda" and not torch.cuda.is_available():
         pytest.skip(reason="cuda is not available")
 
-    model = create_mace(device)
-
-    # Disable CodeGenMixin compilation to TorchScript module used in e3nn.o3.Linear
-    set_optimization_defaults(jit_script_fx=False)
-    model_compiled = torch.compile(create_mace(device), mode="default")
+    model_defaults = create_mace(device)
+    tmp_model = compile.prepare(create_mace)(device)
+    model_compiled = torch.compile(tmp_model, mode="default")
 
     batch = create_batch(device)
-    output1 = model(batch, training=True)
+    output1 = model_defaults(batch, training=True)
     output2 = model_compiled(batch, training=True)
     assert torch.allclose(output1["energy"][0], output2["energy"][0])
     assert torch.allclose(output2["energy"][0], output2["energy"][1])
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
-def test_inference_speedup():
+@pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
+def test_inference_speedup(compile_mode):
     # PyTorch eager Baseline
+    nruns = 16
     batch = create_batch("cuda")
     model = create_mace("cuda")
     model = time_func(model)
-
-    # Disable CodeGenMixin compilation to TorchScript module used in e3nn.o3.Linear
-    set_optimization_defaults(jit_script_fx=False)
-    compiled = torch.compile(create_mace("cuda"), mode="default")
-    compiled = time_func(compiled)
-
-    nruns = 10
     t_eager = np.array([model(batch, training=False)[1] for _ in range(nruns)])
+
+    print(f'Compiling using mode="{compile_mode}"')
+    torch._dynamo.reset()
+    model = compile.prepare(create_mace)("cuda")
+    compiled = torch.compile(model, mode=compile_mode)
+    compiled = time_func(compiled)
     t_compiled = np.array([compiled(batch, training=False)[1] for _ in range(nruns)])
+
     df = pd.DataFrame(
-        {"eager": t_eager, "compiled": t_compiled, "speedup": t_eager / t_compiled}
+        {
+            "eager": t_eager,
+            f"compile mode={compile_mode}": t_compiled,
+            "speedup": t_eager / t_compiled,
+        }
     )
     print(f"\n\n{df.to_string(index=False)}\n\n")
 
@@ -163,22 +165,8 @@ def test_graph_breaks():
     # Ideally we would have as few graph breaks as possible...
     import torch._dynamo as dynamo
 
-    set_optimization_defaults(jit_script_fx=False)
-    model = create_mace("cuda")
     batch = create_batch("cuda")
+    model = compile.prepare(create_mace)("cuda")
     explanation = dynamo.explain(model)(batch, training=False)
     print(explanation.break_reasons)
     assert explanation.graph_break_count == 2
-
-
-def transform(module: nn.Module) -> nn.Module:
-    from torch.fx import symbolic_trace
-
-    for name, child in module.named_children():
-        if isinstance(child, modules.blocks.NonLinearReadoutBlock):
-            traced = symbolic_trace(child)
-            setattr(module, name, traced)
-        else:
-            transform(child)
-
-    return module
