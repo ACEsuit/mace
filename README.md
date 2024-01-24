@@ -45,7 +45,7 @@ A partial documentation is available at: https://mace-docs.readthedocs.io
 Requirements:
 
 - Python >= 3.7
-- [PyTorch](https://pytorch.org/) >= 1.12
+- [PyTorch](https://pytorch.org/) >= 1.12 **(training with float64 is not supported with PyTorch 2.1)**.
 
 (for openMM, use Python = 3.9)
 
@@ -55,7 +55,7 @@ To install via `pip`, follow the steps below:
 
 ```sh
 pip install --upgrade pip
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 pip install mace-torch
 ```
 
@@ -91,7 +91,7 @@ python -m venv mace-venv
 source mace-venv/bin/activate
 
 # Install PyTorch (for example, for CUDA 11.6 [cu116])
-pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+pip3 install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
 # Clone and install MACE (and all required packages)
 git clone https://github.com/ACEsuit/mace.git
