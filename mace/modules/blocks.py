@@ -19,7 +19,7 @@ from .irreps_tools import (
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
-from .radial import BesselBasis, GaussianBasis, PolynomialCutoff
+from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, AgnesiTransform
 from .symmetric_contraction import SymmetricContraction
 
 
@@ -149,21 +149,31 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         radial_type: str = "bessel",
+        distance_transform: bool = False,
     ):
         super().__init__()
         if radial_type == "bessel":
             self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
         elif radial_type == "gaussian":
             self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
+        if distance_transform:
+            self.distance_transform = AgnesiTransform()
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
         self.out_dim = num_bessel
 
     def forward(
         self,
         edge_lengths: torch.Tensor,  # [n_edges, 1]
+        node_attrs: torch.Tensor,
+        edge_index: torch.Tensor,
+        atomic_numbers: torch.Tensor,
     ):
-        radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
+        if hasattr(self, "distance_transform"):
+            edge_lengths = self.distance_transform(
+                edge_lengths, node_attrs, edge_index, atomic_numbers
+            )
+        radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         return radial * cutoff  # [n_edges, n_basis]
 
 

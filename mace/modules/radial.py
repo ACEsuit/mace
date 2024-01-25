@@ -6,13 +6,15 @@
 
 import numpy as np
 import torch
+import ase
 from e3nn.util.jit import compile_mode
+
+from mace.tools.scatter import scatter_sum
 
 
 @compile_mode("script")
 class BesselBasis(torch.nn.Module):
     """
-    Klicpera, J.; Groß, J.; Günnemann, S. Directional Message Passing for Molecular Graphs; ICLR 2020.
     Equation (7)
     """
 
@@ -80,7 +82,6 @@ class GaussianBasis(torch.nn.Module):
 @compile_mode("script")
 class PolynomialCutoff(torch.nn.Module):
     """
-    Klicpera, J.; Groß, J.; Günnemann, S. Directional Message Passing for Molecular Graphs; ICLR 2020.
     Equation (8)
     """
 
@@ -109,3 +110,131 @@ class PolynomialCutoff(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
+
+
+@compile_mode("script")
+class ZBLBasis(torch.nn.Module):
+    """
+    Implementation of the Ziegler-Biersack-Littmark (ZBL) potential
+    """
+
+    p: torch.Tensor
+    r_max: torch.Tensor
+
+    def __init__(self, r_max: float, p=6, trainable=False):
+        super().__init__()
+        self.register_buffer(
+            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
+        )
+        # Pre-calculate the p coefficients for the ZBL potential
+        self.register_buffer(
+            "c",
+            torch.tensor(
+                [0.1818, 0.5099, 0.2802, 0.02817], dtype=torch.get_default_dtype()
+            ),
+        )
+        self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
+        self.register_buffer(
+            "covalent_radii",
+            torch.tensor(
+                ase.data.covalent_radii,
+                dtype=torch.get_default_dtype(),
+            ),
+        )
+        self.cutoff = PolynomialCutoff(p, r_max)
+        if trainable:
+            self.a_exp = torch.nn.Parameter(torch.tensor(0.300, requires_grad=True))
+            self.a_prefactor = torch.nn.Parameter(
+                torch.tensor(0.4543, requires_grad=True)
+            )
+        else:
+            self.register_buffer("a_exp", torch.tensor(0.300))
+            self.register_buffer("a_prefactor", torch.tensor(0.4543))
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        node_attrs: torch.Tensor,
+        edge_index: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+    ) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        node_atomic_numbers = atomic_numbers[
+            torch.where(node_attrs.int() == 1)[1]
+        ].unsqueeze(-1)
+        Z_u = node_atomic_numbers[sender]
+        Z_v = node_atomic_numbers[receiver]
+        a = (
+            self.a_prefactor
+            * 0.529
+            / (torch.pow(Z_u, self.a_exp) + torch.pow(Z_v, self.a_exp))
+        )
+        r_over_a = x / a
+        phi = (
+            self.c[0] * torch.exp(-3.2 * r_over_a)
+            + self.c[1] * torch.exp(-0.9423 * r_over_a)
+            + self.c[2] * torch.exp(-0.4028 * r_over_a)
+            + self.c[3] * torch.exp(-0.2016 * r_over_a)
+        )
+        v_edges = (14.3996 * Z_u * Z_v) / x * phi
+        r_max = self.covalent_radii[Z_u] + self.covalent_radii[Z_v]
+        envelope = (
+            1.0
+            - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / r_max, self.p)
+            + self.p * (self.p + 2.0) * torch.pow(x / r_max, self.p + 1)
+            - (self.p * (self.p + 1.0) / 2) * torch.pow(x / r_max, self.p + 2)
+        ) * (x < r_max)
+        v_edges = 0.5 * v_edges * envelope
+        V_ZBL = scatter_sum(v_edges, receiver, dim=0, dim_size=node_attrs.size(0))
+        return V_ZBL.squeeze(-1)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(r_max={self.r_max}, c={self.c})"
+
+
+class AgnesiTransform(torch.nn.Module):
+    """
+    Agnesi transform see ACEpotentials.jl, JCP 2023, p. 160
+    """
+
+    def __init__(
+        self, q: float = 0.9183, p: float = 4.5791, a: float = 1.0805, trainable=False
+    ):
+        super().__init__()
+        self.register_buffer("q", torch.tensor(q, dtype=torch.get_default_dtype()))
+        self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
+        self.register_buffer("a", torch.tensor(a, dtype=torch.get_default_dtype()))
+        self.register_buffer(
+            "covalent_radii",
+            torch.tensor(
+                ase.data.covalent_radii,
+                dtype=torch.get_default_dtype(),
+            ),
+        )
+        if trainable:
+            self.a = torch.nn.Parameter(torch.tensor(1.0805, requires_grad=True))
+            self.q = torch.nn.Parameter(torch.tensor(0.9183, requires_grad=True))
+            self.p = torch.nn.Parameter(torch.tensor(4.5791, requires_grad=True))
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        node_attrs: torch.Tensor,
+        edge_index: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+    ) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        node_atomic_numbers = atomic_numbers[
+            torch.where(node_attrs.int() == 1)[1]
+        ].unsqueeze(-1)
+        Z_u = node_atomic_numbers[sender]
+        Z_v = node_atomic_numbers[receiver]
+        r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 2
+        return (
+            1 + (self.a * ((x / r_0) ** self.q) / (1 + (x / r_0) ** (self.q - self.p)))
+        ) ** (-1)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(a={self.a}, q={self.q}, p={self.p})"
