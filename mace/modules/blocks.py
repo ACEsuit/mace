@@ -158,8 +158,6 @@ class RadialEmbeddingBlock(torch.nn.Module):
             self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
         if distance_transform:
             self.distance_transform = AgnesiTransform()
-        else:
-            self.distance_transform = None
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
         self.out_dim = num_bessel
 
@@ -171,7 +169,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         atomic_numbers: torch.Tensor,
     ):
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
-        if self.distance_transform is not None:
+        if hasattr(self, "distance_transform"):
             edge_lengths = self.distance_transform(
                 edge_lengths, node_attrs, edge_index, atomic_numbers
             )
