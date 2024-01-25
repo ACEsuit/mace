@@ -166,11 +166,14 @@ def test_inference_speedup(compile_mode, dtype):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
 def test_graph_breaks():
-    # Ideally we would have as few graph breaks as possible...
     import torch._dynamo as dynamo
 
     batch = create_batch("cuda")
     model = compile.prepare(create_mace)("cuda")
     explanation = dynamo.explain(model)(batch, training=False)
-    print(explanation.break_reasons)
-    assert explanation.graph_break_count == 2
+
+    # these clutter the output but might be useful for investigating graph breaks
+    explanation.ops_per_graph = None
+    explanation.out_guards = None
+    print(explanation)
+    assert explanation.graph_break_count == 0
