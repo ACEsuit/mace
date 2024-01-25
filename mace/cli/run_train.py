@@ -222,36 +222,7 @@ def main() -> None:
     logging.info(f"Selected the following outputs: {output_args}")
 
     # Build model
-    if args.foundation_model is None:
-        logging.info("Building model")
-        if args.num_channels is not None and args.max_L is not None:
-            assert args.num_channels > 0, "num_channels must be positive integer"
-            assert args.max_L >= 0, "max_L must be non-negative integer"
-            args.hidden_irreps = o3.Irreps(
-                (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
-                .sort()
-                .irreps.simplify()
-            )
-
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
-
-        logging.info(f"Hidden irreps: {args.hidden_irreps}")
-        model_config = dict(
-            r_max=args.r_max,
-            num_bessel=args.num_radial_basis,
-            num_polynomial_cutoff=args.num_cutoff_basis,
-            max_ell=args.max_ell,
-            interaction_cls=modules.interaction_classes[args.interaction],
-            num_interactions=args.num_interactions,
-            num_elements=len(z_table),
-            hidden_irreps=o3.Irreps(args.hidden_irreps),
-            atomic_energies=atomic_energies,
-            avg_num_neighbors=args.avg_num_neighbors,
-            atomic_numbers=z_table.zs,
-        )
-    else:
+    if args.foundation_model in ["small", "medium", "large"]:
         args.model = "ScaleShiftMACE"
         if args.foundation_model == "small":
             args.max_L = 0
@@ -277,6 +248,35 @@ def main() -> None:
             max_ell=3,
             interaction_cls=modules.interaction_classes[args.interaction],
             num_interactions=2,
+            num_elements=len(z_table),
+            hidden_irreps=o3.Irreps(args.hidden_irreps),
+            atomic_energies=atomic_energies,
+            avg_num_neighbors=args.avg_num_neighbors,
+            atomic_numbers=z_table.zs,
+        )
+    else:
+        logging.info("Building model")
+        if args.num_channels is not None and args.max_L is not None:
+            assert args.num_channels > 0, "num_channels must be positive integer"
+            assert args.max_L >= 0, "max_L must be non-negative integer"
+            args.hidden_irreps = o3.Irreps(
+                (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+                .sort()
+                .irreps.simplify()
+            )
+
+        assert (
+            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+
+        logging.info(f"Hidden irreps: {args.hidden_irreps}")
+        model_config = dict(
+            r_max=args.r_max,
+            num_bessel=args.num_radial_basis,
+            num_polynomial_cutoff=args.num_cutoff_basis,
+            max_ell=args.max_ell,
+            interaction_cls=modules.interaction_classes[args.interaction],
+            num_interactions=args.num_interactions,
             num_elements=len(z_table),
             hidden_irreps=o3.Irreps(args.hidden_irreps),
             atomic_energies=atomic_energies,
@@ -379,15 +379,21 @@ def main() -> None:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
     if args.foundation_model is not None:
-        calc = mace_mp(
-            model=args.foundation_model,
-            device=args.device,
-            default_dtype=args.default_dtype,
-        )
-        logging.info(
-            f"Using foundation model {args.foundation_model} as initial checkpoint."
-        )
-        model_foundation = calc.models[0]
+        if args.foundation_model in ["small", "medium", "large"]:
+            calc = mace_mp(
+                model=args.foundation_model,
+                device=args.device,
+                default_dtype=args.default_dtype,
+            )
+            logging.info(
+                f"Using foundation model {args.foundation_model} as initial checkpoint."
+            )
+            model_foundation = calc.models[0]
+        else:
+            model_foundation = torch.load(args.foundation_model, map_location=device)
+            logging.info(
+                f"Using foundation model {args.foundation_model} as initial checkpoint."
+            )
         model = load_foundations(
             model,
             model_foundation,
