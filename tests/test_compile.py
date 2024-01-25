@@ -104,13 +104,14 @@ def create_batch(device: str):
 def time_func(func: Callable):
     @wraps(func)
     def wrapper(*args, **kwargs):
+        torch._inductor.cudagraph_mark_step_begin()
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         start.record()
-        results = func(*args, **kwargs)
+        func(*args, **kwargs)
         end.record()
         torch.cuda.synchronize()
-        return results, start.elapsed_time(end) / 1000
+        return start.elapsed_time(end) / 1000
 
     return wrapper
 
