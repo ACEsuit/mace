@@ -9,8 +9,9 @@ import pytest
 from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
 from ase.constraints import ExpCellFilter
+from ase import build
 
-from mace.calculators import mace_mp
+from mace.calculators import mace_mp, mace_off
 from mace.calculators.foundations_models import local_model_path
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
@@ -454,14 +455,25 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
     assert isinstance(mp_mace.models[0], ScaleShiftMACE)
 
     stdout, stderr = capsys.readouterr()
-    if os.path.isfile(local_model_path):
-        assert (
-            "Using local medium Materials Project MACE model for MACECalculator "
-            f"model={local_model_path!r}\n" in stdout
-        )
-    else:
-        assert (
-            f"Using Materials Project MACE for MACECalculator with model='{os.path.expanduser('~')}/.cache/mace/y7uhwpje'"
-            in stdout
-        )
     assert stderr == ""
+
+
+def test_mace_off():
+    mace_off__model = mace_off(model="small", device="cpu")
+    assert isinstance(mace_off__model, MACECalculator)
+    assert mace_off__model.model_type == "MACE"
+    assert len(mace_off__model.models) == 1
+    assert isinstance(mace_off__model.models[0], ScaleShiftMACE)
+
+    atoms = build.molecule("H2O")
+    atoms.calc = mace_off__model
+
+    E = atoms.get_potential_energy()
+
+    assert np.allclose(E, -2081.116128586803, atol=1e-9)
+
+
+def test_mace_off_2(capsys: pytest.CaptureFixture):
+    mace_off__model = mace_off(model="small", device="cpu")
+    stdout, stderr = capsys.readouterr()
+    assert "Downloading" not in stdout

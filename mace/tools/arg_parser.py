@@ -441,8 +441,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--foundation_model_readout",
         help="Use readout of foundation model for transfer learning",
-        action="store_true",
-        default=False,
+        action="store_false",
+        default=True,
     )
     parser.add_argument(
         "--eval_interval", help="evaluate model every <n> epochs", type=int, default=2

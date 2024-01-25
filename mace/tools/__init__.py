@@ -29,6 +29,7 @@ from .utils import (
     get_optimizer,
     get_tag,
     setup_logger,
+    load_foundations,
 )
 
 __all__ = [
@@ -64,4 +65,5 @@ __all__ = [
     "cartesian_to_spherical",
     "voigt_to_matrix",
     "init_wandb",
+    "load_foundations",
 ]
