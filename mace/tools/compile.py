@@ -3,6 +3,8 @@ from functools import wraps
 from typing import Callable, Tuple
 
 import torch.nn as nn
+import torch._dynamo as dynamo
+from torch import autograd
 from torch.fx import symbolic_trace
 from e3nn import get_optimization_defaults, set_optimization_defaults
 
@@ -19,15 +21,21 @@ def disable_e3nn_codegen():
     set_optimization_defaults(jit_script_fx=init_val)
 
 
-def prepare(func: ModuleFactory) -> ModuleFactory:
+def prepare(func: ModuleFactory, allow_autograd: bool = True) -> ModuleFactory:
     """Function transform that prepares a MACE module for torch.compile
 
     Args:
         func (ModuleFactory): A function that creates an nn.Module
+        allow_autograd (bool, optional): Force inductor compiler to inline call to
+            `torch.autograd.grad`. Defaults to True.
 
     Returns:
         ModuleFactory: Decorated function that creates a torch.compile compatible module
     """
+    if allow_autograd:
+        dynamo.allow_in_graph(autograd.grad)
+    elif dynamo.allowed_functions.is_allowed(autograd.grad):
+        dynamo.disallow_in_graph(autograd.grad)
 
     @wraps(func)
     def wrapper(*args, **kwargs):
