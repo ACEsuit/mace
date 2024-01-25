@@ -134,20 +134,23 @@ def test_mace(device):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
 @pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
-def test_inference_speedup(compile_mode):
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_inference_speedup(compile_mode, dtype):
+    torch.set_default_dtype(dtype)
+
     # PyTorch eager Baseline
     nruns = 16
     batch = create_batch("cuda")
     model = create_mace("cuda")
     model = time_func(model)
-    t_eager = np.array([model(batch, training=False)[1] for _ in range(nruns)])
+    t_eager = np.array([model(batch, training=False) for _ in range(nruns)])
 
     print(f'Compiling using mode="{compile_mode}"')
-    torch._dynamo.reset()
+    torch.compiler.reset()
     model = compile.prepare(create_mace)("cuda")
-    compiled = torch.compile(model, mode=compile_mode)
+    compiled = torch.compile(model, mode=compile_mode, fullgraph=True)
     compiled = time_func(compiled)
-    t_compiled = np.array([compiled(batch, training=False)[1] for _ in range(nruns)])
+    t_compiled = np.array([compiled(batch, training=True) for _ in range(nruns)])
 
     df = pd.DataFrame(
         {
