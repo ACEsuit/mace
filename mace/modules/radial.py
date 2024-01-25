@@ -199,7 +199,7 @@ class AgnesiTransform(torch.nn.Module):
     """
 
     def __init__(
-        self, q: float = 0.9183, p: float = 4.5791, a: float = 1.0805, trainable=True
+        self, q: float = 0.9183, p: float = 4.5791, a: float = 1.0805, trainable=False
     ):
         super().__init__()
         self.register_buffer("q", torch.tensor(q, dtype=torch.get_default_dtype()))
@@ -213,9 +213,9 @@ class AgnesiTransform(torch.nn.Module):
             ),
         )
         if trainable:
-            self.a = torch.nn.Parameter(torch.tensor(1.0, requires_grad=True))
-            self.q = torch.nn.Parameter(torch.tensor(1.0, requires_grad=True))
-            self.p = torch.nn.Parameter(torch.tensor(4.0, requires_grad=True))
+            self.a = torch.nn.Parameter(torch.tensor(1.0805, requires_grad=True))
+            self.q = torch.nn.Parameter(torch.tensor(0.9183, requires_grad=True))
+            self.p = torch.nn.Parameter(torch.tensor(4.5791, requires_grad=True))
 
     def forward(
         self,
