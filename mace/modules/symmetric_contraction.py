@@ -226,8 +226,8 @@ class Contraction(torch.nn.Module):
             )
             c_tensor = c_tensor + out
             out = contract_features(c_tensor, x)
-        resize_shape = torch.prod(torch.tensor(out.shape[1:]))
-        return out.view(out.shape[0], resize_shape)
+
+        return out.view(out.shape[0], -1)
 
     def U_tensors(self, nu: int):
         return dict(self.named_buffers())[f"U_matrix_{nu}"]
