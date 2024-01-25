@@ -26,10 +26,12 @@ def mace_mp(
 ) -> MACECalculator:
     """
     Constructs a MACECalculator with a pretrained model based on the Materials Project (89 elements).
-    The model is released under the MIT license.
+    The model is released under the MIT license. See https://github.com/ACEsuit/mace-mp for all models.
     Note:
         If you are using this function, please cite the relevant paper for the Materials Project,
         any paper associated with the MACE model, and also the following:
+        - MACE-MP by Ilyes Batatia, Philipp Benner, Yuan Chiang, Alin M. Elena,
+            Dávid P. Kovács, Janosh Riebesell, et al., 2023, arXiv:2401.00096
         - MACE-Universal by Yuan Chiang, 2023, Hugging Face, Revision e5ebd9b,
             DOI: 10.57967/hf/1202, URL: https://huggingface.co/cyrusyc/mace-universal
         - Matbench Discovery by Janosh Riebesell, Rhys EA Goodall, Philipp Benner, Yuan Chiang,
@@ -57,9 +59,9 @@ def mace_mp(
     elif model in (None, "small", "medium", "large") or str(model).startswith("https:"):
         try:
             urls = dict(
-                small="https://tinyurl.com/2jmmb8b7",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
-                medium="https://tinyurl.com/y7uhwpje",  # 2023-12-03-mace-128-L1_epoch-199.model
-                large="https://figshare.com/ndownloader/files/43117273",
+                small="http://tinyurl.com/46jrkm3v",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
+                medium="http://tinyurl.com/5yyxdm76",  # 2023-12-03-mace-128-L1_epoch-199.model
+                large="http://tinyurl.com/43hjdekn",  # MACE_MPtrj_2022.9.model
             )
             checkpoint_url = (
                 urls.get(model, urls["medium"])
@@ -75,7 +77,13 @@ def mace_mp(
                 os.makedirs(cache_dir, exist_ok=True)
                 # download and save to disk
                 print(f"Downloading MACE model from {checkpoint_url!r}")
-                urllib.request.urlretrieve(checkpoint_url, cached_model_path)
+                _, http_msg = urllib.request.urlretrieve(
+                    checkpoint_url, cached_model_path
+                )
+                if "Content-Type: text/html" in http_msg:
+                    raise RuntimeError(
+                        f"Model download failed, please check the URL {checkpoint_url}"
+                    )
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
             msg = f"Using Materials Project MACE for MACECalculator with {model}"
@@ -119,6 +127,82 @@ def mace_mp(
         )
     calc = mace_calc if not dispersion else SumCalculator([mace_calc, d3_calc])
     return calc
+
+
+def mace_off(
+    model: Union[str, Path] = None,
+    device: str = "",
+    default_dtype: str = "float64",
+    return_raw_model: bool = False,
+    **kwargs,
+) -> MACECalculator:
+    """
+    Constructs a MACECalculator with a pretrained model based on the MACE-OFF23 models.
+    The model is released under the ASL license.
+    Note:
+        If you are using this function, please cite the relevant paper by Kovacs et.al., arXiv:2312.15211
+
+    Args:
+        model (str, optional): Path to the model. Defaults to None which first checks for
+            a local model and then downloads the default medium model from https://github.com/ACEsuit/mace-off.
+            Specify "small", "medium" or "large" to download a smaller or larger model.
+        device (str, optional): Device to use for the model. Defaults to "cuda".
+        default_dtype (str, optional): Default dtype for the model. Defaults to "float64".
+        return_raw_model (bool, optional): Whether to return the raw model or an ASE calculator. Defaults to False.
+        **kwargs: Passed to MACECalculator.
+
+    Returns:
+        MACECalculator: trained on the MACE-OFF23 dataset
+    """
+    try:
+        urls = dict(
+            small="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true",
+            medium="https://github.com/ACEsuit/mace-off/raw/main/mace_off23/MACE-OFF23_medium.model?raw=true",
+            large="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model?raw=true",
+        )
+        checkpoint_url = (
+            urls.get(model, urls["medium"])
+            if model in (None, "small", "medium", "large")
+            else model
+        )
+        cache_dir = os.path.expanduser("~/.cache/mace")
+        checkpoint_url_name = os.path.basename(checkpoint_url).split("?")[0]
+        cached_model_path = f"{cache_dir}/{checkpoint_url_name}"
+        if not os.path.isfile(cached_model_path):
+            os.makedirs(cache_dir, exist_ok=True)
+            # download and save to disk
+            print(f"Downloading MACE model from {checkpoint_url!r}")
+            print(
+                "The model is distributed under the Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use the model you accept the terms of the license."
+            )
+            print(
+                "ASL is based on the Gnu Public License, but does not permit commercial use"
+            )
+            urllib.request.urlretrieve(checkpoint_url, cached_model_path)
+            print(f"Cached MACE model to {cached_model_path}")
+        model = cached_model_path
+        msg = f"Using MACE-OFF23 MODEL for MACECalculator with {model}"
+        print(msg)
+    except Exception as exc:
+        raise RuntimeError("Model download failed") from exc
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+
+    if return_raw_model:
+        return torch.load(model, map_location=device)
+
+    if default_dtype == "float64":
+        print(
+            "Using float64 for MACECalculator, which is slower but more accurate. Recommended for geometry optimization."
+        )
+    if default_dtype == "float32":
+        print(
+            "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization."
+        )
+    mace_calc = MACECalculator(
+        model_paths=model, device=device, default_dtype=default_dtype, **kwargs
+    )
+    return mace_calc
 
 
 def mace_anicc(

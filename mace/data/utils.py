@@ -17,8 +17,8 @@ from mace.tools import AtomicNumberTable
 Vector = np.ndarray  # [3,]
 Positions = np.ndarray  # [..., 3]
 Forces = np.ndarray  # [..., 3]
-Stress = np.ndarray  # [6, ]
-Virials = np.ndarray  # [3,3]
+Stress = np.ndarray  # [6, ], [3,3], [9, ]
+Virials = np.ndarray  # [6, ], [3,3], [9, ]
 Charges = np.ndarray  # [..., 1]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
