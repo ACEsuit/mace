@@ -87,10 +87,8 @@ def time_func(func: Callable):
 
 @pytest.fixture(params=[torch.float32, torch.float64], ids=["fp32", "fp64"])
 def default_dtype(request):
-    init = torch.get_default_dtype()
-    torch.set_default_dtype(request.param)
-    yield torch.get_default_dtype()
-    torch.set_default_dtype(init)
+    with tools.torch_tools.default_dtype(request.param):
+        yield torch.get_default_dtype()
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
