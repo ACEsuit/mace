@@ -42,7 +42,7 @@ If you do not have CUDA pre-installed, it is **recommended** to follow the conda
     conda install numpy scipy matplotlib ase opt_einsum prettytable pandas e3nn
 
     # Clone and install MACE (and all required packages)
-    git clone git@github.com:ACEsuit/mace.git 
+    git clone https://github.com/ACEsuit/mace.git 
     pip install ./mace
 
 
@@ -61,7 +61,7 @@ To install via `pip`, follow the steps below:
     pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 
     # Clone and install MACE (and all required packages)
-    git clone git@github.com:ACEsuit/mace.git
+    git clone https://github.com/ACEsuit/mace.git
     pip install ./mace
 
 **Note:** The homonymous package on `PyPI <https://pypi.org/project/MACE/>`_ has nothing to do with this one.
