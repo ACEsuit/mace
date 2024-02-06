@@ -58,10 +58,11 @@ def mace_mp(
         )
     elif model in (None, "small", "medium", "large") or str(model).startswith("https:"):
         try:
+            # checkpoints release: https://github.com/ACEsuit/mace-mp/releases/tag/mace_mp_0
             urls = dict(
-                small="http://tinyurl.com/46jrkm3v",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
-                medium="http://tinyurl.com/5yyxdm76",  # 2023-12-03-mace-128-L1_epoch-199.model
-                large="http://tinyurl.com/5f5yavf3",  # MACE_MPtrj_2022.9.model
+                small="https://tinyurl.com/46jrkm3v",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
+                medium="https://tinyurl.com/5yyxdm76",  # 2023-12-03-mace-128-L1_epoch-199.model
+                large="https://tinyurl.com/5f5yavf3",  # MACE_MPtrj_2022.9.model
             )
             checkpoint_url = (
                 urls.get(model, urls["medium"])
