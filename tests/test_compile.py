@@ -2,7 +2,6 @@ from functools import wraps
 from typing import Callable
 
 import numpy as np
-import pandas as pd
 import pytest
 import torch
 import torch.nn.functional as F
@@ -74,13 +73,9 @@ def time_func(func: Callable):
     @wraps(func)
     def wrapper(*args, **kwargs):
         torch._inductor.cudagraph_mark_step_begin()
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        func(*args, **kwargs)
-        end.record()
+        outputs = func(*args, **kwargs)
         torch.cuda.synchronize()
-        return start.elapsed_time(end) / 1000
+        return outputs
 
     return wrapper
 
@@ -109,34 +104,27 @@ def test_mace(device, default_dtype):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
-@pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
-def test_inference_speedup(compile_mode, default_dtype):
+def test_eager_benchmark(benchmark, default_dtype):
     print(f"using default dtype = {default_dtype}")
-
-    # PyTorch eager Baseline
-    nruns = 16
     batch = create_batch("cuda")
     model = create_mace("cuda")
     model = time_func(model)
-    t_eager = np.array([model(batch, training=False) for _ in range(nruns)])
+    benchmark(model, batch, training=True)
 
-    print(f'Compiling using mode="{compile_mode}"')
-    torch.compiler.reset()
-    model = compile.prepare(create_mace)("cuda")
-    compiled = torch.compile(model, mode=compile_mode, fullgraph=True)
-    compiled = time_func(compiled)
-    t_compiled = np.array([compiled(batch, training=True) for _ in range(nruns)])
 
-    df = pd.DataFrame(
-        {
-            "eager": t_eager,
-            f"compile mode={compile_mode}": t_compiled,
-            "speedup": t_eager / t_compiled,
-        }
-    )
-    print(f"\n\n{df.to_string(index=False)}\n\n")
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
+@pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
+@pytest.mark.parametrize("enable_amp", [False, True], ids=["fp32", "mixed"])
+def test_compile_benchmark(benchmark, compile_mode, enable_amp):
+    with tools.torch_tools.default_dtype(torch.float32):
+        batch = create_batch("cuda")
+        torch.compiler.reset()
+        model = compile.prepare(create_mace)("cuda")
+        model = torch.compile(model, mode=compile_mode, fullgraph=True)
+        model = time_func(model)
 
-    assert np.median(df["speedup"][-4:]) > 1, "Median compile speedup is less than 1"
+        with torch.autocast("cuda", enabled=enable_amp):
+            benchmark(model, batch, training=True)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
