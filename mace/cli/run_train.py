@@ -180,6 +180,13 @@ def main() -> None:
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
         )
+    elif args.loss == "universal":
+        loss_fn = modules.UniversalLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            huber_delta=args.huber_delta,
+        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
@@ -220,7 +227,7 @@ def main() -> None:
     logging.info(f"Selected the following outputs: {output_args}")
 
     # Build model
-    if args.foundation_model is None:
+    if args.foundation_model in ["small", "medium", "large"]:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:
             assert args.num_channels > 0, "num_channels must be positive integer"
@@ -306,6 +313,35 @@ def main() -> None:
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
         )
+    else:
+        logging.info("Building model")
+        if args.num_channels is not None and args.max_L is not None:
+            assert args.num_channels > 0, "num_channels must be positive integer"
+            assert args.max_L >= 0, "max_L must be non-negative integer"
+            args.hidden_irreps = o3.Irreps(
+                (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+                .sort()
+                .irreps.simplify()
+            )
+
+        assert (
+            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+
+        logging.info(f"Hidden irreps: {args.hidden_irreps}")
+        model_config = dict(
+            r_max=args.r_max,
+            num_bessel=args.num_radial_basis,
+            num_polynomial_cutoff=args.num_cutoff_basis,
+            max_ell=args.max_ell,
+            interaction_cls=modules.interaction_classes[args.interaction],
+            num_interactions=args.num_interactions,
+            num_elements=len(z_table),
+            hidden_irreps=o3.Irreps(args.hidden_irreps),
+            atomic_energies=atomic_energies,
+            avg_num_neighbors=args.avg_num_neighbors,
+            atomic_numbers=z_table.zs,
+        )
 
     model: torch.nn.Module
 
@@ -319,6 +355,8 @@ def main() -> None:
             )
         model = modules.ScaleShiftMACE(
             **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[
@@ -334,6 +372,8 @@ def main() -> None:
         mean, std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
         model = modules.ScaleShiftMACE(
             **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
@@ -469,6 +509,11 @@ def main() -> None:
             {
                 "name": "readouts",
                 "params": model.readouts.parameters(),
+                "weight_decay": 0.0,
+            },
+            {
+                "name": "radial_embedding",
+                "params": model.radial_embedding.parameters(),
                 "weight_decay": 0.0,
             },
         ],
