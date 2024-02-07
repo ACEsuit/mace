@@ -8,10 +8,12 @@ import ast
 import json
 import logging
 from pathlib import Path
+from copy import deepcopy
 from typing import Optional
 
 import numpy as np
 from mace.calculators.foundations_models import mace_off
+from mace.tools.utils import load_maceoff_foundations
 import torch.nn.functional
 from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
@@ -26,6 +28,8 @@ from mace.tools.scripts_utils import (
     create_error_table,
     get_dataset_from_xyz,
 )
+
+
 
 
 def main() -> None:
@@ -412,19 +416,24 @@ def main() -> None:
             f"Using foundation model {args.foundation_model} as initial checkpoint."
         )
         model_foundation = calc.models[0]
-        model = load_foundations(
-            model,
-            model_foundation,
-            z_table,
-            load_readout=True,
-            max_L=args.max_L,
-        )
+        params_pre_init  = deepcopy(model.state_dict())
+        if "mace-mp" in args.foundation_model:
+            model = load_foundations(
+                model,
+                model_foundation,
+                z_table,
+                load_readout=True,
+                max_L=args.max_L,
+            )
+        elif "mace-off" in args.foundation_model:
+            model = load_maceoff_foundations(model, model_foundation)
         if args.freeze_weights:
             logging.info("Freezing weights")
             for name, param in model.named_parameters():
                 if "readout" in name:
-                    param.requires_grad = False
+                    param.requires_grad = True
     model.to(device)
+
 
     # Optimizer
     decay_interactions = {}
