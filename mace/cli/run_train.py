@@ -227,36 +227,37 @@ def main() -> None:
     logging.info(f"Selected the following outputs: {output_args}")
 
     # Build model
-    if args.foundation_model in ["small", "medium", "large"]:
-        logging.info("Building model")
-        if args.num_channels is not None and args.max_L is not None:
-            assert args.num_channels > 0, "num_channels must be positive integer"
-            assert args.max_L >= 0, "max_L must be non-negative integer"
-            args.hidden_irreps = o3.Irreps(
-                (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
-                .sort()
-                .irreps.simplify()
-            )
-
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
-
-        logging.info(f"Hidden irreps: {args.hidden_irreps}")
-        model_config = dict(
-            r_max=args.r_max,
-            num_bessel=args.num_radial_basis,
-            num_polynomial_cutoff=args.num_cutoff_basis,
-            max_ell=args.max_ell,
-            interaction_cls=modules.interaction_classes[args.interaction],
-            num_interactions=args.num_interactions,
-            num_elements=len(z_table),
-            hidden_irreps=o3.Irreps(args.hidden_irreps),
-            atomic_energies=atomic_energies,
-            avg_num_neighbors=args.avg_num_neighbors,
-            atomic_numbers=z_table.zs,
-        )
-    else:
+    # if args.foundation_model is None:
+    #     logging.info("Building model")
+    #     if args.num_channels is not None and args.max_L is not None:
+    #         assert args.num_channels > 0, "num_channels must be positive integer"
+    #         assert args.max_L >= 0, "max_L must be non-negative integer"
+    #         args.hidden_irreps = o3.Irreps(
+    #             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+    #             .sort()
+    #             .irreps.simplify()
+    #         )
+    #
+    #     assert (
+    #         len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+    #     ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+    #
+    #     logging.info(f"Hidden irreps: {args.hidden_irreps}")
+    #     model_config = dict(
+    #         r_max=args.r_max,
+    #         num_bessel=args.num_radial_basis,
+    #         num_polynomial_cutoff=args.num_cutoff_basis,
+    #         max_ell=args.max_ell,
+    #         interaction_cls=modules.interaction_classes[args.interaction],
+    #         num_interactions=args.num_interactions,
+    #         num_elements=len(z_table),
+    #         hidden_irreps=o3.Irreps(args.hidden_irreps),
+    #         atomic_energies=atomic_energies,
+    #         avg_num_neighbors=args.avg_num_neighbors,
+    #         atomic_numbers=z_table.zs,
+    #     )
+    # else:
+    if args.foundation_model is not None:
         if "mace-mp" in args.foundation_model:
             args.model = "ScaleShiftMACE"
             args.num_channels = 128
@@ -269,7 +270,6 @@ def main() -> None:
             args.num_bessel = 8
             args.r_max = 5.0
             args.interaction = "RealAgnosticResidualInteractionBlock"
-
         if args.foundation_model == "mace-mp-small":
             args.max_L = 0
         elif args.foundation_model == "mace-mp-medium":
