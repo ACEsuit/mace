@@ -371,6 +371,7 @@ class ScaleShiftMACE(MACE):
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
             node_feats_list.append(node_feats)
+            # print(node_feats)
             node_es_list.append(readout(node_feats).squeeze(-1))  # {[n_nodes, ], }
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)

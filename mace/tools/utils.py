@@ -150,6 +150,22 @@ class MetricsLogger:
             f.write("\n")
 
 
+
+def load_maceoff_foundations(model: torch.nn.Module, model_foundations: torch.nn.Module) -> torch.nn.Module:
+    state_dict = model_foundations.state_dict()
+    torch.save(state_dict, "foundation_state_dict.pt")
+    model.load_state_dict(torch.load("foundation_state_dict.pt"))
+    # for (name_foundations, param_foundations) in model_foundations.state_dict():
+    #     for (name, param) in model.state_dict():
+    #         if name_foundations == name:
+    #             logging.info(f"copying parameter, {name}, {name_foundations}")
+    #             param = param_foundations.data.clone()
+
+    # model.scale_shift.scale = model_foundations.scale_shift.scale.clone()
+    # model.scale_shift.shift = model_foundations.scale_shift.shift.clone()
+    # logging.info(model.scale_shift.scale, model.scale_shift.shift)
+    return model
+
 def load_foundations(
     model: torch.nn.Module,
     model_foundations: torch.nn.Module,
@@ -213,6 +229,7 @@ def load_foundations(
         model.interactions[i].linear.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear.weight.clone()
         )
+        print(model.interactions[i].__class__.__name__)
         if (
             model.interactions[i].__class__.__name__
             == "RealAgnosticResidualInteractionBlock"

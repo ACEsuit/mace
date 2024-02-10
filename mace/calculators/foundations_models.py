@@ -56,7 +56,7 @@ def mace_mp(
         print(
             f"Using local medium Materials Project MACE model for MACECalculator {model}"
         )
-    elif model in (None, "small", "medium", "large") or str(model).startswith("https:"):
+    elif model in (None, "mace-mp-small", "mace-mp-medium", "mace-mp-large") or str(model).startswith("https:"):
         try:
             urls = dict(
                 small="http://tinyurl.com/46jrkm3v",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
@@ -64,8 +64,8 @@ def mace_mp(
                 large="http://tinyurl.com/43hjdekn",  # MACE_MPtrj_2022.9.model
             )
             checkpoint_url = (
-                urls.get(model, urls["medium"])
-                if model in (None, "small", "medium", "large")
+                urls.get(model.split('-')[-1], urls["medium"])
+                if model in (None, "mace-mp-small", "mace-mp-medium", "mace-mp-large")
                 else model
             )
             cache_dir = os.path.expanduser("~/.cache/mace")
@@ -161,8 +161,8 @@ def mace_off(
             large="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model?raw=true",
         )
         checkpoint_url = (
-            urls.get(model, urls["medium"])
-            if model in (None, "small", "medium", "large")
+            urls.get(model.split("-")[-1], urls["small"])
+            if model in (None, "mace-off-small", "mace-off-medium", "mace-off-large")
             else model
         )
         cache_dir = os.path.expanduser("~/.cache/mace")

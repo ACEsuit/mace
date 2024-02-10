@@ -262,7 +262,6 @@ def take_step(
         compute_stress=output_args["stress"],
     )
     loss = loss_fn(pred=output, ref=batch)
-    print("loss", loss)
     loss.backward()
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)

@@ -8,9 +8,12 @@ import ast
 import json
 import logging
 from pathlib import Path
+from copy import deepcopy
 from typing import Optional
 
 import numpy as np
+from mace.calculators.foundations_models import mace_off
+from mace.tools.utils import load_maceoff_foundations
 import torch.nn.functional
 from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
@@ -25,6 +28,8 @@ from mace.tools.scripts_utils import (
     create_error_table,
     get_dataset_from_xyz,
 )
+
+
 
 
 def main() -> None:
@@ -222,29 +227,82 @@ def main() -> None:
     logging.info(f"Selected the following outputs: {output_args}")
 
     # Build model
-    if args.foundation_model in ["small", "medium", "large"]:
-        logging.info("Building model")
-        args.model = "ScaleShiftMACE"
-        if args.foundation_model == "small":
+    # if args.foundation_model is None:
+    #     logging.info("Building model")
+    #     if args.num_channels is not None and args.max_L is not None:
+    #         assert args.num_channels > 0, "num_channels must be positive integer"
+    #         assert args.max_L >= 0, "max_L must be non-negative integer"
+    #         args.hidden_irreps = o3.Irreps(
+    #             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+    #             .sort()
+    #             .irreps.simplify()
+    #         )
+    #
+    #     assert (
+    #         len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+    #     ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+    #
+    #     logging.info(f"Hidden irreps: {args.hidden_irreps}")
+    #     model_config = dict(
+    #         r_max=args.r_max,
+    #         num_bessel=args.num_radial_basis,
+    #         num_polynomial_cutoff=args.num_cutoff_basis,
+    #         max_ell=args.max_ell,
+    #         interaction_cls=modules.interaction_classes[args.interaction],
+    #         num_interactions=args.num_interactions,
+    #         num_elements=len(z_table),
+    #         hidden_irreps=o3.Irreps(args.hidden_irreps),
+    #         atomic_energies=atomic_energies,
+    #         avg_num_neighbors=args.avg_num_neighbors,
+    #         atomic_numbers=z_table.zs,
+    #     )
+    # else:
+    if args.foundation_model is not None:
+        if "mace-mp" in args.foundation_model:
+            args.model = "ScaleShiftMACE"
+            args.num_channels = 128
+            args.r_max = 6.0
+            args.num_bessel = 10
+            args.interaction_first = "RealAgnosticResidualInteractionBlock"
+            args.interaction = "RealAgnosticResidualInteractionBlock"
+        elif "mace-off" in args.foundation_model:
+            args.model = "MACE"
+            args.num_bessel = 8
+            args.r_max = 5.0
+            args.interaction = "RealAgnosticResidualInteractionBlock"
+        if args.foundation_model == "mace-mp-small":
             args.max_L = 0
-        elif args.foundation_model == "medium":
+        elif args.foundation_model == "mace-mp-medium":
             args.max_L = 1
-        elif args.foundation_model == "large":
+        elif args.foundation_model == "mace-mp-large":
             args.max_L = 2
-        args.num_channels = 128
+
+        # now handle mace-off models
+        elif args.foundation_model == "mace-off-small":
+            args.max_L = 0
+            args.num_channels = 96
+            args.r_max = 4.5
+        elif args.foundation_model == "mace-off-medium":
+            args.max_L = 1
+            args.num_channels = 128
+        elif args.foundation_model == "mace-off-large":
+            args.max_L = 2
+            args.num_channels = 192
+
         args.hidden_irreps = o3.Irreps(
             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
             .sort()
             .irreps.simplify()
         )
-        args.interaction_first = "RealAgnosticResidualInteractionBlock"
-        args.interaction = "RealAgnosticResidualInteractionBlock"
+
+
+
         logging.info(
-            f"Using {args.foundation_model} mace-mp-0 settings. Hidden irreps: {args.hidden_irreps}"
+            f"Using {args.foundation_model} foundation_model settings. Hidden irreps: {args.hidden_irreps}"
         )
         model_config = dict(
-            r_max=6.0,
-            num_bessel=10,
+            r_max=args.r_max,
+            num_bessel=args.num_bessel,
             num_polynomial_cutoff=5,
             max_ell=3,
             interaction_cls=modules.interaction_classes[args.interaction],
@@ -380,29 +438,42 @@ def main() -> None:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
     if args.foundation_model is not None:
-        if args.foundation_model in ["small", "medium", "large"]:
+        if "mace-mp" in args.foundation_model:
             calc = mace_mp(
                 model=args.foundation_model,
                 device=args.device,
                 default_dtype=args.default_dtype,
             )
-            logging.info(
-                f"Using foundation model {args.foundation_model} as initial checkpoint."
+        elif "mace-off" in args.foundation_model:
+            calc = mace_off(
+                model=args.foundation_model,
+                device=args.device,
+                default_dtype=args.default_dtype,
             )
-            model_foundation = calc.models[0]
         else:
-            model_foundation = torch.load(args.foundation_model, map_location=device)
-            logging.info(
-                f"Using foundation model {args.foundation_model} as initial checkpoint."
-            )
-        model = load_foundations(
-            model,
-            model_foundation,
-            z_table,
-            load_readout=True,
-            max_L=args.max_L,
+            raise ValueError("Unknown foundation model")
+        logging.info(
+            f"Using foundation model {args.foundation_model} as initial checkpoint."
         )
+        model_foundation = calc.models[0]
+        params_pre_init  = deepcopy(model.state_dict())
+        if "mace-mp" in args.foundation_model:
+            model = load_foundations(
+                model,
+                model_foundation,
+                z_table,
+                load_readout=True,
+                max_L=args.max_L,
+            )
+        elif "mace-off" in args.foundation_model:
+            model = load_maceoff_foundations(model, model_foundation)
+        if args.freeze_weights:
+            logging.info("Freezing weights")
+            for name, param in model.named_parameters():
+                if "readout" in name:
+                    param.requires_grad = True
     model.to(device)
+
 
     # Optimizer
     decay_interactions = {}
