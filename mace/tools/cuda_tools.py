@@ -208,14 +208,12 @@ def invariant_residual_interaction_forward(
     tp_weights = self.conv_tp_weights(edge_feats)
     message = self.tp.forward(
         node_feats,
-        edge_attrs.double(),
-        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1])
-        .contiguous()
-        .double(),
+        edge_attrs,
+        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1]).contiguous(),
         sender.int(),
         receiver.int(),
         num_nodes,
-    ).float()
+    )
     message = self.linear(message) / self.avg_num_neighbors
     return (
         message.contiguous(),
@@ -238,14 +236,12 @@ def invariant_interaction_forward(
     tp_weights = self.conv_tp_weights(edge_feats)
     message = self.tp.forward(
         node_feats,
-        edge_attrs.double(),
-        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1])
-        .contiguous()
-        .double(),
+        edge_attrs,
+        tp_weights.view(tp_weights.shape[0], -1, node_feats.shape[-1]).contiguous(),
         sender.int(),
         receiver.int(),
         num_nodes,
-    ).float()
+    )
     message = self.linear(message) / self.avg_num_neighbors
     message = self.skip_tp(message, node_attrs)
     return (
