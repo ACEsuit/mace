@@ -113,9 +113,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--distance_transform",
-        help="use amsgrad variant of optimizer",
-        action="store_true",
-        default=False,
+        help="use distance transform for radial basis functions",
+        default="None",
+        choices=["None", "Agnesi", "Soft"],
     )
     parser.add_argument(
         "--interaction",
