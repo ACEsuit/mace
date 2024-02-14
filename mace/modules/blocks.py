@@ -19,7 +19,13 @@ from .irreps_tools import (
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
-from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, AgnesiTransform
+from .radial import (
+    BesselBasis,
+    GaussianBasis,
+    PolynomialCutoff,
+    AgnesiTransform,
+    SoftTransform,
+)
 from .symmetric_contraction import SymmetricContraction
 
 
@@ -149,15 +155,17 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         radial_type: str = "bessel",
-        distance_transform: bool = False,
+        distance_transform: str = "None",
     ):
         super().__init__()
         if radial_type == "bessel":
             self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
         elif radial_type == "gaussian":
             self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
-        if distance_transform:
+        if distance_transform == "Agnesi":
             self.distance_transform = AgnesiTransform()
+        elif distance_transform == "Soft":
+            self.distance_transform = SoftTransform()
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
         self.out_dim = num_bessel
 
