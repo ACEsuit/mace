@@ -402,6 +402,7 @@ def main() -> None:
             max_L=args.max_L,
         )
     model.to(device)
+    print(model)
 
     # Optimizer
     decay_interactions = {}

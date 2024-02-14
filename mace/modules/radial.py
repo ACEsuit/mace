@@ -242,12 +242,10 @@ class AgnesiTransform(torch.nn.Module):
 
 class SoftTransform(torch.nn.Module):
     """
-    Agnesi transform see ACEpotentials.jl, JCP 2023, p. 160
+    Soft Transform
     """
 
-    def __init__(
-        self, q: float = 0.9183, p: float = 4.5791, a: float = 1.0805, trainable=False
-    ):
+    def __init__(self, a: float = 0.2, b: float = 3.0, trainable=False):
         super().__init__()
         self.register_buffer(
             "covalent_radii",
@@ -256,6 +254,12 @@ class SoftTransform(torch.nn.Module):
                 dtype=torch.get_default_dtype(),
             ),
         )
+        if trainable:
+            self.a = torch.nn.Parameter(torch.tensor(a, requires_grad=True))
+            self.b = torch.nn.Parameter(torch.tensor(b, requires_grad=True))
+        else:
+            self.register_buffer("a", torch.tensor(a))
+            self.register_buffer("b", torch.tensor(b))
 
     def forward(
         self,
@@ -273,7 +277,7 @@ class SoftTransform(torch.nn.Module):
         Z_v = node_atomic_numbers[receiver]
         r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 2
         x = x / r_0
-        return x + torch.tanh(-x - 0.5 * x**4) + 1
+        return x + torch.tanh(-x - self.a * (x**self.b)) + 1
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(a={self.a}, q={self.q}, p={self.p})"
+        return f"{self.__class__.__name__}(a={self.a.item()}, b={self.b.item()})"
