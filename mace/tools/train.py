@@ -7,19 +7,18 @@
 import dataclasses
 import logging
 import time
-from typing import Any, Dict, Optional, Tuple, Union, List
 from contextlib import nullcontext
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from torch.optim.swa_utils import SWALR, AveragedModel
-from torch.utils.data import DataLoader
-from torch_ema import ExponentialMovingAverage
-from torchmetrics import Metric
-
 import torch.distributed
 from torch.nn.parallel import DistributedDataParallel
+from torch.optim.swa_utils import SWALR, AveragedModel
+from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
+from torch_ema import ExponentialMovingAverage
+from torchmetrics import Metric
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
@@ -499,7 +498,7 @@ class MACELoss(Metric):
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
 
-    def update(self, batch, output):
+    def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
         self.total_loss += loss
         self.num_data += batch.num_graphs

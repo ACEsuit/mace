@@ -5,13 +5,12 @@
 ###########################################################################################
 
 import logging
-import h5py
-from multiprocessing import Pool
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import ase.data
 import ase.io
+import h5py
 import numpy as np
 
 from mace.tools import AtomicNumberTable
@@ -215,9 +214,9 @@ def load_from_xyz(
                 isolated_atom_config = atoms.info.get("config_type") == "IsolatedAtom"
                 if isolated_atom_config:
                     if energy_key in atoms.info.keys():
-                        atomic_energies_dict[
-                            atoms.get_atomic_numbers()[0]
-                        ] = atoms.info[energy_key]
+                        atomic_energies_dict[atoms.get_atomic_numbers()[0]] = (
+                            atoms.info[energy_key]
+                        )
                     else:
                         logging.warning(
                             f"Configuration '{idx}' is marked as 'IsolatedAtom' "
@@ -322,8 +321,8 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
 
 def save_configurations_as_HDF5(configurations: Configurations, i, h5_file) -> None:
     grp = h5_file.create_group("config_batch_0")
-    for i, config in enumerate(configurations):
-        subgroup_name = f"config_{i}"
+    for j, config in enumerate(configurations):
+        subgroup_name = f"config_{j}"
         subgroup = grp.create_group(subgroup_name)
         subgroup["atomic_numbers"] = write_value(config.atomic_numbers)
         subgroup["positions"] = write_value(config.positions)
@@ -345,4 +344,3 @@ def save_configurations_as_HDF5(configurations: Configurations, i, h5_file) -> N
 
 def write_value(value):
     return value if value is not None else "None"
-

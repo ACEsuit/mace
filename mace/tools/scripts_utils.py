@@ -4,9 +4,9 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import ast
 import dataclasses
 import logging
-import ast
 import os
 from typing import Dict, List, Optional, Tuple
 
@@ -15,8 +15,7 @@ import torch.distributed
 from prettytable import PrettyTable
 
 from mace import data, modules
-from mace.data import AtomicData
-from mace.tools import AtomicNumberTable, evaluate, torch_geometric
+from mace.tools import evaluate
 
 
 @dataclasses.dataclass
@@ -100,6 +99,7 @@ def get_dataset_from_xyz(
         atomic_energies_dict,
     )
 
+
 def get_config_type_weights(ct_weights):
     """
     Get config type weights from command line argument
@@ -114,7 +114,8 @@ def get_config_type_weights(ct_weights):
         config_type_weights = {"Default": 1.0}
     return config_type_weights
 
-def get_atomic_energies(E0s, train_collection, z_table)->dict:
+
+def get_atomic_energies(E0s, train_collection, z_table) -> dict:
     if E0s is not None:
         logging.info(
             "Atomic Energies not in training file, using command line argument E0s"
@@ -138,23 +139,24 @@ def get_atomic_energies(E0s, train_collection, z_table)->dict:
                 atomic_energies_dict = ast.literal_eval(E0s)
                 assert isinstance(atomic_energies_dict, dict)
             except Exception as e:
-                raise RuntimeError(
-                    f"E0s specified invalidly, error {e} occured"
-                ) from e
+                raise RuntimeError(f"E0s specified invalidly, error {e} occured") from e
     else:
         raise RuntimeError(
             "E0s not found in training file and not specified in command line"
         )
     return atomic_energies_dict
 
-def get_loss_fn(loss: str,
-                energy_weight: float,
-                forces_weight: float,
-                stress_weight: float,
-                virials_weight: float,
-                dipole_weight: float,
-                dipole_only: bool,
-                compute_dipole: bool) -> torch.nn.Module:
+
+def get_loss_fn(
+    loss: str,
+    energy_weight: float,
+    forces_weight: float,
+    stress_weight: float,
+    virials_weight: float,
+    dipole_weight: float,
+    dipole_only: bool,
+    compute_dipole: bool,
+) -> torch.nn.Module:
     if loss == "weighted":
         loss_fn = modules.WeightedEnergyForcesLoss(
             energy_weight=energy_weight, forces_weight=forces_weight
@@ -193,8 +195,12 @@ def get_loss_fn(loss: str,
         )
     return loss_fn
 
-def get_files_with_suffix(dir_path:str, suffix:str)-> List[str]:
-    return [os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(suffix)]
+
+def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
+    return [
+        os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(suffix)
+    ]
+
 
 def custom_key(key):
     """
@@ -202,12 +208,12 @@ def custom_key(key):
     to ensure that the training set, and validation set
     are evaluated first
     """
-    if key == 'train':
+    if key == "train":
         return (0, key)
-    elif key == 'valid':
+    if key == "valid":
         return (1, key)
-    else:
-        return (2, key)
+    return (2, key)
+
 
 class LRScheduler:
     def __init__(self, optimizer, args) -> None:
@@ -229,7 +235,9 @@ class LRScheduler:
         if self.scheduler == "ExponentialLR":
             self.lr_scheduler.step(epoch=epoch)
         elif self.scheduler == "ReduceLROnPlateau":
-            self.lr_scheduler.step(metrics=metrics, epoch=epoch)
+            self.lr_scheduler.step(
+                metrics=metrics, epoch=epoch
+            )  # pylint: disable=E1123
 
     def __getattr__(self, name):
         if name == "step":
@@ -307,7 +315,7 @@ def create_error_table(
             "RMSE MU / mDebye / atom",
             "rel MU RMSE %",
         ]
-    
+
     for name in sorted(all_data_loaders, key=custom_key):
         data_loader = all_data_loaders[name]
         logging.info(f"Evaluating {name} ...")
@@ -320,7 +328,7 @@ def create_error_table(
         )
         if distributed:
             torch.distributed.barrier()
-            
+
         del data_loader
         torch.cuda.empty_cache()
         if log_wandb:

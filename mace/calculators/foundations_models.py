@@ -109,10 +109,10 @@ def mace_mp(
         gh_url = "https://github.com/pfnet-research/torch-dftd"
         try:
             from torch_dftd.torch_dftd3_calculator import TorchDFTD3Calculator
-        except ImportError:
+        except ImportError as exc:
             raise RuntimeError(
-                f"Please install torch-dftd to use dispersion corrections (see {gh_url})"
-            )
+                f"Please install torch-dftd to use dispersion corrections (see {gh_url} from {exc})"
+            ) from exc
         print(
             f"Using TorchDFTD3Calculator for D3 dispersion corrections (see {gh_url})"
         )

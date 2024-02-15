@@ -1,17 +1,15 @@
-from pathlib import Path
 import numpy as np
 import pytest
 import torch
 import torch.nn.functional
+from ase.build import molecule
 from e3nn import o3
-from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
-from ase.build import molecule
+from mace.calculators import mace_mp
 from mace.tools import torch_geometric
 from mace.tools.utils import load_foundations
-from mace.calculators import mace_mp
 
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(

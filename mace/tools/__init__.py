@@ -2,6 +2,7 @@ from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
 from .torch_tools import (
+    DataParallelModel,
     TensorDict,
     cartesian_to_spherical,
     count_parameters,
@@ -13,7 +14,6 @@ from .torch_tools import (
     to_numpy,
     to_one_hot,
     voigt_to_matrix,
-    DataParallelModel,
 )
 from .train import SWAContainer, evaluate, train
 from .utils import (
@@ -29,8 +29,8 @@ from .utils import (
     get_atomic_number_table_from_zs,
     get_optimizer,
     get_tag,
-    setup_logger,
     load_foundations,
+    setup_logger,
 )
 
 __all__ = [

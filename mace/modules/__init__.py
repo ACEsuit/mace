@@ -22,13 +22,13 @@ from .blocks import (
 )
 from .loss import (
     DipoleSingleLoss,
+    UniversalLoss,
     WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesLoss,
     WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
-    UniversalLoss,
 )
 from .models import (
     MACE,
