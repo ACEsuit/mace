@@ -137,7 +137,7 @@ def init_wandb(project: str, entity: str, name: str, config: dict):
 
 class DataParallelModel(torch.nn.Module):
     def __init__(self, model):
-        super(DataParallelModel, self).__init__()
+        super(DataParallelModel, self).__init__()  # pylint: disable=R1725
         self.model = torch.nn.DataParallel(model).cuda()
 
     def forward(self, batch, training, compute_force, compute_virials, compute_stress):

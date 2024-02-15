@@ -1,31 +1,25 @@
 # This file loads an xyz dataset and prepares
 # new hdf5 file that is ready for training with on-the-fly dataloading
 
-import logging
 import ast
-import numpy as np
 import json
-import random
-import tqdm
-from glob import glob
-import h5py
-from ase.io import read
-import torch
+import logging
 import multiprocessing as mp
 import os
+import random
+from glob import glob
 from typing import List, Tuple
 
+import h5py
+import numpy as np
+import tqdm
 
-from mace.tools import to_numpy
-from mace import tools, data
-from mace.data.utils import (
-    save_AtomicData_to_HDF5,
-    save_configurations_as_HDF5,
-)
-from mace.tools.scripts_utils import get_dataset_from_xyz, get_atomic_energies
-from mace.tools.utils import AtomicNumberTable
-from mace.tools import torch_geometric
+from mace import data, tools
+from mace.data.utils import save_configurations_as_HDF5
 from mace.modules import compute_statistics
+from mace.tools import torch_geometric
+from mace.tools.scripts_utils import get_atomic_energies, get_dataset_from_xyz
+from mace.tools.utils import AtomicNumberTable
 
 
 def compute_stats_target(
@@ -50,24 +44,25 @@ def compute_stats_target(
 
 def pool_compute_stats(inputs: List):
     path_to_files, z_table, r_max, atomic_energies, batch_size, num_process = inputs
-    pool = mp.Pool(processes=num_process)
 
-    re = [
-        pool.apply_async(
-            compute_stats_target,
-            args=(
-                file,
-                z_table,
-                r_max,
-                atomic_energies,
-                batch_size,
-            ),
-        )
-        for file in glob(path_to_files + "/*")
-    ]
+    with mp.Pool(processes=num_process) as pool:
+        re = [
+            pool.apply_async(
+                compute_stats_target,
+                args=(
+                    file,
+                    z_table,
+                    r_max,
+                    atomic_energies,
+                    batch_size,
+                ),
+            )
+            for file in glob(path_to_files + "/*")
+        ]
 
-    pool.close()
-    pool.join()
+        pool.close()
+        pool.join()
+
     results = [r.get() for r in tqdm.tqdm(re)]
     return np.average(results, axis=0)
 
@@ -168,19 +163,19 @@ def main():
     drop_last = False
     if len(collections.train) % 2 == 1:
         drop_last = True
-    
+
     # Define Task for Multiprocessiing
     def multi_train_hdf5(process):
         with h5py.File(args.h5_prefix + "train/train_" + str(process)+".h5", "w") as f:
             f.attrs["drop_last"] = drop_last
             save_configurations_as_HDF5(split_train[process], process, f)
-      
+
     processes = []
     for i in range(args.num_process):
         p = mp.Process(target=multi_train_hdf5, args=[i])
         p.start()
         processes.append(p)
-        
+
     for i in processes:
         i.join()
 
@@ -207,14 +202,14 @@ def main():
         "atomic_numbers": str(z_table.zs),
         "r_max": args.r_max,
     }
-    
-    with open(args.h5_prefix + "statistics.json", "w") as f:
+
+    with open(args.h5_prefix + "statistics.json", "w") as f: # pylint: disable=W1514
         json.dump(statistics, f)
-    
+
     logging.info("Preparing validation set")
     if args.shuffle:
         random.shuffle(collections.valid)
-    split_valid = np.array_split(collections.valid, args.num_process) 
+    split_valid = np.array_split(collections.valid, args.num_process)
     drop_last = False
     if len(collections.valid) % 2 == 1:
         drop_last = True
@@ -223,28 +218,28 @@ def main():
         with h5py.File(args.h5_prefix + "val/val_" + str(process)+".h5", "w") as f:
             f.attrs["drop_last"] = drop_last
             save_configurations_as_HDF5(split_valid[process], process, f)
-    
+
     processes = []
     for i in range(args.num_process):
         p = mp.Process(target=multi_valid_hdf5, args=[i])
         p.start()
         processes.append(p)
-        
+
     for i in processes:
         i.join()
 
     if args.test_file is not None:
         def multi_test_hdf5(process, name):
-            with h5py.File(args.h5_prefix + "test/" + name + "_" + str(process) + ".h5", "w") as f:                    
+            with h5py.File(args.h5_prefix + "test/" + name + "_" + str(process) + ".h5", "w") as f:
                 f.attrs["drop_last"] = drop_last
                 save_configurations_as_HDF5(split_test[process], process, f)
-            
+
         logging.info("Preparing test sets")
         for name, subset in collections.tests:
             drop_last = False
             if len(subset) % 2 == 1:
                 drop_last = True
-            split_test = np.array_split(subset, args.num_process) 
+            split_test = np.array_split(subset, args.num_process)
 
             processes = []
             for i in range(args.num_process):

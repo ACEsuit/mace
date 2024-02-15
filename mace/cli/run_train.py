@@ -23,7 +23,6 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp
-from mace.data import HDF5Dataset, dataset_from_sharded_hdf5
 from mace.tools import torch_geometric
 from mace.tools.scripts_utils import (
     LRScheduler,
@@ -43,7 +42,7 @@ def main() -> None:
     if args.distributed:
         try:
             distr_env = DistributedEnvironment()
-        except Exception as e:
+        except Exception as e:  # pylint: disable=W0703
             logging.info(f"Error specifying environment for distributed training: {e}")
             return
         world_size = distr_env.world_size
@@ -74,7 +73,7 @@ def main() -> None:
     device = tools.init_device(args.device)
 
     if args.statistics_file is not None:
-        with open(args.statistics_file, "r") as f:
+        with open(args.statistics_file, "r") as f:  # pylint: disable=W1514
             statistics = json.load(f)
         logging.info("Using statistics json file")
         args.r_max = statistics["r_max"]
@@ -201,13 +200,13 @@ def main() -> None:
             for config in collections.valid
         ]
     elif args.train_file.endswith(".h5"):
-        train_set = HDF5Dataset(args.train_file, r_max=args.r_max, z_table=z_table)
-        valid_set = HDF5Dataset(args.valid_file, r_max=args.r_max, z_table=z_table)
+        train_set = data.HDF5Dataset(args.train_file, r_max=args.r_max, z_table=z_table)
+        valid_set = data.HDF5Dataset(args.valid_file, r_max=args.r_max, z_table=z_table)
     else:  # This case would be for when the file path is to a directory of multiple .h5 files
-        train_set = dataset_from_sharded_hdf5(
+        train_set = data.dataset_from_sharded_hdf5(
             args.train_file, r_max=args.r_max, z_table=z_table
         )
-        valid_set = dataset_from_sharded_hdf5(
+        valid_set = data.dataset_from_sharded_hdf5(
             args.valid_file, r_max=args.r_max, z_table=z_table
         )
 
@@ -728,11 +727,14 @@ def main() -> None:
         test_files = get_files_with_suffix(args.test_dir, "_test.h5")
         for test_file in test_files:
             name = os.path.splitext(os.path.basename(test_file))[0]
-            test_sets[name] = HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
+            test_sets[name] = data.HDF5Dataset(
+                test_file, r_max=args.r_max, z_table=z_table
+            )
     else:
         test_folders = glob(args.test_dir + "/*")
         for folder in test_folders:
-            test_sets[name] = dataset_from_sharded_hdf5(
+            name = os.path.splitext(os.path.basename(test_file))[0]
+            test_sets[name] = data.dataset_from_sharded_hdf5(
                 folder, r_max=args.r_max, z_table=z_table
             )
 

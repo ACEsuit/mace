@@ -4,9 +4,9 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import ase
 import numpy as np
 import torch
-import ase
 from e3nn.util.jit import compile_mode
 
 from mace.tools.scatter import scatter_sum
@@ -141,7 +141,7 @@ class ZBLBasis(torch.nn.Module):
                 dtype=torch.get_default_dtype(),
             ),
         )
-        self.cutoff = PolynomialCutoff(p, r_max)
+        self.cutoff = PolynomialCutoff(r_max, p)
         if trainable:
             self.a_exp = torch.nn.Parameter(torch.tensor(0.300, requires_grad=True))
             self.a_prefactor = torch.nn.Parameter(

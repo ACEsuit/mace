@@ -20,10 +20,10 @@ from .irreps_tools import (
     tp_out_irreps_with_instructions,
 )
 from .radial import (
+    AgnesiTransform,
     BesselBasis,
     GaussianBasis,
     PolynomialCutoff,
-    AgnesiTransform,
     SoftTransform,
 )
 from .symmetric_contraction import SymmetricContraction
