@@ -46,6 +46,7 @@ from .utils import (
     compute_mean_rms_energy_forces,
     compute_mean_std_atomic_inter_energy,
     compute_rms_dipoles,
+    compute_statistics,
 )
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {
@@ -103,5 +104,6 @@ __all__ = [
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
     "compute_avg_num_neighbors",
+    "compute_statistics",
     "compute_fixed_charge_dipole",
 ]
