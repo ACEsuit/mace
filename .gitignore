@@ -21,5 +21,9 @@ build/
 
 # Distribution
 dist/
-*.model
-*.pt
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# DS_Store
+.DS_Store
