@@ -32,4 +32,3 @@ srun python mace/scripts/run_train.py \
     --device='cuda' \
     --distributed \
     --seed=2222 \
-

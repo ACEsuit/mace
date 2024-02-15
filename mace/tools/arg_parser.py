@@ -6,6 +6,7 @@
 
 import argparse
 from typing import Optional
+import os
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -254,6 +255,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Path to directory with test files named as test_*.h5",
         type=str,
         default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--multi_processed_test",
+        help="Boolean value for whether the test data was multiprocessed",
+        type=bool,
+        default=False,
         required=False,
     )
     parser.add_argument(
@@ -588,6 +596,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         required=False,
+    )
+    parser.add_argument(
+        "--num_process",
+        help="The user defined number of processes to use, as well as the number of files created.", 
+        type=int, 
+        default=int(os.cpu_count()/4)
     )
     parser.add_argument(
         "--valid_fraction",

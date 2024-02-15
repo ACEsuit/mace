@@ -157,6 +157,13 @@ class HDF5Dataset(Dataset):
         )
         return atomic_data
 
+def dataset_from_sharded_hdf5(files: List, z_table: AtomicNumberTable, r_max: float):
+    files = glob(files+'/*')
+    datasets = []
+    for file in files:
+        datasets.append(data.HDF5Dataset(file, z_table=z_table, r_max=r_max))
+    full_dataset = ConcatDataset(datasets)
+    return full_dataset
 
 def dataset_from_sharded_hdf5(files: List, z_table: AtomicNumberTable, r_max: float):
     files = glob(files + "/*")
