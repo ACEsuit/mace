@@ -3,6 +3,10 @@ import torch
 from torch.utils.data import Dataset, IterableDataset, ChainDataset
 from mace import data
 from mace.data.utils import Configuration
+from torch.utils.data import ConcatDataset
+from glob import glob
+from typing import List
+from mace.tools.utils import AtomicNumberTable
 
 
 class HDF5ChainDataset(ChainDataset):
@@ -24,7 +28,7 @@ class HDF5ChainDataset(ChainDataset):
 
     def __getstate__(self):
         _d = dict(self.__dict__)
-        
+
         # An opened h5py.File cannot be pickled, so we must exclude it from the state
         _d["_file"] = None
         return _d
@@ -152,6 +156,15 @@ class HDF5Dataset(Dataset):
             config, z_table=self.z_table, cutoff=self.r_max
         )
         return atomic_data
+
+
+def dataset_from_sharded_hdf5(files: List, z_table: AtomicNumberTable, r_max: float):
+    files = glob(files + "/*")
+    datasets = []
+    for file in files:
+        datasets.append(data.HDF5Dataset(file, z_table=z_table, r_max=r_max))
+    full_dataset = ConcatDataset(datasets)
+    return full_dataset
 
 
 def unpack_value(value):
