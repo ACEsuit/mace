@@ -6,26 +6,24 @@ OpenMM Interface
 
 MACE models can be used to run molecular dynamics through OpenMM.  A wide variety of simulations can be run in this way, and it allows for execution of the full simulation on the GPU.
 
-
-Installation Instructions
+Manual Installation steps
 -------------------------
-In order to run simulations through openMM, a custom conda environment is required.  
 
-- First, clone our fork of openmmtools, which contains the command line utilities to launch MACE md simulations
-
-``git clone --branch development https://github.com/jharrymoore/openmmtools.git``
-
-- Ensure you have conda (or miniconda) installed on your system, and ``mamba`` installed in the base environment
-- Run the install script included in the top level of the directory.  
-
-``./mace-install.sh``
-
-This will build the conda environment and install all required packages. There are additional installation instructions contained within the openmmtools repository.
-
-
-Once you have your environment built, the ``mace-md`` entrypoint will be available.
-
-
+Create the conda environment from the provided environment file. Note we use mamba as a drop in conda replacement.
+``conda install mamba -c conda-forge ``
+- If you are installing on a headnode, override the virtual cuda package to match the compute node CUDA version.
+``export CONDA_OVERRIDE_CUDA=11.8
+mamba env create -f mace-openmm.yml ``
+- Install additional MACE/openMM related packages from GitHub
+``pip install git+https://github.com/choderalab/mpiplus.git
+pip install git+https://github.com/ACEsuit/mace.git
+pip install git+https://github.com/jharrymoore/openmm-ml.git@mace
+pip install git+https://github.com/jharrymoore/openmmtools.git@development
+``
+- To quickly test the installation, run the following command to run a short MACE MD simulation
+``wget https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model
+mace-md -f ejm_31.sdf --ml_mol ejm_31.sdf --model_path MACE-OFF23_small.model --output_dir md_test --nl torch_nl --steps 1000 --minimiser ase --dtype float64 --remove_cmm --unwrap
+``
 
 Testing your Installation
 -------------------------
