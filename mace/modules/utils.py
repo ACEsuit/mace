@@ -41,22 +41,40 @@ def compute_forces(
 def compute_forces_virials(
     energy: torch.Tensor,
     positions: torch.Tensor,
+    batch: torch.Tensor,
     displacement: torch.Tensor,
+    edge_index: torch.Tensor,
+    vectors: torch.Tensor,    
     cell: torch.Tensor,
     training: bool = True,
     compute_stress: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
-    forces, virials = torch.autograd.grad(
+    forces, vector_force = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
-        inputs=[positions, displacement],  # [n_nodes, 3]
+        inputs=[positions, vectors],  # [n_nodes, 3]
         grad_outputs=grad_outputs,
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,
     )
+    edge_virial = torch.einsum(
+        "zi,zj->zij", vector_force, vectors
+    )
+
+    atom_virial = scatter_sum(
+        edge_virial, edge_index[0], dim=0, dim_size=len(positions),
+    )
+
+    atom_virial = (atom_virial + scatter_sum(
+        edge_virial, edge_index[1], dim=0, dim_size=len(positions),
+    ))/2
+
+
+    virials = scatter_sum(atom_virial, batch, dim=0)
+    virials = (virials + virials.transpose(-1, -2)) / 2
     stress = torch.zeros_like(displacement)
-    if compute_stress and virials is not None:
+    if  compute_stress and virials is not None:
         cell = cell.view(-1, 3, 3)
         volume = torch.einsum(
             "zi,zi->z",
@@ -64,12 +82,14 @@ def compute_forces_virials(
             torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
         ).unsqueeze(-1)
         stress = virials / volume.view(-1, 1, 1)
+    if atom_virial is None:
+        atom_virial = torch.zeros_like((1,3,3))
     if forces is None:
         forces = torch.zeros_like(positions)
     if virials is None:
         virials = torch.zeros((1, 3, 3))
+    return -1 * forces, -1 * virials, stress, -1 * atom_virial
 
-    return -1 * forces, -1 * virials, stress
 
 
 def get_symmetric_displacement(
@@ -113,32 +133,42 @@ def get_symmetric_displacement(
 def get_outputs(
     energy: torch.Tensor,
     positions: torch.Tensor,
-    displacement: Optional[torch.Tensor],
+    batch: torch.Tensor,
+    displacement: torch.Tensor,
+    edge_index: torch.Tensor,
+    vectors: torch.Tensor,
     cell: torch.Tensor,
     training: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-    if (compute_virials or compute_stress) and displacement is not None:
+    if (compute_virials or compute_stress) and vectors is not None:
         # forces come for free
-        forces, virials, stress = compute_forces_virials(
+        forces, virials, stress, atom_virial = compute_forces_virials(
             energy=energy,
             positions=positions,
+            batch=batch,
             displacement=displacement,
+            edge_index=edge_index,
+            vectors=vectors,
             cell=cell,
             compute_stress=compute_stress,
             training=training,
         )
+
     elif compute_force:
-        forces, virials, stress = (
+        forces, virials, stress, atom_virial = (
             compute_forces(energy=energy, positions=positions, training=training),
+            None,
             None,
             None,
         )
     else:
-        forces, virials, stress = (None, None, None)
-    return forces, virials, stress
+        forces, virials, stress, atom_virial = (None, None, None, None)
+
+
+    return forces, virials, stress, atom_virial
 
 
 def get_edge_vectors_and_lengths(
