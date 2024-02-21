@@ -502,7 +502,9 @@ class BOTNet(torch.nn.Module):
             positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lengths)
+        edge_feats = self.radial_embedding(
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
 
         # Interactions
         energies = [e0]
@@ -563,7 +565,9 @@ class ScaleShiftBOTNet(BOTNet):
             positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lengths)
+        edge_feats = self.radial_embedding(
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
 
         # Interactions
         node_es_list = []
@@ -756,7 +760,9 @@ class AtomicDipolesMACE(torch.nn.Module):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lengths)
+        edge_feats = self.radial_embedding(
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
 
         # Interactions
         dipoles = []
@@ -973,7 +979,9 @@ class EnergyDipolesMACE(torch.nn.Module):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(lengths)
+        edge_feats = self.radial_embedding(
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
 
         # Interactions
         energies = [e0]
