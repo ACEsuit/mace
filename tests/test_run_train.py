@@ -35,6 +35,7 @@ def fixture_fitting_configs():
         c = water.copy()
         c.positions += np.random.normal(0.1, size=c.positions.shape)
         c.info["REF_energy"] = np.random.normal(0.1)
+        print(c.info["REF_energy"])
         c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
         c.info["REF_stress"] = np.random.normal(0.1, size=6)
         fit_configs.append(c)
@@ -284,7 +285,7 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     mace_params["model_dir"] = str(tmp_path)
     mace_params["train_file"] = tmp_path / "fit.xyz"
     mace_params["loss"] = "weighted"
-    mace_params["foundation_model"] = "use_mp"
+    mace_params["foundation_model"] = "small"
     mace_params["hidden_irreps"] = "64x0e+64x1o+64x2e"
     mace_params["r_max"] = 6.0
     mace_params["default_dtype"] = "float32"
