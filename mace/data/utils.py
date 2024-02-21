@@ -220,7 +220,10 @@ def load_from_xyz(
                     else:
                         logging.warning(
                             f"Configuration '{idx}' is marked as 'IsolatedAtom' "
-                            "but does not contain an energy."
+                            "but does not contain an energy. Zero energy will be used."
+                        )
+                        atomic_energies_dict[atoms.get_atomic_numbers()[0]] = np.zeros(
+                            1
                         )
             else:
                 atoms_without_iso_atoms.append(atoms)
