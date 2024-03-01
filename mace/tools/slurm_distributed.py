@@ -23,6 +23,7 @@ class DistributedEnvironment:
         hostname = hostlist.expand_hostlist(os.environ["SLURM_JOB_NODELIST"])[0]
         os.environ["MASTER_ADDR"] = hostname
         os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "33333")
-        os.environ["WORLD_SIZE"] = os.environ["SLURM_NTASKS"]
+        os.environ["WORLD_SIZE"] = os.environ.get("SLURM_NTASKS",
+            str(int(os.environ["SLURM_NTASKS_PER_NODE"]) * int(os.environ["SLURM_NNODES"])))
         os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
         os.environ["RANK"] = os.environ["SLURM_PROCID"]
