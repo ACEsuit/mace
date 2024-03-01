@@ -384,25 +384,25 @@ def main() -> None:
                 .irreps.simplify()
             )
 
-    assert (
-        len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-    ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        assert (
+            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
 
-    logging.info(f"Hidden irreps: {args.hidden_irreps}")
+        logging.info(f"Hidden irreps: {args.hidden_irreps}")
 
-    model_config = dict(
-        r_max=args.r_max,
-        num_bessel=args.num_radial_basis,
-        num_polynomial_cutoff=args.num_cutoff_basis,
-        max_ell=args.max_ell,
-        interaction_cls=modules.interaction_classes[args.interaction],
-        num_interactions=args.num_interactions,
-        num_elements=len(z_table),
-        hidden_irreps=o3.Irreps(args.hidden_irreps),
-        atomic_energies=atomic_energies,
-        avg_num_neighbors=args.avg_num_neighbors,
-        atomic_numbers=z_table.zs,
-    )
+        model_config = dict(
+            r_max=args.r_max,
+            num_bessel=args.num_radial_basis,
+            num_polynomial_cutoff=args.num_cutoff_basis,
+            max_ell=args.max_ell,
+            interaction_cls=modules.interaction_classes[args.interaction],
+            num_interactions=args.num_interactions,
+            num_elements=len(z_table),
+            hidden_irreps=o3.Irreps(args.hidden_irreps),
+            atomic_energies=atomic_energies,
+            avg_num_neighbors=args.avg_num_neighbors,
+            atomic_numbers=z_table.zs,
+        )
 
     model: torch.nn.Module
 

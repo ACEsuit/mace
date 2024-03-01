@@ -206,7 +206,20 @@ def train(
                     output_args=output_args,
                     device=device,
                 )
-
+                valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch)
+            if ema is not None:
+                with ema.average_parameters():
+                    checkpoint_handler.save(
+                        state=CheckpointState(model, optimizer, lr_scheduler),
+                        epochs=epoch,
+                        keep_last=True,
+                    )
+            else:
+                checkpoint_handler.save(
+                    state=CheckpointState(model, optimizer, lr_scheduler),
+                    epochs=epoch,
+                    keep_last=True,
+                )
             if rank == 0:
                 eval_metrics["mode"] = "eval"
                 eval_metrics["epoch"] = epoch
@@ -341,6 +354,11 @@ def train(
                             f"Stopping optimization after {patience_counter} epochs without improvement"
                         )
                         break
+                    checkpoint_handler.save(
+                        state=CheckpointState(model, optimizer, lr_scheduler),
+                        epochs=epoch,
+                        keep_last=keep_last,
+                    )
                 else:
                     lowest_loss = valid_loss
                     patience_counter = 0
@@ -351,14 +369,14 @@ def train(
                                 epochs=epoch,
                                 keep_last=keep_last,
                             )
-                            keep_last = False
+                            # keep_last = False
                     else:
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
                             epochs=epoch,
                             keep_last=keep_last,
                         )
-                        keep_last = False
+                    # keep_last = False
         if distributed:
             torch.distributed.barrier()
         epoch += 1
