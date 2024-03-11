@@ -47,6 +47,7 @@ class Configuration:
     stress_weight: float = 1.0  # weight of config stress in loss
     virials_weight: float = 1.0  # weight of config virial in loss
     config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
+    theory: Optional[str] = "Default"  # theory used to compute the config
 
 
 Configurations = List[Configuration]
@@ -78,6 +79,7 @@ def config_from_atoms_list(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    theory_key="theory",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -95,6 +97,7 @@ def config_from_atoms_list(
                 virials_key=virials_key,
                 dipole_key=dipole_key,
                 charges_key=charges_key,
+                theory_key=theory_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -109,6 +112,7 @@ def config_from_atoms(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    theory_key="theory",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -135,6 +139,8 @@ def config_from_atoms(
     forces_weight = atoms.info.get("config_forces_weight", 1.0)
     stress_weight = atoms.info.get("config_stress_weight", 1.0)
     virials_weight = atoms.info.get("config_virials_weight", 1.0)
+
+    theory = atoms.info.get(theory_key, "Default")
 
     # fill in missing quantities but set their weight to 0.0
     if energy is None:
@@ -163,6 +169,7 @@ def config_from_atoms(
         dipole=dipole,
         charges=charges,
         weight=weight,
+        theory=theory,
         energy_weight=energy_weight,
         forces_weight=forces_weight,
         stress_weight=stress_weight,
@@ -198,6 +205,7 @@ def load_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipole",
     charges_key: str = "charges",
+    theory_key: str = "theory",
     extract_atomic_energies: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
@@ -232,6 +240,9 @@ def load_from_xyz(
             logging.info("Using isolated atom energies from training file")
 
         atoms_list = atoms_without_iso_atoms
+    theories = set()
+    for atoms in atoms_list:
+        theories.add(atoms.info.get(theory_key, "Default"))
 
     configs = config_from_atoms_list(
         atoms_list,
@@ -242,8 +253,9 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        theory_key=theory_key,
     )
-    return atomic_energies_dict, configs
+    return atomic_energies_dict, configs, theories
 
 
 def compute_average_E0s(
