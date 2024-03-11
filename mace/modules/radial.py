@@ -275,9 +275,13 @@ class SoftTransform(torch.nn.Module):
         ].unsqueeze(-1)
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
-        r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 2
-        x = x / r_0
-        return x + torch.tanh(-x - self.a * (x**self.b)) + 1
+        r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 4
+        y = (
+            x
+            + (1 / 2) * torch.tanh(-(x / r_0) - self.a * ((x / r_0) ** self.b))
+            + 1 / 2
+        )
+        return y
 
     def __repr__(self):
         return f"{self.__class__.__name__}(a={self.a.item()}, b={self.b.item()})"

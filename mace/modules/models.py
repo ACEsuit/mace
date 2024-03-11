@@ -353,7 +353,6 @@ class ScaleShiftMACE(MACE):
             )
         else:
             pair_node_energy = torch.zeros_like(node_e0)
-
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list = []
