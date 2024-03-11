@@ -238,9 +238,10 @@ def load_foundations(
                 model_foundations.interactions[i]
                 .skip_tp.weight.reshape(
                     num_channels_foundation,
+                    (max_L + 1) ** 2,
                     num_species_foundations,
                     num_channels_foundation,
-                )[:, indices_weights, :, -1]
+                )[:, :, indices_weights, :]
                 .flatten()
                 .clone()
                 / (num_species_foundations / num_species) ** 0.5
