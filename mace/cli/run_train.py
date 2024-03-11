@@ -91,7 +91,7 @@ def main() -> None:
                 ".xyz"
             ), "valid_file if given must be same format as train_file"
         config_type_weights = get_config_type_weights(args.config_type_weights)
-        collections, atomic_energies_dict = get_dataset_from_xyz(
+        collections, atomic_energies_dict, theories = get_dataset_from_xyz(
             train_path=args.train_file,
             valid_path=args.valid_file,
             valid_fraction=args.valid_fraction,
@@ -192,11 +192,15 @@ def main() -> None:
 
     if args.train_file.endswith(".xyz"):
         train_set = [
-            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+            data.AtomicData.from_config(
+                config, z_table=z_table, cutoff=args.r_max, theories=theories
+            )
             for config in collections.train
         ]
         valid_set = [
-            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+            data.AtomicData.from_config(
+                config, z_table=z_table, cutoff=args.r_max, theories=theories
+            )
             for config in collections.valid
         ]
     elif args.train_file.endswith(".h5"):

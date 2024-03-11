@@ -61,6 +61,7 @@ class MACE(torch.nn.Module):
         distance_transform: str = "None",
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
+        theories: Optional[List[str]] = ["Default"],
     ):
         super().__init__()
         self.register_buffer(
@@ -161,7 +162,7 @@ class MACE(torch.nn.Module):
             self.products.append(prod)
             if i == num_interactions - 2:
                 self.readouts.append(
-                    NonLinearReadoutBlock(hidden_irreps_out, MLP_irreps, gate)
+                    NonLinearReadoutBlock(hidden_irreps_out, MLP_irreps, gate, )
                 )
             else:
                 self.readouts.append(LinearReadoutBlock(hidden_irreps))
