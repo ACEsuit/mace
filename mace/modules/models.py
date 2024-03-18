@@ -162,10 +162,17 @@ class MACE(torch.nn.Module):
             self.products.append(prod)
             if i == num_interactions - 2:
                 self.readouts.append(
-                    NonLinearReadoutBlock(hidden_irreps_out, MLP_irreps, gate, )
+                    NonLinearReadoutBlock(
+                        hidden_irreps_out,
+                        (len(theories) * o3.Irreps("16x0e")).simplify(),
+                        gate,
+                        o3.Irreps(f"{len(theories)}x0e"),
+                    )
                 )
             else:
-                self.readouts.append(LinearReadoutBlock(hidden_irreps))
+                self.readouts.append(
+                    LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(theories)}x0e"))
+                )
 
     def forward(
         self,
@@ -179,6 +186,7 @@ class MACE(torch.nn.Module):
         # Setup
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
+        print("theory", data["theory"])
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3),
@@ -246,9 +254,12 @@ class MACE(torch.nn.Module):
                 node_attrs=data["node_attrs"],
             )
             node_feats_list.append(node_feats)
-            node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
+            node_energies = readout(node_feats)  # [n_nodes, ]
             energy = scatter_sum(
-                src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
+                src=node_energies[:, data["theory"]],
+                index=data["batch"],
+                dim=-1,
+                dim_size=num_graphs,
             )  # [n_graphs,]
             energies.append(energy)
             node_energies_list.append(node_energies)
@@ -311,6 +322,7 @@ class ScaleShiftMACE(MACE):
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
+        print("theory", data["theory"])
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3),
@@ -372,6 +384,7 @@ class ScaleShiftMACE(MACE):
             )
             node_feats_list.append(node_feats)
             node_es_list.append(readout(node_feats).squeeze(-1))  # {[n_nodes, ], }
+
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
         # print("node_es_list", node_es_list)

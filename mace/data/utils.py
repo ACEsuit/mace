@@ -243,7 +243,7 @@ def load_from_xyz(
     theories = set()
     for atoms in atoms_list:
         theories.add(atoms.info.get(theory_key, "Default"))
-
+    theories = list(theories)
     configs = config_from_atoms_list(
         atoms_list,
         config_type_weights=config_type_weights,
