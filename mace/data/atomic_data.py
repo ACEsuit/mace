@@ -115,7 +115,7 @@ class AtomicData(torch_geometric.data.Data):
         config: Configuration,
         z_table: AtomicNumberTable,
         cutoff: float,
-        theories: set,
+        theories: Optional[list] = ["Default"],
     ) -> "AtomicData":
         edge_index, shifts, unit_shifts = get_neighborhood(
             positions=config.positions, cutoff=cutoff, pbc=config.pbc, cell=config.cell
@@ -126,10 +126,8 @@ class AtomicData(torch_geometric.data.Data):
             num_classes=len(z_table),
         )
 
-        theory = torch.nn.functional.one_hot(
-            torch.tensor([theories.index(config.theory)], dtype=torch.long),
-            num_classes=len(theories),
-        ).squeeze(0)
+        theory = torch.tensor(theories.index(config.theory), dtype=torch.long)
+        print("theory", theory)
 
         cell = (
             torch.tensor(config.cell, dtype=torch.get_default_dtype())
