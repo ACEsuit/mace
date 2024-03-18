@@ -56,6 +56,34 @@ class BesselBasis(torch.nn.Module):
 
 
 @compile_mode("script")
+class ChebychevBasis(torch.nn.Module):
+    """
+    Equation (7)
+    """
+
+    def __init__(self, r_max: float, num_basis=8, trainable=False):
+        super().__init__()
+        self.register_buffer(
+            "n",
+            torch.arange(1, num_basis + 1, dtype=torch.get_default_dtype()).unsqueeze(
+                0
+            ),
+        )
+        self.num_basis = num_basis
+        self.r_max = r_max
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [..., 1]
+        x = x.repeat(1, self.num_basis)
+        n = self.n.repeat(len(x), 1)
+        return torch.special.chebyshev_polynomial_t(x, n)
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(r_max={self.r_max}, num_basis={self.num_basis},"
+        )
+
+
+@compile_mode("script")
 class GaussianBasis(torch.nn.Module):
     """
     Gaussian basis functions

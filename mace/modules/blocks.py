@@ -22,6 +22,7 @@ from .irreps_tools import (
 from .radial import (
     AgnesiTransform,
     BesselBasis,
+    ChebychevBasis,
     GaussianBasis,
     PolynomialCutoff,
     SoftTransform,
@@ -162,6 +163,8 @@ class RadialEmbeddingBlock(torch.nn.Module):
             self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
         elif radial_type == "gaussian":
             self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
+        elif radial_type == "chebyshev":
+            self.bessel_fn = ChebychevBasis(r_max=r_max, num_basis=num_bessel)
         if distance_transform == "Agnesi":
             self.distance_transform = AgnesiTransform()
         elif distance_transform == "Soft":
