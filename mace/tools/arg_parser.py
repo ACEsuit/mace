@@ -98,7 +98,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="type of radial basis functions",
         type=str,
         default="bessel",
-        choices=["bessel", "gaussian"],
+        choices=["bessel", "gaussian", "chebyshev"],
     )
     parser.add_argument(
         "--num_radial_basis",
