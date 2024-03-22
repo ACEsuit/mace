@@ -132,12 +132,14 @@ class AtomicEnergiesBlock(torch.nn.Module):
 
     def __init__(self, atomic_energies: Union[np.ndarray, torch.Tensor]):
         super().__init__()
-        assert len(atomic_energies.shape) == 1
+        # assert len(atomic_energies.shape) == 1
 
         self.register_buffer(
             "atomic_energies",
-            torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
-        )  # [n_elements, ]
+            torch.atleast_2d(
+                torch.tensor(atomic_energies, dtype=torch.get_default_dtype())
+            ),
+        )  # [n_elements, n_theories]
 
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]

@@ -132,7 +132,9 @@ class MACE(torch.nn.Module):
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        self.readouts.append(LinearReadoutBlock(hidden_irreps))
+        self.readouts.append(
+            LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(theories)}x0e"))
+        )
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
@@ -209,9 +211,9 @@ class MACE(torch.nn.Module):
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])
-        e0 = scatter_sum(
-            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
-        )  # [n_graphs,]
+        e0 = scatter_sum(src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs)[
+            torch.arange(num_graphs, data["theory"])
+        ]  # [n_graphs, n_theories]
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
         vectors, lengths = get_edge_vectors_and_lengths(
@@ -254,11 +256,13 @@ class MACE(torch.nn.Module):
                 node_attrs=data["node_attrs"],
             )
             node_feats_list.append(node_feats)
-            node_energies = readout(node_feats)  # [n_nodes, ]
+            node_energies = readout(node_feats)[
+                torch.arange(node_feats.shape[0]), data["theory"][data["batch"]]
+            ]  # [n_nodes, len(theories)]
             energy = scatter_sum(
-                src=node_energies[:, data["theory"]],
+                src=node_energies,
                 index=data["batch"],
-                dim=-1,
+                dim=0,
                 dim_size=num_graphs,
             )  # [n_graphs,]
             energies.append(energy)
@@ -322,7 +326,6 @@ class ScaleShiftMACE(MACE):
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
-        print("theory", data["theory"])
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3),
@@ -345,9 +348,9 @@ class ScaleShiftMACE(MACE):
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])
-        e0 = scatter_sum(
-            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
-        )  # [n_graphs,]
+        e0 = scatter_sum(src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs)[
+            torch.arange(num_graphs), data["theory"]
+        ]  # [n_graphs, num_theories]
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -383,7 +386,11 @@ class ScaleShiftMACE(MACE):
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
             node_feats_list.append(node_feats)
-            node_es_list.append(readout(node_feats).squeeze(-1))  # {[n_nodes, ], }
+            node_es_list.append(
+                readout(node_feats)[
+                    torch.arange(node_feats.shape[0]), data["theory"][data["batch"]]
+                ].squeeze(-1)
+            )  # {[n_nodes, ], }
 
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -507,7 +514,7 @@ class BOTNet(torch.nn.Module):
         node_e0 = self.atomic_energies_fn(data.node_attrs)
         e0 = scatter_sum(
             src=node_e0, index=data.batch, dim=-1, dim_size=data.num_graphs
-        )  # [n_graphs,]
+        )  # [n_graphs, n_theories]
 
         # Embeddings
         node_feats = self.node_embedding(data.node_attrs)
