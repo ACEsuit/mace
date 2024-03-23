@@ -10,6 +10,7 @@ import logging
 import os
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.distributed
 from prettytable import PrettyTable
@@ -40,7 +41,7 @@ def get_dataset_from_xyz(
     charges_key: str = "charges",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
-    atomic_energies_dict, all_train_configs = data.load_from_xyz(
+    atomic_energies_dict, all_train_configs, theories = data.load_from_xyz(
         file_path=train_path,
         config_type_weights=config_type_weights,
         energy_key=energy_key,
@@ -55,7 +56,7 @@ def get_dataset_from_xyz(
         f"Loaded {len(all_train_configs)} training configurations from '{train_path}'"
     )
     if valid_path is not None:
-        _, valid_configs = data.load_from_xyz(
+        _, valid_configs, _ = data.load_from_xyz(
             file_path=valid_path,
             config_type_weights=config_type_weights,
             energy_key=energy_key,
@@ -80,7 +81,7 @@ def get_dataset_from_xyz(
 
     test_configs = []
     if test_path is not None:
-        _, all_test_configs = data.load_from_xyz(
+        _, all_test_configs, _ = data.load_from_xyz(
             file_path=test_path,
             config_type_weights=config_type_weights,
             energy_key=energy_key,
@@ -97,6 +98,7 @@ def get_dataset_from_xyz(
     return (
         SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
         atomic_energies_dict,
+        theories,
     )
 
 
@@ -115,7 +117,7 @@ def get_config_type_weights(ct_weights):
     return config_type_weights
 
 
-def get_atomic_energies(E0s, train_collection, z_table) -> dict:
+def get_atomic_energies(E0s, train_collection, z_table, theories) -> dict:
     if E0s is not None:
         logging.info(
             "Atomic Energies not in training file, using command line argument E0s"
@@ -128,7 +130,7 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
             try:
                 assert train_collection is not None
                 atomic_energies_dict = data.compute_average_E0s(
-                    train_collection, z_table
+                    train_collection, z_table, theories
                 )
             except Exception as e:
                 raise RuntimeError(
@@ -213,6 +215,19 @@ def custom_key(key):
     if key == "valid":
         return (1, key)
     return (2, key)
+
+
+def dict_to_array(data):
+    unique_keys = set()
+    for inner_dict in data.values():
+        unique_keys.update(inner_dict.keys())
+    sorted_keys = sorted(unique_keys)
+    result_array = np.zeros((len(data), len(sorted_keys)))
+    for default_index, (_, inner_dict) in enumerate(data.items()):
+        for key, value in inner_dict.items():
+            key_index = sorted_keys.index(key)
+            result_array[default_index][key_index] = value
+    return np.squeeze(result_array)
 
 
 class LRScheduler:

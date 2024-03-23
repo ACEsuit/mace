@@ -136,15 +136,16 @@ class AtomicEnergiesBlock(torch.nn.Module):
 
         self.register_buffer(
             "atomic_energies",
-            torch.atleast_2d(
-                torch.tensor(atomic_energies, dtype=torch.get_default_dtype())
-            ),
+            torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
         )  # [n_elements, n_theories]
 
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
-        return torch.matmul(x, self.atomic_energies)
+        print("self.atomic_energies.T", torch.atleast_2d(self.atomic_energies).T)
+        print("self.atomic_energies.T", self.atomic_energies.T.shape)
+        print("x", x.shape)
+        return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
 
     def __repr__(self):
         formatted_energies = ", ".join([f"{x:.4f}" for x in self.atomic_energies])
@@ -742,14 +743,20 @@ class ScaleShiftBlock(torch.nn.Module):
     def __init__(self, scale: float, shift: float):
         super().__init__()
         self.register_buffer(
-            "scale", torch.tensor(scale, dtype=torch.get_default_dtype())
+            "scale",
+            torch.atleast_1d(torch.tensor(scale, dtype=torch.get_default_dtype())),
         )
         self.register_buffer(
-            "shift", torch.tensor(shift, dtype=torch.get_default_dtype())
+            "shift",
+            torch.atleast_1d(torch.tensor(shift, dtype=torch.get_default_dtype())),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.scale * x + self.shift
+    def forward(self, x: torch.Tensor, theory: torch.Tensor) -> torch.Tensor:
+        print("theory", theory.shape)
+        print("x", x.shape)
+        print("self.scale", self.scale.shape)
+        print("self.shift", self.shift.shape)
+        return self.scale[theory] * x + self.shift[theory]
 
     def __repr__(self):
         return (
