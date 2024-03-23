@@ -207,6 +207,7 @@ def load_from_xyz(
     charges_key: str = "charges",
     theory_key: str = "theory",
     extract_atomic_energies: bool = False,
+    keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
 
@@ -222,7 +223,10 @@ def load_from_xyz(
                 isolated_atom_config = atoms.info.get("config_type") == "IsolatedAtom"
                 if isolated_atom_config:
                     if energy_key in atoms.info.keys():
-                        atomic_energies_dict[atoms.get_atomic_numbers()[0]] = (
+                        theory = atoms.info.get(theory_key, "Default")
+                        if theory not in atomic_energies_dict:
+                            atomic_energies_dict[theory] = {}
+                        atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
                             atoms.info[energy_key]
                         )
                     else:
@@ -230,16 +234,19 @@ def load_from_xyz(
                             f"Configuration '{idx}' is marked as 'IsolatedAtom' "
                             "but does not contain an energy. Zero energy will be used."
                         )
-                        atomic_energies_dict[atoms.get_atomic_numbers()[0]] = np.zeros(
-                            1
+                        theory = atoms.info.get(theory_key, "Default")
+                        if theory not in atomic_energies_dict:
+                            atomic_energies_dict[theory] = {}
+                        atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
+                            np.zeros(1)
                         )
             else:
                 atoms_without_iso_atoms.append(atoms)
 
         if len(atomic_energies_dict) > 0:
             logging.info("Using isolated atom energies from training file")
-
-        atoms_list = atoms_without_iso_atoms
+        if not keep_isolated_atoms:
+            atoms_list = atoms_without_iso_atoms
     theories = set()
     for atoms in atoms_list:
         theories.add(atoms.info.get(theory_key, "Default"))
@@ -259,7 +266,7 @@ def load_from_xyz(
 
 
 def compute_average_E0s(
-    collections_train: Configurations, z_table: AtomicNumberTable
+    collections_train: Configurations, z_table: AtomicNumberTable, theories: List[str]
 ) -> Dict[int, float]:
     """
     Function to compute the average interaction energy of each chemical element
@@ -269,22 +276,25 @@ def compute_average_E0s(
     len_zs = len(z_table)
     A = np.zeros((len_train, len_zs))
     B = np.zeros(len_train)
-    for i in range(len_train):
-        B[i] = collections_train[i].energy
-        for j, z in enumerate(z_table.zs):
-            A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
-    try:
-        E0s = np.linalg.lstsq(A, B, rcond=None)[0]
-        atomic_energies_dict = {}
-        for i, z in enumerate(z_table.zs):
-            atomic_energies_dict[z] = E0s[i]
-    except np.linalg.LinAlgError:
-        logging.warning(
-            "Failed to compute E0s using least squares regression, using the same for all atoms"
-        )
-        atomic_energies_dict = {}
-        for i, z in enumerate(z_table.zs):
-            atomic_energies_dict[z] = 0.0
+    for theory in theories:
+        for i in range(len_train):
+            if collections_train[i].theory != theory:
+                continue
+            B[i] = collections_train[i].energy
+            for j, z in enumerate(z_table.zs):
+                A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
+        try:
+            E0s = np.linalg.lstsq(A, B, rcond=None)[0]
+            atomic_energies_dict = {}
+            for i, z in enumerate(z_table.zs):
+                atomic_energies_dict[theory][z] = E0s[i]
+        except np.linalg.LinAlgError:
+            logging.warning(
+                "Failed to compute E0s using least squares regression, using the same for all atoms"
+            )
+            atomic_energies_dict = {}
+            for i, z in enumerate(z_table.zs):
+                atomic_energies_dict[theory][z] = 0.0
     return atomic_energies_dict
 
 

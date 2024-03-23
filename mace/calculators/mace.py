@@ -203,7 +203,9 @@ class MACECalculator(Calculator):
 
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
             batch = next(iter(data_loader)).to(self.device)
-            node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])
+            node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])[
+                torch.arange(batch.num_nodes), batch.theory[batch.batch]
+            ]
             compute_stress = True
         else:
             compute_stress = False
