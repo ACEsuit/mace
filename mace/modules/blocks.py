@@ -142,9 +142,6 @@ class AtomicEnergiesBlock(torch.nn.Module):
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
-        print("self.atomic_energies.T", torch.atleast_2d(self.atomic_energies).T)
-        print("self.atomic_energies.T", self.atomic_energies.T.shape)
-        print("x", x.shape)
         return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
 
     def __repr__(self):
@@ -752,13 +749,20 @@ class ScaleShiftBlock(torch.nn.Module):
         )
 
     def forward(self, x: torch.Tensor, theory: torch.Tensor) -> torch.Tensor:
-        print("theory", theory.shape)
-        print("x", x.shape)
-        print("self.scale", self.scale.shape)
-        print("self.shift", self.shift.shape)
-        return self.scale[theory] * x + self.shift[theory]
+        return (
+            torch.atleast_1d(self.scale)[theory] * x
+            + torch.atleast_1d(self.shift)[theory]
+        )
 
     def __repr__(self):
-        return (
-            f"{self.__class__.__name__}(scale={self.scale:.6f}, shift={self.shift:.6f})"
+        formatted_scale = (
+            ", ".join([f"{x:.4f}" for x in self.scale])
+            if self.scale.numel() > 1
+            else f"{self.scale.item():.4f}"
         )
+        formatted_shift = (
+            ", ".join([f"{x:.4f}" for x in self.shift])
+            if self.shift.numel() > 1
+            else f"{self.shift.item():.4f}"
+        )
+        return f"{self.__class__.__name__}(scale={formatted_scale}, shift={formatted_shift})"
