@@ -35,7 +35,7 @@ table = tools.AtomicNumberTable([1, 6, 8])
 atomic_energies = np.array([0.0, 0.0, 0.0], dtype=float)
 
 
-@pytest.skip("Problem with the float type", allow_module_level=True)
+# @pytest.skip("Problem with the float type", allow_module_level=True)
 def test_foundations():
     # Create MACE model
     model_config = dict(
