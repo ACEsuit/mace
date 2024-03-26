@@ -106,10 +106,26 @@ def main() -> None:
             dipole_key=args.dipole_key,
             charges_key=args.charges_key,
         )
+        if args.theories is not None:
+            args.theories = ast.literal_eval(args.theories)
+            assert set(theories) == set(args.theories), (
+                "Theories from command line and data do not match,"
+                f"{set(theories)} != {set(args.theories)}"
+            )
+            logging.info(
+                "Using theories from command line argument,"
+                f" theories used: {args.theories}"
+            )
+            theories = args.theories
+        else:
+            logging.info(
+                "Using theories extracted from data files,"
+                f" theories used: {theories}"
+            )
 
         logging.info(
             f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
-            f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}]"
+            f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
         )
     else:
         atomic_energies_dict = None
@@ -414,6 +430,7 @@ def main() -> None:
             atomic_inter_shift=0.0,
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
+            theories=theories,
         )
     elif args.model == "ScaleShiftMACE":
         model = modules.ScaleShiftMACE(
@@ -428,6 +445,7 @@ def main() -> None:
             atomic_inter_shift=args.mean,
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
+            theories=theories,
         )
     elif args.model == "ScaleShiftBOTNet":
         model = modules.ScaleShiftBOTNet(
@@ -506,7 +524,6 @@ def main() -> None:
             max_L=args.max_L,
         )
     model.to(device)
-    print(model)
 
     # Optimizer
     decay_interactions = {}
@@ -705,7 +722,9 @@ def main() -> None:
     if args.train_file.endswith(".xyz"):
         for name, subset in collections.tests:
             test_sets[name] = [
-                data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
+                data.AtomicData.from_config(
+                    config, z_table=z_table, cutoff=args.r_max, theories=theories
+                )
                 for config in subset
             ]
     elif not args.multi_processed_test:
@@ -738,7 +757,7 @@ def main() -> None:
             test_set,
             batch_size=args.valid_batch_size,
             shuffle=(test_sampler is None),
-            drop_last=test_set.drop_last,
+            drop_last=False,
             num_workers=args.num_workers,
             pin_memory=args.pin_memory,
         )

@@ -274,9 +274,12 @@ def compute_average_E0s(
     """
     len_train = len(collections_train)
     len_zs = len(z_table)
-    A = np.zeros((len_train, len_zs))
-    B = np.zeros(len_train)
+    atomic_energies_dict = {}
     for theory in theories:
+        A = np.zeros((len_train, len_zs))
+        B = np.zeros(len_train)
+        if theory not in atomic_energies_dict:
+            atomic_energies_dict[theory] = {}
         for i in range(len_train):
             if collections_train[i].theory != theory:
                 continue
@@ -285,14 +288,12 @@ def compute_average_E0s(
                 A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
         try:
             E0s = np.linalg.lstsq(A, B, rcond=None)[0]
-            atomic_energies_dict = {}
             for i, z in enumerate(z_table.zs):
                 atomic_energies_dict[theory][z] = E0s[i]
         except np.linalg.LinAlgError:
             logging.warning(
                 "Failed to compute E0s using least squares regression, using the same for all atoms"
             )
-            atomic_energies_dict = {}
             for i, z in enumerate(z_table.zs):
                 atomic_energies_dict[theory][z] = 0.0
     return atomic_energies_dict

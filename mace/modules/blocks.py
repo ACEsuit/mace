@@ -16,6 +16,7 @@ from mace.tools.scatter import scatter_sum
 
 from .irreps_tools import (
     linear_out_irreps,
+    mask_theory,
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
@@ -48,7 +49,9 @@ class LinearReadoutBlock(torch.nn.Module):
         super().__init__()
         self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+    def forward(
+        self, x: torch.Tensor, theories: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         return self.linear(x)  # [n_nodes, 1]
 
 
@@ -60,16 +63,26 @@ class NonLinearReadoutBlock(torch.nn.Module):
         MLP_irreps: o3.Irreps,
         gate: Optional[Callable],
         irrep_out: o3.Irreps = o3.Irreps("0e"),
+        num_theories: int = 1,
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
+        self.num_theories = num_theories
         self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
         self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
         self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=irrep_out)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+    def forward(
+        self, x: torch.Tensor, theories: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
-        return self.linear_2(x)  # [n_nodes, 1]
+        if (
+            hasattr(self, "num_theories")
+            and self.num_theories > 1
+            and theories is not None
+        ):
+            x = mask_theory(x, theories, self.num_theories)
+        return self.linear_2(x)  # [n_nodes, len(theories)]
 
 
 @compile_mode("script")
@@ -145,7 +158,12 @@ class AtomicEnergiesBlock(torch.nn.Module):
         return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
 
     def __repr__(self):
-        formatted_energies = ", ".join([f"{x:.4f}" for x in self.atomic_energies])
+        formatted_energies = ", ".join(
+            [
+                "[" + ", ".join([f"{x:.4f}" for x in group]) + "]"
+                for group in torch.atleast_2d(self.atomic_energies)
+            ]
+        )
         return f"{self.__class__.__name__}(energies=[{formatted_energies}])"
 
 

@@ -161,11 +161,11 @@ def get_edge_vectors_and_lengths(
 
 
 def _check_non_zero(std):
-    if std == 0.0:
+    if np.any(std == 0):
         logging.warning(
             "Standard deviation of the scaling is zero, Changing to no scaling"
         )
-        std = 1.0
+        std[std == 0] = 1
     return std
 
 
@@ -263,13 +263,11 @@ def compute_mean_rms_energy_forces(
     # mean = to_numpy(torch.mean(atom_energies)).item()
     # rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
     mean = scatter_mean(src=atom_energies, index=theory, dim=0).squeeze(-1)
-    print("theory", theory_batch.shape)
-    print("forces", forces.shape)
     rms = to_numpy(
         torch.sqrt(
             scatter_mean(src=torch.square(forces), index=theory_batch, dim=0).mean(-1)
         )
-    ).item()
+    )
     rms = _check_non_zero(rms)
 
     return mean, rms

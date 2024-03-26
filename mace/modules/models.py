@@ -73,6 +73,7 @@ class MACE(torch.nn.Module):
         self.register_buffer(
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
+        self.theories = theories
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
         # Embedding
@@ -166,9 +167,10 @@ class MACE(torch.nn.Module):
                 self.readouts.append(
                     NonLinearReadoutBlock(
                         hidden_irreps_out,
-                        (len(theories) * o3.Irreps("16x0e")).simplify(),
+                        (len(theories) * MLP_irreps).simplify(),
                         gate,
                         o3.Irreps(f"{len(theories)}x0e"),
+                        len(theories),
                     )
                 )
             else:
@@ -191,6 +193,7 @@ class MACE(torch.nn.Module):
         print("theory", data["theory"])
         num_atoms_arange = torch.arange(data["positions"].shape[0])
         num_graphs = data["ptr"].numel() - 1
+        node_theories = data["theory"][data["batch"]]
         displacement = torch.zeros(
             (num_graphs, 3, 3),
             dtype=data["positions"].dtype,
@@ -212,9 +215,9 @@ class MACE(torch.nn.Module):
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
-            num_atoms_arange, data["theory"][data["batch"]]
+            num_atoms_arange, node_theories
         ]
-        print("node e0", node_e0.shape)
+        # print("node e0", node_e0.shape)
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
         )  # [n_graphs, n_theories]
@@ -262,8 +265,8 @@ class MACE(torch.nn.Module):
                 node_attrs=data["node_attrs"],
             )
             node_feats_list.append(node_feats)
-            node_energies = readout(node_feats)[
-                num_atoms_arange, data["theory"][data["batch"]]
+            node_energies = readout(node_feats, node_theories)[
+                num_atoms_arange, node_theories
             ]  # [n_nodes, len(theories)]
             energy = scatter_sum(
                 src=node_energies,
@@ -334,6 +337,7 @@ class ScaleShiftMACE(MACE):
         data["node_attrs"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
         num_atoms_arange = torch.arange(data["positions"].shape[0])
+        node_theories = data["theory"][data["batch"]]
         displacement = torch.zeros(
             (num_graphs, 3, 3),
             dtype=data["positions"].dtype,
@@ -355,7 +359,7 @@ class ScaleShiftMACE(MACE):
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
-            num_atoms_arange, data["theory"][data["batch"]]
+            num_atoms_arange, node_theories
         ]
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
@@ -396,18 +400,18 @@ class ScaleShiftMACE(MACE):
             )
             node_feats_list.append(node_feats)
             node_es_list.append(
-                readout(node_feats)[num_atoms_arange, data["theory"][data["batch"]]]
+                readout(node_feats, node_theories)[num_atoms_arange, node_theories]
             )  # {[n_nodes, ], }
 
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
-        print("node_es_list", node_es_list)
+        # print("node_es_list", node_es_list)
         # Sum over interactions
         node_inter_es = torch.sum(
             torch.stack(node_es_list, dim=0), dim=0
         )  # [n_nodes, ]
-        print("node_inter_es", node_inter_es.shape)
-        node_inter_es = self.scale_shift(node_inter_es, data["theory"][data["batch"]])
+        # print("node_inter_es", node_inter_es.shape)
+        node_inter_es = self.scale_shift(node_inter_es, node_theories)
 
         # Sum over nodes in graph
         inter_e = scatter_sum(
@@ -417,7 +421,7 @@ class ScaleShiftMACE(MACE):
         # Add E_0 and (scaled) interaction energy
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
-        print("node_energy", node_energy.shape)
+        # print("node_energy", node_energy.shape)
         forces, virials, stress = get_outputs(
             energy=inter_e,
             positions=data["positions"],
