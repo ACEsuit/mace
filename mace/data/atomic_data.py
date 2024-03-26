@@ -125,9 +125,11 @@ class AtomicData(torch_geometric.data.Data):
             torch.tensor(indices, dtype=torch.long).unsqueeze(-1),
             num_classes=len(z_table),
         )
-
-        theory = torch.tensor(theories.index(config.theory), dtype=torch.long)
-        print("theory", theory)
+        try:
+            theory = torch.tensor(theories.index(config.theory), dtype=torch.long)
+        except:
+            print(f"Theory {config.theory} not found in {theories}")
+            theory = torch.tensor(0, dtype=torch.long)
 
         cell = (
             torch.tensor(config.cell, dtype=torch.get_default_dtype())

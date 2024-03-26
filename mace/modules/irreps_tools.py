@@ -84,3 +84,15 @@ class reshape_irreps(torch.nn.Module):
             field = field.reshape(batch, mul, d)
             out.append(field)
         return torch.cat(out, dim=-1)
+
+
+def mask_theory(
+    x: torch.Tensor, theory: torch.Tensor, num_theories: int
+) -> torch.Tensor:
+    mask = torch.zeros(
+        x.shape[0], x.shape[1] // num_theories, num_theories, device=x.device
+    )
+    idx = torch.arange(mask.shape[0], device=x.device)
+    mask[idx, :, theory] = 1
+    mask = mask.permute(0, 2, 1).reshape(x.shape)
+    return x * mask

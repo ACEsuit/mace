@@ -128,6 +128,10 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+        try:
+            self.theories = self.models[0].theories
+        except:
+            self.theories = ["Default"]
         model_dtype = get_model_dtype(self.models[0])
         if default_dtype == "":
             print(
@@ -193,7 +197,10 @@ class MACECalculator(Calculator):
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
                 data.AtomicData.from_config(
-                    config, z_table=self.z_table, cutoff=self.r_max
+                    config,
+                    z_table=self.z_table,
+                    cutoff=self.r_max,
+                    theories=self.theories,
                 )
             ],
             batch_size=1,
@@ -300,7 +307,10 @@ class MACECalculator(Calculator):
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
                 data.AtomicData.from_config(
-                    config, z_table=self.z_table, cutoff=self.r_max
+                    config,
+                    z_table=self.z_table,
+                    cutoff=self.r_max,
+                    theories=self.theories,
                 )
             ],
             batch_size=1,

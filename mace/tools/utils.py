@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, Iterable, Optional, Sequence, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -167,6 +167,10 @@ def load_foundations(
     """
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
+    try:
+        foundations_theories = model_foundations.theories
+    except AttributeError:
+        foundations_theories = ["Default"]
     new_z_table = table
     num_species_foundations = len(z_table.zs)
     num_channels_foundation = (
@@ -195,22 +199,24 @@ def load_foundations(
         for j in range(4):  # Assuming 4 layers in conv_tp_weights,
             layer_name = f"layer{j}"
             if j == 0:
-                getattr(
-                    model.interactions[i].conv_tp_weights, layer_name
-                ).weight = torch.nn.Parameter(
-                    getattr(
-                        model_foundations.interactions[i].conv_tp_weights, layer_name
+                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
+                    torch.nn.Parameter(
+                        getattr(
+                            model_foundations.interactions[i].conv_tp_weights,
+                            layer_name,
+                        )
+                        .weight[:num_radial, :]
+                        .clone()
                     )
-                    .weight[:num_radial, :]
-                    .clone()
                 )
             else:
-                getattr(
-                    model.interactions[i].conv_tp_weights, layer_name
-                ).weight = torch.nn.Parameter(
-                    getattr(
-                        model_foundations.interactions[i].conv_tp_weights, layer_name
-                    ).weight.clone()
+                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
+                    torch.nn.Parameter(
+                        getattr(
+                            model_foundations.interactions[i].conv_tp_weights,
+                            layer_name,
+                        ).weight.clone()
+                    )
                 )
 
         model.interactions[i].linear.weight = torch.nn.Parameter(
@@ -231,28 +237,41 @@ def load_foundations(
                 .clone()
                 / (num_species_foundations / num_species) ** 0.5
             )
+        else:
+            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
+                model_foundations.interactions[i]
+                .skip_tp.weight.reshape(
+                    num_channels_foundation,
+                    (max_L + 1) ** 2,
+                    num_species_foundations,
+                    num_channels_foundation,
+                )[:, :, indices_weights, :]
+                .flatten()
+                .clone()
+                / (num_species_foundations / num_species) ** 0.5
+            )
 
     # Transferring products
     for i in range(2):  # Assuming 2 products modules
         max_range = max_L + 1 if i == 0 else 1
         for j in range(max_range):  # Assuming 3 contractions in symmetric_contractions
-            model.products[i].symmetric_contractions.contractions[
-                j
-            ].weights_max = torch.nn.Parameter(
-                model_foundations.products[i]
-                .symmetric_contractions.contractions[j]
-                .weights_max[indices_weights, :, :]
-                .clone()
+            model.products[i].symmetric_contractions.contractions[j].weights_max = (
+                torch.nn.Parameter(
+                    model_foundations.products[i]
+                    .symmetric_contractions.contractions[j]
+                    .weights_max[indices_weights, :, :]
+                    .clone()
+                )
             )
 
             for k in range(2):  # Assuming 2 weights in each contraction
-                model.products[i].symmetric_contractions.contractions[j].weights[
-                    k
-                ] = torch.nn.Parameter(
-                    model_foundations.products[i]
-                    .symmetric_contractions.contractions[j]
-                    .weights[k][indices_weights, :, :]
-                    .clone()
+                model.products[i].symmetric_contractions.contractions[j].weights[k] = (
+                    torch.nn.Parameter(
+                        model_foundations.products[i]
+                        .symmetric_contractions.contractions[j]
+                        .weights[k][indices_weights, :, :]
+                        .clone()
+                    )
                 )
 
         model.products[i].linear.weight = torch.nn.Parameter(
@@ -261,20 +280,64 @@ def load_foundations(
 
     if load_readout:
         # Transferring readouts
+        # model.readouts[0].linear.weight[
+        #     : len(foundations_theories) * num_channels_foundation
+        # ] = torch.nn.Parameter(model_foundations.readouts[0].linear.weight.clone())
+        model_readouts_zero_linear_weight = model.readouts[0].linear.weight.clone()
+        model_readouts_zero_linear_weight.view(num_channels_foundation, -1)[
+            :, : len(foundations_theories)
+        ] = (
+            model_foundations.readouts[0]
+            .linear.weight.view(num_channels_foundation, -1)
+            .clone()
+        )
         model.readouts[0].linear.weight = torch.nn.Parameter(
-            model_foundations.readouts[0].linear.weight.clone()
+            model_readouts_zero_linear_weight
         )
-
+        shape_input_1 = (
+            model_foundations.readouts[1].linear_1.__dict__["irreps_out"].num_irreps
+        )
+        shape_output_1 = model.readouts[1].linear_1.__dict__["irreps_out"].num_irreps
+        # model.readouts[1].linear_1.weight[:shape_input_1] = torch.nn.Parameter(
+        #     model_foundations.readouts[1].linear_1.weight.clone()
+        # )
+        model_readouts_one_linear_1_weight = model.readouts[1].linear_1.weight.clone()
+        model_readouts_one_linear_1_weight.view(num_channels_foundation, -1)[
+            :, :shape_input_1
+        ] = (
+            model_foundations.readouts[1]
+            .linear_1.weight.view(num_channels_foundation, -1)
+            .clone()
+        )
         model.readouts[1].linear_1.weight = torch.nn.Parameter(
-            model_foundations.readouts[1].linear_1.weight.clone()
+            model_readouts_one_linear_1_weight
         )
-
+        shape_input_2 = (
+            model_foundations.readouts[1].linear_2.__dict__["irreps_out"].num_irreps
+        )
+        # model.readouts[1].linear_2.weight[:shape_input_2] = torch.nn.Parameter(
+        #     model_foundations.readouts[1].linear_2.weight.clone()
+        # )
+        model_readouts_one_linear_2_weight = model.readouts[1].linear_2.weight.clone()
+        model_readouts_one_linear_2_weight.view(shape_output_1, -1)[
+            :shape_input_1, :shape_input_2
+        ] = model_foundations.readouts[1].linear_2.weight.view(
+            shape_input_1, -1
+        ).clone() / (
+            ((shape_input_1) / (shape_output_1)) ** 0.5
+        )
         model.readouts[1].linear_2.weight = torch.nn.Parameter(
-            model_foundations.readouts[1].linear_2.weight.clone()
+            model_readouts_one_linear_2_weight
         )
     if model_foundations.scale_shift is not None:
         if use_scale:
-            model.scale_shift.scale = model_foundations.scale_shift.scale.clone()
+            scale_shape = model_foundations.scale_shift.scale.shape
+            model.scale_shift.scale[: (len(scale_shape) + 1)] = (
+                model_foundations.scale_shift.scale.clone()
+            )
         if use_shift:
-            model.scale_shift.shift = model_foundations.scale_shift.shift.clone()
+            shift_shape = model_foundations.scale_shift.shift.shape
+            model.scale_shift.shift[: len(shift_shape)] = (
+                model_foundations.scale_shift.shift.clone()
+            )
     return model

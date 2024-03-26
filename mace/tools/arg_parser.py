@@ -312,6 +312,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--theories",
+        help="List of theories in the training set",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
         "--energy_key",
         help="Key of reference energies in training xyz",
         type=str,
