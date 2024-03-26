@@ -36,6 +36,8 @@ def parse_args() -> argparse.Namespace:
         "--num_samples",
         help="number of samples to select for the pretraining",
         type=int,
+        required=False,
+        default=None,
     )
     parser.add_argument("--model", help="path to model", required=True)
     parser.add_argument("--output", help="output path", required=True)
@@ -141,7 +143,7 @@ class FPS:
         """
         Run the farthest point sampling algorithm.
         """
-        for _ in range(max(self.n_samples, len(self.atoms_list)) - 1):
+        for _ in range(min(self.n_samples, len(self.atoms_list)) - 1):
             self.update()
         return self.list_index
 
@@ -201,6 +203,7 @@ def main():
         )
     atoms_list_ft = ase.io.read(args.configs_ft, index=":")
     all_species_ft = np.unique([x.symbol for atoms in atoms_list_ft for x in atoms])
+
     print(
         "Filtering configurations based on the finetuning set,"
         f"filtering type: combinations, elements: {all_species_ft}"
@@ -221,16 +224,19 @@ def main():
         ]
 
     else:
-        print("Calculating descriptors for the pretraining set")
         atoms_list_pt = ase.io.read(args.configs_pt, index=":")
         atoms_list_pt = [
             x for x in atoms_list_pt if filter_atoms(x, all_species_ft, "combinations")
         ]
-        calculate_descriptors(atoms_list_pt, calc, None)
-    if args.num_samples < len(atoms_list_pt):
+
+    if args.num_samples is not None and args.num_samples < len(atoms_list_pt):
+        if args.descriptors is None:
+            print("Calculating descriptors for the pretraining set")
+            calculate_descriptors(atoms_list_pt, calc, None)
         print("Selecting configurations using Farthest Point Sampling")
         fps_pt = FPS(atoms_list_pt, args.num_samples)
         idx_pt = fps_pt.run()
+        print(f"Selected {len(idx_pt)} configurations")
         atoms_list_pt = [atoms_list_pt[i] for i in idx_pt]
     for atoms in atoms_list_pt:
         # del atoms.info["mace_descriptors"]
