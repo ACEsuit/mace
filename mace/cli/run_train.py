@@ -427,7 +427,7 @@ def main() -> None:
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
-            atomic_inter_shift=0.0,
+            atomic_inter_shift=[0.0] * len(theories),
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             theories=theories,

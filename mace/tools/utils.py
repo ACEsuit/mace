@@ -161,6 +161,7 @@ def load_foundations(
     use_shift=False,
     use_scale=True,
     max_L=2,
+    max_ell=3,
 ):
     """
     Load the foundations of a model into a model for fine-tuning.
@@ -242,7 +243,7 @@ def load_foundations(
                 model_foundations.interactions[i]
                 .skip_tp.weight.reshape(
                     num_channels_foundation,
-                    (max_L + 1) ** 2,
+                    (max_ell + 1),
                     num_species_foundations,
                     num_channels_foundation,
                 )[:, :, indices_weights, :]

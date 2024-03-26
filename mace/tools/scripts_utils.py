@@ -218,6 +218,8 @@ def custom_key(key):
 
 
 def dict_to_array(data):
+    if not all(isinstance(value, dict) for value in data.values()):
+        return np.array(list(data.values()))
     unique_keys = set()
     for inner_dict in data.values():
         unique_keys.update(inner_dict.keys())
