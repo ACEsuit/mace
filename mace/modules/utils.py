@@ -14,7 +14,8 @@ import torch.utils.data
 from scipy.constants import c, e
 
 from mace.tools import to_numpy
-from mace.tools.scatter import scatter_sum
+from mace.tools.scatter import scatter_mean, scatter_std, scatter_sum
+from mace.tools.torch_geometric.batch import Batch
 
 from .blocks import AtomicEnergiesBlock
 
@@ -160,11 +161,11 @@ def get_edge_vectors_and_lengths(
 
 
 def _check_non_zero(std):
-    if std == 0.0:
+    if np.any(std == 0):
         logging.warning(
             "Standard deviation of the scaling is zero, Changing to no scaling"
         )
-        std = 1.0
+        std[std == 0] = 1
     return std
 
 
@@ -191,23 +192,44 @@ def compute_mean_std_atomic_inter_energy(
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
 
     avg_atom_inter_es_list = []
+    theory_list = []
 
     for batch in data_loader:
         node_e0 = atomic_energies_fn(batch.node_attrs)
         graph_e0s = scatter_sum(
-            src=node_e0, index=batch.batch, dim=-1, dim_size=batch.num_graphs
-        )
+            src=node_e0, index=batch.batch, dim=0, dim_size=batch.num_graphs
+        )[torch.arange(batch.num_graphs), batch.theory]
         graph_sizes = batch.ptr[1:] - batch.ptr[:-1]
         avg_atom_inter_es_list.append(
             (batch.energy - graph_e0s) / graph_sizes
         )  # {[n_graphs], }
+        theory_list.append(batch.theory)
 
     avg_atom_inter_es = torch.cat(avg_atom_inter_es_list)  # [total_n_graphs]
-    mean = to_numpy(torch.mean(avg_atom_inter_es)).item()
-    std = to_numpy(torch.std(avg_atom_inter_es)).item()
+    theory = torch.cat(theory_list, dim=0)  # [total_n_graphs]
+    # mean = to_numpy(torch.mean(avg_atom_inter_es)).item()
+    # std = to_numpy(torch.std(avg_atom_inter_es)).item()
+    mean = to_numpy(
+        scatter_mean(src=avg_atom_inter_es, index=theory, dim=0).squeeze(-1)
+    )
+    std = to_numpy(scatter_std(src=avg_atom_inter_es, index=theory, dim=0).squeeze(-1))
     std = _check_non_zero(std)
 
     return mean, std
+
+
+def _compute_mean_std_atomic_inter_energy(
+    batch: Batch,
+    atomic_energies_fn: AtomicEnergiesBlock,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    theory = batch.theory
+    node_e0 = atomic_energies_fn(batch.node_attrs)
+    graph_e0s = scatter_sum(
+        src=node_e0, index=batch.batch, dim=0, dim_size=batch.num_graphs
+    )[torch.arange(batch.num_graphs), theory]
+    graph_sizes = batch.ptr[1:] - batch.ptr[:-1]
+    atom_energies = (batch.energy - graph_e0s) / graph_sizes
+    return atom_energies
 
 
 def compute_mean_rms_energy_forces(
@@ -218,26 +240,55 @@ def compute_mean_rms_energy_forces(
 
     atom_energy_list = []
     forces_list = []
+    theory_list = []
+    theory_batch = []
 
     for batch in data_loader:
+        theory = batch.theory
         node_e0 = atomic_energies_fn(batch.node_attrs)
         graph_e0s = scatter_sum(
-            src=node_e0, index=batch.batch, dim=-1, dim_size=batch.num_graphs
-        )
+            src=node_e0, index=batch.batch, dim=0, dim_size=batch.num_graphs
+        )[torch.arange(batch.num_graphs), theory]
         graph_sizes = batch.ptr[1:] - batch.ptr[:-1]
         atom_energy_list.append(
             (batch.energy - graph_e0s) / graph_sizes
         )  # {[n_graphs], }
         forces_list.append(batch.forces)  # {[n_graphs*n_atoms,3], }
+        theory_list.append(theory)
+        theory_batch.append(theory[batch.batch])
 
     atom_energies = torch.cat(atom_energy_list, dim=0)  # [total_n_graphs]
     forces = torch.cat(forces_list, dim=0)  # {[total_n_graphs*n_atoms,3], }
+    theory = torch.cat(theory_list, dim=0)  # [total_n_graphs]
+    theory_batch = torch.cat(theory_batch, dim=0)  # [total_n_graphs]
 
-    mean = to_numpy(torch.mean(atom_energies)).item()
-    rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
+    # mean = to_numpy(torch.mean(atom_energies)).item()
+    # rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
+    mean = to_numpy(scatter_mean(src=atom_energies, index=theory, dim=0).squeeze(-1))
+    rms = to_numpy(
+        torch.sqrt(
+            scatter_mean(src=torch.square(forces), index=theory_batch, dim=0).mean(-1)
+        )
+    )
     rms = _check_non_zero(rms)
 
     return mean, rms
+
+
+def _compute_mean_rms_energy_forces(
+    batch: Batch,
+    atomic_energies_fn: AtomicEnergiesBlock,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    theory = batch.theory
+    node_e0 = atomic_energies_fn(batch.node_attrs)
+    graph_e0s = scatter_sum(
+        src=node_e0, index=batch.batch, dim=0, dim_size=batch.num_graphs
+    )[torch.arange(batch.num_graphs), theory]
+    graph_sizes = batch.ptr[1:] - batch.ptr[:-1]
+    atom_energies = (batch.energy - graph_e0s) / graph_sizes  # {[n_graphs], }
+    forces = batch.forces  # {[n_graphs*n_atoms,3], }
+
+    return atom_energies, forces
 
 
 def compute_avg_num_neighbors(data_loader: torch.utils.data.DataLoader) -> float:
@@ -252,6 +303,53 @@ def compute_avg_num_neighbors(data_loader: torch.utils.data.DataLoader) -> float
         torch.cat(num_neighbors, dim=0).type(torch.get_default_dtype())
     )
     return to_numpy(avg_num_neighbors).item()
+
+
+def compute_statistics(
+    data_loader: torch.utils.data.DataLoader,
+    atomic_energies: np.ndarray,
+) -> Tuple[float, float, float, float]:
+    atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
+
+    atom_energy_list = []
+    forces_list = []
+    num_neighbors = []
+    theory_list = []
+
+    for batch in data_loader:
+        theory = batch.theory
+        node_e0 = atomic_energies_fn(batch.node_attrs)
+        graph_e0s = scatter_sum(
+            src=node_e0, index=batch.batch, dim=0, dim_size=batch.num_graphs
+        )[torch.arange(batch.num_graphs), theory]
+        graph_sizes = batch.ptr[1:] - batch.ptr[:-1]
+        atom_energy_list.append(
+            (batch.energy - graph_e0s) / graph_sizes
+        )  # {[n_graphs], }
+        forces_list.append(batch.forces)  # {[n_graphs*n_atoms,3], }
+        theory_list.append(theory)  # {[n_graphs], }
+
+        _, receivers = batch.edge_index
+        _, counts = torch.unique(receivers, return_counts=True)
+        num_neighbors.append(counts)
+
+    atom_energies = torch.cat(atom_energy_list, dim=0)  # [total_n_graphs]
+    forces = torch.cat(forces_list, dim=0)  # {[total_n_graphs*n_atoms,3], }
+    theory = torch.cat(theory_list, dim=0)  # [total_n_graphs]
+
+    # mean = to_numpy(torch.mean(atom_energies)).item()
+    mean = to_numpy(scatter_mean(src=atom_energies, index=theory, dim=0).squeeze(-1))
+    # do the mean for each theory
+    # rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
+    rms = to_numpy(
+        torch.sqrt(scatter_mean(src=torch.square(forces), index=theory, dim=0))
+    )
+
+    avg_num_neighbors = torch.mean(
+        torch.cat(num_neighbors, dim=0).type(torch.get_default_dtype())
+    )
+
+    return to_numpy(avg_num_neighbors).item(), mean, rms
 
 
 def compute_rms_dipoles(

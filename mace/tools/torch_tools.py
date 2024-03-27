@@ -137,3 +137,24 @@ def init_wandb(project: str, entity: str, name: str, config: dict):
     import wandb
 
     wandb.init(project=project, entity=entity, name=name, config=config)
+
+
+class DataParallelModel(torch.nn.Module):
+    def __init__(self, model):
+        super(DataParallelModel, self).__init__()  # pylint: disable=R1725
+        self.model = torch.nn.DataParallel(model).cuda()
+
+    def forward(self, batch, training, compute_force, compute_virials, compute_stress):
+        return self.model(
+            batch,
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+        )
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.model.module, name)

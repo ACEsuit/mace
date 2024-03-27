@@ -61,7 +61,7 @@ def mace_mp(
             urls = dict(
                 small="http://tinyurl.com/46jrkm3v",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
                 medium="http://tinyurl.com/5yyxdm76",  # 2023-12-03-mace-128-L1_epoch-199.model
-                large="http://tinyurl.com/5f5yavf3",  # MACE_MPtrj_2022.9.model
+                large="http://tinyurl.com/43hjdekn",  # MACE_MPtrj_2022.9.model
             )
             checkpoint_url = (
                 urls.get(model, urls["medium"])
@@ -109,10 +109,10 @@ def mace_mp(
         gh_url = "https://github.com/pfnet-research/torch-dftd"
         try:
             from torch_dftd.torch_dftd3_calculator import TorchDFTD3Calculator
-        except ImportError:
+        except ImportError as exc:
             raise RuntimeError(
-                f"Please install torch-dftd to use dispersion corrections (see {gh_url})"
-            )
+                f"Please install torch-dftd to use dispersion corrections (see {gh_url} from {exc})"
+            ) from exc
         print(
             f"Using TorchDFTD3Calculator for D3 dispersion corrections (see {gh_url})"
         )

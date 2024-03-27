@@ -16,10 +16,17 @@ from mace.tools.scatter import scatter_sum
 
 from .irreps_tools import (
     linear_out_irreps,
+    mask_theory,
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
-from .radial import BesselBasis, GaussianBasis, PolynomialCutoff
+from .radial import (
+    AgnesiTransform,
+    BesselBasis,
+    GaussianBasis,
+    PolynomialCutoff,
+    SoftTransform,
+)
 from .symmetric_contraction import SymmetricContraction
 
 
@@ -38,30 +45,44 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
 
 @compile_mode("script")
 class LinearReadoutBlock(torch.nn.Module):
-    def __init__(self, irreps_in: o3.Irreps):
+    def __init__(self, irreps_in: o3.Irreps, irrep_out: o3.Irreps = o3.Irreps("0e")):
         super().__init__()
-        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=o3.Irreps("0e"))
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+    def forward(
+        self, x: torch.Tensor, theories: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         return self.linear(x)  # [n_nodes, 1]
 
 
 @compile_mode("script")
 class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
-        self, irreps_in: o3.Irreps, MLP_irreps: o3.Irreps, gate: Optional[Callable]
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Optional[Callable],
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        num_theories: int = 1,
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
+        self.num_theories = num_theories
         self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
         self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
-        self.linear_2 = o3.Linear(
-            irreps_in=self.hidden_irreps, irreps_out=o3.Irreps("0e")
-        )
+        self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=irrep_out)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+    def forward(
+        self, x: torch.Tensor, theories: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
-        return self.linear_2(x)  # [n_nodes, 1]
+        if (
+            hasattr(self, "num_theories")
+            and self.num_theories > 1
+            and theories is not None
+        ):
+            x = mask_theory(x, theories, self.num_theories)
+        return self.linear_2(x)  # [n_nodes, len(theories)]
 
 
 @compile_mode("script")
@@ -124,20 +145,25 @@ class AtomicEnergiesBlock(torch.nn.Module):
 
     def __init__(self, atomic_energies: Union[np.ndarray, torch.Tensor]):
         super().__init__()
-        assert len(atomic_energies.shape) == 1
+        # assert len(atomic_energies.shape) == 1
 
         self.register_buffer(
             "atomic_energies",
             torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
-        )  # [n_elements, ]
+        )  # [n_elements, n_theories]
 
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
-        return torch.matmul(x, self.atomic_energies)
+        return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
 
     def __repr__(self):
-        formatted_energies = ", ".join([f"{x:.4f}" for x in self.atomic_energies])
+        formatted_energies = ", ".join(
+            [
+                "[" + ", ".join([f"{x:.4f}" for x in group]) + "]"
+                for group in torch.atleast_2d(self.atomic_energies)
+            ]
+        )
         return f"{self.__class__.__name__}(energies=[{formatted_energies}])"
 
 
@@ -149,21 +175,33 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         radial_type: str = "bessel",
+        distance_transform: str = "None",
     ):
         super().__init__()
         if radial_type == "bessel":
             self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
         elif radial_type == "gaussian":
             self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
+        if distance_transform == "Agnesi":
+            self.distance_transform = AgnesiTransform()
+        elif distance_transform == "Soft":
+            self.distance_transform = SoftTransform()
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
         self.out_dim = num_bessel
 
     def forward(
         self,
         edge_lengths: torch.Tensor,  # [n_edges, 1]
+        node_attrs: torch.Tensor,
+        edge_index: torch.Tensor,
+        atomic_numbers: torch.Tensor,
     ):
-        radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
+        if hasattr(self, "distance_transform"):
+            edge_lengths = self.distance_transform(
+                edge_lengths, node_attrs, edge_index, atomic_numbers
+            )
+        radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         return radial * cutoff  # [n_edges, n_basis]
 
 
@@ -203,7 +241,6 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         node_feats = self.symmetric_contractions(node_feats, node_attrs)
         if self.use_sc and sc is not None:
             return self.linear(node_feats) + sc
-
         return self.linear(node_feats)
 
 
@@ -721,16 +758,29 @@ class ScaleShiftBlock(torch.nn.Module):
     def __init__(self, scale: float, shift: float):
         super().__init__()
         self.register_buffer(
-            "scale", torch.tensor(scale, dtype=torch.get_default_dtype())
+            "scale",
+            torch.atleast_1d(torch.tensor(scale, dtype=torch.get_default_dtype())),
         )
         self.register_buffer(
-            "shift", torch.tensor(shift, dtype=torch.get_default_dtype())
+            "shift",
+            torch.atleast_1d(torch.tensor(shift, dtype=torch.get_default_dtype())),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.scale * x + self.shift
+    def forward(self, x: torch.Tensor, theory: torch.Tensor) -> torch.Tensor:
+        return (
+            torch.atleast_1d(self.scale)[theory] * x
+            + torch.atleast_1d(self.shift)[theory]
+        )
 
     def __repr__(self):
-        return (
-            f"{self.__class__.__name__}(scale={self.scale:.6f}, shift={self.shift:.6f})"
+        formatted_scale = (
+            ", ".join([f"{x:.4f}" for x in self.scale])
+            if self.scale.numel() > 1
+            else f"{self.scale.item():.4f}"
         )
+        formatted_shift = (
+            ", ".join([f"{x:.4f}" for x in self.shift])
+            if self.shift.numel() > 1
+            else f"{self.shift.item():.4f}"
+        )
+        return f"{self.__class__.__name__}(scale={formatted_scale}, shift={formatted_shift})"
