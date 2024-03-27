@@ -13,6 +13,7 @@ from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
 
 from mace.tools.scatter import scatter_sum
+from mace.tools.compile import simplify_if_compile
 
 from .irreps_tools import (
     linear_out_irreps,
@@ -46,6 +47,7 @@ class LinearReadoutBlock(torch.nn.Module):
         return self.linear(x)  # [n_nodes, 1]
 
 
+@simplify_if_compile
 @compile_mode("script")
 class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
