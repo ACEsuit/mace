@@ -756,11 +756,15 @@ def main() -> None:
                 drop_last=True,
                 seed=args.seed,
             )
+        try:
+            drop_last = test_set.drop_last
+        except:
+            drop_last = False
         test_loader = torch_geometric.dataloader.DataLoader(
             test_set,
             batch_size=args.valid_batch_size,
             shuffle=(test_sampler is None),
-            drop_last=test_set.drop_last,
+            drop_last=drop_last,
             num_workers=args.num_workers,
             pin_memory=args.pin_memory,
         )
