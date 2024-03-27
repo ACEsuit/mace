@@ -8,21 +8,28 @@
 
 ## Table of contents
 
-- [About MACE](#about-mace)
-- [Documentation](#documentation)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Training](#training)
-  - [Evaluation](#evaluation)
-- [Tutorial](#tutorial)
-- [Weights and Biases](#weights-and-biases-for-experiment-tracking)
-- [Development](#development)
-- [Pretrained foundation models](#pretrained-foundation-models)
-  - [MACE-MP: Materials Project Force Fields](#mace-mp-materials-project-force-fields)
-  - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
-- [References](#references)
-- [Contact](#contact)
-- [License](#license)
+- [MACE](#mace)
+  - [Table of contents](#table-of-contents)
+  - [About MACE](#about-mace)
+  - [Documentation](#documentation)
+  - [Installation](#installation)
+    - [pip installation](#pip-installation)
+    - [conda installation](#conda-installation)
+    - [pip installation from source](#pip-installation-from-source)
+  - [Usage](#usage)
+    - [Training](#training)
+    - [Evaluation](#evaluation)
+  - [Tutorial](#tutorial)
+  - [Weights and Biases for experiment tracking](#weights-and-biases-for-experiment-tracking)
+  - [Pretrained Foundation Models](#pretrained-foundation-models)
+    - [MACE-MP: Materials Project Force Fields](#mace-mp-materials-project-force-fields)
+      - [Example usage in ASE](#example-usage-in-ase)
+    - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
+      - [Example usage in ASE](#example-usage-in-ase-1)
+  - [Development](#development)
+  - [References](#references)
+  - [Contact](#contact)
+  - [License](#license)
 
 ## About MACE
 
@@ -179,6 +186,9 @@ And specify the necessary keyword arguments (`--wandb`, `--wandb_project`, `--wa
 We have collaborated with the Materials Project (MP) to train a universal MACE potential covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories.
 The models are releaed on GitHub at https://github.com/ACEsuit/mace-mp.
 If you use them please cite [our paper](https://arxiv.org/abs/2401.00096) which also contains an large range of example applications and benchmarks.
+
+> [!CAUTION]
+> The MACE-MP models are trained on MPTrj raw DFT energies from VASP outputs, and are not directly comparable to the MP's DFT energies or CHGNet's energies, which have been applied MP2020Compatibility corrections for some transition metal oxides, fluorides (GGA/GGA+U mixing corrections), and 14 anions species (anion corrections). For more details, please refer to the [MP Documentation](https://docs.materialsproject.org/methodology/materials-methodology/thermodynamic-stability/thermodynamic-stability/anion-and-gga-gga+u-mixing) and [MP2020Compatibility.yaml](https://github.com/materialsproject/pymatgen/blob/master/pymatgen/entries/MP2020Compatibility.yaml).
 
 #### Example usage in ASE
 ```py
