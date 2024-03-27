@@ -209,8 +209,10 @@ def compute_mean_std_atomic_inter_energy(
     theory = torch.cat(theory_list, dim=0)  # [total_n_graphs]
     # mean = to_numpy(torch.mean(avg_atom_inter_es)).item()
     # std = to_numpy(torch.std(avg_atom_inter_es)).item()
-    mean = scatter_mean(src=avg_atom_inter_es, index=theory, dim=0).squeeze(-1)
-    std = scatter_std(src=avg_atom_inter_es, index=theory, dim=0).squeeze(-1)
+    mean = to_numpy(
+        scatter_mean(src=avg_atom_inter_es, index=theory, dim=0).squeeze(-1)
+    )
+    std = to_numpy(scatter_std(src=avg_atom_inter_es, index=theory, dim=0).squeeze(-1))
     std = _check_non_zero(std)
 
     return mean, std
@@ -262,7 +264,7 @@ def compute_mean_rms_energy_forces(
 
     # mean = to_numpy(torch.mean(atom_energies)).item()
     # rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
-    mean = scatter_mean(src=atom_energies, index=theory, dim=0).squeeze(-1)
+    mean = to_numpy(scatter_mean(src=atom_energies, index=theory, dim=0).squeeze(-1))
     rms = to_numpy(
         torch.sqrt(
             scatter_mean(src=torch.square(forces), index=theory_batch, dim=0).mean(-1)
@@ -336,12 +338,12 @@ def compute_statistics(
     theory = torch.cat(theory_list, dim=0)  # [total_n_graphs]
 
     # mean = to_numpy(torch.mean(atom_energies)).item()
-    mean = scatter_mean(src=atom_energies, index=theory, dim=0).squeeze(-1)
+    mean = to_numpy(scatter_mean(src=atom_energies, index=theory, dim=0).squeeze(-1))
     # do the mean for each theory
     # rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
     rms = to_numpy(
         torch.sqrt(scatter_mean(src=torch.square(forces), index=theory, dim=0))
-    ).item()
+    )
 
     avg_num_neighbors = torch.mean(
         torch.cat(num_neighbors, dim=0).type(torch.get_default_dtype())
