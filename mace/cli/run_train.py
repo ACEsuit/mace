@@ -690,6 +690,11 @@ def main() -> None:
 
         wandb_config = {}
         args_dict = vars(args)
+
+        for key, value in args_dict.items():
+            if isinstance(value, np.ndarray):
+                args_dict[key] = value.tolist()
+
         args_dict_json = json.dumps(args_dict)
         for key in args.wandb_log_hypers:
             wandb_config[key] = args_dict[key]

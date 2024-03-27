@@ -29,3 +29,4 @@ dist/
 .DS_Store
 *.model
 *.pt
+/wandb

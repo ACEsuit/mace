@@ -212,6 +212,7 @@ def train(
             )
             with param_context:
                 valid_loss = 0.0
+                wandb_log_dict = {}
                 for valid_loader_name, valid_loader in valid_loaders.items():
                     valid_loss_theory, eval_metrics = evaluate(
                         model=model_to_evaluate,
@@ -230,14 +231,15 @@ def train(
                         valid_loader_name,
                     )
                     if log_wandb:
-                        wandb_log_dict = {
-                            "theory": valid_loader_name,
+                        wandb_log_dict[valid_loader_name] = {
                             "epoch": epoch,
-                            "valid_loss": valid_loss,
+                            "valid_loss": valid_loss_theory,
                             "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
                             "valid_rmse_f": eval_metrics["rmse_f"],
                         }
-                        wandb.log(wandb_log_dict)
+
+            if log_wandb:
+                wandb.log(wandb_log_dict)
 
             if valid_loss >= lowest_loss:
                 patience_counter += 1
