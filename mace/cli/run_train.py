@@ -758,7 +758,7 @@ def main() -> None:
             )
         try:
             drop_last = test_set.drop_last
-        except:
+        except AttributeError as e:
             drop_last = False
         test_loader = torch_geometric.dataloader.DataLoader(
             test_set,
