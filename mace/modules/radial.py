@@ -61,7 +61,7 @@ class ChebychevBasis(torch.nn.Module):
     Equation (7)
     """
 
-    def __init__(self, r_max: float, num_basis=8, trainable=False):
+    def __init__(self, r_max: float, num_basis=8):
         super().__init__()
         self.register_buffer(
             "n",
