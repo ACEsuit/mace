@@ -143,8 +143,7 @@ def train(
     epoch = start_epoch
 
     # log validation loss before _any_ training
-    torch.save(model, r"D:\Work\mace_debug\model_before_training.pt")
-    valid_loss_theory, eval_metrics = evaluate(
+    valid_loss, eval_metrics = evaluate(
         model=model,
         loss_fn=loss_fn,
         data_loader=valid_loader,
@@ -201,7 +200,7 @@ def train(
                 ema.average_parameters() if ema is not None else nullcontext()
             )
             with param_context:
-                valid_loss_theory, eval_metrics = evaluate(
+                valid_loss, eval_metrics = evaluate(
                     model=model_to_evaluate,
                     loss_fn=loss_fn,
                     data_loader=valid_loader,
@@ -219,7 +218,7 @@ def train(
             if log_wandb:
                 wandb_log_dict = {
                     "epoch": epoch,
-                    "valid_loss": valid_loss_theory,
+                    "valid_loss": valid_loss,
                     "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
                     "valid_rmse_f": eval_metrics["rmse_f"],
                 }

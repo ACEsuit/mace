@@ -234,7 +234,7 @@ def main() -> None:
         batch_size=args.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
-        drop_last=False,
+        drop_last=True if train_sampler is None else False,
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
     )
