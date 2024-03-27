@@ -45,7 +45,9 @@ def main() -> None:
         try:
             import intel_extension_for_pytorch as ipex
         except ImportError:
-            raise ImportError("Error: Intel extension for PyTorch not found, but XPU device was specified")
+            raise ImportError(
+                "Error: Intel extension for PyTorch not found, but XPU device was specified"
+            )
     if args.distributed:
         try:
             distr_env = DistributedEnvironment()
@@ -437,7 +439,6 @@ def main() -> None:
         args.std = 1.0
         logging.info("No scaling selected")
     elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
-        print("args.model", args.model)
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
         )
@@ -602,7 +603,6 @@ def main() -> None:
         logging.info("Optimzing model and optimzier for XPU")
         model, optimizer = ipex.optimize(model, optimizer=optimizer)
     logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + "_train")
-
 
     lr_scheduler = LRScheduler(optimizer, args)
 
