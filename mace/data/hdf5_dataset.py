@@ -58,6 +58,7 @@ class HDF5Dataset(Dataset):
             dipole=unpack_value(subgrp["dipole"][()]),
             charges=unpack_value(subgrp["charges"][()]),
             weight=unpack_value(subgrp["weight"][()]),
+            theory=unpack_value(subgrp["theory"][()]),
             energy_weight=unpack_value(subgrp["energy_weight"][()]),
             forces_weight=unpack_value(subgrp["forces_weight"][()]),
             stress_weight=unpack_value(subgrp["stress_weight"][()]),
@@ -67,16 +68,21 @@ class HDF5Dataset(Dataset):
             cell=unpack_value(subgrp["cell"][()]),
         )
         atomic_data = AtomicData.from_config(
-            config, z_table=self.z_table, cutoff=self.r_max
+            config,
+            z_table=self.z_table,
+            cutoff=self.r_max,
+            theories=self.kwargs.get("theories", ["Default"]),
         )
         return atomic_data
 
 
-def dataset_from_sharded_hdf5(files: List, z_table: AtomicNumberTable, r_max: float):
+def dataset_from_sharded_hdf5(
+    files: List, z_table: AtomicNumberTable, r_max: float, **kwargs
+):
     files = glob(files + "/*")
     datasets = []
     for file in files:
-        datasets.append(HDF5Dataset(file, z_table=z_table, r_max=r_max))
+        datasets.append(HDF5Dataset(file, z_table=z_table, r_max=r_max, **kwargs))
     full_dataset = ConcatDataset(datasets)
     return full_dataset
 
