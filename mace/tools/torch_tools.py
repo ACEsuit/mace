@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import logging
+from contextlib import contextmanager
 from typing import Dict
 
 import numpy as np
@@ -133,3 +134,16 @@ def init_wandb(project: str, entity: str, name: str, config: dict):
     import wandb
 
     wandb.init(project=project, entity=entity, name=name, config=config)
+
+
+@contextmanager
+def default_dtype(dtype: torch.dtype):
+    """Context manager for configuring the default_dtype used by torch
+
+    Args:
+        dtype (torch.dtype): the default dtype to use within this context manager
+    """
+    init = torch.get_default_dtype()
+    torch.set_default_dtype(dtype)
+    yield
+    torch.set_default_dtype(init)
