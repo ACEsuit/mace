@@ -77,6 +77,77 @@ def weighted_mean_squared_error_dipole(ref: Batch, pred: TensorDict) -> torch.Te
     # return torch.mean(torch.square((torch.reshape(ref['dipole'], pred["dipole"].shape) - pred['dipole']) / num_atoms))  # []
 
 
+def conditional_mse_forces(ref: Batch, pred: TensorDict) -> torch.Tensor:
+    # forces: [n_atoms, 3]
+    configs_weight = torch.repeat_interleave(
+        ref.weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+    configs_forces_weight = torch.repeat_interleave(
+        ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+
+    # Define the multiplication factors for each condition
+    factors = torch.tensor([1.0, 0.7, 0.4, 0.1])
+
+    # Apply multiplication factors based on conditions
+    c1 = torch.norm(ref["forces"], dim=-1) < 100
+    c2 = (torch.norm(ref["forces"], dim=-1) >= 100) & (
+        torch.norm(ref["forces"], dim=-1) < 200
+    )
+    c3 = (torch.norm(ref["forces"], dim=-1) >= 200) & (
+        torch.norm(ref["forces"], dim=-1) < 300
+    )
+
+    err = ref["forces"] - pred["forces"]
+
+    se = torch.zeros_like(err)
+
+    se[c1] = torch.square(err[c1]) * factors[0]
+    se[c2] = torch.square(err[c2]) * factors[1]
+    se[c3] = torch.square(err[c3]) * factors[2]
+    se[~(c1 | c2 | c3)] = torch.square(err[~(c1 | c2 | c3)]) * factors[3]
+
+    return torch.mean(configs_weight * configs_forces_weight * se)
+
+
+def conditional_huber_forces(
+    ref: Batch, pred: TensorDict, huber_delta: float
+) -> torch.Tensor:
+    # Define the multiplication factors for each condition
+    factors = huber_delta * torch.tensor([1.0, 0.7, 0.4, 0.1])
+
+    # Apply multiplication factors based on conditions
+    c1 = torch.norm(ref["forces"], dim=-1) < 100
+    c2 = (torch.norm(ref["forces"], dim=-1) >= 100) & (
+        torch.norm(ref["forces"], dim=-1) < 200
+    )
+    c3 = (torch.norm(ref["forces"], dim=-1) >= 200) & (
+        torch.norm(ref["forces"], dim=-1) < 300
+    )
+    c4 = ~(c1 | c2 | c3)
+
+    se = torch.zeros_like(pred["forces"])
+
+    se[c1] = torch.nn.functional.huber_loss(
+        ref["forces"][c1], pred["forces"][c1], reduction="none", delta=factors[0]
+    )
+    se[c2] = torch.nn.functional.huber_loss(
+        ref["forces"][c2], pred["forces"][c2], reduction="none", delta=factors[1]
+    )
+    se[c3] = torch.nn.functional.huber_loss(
+        ref["forces"][c3], pred["forces"][c3], reduction="none", delta=factors[2]
+    )
+    se[c4] = torch.nn.functional.huber_loss(
+        ref["forces"][c4], pred["forces"][c4], reduction="none", delta=factors[3]
+    )
+
+    return torch.mean(se)
+
+
 class WeightedEnergyForcesLoss(torch.nn.Module):
     def __init__(self, energy_weight=1.0, forces_weight=1.0) -> None:
         super().__init__()
@@ -171,6 +242,43 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
             self.energy_weight
             * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
             + self.forces_weight * self.huber_loss(ref["forces"], pred["forces"])
+            + self.stress_weight * self.huber_loss(ref["stress"], pred["stress"])
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f})"
+        )
+
+
+class UniversalLoss(torch.nn.Module):
+    def __init__(
+        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01
+    ) -> None:
+        super().__init__()
+        self.huber_delta = huber_delta
+        self.huber_loss = torch.nn.HuberLoss(reduction="mean", delta=huber_delta)
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "stress_weight",
+            torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        num_atoms = ref.ptr[1:] - ref.ptr[:-1]
+        return (
+            self.energy_weight
+            * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
+            + self.forces_weight
+            * conditional_huber_forces(ref, pred, huber_delta=self.huber_delta)
             + self.stress_weight * self.huber_loss(ref["stress"], pred["stress"])
         )
 

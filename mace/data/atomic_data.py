@@ -52,6 +52,7 @@ class AtomicData(torch_geometric.data.Data):
         unit_shifts: torch.Tensor,  # [n_edges, 3]
         cell: Optional[torch.Tensor],  # [3,3]
         weight: Optional[torch.Tensor],  # [,]
+        theory: Optional[torch.Tensor],  # [,]
         energy_weight: Optional[torch.Tensor],  # [,]
         forces_weight: Optional[torch.Tensor],  # [,]
         stress_weight: Optional[torch.Tensor],  # [,]
@@ -72,6 +73,7 @@ class AtomicData(torch_geometric.data.Data):
         assert unit_shifts.shape[1] == 3
         assert len(node_attrs.shape) == 2
         assert weight is None or len(weight.shape) == 0
+        assert theory is None or len(theory.shape) == 0
         assert energy_weight is None or len(energy_weight.shape) == 0
         assert forces_weight is None or len(forces_weight.shape) == 0
         assert stress_weight is None or len(stress_weight.shape) == 0
@@ -93,6 +95,7 @@ class AtomicData(torch_geometric.data.Data):
             "cell": cell,
             "node_attrs": node_attrs,
             "weight": weight,
+            "theory": theory,
             "energy_weight": energy_weight,
             "forces_weight": forces_weight,
             "stress_weight": stress_weight,
@@ -108,7 +111,11 @@ class AtomicData(torch_geometric.data.Data):
 
     @classmethod
     def from_config(
-        cls, config: Configuration, z_table: AtomicNumberTable, cutoff: float
+        cls,
+        config: Configuration,
+        z_table: AtomicNumberTable,
+        cutoff: float,
+        theories: Optional[list] = ["Default"],
     ) -> "AtomicData":
         edge_index, shifts, unit_shifts = get_neighborhood(
             positions=config.positions, cutoff=cutoff, pbc=config.pbc, cell=config.cell
@@ -118,6 +125,11 @@ class AtomicData(torch_geometric.data.Data):
             torch.tensor(indices, dtype=torch.long).unsqueeze(-1),
             num_classes=len(z_table),
         )
+        try:
+            theory = torch.tensor(theories.index(config.theory), dtype=torch.long)
+        except:
+            print(f"Theory {config.theory} not found in {theories}")
+            theory = torch.tensor(0, dtype=torch.long)
 
         cell = (
             torch.tensor(config.cell, dtype=torch.get_default_dtype())
@@ -200,6 +212,7 @@ class AtomicData(torch_geometric.data.Data):
             cell=cell,
             node_attrs=one_hot,
             weight=weight,
+            theory=theory,
             energy_weight=energy_weight,
             forces_weight=forces_weight,
             stress_weight=stress_weight,

@@ -4,16 +4,19 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import ast
 import dataclasses
 import logging
+import os
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import torch
+import torch.distributed
 from prettytable import PrettyTable
 
-from mace import data
-from mace.data import AtomicData
-from mace.tools import AtomicNumberTable, evaluate, torch_geometric
+from mace import data, modules
+from mace.tools import evaluate
 
 
 @dataclasses.dataclass
@@ -38,7 +41,7 @@ def get_dataset_from_xyz(
     charges_key: str = "charges",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
-    atomic_energies_dict, all_train_configs = data.load_from_xyz(
+    atomic_energies_dict, all_train_configs, theories = data.load_from_xyz(
         file_path=train_path,
         config_type_weights=config_type_weights,
         energy_key=energy_key,
@@ -53,7 +56,7 @@ def get_dataset_from_xyz(
         f"Loaded {len(all_train_configs)} training configurations from '{train_path}'"
     )
     if valid_path is not None:
-        _, valid_configs = data.load_from_xyz(
+        _, valid_configs, _ = data.load_from_xyz(
             file_path=valid_path,
             config_type_weights=config_type_weights,
             energy_key=energy_key,
@@ -78,7 +81,7 @@ def get_dataset_from_xyz(
 
     test_configs = []
     if test_path is not None:
-        _, all_test_configs = data.load_from_xyz(
+        _, all_test_configs, _ = data.load_from_xyz(
             file_path=test_path,
             config_type_weights=config_type_weights,
             energy_key=energy_key,
@@ -95,7 +98,138 @@ def get_dataset_from_xyz(
     return (
         SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
         atomic_energies_dict,
+        theories,
     )
+
+
+def get_config_type_weights(ct_weights):
+    """
+    Get config type weights from command line argument
+    """
+    try:
+        config_type_weights = ast.literal_eval(ct_weights)
+        assert isinstance(config_type_weights, dict)
+    except Exception as e:  # pylint: disable=W0703
+        logging.warning(
+            f"Config type weights not specified correctly ({e}), using Default"
+        )
+        config_type_weights = {"Default": 1.0}
+    return config_type_weights
+
+
+def get_atomic_energies(E0s, train_collection, z_table, theories) -> dict:
+    if E0s is not None:
+        logging.info(
+            "Atomic Energies not in training file, using command line argument E0s"
+        )
+        if E0s.lower() == "average":
+            logging.info(
+                "Computing average Atomic Energies using least squares regression"
+            )
+            # catch if colections.train not defined above
+            try:
+                assert train_collection is not None
+                atomic_energies_dict = data.compute_average_E0s(
+                    train_collection, z_table, theories
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    f"Could not compute average E0s if no training xyz given, error {e} occured"
+                ) from e
+        else:
+            try:
+                atomic_energies_dict = ast.literal_eval(E0s)
+                assert isinstance(atomic_energies_dict, dict)
+            except Exception as e:
+                raise RuntimeError(f"E0s specified invalidly, error {e} occured") from e
+    else:
+        raise RuntimeError(
+            "E0s not found in training file and not specified in command line"
+        )
+    return atomic_energies_dict
+
+
+def get_loss_fn(
+    loss: str,
+    energy_weight: float,
+    forces_weight: float,
+    stress_weight: float,
+    virials_weight: float,
+    dipole_weight: float,
+    dipole_only: bool,
+    compute_dipole: bool,
+) -> torch.nn.Module:
+    if loss == "weighted":
+        loss_fn = modules.WeightedEnergyForcesLoss(
+            energy_weight=energy_weight, forces_weight=forces_weight
+        )
+    elif loss == "forces_only":
+        loss_fn = modules.WeightedForcesLoss(forces_weight=forces_weight)
+    elif loss == "virials":
+        loss_fn = modules.WeightedEnergyForcesVirialsLoss(
+            energy_weight=energy_weight,
+            forces_weight=forces_weight,
+            virials_weight=virials_weight,
+        )
+    elif loss == "stress":
+        loss_fn = modules.WeightedEnergyForcesStressLoss(
+            energy_weight=energy_weight,
+            forces_weight=forces_weight,
+            stress_weight=stress_weight,
+        )
+    elif loss == "dipole":
+        assert (
+            dipole_only is True
+        ), "dipole loss can only be used with AtomicDipolesMACE model"
+        loss_fn = modules.DipoleSingleLoss(
+            dipole_weight=dipole_weight,
+        )
+    elif loss == "energy_forces_dipole":
+        assert dipole_only is False and compute_dipole is True
+        loss_fn = modules.WeightedEnergyForcesDipoleLoss(
+            energy_weight=energy_weight,
+            forces_weight=forces_weight,
+            dipole_weight=dipole_weight,
+        )
+    else:
+        loss_fn = modules.EnergyForcesLoss(
+            energy_weight=energy_weight, forces_weight=forces_weight
+        )
+    return loss_fn
+
+
+def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
+    return [
+        os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(suffix)
+    ]
+
+
+def custom_key(key):
+    """
+    Helper function to sort the keys of the data loader dictionary
+    to ensure that the training set, and validation set
+    are evaluated first
+    """
+    if key == "train":
+        return (0, key)
+    if key == "valid":
+        return (1, key)
+    return (2, key)
+
+
+def dict_to_array(data):
+    if not all(isinstance(value, dict) for value in data.values()):
+        return np.array(list(data.values()))
+    unique_keys = set()
+    for inner_dict in data.values():
+        unique_keys.update(inner_dict.keys())
+    sorted_keys = sorted(unique_keys)
+    result_array = np.zeros((len(data), len(sorted_keys)))
+    for default_index, (_, inner_dict) in enumerate(data.items()):
+        for key, value in inner_dict.items():
+            key_index = sorted_keys.index(key)
+            result_array[default_index][key_index] = value
+    return np.squeeze(result_array)
 
 
 class LRScheduler:
@@ -118,7 +252,9 @@ class LRScheduler:
         if self.scheduler == "ExponentialLR":
             self.lr_scheduler.step(epoch=epoch)
         elif self.scheduler == "ReduceLROnPlateau":
-            self.lr_scheduler.step(metrics=metrics, epoch=epoch)
+            self.lr_scheduler.step(
+                metrics=metrics, epoch=epoch
+            )  # pylint: disable=E1123
 
     def __getattr__(self, name):
         if name == "step":
@@ -128,15 +264,13 @@ class LRScheduler:
 
 def create_error_table(
     table_type: str,
-    all_collections: list,
-    z_table: AtomicNumberTable,
-    r_max: float,
-    valid_batch_size: int,
+    all_data_loaders: dict,
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     output_args: Dict[str, bool],
     log_wandb: bool,
     device: str,
+    distributed: bool = False,
 ) -> PrettyTable:
     if log_wandb:
         import wandb
@@ -198,17 +332,9 @@ def create_error_table(
             "RMSE MU / mDebye / atom",
             "rel MU RMSE %",
         ]
-    for name, subset in all_collections:
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                AtomicData.from_config(config, z_table=z_table, cutoff=r_max)
-                for config in subset
-            ],
-            batch_size=valid_batch_size,
-            shuffle=False,
-            drop_last=False,
-        )
 
+    for name in sorted(all_data_loaders, key=custom_key):
+        data_loader = all_data_loaders[name]
         logging.info(f"Evaluating {name} ...")
         _, metrics = evaluate(
             model,
@@ -217,6 +343,11 @@ def create_error_table(
             output_args=output_args,
             device=device,
         )
+        if distributed:
+            torch.distributed.barrier()
+
+        del data_loader
+        torch.cuda.empty_cache()
         if log_wandb:
             wandb_log_dict = {
                 name

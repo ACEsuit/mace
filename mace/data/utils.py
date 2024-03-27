@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import ase.data
 import ase.io
+import h5py
 import numpy as np
 
 from mace.tools import AtomicNumberTable
@@ -46,6 +47,7 @@ class Configuration:
     stress_weight: float = 1.0  # weight of config stress in loss
     virials_weight: float = 1.0  # weight of config virial in loss
     config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
+    theory: Optional[str] = "Default"  # theory used to compute the config
 
 
 Configurations = List[Configuration]
@@ -77,6 +79,7 @@ def config_from_atoms_list(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    theory_key="theory",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -94,6 +97,7 @@ def config_from_atoms_list(
                 virials_key=virials_key,
                 dipole_key=dipole_key,
                 charges_key=charges_key,
+                theory_key=theory_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -108,6 +112,7 @@ def config_from_atoms(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    theory_key="theory",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -135,6 +140,8 @@ def config_from_atoms(
     stress_weight = atoms.info.get("config_stress_weight", 1.0)
     virials_weight = atoms.info.get("config_virials_weight", 1.0)
 
+    theory = atoms.info.get(theory_key, "Default")
+
     # fill in missing quantities but set their weight to 0.0
     if energy is None:
         energy = 0.0
@@ -148,6 +155,9 @@ def config_from_atoms(
     if virials is None:
         virials = np.zeros((3, 3))
         virials_weight = 0.0
+    if dipole is None:
+        dipole = np.zeros(3)
+        # dipoles_weight = 0.0
 
     return Configuration(
         atomic_numbers=atomic_numbers,
@@ -159,6 +169,7 @@ def config_from_atoms(
         dipole=dipole,
         charges=charges,
         weight=weight,
+        theory=theory,
         energy_weight=energy_weight,
         forces_weight=forces_weight,
         stress_weight=stress_weight,
@@ -194,7 +205,9 @@ def load_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipole",
     charges_key: str = "charges",
+    theory_key: str = "theory",
     extract_atomic_energies: bool = False,
+    keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
 
@@ -210,22 +223,34 @@ def load_from_xyz(
                 isolated_atom_config = atoms.info.get("config_type") == "IsolatedAtom"
                 if isolated_atom_config:
                     if energy_key in atoms.info.keys():
-                        atomic_energies_dict[
-                            atoms.get_atomic_numbers()[0]
-                        ] = atoms.info[energy_key]
+                        theory = atoms.info.get(theory_key, "Default")
+                        if theory not in atomic_energies_dict:
+                            atomic_energies_dict[theory] = {}
+                        atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
+                            atoms.info[energy_key]
+                        )
                     else:
                         logging.warning(
                             f"Configuration '{idx}' is marked as 'IsolatedAtom' "
-                            "but does not contain an energy."
+                            "but does not contain an energy. Zero energy will be used."
+                        )
+                        theory = atoms.info.get(theory_key, "Default")
+                        if theory not in atomic_energies_dict:
+                            atomic_energies_dict[theory] = {}
+                        atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
+                            np.zeros(1)
                         )
             else:
                 atoms_without_iso_atoms.append(atoms)
 
         if len(atomic_energies_dict) > 0:
             logging.info("Using isolated atom energies from training file")
-
-        atoms_list = atoms_without_iso_atoms
-
+        if not keep_isolated_atoms:
+            atoms_list = atoms_without_iso_atoms
+    theories = set()
+    for atoms in atoms_list:
+        theories.add(atoms.info.get(theory_key, "Default"))
+    theories = list(theories)
     configs = config_from_atoms_list(
         atoms_list,
         config_type_weights=config_type_weights,
@@ -235,12 +260,13 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        theory_key=theory_key,
     )
-    return atomic_energies_dict, configs
+    return atomic_energies_dict, configs, theories
 
 
 def compute_average_E0s(
-    collections_train: Configurations, z_table: AtomicNumberTable
+    collections_train: Configurations, z_table: AtomicNumberTable, theories: List[str]
 ) -> Dict[int, float]:
     """
     Function to compute the average interaction energy of each chemical element
@@ -248,22 +274,99 @@ def compute_average_E0s(
     """
     len_train = len(collections_train)
     len_zs = len(z_table)
-    A = np.zeros((len_train, len_zs))
-    B = np.zeros(len_train)
-    for i in range(len_train):
-        B[i] = collections_train[i].energy
-        for j, z in enumerate(z_table.zs):
-            A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
-    try:
-        E0s = np.linalg.lstsq(A, B, rcond=None)[0]
-        atomic_energies_dict = {}
-        for i, z in enumerate(z_table.zs):
-            atomic_energies_dict[z] = E0s[i]
-    except np.linalg.LinAlgError:
-        logging.warning(
-            "Failed to compute E0s using least squares regression, using the same for all atoms"
-        )
-        atomic_energies_dict = {}
-        for i, z in enumerate(z_table.zs):
-            atomic_energies_dict[z] = 0.0
+    atomic_energies_dict = {}
+    for theory in theories:
+        A = np.zeros((len_train, len_zs))
+        B = np.zeros(len_train)
+        if theory not in atomic_energies_dict:
+            atomic_energies_dict[theory] = {}
+        for i in range(len_train):
+            if collections_train[i].theory != theory:
+                continue
+            B[i] = collections_train[i].energy
+            for j, z in enumerate(z_table.zs):
+                A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
+        try:
+            E0s = np.linalg.lstsq(A, B, rcond=None)[0]
+            for i, z in enumerate(z_table.zs):
+                atomic_energies_dict[theory][z] = E0s[i]
+        except np.linalg.LinAlgError:
+            logging.warning(
+                "Failed to compute E0s using least squares regression, using the same for all atoms"
+            )
+            for i, z in enumerate(z_table.zs):
+                atomic_energies_dict[theory][z] = 0.0
     return atomic_energies_dict
+
+
+def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
+    with h5py.File(out_name, "w") as f:
+        for i, data in enumerate(dataset):
+            grp = f.create_group(f"config_{i}")
+            grp["num_nodes"] = data.num_nodes
+            grp["edge_index"] = data.edge_index
+            grp["positions"] = data.positions
+            grp["shifts"] = data.shifts
+            grp["unit_shifts"] = data.unit_shifts
+            grp["cell"] = data.cell
+            grp["node_attrs"] = data.node_attrs
+            grp["weight"] = data.weight
+            grp["energy_weight"] = data.energy_weight
+            grp["forces_weight"] = data.forces_weight
+            grp["stress_weight"] = data.stress_weight
+            grp["virials_weight"] = data.virials_weight
+            grp["forces"] = data.forces
+            grp["energy"] = data.energy
+            grp["stress"] = data.stress
+            grp["virials"] = data.virials
+            grp["dipole"] = data.dipole
+            grp["charges"] = data.charges
+
+
+def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
+    grp = h5_file.create_group(f"config_{i}")
+    grp["num_nodes"] = data.num_nodes
+    grp["edge_index"] = data.edge_index
+    grp["positions"] = data.positions
+    grp["shifts"] = data.shifts
+    grp["unit_shifts"] = data.unit_shifts
+    grp["cell"] = data.cell
+    grp["node_attrs"] = data.node_attrs
+    grp["weight"] = data.weight
+    grp["energy_weight"] = data.energy_weight
+    grp["forces_weight"] = data.forces_weight
+    grp["stress_weight"] = data.stress_weight
+    grp["virials_weight"] = data.virials_weight
+    grp["forces"] = data.forces
+    grp["energy"] = data.energy
+    grp["stress"] = data.stress
+    grp["virials"] = data.virials
+    grp["dipole"] = data.dipole
+    grp["charges"] = data.charges
+
+
+def save_configurations_as_HDF5(configurations: Configurations, i, h5_file) -> None:
+    grp = h5_file.create_group("config_batch_0")
+    for j, config in enumerate(configurations):
+        subgroup_name = f"config_{j}"
+        subgroup = grp.create_group(subgroup_name)
+        subgroup["atomic_numbers"] = write_value(config.atomic_numbers)
+        subgroup["positions"] = write_value(config.positions)
+        subgroup["energy"] = write_value(config.energy)
+        subgroup["forces"] = write_value(config.forces)
+        subgroup["stress"] = write_value(config.stress)
+        subgroup["virials"] = write_value(config.virials)
+        subgroup["dipole"] = write_value(config.dipole)
+        subgroup["charges"] = write_value(config.charges)
+        subgroup["cell"] = write_value(config.cell)
+        subgroup["pbc"] = write_value(config.pbc)
+        subgroup["weight"] = write_value(config.weight)
+        subgroup["energy_weight"] = write_value(config.energy_weight)
+        subgroup["forces_weight"] = write_value(config.forces_weight)
+        subgroup["stress_weight"] = write_value(config.stress_weight)
+        subgroup["virials_weight"] = write_value(config.virials_weight)
+        subgroup["config_type"] = write_value(config.config_type)
+
+
+def write_value(value):
+    return value if value is not None else "None"
