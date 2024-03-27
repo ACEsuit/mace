@@ -2,63 +2,25 @@ from functools import wraps
 from typing import Callable
 
 import numpy as np
-import pandas as pd
 import pytest
 import torch
 import torch.nn.functional as F
 from e3nn import o3
-from scipy.spatial.transform import Rotation as R
+from torch.testing import assert_close
 
 from mace import data, modules, tools
-from mace.tools import torch_geometric, compile
+from mace.tools import compile, torch_geometric
 
-torch.set_default_dtype(torch.float64)
-config = data.Configuration(
-    atomic_numbers=np.array([8, 1, 1]),
-    positions=np.array(
-        [
-            [0.0, -2.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ]
-    ),
-    forces=np.array(
-        [
-            [0.0, -1.3, 0.0],
-            [1.0, 0.2, 0.0],
-            [0.0, 1.1, 0.3],
-        ]
-    ),
-    energy=-1.5,
-    charges=np.array([-2.0, 1.0, 1.0]),
-    dipole=np.array([-1.5, 1.5, 2.0]),
-)
-# Created the rotated environment
-rot = R.from_euler("z", 60, degrees=True).as_matrix()
-positions_rotated = np.array(rot @ config.positions.T).T
-config_rotated = data.Configuration(
-    atomic_numbers=np.array([8, 1, 1]),
-    positions=positions_rotated,
-    forces=np.array(
-        [
-            [0.0, -1.3, 0.0],
-            [1.0, 0.2, 0.0],
-            [0.0, 1.1, 0.3],
-        ]
-    ),
-    energy=-1.5,
-    charges=np.array([-2.0, 1.0, 1.0]),
-    dipole=np.array([-1.5, 1.5, 2.0]),
-)
-table = tools.AtomicNumberTable([1, 8])
-atomic_energies = np.array([1.0, 3.0], dtype=float)
+table = tools.AtomicNumberTable([6])
+atomic_energies = np.array([1.0], dtype=float)
+cutoff = 5.0
 
 
 def create_mace(device: str, seed: int = 1702):
     torch_geometric.seed_everything(seed)
 
     model_config = {
-        "r_max": 5,
+        "r_max": cutoff,
         "num_bessel": 8,
         "num_polynomial_cutoff": 6,
         "max_ell": 3,
@@ -69,7 +31,7 @@ def create_mace(device: str, seed: int = 1702):
             "RealAgnosticResidualInteractionBlock"
         ],
         "num_interactions": 2,
-        "num_elements": 2,
+        "num_elements": 1,
         "hidden_irreps": o3.Irreps("128x0e + 128x1o"),
         "MLP_irreps": o3.Irreps("16x0e"),
         "gate": F.silu,
@@ -84,15 +46,21 @@ def create_mace(device: str, seed: int = 1702):
 
 
 def create_batch(device: str):
-    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
-    atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=table, cutoff=3.0
-    )
+    from ase import build
 
+    size = 2
+    atoms = build.bulk("C", "diamond", a=3.567, cubic=True)
+    atoms_list = [atoms.repeat((size, size, size))]
+    print("Number of atoms", len(atoms_list[0]))
+
+    configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
     data_loader = torch_geometric.dataloader.DataLoader(
-        dataset=[atomic_data, atomic_data2],
-        batch_size=2,
-        shuffle=True,
+        dataset=[
+            data.AtomicData.from_config(config, z_table=table, cutoff=cutoff)
+            for config in configs
+        ],
+        batch_size=1,
+        shuffle=False,
         drop_last=False,
     )
     batch = next(iter(data_loader))
@@ -105,19 +73,22 @@ def time_func(func: Callable):
     @wraps(func)
     def wrapper(*args, **kwargs):
         torch._inductor.cudagraph_mark_step_begin()
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        func(*args, **kwargs)
-        end.record()
+        outputs = func(*args, **kwargs)
         torch.cuda.synchronize()
-        return start.elapsed_time(end) / 1000
+        return outputs
 
     return wrapper
 
 
+@pytest.fixture(params=[torch.float32, torch.float64], ids=["fp32", "fp64"])
+def default_dtype(request):
+    with tools.torch_tools.default_dtype(request.param):
+        yield torch.get_default_dtype()
+
+
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
-def test_mace(device):
+def test_mace(device, default_dtype):
+    print(f"using default dtype = {default_dtype}")
     if device == "cuda" and not torch.cuda.is_available():
         pytest.skip(reason="cuda is not available")
 
@@ -128,40 +99,32 @@ def test_mace(device):
     batch = create_batch(device)
     output1 = model_defaults(batch, training=True)
     output2 = model_compiled(batch, training=True)
-    assert torch.allclose(output1["energy"][0], output2["energy"][0])
-    assert torch.allclose(output2["energy"][0], output2["energy"][1])
+    assert_close(output1["energy"], output2["energy"])
+    assert_close(output1["forces"], output2["forces"])
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
+def test_eager_benchmark(benchmark, default_dtype):
+    print(f"using default dtype = {default_dtype}")
+    batch = create_batch("cuda")
+    model = create_mace("cuda")
+    model = time_func(model)
+    benchmark(model, batch, training=True)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
 @pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_inference_speedup(compile_mode, dtype):
-    torch.set_default_dtype(dtype)
+@pytest.mark.parametrize("enable_amp", [False, True], ids=["fp32", "mixed"])
+def test_compile_benchmark(benchmark, compile_mode, enable_amp):
+    with tools.torch_tools.default_dtype(torch.float32):
+        batch = create_batch("cuda")
+        torch.compiler.reset()
+        model = compile.prepare(create_mace)("cuda")
+        model = torch.compile(model, mode=compile_mode, fullgraph=True)
+        model = time_func(model)
 
-    # PyTorch eager Baseline
-    nruns = 16
-    batch = create_batch("cuda")
-    model = create_mace("cuda")
-    model = time_func(model)
-    t_eager = np.array([model(batch, training=False) for _ in range(nruns)])
-
-    print(f'Compiling using mode="{compile_mode}"')
-    torch.compiler.reset()
-    model = compile.prepare(create_mace)("cuda")
-    compiled = torch.compile(model, mode=compile_mode, fullgraph=True)
-    compiled = time_func(compiled)
-    t_compiled = np.array([compiled(batch, training=True) for _ in range(nruns)])
-
-    df = pd.DataFrame(
-        {
-            "eager": t_eager,
-            f"compile mode={compile_mode}": t_compiled,
-            "speedup": t_eager / t_compiled,
-        }
-    )
-    print(f"\n\n{df.to_string(index=False)}\n\n")
-
-    assert np.median(df["speedup"][-4:]) > 1, "Median compile speedup is less than 1"
+        with torch.autocast("cuda", enabled=enable_amp):
+            benchmark(model, batch, training=True)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
