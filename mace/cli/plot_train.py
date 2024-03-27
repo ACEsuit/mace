@@ -178,7 +178,7 @@ def main():
         for results in parse_training_results(path)
     )
 
-    for name, group in data.groupby(["name"]):
+    for name, group in data.groupby("name"):
         plot(group, min_epoch=args.min_epoch, output_path=f"{name}.pdf")
 
 
