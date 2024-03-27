@@ -193,21 +193,29 @@ def main() -> None:
             )
             for config in collections.train
         ]
-        valid_set = [
-            data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=args.r_max, theories=theories
-            )
-            for config in collections.valid
-        ]
+        valid_sets = {theory: [] for theory in theories}
+        for theory in theories:
+            valid_sets[theory] = [
+                data.AtomicData.from_config(
+                    config, z_table=z_table, cutoff=args.r_max, theories=theories
+                )
+                for config in collections.valid
+                if config.theory == theory
+            ]
+
     elif args.train_file.endswith(".h5"):
-        train_set = data.HDF5Dataset(args.train_file, r_max=args.r_max, z_table=z_table)
-        valid_set = data.HDF5Dataset(args.valid_file, r_max=args.r_max, z_table=z_table)
+        train_set = data.HDF5Dataset(
+            args.train_file, r_max=args.r_max, z_table=z_table, theories=theories
+        )
+        valid_set = data.HDF5Dataset(
+            args.valid_file, r_max=args.r_max, z_table=z_table, theories=theories
+        )
     else:  # This case would be for when the file path is to a directory of multiple .h5 files
         train_set = data.dataset_from_sharded_hdf5(
-            args.train_file, r_max=args.r_max, z_table=z_table
+            args.train_file, r_max=args.r_max, z_table=z_table, theories=theories
         )
         valid_set = data.dataset_from_sharded_hdf5(
-            args.valid_file, r_max=args.r_max, z_table=z_table
+            args.valid_file, r_max=args.r_max, z_table=z_table, theories=theories
         )
 
     train_sampler, valid_sampler = None, None
@@ -238,15 +246,28 @@ def main() -> None:
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
     )
-    valid_loader = torch_geometric.dataloader.DataLoader(
-        dataset=valid_set,
-        batch_size=args.valid_batch_size,
-        sampler=valid_sampler,
-        shuffle=(valid_sampler is None),
-        drop_last=False,
-        pin_memory=args.pin_memory,
-        num_workers=args.num_workers,
-    )
+    valid_loaders = {theories[i]: None for i in range(len(theories))}
+    if not isinstance(valid_sets, dict):
+        valid_sets = {"Default": valid_sets}
+    for theory, valid_set in valid_sets.items():
+        valid_loaders[theory] = torch_geometric.dataloader.DataLoader(
+            dataset=valid_set,
+            batch_size=args.valid_batch_size,
+            sampler=valid_sampler,
+            shuffle=(valid_sampler is None),
+            drop_last=False,
+            pin_memory=args.pin_memory,
+            num_workers=args.num_workers,
+        )
+    # valid_loader = torch_geometric.dataloader.DataLoader(
+    #     dataset=valid_set,
+    #     batch_size=args.valid_batch_size,
+    #     sampler=valid_sampler,
+    #     shuffle=(valid_sampler is None),
+    #     drop_last=False,
+    #     pin_memory=args.pin_memory,
+    #     num_workers=args.num_workers,
+    # )
 
     # loss_fn: torch.nn.Module = get_loss_fn(
     #     args.loss,
@@ -689,7 +710,7 @@ def main() -> None:
         model=model,
         loss_fn=loss_fn,
         train_loader=train_loader,
-        valid_loader=valid_loader,
+        valid_loaders=valid_loaders,
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         checkpoint_handler=checkpoint_handler,
@@ -715,8 +736,9 @@ def main() -> None:
 
     all_data_loaders = {
         "train": train_loader,
-        "valid": valid_loader,
     }
+    for theory, valid_loader in valid_loaders.items():
+        all_data_loaders[theory] = valid_loader
 
     test_sets = {}
     if args.train_file.endswith(".xyz"):
@@ -732,14 +754,14 @@ def main() -> None:
         for test_file in test_files:
             name = os.path.splitext(os.path.basename(test_file))[0]
             test_sets[name] = data.HDF5Dataset(
-                test_file, r_max=args.r_max, z_table=z_table
+                test_file, r_max=args.r_max, z_table=z_table, theories=theories
             )
     else:
         test_folders = glob(args.test_dir + "/*")
         for folder in test_folders:
             name = os.path.splitext(os.path.basename(test_file))[0]
             test_sets[name] = data.dataset_from_sharded_hdf5(
-                folder, r_max=args.r_max, z_table=z_table
+                folder, r_max=args.r_max, z_table=z_table, theories=theories
             )
 
     for test_name, test_set in test_sets.items():
