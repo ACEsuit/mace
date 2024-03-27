@@ -4,13 +4,18 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-import argparse
+import configargparse
 import ast
 from typing import List, Optional, Union
 
 
-def build_default_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
+def build_default_arg_parser() -> configargparse.ArgumentParser:
+    parser = configargparse.ArgumentParser(
+            config_file_parser_class=configargparse.YAMLConfigFileParser,
+            )
+
+    # config file
+    parser.add("--config", type=str, is_config_file=True, help='config file to agregate options')
 
     # Name and seed
     parser.add_argument("--name", help="experiment name", required=True)
@@ -494,6 +499,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "forces_weight",
         ],
     )
+
     return parser
 
 
