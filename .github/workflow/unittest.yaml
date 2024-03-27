@@ -1,0 +1,29 @@
+name: unit tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest-container:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install requirements
+        run: |
+          pip install -U pip
+          pip install .[dev]
+
+      - name: Log installed environment
+        run: |
+          python3 -m pip freeze
+
+      - name: Run unit tests
+        run: |
+          pytest tests
