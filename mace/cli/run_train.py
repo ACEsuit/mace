@@ -40,6 +40,12 @@ from mace.tools.utils import load_foundations
 def main() -> None:
     args = tools.build_default_arg_parser().parse_args()
     tag = tools.get_tag(name=args.name, seed=args.seed)
+
+    if args.device == "xpu":
+        try:
+            import intel_extension_for_pytorch as ipex
+        except ImportError:
+            raise ImportError("Error: Intel extension for PyTorch not found, but XPU device was specified")
     if args.distributed:
         try:
             distr_env = DistributedEnvironment()
@@ -592,8 +598,11 @@ def main() -> None:
         optimizer = torch.optim.AdamW(**param_options)
     else:
         optimizer = torch.optim.Adam(**param_options)
-
+    if args.device == "xpu":
+        logging.info("Optimzing model and optimzier for XPU")
+        model, optimizer = ipex.optimize(model, optimizer=optimizer)
     logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + "_train")
+
 
     lr_scheduler = LRScheduler(optimizer, args)
 
