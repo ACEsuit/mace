@@ -43,7 +43,7 @@ def main() -> None:
         try:
             distr_env = DistributedEnvironment()
         except Exception as e:  # pylint: disable=W0703
-            logging.info(f"Error specifying environment for distributed training: {e}")
+            logging.error(f"Failed to initialize distributed environment: {e}")
             return
         world_size = distr_env.world_size
         local_rank = distr_env.local_rank
@@ -410,7 +410,6 @@ def main() -> None:
         args.std = 1.0
         logging.info("No scaling selected")
     elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
-        print("args.model", args.model)
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
         )
@@ -522,7 +521,6 @@ def main() -> None:
             max_L=args.max_L,
         )
     model.to(device)
-    print(model)
 
     # Optimizer
     decay_interactions = {}
@@ -584,6 +582,13 @@ def main() -> None:
             args.start_swa = (
                 args.max_num_epochs // 4 * 3
             )  # if not set start swa at 75% of training
+        else:
+            if args.start_swa > args.max_num_epochs:
+                logging.info(
+                    f"Start swa must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+                )
+                args.start_swa = args.max_num_epochs // 4 * 3
+                logging.info(f"Setting start swa to {args.start_swa}")
         if args.loss == "forces_only":
             logging.info("Can not select swa with forces only loss.")
         elif args.loss == "virials":
@@ -697,6 +702,7 @@ def main() -> None:
         max_num_epochs=args.max_num_epochs,
         logger=logger,
         patience=args.patience,
+        save_all_checkpoints=args.save_all_checkpoints,
         output_args=output_args,
         device=device,
         swa=swa,

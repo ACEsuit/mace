@@ -518,6 +518,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--save_all_checkpoints",
+        help="save all checkpoints",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--restart_latest",
         help="restart optimizer from latest checkpoint",
         action="store_true",
