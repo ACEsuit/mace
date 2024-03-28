@@ -149,9 +149,15 @@ The keywords `--batch_size` and `--max_num_epochs` should be adapted based on th
 
 The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules. In this example, to make the code ignore stress on molecules, append to your molecules configuration a `config_stress_weight = 0.0`.
 
+#### Apple Silicon GPU acceleration
+
 To use Apple Silicon GPU acceleration make sure to install the latest PyTorch version and specify `--device=mps`.
 
+#### Multi-GPU training
+
 For multi-GPU training, use the `--distributed` flag. This will use PyTorch's DistributedDataParallel module to train the model on multiple GPUs. Combine with on-line data loading for large datasets (see below). An example slurm script can be found in `mace/scripts/distributed_example.sbatch`.
+
+#### YAML configuration
 
 Option to parse all or some arguments using a YAML is available. For example, to train a model using the arguments above, you can create a YAML file `your_configs.yaml` with the following content:
 
