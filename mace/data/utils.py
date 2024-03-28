@@ -199,6 +199,7 @@ def load_from_xyz(
     dipole_key: str = "dipole",
     charges_key: str = "charges",
     extract_atomic_energies: bool = False,
+    keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
 
@@ -214,9 +215,9 @@ def load_from_xyz(
                 isolated_atom_config = atoms.info.get("config_type") == "IsolatedAtom"
                 if isolated_atom_config:
                     if energy_key in atoms.info.keys():
-                        atomic_energies_dict[
-                            atoms.get_atomic_numbers()[0]
-                        ] = atoms.info[energy_key]
+                        atomic_energies_dict[atoms.get_atomic_numbers()[0]] = (
+                            atoms.info[energy_key]
+                        )
                     else:
                         logging.warning(
                             f"Configuration '{idx}' is marked as 'IsolatedAtom' "
@@ -230,8 +231,8 @@ def load_from_xyz(
 
         if len(atomic_energies_dict) > 0:
             logging.info("Using isolated atom energies from training file")
-
-        atoms_list = atoms_without_iso_atoms
+        if not keep_isolated_atoms:
+            atoms_list = atoms_without_iso_atoms
 
     configs = config_from_atoms_list(
         atoms_list,
