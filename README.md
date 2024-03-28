@@ -151,6 +151,29 @@ The code can handle training set with heterogeneous labels, for example containi
 
 To use Apple Silicon GPU acceleration make sure to install the latest PyTorch version and specify `--device=mps`.
 
+For multi-GPU training, use the `--distributed` flag. This will use PyTorch's DistributedDataParallel module to train the model on multiple GPUs. Combine with on-line data loading for large datasets (see below). An example slurm script can be found in `mace/scripts/distributed_example.sbatch`.
+
+Option to parse all or some arguments using a YAML is available. For example, to train a model using the arguments above, you can create a YAML file `your_configs.yaml` with the following content:
+
+```yaml
+name: nacl
+seed: 2024
+train_file: train.xyz
+swa: yes
+start_swa: 1200
+max_num_epochs: 1500
+device: cpu
+test_file: test.xyz
+E0s:
+  41: -1029.2809654211628
+  38: -1484.1187695035828
+  8: -2042.0330099956639
+config_type_weights:
+  Default: 1.0
+
+```
+And append to the command line `--config="your_configs.yaml"`. Any argument specified in the command line will overwrite the one in the YAML file.
+
 ### Evaluation
 
 To evaluate your MACE model on an XYZ file, run the `mace_eval_configs`:
@@ -289,7 +312,8 @@ mace_run_train \
   --device=cuda \
   --seed=3 
 ```
-Other options are "medium" and "large", or the path to a foundation model. For the latter, the model will be loaded from the path, but you will need to provide the full set of hyperparameters (hidden irreps, r_max, etc.) matching the model.
+Other options are "medium" and "large", or the path to a foundation model. 
+If you want to finetune another model, the model will be loaded from the path provided `--foundation_model=$path_model`, but you will need to provide the full set of hyperparameters (hidden irreps, r_max, etc.) matching the model.
 
 ## Development
 
