@@ -56,7 +56,11 @@ def get_neighborhood(
         unit_shifts = unit_shifts[keep_edge]
 
     # Build output
+    # Using (sender, receiver) ensures the edge_index[0,:] values appear in ascending order
+    # Using (receiver, sender) ensures the edge_index[1,:] values appear in ascending order,
+    #   but the unit shifts need a minus sign to compensate
     edge_index = np.stack((receiver, sender))  # [2, n_edges]
+    unit_shifts = -unit_shifts
 
     # From the docs: With the shift vector S, the distances D between atoms can be computed from
     # D = positions[j]-positions[i]+S.dot(cell)
