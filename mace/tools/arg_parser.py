@@ -10,7 +10,20 @@ from typing import Optional
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
+    try:
+        import configargparse
+
+        parser = configargparse.ArgumentParser(
+            config_file_parser_class=configargparse.YAMLConfigFileParser,
+        )
+        parser.add(
+            "--config",
+            type=str,
+            is_config_file=True,
+            help="config file to agregate options",
+        )
+    except ImportError:
+        parser = argparse.ArgumentParser()
 
     # Name and seed
     parser.add_argument("--name", help="experiment name", required=True)
