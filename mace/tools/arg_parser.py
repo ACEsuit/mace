@@ -723,6 +723,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--keep_isolated_atoms",
+        help="Keep isolated atoms in the dataset, useful for transfer learning",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument(
         "--shuffle",
         help="Shuffle the training dataset",
         type=bool,

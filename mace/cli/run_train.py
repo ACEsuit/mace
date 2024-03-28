@@ -104,6 +104,7 @@ def main() -> None:
             virials_key=args.virials_key,
             dipole_key=args.dipole_key,
             charges_key=args.charges_key,
+            keep_isolated_atoms=args.keep_isolated_atoms,
         )
 
         logging.info(
