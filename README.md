@@ -8,21 +8,28 @@
 
 ## Table of contents
 
-- [About MACE](#about-mace)
-- [Documentation](#documentation)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Training](#training)
-  - [Evaluation](#evaluation)
-- [Tutorial](#tutorial)
-- [Weights and Biases](#weights-and-biases-for-experiment-tracking)
-- [Development](#development)
-- [Pretrained foundation models](#pretrained-foundation-models)
-  - [MACE-MP: Materials Project Force Fields](#mace-mp-materials-project-force-fields)
-  - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
-- [References](#references)
-- [Contact](#contact)
-- [License](#license)
+- [MACE](#mace)
+  - [Table of contents](#table-of-contents)
+  - [About MACE](#about-mace)
+  - [Documentation](#documentation)
+  - [Installation](#installation)
+    - [pip installation](#pip-installation)
+    - [conda installation](#conda-installation)
+    - [pip installation from source](#pip-installation-from-source)
+  - [Usage](#usage)
+    - [Training](#training)
+    - [Evaluation](#evaluation)
+  - [Tutorial](#tutorial)
+  - [Weights and Biases for experiment tracking](#weights-and-biases-for-experiment-tracking)
+  - [Pretrained Foundation Models](#pretrained-foundation-models)
+    - [MACE-MP: Materials Project Force Fields](#mace-mp-materials-project-force-fields)
+      - [Example usage in ASE](#example-usage-in-ase)
+    - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
+      - [Example usage in ASE](#example-usage-in-ase-1)
+  - [Development](#development)
+  - [References](#references)
+  - [Contact](#contact)
+  - [License](#license)
 
 ## About MACE
 
@@ -45,7 +52,7 @@ A partial documentation is available at: https://mace-docs.readthedocs.io
 Requirements:
 
 - Python >= 3.7
-- [PyTorch](https://pytorch.org/) >= 1.12
+- [PyTorch](https://pytorch.org/) >= 1.12 **(training with float64 is not supported with PyTorch 2.1)**.
 
 (for openMM, use Python = 3.9)
 
@@ -55,7 +62,7 @@ To install via `pip`, follow the steps below:
 
 ```sh
 pip install --upgrade pip
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 pip install mace-torch
 ```
 
@@ -91,7 +98,7 @@ python -m venv mace-venv
 source mace-venv/bin/activate
 
 # Install PyTorch (for example, for CUDA 11.6 [cu116])
-pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+pip3 install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
 # Clone and install MACE (and all required packages)
 git clone https://github.com/ACEsuit/mace.git
@@ -157,7 +164,7 @@ mace_eval_configs \
 
 ## Tutorial
 
-You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE. 
+You can run our [Colab tutorial](https://colab.research.google.com/drive/1D6EtMUjQPey_GkuxUAbPgld6_9ibIa-V?authuser=1#scrollTo=Z10787RE1N8T) to quickly get started with MACE.
 
 We also have a more detailed user and developer tutorial at https://github.com/ilyes319/mace-tutorials
 
@@ -226,6 +233,9 @@ We have collaborated with the Materials Project (MP) to train a universal MACE p
 The models are releaed on GitHub at https://github.com/ACEsuit/mace-mp.
 If you use them please cite [our paper](https://arxiv.org/abs/2401.00096) which also contains an large range of example applications and benchmarks.
 
+> [!CAUTION]
+> The MACE-MP models are trained on MPTrj raw DFT energies from VASP outputs, and are not directly comparable to the MP's DFT energies or CHGNet's energies, which have been applied MP2020Compatibility corrections for some transition metal oxides, fluorides (GGA/GGA+U mixing corrections), and 14 anions species (anion corrections). For more details, please refer to the [MP Documentation](https://docs.materialsproject.org/methodology/materials-methodology/thermodynamic-stability/thermodynamic-stability/anion-and-gga-gga+u-mixing) and [MP2020Compatibility.yaml](https://github.com/materialsproject/pymatgen/blob/master/pymatgen/entries/MP2020Compatibility.yaml).
+
 #### Example usage in ASE
 ```py
 from mace.calculators import mace_mp
@@ -239,7 +249,7 @@ print(atoms.get_potential_energy())
 
 ### MACE-OFF: Transferable Organic Force Fields
 
-There is a series (small, medium, large) transferable organic force fields. These can be used for the simulation of organic molecules, crystals and molecular liquids, or as a starting point for fine-tuning on a new dataset. The models are released under the [ASL license](https://github.com/gabor1/ASL). 
+There is a series (small, medium, large) transferable organic force fields. These can be used for the simulation of organic molecules, crystals and molecular liquids, or as a starting point for fine-tuning on a new dataset. The models are released under the [ASL license](https://github.com/gabor1/ASL).
 The models are releaed on GitHub at https://github.com/ACEsuit/mace-off.
 If you use them please cite [our paper](https://arxiv.org/abs/2312.15211) which also contains detailed benchmarks and example applications.
 
@@ -283,13 +293,15 @@ Other options are "medium" and "large", or the path to a foundation model. For t
 
 ## Development
 
-We use `black`, `isort`, `pylint`, and `mypy`.
-Run the following to format and check your code:
-
-```sh
-bash ./scripts/run_checks.sh
+This project uses [pre-commit](https://pre-commit.com/) to execute code formatting and linting on commit.
+We also use `black`, `isort`, `pylint`, and `mypy`.
+We recommend setting up your development environment by installing the `dev` packages
+into your python environment:
+```bash
+pip install -e ".[dev]"
+pre-commit install
 ```
-
+The second line will initialise `pre-commit` to automaticaly run code checks on commit.
 We have CI set up to check this, but we _highly_ recommend that you run those commands
 before you commit (and push) to avoid accidentally committing bad code.
 
