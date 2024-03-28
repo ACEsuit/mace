@@ -176,6 +176,7 @@ def load_foundations(
     indices_weights = [z_table.z_to_index(z) for z in new_z_table.zs]
     num_radial = model.radial_embedding.out_dim
     num_species = len(indices_weights)
+    max_ell = model.spherical_harmonics._lmax
     model.node_embedding.linear.weight = torch.nn.Parameter(
         model_foundations.node_embedding.linear.weight.view(
             num_species_foundations, -1
@@ -184,6 +185,10 @@ def load_foundations(
         .clone()
         / (num_species_foundations / num_species) ** 0.5
     )
+    if model.radial_embedding.bessel_fn.__class__.__name__ == "BesselBasis":
+        model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
+            model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
+        )
 
     for i in range(int(model.num_interactions)):
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
@@ -195,24 +200,24 @@ def load_foundations(
         for j in range(4):  # Assuming 4 layers in conv_tp_weights,
             layer_name = f"layer{j}"
             if j == 0:
-                getattr(
-                    model.interactions[i].conv_tp_weights, layer_name
-                ).weight = torch.nn.Parameter(
-                    getattr(
-                        model_foundations.interactions[i].conv_tp_weights,
-                        layer_name,
+                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
+                    torch.nn.Parameter(
+                        getattr(
+                            model_foundations.interactions[i].conv_tp_weights,
+                            layer_name,
+                        )
+                        .weight[:num_radial, :]
+                        .clone()
                     )
-                    .weight[:num_radial, :]
-                    .clone()
                 )
             else:
-                getattr(
-                    model.interactions[i].conv_tp_weights, layer_name
-                ).weight = torch.nn.Parameter(
-                    getattr(
-                        model_foundations.interactions[i].conv_tp_weights,
-                        layer_name,
-                    ).weight.clone()
+                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
+                    torch.nn.Parameter(
+                        getattr(
+                            model_foundations.interactions[i].conv_tp_weights,
+                            layer_name,
+                        ).weight.clone()
+                    )
                 )
 
         model.interactions[i].linear.weight = torch.nn.Parameter(
@@ -238,7 +243,7 @@ def load_foundations(
                 model_foundations.interactions[i]
                 .skip_tp.weight.reshape(
                     num_channels_foundation,
-                    (max_L + 1) ** 2,
+                    (max_ell + 1),
                     num_species_foundations,
                     num_channels_foundation,
                 )[:, :, indices_weights, :]
@@ -250,23 +255,23 @@ def load_foundations(
     for i in range(2):  # Assuming 2 products modules
         max_range = max_L + 1 if i == 0 else 1
         for j in range(max_range):  # Assuming 3 contractions in symmetric_contractions
-            model.products[i].symmetric_contractions.contractions[
-                j
-            ].weights_max = torch.nn.Parameter(
-                model_foundations.products[i]
-                .symmetric_contractions.contractions[j]
-                .weights_max[indices_weights, :, :]
-                .clone()
+            model.products[i].symmetric_contractions.contractions[j].weights_max = (
+                torch.nn.Parameter(
+                    model_foundations.products[i]
+                    .symmetric_contractions.contractions[j]
+                    .weights_max[indices_weights, :, :]
+                    .clone()
+                )
             )
 
             for k in range(2):  # Assuming 2 weights in each contraction
-                model.products[i].symmetric_contractions.contractions[j].weights[
-                    k
-                ] = torch.nn.Parameter(
-                    model_foundations.products[i]
-                    .symmetric_contractions.contractions[j]
-                    .weights[k][indices_weights, :, :]
-                    .clone()
+                model.products[i].symmetric_contractions.contractions[j].weights[k] = (
+                    torch.nn.Parameter(
+                        model_foundations.products[i]
+                        .symmetric_contractions.contractions[j]
+                        .weights[k][indices_weights, :, :]
+                        .clone()
+                    )
                 )
 
         model.products[i].linear.weight = torch.nn.Parameter(
