@@ -1,5 +1,6 @@
 from functools import wraps
 from typing import Callable
+import os
 
 import numpy as np
 import pytest
@@ -9,7 +10,8 @@ from e3nn import o3
 from torch.testing import assert_close
 
 from mace import data, modules, tools
-from mace.tools import compile, torch_geometric
+from mace.tools import compile as mace_compile
+from mace.tools import torch_geometric
 
 table = tools.AtomicNumberTable([6])
 atomic_energies = np.array([1.0], dtype=float)
@@ -72,7 +74,7 @@ def create_batch(device: str):
 def time_func(func: Callable):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        torch._inductor.cudagraph_mark_step_begin()
+        torch._inductor.cudagraph_mark_step_begin()  # pylint: disable=W0212
         outputs = func(*args, **kwargs)
         torch.cuda.synchronize()
         return outputs
@@ -86,14 +88,16 @@ def default_dtype(request):
         yield torch.get_default_dtype()
 
 
+# skip if on windows
+@pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
-def test_mace(device, default_dtype):
+def test_mace(device, default_dtype):  # pylint: disable=W0621
     print(f"using default dtype = {default_dtype}")
     if device == "cuda" and not torch.cuda.is_available():
         pytest.skip(reason="cuda is not available")
 
     model_defaults = create_mace(device)
-    tmp_model = compile.prepare(create_mace)(device)
+    tmp_model = mace_compile.prepare(create_mace)(device)
     model_compiled = torch.compile(tmp_model, mode="default")
 
     batch = create_batch(device)
@@ -103,8 +107,9 @@ def test_mace(device, default_dtype):
     assert_close(output1["forces"], output2["forces"])
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
-def test_eager_benchmark(benchmark, default_dtype):
+def test_eager_benchmark(benchmark, default_dtype):  # pylint: disable=W0621
     print(f"using default dtype = {default_dtype}")
     batch = create_batch("cuda")
     model = create_mace("cuda")
@@ -112,6 +117,7 @@ def test_eager_benchmark(benchmark, default_dtype):
     benchmark(model, batch, training=True)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
 @pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
 @pytest.mark.parametrize("enable_amp", [False, True], ids=["fp32", "mixed"])
@@ -119,7 +125,7 @@ def test_compile_benchmark(benchmark, compile_mode, enable_amp):
     with tools.torch_tools.default_dtype(torch.float32):
         batch = create_batch("cuda")
         torch.compiler.reset()
-        model = compile.prepare(create_mace)("cuda")
+        model = mace_compile.prepare(create_mace)("cuda")
         model = torch.compile(model, mode=compile_mode, fullgraph=True)
         model = time_func(model)
 
@@ -127,12 +133,13 @@ def test_compile_benchmark(benchmark, compile_mode, enable_amp):
             benchmark(model, batch, training=True)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
 def test_graph_breaks():
     import torch._dynamo as dynamo
 
     batch = create_batch("cuda")
-    model = compile.prepare(create_mace)("cuda")
+    model = mace_compile.prepare(create_mace)("cuda")
     explanation = dynamo.explain(model)(batch, training=False)
 
     # these clutter the output but might be useful for investigating graph breaks
