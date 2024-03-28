@@ -24,7 +24,6 @@ def _broadcast(src: torch.Tensor, other: torch.Tensor, dim: int):
     return src
 
 
-@torch.jit.script
 def scatter_sum(
     src: torch.Tensor,
     index: torch.Tensor,
@@ -49,7 +48,6 @@ def scatter_sum(
         return out.scatter_add_(dim, index, src)
 
 
-@torch.jit.script
 def scatter_std(
     src: torch.Tensor,
     index: torch.Tensor,
@@ -87,7 +85,6 @@ def scatter_std(
     return out
 
 
-@torch.jit.script
 def scatter_mean(
     src: torch.Tensor,
     index: torch.Tensor,
