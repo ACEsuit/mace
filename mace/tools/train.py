@@ -344,7 +344,6 @@ def evaluate(
     data_loader: DataLoader,
     output_args: Dict[str, bool],
     device: torch.device,
-    first: bool = False,
 ) -> Tuple[float, Dict[str, Any]]:
     for param in model.parameters():
         param.requires_grad = False

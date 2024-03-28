@@ -76,17 +76,6 @@ def set_default_dtype(dtype: str) -> None:
     torch.set_default_dtype(dtype_dict[dtype])
 
 
-def get_complex_default_dtype():
-    default_dtype = torch.get_default_dtype()
-    if default_dtype == torch.float64:
-        return torch.complex128
-
-    if default_dtype == torch.float32:
-        return torch.complex64
-
-    raise NotImplementedError
-
-
 def spherical_to_cartesian(t: torch.Tensor):
     """
     Convert spherical notation to cartesian notation

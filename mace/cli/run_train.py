@@ -233,7 +233,7 @@ def main() -> None:
         batch_size=args.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
-        drop_last=True if train_sampler is None else False,
+        drop_last=(train_sampler is None),
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
