@@ -249,17 +249,6 @@ def main() -> None:
         generator=torch.Generator().manual_seed(args.seed),
     )
 
-    # loss_fn: torch.nn.Module = get_loss_fn(
-    #     args.loss,
-    #     args.energy_weight,
-    #     args.forces_weight,
-    #     args.stress_weight,
-    #     args.virials_weight,
-    #     args.dipole_weight,
-    #     dipole_only,
-    #     compute_dipole,
-    # )
-
     if args.loss == "weighted":
         loss_fn = modules.WeightedEnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
