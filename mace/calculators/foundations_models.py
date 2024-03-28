@@ -209,7 +209,7 @@ def mace_off(
 
 
 def mace_anicc(
-    device: str ="cuda",
+    device: str = "cuda",
     model_path: str | Path = None,
 ) -> MACECalculator:
     """
