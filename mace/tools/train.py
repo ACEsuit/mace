@@ -239,14 +239,10 @@ def train(
                     )
                     break
                 if save_all_checkpoints:
-                    if ema is not None:
-                        with ema.average_parameters():
-                            checkpoint_handler.save(
-                                state=CheckpointState(model, optimizer, lr_scheduler),
-                                epochs=epoch,
-                                keep_last=True,
-                            )
-                    else:
+                    param_context = (
+                        ema.average_parameters() if ema is not None else nullcontext()
+                    )
+                    with param_context:
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
                             epochs=epoch,
@@ -255,21 +251,16 @@ def train(
             else:
                 lowest_loss = valid_loss
                 patience_counter = 0
-                if ema is not None:
-                    with ema.average_parameters():
-                        checkpoint_handler.save(
-                            state=CheckpointState(model, optimizer, lr_scheduler),
-                            epochs=epoch,
-                            keep_last=keep_last,
-                        )
-                        # keep_last = False
-                else:
+                param_context = (
+                    ema.average_parameters() if ema is not None else nullcontext()
+                )
+                with param_context:
                     checkpoint_handler.save(
                         state=CheckpointState(model, optimizer, lr_scheduler),
                         epochs=epoch,
                         keep_last=keep_last,
                     )
-                # keep_last = False
+                    keep_last = False or save_all_checkpoints
         if distributed:
             torch.distributed.barrier()
         epoch += 1
@@ -331,8 +322,6 @@ def take_step(
         compute_stress=output_args["stress"],
     )
     loss = loss_fn(pred=output, ref=batch)
-    # print("loss", loss)
-    # print("batch.energy", batch.energy)
     loss.backward()
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
