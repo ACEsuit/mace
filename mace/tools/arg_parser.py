@@ -325,6 +325,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--keep_isolated_atoms",
+        help="Keep isolated atoms in the dataset, useful for transfer learning",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument(
         "--energy_key",
         help="Key of reference energies in training xyz",
         type=str,
@@ -721,12 +727,6 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         required=False,
-    )
-    parser.add_argument(
-        "--keep_isolated_atoms",
-        help="Keep isolated atoms in the dataset, useful for transfer learning",
-        type=bool,
-        default=False,
     )
     parser.add_argument(
         "--shuffle",
