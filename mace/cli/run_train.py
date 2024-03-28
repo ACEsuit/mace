@@ -228,7 +228,6 @@ def main() -> None:
             drop_last=True,
             seed=args.seed,
         )
-
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
         batch_size=args.batch_size,
@@ -237,15 +236,17 @@ def main() -> None:
         drop_last=True if train_sampler is None else False,
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
+        generator=torch.Generator().manual_seed(args.seed),
     )
     valid_loader = torch_geometric.dataloader.DataLoader(
         dataset=valid_set,
         batch_size=args.valid_batch_size,
         sampler=valid_sampler,
-        shuffle=(valid_sampler is None),
+        shuffle=False,
         drop_last=False,
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
+        generator=torch.Generator().manual_seed(args.seed),
     )
 
     # loss_fn: torch.nn.Module = get_loss_fn(

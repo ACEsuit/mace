@@ -142,15 +142,17 @@ def train(
     logging.info("Started training")
     epoch = start_epoch
 
-    # log validation loss before _any_ training
-    valid_loss, eval_metrics = evaluate(
-        model=model,
-        loss_fn=loss_fn,
-        data_loader=valid_loader,
-        output_args=output_args,
-        device=device,
-    )
-    valid_err_log(valid_loss, eval_metrics, logger, log_errors, None)
+    # # log validation loss before _any_ training
+    param_context = ema.average_parameters() if ema is not None else nullcontext()
+    with param_context:
+        valid_loss, eval_metrics = evaluate(
+            model=model,
+            loss_fn=loss_fn,
+            data_loader=valid_loader,
+            output_args=output_args,
+            device=device,
+        )
+        valid_err_log(valid_loss, eval_metrics, logger, log_errors, None)
 
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
@@ -329,6 +331,8 @@ def take_step(
         compute_stress=output_args["stress"],
     )
     loss = loss_fn(pred=output, ref=batch)
+    # print("loss", loss)
+    # print("batch.energy", batch.energy)
     loss.backward()
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
@@ -351,6 +355,7 @@ def evaluate(
     data_loader: DataLoader,
     output_args: Dict[str, bool],
     device: torch.device,
+    first: bool = False,
 ) -> Tuple[float, Dict[str, Any]]:
     for param in model.parameters():
         param.requires_grad = False
