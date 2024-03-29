@@ -33,7 +33,7 @@ from mace.tools.scripts_utils import (
     get_files_with_suffix,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
-from mace.tools.utils import load_foundations
+from mace.tools.finetuning_utils import load_foundations
 
 
 def main() -> None:
