@@ -9,7 +9,11 @@ from scipy.spatial.transform import Rotation as R
 from mace import data, modules, tools
 from mace.calculators import mace_mp
 from mace.tools import torch_geometric
-from mace.tools.utils import load_foundations
+from mace.tools.utils import (
+    extract_config_mace_model,
+    load_foundations,
+    AtomicNumberTable,
+)
 
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
@@ -35,7 +39,7 @@ table = tools.AtomicNumberTable([1, 6, 8])
 atomic_energies = np.array([0.0, 0.0, 0.0], dtype=float)
 
 
-@pytest.skip("Problem with the float type", allow_module_level=True)
+# @pytest.skip("Problem with the float type", allow_module_level=True)
 def test_foundations():
     # Create MACE model
     model_config = dict(
@@ -92,3 +96,35 @@ def test_foundations():
     forces_loaded = model_loaded(batch)["forces"]
     forces = model(batch)["forces"]
     assert torch.allclose(forces, forces_loaded)
+
+
+def test_extract_config():
+    model = mace_mp(device="cpu").models[0]
+    assert isinstance(model, modules.ScaleShiftMACE)
+    model_copy = modules.ScaleShiftMACE(**extract_config_mace_model(model))
+
+    def load_weights(model_copy, model):
+        model_copy.load_state_dict(model.state_dict())
+
+    load_weights(model_copy, model)
+    model = model.cpu().float()
+    model_copy = model_copy.float()
+    z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
+    atomic_data = data.AtomicData.from_config(config, z_table=z_table, cutoff=6.0)
+    atomic_data2 = data.AtomicData.from_config(
+        config_rotated, z_table=z_table, cutoff=6.0
+    )
+
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data, atomic_data2],
+        batch_size=2,
+        shuffle=True,
+        drop_last=False,
+    )
+    batch = next(iter(data_loader))
+    output = model(batch)
+    output_copy = model_copy(batch)
+    # assert all items of the output dicts are equal
+    for key in output.keys():
+        if isinstance(output[key], torch.Tensor):
+            assert torch.allclose(output[key], output_copy[key], atol=1e-5)

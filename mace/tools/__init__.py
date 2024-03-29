@@ -30,6 +30,7 @@ from .utils import (
     get_tag,
     load_foundations,
     setup_logger,
+    extract_load,
 )
 
 __all__ = [
@@ -66,5 +67,6 @@ __all__ = [
     "voigt_to_matrix",
     "init_wandb",
     "load_foundations",
+    "extract_load",
     "build_preprocess_arg_parser",
 ]
