@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional
 
 import torch
+from torch_runstats.scatter import scatter
 from e3nn.util.jit import compile_mode
 
 from mace.tools.scatter import scatter_sum
@@ -45,8 +46,12 @@ class LAMMPS_MACE(torch.nn.Module):
             }
         positions = data["positions"]
         displacement = out["displacement"]
+        vectors = out["vectors"]
         forces: Optional[torch.Tensor] = torch.zeros_like(positions)
         virials: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
+        vector_force  = torch.zeros_like(vectors)
+        edge_virial   = torch.zeros_like(vectors)
+        atom_virial   = torch.zeros_like(positions)
         # accumulate energies of local atoms
         node_energy_local = node_energy * local_or_ghost
         total_energy_local = scatter_sum(
@@ -56,15 +61,39 @@ class LAMMPS_MACE(torch.nn.Module):
         grad_outputs: List[Optional[torch.Tensor]] = [
             torch.ones_like(total_energy_local)
         ]
-        if compute_virials and displacement is not None:
-            forces, virials = torch.autograd.grad(
-                outputs=[total_energy_local],
-                inputs=[positions, displacement],
+
+
+
+        if compute_virials and vectors is not None:
+            forces, vector_force = torch.autograd.grad(
+                outputs=[total_energy_local],  
+                inputs=[positions, vectors],  
                 grad_outputs=grad_outputs,
-                retain_graph=False,
-                create_graph=False,
+                retain_graph=False,  
+                create_graph=False, 
                 allow_unused=True,
             )
+            edge_virial = torch.einsum(
+                "zi,zj->zij", vector_force, vectors
+            )
+
+            atom_virial = scatter(
+                edge_virial,
+                edge_index[0],
+                dim=0,
+                reduce="sum",
+                dim_size=len(positions),
+            )
+            atom_virial = (atom_virial + scatter(
+                edge_virial,
+                edge_index[1],
+                dim=0,
+                reduce="sum",
+                dim_size=len(positions),
+            ))/2
+            virials = scatter(atom_virial, batch, dim=0, reduce="sum")
+            virials = (virials + virials.transpose(-1, -2)) / 2
+
             if forces is not None:
                 forces = -1 * forces
             else:
@@ -73,6 +102,10 @@ class LAMMPS_MACE(torch.nn.Module):
                 virials = -1 * virials
             else:
                 virials = torch.zeros_like(displacement)
+            if atom_virial is not None:
+                atom_virial = -1 * atom_virial
+            else:
+                atom_virial = torch.zeros_like(vectors)
         else:
             forces = torch.autograd.grad(
                 outputs=[total_energy_local],
@@ -91,4 +124,5 @@ class LAMMPS_MACE(torch.nn.Module):
             "node_energy": node_energy,
             "forces": forces,
             "virials": virials,
+            "atom_virial": atom_virial,
         }
