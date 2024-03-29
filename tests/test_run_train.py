@@ -291,7 +291,6 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     mace_params["default_dtype"] = "float32"
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
-
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))

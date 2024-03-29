@@ -7,7 +7,7 @@ from e3nn import o3
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
-from mace.calculators import mace_mp
+from mace.calculators import mace_mp, mace_off
 from mace.tools import torch_geometric
 from mace.tools.utils import (
     AtomicNumberTable,
@@ -97,17 +97,21 @@ def test_foundations():
     assert torch.allclose(forces, forces_loaded)
 
 
-def test_extract_config():
-    model = mace_mp(device="cpu").models[0]
+@pytest.mark.parametrize(
+    "model",
+    [
+        mace_mp(model="small", device="cpu", default_dtype="float64").models[0],
+        mace_mp(model="medium", device="cpu", default_dtype="float64").models[0],
+        mace_mp(model="large", device="cpu", default_dtype="float64").models[0],
+        mace_off(model="small", device="cpu", default_dtype="float64").models[0],
+        mace_off(model="medium", device="cpu", default_dtype="float64").models[0],
+        mace_off(model="large", device="cpu", default_dtype="float64").models[0],
+    ],
+)
+def test_extract_config(model):
     assert isinstance(model, modules.ScaleShiftMACE)
     model_copy = modules.ScaleShiftMACE(**extract_config_mace_model(model))
-
-    def load_weights(model_copy, model):
-        model_copy.load_state_dict(model.state_dict())
-
-    load_weights(model_copy, model)
-    model = model.cpu().float()
-    model_copy = model_copy.float()
+    model_copy.load_state_dict(model.state_dict())
     z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
     atomic_data = data.AtomicData.from_config(config, z_table=z_table, cutoff=6.0)
     atomic_data2 = data.AtomicData.from_config(
