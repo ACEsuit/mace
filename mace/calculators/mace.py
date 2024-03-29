@@ -116,7 +116,7 @@ class MACECalculator(Calculator):
                 torch.compile(
                     prepare(torch.load)(f=model_path, map_location=device),
                     mode=compile_mode,
-                    fullgraph=True,
+                    fullgraph=False,
                 )
                 for model_path in model_paths
             ]
