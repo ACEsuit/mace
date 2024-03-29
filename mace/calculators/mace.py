@@ -114,19 +114,17 @@ class MACECalculator(Calculator):
             print(f"Torch compile is enabled with mode: {compile_mode}")
             self.models = [
                 torch.compile(
-                    prepare(utils.extract_load)(f=model_path, map_location=device),
+                    prepare(torch.load)(f=model_path, map_location=device),
                     mode=compile_mode,
-                    fullgraph=True,
+                    fullgraph=False,
                 )
                 for model_path in model_paths
             ]
-            self.compiled = True
         else:
             self.models = [
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
             ]
-            self.compiled = False
         for model in self.models:
             model.to(device)  # shouldn't be necessary but seems to help with GPU
         r_maxs = [model.r_max.cpu() for model in self.models]
@@ -229,9 +227,7 @@ class MACECalculator(Calculator):
         )
         for i, model in enumerate(self.models):
             batch = batch_base.clone()
-            out = model(
-                batch.to_dict(), compute_stress=compute_stress, training=self.compiled
-            )
+            out = model(batch.to_dict(), compute_stress=compute_stress)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()

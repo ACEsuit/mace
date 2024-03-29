@@ -10,10 +10,9 @@ from mace import data, modules, tools
 from mace.calculators import mace_mp
 from mace.tools import torch_geometric
 from mace.tools.utils import (
-    extract_config_mace_model,
-    load_foundations,
     AtomicNumberTable,
 )
+from mace.tools.finetuning_utils import load_foundations, extract_config_mace_model
 
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(

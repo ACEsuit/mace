@@ -28,10 +28,10 @@ from .utils import (
     get_atomic_number_table_from_zs,
     get_optimizer,
     get_tag,
-    load_foundations,
     setup_logger,
-    extract_load,
 )
+
+from .finetuning_utils import load_foundations, extract_load
 
 __all__ = [
     "TensorDict",
