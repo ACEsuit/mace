@@ -210,7 +210,7 @@ def mace_off(
 
 def mace_anicc(
     device: str = "cuda",
-    model_path: str | Path = None,
+    model_path: str = None,
 ) -> MACECalculator:
     """
     Constructs a MACECalculator with a pretrained model based on the ANI (H, C, N, O).
