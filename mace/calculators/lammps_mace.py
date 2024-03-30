@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import torch
 from torch_runstats.scatter import scatter
@@ -23,7 +23,7 @@ class LAMMPS_MACE(torch.nn.Module):
         data: Dict[str, torch.Tensor],
         local_or_ghost: torch.Tensor,
         compute_virials: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         num_graphs = data["ptr"].numel() - 1
         compute_displacement = False
         if compute_virials:
@@ -36,14 +36,7 @@ class LAMMPS_MACE(torch.nn.Module):
             compute_stress=False,
             compute_displacement=compute_displacement,
         )
-        node_energy = out["node_energy"]
-        if node_energy is None:
-            return {
-                "total_energy_local": None,
-                "node_energy": None,
-                "forces": None,
-                "virials": None,
-            }
+        return out
         positions = data["positions"]
         displacement = out["displacement"]
         vectors = out["vectors"]
@@ -73,10 +66,13 @@ class LAMMPS_MACE(torch.nn.Module):
                 create_graph=False, 
                 allow_unused=True,
             )
-            edge_virial = torch.einsum(
-                "zi,zj->zij", vector_force, vectors
-            )
-
+            # edge_virial = torch.einsum(
+            #     "zi,zj->zij", vector_force, vectors
+            # )
+            edge_virial = torch.matmul (
+                vector_force.unsqueeze (dim = 2), 
+                vectors.unsqueeze (dim = 1)
+            ).squeeze()
             atom_virial = scatter(
                 edge_virial,
                 edge_index[0],
