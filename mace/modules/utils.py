@@ -58,9 +58,13 @@ def compute_forces_virials(
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,
     )
-    edge_virial = torch.einsum(
-        "zi,zj->zij", vector_force, vectors
-    )
+    # edge_virial = torch.einsum(
+    #     "zi,zj->zij", vector_force, vectors
+    # )
+    edge_virial = torch.matmul (
+        torch.unsqueeze(vector_force, dim = 2), 
+        torch.unsqueeze(vectors, dim = 1)
+    ).squeeze()
 
     atom_virial = scatter_sum(
         edge_virial, edge_index[0], dim=0, dim_size=len(positions),
