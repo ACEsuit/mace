@@ -187,11 +187,12 @@ def test_config_types(
     test_by_ct = []
     all_cts = []
     for conf in test_configs:
-        if conf.config_type not in all_cts:
-            all_cts.append(conf.config_type)
-            test_by_ct.append((conf.config_type, [conf]))
+        config_type_name = conf.config_type + "_" + conf.theory
+        if config_type_name not in all_cts:
+            all_cts.append(config_type_name)
+            test_by_ct.append((config_type_name, [conf]))
         else:
-            ind = all_cts.index(conf.config_type)
+            ind = all_cts.index(config_type_name)
             test_by_ct[ind][1].append(conf)
     return test_by_ct
 
