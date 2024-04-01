@@ -230,11 +230,12 @@ def dict_to_array(data):
     unique_keys = set()
     for inner_dict in data.values():
         unique_keys.update(inner_dict.keys())
-    sorted_keys = sorted(unique_keys)
+    unique_keys = list(unique_keys)
+    sorted_keys = sorted([int(key) for key in unique_keys])
     result_array = np.zeros((len(data), len(sorted_keys)))
     for default_index, (_, inner_dict) in enumerate(data.items()):
         for key, value in inner_dict.items():
-            key_index = sorted_keys.index(key)
+            key_index = sorted_keys.index(int(key))
             result_array[default_index][key_index] = value
     return np.squeeze(result_array)
 
