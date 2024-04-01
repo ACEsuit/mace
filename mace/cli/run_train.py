@@ -446,7 +446,6 @@ def main() -> None:
             radial_type=args.radial_type,
         )
     elif args.model == "FoundationMACE":
-        model_config["atomic_inter_shift"] = args.mean
         model = modules.ScaleShiftMACE(**model_config)
     elif args.model == "ScaleShiftBOTNet":
         model = modules.ScaleShiftBOTNet(
