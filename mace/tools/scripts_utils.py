@@ -6,6 +6,7 @@
 
 import ast
 import dataclasses
+import json
 import logging
 import os
 from typing import Dict, List, Optional, Tuple
@@ -137,11 +138,17 @@ def get_atomic_energies(E0s, train_collection, z_table, theories) -> dict:
                     f"Could not compute average E0s if no training xyz given, error {e} occured"
                 ) from e
         else:
-            try:
-                atomic_energies_dict = ast.literal_eval(E0s)
-                assert isinstance(atomic_energies_dict, dict)
-            except Exception as e:
-                raise RuntimeError(f"E0s specified invalidly, error {e} occured") from e
+            if E0s.endswith(".json"):
+                logging.info(f"Loading atomic energies from {E0s}")
+                atomic_energies_dict = json.load(open(E0s, "r"))
+            else:
+                try:
+                    atomic_energies_dict = ast.literal_eval(E0s)
+                    assert isinstance(atomic_energies_dict, dict)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"E0s specified invalidly, error {e} occured"
+                    ) from e
     else:
         raise RuntimeError(
             "E0s not found in training file and not specified in command line"
@@ -447,3 +454,12 @@ def create_error_table(
                 ]
             )
     return table
+
+
+def check_folder_subfolder(folder_path):
+    entries = os.listdir(folder_path)
+    for entry in entries:
+        full_path = os.path.join(folder_path, entry)
+        if os.path.isdir(full_path):
+            return True
+    return False

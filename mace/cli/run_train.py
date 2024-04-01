@@ -32,6 +32,7 @@ from mace.tools.scripts_utils import (
     get_dataset_from_xyz,
     get_files_with_suffix,
     dict_to_array,
+    check_folder_subfolder,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import load_foundations
@@ -91,7 +92,11 @@ def main() -> None:
         args.std = statistics["std"]
         args.avg_num_neighbors = statistics["avg_num_neighbors"]
         args.compute_avg_num_neighbors = False
-        args.E0s = statistics["atomic_energies"]
+        args.E0s = (
+            statistics["atomic_energies"]
+            if not args.E0s.endswith(".json")
+            else args.E0s
+        )
 
     # Data preparation
     if args.train_file.endswith(".xyz"):
@@ -222,9 +227,21 @@ def main() -> None:
         train_set = data.dataset_from_sharded_hdf5(
             args.train_file, r_max=args.r_max, z_table=z_table, theories=theories
         )
-        valid_set = data.dataset_from_sharded_hdf5(
-            args.valid_file, r_max=args.r_max, z_table=z_table, theories=theories
-        )
+        # check if the folder has subfolders for each theory by opening args.valid_file folder
+        if check_folder_subfolder(args.valid_file):
+            valid_sets = {}
+            for theory in theories:
+                valid_sets[theory] = data.dataset_from_sharded_hdf5(
+                    os.path.join(args.valid_file, theory),
+                    r_max=args.r_max,
+                    z_table=z_table,
+                    theories=theories,
+                )
+        else:
+            valid_set = data.dataset_from_sharded_hdf5(
+                args.valid_file, r_max=args.r_max, z_table=z_table, theories=theories
+            )
+            valid_sets = {"Default": valid_set}
 
     train_sampler, valid_sampler = None, None
     if args.distributed:
@@ -236,14 +253,17 @@ def main() -> None:
             drop_last=True,
             seed=args.seed,
         )
-        valid_sampler = torch.utils.data.distributed.DistributedSampler(
-            valid_set,
-            num_replicas=world_size,
-            rank=rank,
-            shuffle=True,
-            drop_last=True,
-            seed=args.seed,
-        )
+        valid_samplers = {}
+        for theory, valid_set in valid_sets.items():
+            valid_sampler = torch.utils.data.distributed.DistributedSampler(
+                valid_set,
+                num_replicas=world_size,
+                rank=rank,
+                shuffle=True,
+                drop_last=True,
+                seed=args.seed,
+            )
+            valid_samplers[theory] = valid_sampler
 
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
@@ -261,7 +281,7 @@ def main() -> None:
         valid_loaders[theory] = torch_geometric.dataloader.DataLoader(
             dataset=valid_set,
             batch_size=args.valid_batch_size,
-            sampler=valid_sampler,
+            sampler=valid_samplers[theory] if args.distributed else None,
             shuffle=(valid_sampler is None),
             drop_last=False,
             pin_memory=args.pin_memory,
