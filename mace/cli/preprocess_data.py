@@ -124,7 +124,7 @@ def main():
             os.makedirs(args.h5_prefix + sub_dir)
 
     # Data preparation
-    collections, atomic_energies_dict = get_dataset_from_xyz(
+    collections, atomic_energies_dict, _ = get_dataset_from_xyz(
         train_path=args.train_file,
         valid_path=args.valid_file,
         valid_fraction=args.valid_fraction,
