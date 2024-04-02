@@ -1,8 +1,9 @@
 import sys
 
 import torch
+from torch_runstats.scatter import scatter
 from e3nn.util import jit
-
+from e3nn.util.jit import compile_mode
 from mace.calculators import LAMMPS_MACE
 
 
