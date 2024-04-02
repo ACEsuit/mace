@@ -7,7 +7,7 @@
 
 from glob import glob
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 import torch
@@ -35,6 +35,7 @@ class MACECalculator(Calculator):
         model_paths: str, path to model or models if a committee is produced
                 to make a committee use a wild card notation like mace_*.model
         device: str, device to run on (cuda or cpu)
+        compile_kwargs: arguments for torch.compile, defaults to None.
         energy_units_to_eV: float, conversion factor from model energy units to eV
         length_units_to_A: float, conversion factor from model length units to Angstroms
         default_dtype: str, default dtype of model
@@ -49,6 +50,7 @@ class MACECalculator(Calculator):
         self,
         model_paths: Union[list, str],
         device: str,
+        compile_kwargs: Optional[dict] = None,
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
         default_dtype="",
@@ -109,9 +111,9 @@ class MACECalculator(Calculator):
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
 
-        self.models = [
-            torch.load(f=model_path, map_location=device) for model_path in model_paths
-        ]
+        self.use_compile = compile_kwargs is not None
+        self.models = self.load_models(model_paths, device, compile_kwargs)
+
         for model in self.models:
             model.to(device)  # shouldn't be necessary but seems to help with GPU
         r_maxs = [model.r_max.cpu() for model in self.models]
@@ -146,6 +148,14 @@ class MACECalculator(Calculator):
         for model in self.models:
             for param in model.parameters():
                 param.requires_grad = False
+
+    def load_models(self, model_paths, device, compile_kwargs):
+        from mace.tools.compile import trampoline
+
+        if self.use_compile:
+            return [torch.compile(trampoline(f), **compile_kwargs) for f in model_paths]
+
+        return [torch.load(f=f, map_location=device) for f in model_paths]
 
     def _create_result_tensors(
         self, model_type: str, num_models: int, num_atoms: int
@@ -214,7 +224,7 @@ class MACECalculator(Calculator):
         )
         for i, model in enumerate(self.models):
             batch = batch_base.clone()
-            out = model(batch.to_dict(), compute_stress=compute_stress)
+            out = self.eval_model(batch, compute_stress, model)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
@@ -278,6 +288,12 @@ class MACECalculator(Calculator):
                     .cpu()
                     .numpy()
                 )
+
+    def eval_model(self, batch, compute_stress, model):
+        out = model(
+            batch.to_dict(), compute_stress=compute_stress, training=self.use_compile
+        )
+        return out
 
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
         """Extracts the descriptors from MACE model.

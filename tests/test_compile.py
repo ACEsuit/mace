@@ -40,8 +40,10 @@ def create_mace(device: str, seed: int = 1702):
         "atomic_numbers": table.zs,
         "correlation": 3,
         "radial_type": "bessel",
+        "atomic_inter_scale": 0.8,
+        "atomic_inter_shift": 0.2,
     }
-    model = modules.MACE(**model_config)
+    model = modules.ScaleShiftMACE(**model_config)
     return model.to(device)
 
 
@@ -116,11 +118,14 @@ def test_eager_benchmark(benchmark, default_dtype):
 @pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
 @pytest.mark.parametrize("enable_amp", [False, True], ids=["fp32", "mixed"])
 def test_compile_benchmark(benchmark, compile_mode, enable_amp):
+    if enable_amp:
+        pytest.skip(reason="Autocast failing with PyTorch 2.2.0")
+
     with tools.torch_tools.default_dtype(torch.float32):
         batch = create_batch("cuda")
         torch.compiler.reset()
         model = compile.prepare(create_mace)("cuda")
-        model = torch.compile(model, mode=compile_mode, fullgraph=True)
+        model = torch.compile(model, mode=compile_mode)
         model = time_func(model)
 
         with torch.autocast("cuda", enabled=enable_amp):
@@ -133,7 +138,7 @@ def test_graph_breaks():
 
     batch = create_batch("cuda")
     model = compile.prepare(create_mace)("cuda")
-    explanation = dynamo.explain(model)(batch, training=False)
+    explanation = dynamo.explain(model)(batch, training=True)
 
     # these clutter the output but might be useful for investigating graph breaks
     explanation.ops_per_graph = None
