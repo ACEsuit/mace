@@ -167,7 +167,7 @@ class MACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> Dict[str, torch.Tensor]:
         # Setup
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
@@ -244,10 +244,13 @@ class MACE(torch.nn.Module):
         node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
 
         # Outputs
-        forces, virials, stress = get_outputs(
+        forces, virials, stress, atom_virial = get_outputs(
             energy=total_energy,
             positions=data["positions"],
+            batch=data["batch"],
             displacement=displacement,
+            edge_index=data["edge_index"],
+            vectors=vectors,
             cell=data["cell"],
             training=training,
             compute_force=compute_force,
@@ -264,6 +267,8 @@ class MACE(torch.nn.Module):
             "stress": stress,
             "displacement": displacement,
             "node_feats": node_feats_out,
+            "vectors": vectors,
+            "atom_virial": atom_virial
         }
 
 
@@ -365,10 +370,16 @@ class ScaleShiftMACE(MACE):
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
 
-        forces, virials, stress = get_outputs(
+
+
+        atom_virial = torch.zeros((num_graphs, 3, 3), dtype=data["positions"].dtype, device=data["positions"].device)
+        forces, virials, stress, atom_virial = get_outputs(
             energy=inter_e,
             positions=data["positions"],
+            batch=data["batch"],
             displacement=displacement,
+            edge_index=data["edge_index"],
+            vectors=vectors,
             cell=data["cell"],
             training=training,
             compute_force=compute_force,
@@ -385,8 +396,9 @@ class ScaleShiftMACE(MACE):
             "stress": stress,
             "displacement": displacement,
             "node_feats": node_feats_out,
+            "vectors": vectors,
+            "atom_virial": atom_virial,
         }
-
         return output
 
 
