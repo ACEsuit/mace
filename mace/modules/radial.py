@@ -141,7 +141,6 @@ class PolynomialCutoff(torch.nn.Module):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
 
 
-@simplify_if_compile
 @compile_mode("script")
 class ZBLBasis(torch.nn.Module):
     """
@@ -190,9 +189,9 @@ class ZBLBasis(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[
-            torch.where(node_attrs.int() == 1)[1]
-        ].unsqueeze(-1)
+        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
+            -1
+        )
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         a = (
@@ -223,7 +222,6 @@ class ZBLBasis(torch.nn.Module):
         return f"{self.__class__.__name__}(r_max={self.r_max}, c={self.c})"
 
 
-@simplify_if_compile
 @compile_mode("script")
 class AgnesiTransform(torch.nn.Module):
     """
@@ -264,9 +262,9 @@ class AgnesiTransform(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[
-            torch.where(node_attrs.int() == 1)[1]
-        ].unsqueeze(-1)
+        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
+            -1
+        )
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         if not hasattr(self, "b"):  # TODO: remove this, only for backward compatibility
@@ -312,9 +310,9 @@ class SoftTransform(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[
-            torch.where(node_attrs.int() == 1)[1]
-        ].unsqueeze(-1)
+        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
+            -1
+        )
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 4
