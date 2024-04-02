@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from e3nn.util.jit import compile_mode
 
+from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
 
 
@@ -140,6 +141,7 @@ class PolynomialCutoff(torch.nn.Module):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
 
 
+@simplify_if_compile
 @compile_mode("script")
 class ZBLBasis(torch.nn.Module):
     """
@@ -221,6 +223,8 @@ class ZBLBasis(torch.nn.Module):
         return f"{self.__class__.__name__}(r_max={self.r_max}, c={self.c})"
 
 
+@simplify_if_compile
+@compile_mode("script")
 class AgnesiTransform(torch.nn.Module):
     """
     Agnesi transform see ACEpotentials.jl, JCP 2023, p. 160
@@ -276,6 +280,8 @@ class AgnesiTransform(torch.nn.Module):
         return f"{self.__class__.__name__}(a={self.a}, q={self.q}, p={self.p})"
 
 
+@simplify_if_compile
+@compile_mode("script")
 class SoftTransform(torch.nn.Module):
     """
     Soft Transform

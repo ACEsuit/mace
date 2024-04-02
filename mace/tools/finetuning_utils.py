@@ -58,7 +58,7 @@ def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     model = torch.load(f=f, map_location=map_location)
     model_copy = model.__class__(**extract_config_mace_model(model))
     model_copy.load_state_dict(model.state_dict())
-    return model_copy
+    return model_copy.to(map_location)
 
 
 def load_foundations(
