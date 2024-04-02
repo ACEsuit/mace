@@ -39,7 +39,9 @@ def parse_args() -> argparse.Namespace:
         required=False,
         default=None,
     )
-    parser.add_argument("--model", help="path to model", required=True)
+    parser.add_argument(
+        "--model", help="path to model", default="small", required=False
+    )
     parser.add_argument("--output", help="output path", required=True)
     parser.add_argument(
         "--descriptors", help="path to descriptors", required=False, default=None
@@ -75,6 +77,25 @@ def parse_args() -> argparse.Namespace:
         help="level of theory for the finetuning set",
         type=str,
         default=None,
+    )
+    parser.add_argument(
+        "--filtering_type",
+        help="filtering type",
+        type=str,
+        choices=[None, "combinations", "exclusive", "inclusive"],
+        default=None,
+    )
+    parser.add_argument(
+        "--weight_ft",
+        help="weight for the finetuning set",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--weight_pt",
+        help="weight for the pretraining set",
+        type=float,
+        default=1.0,
     )
     return parser.parse_args()
 
@@ -202,32 +223,38 @@ def main():
             model_paths=args.model, device=args.device, default_dtype=args.default_dtype
         )
     atoms_list_ft = ase.io.read(args.configs_ft, index=":")
-    all_species_ft = np.unique([x.symbol for atoms in atoms_list_ft for x in atoms])
 
-    print(
-        "Filtering configurations based on the finetuning set,"
-        f"filtering type: combinations, elements: {all_species_ft}"
-    )
-
-    if args.descriptors is not None:
-        print("Loading descriptors")
-        descriptors = np.load(args.descriptors)
-        atoms_list_pt = ase.io.read(args.configs_pt, index=":")
-        for i, atoms in enumerate(atoms_list_pt):
-            atoms.arrays["mace_descriptors"] = descriptors[i]
+    if args.filtering_type != None:
+        all_species_ft = np.unique([x.symbol for atoms in atoms_list_ft for x in atoms])
         print(
             "Filtering configurations based on the finetuning set,"
             f"filtering type: combinations, elements: {all_species_ft}"
         )
-        atoms_list_pt = [
-            x for x in atoms_list_pt if filter_atoms(x, all_species_ft, "combinations")
-        ]
+        if args.descriptors is not None:
+            print("Loading descriptors")
+            descriptors = np.load(args.descriptors)
+            atoms_list_pt = ase.io.read(args.configs_pt, index=":")
+            for i, atoms in enumerate(atoms_list_pt):
+                atoms.arrays["mace_descriptors"] = descriptors[i]
+            print(
+                "Filtering configurations based on the finetuning set,"
+                f"filtering type: combinations, elements: {all_species_ft}"
+            )
+            atoms_list_pt = [
+                x
+                for x in atoms_list_pt
+                if filter_atoms(x, all_species_ft, "combinations")
+            ]
 
+        else:
+            atoms_list_pt = ase.io.read(args.configs_pt, index=":")
+            atoms_list_pt = [
+                x
+                for x in atoms_list_pt
+                if filter_atoms(x, all_species_ft, "combinations")
+            ]
     else:
         atoms_list_pt = ase.io.read(args.configs_pt, index=":")
-        atoms_list_pt = [
-            x for x in atoms_list_pt if filter_atoms(x, all_species_ft, "combinations")
-        ]
 
     if args.num_samples is not None and args.num_samples < len(atoms_list_pt):
         if args.descriptors is None:
@@ -241,6 +268,7 @@ def main():
     for atoms in atoms_list_pt:
         # del atoms.info["mace_descriptors"]
         atoms.info["pretrained"] = True
+        atoms.info["config_weight"] = args.weight_pt
         if args.theory_pt is not None:
             atoms.info["theory"] = args.theory_pt
 
@@ -248,6 +276,8 @@ def main():
     ase.io.write(args.output, atoms_list_pt, format="extxyz")
     print("Saving a combined XYZ file")
     for atoms in atoms_list_ft:
+        atoms.info["pretrained"] = False
+        atoms.info["config_weight"] = args.weight_ft
         if args.theory_ft is not None:
             atoms.info["theory"] = args.theory_ft
     atoms_fps_pt_ft = atoms_list_pt + atoms_list_ft
