@@ -68,6 +68,7 @@ class MACECalculator(Calculator):
                 "node_energy",
                 "forces",
                 "stress",
+                "hessian",
             ]
         elif model_type == "DipoleMACE":
             self.implemented_properties = ["dipole"]
@@ -79,6 +80,7 @@ class MACECalculator(Calculator):
                 "forces",
                 "stress",
                 "dipole",
+                "hessian",
             ]
         else:
             raise ValueError(
@@ -112,6 +114,7 @@ class MACECalculator(Calculator):
         self.models = [
             torch.load(f=model_path, map_location=device) for model_path in model_paths
         ]
+        #print(model_paths,device)
         for model in self.models:
             model.to(device)  # shouldn't be necessary but seems to help with GPU
         r_maxs = [model.r_max.cpu() for model in self.models]
@@ -163,12 +166,14 @@ class MACECalculator(Calculator):
             node_energy = torch.zeros(num_models, num_atoms, device=self.device)
             forces = torch.zeros(num_models, num_atoms, 3, device=self.device)
             stress = torch.zeros(num_models, 3, 3, device=self.device)
+            hessian = torch.zeros(num_models,num_atoms* 3, num_atoms,3, device=self.device)
             dict_of_tensors.update(
                 {
                     "energies": energies,
                     "node_energy": node_energy,
                     "forces": forces,
                     "stress": stress,
+                    "hessian" : hessian,
                 }
             )
         if model_type in ["EnergyDipoleMACE", "DipoleMACE"]:
@@ -214,11 +219,12 @@ class MACECalculator(Calculator):
         )
         for i, model in enumerate(self.models):
             batch = batch_base.clone()
-            out = model(batch.to_dict(), compute_stress=compute_stress)
+            out = model(batch.to_dict(), compute_stress=compute_stress,compute_hessian=False)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
                 ret_tensors["forces"][i] = out["forces"].detach()
+                ret_tensors["hessian"][i]=out["hessian"].detach()
                 if out["stress"] is not None:
                     ret_tensors["stress"][i] = out["stress"].detach()
             if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
@@ -226,6 +232,12 @@ class MACECalculator(Calculator):
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+            self.results["hessian"]=(
+                torch.mean(ret_tensors["hessian"], dim=0).cpu().numpy()
+                * self.energy_units_to_eV
+                / self.length_units_to_A
+                / self.length_units_to_A
+            )
             self.results["energy"] = (
                 torch.mean(ret_tensors["energies"], dim=0).cpu().item()
                 * self.energy_units_to_eV
@@ -240,6 +252,14 @@ class MACECalculator(Calculator):
                 / self.length_units_to_A
             )
             if self.num_models > 1:
+                ### This might be buggy needs to be tested
+                self.results["hessian"] = (
+                    ret_tensors["hessian"].cpu().numpy()
+                    * self.energy_units_to_eV
+                    / self.length_units_to_A
+                    / self.length_units_to_A
+                )
+                
                 self.results["energies"] = (
                     ret_tensors["energies"].cpu().numpy() * self.energy_units_to_eV
                 )
@@ -278,7 +298,65 @@ class MACECalculator(Calculator):
                     .cpu()
                     .numpy()
                 )
+    def get_hessian(self,
+                    atoms=None,
+                    method="loop",
+                    ):
+        """Returns the hessian
+  
+        :param atoms: ase.Atoms object
+    
+        """
+        # call to base-class to set atoms attribute
+        Calculator.calculate(self, atoms)
+        # prepare data
+        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
+        data_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[
+                data.AtomicData.from_config(
+                    config, z_table=self.z_table, cutoff=self.r_max
+                )
+            ],
+            batch_size=1,
+            shuffle=False,
+            drop_last=False,
+        )
 
+        if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+            batch = next(iter(data_loader)).to(self.device)
+            node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])
+            compute_stress = True
+        else:
+            compute_stress = False
+
+        batch_base = next(iter(data_loader)).to(self.device)
+        ret_tensors = self._create_result_tensors(
+            self.model_type, self.num_models, len(atoms)
+        )
+        for i, model in enumerate(self.models):
+            batch = batch_base.clone()
+            out = model(batch.to_dict(), training = True, compute_stress=compute_stress,compute_hessian=True,hessian_method=method)
+            if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+                ret_tensors["hessian"][i]=out["hessian"].detach()
+
+        self.results = {}
+        if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+            self.results["hessian"]=(
+                torch.mean(ret_tensors["hessian"], dim=0).cpu().numpy()
+                * self.energy_units_to_eV
+                / self.length_units_to_A
+                / self.length_units_to_A
+            )
+            ### This might be buggy needs to be tested
+            if self.num_models > 1:
+                self.results["hessian"] = (
+                    ret_tensors["hessian"].cpu().numpy()
+                    * self.energy_units_to_eV
+                    / self.length_units_to_A
+                    / self.length_units_to_A
+                )
+                
+        return self.results["hessian"]
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
         """Extracts the descriptors from MACE model.
         :param atoms: ase.Atoms object

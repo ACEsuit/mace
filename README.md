@@ -14,6 +14,7 @@
 - [Usage](#usage)
   - [Training](#training)
   - [Evaluation](#evaluation)
+  - [Calculate Hessinas](#calculate-hessinas)
 - [Tutorial](#tutorial)
 - [Weights and Biases](#weights-and-biases-for-experiment-tracking)
 - [Development](#development)
@@ -154,6 +155,20 @@ mace_eval_configs \
     --model="your_model.model" \
     --output="./your_output.xyz"
 ```
+
+### Calculate Hessinas
+This branch includes the option to calculate Hessian based on a autograd implementation. To obtain the hessian the following commands can be use:
+```py
+from mace.calculators import mace_mp
+from ase import build
+
+atoms = build.molecule('H2O')
+calc = mace_mp(model="medium", dispersion=False, default_dtype="float64",device='cuda', )#device='cpu')
+atoms.calc = calc
+hessian=calc.get_hessian(atoms=atoms)
+print("h:",hessian)
+```
+A [file](https://github.com/Nilsgoe/mace_hessian/tree/main/tests/test_mace_hessian.py) for a larger test and a comparison with numerical derivatives is also provided.
 
 ## Tutorial
 

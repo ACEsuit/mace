@@ -20,9 +20,10 @@ from .blocks import AtomicEnergiesBlock
 
 
 def compute_forces(
-    energy: torch.Tensor, positions: torch.Tensor, training: bool = True
+    energy: torch.Tensor, positions: torch.Tensor, training: bool = True,compute_hessian: bool =True, hessian_method=None,
 ) -> torch.Tensor:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+    #training=True
     gradient = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions],  # [n_nodes, 3]
@@ -34,8 +35,21 @@ def compute_forces(
         0
     ]  # [n_nodes, 3]
     if gradient is None:
-        return torch.zeros_like(positions)
-    return -1 * gradient
+        return torch.zeros_like(positions), None
+    
+    #print("Hessian?: ",compute_hessian)
+    if compute_hessian == False:
+        hessian = None 
+    else:
+        if hessian_method==None:
+            hessian_method="loop"
+        hessian = compute_hessian_autograd(gradient,positions,hessian_method)
+        
+    if hessian is None:
+        hessian = torch.zeros(gradient.view(-1).shape[0],gradient.shape[0],gradient.shape[1])
+    #print("H:",hessian)
+    return -1 * gradient, hessian
+    
 
 
 def compute_forces_virials(
@@ -45,8 +59,11 @@ def compute_forces_virials(
     cell: torch.Tensor,
     training: bool = True,
     compute_stress: bool = False,
+    compute_hessian: bool = False,
+    hessian_method= None,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+    #training=True
     forces, virials = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions, displacement],  # [n_nodes, 3]
@@ -69,8 +86,53 @@ def compute_forces_virials(
     if virials is None:
         virials = torch.zeros((1, 3, 3))
 
-    return -1 * forces, -1 * virials, stress
+    #print(compute_hessian,forces)
+     # Compute Hessian
+    hessian = None
+    if compute_hessian == True:
+        if hessian_method is None:
+            hessian_method = "loop"
+        hessian = compute_hessian_autograd(forces,positions,hessian_method)
+        
+        #is that needed? it is alreay above been used
+        if forces is None:
+            forces = torch.zeros_like(positions)
+        if virials is None:
+            virials = torch.zeros((1, 3, 3))
+            
+    if hessian is None:
+        hessian = torch.zeros(forces.view(-1).shape[0],forces.shape[0],forces.shape[1])
 
+    return -1 * forces, -1 * virials, stress, hessian
+#exit()
+
+def compute_hessian_autograd(
+    forces: torch.Tensor,
+    positions: torch.Tensor,
+    hessian_method="loop",
+)-> torch.Tensor:
+        
+    if hessian_method=="loop":
+        hessian=[]
+        for grad_elem in forces.view(-1):
+            hess_row = torch.autograd.grad(
+                outputs = [grad_elem], 
+                inputs = [positions], 
+                grad_outputs=torch.ones_like(grad_elem),
+                retain_graph=True, 
+                create_graph=False,
+                allow_unused=False,
+            )[0]
+            hess_row =hess_row.detach() #this makes it very slow? but needs less memory
+            if hess_row is None:
+                hessian.append(torch.zeros_like(positions))
+            else:
+                hessian.append(hess_row)
+        hessian = torch.stack(hessian)
+    else:
+        raise ValueError("For the hessian_method please select loop!")
+        
+    return hessian
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
@@ -119,26 +181,32 @@ def get_outputs(
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
+    compute_hessian: bool =True,
+    hessian_method=None,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+
     if (compute_virials or compute_stress) and displacement is not None:
         # forces come for free
-        forces, virials, stress = compute_forces_virials(
+        forces, virials, stress,hessian = compute_forces_virials(
             energy=energy,
             positions=positions,
             displacement=displacement,
             cell=cell,
             compute_stress=compute_stress,
+            compute_hessian=compute_hessian,
+            hessian_method=hessian_method,
             training=training,
         )
     elif compute_force:
-        forces, virials, stress = (
-            compute_forces(energy=energy, positions=positions, training=training),
-            None,
-            None,
-        )
+        forces, hessian = compute_forces(energy=energy, positions=positions, training=training,compute_hessian=compute_hessian,hessian_method=hessian_method)
+        virials=None
+        stress =None
     else:
-        forces, virials, stress = (None, None, None)
-    return forces, virials, stress
+        forces, virials, stress, hessian = (None, None, None ,None)
+    if compute_hessian ==False:
+        return forces, virials, stress, hessian
+    else:
+        return forces, virials, stress, hessian
 
 
 def get_edge_vectors_and_lengths(

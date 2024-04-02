@@ -288,6 +288,8 @@ class ScaleShiftMACE(MACE):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        compute_hessian: bool =False,
+        hessian_method=None,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
@@ -311,7 +313,6 @@ class ScaleShiftMACE(MACE):
                 num_graphs=num_graphs,
                 batch=data["batch"],
             )
-
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])
         e0 = scatter_sum(
@@ -363,9 +364,8 @@ class ScaleShiftMACE(MACE):
 
         # Add E_0 and (scaled) interaction energy
         total_energy = e0 + inter_e
-        node_energy = node_e0 + node_inter_es
-
-        forces, virials, stress = get_outputs(
+        node_energy = node_e0 + node_inter_es     
+        forces, virials, stress,hessian= get_outputs(
             energy=inter_e,
             positions=data["positions"],
             displacement=displacement,
@@ -374,10 +374,13 @@ class ScaleShiftMACE(MACE):
             compute_force=compute_force,
             compute_virials=compute_virials,
             compute_stress=compute_stress,
+            compute_hessian=compute_hessian,
+            hessian_method=hessian_method,
         )
 
         output = {
             "energy": total_energy,
+            "positions": data["positions"],
             "node_energy": node_energy,
             "interaction_energy": inter_e,
             "forces": forces,
@@ -385,10 +388,10 @@ class ScaleShiftMACE(MACE):
             "stress": stress,
             "displacement": displacement,
             "node_feats": node_feats_out,
+            "hessian": hessian,
         }
 
         return output
-
 
 class BOTNet(torch.nn.Module):
     def __init__(
