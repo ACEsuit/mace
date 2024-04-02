@@ -18,6 +18,7 @@ from mace import data
 from mace.tools.compile import prepare
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
+from mace.tools.finetuning_utils import extract_load
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
@@ -114,17 +115,19 @@ class MACECalculator(Calculator):
             print(f"Torch compile is enabled with mode: {compile_mode}")
             self.models = [
                 torch.compile(
-                    prepare(torch.load)(f=model_path, map_location=device),
+                    prepare(extract_load)(f=model_path, map_location=device),
                     mode=compile_mode,
-                    fullgraph=False,
+                    fullgraph=True,
                 )
                 for model_path in model_paths
             ]
+            self.use_compile = True
         else:
             self.models = [
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
             ]
+            self.use_compile = False
         for model in self.models:
             model.to(device)  # shouldn't be necessary but seems to help with GPU
         r_maxs = [model.r_max.cpu() for model in self.models]
@@ -189,6 +192,13 @@ class MACECalculator(Calculator):
             dict_of_tensors.update({"dipole": dipole})
         return dict_of_tensors
 
+    def _prepare_batch(self, batch):
+        batch_clone = batch.clone()
+        if self.use_compile:
+            batch_clone["node_attrs"].requires_grad_(True)
+            batch_clone["positions"].requires_grad_(True)
+        return batch_clone
+
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         """
@@ -217,7 +227,7 @@ class MACECalculator(Calculator):
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
             batch = next(iter(data_loader)).to(self.device)
             node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])
-            compute_stress = True
+            compute_stress = not self.use_compile
         else:
             compute_stress = False
 
@@ -226,8 +236,12 @@ class MACECalculator(Calculator):
             self.model_type, self.num_models, len(atoms)
         )
         for i, model in enumerate(self.models):
-            batch = batch_base.clone()
-            out = model(batch.to_dict(), compute_stress=compute_stress)
+            batch = self._prepare_batch(batch_base)
+            out = model(
+                batch.to_dict(),
+                compute_stress=compute_stress,
+                training=self.use_compile,
+            )
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
