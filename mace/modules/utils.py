@@ -234,7 +234,7 @@ def compute_mean_rms_energy_forces(
     forces = torch.cat(forces_list, dim=0)  # {[total_n_graphs*n_atoms,3], }
 
     mean = to_numpy(torch.mean(atom_energies)).item()
-    rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
+    rms = to_numpy(torch.sqrt(3*torch.mean(torch.square(forces)))).item()
     rms = _check_non_zero(rms)
 
     return mean, rms

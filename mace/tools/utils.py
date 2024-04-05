@@ -26,7 +26,7 @@ def compute_rel_mae(delta: np.ndarray, target_val: np.ndarray) -> float:
 
 
 def compute_rmse(delta: np.ndarray) -> float:
-    return np.sqrt(np.mean(np.square(delta))).item()
+    return np.sqrt(3*np.mean(np.square(delta))).item()
 
 
 def compute_rel_rmse(delta: np.ndarray, target_val: np.ndarray) -> float:
