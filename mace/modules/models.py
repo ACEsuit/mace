@@ -167,6 +167,8 @@ class MACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        decouple_indices: Optional[List[int]] = None,
+        lmbda: Optional[float] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)
@@ -254,6 +256,16 @@ class MACE(torch.nn.Module):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
         )
+        # dhdl = torch.tensor(0)
+        # if lmbda is not None:
+        #     dhdl = torch.autograd.grad(
+        #         outputs=[total_energy],  # [n_graphs, ]
+        #         inputs=[lmbda],  # [n_nodes, 3]
+        #         grad_outputs=dhdl,
+        #         retain_graph=training,  # Make sure the graph is not destroyed during training
+        #         create_graph=training,  # Create graph for second derivative
+        #         allow_unused=True,  # For complete dissociation turn to true
+        #     )
 
         return {
             "energy": total_energy,
@@ -264,6 +276,7 @@ class MACE(torch.nn.Module):
             "stress": stress,
             "displacement": displacement,
             "node_feats": node_feats_out,
+            # "dHdL": dhdl,
         }
 
 
@@ -288,6 +301,8 @@ class ScaleShiftMACE(MACE):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        decouple_indices: Optional[torch.Tensor] = None,
+        lmbda: Optional[float] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
@@ -312,6 +327,11 @@ class ScaleShiftMACE(MACE):
                 batch=data["batch"],
             )
 
+        # we want a mask into the edge indices for those pairs with an atom on each side of the decoupling plane
+        # TODO: this method assumes we have contiguous atom indices in the alchemical region, and this comes first
+
+        # print("Number of alchemical interactions: ", n_alchemical_interactions)
+        # print("NL", data["edge_index"])
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])
         e0 = scatter_sum(
@@ -328,6 +348,22 @@ class ScaleShiftMACE(MACE):
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats = self.radial_embedding(lengths)
 
+        # scale edge attrs and edge feats by lambda according to the alchemical mask
+        if lmbda is not None and decouple_indices is not None:
+            max_alchemical_atom_idx = torch.max(decouple_indices)
+            alchemical_mask = torch.logical_or(
+                torch.logical_and(
+                    data["edge_index"][0, :] <= max_alchemical_atom_idx,
+                    data["edge_index"][1, :] > max_alchemical_atom_idx,
+                ),
+                torch.logical_and(
+                    data["edge_index"][1, :] <= max_alchemical_atom_idx,
+                    data["edge_index"][0, :] > max_alchemical_atom_idx,
+                ),
+            )
+
+            edge_attrs[alchemical_mask] *= lmbda
+            edge_feats[alchemical_mask] *= lmbda
         # Interactions
         node_es_list = []
         node_feats_list = []
