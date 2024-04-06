@@ -196,3 +196,62 @@ def test_energy_dipole_mace():
         np.array(rot @ output["dipole"][0].detach().numpy()),
         output["dipole"][1].detach().numpy(),
     )
+
+
+def test_alchemical_mace():
+
+    model_config = dict(
+        r_max=5,
+        num_bessel=8,
+        num_polynomial_cutoff=6,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=5,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("32x0e + 32x1o"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies,
+        avg_num_neighbors=8,
+        atomic_numbers=table.zs,
+        correlation=3,
+        radial_type="bessel",
+        atomic_inter_scale=1.0,
+        atomic_inter_shift=0.0,
+    )
+    model = modules.ScaleShiftMACE(**model_config)
+    model_compiled = jit.compile(model)
+
+    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
+    atomic_data2 = data.AtomicData.from_config(
+        config_rotated, z_table=table, cutoff=3.0
+    )
+
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data, atomic_data2],
+        batch_size=2,
+        shuffle=True,
+        drop_last=False,
+    )
+    batch = next(iter(data_loader))
+    output1 = model(
+        batch.to_dict(),
+        training=True,
+        decouple_indices=torch.tensor([0]),
+        lmbda=torch.tensor(0.5),
+    )
+    output2 = model_compiled(
+        batch.to_dict(),
+        training=True,
+        decouple_indices=torch.tensor([0]),
+        lmbda=torch.tensor(0.5),
+    )
+    assert torch.allclose(output1["energy"][0], output2["energy"][0])
+    assert torch.allclose(output1["energy"][1], output2["energy"][1])
+
+    assert torch.allclose(output1["dhdl"], output2["dhdl"])
