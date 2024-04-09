@@ -5,11 +5,7 @@ MACE in LAMMPS
 **************
 
 .. warning::
-    The LAMMPS interface for MACE is work in progress,
-    with improvements in speed, stability, and generality ongoing.
-
-    If you would still like to use it, here are
-    some instructions. Please be extra cautious about
+    Please be cautious about
     benchmarking your LAMMPS model against, for example, the 
     equivalent ASE calculator.
 
@@ -36,60 +32,58 @@ CSD3 Ampere Nodes
 
 First steps::
 
-    mkdir lammps-mace-gpu
-    cd lammps-mace-gpu
     git clone --branch=mace --depth=1 https://github.com/ACEsuit/lammps
-    wget https://download.pytorch.org/libtorch/cu117/libtorch-cxx11-abi-shared-with-deps-1.13.1%2Bcu117.zip
-    unzip libtorch-cxx11-abi-shared-with-deps-1.13.1+cu117.zip
+    wget https://download.pytorch.org/libtorch/cu121/libtorch-shared-with-deps-2.2.0%2Bcu121.zip
+    unzip libtorch-shared-with-deps-2.2.0+cu121.zip
+    rm libtorch-shared-with-deps-2.2.0+cu121.zip
     mv libtorch libtorch-gpu
 
 Request an interactive job to obtain a GPU node for the installation::
 
     sintr -A YOUR-ACCOUNT-GPU -p ampere -N 1 --gres=gpu:1 -t 1:00:00
 
-Prepare the environment::
+After logging on to the GPU node interactively, prepare the environment::
 
     module purge
     module load intel-mkl-2017.4-gcc-5.4.0-2tzpyn7
-    module load rhel8/default-amp
-    module load cudnn
+    module load rhel8/slurm rhel8/global gcc/9 openmpi/gcc/9.3/4.0.4 cuda/12.1 cudnn
 
 Compile LAMMPS::
 
     cd lammps
-    mkdir build-kokkos-cuda
-    cd build-kokkos-cuda
+    mkdir build-ampere
+    cd build-ampere
     cmake \
         -D CMAKE_BUILD_TYPE=Release \
         -D CMAKE_INSTALL_PREFIX=$(pwd) \
-        -D BUILD_MPI=yes \
-        -D BUILD_OMP=yes \
-        -D BUILD_SHARED_LIBS=yes \
-        -D LAMMPS_EXCEPTIONS=yes \
-        -D PKG_KOKKOS=yes \
-        -D Kokkos_ARCH_AMDAVX=yes \
-        -D Kokkos_ARCH_AMPERE100=yes \
-        -D Kokkos_ENABLE_CUDA=yes \
-        -D Kokkos_ENABLE_OPENMP=yes \
-        -D Kokkos_ENABLE_DEBUG=no \
-        -D Kokkos_ENABLE_DEBUG_BOUNDS_CHECK=no \
-        -D Kokkos_ENABLE_CUDA_UVM=no \
+        -D CMAKE_CXX_STANDARD=17 \
+        -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+        -D BUILD_MPI=ON \
+        -D BUILD_SHARED_LIBS=ON \
+        -D PKG_KOKKOS=ON \
+        -D Kokkos_ENABLE_CUDA=ON \
         -D CMAKE_CXX_COMPILER=$(pwd)/../lib/kokkos/bin/nvcc_wrapper \
-        -D PKG_ML-MACE=yes \
+        -D Kokkos_ARCH_AMDAVX=ON \
+        -D Kokkos_ARCH_AMPERE100=ON \
         -D CMAKE_PREFIX_PATH=$(pwd)/../../libtorch-gpu \
+        -D PKG_ML-MACE=ON \
         ../cmake
-     make -j 12
+    make -j 20
+    make install
+
 
 Using the model in LAMMPS
 -------------------------
 
 .. warning::
-    At present, only single-GPU evaluation is supported.
+    At present, only single-GPU evaluation is recommended.
 
-Add the following after your `atom_style` command:::
+Begin your LAMMPS input with the following commands:::
 
-    atom_modify map yes
-    newton on
+    units         metal
+    atom_style    atomic
+    atom_modify   map yes
+    newton        on
 
 Your pair commands should look something like this:::
 
@@ -130,17 +124,26 @@ Install Lammps::
     git clone --branch mace --depth=1 https://github.com/ACEsuit/lammps
     cd lammps; mkdir build; cd build
     cmake -DCMAKE_INSTALL_PREFIX=$(pwd) \
-          -DBUILD_MPI=ON \
-          -DBUILD_OMP=ON \
-          -DPKG_OPENMP=ON \
-          -DPKG_ML-MACE=ON \
-          -DCMAKE_PREFIX_PATH=$(pwd)/../../libtorch \
+          -D CMAKE_CXX_STANDARD=17 \
+          -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+          -D BUILD_MPI=ON \
+          -D BUILD_OMP=ON \
+          -D PKG_OPENMP=ON \
+          -D PKG_ML-MACE=ON \
+          -D CMAKE_PREFIX_PATH=$(pwd)/../../libtorch \
           ../cmake
     make -j 4
     make install
 
 Using the model in LAMMPS
 -------------------------
+
+Begin your LAMMPS input with the following commands:::
+
+    units         metal
+    atom_style    atomic
+    atom_modify   map yes
+    newton        on
 
 Your pair commands should look something like this:::
 
