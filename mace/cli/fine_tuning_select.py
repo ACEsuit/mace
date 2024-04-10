@@ -18,6 +18,7 @@ from tqdm import tqdm
 from mace import data
 import pandas as pd
 from mace.tools import torch_geometric, torch_tools, utils
+import fpsample
 
 
 def parse_args() -> argparse.Namespace:
@@ -157,61 +158,45 @@ class FPS:
     def __init__(self, atoms_list: list[ase.Atoms], n_samples: int):
         self.n_samples = n_samples
         self.atoms_list = atoms_list
+        self.species = np.unique([x.symbol for atoms in atoms_list for x in atoms])
+        self.species_dict = {x: i for i, x in enumerate(self.species)}
         # start from a random configuration
         self.list_index = [np.random.randint(0, len(atoms_list))]
+        self.assemble_descriptors()
 
-    def run(self) -> list[int]:
+    def run(
+        self,
+    ) -> list[int]:
         """
         Run the farthest point sampling algorithm.
         """
-        for _ in range(min(self.n_samples, len(self.atoms_list)) - 1):
-            self.update()
+        print(self.descriptors_dataset.reshape(len(self.atoms_list), -1).shape)
+        print("n_samples", self.n_samples)
+        self.list_index = fpsample.fps_npdu_kdtree_sampling(
+            self.descriptors_dataset.reshape(len(self.atoms_list), -1), self.n_samples
+        )
         return self.list_index
 
-    def update(self) -> list[int]:
+    def assemble_descriptors(self) -> np.ndarray:
         """
-        Compute the farthest point sampling for the index-th configuration.
+        Assemble the descriptors for all the configurations.
         """
-        distance_matrix = self.compute_distance(self.list_index[-1])
-        index_next = np.argmax(np.mean(distance_matrix, axis=1))
-        self.list_index.append(index_next)
-
-    def compute_distance(self, index: int) -> np.ndarray:
-        """
-        Compute the distance matrix between the descriptor of the index-th configuration and all the other configurations.
-        """
-        descriptors_filtered = self.filter_species(index)
-        # compute the distance matrix
-        distance_matrix = np.zeros((len(self.atoms_list), len(descriptors_filtered)))
-        descriptors_atoms_index = self.atoms_list[index].info["mace_descriptors"]
-        for zi, z in enumerate(descriptors_filtered):
-            distance_matrix[:, zi] = np.nan_to_num(
-                np.linalg.norm(
-                    descriptors_filtered[z] - descriptors_atoms_index[z],
-                    axis=1,
+        self.descriptors_dataset = np.float32(
+            10e10
+            * np.ones(
+                (
+                    len(self.atoms_list),
+                    len(self.species),
+                    len(list(self.atoms_list[0].info["mace_descriptors"].values())[0]),
                 )
             )
-            # put inf to zeros
-        return distance_matrix
-
-    def filter_species(self, index: int) -> list[ase.Atoms]:
-        """
-        Filter the configurations based on the species of the index-th configuration.
-        """
-        species_index = np.unique(self.atoms_list[index].symbols)
-        descriptors_species = {z: [] for z in species_index}
-        descriptors_index = self.atoms_list[index].info["mace_descriptors"]
+        )
         for i, atoms in enumerate(self.atoms_list):
-            descriptors_atoms = atoms.info["mace_descriptors"]
-            for z in species_index:
-                descriptors_species[z].append(
-                    descriptors_atoms[z]
-                    if z in descriptors_atoms
-                    else np.full_like(descriptors_index[z], np.nan)
+            descriptors = atoms.info["mace_descriptors"]
+            for z in descriptors:
+                self.descriptors_dataset[i, self.species_dict[z]] = np.float32(
+                    descriptors[z]
                 )
-        for z in species_index:
-            descriptors_species[z] = np.array(descriptors_species[z])
-        return descriptors_species
 
 
 def main():
@@ -232,10 +217,10 @@ def main():
         )
         if args.descriptors is not None:
             print("Loading descriptors")
-            descriptors = np.load(args.descriptors)
+            descriptors = np.load(args.descriptors, allow_pickle=True)
             atoms_list_pt = ase.io.read(args.configs_pt, index=":")
             for i, atoms in enumerate(atoms_list_pt):
-                atoms.arrays["mace_descriptors"] = descriptors[i]
+                atoms.info["mace_descriptors"] = descriptors[i]
             print(
                 "Filtering configurations based on the finetuning set,"
                 f"filtering type: combinations, elements: {all_species_ft}"
@@ -255,11 +240,29 @@ def main():
             ]
     else:
         atoms_list_pt = ase.io.read(args.configs_pt, index=":")
+        if args.descriptors is not None:
+            print(
+                "Loading descriptors for the pretraining set from {}".format(
+                    args.descriptors
+                )
+            )
+            descriptors = np.load(args.descriptors, allow_pickle=True)
+            for i, atoms in enumerate(atoms_list_pt):
+                atoms.info["mace_descriptors"] = descriptors[i]
 
     if args.num_samples is not None and args.num_samples < len(atoms_list_pt):
         if args.descriptors is None:
             print("Calculating descriptors for the pretraining set")
             calculate_descriptors(atoms_list_pt, calc, None)
+            descriptors_list = [
+                atoms.info["mace_descriptors"] for atoms in atoms_list_pt
+            ]
+            print(
+                "Saving descriptors at {}".format(
+                    args.output.replace(".xyz", "descriptors.npy")
+                )
+            )
+            np.save(args.output.replace(".xyz", "descriptors.npy"), descriptors_list)
         print("Selecting configurations using Farthest Point Sampling")
         fps_pt = FPS(atoms_list_pt, args.num_samples)
         idx_pt = fps_pt.run()
