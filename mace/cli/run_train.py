@@ -446,6 +446,21 @@ def main() -> None:
     )
 
     start_epoch = 0
+    if args.init_latest:
+        try:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=True,
+                device=device,
+                model_only=True,
+            )
+        except Exception:  # pylint: disable=W0703
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=False,
+                device=device,
+                model_only=True,
+            )
     if args.restart_latest:
         try:
             opt_start_epoch = checkpoint_handler.load_latest(
