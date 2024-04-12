@@ -432,7 +432,14 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
     )
-    parser.add_argument(
+    parser_restart = parser.add_mutually_exclusive_group()
+    parser_restart.add_argument(
+        "--init_latest",
+        help="initialize model from latest checkpoint",
+        action="store_true",
+        default=False,
+    )
+    parser_restart.add_argument(
         "--restart_latest",
         help="restart optimizer from latest checkpoint",
         action="store_true",
