@@ -22,7 +22,7 @@ from torch_ema import ExponentialMovingAverage
 
 import mace
 from mace import data, modules, tools
-from mace.calculators.foundations_models import mace_mp
+from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.tools import torch_geometric
 from mace.tools.scripts_utils import (
     LRScheduler,
@@ -35,7 +35,7 @@ from mace.tools.scripts_utils import (
     check_folder_subfolder,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
-from mace.tools.utils import load_foundations
+from mace.tools.finetuning_utils import load_foundations, extract_config_mace_model
 
 
 def main() -> None:
@@ -53,7 +53,7 @@ def main() -> None:
         try:
             distr_env = DistributedEnvironment()
         except Exception as e:  # pylint: disable=W0703
-            logging.info(f"Error specifying environment for distributed training: {e}")
+            logging.error(f"Failed to initialize distributed environment: {e}")
             return
         world_size = distr_env.world_size
         local_rank = distr_env.local_rank
@@ -82,11 +82,42 @@ def main() -> None:
     tools.set_default_dtype(args.default_dtype)
     device = tools.init_device(args.device)
 
+    if args.foundation_model is not None:
+        if args.foundation_model in ["small", "medium", "large"]:
+            logging.info(
+                f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
+            )
+            calc = mace_mp(
+                model=args.foundation_model,
+                device=args.device,
+                default_dtype=args.default_dtype,
+            )
+            model_foundation = calc.models[0]
+        elif args.foundation_model in ["small_off", "medium_off", "large_off"]:
+            model_type = args.foundation_model.split("_")[0]
+            logging.info(
+                f"Using foundation model mace-off-2023 {model_type} as initial checkpoint. ASL license."
+            )
+            model_foundation = mace_off(
+                model=model_type,
+                device=args.device,
+                default_dtype=args.default_dtype,
+                return_raw_model=True,
+            )
+        else:
+            model_foundation = torch.load(args.foundation_model, map_location=device)
+            logging.info(
+                f"Using foundation model {args.foundation_model} as initial checkpoint."
+            )
+        args.r_max = model_foundation.r_max.item()
+
     if args.statistics_file is not None:
         with open(args.statistics_file, "r") as f:  # pylint: disable=W1514
             statistics = json.load(f)
         logging.info("Using statistics json file")
-        args.r_max = statistics["r_max"]
+        args.r_max = (
+            statistics["r_max"] if args.foundation_model is None else args.r_max
+        )
         args.atomic_numbers = statistics["atomic_numbers"]
         args.mean = statistics["mean"]
         args.std = statistics["std"]
@@ -118,6 +149,7 @@ def main() -> None:
             virials_key=args.virials_key,
             dipole_key=args.dipole_key,
             charges_key=args.charges_key,
+            keep_isolated_atoms=args.keep_isolated_atoms,
         )
         if args.theories is not None:
             args.theories = ast.literal_eval(args.theories)
@@ -270,9 +302,10 @@ def main() -> None:
         batch_size=args.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
-        drop_last=False,
+        drop_last=(train_sampler is None),
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
+        generator=torch.Generator().manual_seed(args.seed),
     )
     valid_loaders = {theories[i]: None for i in range(len(theories))}
     if not isinstance(valid_sets, dict):
@@ -295,17 +328,6 @@ def main() -> None:
     #     drop_last=False,
     #     pin_memory=args.pin_memory,
     #     num_workers=args.num_workers,
-    # )
-
-    # loss_fn: torch.nn.Module = get_loss_fn(
-    #     args.loss,
-    #     args.energy_weight,
-    #     args.forces_weight,
-    #     args.stress_weight,
-    #     args.virials_weight,
-    #     args.dipole_weight,
-    #     dipole_only,
-    #     compute_dipole,
     # )
 
     if args.loss == "weighted":
@@ -389,39 +411,26 @@ def main() -> None:
     }
     logging.info(f"Selected the following outputs: {output_args}")
 
+    if args.scaling == "no_scaling":
+        args.std = 1.0
+        logging.info("No scaling selected")
+    elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
+        args.mean, args.std = modules.scaling_classes[args.scaling](
+            train_loader, atomic_energies
+        )
     # Build model
-    if args.foundation_model in ["small", "medium", "large"]:
-        args.model = "ScaleShiftMACE"
-        if args.foundation_model == "small":
-            args.max_L = 0
-        elif args.foundation_model == "medium":
-            args.max_L = 1
-        elif args.foundation_model == "large":
-            args.max_L = 2
-        args.num_channels = 128
-        args.hidden_irreps = o3.Irreps(
-            (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
-            .sort()
-            .irreps.simplify()
-        )
-        args.interaction_first = "RealAgnosticResidualInteractionBlock"
-        args.interaction = "RealAgnosticResidualInteractionBlock"
-        logging.info(
-            f"Using {args.foundation_model} mace-mp-0 settings. Hidden irreps: {args.hidden_irreps}"
-        )
-        model_config = dict(
-            r_max=6.0,
-            num_bessel=10,
-            num_polynomial_cutoff=5,
-            max_ell=3,
-            interaction_cls=modules.interaction_classes[args.interaction],
-            num_interactions=2,
-            num_elements=len(z_table),
-            hidden_irreps=o3.Irreps(args.hidden_irreps),
-            atomic_energies=atomic_energies,
-            avg_num_neighbors=args.avg_num_neighbors,
-            atomic_numbers=z_table.zs,
-        )
+    if args.foundation_model is not None:
+        logging.info("Building model")
+        model_config = extract_config_mace_model(model_foundation)
+        model_config["atomic_energies"] = atomic_energies
+        model_config["atomic_numbers"] = z_table.zs
+        model_config["num_elements"] = len(z_table)
+        args.max_L = model_config["hidden_irreps"].lmax
+        if args.model == "MACE":
+            model_config["atomic_inter_shift"] = 0.0
+        else:
+            model_config["atomic_inter_shift"] = args.mean
+        args.model = "FoundationMACE"
     else:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:
@@ -455,14 +464,6 @@ def main() -> None:
 
     model: torch.nn.Module
 
-    if args.scaling == "no_scaling":
-        args.std = 1.0
-        logging.info("No scaling selected")
-    elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
-        args.mean, args.std = modules.scaling_classes[args.scaling](
-            train_loader, atomic_energies
-        )
-
     if args.model == "MACE":
         model = modules.ScaleShiftMACE(
             **model_config,
@@ -495,6 +496,8 @@ def main() -> None:
             radial_type=args.radial_type,
             theories=theories,
         )
+    elif args.model == "FoundationMACE":
+        model = modules.ScaleShiftMACE(**model_config)
     elif args.model == "ScaleShiftBOTNet":
         model = modules.ScaleShiftBOTNet(
             **model_config,
@@ -549,21 +552,6 @@ def main() -> None:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
     if args.foundation_model is not None:
-        if args.foundation_model in ["small", "medium", "large"]:
-            calc = mace_mp(
-                model=args.foundation_model,
-                device=args.device,
-                default_dtype=args.default_dtype,
-            )
-            logging.info(
-                f"Using foundation model {args.foundation_model} as initial checkpoint."
-            )
-            model_foundation = calc.models[0]
-        else:
-            model_foundation = torch.load(args.foundation_model, map_location=device)
-            logging.info(
-                f"Using foundation model {args.foundation_model} as initial checkpoint."
-            )
         model = load_foundations(
             model,
             model_foundation,
@@ -635,6 +623,13 @@ def main() -> None:
             args.start_swa = (
                 args.max_num_epochs // 4 * 3
             )  # if not set start swa at 75% of training
+        else:
+            if args.start_swa > args.max_num_epochs:
+                logging.info(
+                    f"Start swa must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+                )
+                args.start_swa = args.max_num_epochs // 4 * 3
+                logging.info(f"Setting start swa to {args.start_swa}")
         if args.loss == "forces_only":
             logging.info("Can not select swa with forces only loss.")
         elif args.loss == "virials":
@@ -753,6 +748,7 @@ def main() -> None:
         max_num_epochs=args.max_num_epochs,
         logger=logger,
         patience=args.patience,
+        save_all_checkpoints=args.save_all_checkpoints,
         output_args=output_args,
         device=device,
         swa=swa,
@@ -809,11 +805,15 @@ def main() -> None:
                 drop_last=True,
                 seed=args.seed,
             )
+        try:
+            drop_last = test_set.drop_last
+        except AttributeError as e:
+            drop_last = False
         test_loader = torch_geometric.dataloader.DataLoader(
             test_set,
             batch_size=args.valid_batch_size,
             shuffle=(test_sampler is None),
-            drop_last=False,
+            drop_last=drop_last,
             num_workers=args.num_workers,
             pin_memory=args.pin_memory,
         )

@@ -131,6 +131,7 @@ def train(
     max_grad_norm: Optional[float] = 10.0,
     log_wandb: bool = False,
     distributed: bool = False,
+    save_all_checkpoints: bool = False,
     distributed_model: Optional[DistributedDataParallel] = None,
     train_sampler: Optional[DistributedSampler] = None,
     rank: Optional[int] = 0,
@@ -253,37 +254,29 @@ def train(
                         f"Stopping optimization after {patience_counter} epochs without improvement"
                     )
                     break
-                if ema is not None:
-                    with ema.average_parameters():
+                if save_all_checkpoints:
+                    param_context = (
+                        ema.average_parameters() if ema is not None else nullcontext()
+                    )
+                    with param_context:
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
                             epochs=epoch,
                             keep_last=True,
                         )
-                else:
-                    checkpoint_handler.save(
-                        state=CheckpointState(model, optimizer, lr_scheduler),
-                        epochs=epoch,
-                        keep_last=True,
-                    )
             else:
                 lowest_loss = valid_loss
                 patience_counter = 0
-                if ema is not None:
-                    with ema.average_parameters():
-                        checkpoint_handler.save(
-                            state=CheckpointState(model, optimizer, lr_scheduler),
-                            epochs=epoch,
-                            keep_last=keep_last,
-                        )
-                        # keep_last = False
-                else:
+                param_context = (
+                    ema.average_parameters() if ema is not None else nullcontext()
+                )
+                with param_context:
                     checkpoint_handler.save(
                         state=CheckpointState(model, optimizer, lr_scheduler),
                         epochs=epoch,
                         keep_last=keep_last,
                     )
-                # keep_last = False
+                    keep_last = False or save_all_checkpoints
         if distributed:
             torch.distributed.barrier()
         epoch += 1

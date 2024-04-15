@@ -7,9 +7,12 @@ from e3nn import o3
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
-from mace.calculators import mace_mp
+from mace.calculators import mace_mp, mace_off
 from mace.tools import torch_geometric
-from mace.tools.utils import load_foundations
+from mace.tools.utils import (
+    AtomicNumberTable,
+)
+from mace.tools.finetuning_utils import load_foundations, extract_config_mace_model
 
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
@@ -161,3 +164,38 @@ def test_multi_reference():
     assert np.allclose(
         forces, forces_loaded.detach().numpy()[:5, :], atol=1e-5, rtol=1e-5
     )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        mace_mp(model="small", device="cpu", default_dtype="float64").models[0],
+        mace_mp(model="medium", device="cpu", default_dtype="float64").models[0],
+        mace_mp(model="large", device="cpu", default_dtype="float64").models[0],
+        mace_off(model="small", device="cpu", default_dtype="float64").models[0],
+        mace_off(model="medium", device="cpu", default_dtype="float64").models[0],
+        mace_off(model="large", device="cpu", default_dtype="float64").models[0],
+    ],
+)
+def test_extract_config(model):
+    assert isinstance(model, modules.ScaleShiftMACE)
+    model_copy = modules.ScaleShiftMACE(**extract_config_mace_model(model))
+    model_copy.load_state_dict(model.state_dict())
+    z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
+    atomic_data = data.AtomicData.from_config(config, z_table=z_table, cutoff=6.0)
+    atomic_data2 = data.AtomicData.from_config(
+        config_rotated, z_table=z_table, cutoff=6.0
+    )
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data, atomic_data],
+        batch_size=2,
+        shuffle=True,
+        drop_last=False,
+    )
+    batch = next(iter(data_loader))
+    output = model(batch)
+    output_copy = model_copy(batch)
+    # assert all items of the output dicts are equal
+    for key in output.keys():
+        if isinstance(output[key], torch.Tensor):
+            assert torch.allclose(output[key], output_copy[key], atol=1e-5)

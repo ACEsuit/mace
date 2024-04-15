@@ -2,7 +2,6 @@ from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
 from .torch_tools import (
-    DataParallelModel,
     TensorDict,
     cartesian_to_spherical,
     count_parameters,
@@ -29,9 +28,10 @@ from .utils import (
     get_atomic_number_table_from_zs,
     get_optimizer,
     get_tag,
-    load_foundations,
     setup_logger,
 )
+
+from .finetuning_utils import load_foundations, extract_load
 
 __all__ = [
     "TensorDict",
@@ -67,6 +67,6 @@ __all__ = [
     "voigt_to_matrix",
     "init_wandb",
     "load_foundations",
+    "extract_load",
     "build_preprocess_arg_parser",
-    "DataParallelModel",
 ]

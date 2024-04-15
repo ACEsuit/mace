@@ -10,7 +10,20 @@ from typing import Optional
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
+    try:
+        import configargparse
+
+        parser = configargparse.ArgumentParser(
+            config_file_parser_class=configargparse.YAMLConfigFileParser,
+        )
+        parser.add(
+            "--config",
+            type=str,
+            is_config_file=True,
+            help="config file to agregate options",
+        )
+    except ImportError:
+        parser = argparse.ArgumentParser()
 
     # Name and seed
     parser.add_argument("--name", help="experiment name", required=True)
@@ -98,7 +111,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="type of radial basis functions",
         type=str,
         default="bessel",
-        choices=["bessel", "gaussian"],
+        choices=["bessel", "gaussian", "chebyshev"],
     )
     parser.add_argument(
         "--num_radial_basis",
@@ -319,6 +332,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--keep_isolated_atoms",
+        help="Keep isolated atoms in the dataset, useful for transfer learning",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument(
         "--energy_key",
         help="Key of reference energies in training xyz",
         type=str,
@@ -521,6 +540,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--keep_checkpoints",
         help="keep all checkpoints",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--save_all_checkpoints",
+        help="save all checkpoints",
         action="store_true",
         default=False,
     )

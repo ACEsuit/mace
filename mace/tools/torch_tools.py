@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import logging
+from contextlib import contextmanager
 from typing import Dict
 
 import numpy as np
@@ -79,17 +80,6 @@ def set_default_dtype(dtype: str) -> None:
     torch.set_default_dtype(dtype_dict[dtype])
 
 
-def get_complex_default_dtype():
-    default_dtype = torch.get_default_dtype()
-    if default_dtype == torch.float64:
-        return torch.complex128
-
-    if default_dtype == torch.float32:
-        return torch.complex64
-
-    raise NotImplementedError
-
-
 def spherical_to_cartesian(t: torch.Tensor):
     """
     Convert spherical notation to cartesian notation
@@ -139,22 +129,14 @@ def init_wandb(project: str, entity: str, name: str, config: dict):
     wandb.init(project=project, entity=entity, name=name, config=config)
 
 
-class DataParallelModel(torch.nn.Module):
-    def __init__(self, model):
-        super(DataParallelModel, self).__init__()  # pylint: disable=R1725
-        self.model = torch.nn.DataParallel(model).cuda()
+@contextmanager
+def default_dtype(dtype: torch.dtype):
+    """Context manager for configuring the default_dtype used by torch
 
-    def forward(self, batch, training, compute_force, compute_virials, compute_stress):
-        return self.model(
-            batch,
-            training=training,
-            compute_force=compute_force,
-            compute_virials=compute_virials,
-            compute_stress=compute_stress,
-        )
-
-    def __getattr__(self, name):
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.model.module, name)
+    Args:
+        dtype (torch.dtype): the default dtype to use within this context manager
+    """
+    init = torch.get_default_dtype()
+    torch.set_default_dtype(dtype)
+    yield
+    torch.set_default_dtype(init)

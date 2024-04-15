@@ -34,6 +34,7 @@ def get_dataset_from_xyz(
     config_type_weights: Dict,
     test_path: str = None,
     seed: int = 1234,
+    keep_isolated_atoms: bool = False,
     energy_key: str = "energy",
     forces_key: str = "forces",
     stress_key: str = "stress",
@@ -52,6 +53,7 @@ def get_dataset_from_xyz(
         dipole_key=dipole_key,
         charges_key=charges_key,
         extract_atomic_energies=True,
+        keep_isolated_atoms=keep_isolated_atoms,
     )
     logging.info(
         f"Loaded {len(all_train_configs)} training configurations from '{train_path}'"
