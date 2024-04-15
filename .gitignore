@@ -27,7 +27,8 @@ dist/
 
 # DS_Store
 .DS_Store
-*.model
+*.models
 *.pt
 /wandb
 *.xyz
+/checkpoints

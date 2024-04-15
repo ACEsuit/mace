@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from e3nn.util.jit import compile_mode
 
+from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
 
 
@@ -52,6 +53,34 @@ class BesselBasis(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(r_max={self.r_max}, num_basis={len(self.bessel_weights)}, "
             f"trainable={self.bessel_weights.requires_grad})"
+        )
+
+
+@compile_mode("script")
+class ChebychevBasis(torch.nn.Module):
+    """
+    Equation (7)
+    """
+
+    def __init__(self, r_max: float, num_basis=8):
+        super().__init__()
+        self.register_buffer(
+            "n",
+            torch.arange(1, num_basis + 1, dtype=torch.get_default_dtype()).unsqueeze(
+                0
+            ),
+        )
+        self.num_basis = num_basis
+        self.r_max = r_max
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [..., 1]
+        x = x.repeat(1, self.num_basis)
+        n = self.n.repeat(len(x), 1)
+        return torch.special.chebyshev_polynomial_t(x, n)
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(r_max={self.r_max}, num_basis={self.num_basis},"
         )
 
 
@@ -160,9 +189,9 @@ class ZBLBasis(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[
-            torch.where(node_attrs.int() == 1)[1]
-        ].unsqueeze(-1)
+        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
+            -1
+        )
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         a = (
@@ -193,18 +222,25 @@ class ZBLBasis(torch.nn.Module):
         return f"{self.__class__.__name__}(r_max={self.r_max}, c={self.c})"
 
 
+@compile_mode("script")
 class AgnesiTransform(torch.nn.Module):
     """
     Agnesi transform see ACEpotentials.jl, JCP 2023, p. 160
     """
 
     def __init__(
-        self, q: float = 0.9183, p: float = 4.5791, a: float = 1.0805, trainable=False
+        self,
+        q: float = 0.9183,
+        p: float = 4.5791,
+        a: float = 1.0805,
+        b: float = 0.5,
+        trainable=False,
     ):
         super().__init__()
         self.register_buffer("q", torch.tensor(q, dtype=torch.get_default_dtype()))
         self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
         self.register_buffer("a", torch.tensor(a, dtype=torch.get_default_dtype()))
+        self.b = b
         self.register_buffer(
             "covalent_radii",
             torch.tensor(
@@ -226,12 +262,14 @@ class AgnesiTransform(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[
-            torch.where(node_attrs.int() == 1)[1]
-        ].unsqueeze(-1)
+        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
+            -1
+        )
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
-        r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 2
+        if not hasattr(self, "b"):  # TODO: remove this, only for backward compatibility
+            self.b = 0.5
+        r_0 = self.b * (self.covalent_radii[Z_u] + self.covalent_radii[Z_v])
         return (
             1 + (self.a * ((x / r_0) ** self.q) / (1 + (x / r_0) ** (self.q - self.p)))
         ) ** (-1)
@@ -240,6 +278,8 @@ class AgnesiTransform(torch.nn.Module):
         return f"{self.__class__.__name__}(a={self.a}, q={self.q}, p={self.p})"
 
 
+@simplify_if_compile
+@compile_mode("script")
 class SoftTransform(torch.nn.Module):
     """
     Soft Transform
@@ -270,9 +310,9 @@ class SoftTransform(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[
-            torch.where(node_attrs.int() == 1)[1]
-        ].unsqueeze(-1)
+        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
+            -1
+        )
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 4

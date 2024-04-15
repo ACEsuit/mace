@@ -346,7 +346,7 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["charges"] = data.charges
 
 
-def save_configurations_as_HDF5(configurations: Configurations, i, h5_file) -> None:
+def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> None:
     grp = h5_file.create_group("config_batch_0")
     for j, config in enumerate(configurations):
         subgroup_name = f"config_{j}"
