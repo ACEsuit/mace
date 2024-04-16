@@ -377,7 +377,7 @@ def main() -> None:
         model_config["atomic_numbers"] = z_table.zs
         model_config["num_elements"] = len(z_table)
         args.max_L = model_config["hidden_irreps"].lmax
-        if args.model == "MACE":
+        if args.model == "MACE" and calc.models[0].__class__.__name__ == "MACE":
             model_config["atomic_inter_shift"] = 0.0
         else:
             model_config["atomic_inter_shift"] = args.mean
