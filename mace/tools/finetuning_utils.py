@@ -69,12 +69,18 @@ def load_foundations(
     use_shift=False,
     use_scale=True,
     max_L=2,
+    max_ell=3,
 ):
     """
     Load the foundations of a model into a model for fine-tuning.
     """
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
+    try:
+        foundations_theories = model_foundations.theories
+    except AttributeError:
+        foundations_theories = ["Default"]
+    model_theories = model.theories
     new_z_table = table
     num_species_foundations = len(z_table.zs)
     num_channels_foundation = (
@@ -84,7 +90,6 @@ def load_foundations(
     indices_weights = [z_table.z_to_index(z) for z in new_z_table.zs]
     num_radial = model.radial_embedding.out_dim
     num_species = len(indices_weights)
-    max_ell = model.spherical_harmonics._lmax
     model.node_embedding.linear.weight = torch.nn.Parameter(
         model_foundations.node_embedding.linear.weight.view(
             num_species_foundations, -1
@@ -97,7 +102,6 @@ def load_foundations(
         model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
             model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
         )
-
     for i in range(int(model.num_interactions)):
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear_up.weight.clone()
@@ -159,6 +163,7 @@ def load_foundations(
                 .clone()
                 / (num_species_foundations / num_species) ** 0.5
             )
+
     # Transferring products
     for i in range(2):  # Assuming 2 products modules
         max_range = max_L + 1 if i == 0 else 1
@@ -188,20 +193,52 @@ def load_foundations(
 
     if load_readout:
         # Transferring readouts
+        model_readouts_zero_linear_weight = model.readouts[0].linear.weight.clone()
+        model_readouts_zero_linear_weight = (
+            model_foundations.readouts[0]
+            .linear.weight.view(num_channels_foundation, -1)
+            .repeat(1, len(model_theories))
+            .flatten()
+            .clone()
+        )
         model.readouts[0].linear.weight = torch.nn.Parameter(
-            model_foundations.readouts[0].linear.weight.clone()
+            model_readouts_zero_linear_weight
         )
 
+        shape_input_1 = (
+            model_foundations.readouts[1].linear_1.__dict__["irreps_out"].num_irreps
+        )
+        shape_output_1 = model.readouts[1].linear_1.__dict__["irreps_out"].num_irreps
+        model_readouts_one_linear_1_weight = model.readouts[1].linear_1.weight.clone()
+        model_readouts_one_linear_1_weight = (
+            model_foundations.readouts[1]
+            .linear_1.weight.view(num_channels_foundation, -1)
+            .repeat(1, len(model_theories))
+            .flatten()
+            .clone()
+        )
         model.readouts[1].linear_1.weight = torch.nn.Parameter(
-            model_foundations.readouts[1].linear_1.weight.clone()
+            model_readouts_one_linear_1_weight
         )
-
+        model_readouts_one_linear_2_weight = model.readouts[1].linear_2.weight.clone()
+        model_readouts_one_linear_2_weight = model_foundations.readouts[
+            1
+        ].linear_2.weight.view(shape_input_1, -1).repeat(
+            len(model_theories), len(model_theories)
+        ).flatten().clone() / (
+            ((shape_input_1) / (shape_output_1)) ** 0.5
+        )
         model.readouts[1].linear_2.weight = torch.nn.Parameter(
-            model_foundations.readouts[1].linear_2.weight.clone()
+            model_readouts_one_linear_2_weight
         )
     if model_foundations.scale_shift is not None:
         if use_scale:
-            model.scale_shift.scale = model_foundations.scale_shift.scale.clone()
+            model.scale_shift.scale = model_foundations.scale_shift.scale.repeat(
+                len(model_theories)
+            ).clone()
         if use_shift:
-            model.scale_shift.shift = model_foundations.scale_shift.shift.clone()
+            shift_shape = model_foundations.scale_shift.shift.shape
+            model.scale_shift.shift[: len(shift_shape)] = (
+                model_foundations.scale_shift.shift.clone()
+            )
     return model

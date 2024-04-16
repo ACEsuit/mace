@@ -764,11 +764,11 @@ class ScaleShiftBlock(torch.nn.Module):
         super().__init__()
         self.register_buffer(
             "scale",
-            torch.atleast_1d(torch.tensor(scale, dtype=torch.get_default_dtype())),
+            torch.tensor(scale, dtype=torch.get_default_dtype()),
         )
         self.register_buffer(
             "shift",
-            torch.atleast_1d(torch.tensor(shift, dtype=torch.get_default_dtype())),
+            torch.tensor(shift, dtype=torch.get_default_dtype()),
         )
 
     def forward(self, x: torch.Tensor, theory: torch.Tensor) -> torch.Tensor:
