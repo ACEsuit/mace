@@ -35,7 +35,10 @@ from mace.tools.scripts_utils import (
     check_folder_subfolder,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
-from mace.tools.finetuning_utils import load_foundations, extract_config_mace_model
+from mace.tools.finetuning_utils import (
+    load_foundations_elements,
+    extract_config_mace_model,
+)
 
 
 def main() -> None:
@@ -552,13 +555,22 @@ def main() -> None:
         raise RuntimeError(f"Unknown model: '{args.model}'")
 
     if args.foundation_model is not None:
-        model = load_foundations(
-            model,
-            model_foundation,
-            z_table,
-            load_readout=True,
-            max_L=args.max_L,
-        )
+        if args.foundation_filter_elements:
+            model = load_foundations_elements(
+                model,
+                model_foundation,
+                z_table,
+                load_readout=True,
+                max_L=args.max_L,
+            )
+        else:
+            model = load_foundations_elements(
+                model,
+                model_foundation,
+                z_table,
+                load_readout=False,
+                max_L=args.max_L,
+            )
     model.to(device)
 
     # Optimizer

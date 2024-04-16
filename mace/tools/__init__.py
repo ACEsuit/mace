@@ -31,7 +31,7 @@ from .utils import (
     setup_logger,
 )
 
-from .finetuning_utils import load_foundations, extract_load
+from .finetuning_utils import load_foundations_elements, extract_load
 
 __all__ = [
     "TensorDict",
@@ -66,7 +66,7 @@ __all__ = [
     "cartesian_to_spherical",
     "voigt_to_matrix",
     "init_wandb",
-    "load_foundations",
+    "load_foundations_elements",
     "extract_load",
     "build_preprocess_arg_parser",
 ]
