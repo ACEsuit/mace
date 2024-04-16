@@ -12,7 +12,10 @@ from mace.tools import torch_geometric
 from mace.tools.utils import (
     AtomicNumberTable,
 )
-from mace.tools.finetuning_utils import load_foundations, extract_config_mace_model
+from mace.tools.finetuning_utils import (
+    load_foundations_elements,
+    extract_config_mace_model,
+)
 
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
@@ -72,7 +75,7 @@ def test_foundations():
         default_dtype="float64",
     )
     model_foundations = calc.models[0]
-    model_loaded = load_foundations(
+    model_loaded = load_foundations_elements(
         model,
         model_foundations,
         table=table,
@@ -138,7 +141,7 @@ def test_multi_reference():
     )
     model = modules.ScaleShiftMACE(**model_config)
     calc_foundation = mace_mp(device="cpu", default_dtype="float64")
-    model_loaded = load_foundations(
+    model_loaded = load_foundations_elements(
         model,
         calc_foundation.models[0],
         table=table,

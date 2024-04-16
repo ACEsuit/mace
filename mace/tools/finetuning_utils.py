@@ -61,7 +61,7 @@ def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return model_copy.to(map_location)
 
 
-def load_foundations(
+def load_foundations_elements(
     model: torch.nn.Module,
     model_foundations: torch.nn.Module,
     table: AtomicNumberTable,
@@ -76,10 +76,6 @@ def load_foundations(
     """
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
-    try:
-        foundations_theories = model_foundations.theories
-    except AttributeError:
-        foundations_theories = ["Default"]
     model_theories = model.theories
     new_z_table = table
     num_species_foundations = len(z_table.zs)
@@ -241,4 +237,15 @@ def load_foundations(
             model.scale_shift.shift[: len(shift_shape)] = (
                 model_foundations.scale_shift.shift.clone()
             )
+    return model
+
+
+def load_foundations(
+    model,
+    model_foundations,
+):
+    for name, param in model_foundations.named_parameters():
+        if name in model.state_dict().keys():
+            if "readouts" not in name:
+                model.state_dict()[name].copy_(param)
     return model

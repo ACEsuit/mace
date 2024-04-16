@@ -325,6 +325,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--foundation_filter_elements",
+        help="Filter element during fine-tuning",
+        type=bool,
+        default=True,
+        required=False,
+    )
+    parser.add_argument(
         "--theories",
         help="List of theories in the training set",
         type=str,
