@@ -430,10 +430,14 @@ def main() -> None:
         model_config["num_elements"] = len(z_table)
         args.max_L = model_config["hidden_irreps"].lmax
         if args.model == "MACE" and calc.models[0].__class__.__name__ == "MACE":
-            model_config["atomic_inter_shift"] = 0.0
+            model_config["atomic_inter_shift"] = [0.0] * len(theories)
         else:
-            model_config["atomic_inter_shift"] = args.mean
+            model_config["atomic_inter_shift"] = [args.mean] * len(theories)
+        model_config["atomic_inter_scale"] = [model_config["atomic_inter_scale"]] * len(
+            theories
+        )
         args.model = "FoundationMACE"
+        model_config["theories"] = args.theories
     else:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:
