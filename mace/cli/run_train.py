@@ -323,6 +323,7 @@ def main() -> None:
             drop_last=False,
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
+            generator=torch.Generator().manual_seed(args.seed),
         )
     # valid_loader = torch_geometric.dataloader.DataLoader(
     #     dataset=valid_set,
@@ -575,7 +576,6 @@ def main() -> None:
                 max_L=args.max_L,
             )
     model.to(device)
-    logging.info(model)
 
     # Optimizer
     decay_interactions = {}
