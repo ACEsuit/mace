@@ -78,9 +78,16 @@ def get_dataset_from_xyz(
         logging.info(
             "Using random %s%% of training set for validation", 100 * valid_fraction
         )
-        train_configs, valid_configs = data.random_train_valid_split(
-            all_train_configs, valid_fraction, seed
-        )
+        train_configs, valid_configs = [], []
+        for theory in theories:
+            all_train_configs_theory = [
+                config for config in all_train_configs if config.theory == theory
+            ]
+            train_configs_theory, valid_configs_theory = data.random_train_valid_split(
+                all_train_configs_theory, valid_fraction, seed
+            )
+            train_configs.extend(train_configs_theory)
+            valid_configs.extend(valid_configs_theory)
 
     test_configs = []
     if test_path is not None:

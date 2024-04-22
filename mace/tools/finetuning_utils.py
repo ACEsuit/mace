@@ -66,7 +66,7 @@ def load_foundations_elements(
     model_foundations: torch.nn.Module,
     table: AtomicNumberTable,
     load_readout=False,
-    use_shift=False,
+    use_shift=True,
     use_scale=True,
     max_L=2,
     max_ell=3,
@@ -233,10 +233,9 @@ def load_foundations_elements(
                 len(model_theories)
             ).clone()
         if use_shift:
-            shift_shape = model_foundations.scale_shift.shift.shape
-            model.scale_shift.shift[: len(shift_shape)] = (
-                model_foundations.scale_shift.shift.clone()
-            )
+            model.scale_shift.shift = model_foundations.scale_shift.shift.repeat(
+                len(model_theories)
+            ).clone()
     return model
 
 
