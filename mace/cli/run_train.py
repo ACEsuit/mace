@@ -34,6 +34,7 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.finetuning_utils import load_foundations, extract_config_mace_model
+from mace.tools.utils import AtomicNumberTable
 
 
 def main() -> None:
@@ -167,12 +168,25 @@ def main() -> None:
     logging.info(z_table)
 
     if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
-        if args.train_file.endswith(".xyz"):
-            atomic_energies_dict = get_atomic_energies(
-                args.E0s, collections.train, z_table
+        if args.E0s.lower() == "foundation":
+            assert args.foundation_model is not None
+            logging.info("Using atomic energies from foundation model")
+            z_table_foundation = AtomicNumberTable(
+                [int(z) for z in model_foundation.atomic_numbers]
             )
+            atomic_energies_dict = {
+                z: model_foundation.atomic_energies_fn.atomic_energies[
+                    z_table_foundation.z_to_index(z)
+                ].item()
+                for z in z_table.zs
+            }
         else:
-            atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table)
+            if args.train_file.endswith(".xyz"):
+                atomic_energies_dict = get_atomic_energies(
+                    args.E0s, collections.train, z_table
+                )
+            else:
+                atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table)
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
@@ -193,30 +207,6 @@ def main() -> None:
         else:
             compute_energy = True
             compute_dipole = False
-        if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
-            if args.E0s is not None:
-                logging.info(
-                    "Atomic Energies not in training file, using command line argument E0s"
-                )
-                if args.E0s.lower() == "average":
-                    logging.info(
-                        "Computing average Atomic Energies using least squares regression"
-                    )
-                    atomic_energies_dict = data.compute_average_E0s(
-                        collections.train, z_table
-                    )
-                else:
-                    try:
-                        atomic_energies_dict = ast.literal_eval(args.E0s)
-                        assert isinstance(atomic_energies_dict, dict)
-                    except Exception as e:
-                        raise RuntimeError(
-                            f"E0s specified invalidly, error {e} occurred"
-                        ) from e
-            else:
-                raise RuntimeError(
-                    "E0s not found in training file and not specified in command line"
-                )
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
@@ -373,13 +363,14 @@ def main() -> None:
     if args.foundation_model is not None:
         logging.info("Building model")
         model_config = extract_config_mace_model(model_foundation)
-        model_config["atomic_energies"] = atomic_energies
         model_config["atomic_numbers"] = z_table.zs
         model_config["num_elements"] = len(z_table)
         args.max_L = model_config["hidden_irreps"].lmax
         args.model = "FoundationMACE"
         model_config["atomic_inter_shift"] = model_foundation.scale_shift.shift.item()
         model_config["atomic_inter_scale"] = model_foundation.scale_shift.scale.item()
+        model_config["atomic_energies"] = atomic_energies
+
     else:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:
