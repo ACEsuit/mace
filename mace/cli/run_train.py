@@ -378,6 +378,8 @@ def main() -> None:
         model_config["num_elements"] = len(z_table)
         args.max_L = model_config["hidden_irreps"].lmax
         args.model = "FoundationMACE"
+        model_config["atomic_inter_shift"] = model_foundation.scale_shift.shift.item()
+        model_config["atomic_inter_scale"] = model_foundation.scale_shift.scale.item()
     else:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:

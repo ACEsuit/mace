@@ -115,8 +115,22 @@ def config_from_atoms(
     if config_type_weights is None:
         config_type_weights = DEFAULT_CONFIG_TYPE_WEIGHTS
 
-    energy = atoms.info.get(energy_key, None)  # eV
-    forces = atoms.arrays.get(forces_key, None)  # eV / Ang
+    if energy_key == "energy":
+        try:
+            energy = atoms.get_potential_energy()  # eV
+        except Exception as e:
+            logging.warning(f"Failed to get energy from atoms: {e}")
+            energy = None
+    else:
+        energy = atoms.info.get(energy_key, None)  # eV
+    if forces_key == "forces":
+        try:
+            forces = atoms.get_forces()  # eV / Ang
+        except Exception as e:
+            logging.warning(f"Failed to get forces from atoms: {e}")
+            forces = None
+    else:
+        forces = atoms.info.get(forces_key, None)
     stress = atoms.info.get(stress_key, None)  # eV / Ang
     virials = atoms.info.get(virials_key, None)
     dipole = atoms.info.get(dipole_key, None)  # Debye
