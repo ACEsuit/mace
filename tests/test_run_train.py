@@ -349,3 +349,87 @@ def test_run_train_foundation(tmp_path, fitting_configs):
         0.5659750699996948,
     ]
     assert np.allclose(Es, ref_Es)
+
+
+def test_run_train_foundation_multihead(tmp_path, fitting_configs):
+    fitting_configs_ = []
+    for i, c in enumerate(fitting_configs):
+        if i % 2 == 0:
+            c.info["theory"] = "DFT"
+        else:
+            c.info["theory"] = "MP2"
+        fitting_configs_.append(c)
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs_)
+
+    mace_params = _mace_params.copy()
+    mace_params["valid_fraction"] = 0.1
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "small"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float32"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["theories"] = "['MP2','DFT']"
+    mace_params["batch_size"] = 2
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        tmp_path / "MACE.model", device="cpu", default_dtype="float32"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+    # from a run on 28/03/2023 on repulsion a63434aaab70c84ee016e13e4aca8d57297a0f26
+    ref_Es = [
+        1.1737573146820068,
+        0.37266889214515686,
+        0.3591262996196747,
+        0.1222146600484848,
+        0.21925662457942963,
+        0.30689263343811035,
+        0.23039104044437408,
+        0.11772646009922028,
+        0.2409999519586563,
+        0.04042769968509674,
+        0.6277227997779846,
+        0.13879507780075073,
+        0.18997330963611603,
+        0.30589431524276733,
+        0.34129756689071655,
+        -0.0034095346927642822,
+        0.5614650249481201,
+        0.29983872175216675,
+        0.3369189500808716,
+        -0.20579558610916138,
+        0.1669044941663742,
+        0.119053915143013,
+    ]
+    assert np.allclose(Es, ref_Es)

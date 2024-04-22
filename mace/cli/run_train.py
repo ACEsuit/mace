@@ -108,7 +108,9 @@ def main() -> None:
                 return_raw_model=True,
             )
         else:
-            model_foundation = torch.load(args.foundation_model, map_location=device)
+            model_foundation = torch.load(
+                args.foundation_model, map_location=args.device
+            )
             logging.info(
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
@@ -299,7 +301,6 @@ def main() -> None:
                 seed=args.seed,
             )
             valid_samplers[theory] = valid_sampler
-
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
         batch_size=args.batch_size,
@@ -433,9 +434,7 @@ def main() -> None:
             model_config["atomic_inter_shift"] = [0.0] * len(theories)
         else:
             model_config["atomic_inter_shift"] = [args.mean] * len(theories)
-        model_config["atomic_inter_scale"] = [model_config["atomic_inter_scale"]] * len(
-            theories
-        )
+        model_config["atomic_inter_scale"] = [1.0] * len(theories)
         args.model = "FoundationMACE"
         model_config["theories"] = args.theories
     else:
@@ -576,6 +575,7 @@ def main() -> None:
                 max_L=args.max_L,
             )
     model.to(device)
+    logging.info(model)
 
     # Optimizer
     decay_interactions = {}
