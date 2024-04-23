@@ -1,9 +1,17 @@
+exclude: &exclude_files >
+    (?x)^(
+        docs/.*|
+        tests/.*|
+        .github/.*|
+        LICENSE|
+    )$
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v2.5.0
     hooks:
-      - id: end-of-file-fixer
-      - id: trailing-whitespace
+    -   id: mixed-line-ending
+    -   id: trailing-whitespace
 
   - repo: https://github.com/psf/black-pre-commit-mirror
     rev: 23.12.1
@@ -17,34 +25,31 @@ repos:
       - id: isort
         name: Sort imports
 
-  # Failing - to be investigated separately
-  # - repo: local
-  #   hooks:
-  #     - id: pylint
-  #       name: Pylint Checks
-  #       entry: pylint
-  #       language: system
-  #       types: [python]
-  #       args:
-  #         [
-  #           "--rcfile=pyproject.toml", 
-  #           "mace", 
-  #           "tests", 
-  #           "scripts"
-  #         ]  
-  
-  # - repo: local
-  #   hooks:
-  #     - id: mypy
-  #       name: mypy type checks
-  #       entry: mypy
-  #       language: system
-  #       types: [python]
-  #       args:
-  #         [
-  #           --config-file=.mypy.ini,
-  #           mace,
-  #           tests,
-  #           scripts
-  #         ]
+  - repo: https://github.com/PyCQA/pylint
+    rev: pylint-2.5.2
+    hooks:
+    -   id: pylint
+        language: system
+        args: [
+          '--disable=line-too-long',
+          '--disable=no-member',
+          '--disable=missing-module-docstring',
+          '--disable=missing-class-docstring',
+          '--disable=missing-function-docstring',
+          '--disable=too-many-arguments',
+          '--disable=too-many-locals',
+          '--disable=not-callable',
+          '--disable=logging-fstring-interpolation',
+          '--disable=logging-not-lazy',
+          '--disable=invalid-name',
+          '--disable=too-few-public-methods',
+          '--disable=too-many-instance-attributes',
+          '--disable=too-many-statements',
+          '--disable=too-many-branches',
+          '--disable=import-outside-toplevel',
+          '--disable=cell-var-from-loop',
+          '--disable=duplicate-code',
+        ]
+        exclude: *exclude_files
+
   
