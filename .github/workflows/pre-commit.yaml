@@ -20,6 +20,8 @@ jobs:
           pip install pylint
           pip install -U black
           pip install .[dev]
+          pip install wandb
+          pip install tqdm
       - name: Run black
         run: |
           python -m black .
