@@ -3,8 +3,8 @@ exclude: &exclude_files >
         docs/.*|
         tests/.*|
         .github/.*|
-        LICENSE|
-        README|
+        LICENSE.md|
+        README.md|
     )$
 
 repos:
