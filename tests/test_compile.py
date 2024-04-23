@@ -1,6 +1,6 @@
+import os
 from functools import wraps
 from typing import Callable
-import os
 
 import numpy as np
 import pytest

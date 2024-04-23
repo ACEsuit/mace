@@ -233,7 +233,6 @@ class AgnesiTransform(torch.nn.Module):
         q: float = 0.9183,
         p: float = 4.5791,
         a: float = 1.0805,
-        b: float = 0.5,
         trainable=False,
     ):
         super().__init__()

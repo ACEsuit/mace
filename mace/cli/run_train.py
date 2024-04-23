@@ -24,6 +24,7 @@ import mace
 from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.tools import torch_geometric
+from mace.tools.finetuning_utils import extract_config_mace_model, load_foundations
 from mace.tools.scripts_utils import (
     LRScheduler,
     create_error_table,
@@ -33,7 +34,6 @@ from mace.tools.scripts_utils import (
     get_files_with_suffix,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
-from mace.tools.finetuning_utils import load_foundations, extract_config_mace_model
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -360,17 +360,20 @@ def main() -> None:
             train_loader, atomic_energies
         )
     # Build model
-    if args.foundation_model is not None:
+    if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
         logging.info("Building model")
-        model_config = extract_config_mace_model(model_foundation)
-        model_config["atomic_numbers"] = z_table.zs
-        model_config["num_elements"] = len(z_table)
-        args.max_L = model_config["hidden_irreps"].lmax
+        model_config_foundation = extract_config_mace_model(model_foundation)
+        model_config_foundation["atomic_numbers"] = z_table.zs
+        model_config_foundation["num_elements"] = len(z_table)
+        args.max_L = model_config_foundation["hidden_irreps"].lmax
+        model_config_foundation["atomic_inter_shift"] = (
+            model_foundation.scale_shift.shift.item()
+        )
+        model_config_foundation["atomic_inter_scale"] = (
+            model_foundation.scale_shift.scale.item()
+        )
+        model_config_foundation["atomic_energies"] = atomic_energies
         args.model = "FoundationMACE"
-        model_config["atomic_inter_shift"] = model_foundation.scale_shift.shift.item()
-        model_config["atomic_inter_scale"] = model_foundation.scale_shift.scale.item()
-        model_config["atomic_energies"] = atomic_energies
-
     else:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:
@@ -435,7 +438,7 @@ def main() -> None:
             radial_type=args.radial_type,
         )
     elif args.model == "FoundationMACE":
-        model = modules.ScaleShiftMACE(**model_config)
+        model = modules.ScaleShiftMACE(**model_config_foundation)
     elif args.model == "ScaleShiftBOTNet":
         model = modules.ScaleShiftBOTNet(
             **model_config,
@@ -735,7 +738,7 @@ def main() -> None:
             )
         try:
             drop_last = test_set.drop_last
-        except AttributeError as e:
+        except AttributeError as e:  # pylint: disable=W0612
             drop_last = False
         test_loader = torch_geometric.dataloader.DataLoader(
             test_set,

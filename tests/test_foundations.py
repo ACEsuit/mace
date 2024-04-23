@@ -9,10 +9,8 @@ from scipy.spatial.transform import Rotation as R
 from mace import data, modules, tools
 from mace.calculators import mace_mp, mace_off
 from mace.tools import torch_geometric
-from mace.tools.utils import (
-    AtomicNumberTable,
-)
-from mace.tools.finetuning_utils import load_foundations, extract_config_mace_model
+from mace.tools.finetuning_utils import extract_config_mace_model, load_foundations
+from mace.tools.utils import AtomicNumberTable
 
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
