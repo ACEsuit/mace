@@ -86,6 +86,7 @@ def main() -> None:
     device = tools.init_device(args.device)
 
     if args.foundation_model is not None:
+        calc = None
         if args.foundation_model in ["small", "medium", "large"]:
             logging.info(
                 f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
@@ -430,7 +431,7 @@ def main() -> None:
         model_config["atomic_numbers"] = z_table.zs
         model_config["num_elements"] = len(z_table)
         args.max_L = model_config["hidden_irreps"].lmax
-        if args.model == "MACE" and calc.models[0].__class__.__name__ == "MACE":
+        if args.model == "MACE" and (calc is not None and calc.models[0].__class__.__name__ == "MACE"):
             model_config["atomic_inter_shift"] = [0.0] * len(theories)
         else:
             model_config["atomic_inter_shift"] = [args.mean] * len(theories)
