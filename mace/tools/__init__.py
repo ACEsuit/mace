@@ -1,6 +1,7 @@
 from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
+from .finetuning_utils import extract_load, load_foundations
 from .torch_tools import (
     TensorDict,
     cartesian_to_spherical,
@@ -30,8 +31,6 @@ from .utils import (
     get_tag,
     setup_logger,
 )
-
-from .finetuning_utils import load_foundations, extract_load
 
 __all__ = [
     "TensorDict",

@@ -10,31 +10,35 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
     def radial_to_name(radial_type):
         if radial_type == "BesselBasis":
             return "bessel"
-        elif radial_type == "GaussianBasis":
+        if radial_type == "GaussianBasis":
             return "gaussian"
-        elif radial_type == "ChebychevBasis":
+        if radial_type == "ChebychevBasis":
             return "chebyshev"
+        return radial_type
 
     def radial_to_transform(radial):
         if not hasattr(radial, "distance_transform"):
             return None
-        elif radial.distance_transform.__class__.__name__ == "AgnesiTransform":
+        if radial.distance_transform.__class__.__name__ == "AgnesiTransform":
             return "Agnesi"
-        elif radial.distance_transform.__class__.__name__ == "SoftTransform":
+        if radial.distance_transform.__class__.__name__ == "SoftTransform":
             return "Soft"
+        return radial.distance_transform.__class__.__name__
 
     config = {
         "r_max": model.r_max.item(),
         "num_bessel": len(model.radial_embedding.bessel_fn.bessel_weights),
         "num_polynomial_cutoff": model.radial_embedding.cutoff_fn.p.item(),
-        "max_ell": model.spherical_harmonics._lmax,
+        "max_ell": model.spherical_harmonics._lmax,  # pylint: disable=protected-access
         "interaction_cls": model.interactions[-1].__class__,
         "interaction_cls_first": model.interactions[0].__class__,
         "num_interactions": model.num_interactions.item(),
         "num_elements": len(model.atomic_numbers),
         "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
         "MLP_irreps": o3.Irreps(str(model.readouts[-1].hidden_irreps)),
-        "gate": model.readouts[-1].non_linearity._modules["acts"][0].f,
+        "gate": model.readouts[-1]  # pylint: disable=protected-access
+        .non_linearity._modules["acts"][0]
+        .f,
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
         "atomic_numbers": model.atomic_numbers,
@@ -84,7 +88,7 @@ def load_foundations(
     indices_weights = [z_table.z_to_index(z) for z in new_z_table.zs]
     num_radial = model.radial_embedding.out_dim
     num_species = len(indices_weights)
-    max_ell = model.spherical_harmonics._lmax
+    max_ell = model.spherical_harmonics._lmax  # pylint: disable=protected-access
     model.node_embedding.linear.weight = torch.nn.Parameter(
         model_foundations.node_embedding.linear.weight.view(
             num_species_foundations, -1
