@@ -220,27 +220,26 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
-            if len(atoms) == 1:
-                isolated_atom_config = atoms.info.get("config_type") == "IsolatedAtom"
-                if isolated_atom_config:
-                    if energy_key in atoms.info.keys():
-                        theory = atoms.info.get(theory_key, "Default")
-                        if theory not in atomic_energies_dict:
-                            atomic_energies_dict[theory] = {}
-                        atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
-                            atoms.info[energy_key]
-                        )
-                    else:
-                        logging.warning(
-                            f"Configuration '{idx}' is marked as 'IsolatedAtom' "
-                            "but does not contain an energy. Zero energy will be used."
-                        )
-                        theory = atoms.info.get(theory_key, "Default")
-                        if theory not in atomic_energies_dict:
-                            atomic_energies_dict[theory] = {}
-                        atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
-                            np.zeros(1)
-                        )
+            if atoms.info.get("config_type") == "IsolatedAtom":
+                assert len(atoms) == 1, f"Got config_type=IsolatedAtom for a config with len {len(atoms)}"
+                if energy_key in atoms.info.keys():
+                    theory = atoms.info.get(theory_key, "Default")
+                    if theory not in atomic_energies_dict:
+                        atomic_energies_dict[theory] = {}
+                    atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
+                        atoms.info[energy_key]
+                    )
+                else:
+                    logging.warning(
+                        f"Configuration '{idx}' is marked as 'IsolatedAtom' "
+                        "but does not contain an energy. Zero energy will be used."
+                    )
+                    theory = atoms.info.get(theory_key, "Default")
+                    if theory not in atomic_energies_dict:
+                        atomic_energies_dict[theory] = {}
+                    atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
+                        np.zeros(1)
+                    )
             else:
                 atoms_without_iso_atoms.append(atoms)
 
