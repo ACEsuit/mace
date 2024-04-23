@@ -19,6 +19,7 @@ jobs:
           pip install -U pip
           pip install pylint
           pip install -U black
+          pip install .[dev]
       - name: Run black
         run: |
           python -m black .
