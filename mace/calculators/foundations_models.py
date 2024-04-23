@@ -1,7 +1,7 @@
 import os
 import urllib.request
 from pathlib import Path
-from typing import Union
+from typing import Literal, Union
 
 import torch
 from ase import units
@@ -20,8 +20,9 @@ def mace_mp(
     device: str = "",
     default_dtype: str = "float32",
     dispersion: bool = False,
-    dispersion_xc="pbe",
-    dispersion_cutoff=40.0 * units.Bohr,
+    damping: Literal["zero", "bj", "zerom", "bjm"] = "bj",
+    dispersion_xc: str = "pbe",
+    dispersion_cutoff: float = 40.0 * units.Bohr,
     **kwargs,
 ) -> MACECalculator:
     """
@@ -44,6 +45,7 @@ def mace_mp(
         device (str, optional): Device to use for the model. Defaults to "cuda".
         default_dtype (str, optional): Default dtype for the model. Defaults to "float32".
         dispersion (bool, optional): Whether to use D3 dispersion corrections. Defaults to False.
+        damping (str): The damping function associated with the D3 correction. Defaults to "bj" for D3(BJ).
         dispersion_xc (str, optional): Exchange-correlation functional for D3 dispersion corrections.
         dispersion_cutoff (float, optional): Cutoff radius in Bhor for D3 dispersion corrections.
         **kwargs: Passed to MACECalculator and TorchDFTD3Calculator.
@@ -58,10 +60,11 @@ def mace_mp(
         )
     elif model in (None, "small", "medium", "large") or str(model).startswith("https:"):
         try:
+            # checkpoints release: https://github.com/ACEsuit/mace-mp/releases/tag/mace_mp_0
             urls = dict(
-                small="http://tinyurl.com/46jrkm3v",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
-                medium="http://tinyurl.com/5yyxdm76",  # 2023-12-03-mace-128-L1_epoch-199.model
-                large="http://tinyurl.com/5f5yavf3",  # MACE_MPtrj_2022.9.model
+                small="https://tinyurl.com/46jrkm3v",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
+                medium="https://tinyurl.com/5yyxdm76",  # 2023-12-03-mace-128-L1_epoch-199.model
+                large="https://tinyurl.com/5f5yavf3",  # MACE_MPtrj_2022.9.model
             )
             checkpoint_url = (
                 urls.get(model, urls["medium"])
@@ -109,17 +112,17 @@ def mace_mp(
         gh_url = "https://github.com/pfnet-research/torch-dftd"
         try:
             from torch_dftd.torch_dftd3_calculator import TorchDFTD3Calculator
-        except ImportError:
+        except ImportError as exc:
             raise RuntimeError(
-                f"Please install torch-dftd to use dispersion corrections (see {gh_url})"
-            )
+                f"Please install torch-dftd to use dispersion corrections (see {gh_url} from {exc})"
+            ) from exc
         print(
             f"Using TorchDFTD3Calculator for D3 dispersion corrections (see {gh_url})"
         )
         dtype = torch.float32 if default_dtype == "float32" else torch.float64
         d3_calc = TorchDFTD3Calculator(
             device=device,
-            damping="bj",
+            damping=damping,
             dtype=dtype,
             xc=dispersion_xc,
             cutoff=dispersion_cutoff,
@@ -206,8 +209,8 @@ def mace_off(
 
 
 def mace_anicc(
-    device="cuda",
-    model_path=None,
+    device: str = "cuda",
+    model_path: str = None,
 ) -> MACECalculator:
     """
     Constructs a MACECalculator with a pretrained model based on the ANI (H, C, N, O).
