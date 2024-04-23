@@ -4,6 +4,7 @@ exclude: &exclude_files >
         tests/.*|
         .github/.*|
         LICENSE|
+        README|
     )$
 
 repos:
@@ -12,18 +13,21 @@ repos:
     hooks:
     -   id: mixed-line-ending
     -   id: trailing-whitespace
+        exclude: *exclude_files
 
   - repo: https://github.com/psf/black-pre-commit-mirror
     rev: 23.12.1
     hooks:
       - id: black
         name: Black Formating
+        exclude: *exclude_files
 
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2
     hooks:
       - id: isort
         name: Sort imports
+        exclude: *exclude_files
 
   - repo: https://github.com/PyCQA/pylint
     rev: pylint-2.5.2
@@ -51,5 +55,3 @@ repos:
           '--disable=duplicate-code',
         ]
         exclude: *exclude_files
-
-  
