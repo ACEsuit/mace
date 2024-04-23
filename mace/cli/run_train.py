@@ -823,7 +823,7 @@ def main() -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W070344
+                except Exception as e:  # pylint: disable=W0703
                     pass
 
         if args.distributed:
