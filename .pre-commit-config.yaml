@@ -53,5 +53,6 @@ repos:
           '--disable=import-outside-toplevel',
           '--disable=cell-var-from-loop',
           '--disable=duplicate-code',
+          '--disable=use-dict-literal',
         ]
         exclude: *exclude_files

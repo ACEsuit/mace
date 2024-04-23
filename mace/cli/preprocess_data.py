@@ -78,8 +78,7 @@ def split_array(a: np.ndarray, max_size: int):
         for j in range(0, len(factors) - i + 1):
             if np.prod(factors[j : j + i]) <= max_size:
                 test = np.prod(factors[j : j + i])
-                if test > max_factor:
-                    max_factor = test
+                max_factor = max(test, max_factor)
     return np.array_split(a, max_factor), drop_last
 
 
