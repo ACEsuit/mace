@@ -9,6 +9,7 @@ import glob
 import json
 import logging
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +17,7 @@ import numpy as np
 import torch.distributed
 import torch.nn.functional
 from e3nn import o3
+from e3nn.util import jit
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
@@ -24,14 +26,17 @@ import mace
 from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.tools import torch_geometric
-from mace.tools.finetuning_utils import extract_config_mace_model, load_foundations
+from mace.tools.finetuning_utils import load_foundations
 from mace.tools.scripts_utils import (
     LRScheduler,
+    convert_to_json_format,
     create_error_table,
+    extract_config_mace_model,
     get_atomic_energies,
     get_config_type_weights,
     get_dataset_from_xyz,
     get_files_with_suffix,
+    print_git_commit,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
@@ -72,7 +77,7 @@ def main() -> None:
 
     tools.set_default_dtype(args.default_dtype)
     device = tools.init_device(args.device)
-
+    commit = print_git_commit()
     if args.foundation_model is not None:
         if args.foundation_model in ["small", "medium", "large"]:
             logging.info(
@@ -559,15 +564,13 @@ def main() -> None:
         assert dipole_only is False, "swa for dipole fitting not implemented"
         swas.append(True)
         if args.start_swa is None:
-            args.start_swa = (
-                args.max_num_epochs // 4 * 3
-            )  # if not set start swa at 75% of training
+            args.start_swa = max(1, args.max_num_epochs // 4 * 3)
         else:
             if args.start_swa > args.max_num_epochs:
                 logging.info(
                     f"Start swa must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
                 )
-                args.start_swa = args.max_num_epochs // 4 * 3
+                args.start_swa = max(1, args.max_num_epochs // 4 * 3)
                 logging.info(f"Setting start swa to {args.start_swa}")
         if args.loss == "forces_only":
             logging.info("Can not select swa with forces only loss.")
@@ -786,11 +789,42 @@ def main() -> None:
             if args.save_cpu:
                 model = model.to("cpu")
             torch.save(model, model_path)
-
+            extra_files = {
+                "commit.txt": commit.encode("utf-8"),
+                "config.yaml": json.dumps(
+                    convert_to_json_format(extract_config_mace_model(model))
+                ),
+            }
             if swa_eval:
                 torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
+                try:
+                    path_complied = Path(args.model_dir) / (
+                        args.name + "_swa_compiled.model"
+                    )
+                    logging.info(f"Compiling model, saving metadata {path_complied}")
+                    model_compiled = jit.compile(deepcopy(model))
+                    torch.jit.save(
+                        model_compiled,
+                        path_complied,
+                        _extra_files=extra_files,
+                    )
+                except Exception as e:  # pylint: disable=W0703
+                    pass
             else:
                 torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+                try:
+                    path_complied = Path(args.model_dir) / (
+                        args.name + "_compiled.model"
+                    )
+                    logging.info(f"Compiling model, saving metadata to {path_complied}")
+                    model_compiled = jit.compile(deepcopy(model))
+                    torch.jit.save(
+                        model_compiled,
+                        path_complied,
+                        _extra_files=extra_files,
+                    )
+                except Exception as e:  # pylint: disable=W070344
+                    pass
 
         if args.distributed:
             torch.distributed.barrier()
