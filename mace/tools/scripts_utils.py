@@ -388,9 +388,9 @@ class LRScheduler:
         if self.scheduler == "ExponentialLR":
             self.lr_scheduler.step(epoch=epoch)
         elif self.scheduler == "ReduceLROnPlateau":
-            self.lr_scheduler.step(
+            self.lr_scheduler.step(  # pylint: disable=E1123
                 metrics=metrics, epoch=epoch
-            )  # pylint: disable=E1123
+            )
 
     def __getattr__(self, name):
         if name == "step":
