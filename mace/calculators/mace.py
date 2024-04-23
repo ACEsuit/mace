@@ -57,12 +57,14 @@ class MACECalculator(Calculator):
         charges_key="Qs",
         model_type="MACE",
         compile_mode=None,
+        multihead_theory=None,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
         self.results = {}
 
         self.model_type = model_type
+        self.multihead_theory = multihead_theory
 
         if model_type == "MACE":
             self.implemented_properties = [
@@ -217,6 +219,8 @@ class MACECalculator(Calculator):
 
         # prepare data
         config = data.config_from_atoms(atoms, charges_key=self.charges_key)
+        if self.multihead_theory is not None:
+            config.theory = self.multihead_theory
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
                 data.AtomicData.from_config(
@@ -333,6 +337,8 @@ class MACECalculator(Calculator):
         if num_layers == -1:
             num_layers = int(self.models[0].num_interactions)
         config = data.config_from_atoms(atoms, charges_key=self.charges_key)
+        if self.multihead_theory is not None:
+            config.theory = self.multihead_theory
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
                 data.AtomicData.from_config(
