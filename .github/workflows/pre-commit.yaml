@@ -11,4 +11,17 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v3
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install requirements
+        run: |
+          pip install -U pip
+          pip install pylint
+
+      - name: Log installed environment
+        run: |
+          python3 -m pip freeze
+
       - uses: pre-commit/action@v3.0.0
