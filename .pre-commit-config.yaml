@@ -1,0 +1,50 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 23.12.1
+    hooks:
+      - id: black
+        name: Black Formating
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: Sort imports
+
+  # Failing - to be investigated separately
+  # - repo: local
+  #   hooks:
+  #     - id: pylint
+  #       name: Pylint Checks
+  #       entry: pylint
+  #       language: system
+  #       types: [python]
+  #       args:
+  #         [
+  #           "--rcfile=pyproject.toml", 
+  #           "mace", 
+  #           "tests", 
+  #           "scripts"
+  #         ]  
+  
+  # - repo: local
+  #   hooks:
+  #     - id: mypy
+  #       name: mypy type checks
+  #       entry: mypy
+  #       language: system
+  #       types: [python]
+  #       args:
+  #         [
+  #           --config-file=.mypy.ini,
+  #           mace,
+  #           tests,
+  #           scripts
+  #         ]
+  

@@ -12,6 +12,7 @@ import torch.nn.functional
 from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
 
+from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
 
 from .irreps_tools import (
@@ -19,7 +20,14 @@ from .irreps_tools import (
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
-from .radial import BesselBasis, GaussianBasis, PolynomialCutoff
+from .radial import (
+    AgnesiTransform,
+    BesselBasis,
+    ChebychevBasis,
+    GaussianBasis,
+    PolynomialCutoff,
+    SoftTransform,
+)
 from .symmetric_contraction import SymmetricContraction
 
 
@@ -46,6 +54,7 @@ class LinearReadoutBlock(torch.nn.Module):
         return self.linear(x)  # [n_nodes, 1]
 
 
+@simplify_if_compile
 @compile_mode("script")
 class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
@@ -149,21 +158,35 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         radial_type: str = "bessel",
+        distance_transform: str = "None",
     ):
         super().__init__()
         if radial_type == "bessel":
             self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
         elif radial_type == "gaussian":
             self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
+        elif radial_type == "chebyshev":
+            self.bessel_fn = ChebychevBasis(r_max=r_max, num_basis=num_bessel)
+        if distance_transform == "Agnesi":
+            self.distance_transform = AgnesiTransform()
+        elif distance_transform == "Soft":
+            self.distance_transform = SoftTransform()
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
         self.out_dim = num_bessel
 
     def forward(
         self,
         edge_lengths: torch.Tensor,  # [n_edges, 1]
+        node_attrs: torch.Tensor,
+        edge_index: torch.Tensor,
+        atomic_numbers: torch.Tensor,
     ):
-        radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
+        if hasattr(self, "distance_transform"):
+            edge_lengths = self.distance_transform(
+                edge_lengths, node_attrs, edge_index, atomic_numbers
+            )
+        radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         return radial * cutoff  # [n_edges, n_basis]
 
 
@@ -203,7 +226,6 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         node_feats = self.symmetric_contractions(node_feats, node_attrs)
         if self.use_sc and sc is not None:
             return self.linear(node_feats) + sc
-
         return self.linear(node_feats)
 
 
