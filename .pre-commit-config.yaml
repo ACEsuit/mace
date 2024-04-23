@@ -30,7 +30,7 @@ repos:
         exclude: *exclude_files
 
   - repo: https://github.com/PyCQA/pylint
-    rev: pylint-2.5.2
+    rev: pylint-2.14.1
     hooks:
     -   id: pylint
         language: system
