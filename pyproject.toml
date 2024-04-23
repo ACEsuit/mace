@@ -30,6 +30,7 @@ disable = [
     "import-outside-toplevel",
     "cell-var-from-loop",
     "duplicate-code",
+    "use-dict-literal",
 ]
 
 [tool.pylint.MASTER]

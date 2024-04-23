@@ -1,50 +1,58 @@
+exclude: &exclude_files >
+    (?x)^(
+        docs/.*|
+        tests/.*|
+        .github/.*|
+        LICENSE.md|
+        README.md|
+    )$
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v2.5.0
     hooks:
-      - id: end-of-file-fixer
-      - id: trailing-whitespace
+    -   id: mixed-line-ending
+    -   id: trailing-whitespace
+        exclude: *exclude_files
 
   - repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 23.12.1
+    rev: 24.4.0
     hooks:
       - id: black
         name: Black Formating
+        exclude: *exclude_files
 
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2
     hooks:
       - id: isort
         name: Sort imports
+        exclude: *exclude_files
 
-  # Failing - to be investigated separately
-  # - repo: local
-  #   hooks:
-  #     - id: pylint
-  #       name: Pylint Checks
-  #       entry: pylint
-  #       language: system
-  #       types: [python]
-  #       args:
-  #         [
-  #           "--rcfile=pyproject.toml", 
-  #           "mace", 
-  #           "tests", 
-  #           "scripts"
-  #         ]  
-  
-  # - repo: local
-  #   hooks:
-  #     - id: mypy
-  #       name: mypy type checks
-  #       entry: mypy
-  #       language: system
-  #       types: [python]
-  #       args:
-  #         [
-  #           --config-file=.mypy.ini,
-  #           mace,
-  #           tests,
-  #           scripts
-  #         ]
-  
+  - repo: https://github.com/PyCQA/pylint
+    rev: pylint-2.5.2
+    hooks:
+    -   id: pylint
+        language: system
+        args: [
+          '--disable=line-too-long',
+          '--disable=no-member',
+          '--disable=missing-module-docstring',
+          '--disable=missing-class-docstring',
+          '--disable=missing-function-docstring',
+          '--disable=too-many-arguments',
+          '--disable=too-many-locals',
+          '--disable=not-callable',
+          '--disable=logging-fstring-interpolation',
+          '--disable=logging-not-lazy',
+          '--disable=invalid-name',
+          '--disable=too-few-public-methods',
+          '--disable=too-many-instance-attributes',
+          '--disable=too-many-statements',
+          '--disable=too-many-branches',
+          '--disable=import-outside-toplevel',
+          '--disable=cell-var-from-loop',
+          '--disable=duplicate-code',
+          '--disable=use-dict-literal',
+        ]
+        exclude: *exclude_files

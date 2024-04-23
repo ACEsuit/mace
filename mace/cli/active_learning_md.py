@@ -1,4 +1,5 @@
 """Demonstrates active learning molecular dynamics with constant temperature."""
+
 import argparse
 import os
 import time
