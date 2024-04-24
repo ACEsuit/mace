@@ -32,3 +32,4 @@ dist/
 /wandb
 *.xyz
 /checkpoints
+*.model
