@@ -222,20 +222,20 @@ def test_mace_multi_reference():
         distance_transform=True,
         pair_repulsion=True,
         correlation=3,
-        theories=["Default", "dft"],
+        heads=["Default", "dft"],
         # radial_type="chebyshev",
         atomic_inter_scale=[1.0, 1.0],
         atomic_inter_shift=[0.0, 0.1],
     )
     model = modules.ScaleShiftMACE(**model_config)
     model_compiled = jit.compile(model)
-    config.theory = "Default"
-    config_rotated.theory = "dft"
+    config.head = "Default"
+    config_rotated.head = "dft"
     atomic_data = data.AtomicData.from_config(
-        config, z_table=table, cutoff=3.0, theories=["Default", "dft"]
+        config, z_table=table, cutoff=3.0, heads=["Default", "dft"]
     )
     atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=table, cutoff=3.0, theories=["Default", "dft"]
+        config_rotated, z_table=table, cutoff=3.0, heads=["Default", "dft"]
     )
 
     data_loader = torch_geometric.dataloader.DataLoader(

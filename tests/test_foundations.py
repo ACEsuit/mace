@@ -108,7 +108,7 @@ def test_multi_reference():
         energy=-1.5,
         charges=molecule("H2COH").numbers,
         dipole=np.array([-1.5, 1.5, 2.0]),
-        theory="MP2",
+        head="MP2",
     )
     table = tools.AtomicNumberTable([1, 6, 8])
     atomic_energies = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=float)
@@ -137,7 +137,7 @@ def test_multi_reference():
         radial_type="bessel",
         atomic_inter_scale=[1.0, 1.0],
         atomic_inter_shift=[0.0, 0.0],
-        theories=["MP2", "DFT"],
+        heads=["MP2", "DFT"],
     )
     model = modules.ScaleShiftMACE(**model_config)
     calc_foundation = mace_mp(device="cpu", default_dtype="float64")
@@ -150,7 +150,7 @@ def test_multi_reference():
         max_L=1,
     )
     atomic_data = data.AtomicData.from_config(
-        config, z_table=table, cutoff=6.0, theories=["MP2", "DFT"]
+        config, z_table=table, cutoff=6.0, heads=["MP2", "DFT"]
     )
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data, atomic_data],

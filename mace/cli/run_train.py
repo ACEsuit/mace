@@ -11,6 +11,8 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional
+import urllib.request
+
 
 import numpy as np
 import torch.distributed
@@ -23,10 +25,12 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
+from mace.cli.fine_tuning_select import select_samples
 from mace.tools import torch_geometric
 from mace.tools.scripts_utils import (
     LRScheduler,
     create_error_table,
+    dict_to_namespace,
     get_atomic_energies,
     get_config_type_weights,
     get_dataset_from_xyz,
@@ -141,7 +145,7 @@ def main() -> None:
                 ".xyz"
             ), "valid_file if given must be same format as train_file"
         config_type_weights = get_config_type_weights(args.config_type_weights)
-        collections, atomic_energies_dict, theories = get_dataset_from_xyz(
+        collections, atomic_energies_dict, heads = get_dataset_from_xyz(
             train_path=args.train_file,
             valid_path=args.valid_file,
             valid_fraction=args.valid_fraction,
@@ -156,22 +160,86 @@ def main() -> None:
             charges_key=args.charges_key,
             keep_isolated_atoms=args.keep_isolated_atoms,
         )
-        if args.theories is not None:
-            args.theories = ast.literal_eval(args.theories)
-            assert set(theories) == set(args.theories), (
-                "Theories from command line and data do not match,"
-                f"{set(theories)} != {set(args.theories)}"
+        if args.heads is not None:
+            args.heads = ast.literal_eval(args.heads)
+            assert set(heads) == set(args.heads), (
+                "heads from command line and data do not match,"
+                f"{set(heads)} != {set(args.heads)}"
             )
             logging.info(
-                "Using theories from command line argument,"
-                f" theories used: {args.theories}"
+                "Using heads from command line argument," f" heads used: {args.heads}"
             )
-            theories = args.theories
+            heads = args.heads
         else:
             logging.info(
-                "Using theories extracted from data files,"
-                f" theories used: {theories}"
+                "Using heads extracted from data files," f" heads used: {heads}"
             )
+
+        if args.multiheads_finetuning:
+            logging.info("Using multiheads finetuning mode")
+            heads = list(set(["pbe_mp"] + heads))
+            try:
+                checkpoint_url = "https://tinyurl.com/mw2wetc5"
+                cache_dir = os.path.expanduser("~/.cache/mace")
+                checkpoint_url_name = "".join(
+                    c
+                    for c in os.path.basename(checkpoint_url)
+                    if c.isalnum() or c in "_"
+                )
+                cached_dataset_path = f"{cache_dir}/{checkpoint_url_name}"
+                if not os.path.isfile(cached_dataset_path):
+                    os.makedirs(cache_dir, exist_ok=True)
+                    # download and save to disk
+                    logging.info("Downloading MP structures for finetuning")
+                    _, http_msg = urllib.request.urlretrieve(
+                        checkpoint_url, cached_dataset_path
+                    )
+                    if "Content-Type: text/html" in http_msg:
+                        raise RuntimeError(
+                            f"Dataset download failed, please check the URL {checkpoint_url}"
+                        )
+                    logging.info(f"Materials Project dataset to {cached_dataset_path}")
+                dataset_mp = cached_dataset_path
+                msg = f"Using Materials Project dataset with {dataset_mp}"
+                logging.info(msg)
+                args_samples = {
+                    "configs_pt": dataset_mp,
+                    "configs_ft": args.train_file,
+                    "num_samples": 1000,
+                    "seed": args.seed,
+                    "model": args.foundation_model,
+                    "head_pt": "pbe_mp",
+                    "head_ft": "Default",
+                    "weight_pt": 1.0,
+                    "weight_ft": 1.0,
+                    "filtering_type": "combination",
+                    "output": f"{cache_dir}/mp_finetuning.xyz",
+                    "descriptors": None,
+                    "device": args.device,
+                    "default_dtype": args.default_dtype,
+                }
+                select_samples(dict_to_namespace(args_samples))
+                collections_mp, _, _ = get_dataset_from_xyz(
+                    train_path=dataset_mp,
+                    valid_path=None,
+                    valid_fraction=args.valid_fraction,
+                    config_type_weights=config_type_weights,
+                    test_path=None,
+                    seed=args.seed,
+                    energy_key="energy",
+                    forces_key="forces",
+                    stress_key="stress",
+                    virials_key=args.virials_key,
+                    dipole_key=args.dipole_key,
+                    charges_key=args.charges_key,
+                    keep_isolated_atoms=args.keep_isolated_atoms,
+                )
+                collections.train += collections_mp.train
+                collections.valid += collections_mp.valid
+            except Exception as exc:
+                raise RuntimeError(
+                    "Model download failed and no local model found"
+                ) from exc
 
         logging.info(
             f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
@@ -204,12 +272,14 @@ def main() -> None:
     if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
         if args.train_file.endswith(".xyz"):
             atomic_energies_dict = get_atomic_energies(
-                args.E0s, collections.train, z_table, theories
+                args.E0s, collections.train, z_table, heads
             )
         else:
-            atomic_energies_dict = get_atomic_energies(
-                args.E0s, None, z_table, theories
-            )
+            atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table, heads)
+    if args.multiheads_finetuning:
+        with open("mace\calculators\foundations_models\mp_vasp_e0.json", "r") as file:
+            E0s_mp = json.load(file)
+        atomic_energies_dict["pbe_mp"] = {E0s_mp["pbe"][z] for z in z_table.zs}
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
@@ -239,44 +309,44 @@ def main() -> None:
     if args.train_file.endswith(".xyz"):
         train_set = [
             data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=args.r_max, theories=theories
+                config, z_table=z_table, cutoff=args.r_max, heads=heads
             )
             for config in collections.train
         ]
-        valid_sets = {theory: [] for theory in theories}
-        for theory in theories:
-            valid_sets[theory] = [
+        valid_sets = {head: [] for head in heads}
+        for head in heads:
+            valid_sets[head] = [
                 data.AtomicData.from_config(
-                    config, z_table=z_table, cutoff=args.r_max, theories=theories
+                    config, z_table=z_table, cutoff=args.r_max, heads=heads
                 )
                 for config in collections.valid
-                if config.theory == theory
+                if config.head == head
             ]
 
     elif args.train_file.endswith(".h5"):
         train_set = data.HDF5Dataset(
-            args.train_file, r_max=args.r_max, z_table=z_table, theories=theories
+            args.train_file, r_max=args.r_max, z_table=z_table, heads=heads
         )
         valid_set = data.HDF5Dataset(
-            args.valid_file, r_max=args.r_max, z_table=z_table, theories=theories
+            args.valid_file, r_max=args.r_max, z_table=z_table, heads=heads
         )
     else:  # This case would be for when the file path is to a directory of multiple .h5 files
         train_set = data.dataset_from_sharded_hdf5(
-            args.train_file, r_max=args.r_max, z_table=z_table, theories=theories
+            args.train_file, r_max=args.r_max, z_table=z_table, heads=heads
         )
-        # check if the folder has subfolders for each theory by opening args.valid_file folder
+        # check if the folder has subfolders for each head by opening args.valid_file folder
         if check_folder_subfolder(args.valid_file):
             valid_sets = {}
-            for theory in theories:
-                valid_sets[theory] = data.dataset_from_sharded_hdf5(
-                    os.path.join(args.valid_file, theory),
+            for head in heads:
+                valid_sets[head] = data.dataset_from_sharded_hdf5(
+                    os.path.join(args.valid_file, head),
                     r_max=args.r_max,
                     z_table=z_table,
-                    theories=theories,
+                    heads=heads,
                 )
         else:
             valid_set = data.dataset_from_sharded_hdf5(
-                args.valid_file, r_max=args.r_max, z_table=z_table, theories=theories
+                args.valid_file, r_max=args.r_max, z_table=z_table, heads=heads
             )
             valid_sets = {"Default": valid_set}
 
@@ -291,7 +361,7 @@ def main() -> None:
             seed=args.seed,
         )
         valid_samplers = {}
-        for theory, valid_set in valid_sets.items():
+        for head, valid_set in valid_sets.items():
             valid_sampler = torch.utils.data.distributed.DistributedSampler(
                 valid_set,
                 num_replicas=world_size,
@@ -300,7 +370,7 @@ def main() -> None:
                 drop_last=True,
                 seed=args.seed,
             )
-            valid_samplers[theory] = valid_sampler
+            valid_samplers[head] = valid_sampler
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
         batch_size=args.batch_size,
@@ -311,14 +381,14 @@ def main() -> None:
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
     )
-    valid_loaders = {theories[i]: None for i in range(len(theories))}
+    valid_loaders = {heads[i]: None for i in range(len(heads))}
     if not isinstance(valid_sets, dict):
         valid_sets = {"Default": valid_sets}
-    for theory, valid_set in valid_sets.items():
-        valid_loaders[theory] = torch_geometric.dataloader.DataLoader(
+    for head, valid_set in valid_sets.items():
+        valid_loaders[head] = torch_geometric.dataloader.DataLoader(
             dataset=valid_set,
             batch_size=args.valid_batch_size,
-            sampler=valid_samplers[theory] if args.distributed else None,
+            sampler=valid_samplers[head] if args.distributed else None,
             shuffle=(valid_sampler is None),
             drop_last=False,
             pin_memory=args.pin_memory,
@@ -432,12 +502,12 @@ def main() -> None:
         model_config["num_elements"] = len(z_table)
         args.max_L = model_config["hidden_irreps"].lmax
         if args.model == "MACE" and model_foundation.__class__.__name__ == "MACE":
-            model_config["atomic_inter_shift"] = [0.0] * len(theories)
+            model_config["atomic_inter_shift"] = [0.0] * len(heads)
         else:
-            model_config["atomic_inter_shift"] = [args.mean] * len(theories)
-        model_config["atomic_inter_scale"] = [1.0] * len(theories)
+            model_config["atomic_inter_shift"] = [args.mean] * len(heads)
+        model_config["atomic_inter_scale"] = [1.0] * len(heads)
         args.model = "FoundationMACE"
-        model_config["theories"] = args.theories
+        model_config["heads"] = args.heads
     else:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:
@@ -483,10 +553,10 @@ def main() -> None:
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
-            atomic_inter_shift=[0.0] * len(theories),
+            atomic_inter_shift=[0.0] * len(heads),
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
-            theories=theories,
+            heads=heads,
         )
     elif args.model == "ScaleShiftMACE":
         model = modules.ScaleShiftMACE(
@@ -501,7 +571,7 @@ def main() -> None:
             atomic_inter_shift=args.mean,
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
-            theories=theories,
+            heads=heads,
         )
     elif args.model == "FoundationMACE":
         model = modules.ScaleShiftMACE(**model_config)
@@ -783,15 +853,15 @@ def main() -> None:
     all_data_loaders = {
         "train": train_loader,
     }
-    for theory, valid_loader in valid_loaders.items():
-        all_data_loaders[theory] = valid_loader
+    for head, valid_loader in valid_loaders.items():
+        all_data_loaders[head] = valid_loader
 
     test_sets = {}
     if args.train_file.endswith(".xyz"):
         for name, subset in collections.tests:
             test_sets[name] = [
                 data.AtomicData.from_config(
-                    config, z_table=z_table, cutoff=args.r_max, theories=theories
+                    config, z_table=z_table, cutoff=args.r_max, heads=heads
                 )
                 for config in subset
             ]
@@ -800,14 +870,14 @@ def main() -> None:
         for test_file in test_files:
             name = os.path.splitext(os.path.basename(test_file))[0]
             test_sets[name] = data.HDF5Dataset(
-                test_file, r_max=args.r_max, z_table=z_table, theories=theories
+                test_file, r_max=args.r_max, z_table=z_table, heads=heads
             )
     else:
         test_folders = glob(args.test_dir + "/*")
         for folder in test_folders:
             name = os.path.splitext(os.path.basename(test_file))[0]
             test_sets[name] = data.dataset_from_sharded_hdf5(
-                folder, r_max=args.r_max, z_table=z_table, theories=theories
+                folder, r_max=args.r_max, z_table=z_table, heads=heads
             )
 
     for test_name, test_set in test_sets.items():

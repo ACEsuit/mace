@@ -4,6 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import argparse
 import ast
 import dataclasses
 import json
@@ -43,7 +44,7 @@ def get_dataset_from_xyz(
     charges_key: str = "charges",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
-    atomic_energies_dict, all_train_configs, theories = data.load_from_xyz(
+    atomic_energies_dict, all_train_configs, heads = data.load_from_xyz(
         file_path=train_path,
         config_type_weights=config_type_weights,
         energy_key=energy_key,
@@ -79,15 +80,15 @@ def get_dataset_from_xyz(
             "Using random %s%% of training set for validation", 100 * valid_fraction
         )
         train_configs, valid_configs = [], []
-        for theory in theories:
-            all_train_configs_theory = [
-                config for config in all_train_configs if config.theory == theory
+        for head in heads:
+            all_train_configs_head = [
+                config for config in all_train_configs if config.head == head
             ]
-            train_configs_theory, valid_configs_theory = data.random_train_valid_split(
-                all_train_configs_theory, valid_fraction, seed
+            train_configs_head, valid_configs_head = data.random_train_valid_split(
+                all_train_configs_head, valid_fraction, seed
             )
-            train_configs.extend(train_configs_theory)
-            valid_configs.extend(valid_configs_theory)
+            train_configs.extend(train_configs_head)
+            valid_configs.extend(valid_configs_head)
 
     test_configs = []
     if test_path is not None:
@@ -108,7 +109,7 @@ def get_dataset_from_xyz(
     return (
         SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
         atomic_energies_dict,
-        theories,
+        heads,
     )
 
 
@@ -127,7 +128,7 @@ def get_config_type_weights(ct_weights):
     return config_type_weights
 
 
-def get_atomic_energies(E0s, train_collection, z_table, theories) -> dict:
+def get_atomic_energies(E0s, train_collection, z_table, heads) -> dict:
     if E0s is not None:
         logging.info(
             "Atomic Energies not in training file, using command line argument E0s"
@@ -140,7 +141,7 @@ def get_atomic_energies(E0s, train_collection, z_table, theories) -> dict:
             try:
                 assert train_collection is not None
                 atomic_energies_dict = data.compute_average_E0s(
-                    train_collection, z_table, theories
+                    train_collection, z_table, heads
                 )
             except Exception as e:
                 raise RuntimeError(
@@ -473,3 +474,11 @@ def check_folder_subfolder(folder_path):
         if os.path.isdir(full_path):
             return True
     return False
+
+
+def dict_to_namespace(dictionary):
+    # Convert the dictionary into an argparse.Namespace
+    namespace = argparse.Namespace()
+    for key, value in dictionary.items():
+        setattr(namespace, key, value)
+    return namespace

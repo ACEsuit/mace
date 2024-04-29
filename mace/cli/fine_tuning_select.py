@@ -62,20 +62,14 @@ def parse_args() -> argparse.Namespace:
         default="float64",
     )
     parser.add_argument(
-        "--info_prefix",
-        help="prefix for energy, forces and stress keys",
-        type=str,
-        default="MACE_",
-    )
-    parser.add_argument(
-        "--theory_pt",
-        help="level of theory for the pretraining set",
+        "--head_pt",
+        help="level of head for the pretraining set",
         type=str,
         default=None,
     )
     parser.add_argument(
-        "--theory_ft",
-        help="level of theory for the finetuning set",
+        "--head_ft",
+        help="level of head for the finetuning set",
         type=str,
         default=None,
     )
@@ -199,8 +193,9 @@ class FPS:
                 )
 
 
-def main():
-    args = parse_args()
+def select_samples(
+    args: argparse.Namespace,
+) -> None:
     if args.model in ["small", "medium", "large"]:
         calc = mace_mp(args.model, device=args.device, default_dtype=args.default_dtype)
     else:
@@ -272,8 +267,8 @@ def main():
         # del atoms.info["mace_descriptors"]
         atoms.info["pretrained"] = True
         atoms.info["config_weight"] = args.weight_pt
-        if args.theory_pt is not None:
-            atoms.info["theory"] = args.theory_pt
+        if args.head_pt is not None:
+            atoms.info["head"] = args.head_pt
 
     print("Saving the selected configurations")
     ase.io.write(args.output, atoms_list_pt, format="extxyz")
@@ -281,12 +276,17 @@ def main():
     for atoms in atoms_list_ft:
         atoms.info["pretrained"] = False
         atoms.info["config_weight"] = args.weight_ft
-        if args.theory_ft is not None:
-            atoms.info["theory"] = args.theory_ft
+        if args.head_ft is not None:
+            atoms.info["head"] = args.head_ft
     atoms_fps_pt_ft = atoms_list_pt + atoms_list_ft
     ase.io.write(
         args.output.replace(".xyz", "_combined.xyz"), atoms_fps_pt_ft, format="extxyz"
     )
+
+
+def main():
+    args = parse_args()
+    select_samples(args)
 
 
 if __name__ == "__main__":

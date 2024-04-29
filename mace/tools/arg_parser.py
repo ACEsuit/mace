@@ -332,11 +332,17 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
-        "--theories",
-        help="List of theories in the training set",
+        "--heads",
+        help="List of heads in the training set",
         type=str,
         default=None,
         required=False,
+    )
+    parser.add_argument(
+        "--multiheads_finetuning",
+        help="Boolean value for whether the model is multiheaded",
+        type=bool,
+        default=True,
     )
     parser.add_argument(
         "--keep_isolated_atoms",

@@ -47,7 +47,7 @@ class Configuration:
     stress_weight: float = 1.0  # weight of config stress in loss
     virials_weight: float = 1.0  # weight of config virial in loss
     config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
-    theory: Optional[str] = "Default"  # theory used to compute the config
+    head: Optional[str] = "Default"  # head used to compute the config
 
 
 Configurations = List[Configuration]
@@ -79,7 +79,7 @@ def config_from_atoms_list(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
-    theory_key="theory",
+    head_key="head",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -97,7 +97,7 @@ def config_from_atoms_list(
                 virials_key=virials_key,
                 dipole_key=dipole_key,
                 charges_key=charges_key,
-                theory_key=theory_key,
+                head_key=head_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -112,7 +112,7 @@ def config_from_atoms(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
-    theory_key="theory",
+    head_key="head",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -140,7 +140,7 @@ def config_from_atoms(
     stress_weight = atoms.info.get("config_stress_weight", 1.0)
     virials_weight = atoms.info.get("config_virials_weight", 1.0)
 
-    theory = atoms.info.get(theory_key, "Default")
+    head = atoms.info.get(head_key, "Default")
 
     # fill in missing quantities but set their weight to 0.0
     if energy is None:
@@ -169,7 +169,7 @@ def config_from_atoms(
         dipole=dipole,
         charges=charges,
         weight=weight,
-        theory=theory,
+        head=head,
         energy_weight=energy_weight,
         forces_weight=forces_weight,
         stress_weight=stress_weight,
@@ -187,7 +187,7 @@ def test_config_types(
     test_by_ct = []
     all_cts = []
     for conf in test_configs:
-        config_type_name = conf.config_type + "_" + conf.theory
+        config_type_name = conf.config_type + "_" + conf.head
         if config_type_name not in all_cts:
             all_cts.append(config_type_name)
             test_by_ct.append((config_type_name, [conf]))
@@ -206,27 +206,69 @@ def load_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipole",
     charges_key: str = "charges",
-    theory_key: str = "theory",
+    head_key: str = "head",
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
 
+    # Perform initial checks and log warnings
+    if energy_key == "energy":
+        logging.info(
+            "Using energy_key 'energy' is unsafe, consider using a different key, rewriting energies to 'REF_energy'"
+        )
+        energy_key = "REF_energy"
+
+    if forces_key == "forces":
+        logging.info(
+            "Using forces_key 'forces' is unsafe, consider using a different key, rewriting forces to 'REF_forces'"
+        )
+        forces_key = "REF_forces"
+
+    if stress_key == "stress":
+        logging.info(
+            "Using stress_key 'stress' is unsafe, consider using a different key, rewriting stress to 'REF_stress'"
+        )
+        stress_key = "REF_stress"
+
+    # Process each atom only once
+    for atoms in atoms_list:
+        if energy_key == "REF_energy":
+            try:
+                atoms.info["REF_energy"] = atoms.get_potential_energy()
+            except Exception as e:  # pylint: disable=W0703
+                logging.warning(f"Failed to extract energy: {e}")
+                atoms.info["REF_energy"] = None
+
+        if forces_key == "REF_forces":
+            try:
+                atoms.info["REF_forces"] = atoms.get_forces()
+            except Exception as e:  # pylint: disable=W0703
+                logging.warning(f"Failed to extract forces: {e}")
+                atoms.info["REF_forces"] = None
+
+        if stress_key == "REF_stress":
+            try:
+                atoms.info["REF_stress"] = atoms.get_stress()
+            except Exception as e:  # pylint: disable=W0703
+                atoms.info["REF_stress"] = None
+
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
-
     atomic_energies_dict = {}
     if extract_atomic_energies:
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
             if atoms.info.get("config_type") == "IsolatedAtom":
-                assert len(atoms) == 1, f"Got config_type=IsolatedAtom for a config with len {len(atoms)}"
+                assert (
+                    len(atoms) == 1
+                ), f"Got config_type=IsolatedAtom for a config with len {len(atoms)}"
                 if energy_key in atoms.info.keys():
-                    theory = atoms.info.get(theory_key, "Default")
-                    if theory not in atomic_energies_dict:
-                        atomic_energies_dict[theory] = {}
-                    atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
+                    head = atoms.info.get(head_key, "Default")
+                    if head not in atomic_energies_dict:
+                        atomic_energies_dict[head] = {}
+                    atomic_energies_dict[head][atoms.get_atomic_numbers()[0]] = (
                         atoms.info[energy_key]
                     )
                 else:
@@ -234,10 +276,10 @@ def load_from_xyz(
                         f"Configuration '{idx}' is marked as 'IsolatedAtom' "
                         "but does not contain an energy. Zero energy will be used."
                     )
-                    theory = atoms.info.get(theory_key, "Default")
-                    if theory not in atomic_energies_dict:
-                        atomic_energies_dict[theory] = {}
-                    atomic_energies_dict[theory][atoms.get_atomic_numbers()[0]] = (
+                    head = atoms.info.get(head_key, "Default")
+                    if head not in atomic_energies_dict:
+                        atomic_energies_dict[head] = {}
+                    atomic_energies_dict[head][atoms.get_atomic_numbers()[0]] = (
                         np.zeros(1)
                     )
             else:
@@ -247,10 +289,10 @@ def load_from_xyz(
             logging.info("Using isolated atom energies from training file")
         if not keep_isolated_atoms:
             atoms_list = atoms_without_iso_atoms
-    theories = set()
+    heads = set()
     for atoms in atoms_list:
-        theories.add(atoms.info.get(theory_key, "Default"))
-    theories = list(theories)
+        heads.add(atoms.info.get(head_key, "Default"))
+    heads = list(heads)
     configs = config_from_atoms_list(
         atoms_list,
         config_type_weights=config_type_weights,
@@ -260,13 +302,13 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
-        theory_key=theory_key,
+        head_key=head_key,
     )
-    return atomic_energies_dict, configs, theories
+    return atomic_energies_dict, configs, heads
 
 
 def compute_average_E0s(
-    collections_train: Configurations, z_table: AtomicNumberTable, theories: List[str]
+    collections_train: Configurations, z_table: AtomicNumberTable, heads: List[str]
 ) -> Dict[int, float]:
     """
     Function to compute the average interaction energy of each chemical element
@@ -275,13 +317,13 @@ def compute_average_E0s(
     len_train = len(collections_train)
     len_zs = len(z_table)
     atomic_energies_dict = {}
-    for theory in theories:
+    for head in heads:
         A = np.zeros((len_train, len_zs))
         B = np.zeros(len_train)
-        if theory not in atomic_energies_dict:
-            atomic_energies_dict[theory] = {}
+        if head not in atomic_energies_dict:
+            atomic_energies_dict[head] = {}
         for i in range(len_train):
-            if collections_train[i].theory != theory:
+            if collections_train[i].head != head:
                 continue
             B[i] = collections_train[i].energy
             for j, z in enumerate(z_table.zs):
@@ -289,13 +331,13 @@ def compute_average_E0s(
         try:
             E0s = np.linalg.lstsq(A, B, rcond=None)[0]
             for i, z in enumerate(z_table.zs):
-                atomic_energies_dict[theory][z] = E0s[i]
+                atomic_energies_dict[head][z] = E0s[i]
         except np.linalg.LinAlgError:
             logging.warning(
                 "Failed to compute E0s using least squares regression, using the same for all atoms"
             )
             for i, z in enumerate(z_table.zs):
-                atomic_energies_dict[theory][z] = 0.0
+                atomic_energies_dict[head][z] = 0.0
     return atomic_energies_dict
 
 
@@ -321,7 +363,7 @@ def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
             grp["virials"] = data.virials
             grp["dipole"] = data.dipole
             grp["charges"] = data.charges
-            grp["theory"] = data.theory
+            grp["head"] = data.head
 
 
 def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
@@ -344,7 +386,7 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["virials"] = data.virials
     grp["dipole"] = data.dipole
     grp["charges"] = data.charges
-    grp["theory"] = data.theory
+    grp["head"] = data.head
 
 
 def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> None:
@@ -358,7 +400,7 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         subgroup["forces"] = write_value(config.forces)
         subgroup["stress"] = write_value(config.stress)
         subgroup["virials"] = write_value(config.virials)
-        subgroup["theory"] = write_value(config.theory)
+        subgroup["head"] = write_value(config.head)
         subgroup["dipole"] = write_value(config.dipole)
         subgroup["charges"] = write_value(config.charges)
         subgroup["cell"] = write_value(config.cell)

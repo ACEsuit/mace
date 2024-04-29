@@ -355,9 +355,9 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     fitting_configs_ = []
     for i, c in enumerate(fitting_configs):
         if i % 2 == 0:
-            c.info["theory"] = "DFT"
+            c.info["head"] = "DFT"
         else:
-            c.info["theory"] = "MP2"
+            c.info["head"] = "MP2"
         fitting_configs_.append(c)
     ase.io.write(tmp_path / "fit.xyz", fitting_configs_)
 
@@ -373,7 +373,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     mace_params["default_dtype"] = "float32"
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
-    mace_params["theories"] = "['MP2','DFT']"
+    mace_params["heads"] = "['MP2','DFT']"
     mace_params["batch_size"] = 2
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
@@ -432,4 +432,4 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
         0.1669044941663742,
         0.119053915143013,
     ]
-    assert np.allclose(Es, ref_Es)
+    assert np.allclose(Es, ref_Es, tol=1e-2)

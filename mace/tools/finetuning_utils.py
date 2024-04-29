@@ -76,7 +76,7 @@ def load_foundations_elements(
     """
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
-    model_theories = model.theories
+    model_heads = model.heads
     new_z_table = table
     num_species_foundations = len(z_table.zs)
     num_channels_foundation = (
@@ -193,7 +193,7 @@ def load_foundations_elements(
         model_readouts_zero_linear_weight = (
             model_foundations.readouts[0]
             .linear.weight.view(num_channels_foundation, -1)
-            .repeat(1, len(model_theories))
+            .repeat(1, len(model_heads))
             .flatten()
             .clone()
         )
@@ -209,7 +209,7 @@ def load_foundations_elements(
         model_readouts_one_linear_1_weight = (
             model_foundations.readouts[1]
             .linear_1.weight.view(num_channels_foundation, -1)
-            .repeat(1, len(model_theories))
+            .repeat(1, len(model_heads))
             .flatten()
             .clone()
         )
@@ -220,7 +220,7 @@ def load_foundations_elements(
         model_readouts_one_linear_2_weight = model_foundations.readouts[
             1
         ].linear_2.weight.view(shape_input_1, -1).repeat(
-            len(model_theories), len(model_theories)
+            len(model_heads), len(model_heads)
         ).flatten().clone() / (
             ((shape_input_1) / (shape_output_1)) ** 0.5
         )
@@ -230,11 +230,11 @@ def load_foundations_elements(
     if model_foundations.scale_shift is not None:
         if use_scale:
             model.scale_shift.scale = model_foundations.scale_shift.scale.repeat(
-                len(model_theories)
+                len(model_heads)
             ).clone()
         if use_shift:
             model.scale_shift.shift = model_foundations.scale_shift.shift.repeat(
-                len(model_theories)
+                len(model_heads)
             ).clone()
     return model
 
