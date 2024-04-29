@@ -56,7 +56,7 @@ def valid_err_log(
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
-            f"Theory: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
+            f"head: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -66,7 +66,7 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         error_stress = eval_metrics["rmse_stress_per_atom"] * 1e3
         logging.info(
-            f"Theory: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress_per_atom={error_stress:.1f} meV / A^3"
+            f"head: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress_per_atom={error_stress:.1f} meV / A^3"
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -76,37 +76,37 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         error_virials = eval_metrics["rmse_virials_per_atom"] * 1e3
         logging.info(
-            f"Theory: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_virials_per_atom={error_virials:.1f} meV"
+            f"head: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_virials_per_atom={error_virials:.1f} meV"
         )
     elif log_errors == "TotalRMSE":
         error_e = eval_metrics["rmse_e"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
-            f"Theory: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
+            f"head: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
         )
     elif log_errors == "PerAtomMAE":
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         logging.info(
-            f"Theory: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, MAE_E_per_atom={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+            f"head: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, MAE_E_per_atom={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
         )
     elif log_errors == "TotalMAE":
         error_e = eval_metrics["mae_e"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         logging.info(
-            f"Theory: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, MAE_E={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
+            f"head: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, MAE_E={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
         )
     elif log_errors == "DipoleRMSE":
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
         logging.info(
-            f"Theory: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye"
+            f"head: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye"
         )
     elif log_errors == "EnergyDipoleRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
         logging.info(
-            f"Theory: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_Mu_per_atom={error_mu:.2f} mDebye"
+            f"head: {valid_loader_name}, Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_Mu_per_atom={error_mu:.2f} mDebye"
         )
 
 
@@ -152,14 +152,14 @@ def train(
     # log validation loss before _any_ training
     valid_loss = 0.0
     for valid_loader_name, valid_loader in valid_loaders.items():
-        valid_loss_theory, eval_metrics = evaluate(
+        valid_loss_head, eval_metrics = evaluate(
             model=model,
             loss_fn=loss_fn,
             data_loader=valid_loader,
             output_args=output_args,
             device=device,
         )
-        valid_loss += valid_loss_theory
+        valid_loss += valid_loss_head
         valid_err_log(
             valid_loss, eval_metrics, logger, log_errors, None, valid_loader_name
         )
@@ -215,14 +215,14 @@ def train(
                 valid_loss = 0.0
                 wandb_log_dict = {}
                 for valid_loader_name, valid_loader in valid_loaders.items():
-                    valid_loss_theory, eval_metrics = evaluate(
+                    valid_loss_head, eval_metrics = evaluate(
                         model=model_to_evaluate,
                         loss_fn=loss_fn,
                         data_loader=valid_loader,
                         output_args=output_args,
                         device=device,
                     )
-                    valid_loss += valid_loss_theory
+                    valid_loss += valid_loss_head
                     valid_err_log(
                         valid_loss,
                         eval_metrics,
@@ -234,7 +234,7 @@ def train(
                     if log_wandb:
                         wandb_log_dict[valid_loader_name] = {
                             "epoch": epoch,
-                            "valid_loss": valid_loss_theory,
+                            "valid_loss": valid_loss_head,
                             "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
                             "valid_rmse_f": eval_metrics["rmse_f"],
                         }

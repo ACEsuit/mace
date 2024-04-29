@@ -58,7 +58,7 @@ class HDF5Dataset(Dataset):
             dipole=unpack_value(subgrp["dipole"][()]),
             charges=unpack_value(subgrp["charges"][()]),
             weight=unpack_value(subgrp["weight"][()]),
-            theory=unpack_value(subgrp["theory"][()]),
+            head=unpack_value(subgrp["head"][()]),
             energy_weight=unpack_value(subgrp["energy_weight"][()]),
             forces_weight=unpack_value(subgrp["forces_weight"][()]),
             stress_weight=unpack_value(subgrp["stress_weight"][()]),
@@ -71,7 +71,7 @@ class HDF5Dataset(Dataset):
             config,
             z_table=self.z_table,
             cutoff=self.r_max,
-            theories=self.kwargs.get("theories", ["Default"]),
+            heads=self.kwargs.get("heads", ["Default"]),
         )
         return atomic_data
 

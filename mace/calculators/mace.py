@@ -145,9 +145,9 @@ class MACECalculator(Calculator):
         )
         self.charges_key = charges_key
         try:
-            self.theories = self.models[0].theories
+            self.heads = self.models[0].heads
         except:
-            self.theories = ["Default"]
+            self.heads = ["Default"]
         model_dtype = get_model_dtype(self.models[0])
         if default_dtype == "":
             print(
@@ -223,7 +223,7 @@ class MACECalculator(Calculator):
                     config,
                     z_table=self.z_table,
                     cutoff=self.r_max,
-                    theories=self.theories,
+                    heads=self.heads,
                 )
             ],
             batch_size=1,
@@ -233,10 +233,10 @@ class MACECalculator(Calculator):
 
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
             batch = next(iter(data_loader)).to(self.device)
-            node_theories = batch["theory"][batch["batch"]]
+            node_heads = batch["head"][batch["batch"]]
             num_atoms_arange = torch.arange(batch["positions"].shape[0])
             node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])[
-                num_atoms_arange, node_theories
+                num_atoms_arange, node_heads
             ]
             compute_stress = not self.use_compile
         else:
@@ -339,7 +339,7 @@ class MACECalculator(Calculator):
                     config,
                     z_table=self.z_table,
                     cutoff=self.r_max,
-                    theories=self.theories,
+                    heads=self.heads,
                 )
             ],
             batch_size=1,

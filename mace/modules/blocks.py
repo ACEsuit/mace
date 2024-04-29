@@ -17,7 +17,7 @@ from mace.tools.scatter import scatter_sum
 
 from .irreps_tools import (
     linear_out_irreps,
-    mask_theory,
+    mask_head,
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
@@ -52,7 +52,7 @@ class LinearReadoutBlock(torch.nn.Module):
         self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
 
     def forward(
-        self, x: torch.Tensor, theories: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         return self.linear(x)  # [n_nodes, 1]
 
@@ -66,26 +66,22 @@ class NonLinearReadoutBlock(torch.nn.Module):
         MLP_irreps: o3.Irreps,
         gate: Optional[Callable],
         irrep_out: o3.Irreps = o3.Irreps("0e"),
-        num_theories: int = 1,
+        num_heads: int = 1,
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
-        self.num_theories = num_theories
+        self.num_heads = num_heads
         self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
         self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
         self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=irrep_out)
 
     def forward(
-        self, x: torch.Tensor, theories: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
-        if (
-            hasattr(self, "num_theories")
-            and self.num_theories > 1
-            and theories is not None
-        ):
-            x = mask_theory(x, theories, self.num_theories)
-        return self.linear_2(x)  # [n_nodes, len(theories)]
+        if hasattr(self, "num_heads") and self.num_heads > 1 and heads is not None:
+            x = mask_head(x, heads, self.num_heads)
+        return self.linear_2(x)  # [n_nodes, len(heads)]
 
 
 @compile_mode("script")
@@ -153,7 +149,7 @@ class AtomicEnergiesBlock(torch.nn.Module):
         self.register_buffer(
             "atomic_energies",
             torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
-        )  # [n_elements, n_theories]
+        )  # [n_elements, n_heads]
 
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
@@ -771,10 +767,9 @@ class ScaleShiftBlock(torch.nn.Module):
             torch.atleast_1d(torch.tensor(shift, dtype=torch.get_default_dtype())),
         )
 
-    def forward(self, x: torch.Tensor, theory: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, head: torch.Tensor) -> torch.Tensor:
         return (
-            torch.atleast_1d(self.scale)[theory] * x
-            + torch.atleast_1d(self.shift)[theory]
+            torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]
         )
 
     def __repr__(self):
