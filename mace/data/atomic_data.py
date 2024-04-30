@@ -128,8 +128,7 @@ class AtomicData(torch_geometric.data.Data):
         try:
             head = torch.tensor(heads.index(config.head), dtype=torch.long)
         except:
-            print(f"head {config.head} not found in {heads}")
-            head = torch.tensor(0, dtype=torch.long)
+            head = torch.tensor(len(heads) - 1, dtype=torch.long)
 
         cell = (
             torch.tensor(config.cell, dtype=torch.get_default_dtype())
