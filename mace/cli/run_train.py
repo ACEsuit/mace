@@ -242,7 +242,7 @@ def main() -> None:
                     "model": args.foundation_model,
                     "head_pt": "pbe_mp",
                     "head_ft": "Default",
-                    "weight_pt": 1.0,
+                    "weight_pt": args.weight_pt_head,
                     "weight_ft": 1.0,
                     "filtering_type": "combination",
                     "output": f"{cache_dir}/mp_finetuning.xyz",
