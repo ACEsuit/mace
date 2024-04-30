@@ -345,6 +345,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--weight_pt_head",
+        help="Weight of the pretrained head in the loss function",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
         "--keep_isolated_atoms",
         help="Keep isolated atoms in the dataset, useful for transfer learning",
         type=bool,
