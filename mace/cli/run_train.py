@@ -119,6 +119,8 @@ def main() -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
+    else:
+        args.multiheads_finetuning = False
 
     if args.statistics_file is not None:
         with open(args.statistics_file, "r") as f:  # pylint: disable=W1514
