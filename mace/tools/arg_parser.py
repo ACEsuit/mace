@@ -372,7 +372,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--stress_key",
         help="Key of reference stress in training xyz",
         type=str,
-        default="stress",
+        default="REF_stress",
     )
     parser.add_argument(
         "--dipole_key",

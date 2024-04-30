@@ -99,7 +99,7 @@ def calculate_descriptors(
     atoms: t.List[ase.Atoms | ase.Atom], calc: MACECalculator, cutoffs: None | dict
 ) -> None:
     print("Calculating descriptors")
-    for mol in tqdm(atoms):
+    for mol in atoms:
         descriptors = calc.get_descriptors(mol.copy(), invariants_only=True)
         # average descriptors over atoms for each element
         descriptors_dict = {
@@ -182,7 +182,8 @@ class FPS:
                     len(self.atoms_list),
                     len(self.species),
                     len(list(self.atoms_list[0].info["mace_descriptors"].values())[0]),
-                )
+                ),
+                dtype=np.float32,
             )
         )
         for i, atoms in enumerate(self.atoms_list):
@@ -216,10 +217,6 @@ def select_samples(
             atoms_list_pt = ase.io.read(args.configs_pt, index=":")
             for i, atoms in enumerate(atoms_list_pt):
                 atoms.info["mace_descriptors"] = descriptors[i]
-            print(
-                "Filtering configurations based on the finetuning set,"
-                f"filtering type: combinations, elements: {all_species_ft}"
-            )
             atoms_list_pt = [
                 x
                 for x in atoms_list_pt
