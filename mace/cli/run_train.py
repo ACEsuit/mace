@@ -790,7 +790,7 @@ def main() -> None:
                 model = model.to("cpu")
             torch.save(model, model_path)
             extra_files = {
-                "commit.txt": commit.encode("utf-8"),
+                "commit.txt": commit.encode("utf-8") if commit is not None else b"",
                 "config.yaml": json.dumps(
                     convert_to_json_format(extract_config_mace_model(model))
                 ),

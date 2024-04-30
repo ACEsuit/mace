@@ -36,7 +36,7 @@
 MACE provides fast and accurate machine learning interatomic potentials with higher order equivariant message passing.
 
 This repository contains the MACE reference implementation developed by
-Ilyes Batatia, Gregor Simm, and David Kovacs.
+Ilyes Batatia, Gregor Simm, David Kovacs, and the group of Gabor Csanyi, and friends (see Contributors).
 
 Also available:
 
@@ -215,7 +215,7 @@ python ./mace/scripts/preprocess_data.py \
     --seed=123 \
 ```
 
-To see all options and a little description of them run `python ./mace/scripts/preprocess_data.py --help` . The script will create a number of HDF5 files in the `processed_data` folder which can be used for training. There wiull be one file for trainin, one for validation and a separate one for each `config_type` in the test set. To train the model use the `run_train.py` script as follows:
+To see all options and a little description of them run `python ./mace/scripts/preprocess_data.py --help` . The script will create a number of HDF5 files in the `processed_data` folder which can be used for training. There will be one folder for training, one for validation and a separate one for each `config_type` in the test set. To train the model use the `run_train.py` script as follows:
 
 ```sh
 python ./mace/scripts/run_train.py \
