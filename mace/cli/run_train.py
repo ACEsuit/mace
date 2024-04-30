@@ -186,6 +186,7 @@ def main() -> None:
             logging.info(f"Using heads: {heads}")
             try:
                 checkpoint_url = "https://tinyurl.com/mw2wetc5"
+                descriptors_url = "https://tinyurl.com/mpe7br4d"
                 cache_dir = os.path.expanduser("~/.cache/mace")
                 checkpoint_url_name = "".join(
                     c
@@ -193,6 +194,12 @@ def main() -> None:
                     if c.isalnum() or c in "_"
                 )
                 cached_dataset_path = f"{cache_dir}/{checkpoint_url_name}"
+                descriptors_url_name = "".join(
+                    c
+                    for c in os.path.basename(descriptors_url)
+                    if c.isalnum() or c in "_"
+                )
+                cached_descriptors_path = f"{cache_dir}/{descriptors_url_name}"
                 if not os.path.isfile(cached_dataset_path):
                     os.makedirs(cache_dir, exist_ok=True)
                     # download and save to disk
@@ -205,8 +212,25 @@ def main() -> None:
                             f"Dataset download failed, please check the URL {checkpoint_url}"
                         )
                     logging.info(f"Materials Project dataset to {cached_dataset_path}")
+                if not os.path.isfile(cached_descriptors_path):
+                    os.makedirs(cache_dir, exist_ok=True)
+                    # download and save to disk
+                    logging.info("Downloading MP descriptors for finetuning")
+                    _, http_msg = urllib.request.urlretrieve(
+                        descriptors_url, cached_descriptors_path
+                    )
+                    if "Content-Type: text/html" in http_msg:
+                        raise RuntimeError(
+                            f"Descriptors download failed, please check the URL {descriptors_url}"
+                        )
+                    logging.info(
+                        f"Materials Project descriptors to {cached_descriptors_path}"
+                    )
                 dataset_mp = cached_dataset_path
+                descriptors_mp = cached_descriptors_path
                 msg = f"Using Materials Project dataset with {dataset_mp}"
+                logging.info(msg)
+                msg = f"Using Materials Project descriptors with {descriptors_mp}"
                 logging.info(msg)
                 args_samples = {
                     "configs_pt": dataset_mp,
@@ -220,7 +244,7 @@ def main() -> None:
                     "weight_ft": 1.0,
                     "filtering_type": "combination",
                     "output": f"{cache_dir}/mp_finetuning.xyz",
-                    "descriptors": r"D:\Work\mace_mp\descriptors.npy",
+                    "descriptors": descriptors_mp,
                     "device": args.device,
                     "default_dtype": args.default_dtype,
                 }
