@@ -4,7 +4,7 @@
 
 import argparse
 import logging
-import typing as t
+from typing import List
 
 
 import ase.data
@@ -96,7 +96,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def calculate_descriptors(
-    atoms: t.List[ase.Atoms | ase.Atom], calc: MACECalculator, cutoffs: None | dict
+    atoms: List[ase.Atoms], calc: MACECalculator, cutoffs: None | dict
 ) -> None:
     logging.info("Calculating descriptors")
     for mol in atoms:
