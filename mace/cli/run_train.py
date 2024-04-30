@@ -4,6 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import argparse
 import ast
 import glob
 import json
@@ -43,7 +44,17 @@ from mace.tools.utils import AtomicNumberTable
 
 
 def main() -> None:
+    """
+    This script runs the training/fine tuning for mace
+    """
     args = tools.build_default_arg_parser().parse_args()
+    run(args)
+
+
+def run(args: argparse.Namespace) -> None:
+    """
+    This script runs the training/fine tuning for mace
+    """
     tag = tools.get_tag(name=args.name, seed=args.seed)
     if args.distributed:
         try:
