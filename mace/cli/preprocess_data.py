@@ -1,6 +1,7 @@
 # This file loads an xyz dataset and prepares
 # new hdf5 file that is ready for training with on-the-fly dataloading
 
+import argparse
 import ast
 import json
 import logging
@@ -91,7 +92,16 @@ def get_prime_factors(n: int):
     return factors
 
 
-def main():
+def main() -> None:
+    """
+    This script loads an xyz dataset and prepares
+    new hdf5 file that is ready for training with on-the-fly dataloading
+    """
+    args = tools.build_default_arg_parser().parse_args()
+    run(args)
+
+
+def run(args: argparse.Namespace) -> None:
     """
     This script loads an xyz dataset and prepares
     new hdf5 file that is ready for training with on-the-fly dataloading
