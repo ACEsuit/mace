@@ -177,7 +177,13 @@ def main() -> None:
 
         if args.multiheads_finetuning:
             logging.info("Using multiheads finetuning mode")
-            heads = list(set(["pbe_mp"] + heads))
+            if heads is not None:
+                heads = list(set(["pbe_mp"] + heads))
+                args.heads = heads
+            else:
+                heads = ["pbe_mp", "Default"]
+                args.heads = heads
+            logging.info(f"Using heads: {heads}")
             try:
                 checkpoint_url = "https://tinyurl.com/mw2wetc5"
                 cache_dir = os.path.expanduser("~/.cache/mace")
@@ -214,13 +220,13 @@ def main() -> None:
                     "weight_ft": 1.0,
                     "filtering_type": "combination",
                     "output": f"{cache_dir}/mp_finetuning.xyz",
-                    "descriptors": None,
+                    "descriptors": r"D:\Work\mace_mp\descriptors.npy",
                     "device": args.device,
                     "default_dtype": args.default_dtype,
                 }
                 select_samples(dict_to_namespace(args_samples))
                 collections_mp, _, _ = get_dataset_from_xyz(
-                    train_path=dataset_mp,
+                    train_path=f"{cache_dir}/mp_finetuning.xyz",
                     valid_path=None,
                     valid_fraction=args.valid_fraction,
                     config_type_weights=config_type_weights,
@@ -277,9 +283,9 @@ def main() -> None:
         else:
             atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table, heads)
     if args.multiheads_finetuning:
-        with open("mace\calculators\foundations_models\mp_vasp_e0.json", "r") as file:
+        with open(r"mace\calculators\foundations_models\mp_vasp_e0.json", "r") as file:
             E0s_mp = json.load(file)
-        atomic_energies_dict["pbe_mp"] = {E0s_mp["pbe"][z] for z in z_table.zs}
+        atomic_energies_dict["pbe_mp"] = {z: E0s_mp["pbe"][f"{z}"] for z in z_table.zs}
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None

@@ -231,7 +231,6 @@ def load_from_xyz(
         )
         stress_key = "REF_stress"
 
-    # Process each atom only once
     for atoms in atoms_list:
         if energy_key == "REF_energy":
             try:
