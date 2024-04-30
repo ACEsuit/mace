@@ -98,7 +98,7 @@ def parse_args() -> argparse.Namespace:
 def calculate_descriptors(
     atoms: t.List[ase.Atoms | ase.Atom], calc: MACECalculator, cutoffs: None | dict
 ) -> None:
-    print("Calculating descriptors")
+    logging.info("Calculating descriptors")
     for mol in atoms:
         descriptors = calc.get_descriptors(mol.copy(), invariants_only=True)
         # average descriptors over atoms for each element
@@ -164,8 +164,8 @@ class FPS:
         """
         Run the farthest point sampling algorithm.
         """
-        print(self.descriptors_dataset.reshape(len(self.atoms_list), -1).shape)
-        print("n_samples", self.n_samples)
+        logging.info(self.descriptors_dataset.reshape(len(self.atoms_list), -1).shape)
+        logging.info("n_samples", self.n_samples)
         self.list_index = fpsample.fps_npdu_kdtree_sampling(
             self.descriptors_dataset.reshape(len(self.atoms_list), -1), self.n_samples
         )
@@ -207,12 +207,12 @@ def select_samples(
 
     if args.filtering_type != None:
         all_species_ft = np.unique([x.symbol for atoms in atoms_list_ft for x in atoms])
-        print(
-            "Filtering configurations based on the finetuning set,"
+        logging.info(
+            "Filtering configurations based on the finetuning set, "
             f"filtering type: combinations, elements: {all_species_ft}"
         )
         if args.descriptors is not None:
-            print("Loading descriptors")
+            logging.info("Loading descriptors")
             descriptors = np.load(args.descriptors, allow_pickle=True)
             atoms_list_pt = ase.io.read(args.configs_pt, index=":")
             for i, atoms in enumerate(atoms_list_pt):
@@ -222,7 +222,6 @@ def select_samples(
                 for x in atoms_list_pt
                 if filter_atoms(x, all_species_ft, "combinations")
             ]
-
         else:
             atoms_list_pt = ase.io.read(args.configs_pt, index=":")
             atoms_list_pt = [
@@ -233,7 +232,7 @@ def select_samples(
     else:
         atoms_list_pt = ase.io.read(args.configs_pt, index=":")
         if args.descriptors is not None:
-            print(
+            logging.info(
                 "Loading descriptors for the pretraining set from {}".format(
                     args.descriptors
                 )
@@ -244,35 +243,37 @@ def select_samples(
 
     if args.num_samples is not None and args.num_samples < len(atoms_list_pt):
         if args.descriptors is None:
-            print("Calculating descriptors for the pretraining set")
+            logging.info("Calculating descriptors for the pretraining set")
             calculate_descriptors(atoms_list_pt, calc, None)
             descriptors_list = [
                 atoms.info["mace_descriptors"] for atoms in atoms_list_pt
             ]
-            print(
+            logging.info(
                 "Saving descriptors at {}".format(
                     args.output.replace(".xyz", "descriptors.npy")
                 )
             )
             np.save(args.output.replace(".xyz", "descriptors.npy"), descriptors_list)
-        print("Selecting configurations using Farthest Point Sampling")
+        logging.info("Selecting configurations using Farthest Point Sampling")
         fps_pt = FPS(atoms_list_pt, args.num_samples)
         idx_pt = fps_pt.run()
-        print(f"Selected {len(idx_pt)} configurations")
+        logging.info(f"Selected {len(idx_pt)} configurations")
         atoms_list_pt = [atoms_list_pt[i] for i in idx_pt]
     for atoms in atoms_list_pt:
         # del atoms.info["mace_descriptors"]
         atoms.info["pretrained"] = True
         atoms.info["config_weight"] = args.weight_pt
+        atoms.info["mace_descriptors"] = None
         if args.head_pt is not None:
             atoms.info["head"] = args.head_pt
 
-    print("Saving the selected configurations")
+    logging.info("Saving the selected configurations")
     ase.io.write(args.output, atoms_list_pt, format="extxyz")
-    print("Saving a combined XYZ file")
+    logging.info("Saving a combined XYZ file")
     for atoms in atoms_list_ft:
         atoms.info["pretrained"] = False
         atoms.info["config_weight"] = args.weight_ft
+        atoms.info["mace_descriptors"] = None
         if args.head_ft is not None:
             atoms.info["head"] = args.head_ft
     atoms_fps_pt_ft = atoms_list_pt + atoms_list_ft
