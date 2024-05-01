@@ -70,6 +70,109 @@ def compute_forces_virials(
     return -1 * forces, -1 * virials, stress
 
 
+@torch.jit.script
+def compute_ll_feat_gradients(
+    ll_feats: torch.Tensor,
+    displacement: torch.Tensor,
+    batch_dict: Dict[str, torch.Tensor],
+    compute_force: bool = True,
+    compute_virials: bool = False,
+    compute_stress: bool = False,
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+
+    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(ll_feats[:, 0])]
+    positions = batch_dict["positions"]
+
+    if compute_force and not (compute_virials or compute_stress):
+        f_grads_list = []
+        for i in range(ll_feats.shape[-1]):
+            cur_grad_f = torch.autograd.grad(
+                [ll_feats[:, i]],
+                [positions],
+                grad_outputs=grad_outputs,
+                retain_graph=(i != ll_feats.shape[-1] - 1),
+                create_graph=False,
+                allow_unused=True,
+            )[0]
+            if cur_grad_f is None:
+                cur_grad_f = torch.zeros_like(positions)
+            f_grads_list.append(cur_grad_f)
+        f_grads = torch.stack(f_grads_list)
+        f_grads = f_grads.permute(1, 2, 0)
+        v_grads = None
+        s_grads = None
+
+    elif compute_force and (compute_virials or compute_stress):
+        cell = batch_dict["cell"]
+        f_grads_list = []
+        v_grads_list = []
+        s_grads_list = []
+        for i in range(ll_feats.shape[-1]):
+            cur_grad_f, cur_grad_v = torch.autograd.grad(
+                [ll_feats[:, i]],
+                [positions, displacement],
+                grad_outputs=grad_outputs,
+                retain_graph=(i != ll_feats.shape[-1] - 1),
+                create_graph=False,
+                allow_unused=True,
+            )
+            if cur_grad_f is None:
+                cur_grad_f = torch.zeros_like(positions)
+            f_grads_list.append(cur_grad_f)
+            if cur_grad_v is None:
+                cur_grad_v = torch.zeros_like(displacement)
+            v_grads_list.append(cur_grad_v)
+        f_grads = torch.stack(f_grads_list)
+        f_grads = f_grads.permute(1, 2, 0)  # [num_atoms_batch, 3, num_ll_feats]
+        v_grads = torch.stack(v_grads_list)
+        v_grads = v_grads.permute(1, 2, 3, 0)  # [num_batch, 3, 3, num_ll_feats]
+
+        if compute_stress:
+            cell = cell.view(-1, 3, 3)
+            volume = torch.einsum(
+                "zi,zi->z",
+                cell[:, 0, :],
+                torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
+            ).unsqueeze(-1)
+            s_grads = v_grads / volume.view(-1, 1, 1, 1)
+        else:
+            s_grads = None
+
+    elif not compute_force and (compute_virials or compute_stress):
+        cell = batch_dict["cell"]
+        v_grads_list = []
+        for i in range(ll_feats.shape[-1]):
+            cur_grad_v = torch.autograd.grad(
+                [ll_feats[:, i]],
+                [displacement],
+                grad_outputs=grad_outputs,
+                retain_graph=(i != ll_feats.shape[-1] - 1),
+                create_graph=False,
+                allow_unused=True,
+            )[0]
+            if cur_grad_v is None:
+                cur_grad_v = torch.zeros_like(displacement)
+            v_grads_list.append(cur_grad_v)
+        v_grads = torch.stack(v_grads_list)
+        v_grads = v_grads.permute(1, 2, 3, 0)  # [num_batch, 3, 3, num_ll_feats]
+
+        if compute_stress:
+            cell = cell.view(-1, 3, 3)
+            volume = torch.einsum(
+                "zi,zi->z",
+                cell[:, 0, :],
+                torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
+            ).unsqueeze(-1)
+            s_grads = v_grads / volume.view(-1, 1, 1, 1)
+        else:
+            s_grads = None
+        f_grads = None
+    else:
+        raise RuntimeError("Unsupported configuration for computing gradients")
+
+    return f_grads, v_grads, s_grads
+
+
 def get_symmetric_displacement(
     positions: torch.Tensor,
     unit_shifts: torch.Tensor,
