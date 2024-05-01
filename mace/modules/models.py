@@ -389,30 +389,19 @@ class ScaleShiftMACE(MACE):
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
 
-        forces, virials, stress = get_outputs(
+        
+        forces, virials, stress, dhdl = get_outputs(
             energy=inter_e,
             positions=data["positions"],
             displacement=displacement,
+            lmbda=lmbda,
             cell=data["cell"],
-            training=training,
+            training=True,
             compute_force=compute_force,
             compute_virials=compute_virials,
             compute_stress=compute_stress,
         )
 
-        # compute the derivative of the energy w.r.t. lambda
-        if lmbda is not None:
-            grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(total_energy)]
-            dhdl = torch.autograd.grad(
-                outputs=[total_energy],  # [n_graphs, ]
-                inputs=[lmbda],  # [n_nodes, 3]
-                grad_outputs=grad_outputs,
-                retain_graph=training,  # Make sure the graph is not destroyed during training
-                create_graph=training,  # Create graph for second derivative
-                allow_unused=True,  # For complete dissociation turn to true
-            )[0]
-        else:
-            dhdl = torch.zeros_like(total_energy)
 
         output = {
             "energy": total_energy,

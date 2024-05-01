@@ -38,6 +38,25 @@ def compute_forces(
     return -1 * gradient
 
 
+def compute_forces_dhdl(
+    energy: torch.Tensor, positions: torch.Tensor, lmbda: torch.Tensor, training: bool = True
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+    forces, dhdl = torch.autograd.grad(
+        outputs=[energy],  # [n_graphs, ]
+        inputs=[positions, lmbda],  # [n_nodes, 3]
+        grad_outputs=grad_outputs,
+        retain_graph=training,  # Make sure the graph is not destroyed during training
+        create_graph=training,  # Create graph for second derivative
+        allow_unused=True,  # For complete dissociation turn to true
+    )  # [n_nodes, 3]
+    if forces is None:
+        forces = torch.zeros_like(positions)
+    if dhdl is None:
+        dhdl = torch.zeros_like(energy)
+    return -1 * forces, dhdl
+
+
 def compute_forces_virials(
     energy: torch.Tensor,
     positions: torch.Tensor,
@@ -114,12 +133,14 @@ def get_outputs(
     energy: torch.Tensor,
     positions: torch.Tensor,
     displacement: Optional[torch.Tensor],
+    lmbda: Optional[torch.Tensor],
     cell: torch.Tensor,
     training: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
-) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+    compute_dhdl: bool = True
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
     if (compute_virials or compute_stress) and displacement is not None:
         # forces come for free
         forces, virials, stress = compute_forces_virials(
@@ -130,15 +151,25 @@ def get_outputs(
             compute_stress=compute_stress,
             training=training,
         )
+        dhdl = None
+    elif compute_dhdl and lmbda is not None:
+        forces, dhdl = compute_forces_dhdl(
+            energy=energy,
+            positions=positions,
+            lmbda=lmbda,
+            training=training,
+        )
+        virials, stress = None, None
     elif compute_force:
-        forces, virials, stress = (
+        forces, virials, stress, dhdl = (
             compute_forces(energy=energy, positions=positions, training=training),
             None,
             None,
+            None
         )
     else:
-        forces, virials, stress = (None, None, None)
-    return forces, virials, stress
+        forces, virials, stress, dhdl = (None, None, None, None)
+    return forces, virials, stress, dhdl
 
 
 def get_edge_vectors_and_lengths(
