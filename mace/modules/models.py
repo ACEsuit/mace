@@ -402,6 +402,7 @@ class ScaleShiftMACE(MACE):
             compute_stress=compute_stress,
         )
 
+       
 
         output = {
             "energy": total_energy,
