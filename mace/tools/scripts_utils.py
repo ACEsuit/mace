@@ -234,7 +234,7 @@ def custom_key(key):
     return (2, key)
 
 
-def dict_to_array(data):
+def dict_to_array(data, heads):
     if not all(isinstance(value, dict) for value in data.values()):
         return np.array(list(data.values()))
     unique_keys = set()
@@ -243,10 +243,11 @@ def dict_to_array(data):
     unique_keys = list(unique_keys)
     sorted_keys = sorted([int(key) for key in unique_keys])
     result_array = np.zeros((len(data), len(sorted_keys)))
-    for default_index, (_, inner_dict) in enumerate(data.items()):
+    for _, (head_name, inner_dict) in enumerate(data.items()):
         for key, value in inner_dict.items():
             key_index = sorted_keys.index(int(key))
-            result_array[default_index][key_index] = value
+            head_index = heads.index(head_name)
+            result_array[head_index][key_index] = value
     return np.squeeze(result_array)
 
 
