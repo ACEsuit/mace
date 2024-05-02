@@ -348,7 +348,7 @@ def main() -> None:
         # atomic_energies: np.ndarray = np.array(
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
-        atomic_energies = dict_to_array(atomic_energies_dict)
+        atomic_energies = dict_to_array(atomic_energies_dict, args.heads)
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
 
     if args.train_file.endswith(".xyz"):
