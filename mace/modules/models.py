@@ -1233,7 +1233,7 @@ class LLPRModel(torch.nn.Module):
 
         return output
 
-    def aggregate_ll_features(
+    def aggregate_features(
             self,
             ll_feats: torch.Tensor,
             indices: torch.Tensor,
@@ -1283,7 +1283,7 @@ class LLPRModel(torch.nn.Module):
 
             num_graphs = batch_dict["ptr"].numel() - 1
             num_atoms = batch_dict["ptr"][1:] - batch_dict["ptr"][:-1]
-            ll_feats = self.aggregate_ll_features(output["node_feats"], batch_dict["batch"], num_graphs)
+            ll_feats = self.aggregate_features(output["node_feats"], batch_dict["batch"], num_graphs)
 
             if include_forces or include_virials or include_stresses:
                 f_grads, v_grads, s_grads = compute_ll_feat_gradients(
@@ -1298,19 +1298,18 @@ class LLPRModel(torch.nn.Module):
                 f_grads, v_grads, s_grads = None, None, None
             ll_feats = ll_feats.detach()
 
-            if include_energy:
-                # Account for the weighting of structures and targets
-                # Apply Huber loss mask if universal model
-                cur_weights = torch.mul(batch.weight, batch.energy_weight)
-                if is_universal:
-                    huber_mask = get_huber_mask(
-                        output["energy"],
-                        batch["energy"],
-                        huber_delta,
-                    )
-                    cur_weights *= huber_mask
-                ll_feats = torch.mul(ll_feats, cur_weights.unsqueeze(-1)**(0.5))
-                self.covariance += (ll_feats / num_atoms.unsqueeze(-1)).T @ (ll_feats / num_atoms.unsqueeze(-1))
+            # Account for the weighting of structures and targets
+            # Apply Huber loss mask if universal model
+            cur_weights = torch.mul(batch.weight, batch.energy_weight)
+            if is_universal:
+                huber_mask = get_huber_mask(
+                    output["energy"],
+                    batch["energy"],
+                    huber_delta,
+                )
+                cur_weights *= huber_mask
+            ll_feats = torch.mul(ll_feats, cur_weights.unsqueeze(-1)**(0.5))
+            self.covariance += (ll_feats / num_atoms).T @ (ll_feats / num_atoms)
 
             if include_forces:
                 # Account for the weighting of structures and targets
