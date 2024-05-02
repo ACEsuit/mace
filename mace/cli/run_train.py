@@ -181,7 +181,7 @@ def main() -> None:
         if args.multiheads_finetuning:
             logging.info("Using multiheads finetuning mode")
             if heads is not None:
-                heads = list(set(["pbe_mp"] + heads))
+                heads = list(dict.fromkeys(["pbe_mp"] + heads))
                 args.heads = heads
             else:
                 heads = ["pbe_mp", "Default"]
