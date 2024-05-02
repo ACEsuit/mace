@@ -96,7 +96,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def calculate_descriptors(
-    atoms: List[ase.Atoms], calc: MACECalculator, cutoffs: None | dict
+    atoms: List[ase.Atoms], calc: MACECalculator, cutoffs: None
 ) -> None:
     logging.info("Calculating descriptors")
     for mol in atoms:
