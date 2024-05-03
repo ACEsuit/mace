@@ -1308,7 +1308,7 @@ class LLPRModel(torch.nn.Module):
                         batch["energy"],
                         huber_delta,
                     )
-                    cur_weights = torch.mul(cur_weights, huber_mask)
+                    cur_weights *= huber_mask
                 ll_feats = torch.mul(ll_feats, cur_weights.unsqueeze(-1)**(0.5))
                 self.covariance += (ll_feats / num_atoms.unsqueeze(-1)).T @ (ll_feats / num_atoms.unsqueeze(-1))
 
