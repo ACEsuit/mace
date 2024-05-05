@@ -246,14 +246,14 @@ def main() -> None:
                     "weight_pt": args.weight_pt_head,
                     "weight_ft": 1.0,
                     "filtering_type": "combination",
-                    "output": f"{cache_dir}/mp_finetuning.xyz",
+                    "output": f"mp_finetuning-{tag}.xyz",
                     "descriptors": descriptors_mp,
                     "device": args.device,
                     "default_dtype": args.default_dtype,
                 }
                 select_samples(dict_to_namespace(args_samples))
                 collections_mp, _, _ = get_dataset_from_xyz(
-                    train_path=f"{cache_dir}/mp_finetuning.xyz",
+                    train_path=f"mp_finetuning-{tag}.xyz",
                     valid_path=None,
                     valid_fraction=args.valid_fraction,
                     config_type_weights=config_type_weights,
