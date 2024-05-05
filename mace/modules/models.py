@@ -244,11 +244,12 @@ class MACE(torch.nn.Module):
         node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
 
         # Outputs
-        forces, virials, stress = get_outputs(
+        forces, virials, stress, dhdl = get_outputs(
             energy=total_energy,
             positions=data["positions"],
             displacement=displacement,
             cell=data["cell"],
+            lmbda=None,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -389,7 +390,6 @@ class ScaleShiftMACE(MACE):
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
 
-        
         forces, virials, stress, dhdl = get_outputs(
             energy=inter_e,
             positions=data["positions"],
@@ -401,8 +401,6 @@ class ScaleShiftMACE(MACE):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
         )
-
-       
 
         output = {
             "energy": total_energy,
