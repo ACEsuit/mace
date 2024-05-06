@@ -248,10 +248,10 @@ def load_from_xyz(
 
         if forces_from_calc:
             try:
-                atoms.info["_REF_forces"] = atoms.get_forces()
+                atoms.arrays["_REF_forces"] = atoms.get_forces()
             except Exception as e:  # pylint: disable=W0703
                 logging.warning(f"Failed to extract forces: {e}")
-                atoms.info["_REF_forces"] = None
+                atoms.arrays["_REF_forces"] = None
 
         if stress_from_calc:
             try:
