@@ -1262,8 +1262,14 @@ class LLPRModel(torch.nn.Module):
         huber_delta: float = 0.01,
     ) -> None:
         # Utility function to compute the covariance matrix for a training set.
+        # Note that this function computes the covariance step-wise, so it can
+        # be used to accumulate multiple times on subsets of the same training set
 
-        for batch in train_loader:
+        if not is_universal:
+            raise NotImplementedError("Only universal loss models are supported for LLPR")
+
+        import tqdm
+        for batch in tqdm.tqdm(train_loader):
             batch.to(self.covariance.device)
             batch_dict = batch.to_dict()
             output = self.orig_model(
@@ -1344,8 +1350,10 @@ class LLPRModel(torch.nn.Module):
                         batch["stress"],
                         huber_delta,
                     )
-                    cur_s_weights = torch.mul(cur_s_weights, huber_mask_stress)
-                s_grads = torch.mul(s_grads, cur_s_weights.unsqueeze(-1)**(0.5))
+                    cur_s_weights *= huber_mask_stress
+                s_grads = torch.mul(s_grads, cur_s_weights.view(-1, 1, 1, 1)**(0.5))
+                # The stresses seem to be normalized by n_atoms in the normal loss, but
+                # not in the universal loss. Here, we don't normalize
                 s_grads = s_grads.reshape(-1, ll_feats.shape[-1])
                 # The stresses seem to be normalized by n_atoms in the normal loss, but
                 # not in the universal loss.
