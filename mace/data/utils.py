@@ -220,10 +220,10 @@ def load_from_xyz(
         forces_key = "REF_forces"
         for atoms in atoms_list:
             try:
-                atoms.info["REF_forces"] = atoms.get_forces()
+                atoms.arrays["REF_forces"] = atoms.get_forces()
             except Exception as e:  # pylint: disable=W0703
                 logging.warning(f"Failed to extract forces: {e}")
-                atoms.info["REF_forces"] = None
+                atoms.arrays["REF_forces"] = None
     if stress_key == "stress":
         logging.info(
             "Using stress_key 'stress' is unsafe, consider using a different key, rewriting stress to 'REF_stress'"
