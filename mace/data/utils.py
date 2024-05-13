@@ -204,7 +204,7 @@ def load_from_xyz(
     atoms_list = ase.io.read(file_path, index=":")
     if energy_key == "energy":
         logging.info(
-            "Using energy_key 'energy' is unsafe, consider using a different key, rewriting energies to 'REF_energy'"
+            "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_energy'. You need to use --energy_key='REF_energy', to tell the key name chosen."
         )
         energy_key = "REF_energy"
         for atoms in atoms_list:
@@ -215,7 +215,7 @@ def load_from_xyz(
                 atoms.info["REF_energy"] = None
     if forces_key == "forces":
         logging.info(
-            "Using forces_key 'forces' is unsafe, consider using a different key, rewriting forces to 'REF_forces'"
+            "Since ASE version 3.23.0b1, using energy_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_forces'. You need to use --forces_key='REF_forces', to tell the key name chosen."
         )
         forces_key = "REF_forces"
         for atoms in atoms_list:
@@ -226,7 +226,7 @@ def load_from_xyz(
                 atoms.arrays["REF_forces"] = None
     if stress_key == "stress":
         logging.info(
-            "Using stress_key 'stress' is unsafe, consider using a different key, rewriting stress to 'REF_stress'"
+            "Since ASE version 3.23.0b1, using energy_key 'stress' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_stress'. You need to use --stress_key='REF_stress', to tell the key name chosen."
         )
         stress_key = "REF_stress"
         for atoms in atoms_list:
