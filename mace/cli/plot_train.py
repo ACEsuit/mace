@@ -170,8 +170,12 @@ def get_paths(path: str) -> List[str]:
     return paths
 
 
-def main():
+def main() -> None:
     args = parse_args()
+    run(args)
+
+
+def run(args: argparse.Namespace) -> None:
     data = pd.DataFrame(
         results
         for path in get_paths(args.path)
