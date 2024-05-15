@@ -390,6 +390,7 @@ def run(args: argparse.Namespace) -> None:
         )
         model_config_foundation["atomic_energies"] = atomic_energies
         args.model = "FoundationMACE"
+        model_config = model_config_foundation  # pylint
     else:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:
@@ -584,8 +585,8 @@ def run(args: argparse.Namespace) -> None:
                 args.start_swa = max(1, args.max_num_epochs // 4 * 3)
                 logging.info(f"Setting start swa to {args.start_swa}")
         if args.loss == "forces_only":
-            logging.info("Can not select swa with forces only loss.")
-        elif args.loss == "virials":
+            raise ValueError("Can not select swa with forces only loss.")
+        if args.loss == "virials":
             loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
                 energy_weight=args.swa_energy_weight,
                 forces_weight=args.swa_forces_weight,
