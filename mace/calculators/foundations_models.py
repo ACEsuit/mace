@@ -108,6 +108,7 @@ def mace_mp(
     mace_calc = MACECalculator(
         model_paths=model, device=device, default_dtype=default_dtype, **kwargs
     )
+    d3_calc = None
     if dispersion:
         gh_url = "https://github.com/pfnet-research/torch-dftd"
         try:
