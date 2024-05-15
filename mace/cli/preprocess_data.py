@@ -97,11 +97,10 @@ def main() -> None:
     This script loads an xyz dataset and prepares
     new hdf5 file that is ready for training with on-the-fly dataloading
     """
-    args = tools.build_default_arg_parser().parse_args()
-    run(args)
+    run()
 
 
-def run(args: argparse.Namespace) -> None:
+def run() -> None:
     """
     This script loads an xyz dataset and prepares
     new hdf5 file that is ready for training with on-the-fly dataloading
