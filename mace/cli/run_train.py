@@ -586,7 +586,7 @@ def run(args: argparse.Namespace) -> None:
                 logging.info(f"Setting start swa to {args.start_swa}")
         if args.loss == "forces_only":
             raise ValueError("Can not select swa with forces only loss.")
-        elif args.loss == "virials":
+        if args.loss == "virials":
             loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
                 energy_weight=args.swa_energy_weight,
                 forces_weight=args.swa_forces_weight,
