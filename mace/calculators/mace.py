@@ -11,6 +11,8 @@ from typing import Union
 
 import numpy as np
 import torch
+# TODO: make this import conditional on intel somehow
+import intel_extension_for_pytorch as ipex
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
 
