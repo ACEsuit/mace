@@ -153,7 +153,14 @@ def get_atomic_energies(E0s, train_collection, z_table, heads) -> dict:
                 atomic_energies_dict = json.load(open(E0s, "r"))
             else:
                 try:
-                    atomic_energies_dict = ast.literal_eval(E0s)
+                    atomic_energies_eval = ast.literal_eval(E0s)
+                    if not all(
+                        isinstance(value, dict)
+                        for value in atomic_energies_eval.values()
+                    ):
+                        atomic_energies_dict = {"Default": atomic_energies_eval}
+                    else:
+                        atomic_energies_dict = atomic_energies_eval
                     assert isinstance(atomic_energies_dict, dict)
                 except Exception as e:
                     raise RuntimeError(

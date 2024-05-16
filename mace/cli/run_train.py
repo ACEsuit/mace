@@ -238,7 +238,7 @@ def main() -> None:
                 args_samples = {
                     "configs_pt": dataset_mp,
                     "configs_ft": args.train_file,
-                    "num_samples": 1000,
+                    "num_samples": args.num_samples_pt,
                     "seed": args.seed,
                     "model": args.foundation_model,
                     "head_pt": "pbe_mp",
