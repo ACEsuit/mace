@@ -92,6 +92,7 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
     )
+    parser.add_argument("--seed", help="random seed", type=int, default=42)
     return parser.parse_args()
 
 
@@ -197,6 +198,8 @@ class FPS:
 def select_samples(
     args: argparse.Namespace,
 ) -> None:
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
     if args.model in ["small", "medium", "large"]:
         calc = mace_mp(args.model, device=args.device, default_dtype=args.default_dtype)
     else:
@@ -217,18 +220,34 @@ def select_samples(
             atoms_list_pt = ase.io.read(args.configs_pt, index=":")
             for i, atoms in enumerate(atoms_list_pt):
                 atoms.info["mace_descriptors"] = descriptors[i]
-            atoms_list_pt = [
+            atoms_list_pt_filtered = [
                 x
                 for x in atoms_list_pt
                 if filter_atoms(x, all_species_ft, "combinations")
             ]
         else:
             atoms_list_pt = ase.io.read(args.configs_pt, index=":")
-            atoms_list_pt = [
+            atoms_list_pt_filtered = [
                 x
                 for x in atoms_list_pt
                 if filter_atoms(x, all_species_ft, "combinations")
             ]
+        if len(atoms_list_pt_filtered) <= args.num_samples:
+            logging.info(
+                "Number of configurations after filtering is less than the number of samples, "
+                "selecting random configurations, for the rest."
+            )
+            atoms_list_pt_minus_filtered = [
+                x for x in atoms_list_pt if x not in atoms_list_pt_filtered
+            ]
+            atoms_list_pt_random = np.random.choice(
+                atoms_list_pt_minus_filtered,
+                args.num_samples - len(atoms_list_pt_filtered),
+            ).tolist()
+            atoms_list_pt = atoms_list_pt_filtered + atoms_list_pt_random
+        else:
+            atoms_list_pt = atoms_list_pt_filtered
+
     else:
         atoms_list_pt = ase.io.read(args.configs_pt, index=":")
         if args.descriptors is not None:
