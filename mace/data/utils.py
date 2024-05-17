@@ -215,7 +215,7 @@ def load_from_xyz(
                 atoms.info["REF_energy"] = None
     if forces_key == "forces":
         logging.info(
-            "Since ASE version 3.23.0b1, using force_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_forces'. You need to use --forces_key='REF_forces', to tell the key name chosen."
+            "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_forces'. You need to use --forces_key='REF_forces', to tell the key name chosen."
         )
         forces_key = "REF_forces"
         for atoms in atoms_list:
