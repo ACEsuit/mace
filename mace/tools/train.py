@@ -457,7 +457,7 @@ class MACELoss(Metric):
             )
             self.delta_polarizability_per_atom.append(
                 (batch.polarizability - output["polarizability"])
-                / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
+                / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1).unsqueeze(-1)
             )
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:

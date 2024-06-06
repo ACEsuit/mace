@@ -798,7 +798,9 @@ class AtomicDipolesMACE(torch.nn.Module):
             )
             node_out = readout(node_feats).squeeze(-1)  # [n_nodes,3]
             if self.use_polarizability:
+                print("node_out.shape", node_out.shape)
                 node_dipoles = node_out[:, 1:4]
+                print("node_dipoles", node_dipoles.shape)
                 node_polarizability = torch.cat(
                     (node_out[:, 0].unsqueeze(-1), node_out[:, 4:]), dim=-1
                 )
@@ -842,7 +844,7 @@ class AtomicDipolesMACE(torch.nn.Module):
                 dim_size=num_graphs,
             )  # [n_graphs,6]
             total_polarizability = spherical_to_cartesian(
-                total_polarizability_spherical, device=data["positions"].device
+                total_polarizability_spherical
             )
 
             if compute_dielectric_derivatives:

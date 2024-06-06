@@ -86,7 +86,7 @@ class AtomicData(torch_geometric.data.Data):
         assert virials is None or virials.shape == (1, 3, 3)
         assert dipole is None or dipole.shape[-1] == 3
         assert charges is None or charges.shape == (num_nodes,)
-        assert polarizability is None or polarizability.shape == (3, 3)
+        assert polarizability is None or polarizability.shape == (1, 3, 3)
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -212,7 +212,7 @@ class AtomicData(torch_geometric.data.Data):
         )
         polarizability = (
             torch.tensor(config.polarizability, dtype=torch.get_default_dtype()).view(
-                3, 3
+                1, 3, 3
             )
             if config.polarizability is not None
             else None

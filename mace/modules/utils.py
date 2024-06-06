@@ -353,18 +353,16 @@ def compute_dielectric_gradients(
 
     def get_vjp(v):
         return torch.autograd.grad(
-            dielectric,
+            dielectric.sum(0),
             positions,
             v,
             retain_graph=True,
-            create_graph=True,
-            allow_unused=True,
+            create_graph=False,
+            allow_unused=False,
         )
 
     I_N = torch.eye(dielectric.shape[-1]).to(dielectric.device)
-    gradient = torch.vmap(get_vjp, in_dims=1, out_dims=-1)(
-        I_N.unsqueeze(0).repeat(positions.shape[0], 1, 1)
-    )[0]
+    gradient = torch.vmap(get_vjp, in_dims=1, out_dims=-1)(I_N)[0]
     if gradient[0] is None:
         return torch.zeros((positions.shape[0], dielectric.shape[-1], 3))
     return gradient

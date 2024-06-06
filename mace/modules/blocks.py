@@ -84,8 +84,8 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
         super().__init__()
         if dipole_only:
             self.irreps_out = o3.Irreps("1x1o")
-        elif dipole_polar:
-            self.irreps_out = o3.Irreps("1x0e + 1x1o + 1x1e")
+        if dipole_polar:
+            self.irreps_out = o3.Irreps("1x0e + 1x1o + 1x2e")
         else:
             self.irreps_out = o3.Irreps("1x0e + 1x1o")
         self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_out)
@@ -108,8 +108,8 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         self.hidden_irreps = MLP_irreps
         if dipole_only:
             self.irreps_out = o3.Irreps("1x1o")
-        elif dipole_polar:
-            self.irreps_out = o3.Irreps("1x0e + 1x1o + 1x1e")
+        if dipole_polar:
+            self.irreps_out = o3.Irreps("1x0e + 1x1o + 1x2e")
         else:
             self.irreps_out = o3.Irreps("1x0e + 1x1o")
         irreps_scalars = o3.Irreps(
