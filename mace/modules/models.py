@@ -755,7 +755,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
-        compute_dielectric_derivatives: bool = True,
+        compute_dielectric_derivatives: bool = False,  # no training on derivatives
     ) -> Dict[str, Optional[torch.Tensor]]:
         assert compute_force is False
         assert compute_virials is False
@@ -798,9 +798,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             )
             node_out = readout(node_feats).squeeze(-1)  # [n_nodes,3]
             if self.use_polarizability:
-                print("node_out.shape", node_out.shape)
                 node_dipoles = node_out[:, 1:4]
-                print("node_dipoles", node_dipoles.shape)
                 node_polarizability = torch.cat(
                     (node_out[:, 0].unsqueeze(-1), node_out[:, 4:]), dim=-1
                 )
