@@ -234,7 +234,7 @@ def select_samples(
             ]
         if len(atoms_list_pt_filtered) <= args.num_samples:
             logging.info(
-                f"Number of configurations after filtering {len(atoms_list_pt_filtered} "
+                f"Number of configurations after filtering {len(atoms_list_pt_filtered)} "
                 f"is less than the number of samples {args.num_samples}, "
                 "selecting random configurations for the rest."
             )
@@ -244,9 +244,11 @@ def select_samples(
             atoms_list_pt_random_inds = np.random.choice(
                 list(range(len(atoms_list_pt_minus_filtered))),
                 args.num_samples - len(atoms_list_pt_filtered),
-                replace=False
+                replace=False,
             )
-            atoms_list_pt = atoms_list_pt_filtered + [atoms_list_pt_minus_filtered[ind] for ind in atoms_list_pt_random_inds]
+            atoms_list_pt = atoms_list_pt_filtered + [
+                atoms_list_pt_minus_filtered[ind] for ind in atoms_list_pt_random_inds
+            ]
         else:
             atoms_list_pt = atoms_list_pt_filtered
 
