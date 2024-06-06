@@ -19,11 +19,16 @@ from mace import data, tools
 from mace.data.utils import save_configurations_as_HDF5, config_from_atoms, Configurations
 from mace.modules import compute_statistics
 from mace.tools import torch_geometric
-from mace.tools.scripts_utils import get_atomic_energies, get_dataset_from_xyz, SubsetCollection
+from mace.tools.scripts_utils import get_atomic_energies, SubsetCollection
 from mace.tools.utils import AtomicNumberTable
 
 from ase.io import iread
 from ase import Atoms
+
+from mpi4py import MPI
+from itertools import islice
+from collections.abc import Iterable
+from typing import Generator
 
 
 def compute_stats_target(
@@ -94,11 +99,6 @@ def get_prime_factors(n: int):
             n = n / i
     return factors
 
-
-from mpi4py import MPI
-from itertools import islice
-from collections.abc import Iterable
-from typing import Generator
 
 # def chunkify(iterable: Iterable, chunk_size: int) -> Generator:
 #     """
