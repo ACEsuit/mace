@@ -434,7 +434,7 @@ def main() -> None:
             dataset=valid_set,
             batch_size=args.valid_batch_size,
             sampler=valid_samplers[head] if args.distributed else None,
-            shuffle=(valid_sampler is None),
+            shuffle=False
             drop_last=False,
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
