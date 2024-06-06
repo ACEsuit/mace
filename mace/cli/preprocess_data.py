@@ -145,6 +145,7 @@ def run(args: argparse.Namespace):
         virials_key=args.virials_key,
         dipole_key=args.dipole_key,
         charges_key=args.charges_key,
+        polarizability_key=args.polarizability_key,
     )
 
     # Atomic number table

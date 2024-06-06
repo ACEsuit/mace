@@ -344,3 +344,27 @@ def compute_fixed_charge_dipole(
     return scatter_sum(
         src=mu, index=batch.unsqueeze(-1), dim=0, dim_size=num_graphs
     )  # [N_graphs,3]
+
+
+def compute_dielectric_gradients(
+    dielectric: torch.Tensor,
+    positions: torch.Tensor,
+) -> Tuple[torch.tensor, torch.tensor]:
+
+    def get_vjp(v):
+        return torch.autograd.grad(
+            dielectric,
+            positions,
+            v,
+            retain_graph=True,
+            create_graph=True,
+            allow_unused=True,
+        )
+
+    I_N = torch.eye(dielectric.shape[-1]).to(dielectric.device)
+    gradient = torch.vmap(get_vjp, in_dims=1, out_dims=-1)(
+        I_N.unsqueeze(0).repeat(positions.shape[0], 1, 1)
+    )[0]
+    if gradient[0] is None:
+        return torch.zeros((positions.shape[0], dielectric.shape[-1], 3))
+    return gradient

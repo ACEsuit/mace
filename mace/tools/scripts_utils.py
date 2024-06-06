@@ -42,6 +42,7 @@ def get_dataset_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
+    polarizability_key: str = "polarizability",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
     atomic_energies_dict, all_train_configs = data.load_from_xyz(
@@ -53,6 +54,7 @@ def get_dataset_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        polarizability_key=polarizability_key,
         extract_atomic_energies=True,
         keep_isolated_atoms=keep_isolated_atoms,
     )
@@ -69,6 +71,7 @@ def get_dataset_from_xyz(
             virials_key=virials_key,
             dipole_key=dipole_key,
             charges_key=charges_key,
+            polarizability_key=polarizability_key,
             extract_atomic_energies=False,
         )
         logging.info(
@@ -94,6 +97,7 @@ def get_dataset_from_xyz(
             stress_key=stress_key,
             virials_key=virials_key,
             charges_key=charges_key,
+            polarizability_key=polarizability_key,
             extract_atomic_energies=False,
         )
         # create list of tuples (config_type, list(Atoms))
@@ -454,12 +458,14 @@ def create_error_table(
             "config_type",
             "RMSE MU / mDebye / atom",
             "relative MU RMSE %",
+            "RMSE ALPHA e / A^3",
         ]
     elif table_type == "DipoleMAE":
         table.field_names = [
             "config_type",
             "MAE MU / mDebye / atom",
             "relative MU MAE %",
+            "RMSE ALPHA e / A^3",
         ]
     elif table_type == "EnergyDipoleRMSE":
         table.field_names = [
@@ -563,6 +569,7 @@ def create_error_table(
                     name,
                     f"{metrics['rmse_mu_per_atom'] * 1000:.2f}",
                     f"{metrics['rel_rmse_mu']:.1f}",
+                    f"{metrics['rmse_alpha']:.2f}",
                 ]
             )
         elif table_type == "DipoleMAE":
@@ -571,6 +578,7 @@ def create_error_table(
                     name,
                     f"{metrics['mae_mu_per_atom'] * 1000:.2f}",
                     f"{metrics['rel_mae_mu']:.1f}",
+                    f"{metrics['mae_alpha']:.2f}",
                 ]
             )
         elif table_type == "EnergyDipoleRMSE":
