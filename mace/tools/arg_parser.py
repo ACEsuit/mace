@@ -332,6 +332,17 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--filtering_type_pt",
+        help="strategy for filtering configs from pretrained database",
+        choices=["none",
+                 "combinations",
+                 "exclusive",
+                 "inclusive",
+                 "any"],
+        default="combinations",
+        required=False,
+    )
+    parser.add_argument(
         "--heads",
         help="List of heads in the training set",
         type=str,
