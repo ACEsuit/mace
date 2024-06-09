@@ -246,6 +246,7 @@ def main() -> None:
                     "weight_pt": args.weight_pt_head,
                     "weight_ft": 1.0,
                     "filtering_type": args.filtering_type_pt,
+                    "extra_filtering_type": args.extra_filtering_type_pt,
                     "output": f"mp_finetuning-{tag}.xyz",
                     "descriptors": descriptors_mp,
                     "device": args.device,

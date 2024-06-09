@@ -343,6 +343,14 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--extra_filtering_type_pt",
+        help="strategy for selecting extra configs (in addition to filtering) from pretrained database",
+        choices=["random",
+                 "fps_npdu_kdtree"],
+        default="random",
+        required=False,
+    )
+    parser.add_argument(
         "--heads",
         help="List of heads in the training set",
         type=str,

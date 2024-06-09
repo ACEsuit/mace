@@ -78,7 +78,14 @@ def parse_args() -> argparse.Namespace:
         help="filtering type",
         type=str,
         choices=["none", "combinations", "exclusive", "inclusive", "any"],
-        default=None,
+        default="none",
+    )
+    parser.add_argument(
+        "--extra_filtering_type",
+        help="extra configs filtering type",
+        type=str,
+        choices=["random", "fps_npdu_kdtree"],
+        default="random",
     )
     parser.add_argument(
         "--weight_ft",
@@ -146,9 +153,10 @@ def filter_atoms(
 
 
 class FPS:
-    def __init__(self, atoms_list: list[ase.Atoms], n_samples: int):
+    def __init__(self, atoms_list: list[ase.Atoms], n_samples: int, fps_type="fps_npdu_kdtree"):
         self.n_samples = n_samples
         self.atoms_list = atoms_list
+        self.fps_type = fps_type
         self.species = np.unique([x.symbol for atoms in atoms_list for x in atoms])
         self.species_dict = {x: i for i, x in enumerate(self.species)}
         # start from a random configuration
@@ -163,9 +171,12 @@ class FPS:
         """
         logging.info(f"fps descriptor shape {self.descriptors_dataset.reshape((len(self.atoms_list), -1)).shape}")
         logging.info(f"fps n_samples {self.n_samples}")
-        self.list_index = fpsample.fps_npdu_kdtree_sampling(
-            self.descriptors_dataset.reshape((len(self.atoms_list), -1)), self.n_samples
-        )
+        if self.fps_type == "fps_npdu_kdtree":
+            self.list_index = fpsample.fps_npdu_kdtree_sampling(
+                self.descriptors_dataset.reshape((len(self.atoms_list), -1)), self.n_samples
+            )
+        else:
+            raise ValueError(f"Unsupported fps_type {self.fps_type}")
         return self.list_index
 
     def assemble_descriptors(self) -> np.ndarray:
@@ -297,9 +308,13 @@ def select_samples(
         indices_pt_avail = set(list(range(len(atoms_list_pt)))) - set(indices_pt_filtered)
         atoms_list_pt_avail = [atoms_list_pt[ind] for ind in indices_pt_avail]
 
-        logging.info("Selecting configurations using Farthest Point Sampling")
-        fps_pt = FPS(atoms_list_pt_avail, args.num_samples - len(atoms_list_pt_filtered))
-        idx_pt = fps_pt.run()
+        if args.extra_filtering_type == "random":
+            logging.info("Selecting configurations randomly")
+            idx_pt = np.random.choice(len(atoms_list_pt_avail), args.num_samples - len(atoms_list_pt_filtered), replace=False)
+        else:
+            logging.info("Selecting configurations using Farthest Point Sampling")
+            fps_pt = FPS(atoms_list_pt_avail, args.num_samples - len(atoms_list_pt_filtered), fps_type=args.extra_filtering_type)
+            idx_pt = fps_pt.run()
         logging.info(f"Selected {len(idx_pt)} configurations")
         atoms_list_pt_extra = [atoms_list_pt_avail[i] for i in idx_pt]
 
