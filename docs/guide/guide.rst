@@ -11,6 +11,7 @@ User Guide
     installation
     load
     training
+    finetuning
     evaluation
     ase
     descriptors

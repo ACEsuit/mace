@@ -10,6 +10,7 @@ To preprocess your dataset specified as an xyz file run the `preprocess_data.py`
 An example is given here:
 
 .. code-block:: bash
+
     mkdir processed_data
     python <mace_repo_dir>/mace/cli/preprocess_data.py \
         --train_file="/path/to/train_large.xyz" \
@@ -30,6 +31,7 @@ The statistics of the dataset will be saved in a json file in the same directory
 The preprocessed data can be used for training the model using the on-line dataloader as shown in the example below.
 
 .. code-block:: bash
+    
     python <mace_repo_dir>/mace/cli/run_train.py \
     --name="MACE_on_big_data" \
     --num_workers=16 \
