@@ -16,3 +16,6 @@ User Guide
     descriptors
     openmm
     lammps
+    foundation_models
+    multipreprocessing
+    multigpu

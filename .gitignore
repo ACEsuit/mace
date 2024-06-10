@@ -20,3 +20,6 @@ logs/MACE_run-5.log
 *.txt
 !requirements.txt
 *log
+/checkpoints
+/wandb
+*.model
