@@ -162,7 +162,7 @@ def config_from_atoms(
         dipole = np.zeros(3)
         dipoles_weight = 0.0
     if polarizability is None:
-        polarizability = np.zeros(3)
+        polarizability = np.zeros(9)
         polarizability_weight = 0.0
 
     return Configuration(

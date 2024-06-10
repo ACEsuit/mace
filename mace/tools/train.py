@@ -93,7 +93,7 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
         error_polarizability = eval_metrics["rmse_polarizability_per_atom"] * 1e3
         logging.info(
-            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye, RMSE_polarizability_per_atom={error_polarizability:.2f} e A^2 / V",
+            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye, RMSE_polarizability_per_atom={error_polarizability:.2f} me A^2 / V",
         )
     elif log_errors == "EnergyDipoleRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3

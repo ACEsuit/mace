@@ -858,9 +858,13 @@ class AtomicDipolesMACE(torch.nn.Module):
                 dmu_dr = None
                 dalpha_dr = None
         else:
+            if compute_dielectric_derivatives:
+                dmu_dr = compute_dielectric_gradients(
+                    dielectric=total_dipole,
+                    positions=data["positions"],
+                )
             total_polarizability = None
             total_polarizability_spherical = None
-            dmu_dr = None
             dalpha_dr = None
 
         output = {
