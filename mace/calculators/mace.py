@@ -6,11 +6,18 @@
 
 
 from glob import glob
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Union
 
 import numpy as np
 import torch
+has_ipex = find_spec("intel_extension_for_pytorch")
+if has_ipex:
+    try:
+        import intel_extension_for_pytorch as ipex
+    except ImportError as e:
+        raise ImportError("IPEX is installed, but could not be imported!") from e
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
 
