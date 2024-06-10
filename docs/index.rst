@@ -36,6 +36,7 @@ For detailed information on how to use `MACE`, please refer to the following doc
 
     examples/ase_examples.rst
     examples/training_examples.rst
+    examples/foundation_examples.rst
 
 .. toctree::
     :caption: API
