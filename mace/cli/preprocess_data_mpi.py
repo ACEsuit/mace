@@ -8,10 +8,8 @@ import logging
 import multiprocessing as mp
 import os
 import random
-from collections.abc import Iterable
 from glob import glob
-from itertools import islice
-from typing import Generator, List, Tuple
+from typing import List, Tuple
 
 import h5py
 import numpy as np
@@ -105,32 +103,13 @@ def get_prime_factors(n: int):
     return factors
 
 
-# def chunkify(iterable: Iterable, chunk_size: int) -> Generator:
-#     """
-#     Splits an iterable into chunks of a specified size.
-
-#     Args:
-#         iterable (Iterable): The input iterable to split.
-#         chunk_size (int): The size of each chunk.
-
-#     Yields:
-#         Generator: A generator yielding chunks of the input iterable.
-#     """
-#     it = iter(iterable)
-#     while True:
-#         chunk = list(islice(it, chunk_size))
-#         if not chunk:
-#             break
-#         yield chunk
-
-
 def chunkify(data: list, size: int) -> list:
     """
     Splits an iterable into a specified number of chunks without knowing its length.
 
     Args:
-        iterable (Iterable): The input iterable to split.
-        num_chunks (int): The number of chunks to create.
+        data (Iterable): The iterable to split into chunks.
+        size (int): The number of chunks to split the iterable into.
 
     Yields:
         Generator: A generator yielding chunks of the input iterable.
@@ -186,13 +165,13 @@ def read_configs(
 
     # MPI: Read the xyz file
 
-    if rank == 0:
-        logging.info(f"Reading the xyz file {file}...")
+    data = list(iread(file, ":"))
 
-        data = list(iread(file, ":"))
+    if rank == 0:
+        logging.info(f"Read the xyz file {file}: {len(data)} configurations")
         chunks = chunkify(data, size)
     else:
-        chunks = None
+        chunks = []
 
     # Scatter chunks to all processes
     chunk = comm.scatter(chunks, root=0)
@@ -202,10 +181,14 @@ def read_configs(
     print(f"Process {rank} processed chunk of size {len(chunk)}")
 
     # Gather results from all processes
-    configs = comm.gather(result, root=0)
+    results = comm.gather(result, root=0)
 
     if rank == 0:
         logging.info("Gathered configurations from all processes")
+
+        configs = []
+        for result in results:
+            configs.extend(result)
         return configs
     else:
         return
@@ -230,7 +213,7 @@ def get_z_table(
             logging.info("Extracting atomic numbers...")
             chunks = chunkify(configs, size)
         else:
-            chunks = None
+            chunks = []
 
         chunk = comm.scatter(chunks, root=0)
 
@@ -239,7 +222,7 @@ def get_z_table(
         for z in zs:
             z_set.add(z)
 
-        print(f"Process {rank} processed chunk of size {len(chunk)}")
+        print(f"Rank {rank} processed chunk of size {len(chunk)}")
 
         z_sets = comm.gather(z_set, root=0)
 
@@ -248,17 +231,19 @@ def get_z_table(
                 z for z_set in z_sets for z in z_set
             )
             logging.info("Extracted atomic numbers")
+            return z_table
 
-            comm.bcast(z_table, root=0)
+            # comm.bcast(z_table, root=0)
 
-        comm.barrier()
+        # comm.barrier()
+        return
     else:
         logging.info("Using atomic numbers from command line argument")
         zs_list = ast.literal_eval(args.atomic_numbers)
         assert isinstance(zs_list, list)
         z_table = tools.get_atomic_number_table_from_zs(zs_list)
 
-    return z_table
+        return z_table
 
 
 # def write_hdf5(
@@ -353,15 +338,18 @@ def main() -> None:
         test_configs = []
         logging.info("No test set provided")
 
-    comm.barrier()
+    # comm.bcast(train_configs, root=0)
+    # comm.bcast(valid_configs, root=0)
+    # comm.bcast(test_configs, root=0)
 
     # Atomic number table
-    assert isinstance(train_configs, list)
-    assert isinstance(valid_configs, list)
-    configs = [c for c in train_configs] + [c for c in valid_configs]
+    if rank == 0:
+        # assert isinstance(train_configs, list)
+        # assert isinstance(valid_configs, list)
+        configs = [c for c in train_configs] + [c for c in valid_configs]
+        z_table = get_z_table(configs, args)
 
-    z_table = get_z_table(configs, args)
-
+    # comm.bcast(z_table, root=0)
     comm.barrier()
 
     if rank == 0:
