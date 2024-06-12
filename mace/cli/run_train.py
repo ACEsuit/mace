@@ -132,12 +132,15 @@ def run(args: argparse.Namespace) -> None:
         args.compute_avg_num_neighbors = False
         args.E0s = statistics["atomic_energies"]
 
+    train_file_type = data.utils.get_configs_file_type(args.train_file)
+
     # Data preparation
-    if args.train_file.endswith(".xyz"):
+    if train_file_type == "non_hdf5_file":
         if args.valid_file is not None:
-            assert args.valid_file.endswith(
-                ".xyz"
-            ), "valid_file if given must be same format as train_file"
+            assert (Path(args.valid_file).suffix ==
+                    Path(args.train_file).suffix
+                   ), (f"valid_file {args.valid_file} if given must be same "
+                       f"format as train_file {args.train_file}")
         config_type_weights = get_config_type_weights(args.config_type_weights)
         collections, atomic_energies_dict = get_dataset_from_xyz(
             train_path=args.train_file,
@@ -165,7 +168,9 @@ def run(args: argparse.Namespace) -> None:
     # Atomic number table
     # yapf: disable
     if args.atomic_numbers is None:
-        assert args.train_file.endswith(".xyz"), "Must specify atomic_numbers when using .h5 train_file input"
+        assert train_file_type not in ("hdf5_dir", "hdf5_file"), (
+               "Must specify atomic_numbers when using hdf5 train_file input"
+               )
         z_table = tools.get_atomic_number_table_from_zs(
             z
             for configs in (collections.train, collections.valid)
@@ -197,7 +202,7 @@ def run(args: argparse.Namespace) -> None:
                 for z in z_table.zs
             }
         else:
-            if args.train_file.endswith(".xyz"):
+            if train_file_type == "non_hdf5_file":
                 atomic_energies_dict = get_atomic_energies(
                     args.E0s, collections.train, z_table
                 )
@@ -228,7 +233,7 @@ def run(args: argparse.Namespace) -> None:
         )
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
 
-    if args.train_file.endswith(".xyz"):
+    if train_file_type == "non_hdf5_file":
         train_set = [
             data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
             for config in collections.train
@@ -237,16 +242,18 @@ def run(args: argparse.Namespace) -> None:
             data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
             for config in collections.valid
         ]
-    elif args.train_file.endswith(".h5"):
+    elif train_file_type == "hdf5_file":
         train_set = data.HDF5Dataset(args.train_file, r_max=args.r_max, z_table=z_table)
         valid_set = data.HDF5Dataset(args.valid_file, r_max=args.r_max, z_table=z_table)
-    else:  # This case would be for when the file path is to a directory of multiple .h5 files
+    elif train_file_type == "hdf5_dir":  # This case would be for when the file path is to a directory of multiple .h5 files
         train_set = data.dataset_from_sharded_hdf5(
             args.train_file, r_max=args.r_max, z_table=z_table
         )
         valid_set = data.dataset_from_sharded_hdf5(
             args.valid_file, r_max=args.r_max, z_table=z_table
         )
+    else:
+        raise ValueError(f"Unknown train_file_type {train_file_type}")
 
     train_sampler, valid_sampler = None, None
     if args.distributed:
@@ -719,7 +726,7 @@ def run(args: argparse.Namespace) -> None:
     }
 
     test_sets = {}
-    if args.train_file.endswith(".xyz"):
+    if train_file_type == "non_hdf5_file":
         for name, subset in collections.tests:
             test_sets[name] = [
                 data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)

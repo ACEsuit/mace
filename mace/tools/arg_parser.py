@@ -240,13 +240,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     # Dataset
     parser.add_argument(
         "--train_file",
-        help="Training set file, format is .xyz or .h5",
+        help="Training set file readable by ase.io.read, or .h5/.hdf5, or directory containing sharded hdf5",
         type=str,
         required=True,
     )
     parser.add_argument(
         "--valid_file",
-        help="Validation set .xyz or .h5 file",
+        help="Validation set readable by ase.io.read, or .h5/.hdf5, or directory containing sharded hdf5",
         default=None,
         type=str,
         required=False,
@@ -260,7 +260,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--test_file",
-        help="Test set .xyz pt .h5 file",
+        help="Test set readable by ase.io.read, or .h5/.hdf5, or directory containing sharded hdf5",
         type=str,
     )
     parser.add_argument(
@@ -332,37 +332,37 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--energy_key",
-        help="Key of reference energies in training xyz",
+        help="Key of reference energies in training file",
         type=str,
         default="energy",
     )
     parser.add_argument(
         "--forces_key",
-        help="Key of reference forces in training xyz",
+        help="Key of reference forces in training file",
         type=str,
         default="forces",
     )
     parser.add_argument(
         "--virials_key",
-        help="Key of reference virials in training xyz",
+        help="Key of reference virials in training file",
         type=str,
         default="virials",
     )
     parser.add_argument(
         "--stress_key",
-        help="Key of reference stress in training xyz",
+        help="Key of reference stress in training file",
         type=str,
         default="stress",
     )
     parser.add_argument(
         "--dipole_key",
-        help="Key of reference dipoles in training xyz",
+        help="Key of reference dipoles in training file",
         type=str,
         default="dipole",
     )
     parser.add_argument(
         "--charges_key",
-        help="Key of atomic charges in training xyz",
+        help="Key of atomic charges in training file",
         type=str,
         default="charges",
     )
@@ -611,14 +611,14 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train_file",
-        help="Training set h5 file",
+        help="Training set ase.io.read-compatible file",
         type=str,
         default=None,
         required=True,
     )
     parser.add_argument(
         "--valid_file",
-        help="Training set xyz file",
+        help="Training set ase.io.read-compatible file",
         type=str,
         default=None,
         required=False,
@@ -638,7 +638,7 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--test_file",
-        help="Test set xyz file",
+        help="Test set ase.io.read-compatible file",
         type=str,
         default=None,
         required=False,
@@ -660,37 +660,37 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--energy_key",
-        help="Key of reference energies in training xyz",
+        help="Key of reference energies in training file",
         type=str,
         default="energy",
     )
     parser.add_argument(
         "--forces_key",
-        help="Key of reference forces in training xyz",
+        help="Key of reference forces in training file",
         type=str,
         default="forces",
     )
     parser.add_argument(
         "--virials_key",
-        help="Key of reference virials in training xyz",
+        help="Key of reference virials in training file",
         type=str,
         default="virials",
     )
     parser.add_argument(
         "--stress_key",
-        help="Key of reference stress in training xyz",
+        help="Key of reference stress in training file",
         type=str,
         default="stress",
     )
     parser.add_argument(
         "--dipole_key",
-        help="Key of reference dipoles in training xyz",
+        help="Key of reference dipoles in training file",
         type=str,
         default="dipole",
     )
     parser.add_argument(
         "--charges_key",
-        help="Key of atomic charges in training xyz",
+        help="Key of atomic charges in training file",
         type=str,
         default="charges",
     )

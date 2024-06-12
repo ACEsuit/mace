@@ -7,6 +7,7 @@
 import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
+from pathlib import Path
 
 import ase.data
 import ase.io
@@ -187,6 +188,23 @@ def test_config_types(
             ind = all_cts.index(conf.config_type)
             test_by_ct[ind][1].append(conf)
     return test_by_ct
+
+
+def get_configs_file_type(
+    filename: str
+) -> str:
+    filepath = Path(filename)
+    if filepath.is_dir():
+        # only support dirs when it contains (presumably sharded) hdf5 files
+        if len(list(filepath.glob("*.h5")) + list(filepath.glob("*.hdf5"))) == 0:
+            raise RuntimeError(f"Got directory {filename} with no .h5/.hdf5 files")
+        return "hdf5_dir"
+
+    if filepath.suffix in (".h5", ".hdf5"):
+        # special case
+        return "hdf5_file"
+
+    return "non_hdf5_file"
 
 
 def load_from_xyz(
