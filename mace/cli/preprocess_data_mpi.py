@@ -312,8 +312,9 @@ def main() -> None:
 
     if args.valid_file is not None:
         valid_configs = read_configs(args.valid_file, args, config_type_weights)
-        logging.info(f"Number of training configurations: {len(train_configs)}")
-        logging.info(f"Number of validation configurations: {len(valid_configs)}")
+        if rank == 0:
+            logging.info(f"Number of training configurations: {len(train_configs)}")
+            logging.info(f"Number of validation configurations: {len(valid_configs)}")
     else:
         if rank == 0:
             logging.info(
