@@ -168,7 +168,7 @@ def read_configs(
     data = list(iread(file, ":"))
 
     if rank == 0:
-        logging.info(f"Read the xyz file {file}: {len(data)} configurations")
+        logging.info(f"Read the file from {file}: {len(data)} configurations")
         chunks = chunkify(data, size)
     else:
         chunks = []
