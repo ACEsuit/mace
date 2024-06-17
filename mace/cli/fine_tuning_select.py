@@ -13,11 +13,6 @@ import numpy as np
 import torch
 
 from mace.calculators import MACECalculator, mace_mp
-from tqdm import tqdm
-
-from mace import data
-import pandas as pd
-from mace.tools import torch_geometric, torch_tools, utils
 
 try:
     import fpsample
