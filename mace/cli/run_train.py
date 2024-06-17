@@ -152,6 +152,7 @@ def run(args: argparse.Namespace) -> None:
             virials_key=args.virials_key,
             dipole_key=args.dipole_key,
             charges_key=args.charges_key,
+            polarizability_key=args.polarizability_key,
             keep_isolated_atoms=args.keep_isolated_atoms,
         )
 
@@ -208,6 +209,7 @@ def run(args: argparse.Namespace) -> None:
         atomic_energies = None
         dipole_only = True
         compute_dipole = True
+        compute_polarizability = args.compute_polarizability
         compute_energy = False
         args.compute_forces = False
         compute_virials = False
@@ -216,6 +218,7 @@ def run(args: argparse.Namespace) -> None:
         dipole_only = False
         if args.model == "EnergyDipolesMACE":
             compute_dipole = True
+            compute_polarizability = False
             compute_energy = True
             args.compute_forces = True
             compute_virials = False
@@ -223,6 +226,7 @@ def run(args: argparse.Namespace) -> None:
         else:
             compute_energy = True
             compute_dipole = False
+            compute_polarizability = False
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
@@ -323,9 +327,16 @@ def run(args: argparse.Namespace) -> None:
         assert (
             dipole_only is True
         ), "dipole loss can only be used with AtomicDipolesMACE model"
-        loss_fn = modules.DipoleSingleLoss(
-            dipole_weight=args.dipole_weight,
-        )
+        if compute_polarizability:
+            loss_fn = modules.DipolePolarLoss(
+                dipole_weight=args.dipole_weight,
+                polarizability_weight=args.polarizability_weight,
+            )
+        else:
+            loss_fn = modules.DipoleSingleLoss(
+                dipole_weight=args.dipole_weight,
+            )
+
     elif args.loss == "energy_forces_dipole":
         assert dipole_only is False and compute_dipole is True
         loss_fn = modules.WeightedEnergyForcesDipoleLoss(
@@ -486,6 +497,7 @@ def run(args: argparse.Namespace) -> None:
                 "RealAgnosticInteractionBlock"
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
+            use_polarizability=compute_polarizability,
             # dipole_scale=1,
             # dipole_shift=0,
         )

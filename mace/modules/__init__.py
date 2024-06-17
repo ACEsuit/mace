@@ -22,6 +22,7 @@ from .blocks import (
 )
 from .loss import (
     DipoleSingleLoss,
+    DipolePolarLoss,
     UniversalLoss,
     WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesLoss,
@@ -42,6 +43,7 @@ from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
     compute_avg_num_neighbors,
+    compute_dielectric_gradients,
     compute_fixed_charge_dipole,
     compute_mean_rms_energy_forces,
     compute_mean_std_atomic_inter_energy,
@@ -97,6 +99,7 @@ __all__ = [
     "WeightedEnergyForcesVirialsLoss",
     "WeightedEnergyForcesStressLoss",
     "DipoleSingleLoss",
+    "DipolePolarLoss",
     "WeightedEnergyForcesDipoleLoss",
     "WeightedHuberEnergyForcesStressLoss",
     "UniversalLoss",
@@ -106,4 +109,5 @@ __all__ = [
     "compute_avg_num_neighbors",
     "compute_statistics",
     "compute_fixed_charge_dipole",
+    "compute_dielectric_gradients",
 ]
