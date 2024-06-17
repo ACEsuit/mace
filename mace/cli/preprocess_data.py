@@ -3,12 +3,12 @@
 
 import argparse
 import ast
-from functools import partial
 import json
 import logging
 import multiprocessing as mp
 import os
 import random
+from functools import partial
 from glob import glob
 from typing import List, Tuple
 
@@ -250,13 +250,13 @@ def run(args: argparse.Namespace):
         i.join()
 
     if args.test_file is not None:
-        multi_test_hdf5_ = partial(multi_test_hdf5, args=args, split_test=split_test, drop_last=drop_last)
         logging.info("Preparing test sets")
         for name, subset in collections.tests:
             drop_last = False
             if len(subset) % 2 == 1:
                 drop_last = True
             split_test = np.array_split(subset, args.num_process)
+            multi_test_hdf5_ = partial(multi_test_hdf5, args=args, split_test=split_test, drop_last=drop_last)
 
             processes = []
             for i in range(args.num_process):
