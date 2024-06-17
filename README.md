@@ -52,7 +52,7 @@ A partial documentation is available at: https://mace-docs.readthedocs.io
 Requirements:
 
 - Python >= 3.7
-- [PyTorch](https://pytorch.org/) >= 1.12 **(training with float64 is not supported with PyTorch 2.1)**.
+- [PyTorch](https://pytorch.org/) >= 1.12 **(training with float64 is not supported with PyTorch 2.1)**. Use Pytorch 2.3 to support analytic derivatives of tensors such as polarization and polarizability. 
 
 (for openMM, use Python = 3.9)
 
