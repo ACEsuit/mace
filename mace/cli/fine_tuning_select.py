@@ -18,7 +18,11 @@ from tqdm import tqdm
 from mace import data
 import pandas as pd
 from mace.tools import torch_geometric, torch_tools, utils
-import fpsample
+
+try:
+    import fpsample
+except ImportError:
+    logging.error("fpsample not found, to use FPS, install using pip install fpsample")
 
 
 def parse_args() -> argparse.Namespace:
@@ -278,9 +282,15 @@ def select_samples(
             )
             np.save(args.output.replace(".xyz", "descriptors.npy"), descriptors_list)
         logging.info("Selecting configurations using Farthest Point Sampling")
-        fps_pt = FPS(atoms_list_pt, args.num_samples)
-        idx_pt = fps_pt.run()
-        logging.info(f"Selected {len(idx_pt)} configurations")
+        try:
+            fps_pt = FPS(atoms_list_pt, args.num_samples)
+            idx_pt = fps_pt.run()
+            logging.info(f"Selected {len(idx_pt)} configurations")
+        except Exception as e:
+            logging.error(f"FPS failed, selecting random configurations instead: {e}")
+            idx_pt = np.random.choice(
+                list(range(len(atoms_list_pt)), args.num_samples, replace=False)
+            )
         atoms_list_pt = [atoms_list_pt[i] for i in idx_pt]
     for atoms in atoms_list_pt:
         # del atoms.info["mace_descriptors"]
