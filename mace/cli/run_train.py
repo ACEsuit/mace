@@ -180,6 +180,7 @@ def main() -> None:
 
         if args.multiheads_finetuning:
             logging.info("Using multiheads finetuning mode")
+            args.loss = "universal"
             if heads is not None:
                 heads = list(dict.fromkeys(["pbe_mp"] + heads))
                 args.heads = heads
@@ -518,7 +519,7 @@ def main() -> None:
 
     # Selecting outputs
     compute_virials = False
-    if args.loss in ("stress", "virials", "huber"):
+    if args.loss in ("stress", "virials", "huber", "universal"):
         compute_virials = True
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
@@ -554,6 +555,8 @@ def main() -> None:
         model_config["atomic_inter_scale"] = [1.0] * len(heads)
         args.model = "FoundationMACE"
         model_config["heads"] = args.heads
+        logging.info("Model configuration extracted from foundation model")
+        logging.info("Using universal loss function for fine-tuning")
     else:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:

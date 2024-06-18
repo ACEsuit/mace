@@ -13,12 +13,11 @@ import numpy as np
 import torch
 
 from mace.calculators import MACECalculator, mace_mp
-from tqdm import tqdm
 
-from mace import data
-import pandas as pd
-from mace.tools import torch_geometric, torch_tools, utils
-import fpsample
+try:
+    import fpsample
+except ImportError:
+    logging.error("fpsample not found, to use FPS, install using pip install fpsample")
 
 
 def parse_args() -> argparse.Namespace:
@@ -290,6 +289,7 @@ def select_samples(
                 )
             )
             np.save(args.output.replace(".xyz", "descriptors.npy"), descriptors_list)
+<<<<<<< HEAD
 
     # actually do filtering
     atoms_list_pt_filtered = [atoms_list_pt[ind] for ind in indices_pt_filtered]
