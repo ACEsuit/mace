@@ -17,7 +17,7 @@ from mace.calculators import MACECalculator, mace_mp
 try:
     import fpsample
 except ImportError:
-    logging.error("fpsample not found, to use FPS, install using pip install fpsample")
+    pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -110,7 +110,7 @@ def calculate_descriptors(
 
 
 def filter_atoms(
-    atoms: ase.Atoms, element_subset: list[str], filtering_type: str
+    atoms: ase.Atoms, element_subset: List[str], filtering_type: str
 ) -> bool:
     """
     Filters atoms based on the provided filtering type and element subset.
@@ -149,7 +149,7 @@ def filter_atoms(
 
 
 class FPS:
-    def __init__(self, atoms_list: list[ase.Atoms], n_samples: int):
+    def __init__(self, atoms_list: List[ase.Atoms], n_samples: int):
         self.n_samples = n_samples
         self.atoms_list = atoms_list
         self.species = np.unique([x.symbol for atoms in atoms_list for x in atoms])
@@ -160,7 +160,7 @@ class FPS:
 
     def run(
         self,
-    ) -> list[int]:
+    ) -> List[int]:
         """
         Run the farthest point sampling algorithm.
         """
