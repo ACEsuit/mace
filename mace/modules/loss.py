@@ -273,12 +273,13 @@ class UniversalLoss(torch.nn.Module):
 
     def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
+        pred_stress = torch.nan_to_num(pred["stress"], nan=0.0, posinf=0.0, neginf=0.0)
         return (
             self.energy_weight
             * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
             + self.forces_weight
             * conditional_huber_forces(ref, pred, huber_delta=self.huber_delta)
-            + self.stress_weight * self.huber_loss(ref["stress"], pred["stress"])
+            + self.stress_weight * self.huber_loss(ref["stress"], pred_stress)
         )
 
     def __repr__(self):
