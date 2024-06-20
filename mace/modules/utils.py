@@ -64,7 +64,8 @@ def compute_forces_virials(
             cell[:, 0, :],
             torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
         ).unsqueeze(-1)
-        stress = virials / volume.view(-1, 1, 1)
+        stress = virials / (volume.view(-1, 1, 1) + 1e-16)
+        stress = torch.where(torch.abs(stress) > 1e10, stress, torch.zeros_like(stress))
     if forces is None:
         forces = torch.zeros_like(positions)
     if virials is None:
@@ -122,7 +123,6 @@ def get_outputs(
     compute_stress: bool = True,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
     if (compute_virials or compute_stress) and displacement is not None:
-        # forces come for free
         forces, virials, stress = compute_forces_virials(
             energy=energy,
             positions=positions,
