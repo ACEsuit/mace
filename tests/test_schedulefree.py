@@ -7,7 +7,7 @@ from e3nn import o3
 
 from mace import data, modules, tools
 from mace.tools import torch_geometric, scripts_utils
-import tempdir
+import tempfile
 
 try:
     import schedulefree
@@ -103,7 +103,7 @@ def test_can_load_checkpoint(device):
     args.scheduler = "ExponentialLR"
     args.lr_scheduler_gamma = 0.9
     lr_scheduler = scripts_utils.LRScheduler(optimizer, args)
-    with tempdir.TempDir() as d:
+    with tempfile.TemporaryDirectory() as d:
         checkpoint_handler = tools.CheckpointHandler(
             directory=d, keep=False, tag="schedulefree"
         )
