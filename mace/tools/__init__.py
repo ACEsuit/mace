@@ -1,6 +1,11 @@
-from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
+from .arg_parser import (
+    build_default_arg_parser,
+    build_preprocess_arg_parser,
+    check_args,
+)
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
+from .finetuning_utils import extract_load, load_foundations_elements
 from .torch_tools import (
     TensorDict,
     cartesian_to_spherical,
@@ -31,8 +36,6 @@ from .utils import (
     setup_logger,
 )
 
-from .finetuning_utils import load_foundations_elements, extract_load
-
 __all__ = [
     "TensorDict",
     "AtomicNumberTable",
@@ -40,6 +43,7 @@ __all__ = [
     "to_numpy",
     "to_one_hot",
     "build_default_arg_parser",
+    "check_args",
     "set_seeds",
     "init_device",
     "setup_logger",
