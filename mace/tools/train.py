@@ -159,10 +159,10 @@ def train(
             output_args=output_args,
             device=device,
         )
-        valid_loss += valid_loss_head
         valid_err_log(
             valid_loss_head, eval_metrics, logger, log_errors, None, valid_loader_name
         )
+    valid_loss = valid_loss_head  # consider only the last head for the checkpoint
 
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
@@ -244,12 +244,16 @@ def train(
 
             if valid_loss >= lowest_loss:
                 patience_counter += 1
-                if patience_counter >= patience and (swa is not None and epoch < swa.start):
+                if patience_counter >= patience and (
+                    swa is not None and epoch < swa.start
+                ):
                     logging.info(
                         f"Stopping optimization after {patience_counter} epochs without improvement and starting swa"
                     )
                     epoch = swa.start
-                elif patience_counter >= patience and (swa is None or epoch >= swa.start):
+                elif patience_counter >= patience and (
+                    swa is None or epoch >= swa.start
+                ):
                     logging.info(
                         f"Stopping optimization after {patience_counter} epochs without improvement"
                     )
