@@ -105,12 +105,12 @@ def run(args: argparse.Namespace) -> None:
             logging.info(
                 f"Using foundation model mace-off-2023 {model_type} as initial checkpoint. ASL license."
             )
-            model_foundation = mace_off(
+            calc = mace_off(
                 model=model_type,
                 device=args.device,
                 default_dtype=args.default_dtype,
-                return_raw_model=True,
             )
+            model_foundation = calc.models[0]
         else:
             model_foundation = torch.load(args.foundation_model, map_location=device)
             logging.info(
@@ -354,7 +354,7 @@ def run(args: argparse.Namespace) -> None:
 
     # Selecting outputs
     compute_virials = False
-    if args.loss in ("stress", "virials", "huber"):
+    if args.loss in ("stress", "virials", "huber", "universal"):
         compute_virials = True
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
@@ -558,15 +558,27 @@ def run(args: argparse.Namespace) -> None:
         ],
         lr=args.lr,
         amsgrad=args.amsgrad,
+        betas=(args.beta, 0.999),
     )
 
     optimizer: torch.optim.Optimizer
     if args.optimizer == "adamw":
         optimizer = torch.optim.AdamW(**param_options)
+    elif args.optimizer == "schedulefree":
+        try:
+            from schedulefree import adamw_schedulefree
+        except ImportError as exc:
+            raise ImportError(
+                "`schedulefree` is not installed. Please install it via `pip install schedulefree` or `pip install mace-torch[schedulefree]`"
+            ) from exc
+        _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
+        optimizer = adamw_schedulefree.AdamWScheduleFree(**_param_options)
     else:
         optimizer = torch.optim.Adam(**param_options)
 
-    logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + "_train")
+    logger = tools.MetricsLogger(
+        directory=args.results_dir, tag=tag + "_train"
+    )  # pylint: disable=E1123
 
     lr_scheduler = LRScheduler(optimizer, args)
 

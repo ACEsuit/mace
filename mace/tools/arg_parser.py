@@ -446,7 +446,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Optimizer for parameter optimization",
         type=str,
         default="adam",
-        choices=["adam", "adamw"],
+        choices=["adam", "adamw", "schedulefree"],
+    )
+    parser.add_argument(
+        "--beta",
+        help="Beta parameter for the optimizer",
+        type=float,
+        default=0.9,
     )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
