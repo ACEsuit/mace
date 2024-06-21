@@ -446,7 +446,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Optimizer for parameter optimization",
         type=str,
         default="adam",
-        choices=["adam", "adamw"],
+        choices=["adam", "adamw", "schedulefree"],
+    )
+    parser.add_argument(
+        "--beta",
+        help="Beta parameter for the optimizer",
+        type=float,
+        default=0.9,
     )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
@@ -567,6 +573,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Use Weights and Biases for experiment tracking",
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "--wandb_dir",
+        help="An absolute path to a directory where Weights and Biases metadata will be stored",
+        type=str,
+        default=None,
     )
     parser.add_argument(
         "--wandb_project",

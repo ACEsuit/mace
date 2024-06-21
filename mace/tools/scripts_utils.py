@@ -167,10 +167,18 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "num_interactions": model.num_interactions.item(),
         "num_elements": len(model.atomic_numbers),
         "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
-        "MLP_irreps": o3.Irreps(str(model.readouts[-1].hidden_irreps)),
-        "gate": model.readouts[-1]  # pylint: disable=protected-access
-        .non_linearity._modules["acts"][0]
-        .f,
+        "MLP_irreps": (
+            o3.Irreps(str(model.readouts[-1].hidden_irreps))
+            if model.num_interactions.item() > 1
+            else 1
+        ),
+        "gate": (
+            model.readouts[-1]  # pylint: disable=protected-access
+            .non_linearity._modules["acts"][0]
+            .f
+            if model.num_interactions.item() > 1
+            else None
+        ),
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
         "atomic_numbers": model.atomic_numbers,
@@ -373,6 +381,9 @@ def custom_key(key):
 class LRScheduler:
     def __init__(self, optimizer, args) -> None:
         self.scheduler = args.scheduler
+        self._optimizer_type = (
+            args.optimizer
+        )  # Schedulefree does not need an optimizer but checkpoint handler does.
         if args.scheduler == "ExponentialLR":
             self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
                 optimizer=optimizer, gamma=args.lr_scheduler_gamma
@@ -387,6 +398,8 @@ class LRScheduler:
             raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 
     def step(self, metrics=None, epoch=None):  # pylint: disable=E1123
+        if self._optimizer_type == "schedulefree":
+            return  # In principle, schedulefree optimizer can be used with a scheduler but the paper suggests it's not necessary
         if self.scheduler == "ExponentialLR":
             self.lr_scheduler.step(epoch=epoch)
         elif self.scheduler == "ReduceLROnPlateau":
