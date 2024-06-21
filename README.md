@@ -60,7 +60,7 @@ Requirements:
 ### pip installation
 This is the recommended way to install MACE. 
 
-**First, make sure to install PyTorch.** Please refer to the [official PyTorch installation](https://pytorch.org/get-started/locally/) for the installation instructions. Select the appropriate options for your system (CUDA version, etc).
+**First, make sure to install PyTorch.** Please refer to the [official PyTorch installation](https://pytorch.org/get-started/locally/) for the installation instructions. Select the appropriate options for your system. For GPU installation, make sure to select pip + the appropriate CUDA version for your system. For recent GPUs, the latest cuda version is usually the best choice.
 
 To install via `pip`, follow the steps below:
 
