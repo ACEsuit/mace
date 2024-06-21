@@ -65,7 +65,7 @@ def compute_forces_virials(
             torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
         ).unsqueeze(-1)
         stress = virials / (volume.view(-1, 1, 1) + 1e-16)
-        stress = torch.where(torch.abs(stress) > 1e10, stress, torch.zeros_like(stress))
+        stress = torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
     if forces is None:
         forces = torch.zeros_like(positions)
     if virials is None:
