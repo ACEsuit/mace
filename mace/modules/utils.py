@@ -111,6 +111,62 @@ def get_symmetric_displacement(
     return positions, shifts, displacement
 
 
+@torch.jit.unused
+def compute_hessians_vmap(
+    forces: torch.Tensor,
+    positions: torch.Tensor,
+) -> torch.Tensor:
+    forces_flatten = forces.view(-1)
+    num_elements = forces_flatten.shape[0]
+
+    def get_vjp(v):
+        return torch.autograd.grad(
+            -1 * forces_flatten,
+            positions,
+            v,
+            retain_graph=True,
+            create_graph=False,
+            allow_unused=False,
+        )
+
+    I_N = torch.eye(num_elements).to(forces.device)
+    try:
+        chunk_size = 1 if num_elements < 64 else 16
+        gradient = torch.vmap(get_vjp, in_dims=0, out_dims=0, chunk_size=chunk_size)(
+            I_N
+        )[0]
+    except RuntimeError:
+        gradient = compute_hessians_loop(forces, positions)
+    if gradient is None:
+        return torch.zeros((positions.shape[0], forces.shape[0], 3, 3))
+    return gradient
+
+
+@torch.jit.unused
+def compute_hessians_loop(
+    forces: torch.Tensor,
+    positions: torch.Tensor,
+) -> torch.Tensor:
+
+    hessian = []
+    for grad_elem in forces.view(-1):
+        hess_row = torch.autograd.grad(
+            outputs=[-1 * grad_elem],
+            inputs=[positions],
+            grad_outputs=torch.ones_like(grad_elem),
+            retain_graph=True,
+            create_graph=False,
+            allow_unused=False,
+        )[0]
+        hess_row = hess_row.detach()  # this makes it very slow? but needs less memory
+        if hess_row is None:
+            hessian.append(torch.zeros_like(positions))
+        else:
+            hessian.append(hess_row)
+    hessian = torch.stack(hessian)
+    return hessian
+
+
 def get_outputs(
     energy: torch.Tensor,
     positions: torch.Tensor,
@@ -120,7 +176,13 @@ def get_outputs(
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
-) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+    compute_hessian: bool = False,
+) -> Tuple[
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+]:
     if (compute_virials or compute_stress) and displacement is not None:
         # forces come for free
         forces, virials, stress = compute_forces_virials(
@@ -129,17 +191,26 @@ def get_outputs(
             displacement=displacement,
             cell=cell,
             compute_stress=compute_stress,
-            training=training,
+            training=(training or compute_hessian),
         )
     elif compute_force:
         forces, virials, stress = (
-            compute_forces(energy=energy, positions=positions, training=training),
+            compute_forces(
+                energy=energy,
+                positions=positions,
+                training=(training or compute_hessian),
+            ),
             None,
             None,
         )
     else:
         forces, virials, stress = (None, None, None)
-    return forces, virials, stress
+    if compute_hessian:
+        assert forces is not None, "Forces must be computed to get the hessian"
+        hessian = compute_hessians_vmap(forces, positions)
+    else:
+        hessian = None
+    return forces, virials, stress, hessian
 
 
 def get_edge_vectors_and_lengths(
