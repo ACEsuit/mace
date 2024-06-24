@@ -130,7 +130,7 @@ def test_run_train(tmp_path, fitting_configs):
         -0.036065736712447574,
         -0.24413743841886623,
         -0.0838104612106429,
-        -0.14751978636626545
+        -0.14751978636626545,
     ]
 
     assert np.allclose(Es, ref_Es)
@@ -201,7 +201,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
         -0.13680153117705554,
         -0.23418951968636786,
         -0.11790833839379238,
-        -0.14930562311066484
+        -0.14930562311066484,
     ]
     assert np.allclose(Es, ref_Es)
 

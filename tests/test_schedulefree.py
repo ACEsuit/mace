@@ -1,4 +1,6 @@
+import tempfile
 from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 import torch
@@ -6,8 +8,7 @@ import torch.nn.functional as F
 from e3nn import o3
 
 from mace import data, modules, tools
-from mace.tools import torch_geometric, scripts_utils
-import tempfile
+from mace.tools import scripts_utils, torch_geometric
 
 try:
     import schedulefree
@@ -93,7 +94,6 @@ def do_optimization_step(
     optimizer.eval()
 
 
-
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 def test_can_load_checkpoint(device):
     model = create_mace(device)
@@ -112,7 +112,7 @@ def test_can_load_checkpoint(device):
         batch = create_batch(device)
         output = model(batch)
         energy = output["energy"].detach().cpu().numpy()
-        
+
         state = tools.CheckpointState(
             model=model, optimizer=optimizer, lr_scheduler=lr_scheduler
         )
