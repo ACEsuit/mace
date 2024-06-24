@@ -26,6 +26,7 @@
       - [Example usage in ASE](#example-usage-in-ase)
     - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
       - [Example usage in ASE](#example-usage-in-ase-1)
+    - [Finetuning foundation models](#finetuning-foundation-models)
   - [Development](#development)
   - [References](#references)
   - [Contact](#contact)
