@@ -111,6 +111,7 @@ def get_symmetric_displacement(
     return positions, shifts, displacement
 
 
+@torch.jit.unused
 def compute_hessians_vmap(
     forces: torch.Tensor,
     positions: torch.Tensor,
@@ -141,6 +142,7 @@ def compute_hessians_vmap(
     return gradient
 
 
+@torch.jit.unused
 def compute_hessians_loop(
     forces: torch.Tensor,
     positions: torch.Tensor,
@@ -175,7 +177,12 @@ def get_outputs(
     compute_virials: bool = True,
     compute_stress: bool = True,
     compute_hessian: bool = False,
-) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+) -> Tuple[
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+]:
     if (compute_virials or compute_stress) and displacement is not None:
         # forces come for free
         forces, virials, stress = compute_forces_virials(
