@@ -1,4 +1,4 @@
-.. _finetuning:
+.. _hessian:
 
 *******************
 Analytical Hessians

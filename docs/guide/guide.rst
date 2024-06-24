@@ -15,6 +15,7 @@ User Guide
     evaluation
     ase
     descriptors
+    hessian
     openmm
     lammps
     foundation_models
