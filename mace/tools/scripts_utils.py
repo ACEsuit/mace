@@ -205,6 +205,12 @@ def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return model_copy.to(map_location)
 
 
+def extract_model(model: torch.nn.Module, map_location: str = "cpu") -> torch.nn.Module:
+    model_copy = model.__class__(**extract_config_mace_model(model))
+    model_copy.load_state_dict(model.state_dict())
+    return model_copy.to(map_location)
+
+
 def convert_to_json_format(dict_input):
     for key, value in dict_input.items():
         if isinstance(value, (np.ndarray, torch.Tensor)):
