@@ -400,14 +400,11 @@ class MACELoss(Metric):
         self.add_state("delta_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("Mus_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("mus", default=[], dist_reduce_fx="cat")
-        self.add_state("mus_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state(
             "polarizability_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
         )
-        self.add_state("polarizability", default=[], dist_reduce_fx="cat")
-        self.add_state("polarizability_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("delta_polarizability", default=[], dist_reduce_fx="cat")
         self.add_state(
             "delta_polarizability_per_atom", default=[], dist_reduce_fx="cat"
@@ -445,9 +442,6 @@ class MACELoss(Metric):
         if output.get("dipole") is not None and batch.dipole is not None:
             self.Mus_computed += 1.0
             self.mus.append(batch.dipole)
-            self.mus_per_atom.append(
-                (batch.dipole) / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
-            )
             self.delta_mus.append(batch.dipole - output["dipole"])
             self.delta_mus_per_atom.append(
                 (batch.dipole - output["dipole"])
@@ -458,8 +452,6 @@ class MACELoss(Metric):
             and batch.polarizability is not None
         ):
             self.polarizability_computed += 1.0
-            self.polarizability.append(batch.polarizability)
-            self.polarizability_per_atom.append((batch.polarizability) / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1).unsqueeze(-1))
             self.delta_polarizability.append(
                 batch.polarizability - output["polarizability"]
             )
@@ -507,47 +499,29 @@ class MACELoss(Metric):
             aux["rmse_virials_per_atom"] = compute_rmse(delta_virials_per_atom)
             aux["q95_virials"] = compute_q95(delta_virials)
         if self.Mus_computed:
-            
-            # stores locally for easier referencing
             mus = self.convert(self.mus)
-            mus_per_atom = self.convert(self.mus_per_atom)
             delta_mus = self.convert(self.delta_mus)
             delta_mus_per_atom = self.convert(self.delta_mus_per_atom)
-            
             aux["mae_mu"] = compute_mae(delta_mus)
             aux["mae_mu_per_atom"] = compute_mae(delta_mus_per_atom)
-            #relative errors are better estimated on per atom quantities
-            aux["rel_mae_mu"] = compute_rel_mae(delta_mus_per_atom, mus_per_atom)
-            
+            aux["rel_mae_mu"] = compute_rel_mae(delta_mus, mus)
             aux["rmse_mu"] = compute_rmse(delta_mus)
             aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
-            #relative errors are better estimated on per atom quantities
-            aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus_per_atom, mus_per_atom)
-            
+            aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
             aux["q95_mu"] = compute_q95(delta_mus)
         if self.polarizability_computed:
-
-            # stores locally for easier referencing
-            pols = self.convert(self.polarizability)
-            pols_per_atom = self.convert(self.polarizability_per_atom)
-            delta_pols = self.convert(self.delta_polarizability)
-            delta_pols_per_atom = self.convert(
+            delta_polarizability = self.convert(self.delta_polarizability)
+            delta_polarizability_per_atom = self.convert(
                 self.delta_polarizability_per_atom
             )
-
-            aux["mae_polarizability"] = compute_mae(delta_pols)
-            aux["mae_polarizability_per_atom"] = compute_mae(delta_pols_per_atom)
-            #relative errors are better estimated on per atom quantities
-            aux["rel_mae_polarizability"] = compute_rel_mae(delta_pols_per_atom, pols_per_atom)
-            
-            aux["rmse_polarizability"] = compute_rmse(delta_pols)
-            aux["rmse_polarizability_per_atom"] = compute_rmse(delta_pols_per_atom)
-            #relative errors are better estimated on per atom quantities
-            #print (delta_pols_per_atom[0])
-            #print (pols_per_atom[0])
-            print (compute_rel_rmse(delta_pols_per_atom, pols_per_atom))
-            aux["rel_rmse_polarizability"] = compute_rel_rmse(delta_pols_per_atom, pols_per_atom)
-            
-            aux["q95_polarizability"] = compute_q95(delta_pols)
+            aux["mae_polarizability"] = compute_mae(delta_polarizability)
+            aux["mae_polarizability_per_atom"] = compute_mae(
+                delta_polarizability_per_atom
+            )
+            aux["rmse_polarizability"] = compute_rmse(delta_polarizability)
+            aux["rmse_polarizability_per_atom"] = compute_rmse(
+                delta_polarizability_per_atom
+            )
+            aux["q95_polarizability"] = compute_q95(delta_polarizability)
 
         return aux["loss"], aux
