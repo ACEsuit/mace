@@ -18,7 +18,7 @@ from mace import data
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import prepare
-from mace.tools.scripts_utils import extract_load
+from mace.tools.scripts_utils import extract_load, extract_model
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
@@ -316,6 +316,10 @@ class MACECalculator(Calculator):
             atoms = self.atoms
         if self.model_type != "MACE":
             raise NotImplementedError("Only implemented for MACE models")
+        self.models = [
+            prepare(extract_model)(model=model, map_location=self.device)
+            for model in self.models
+        ]
         batch = self._atoms_to_batch(atoms)
         hessians = [
             model(
