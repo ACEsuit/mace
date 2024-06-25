@@ -316,15 +316,13 @@ class MACECalculator(Calculator):
             atoms = self.atoms
         if self.model_type != "MACE":
             raise NotImplementedError("Only implemented for MACE models")
-        self.models = [
-            prepare(extract_model)(model=model, map_location=self.device)
-            for model in self.models
-        ]
         batch = self._atoms_to_batch(atoms)
         hessians = [
             model(
-                batch.to_dict(),
+                self._clone_batch(batch).to_dict(),
                 compute_hessian=True,
+                compute_stress=False,
+                training=self.use_compile,
             )["hessian"]
             for model in self.models
         ]
