@@ -57,6 +57,7 @@ class MACECalculator(Calculator):
         charges_key="Qs",
         model_type="MACE",
         compile_mode=None,
+        fullgraph=True,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
@@ -117,7 +118,7 @@ class MACECalculator(Calculator):
                 torch.compile(
                     prepare(extract_load)(f=model_path, map_location=device),
                     mode=compile_mode,
-                    fullgraph=True,
+                    fullgraph=fullgraph,
                 )
                 for model_path in model_paths
             ]
