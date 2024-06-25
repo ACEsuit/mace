@@ -135,9 +135,7 @@ def compute_hessians_vmap(
         gradient = torch.vmap(get_vjp, in_dims=0, out_dims=0, chunk_size=chunk_size)(
             I_N
         )[0]
-    except RuntimeError as e:
-        print("Using loop for hessian computation")
-        print("Error: ", e)
+    except RuntimeError:
         gradient = compute_hessians_loop(forces, positions)
     if gradient is None:
         return torch.zeros((positions.shape[0], forces.shape[0], 3, 3))
