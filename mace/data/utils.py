@@ -242,21 +242,20 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
-            if len(atoms) == 1:
-                isolated_atom_config = atoms.info.get("config_type") == "IsolatedAtom"
-                if isolated_atom_config:
-                    if energy_key in atoms.info.keys():
-                        atomic_energies_dict[atoms.get_atomic_numbers()[0]] = (
-                            atoms.info[energy_key]
-                        )
-                    else:
-                        logging.warning(
-                            f"Configuration '{idx}' is marked as 'IsolatedAtom' "
-                            "but does not contain an energy. Zero energy will be used."
-                        )
-                        atomic_energies_dict[atoms.get_atomic_numbers()[0]] = np.zeros(
-                            1
-                        )
+            isolated_atom_config = len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
+            if isolated_atom_config:
+                if energy_key in atoms.info.keys():
+                    atomic_energies_dict[atoms.get_atomic_numbers()[0]] = (
+                        atoms.info[energy_key]
+                    )
+                else:
+                    logging.warning(
+                        f"Configuration '{idx}' is marked as 'IsolatedAtom' "
+                        "but does not contain an energy. Zero energy will be used."
+                    )
+                    atomic_energies_dict[atoms.get_atomic_numbers()[0]] = np.zeros(
+                        1
+                    )
             else:
                 atoms_without_iso_atoms.append(atoms)
 
