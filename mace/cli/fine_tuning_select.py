@@ -289,7 +289,6 @@ def select_samples(
                 )
             )
             np.save(args.output.replace(".xyz", "descriptors.npy"), descriptors_list)
-<<<<<<< HEAD
 
     # actually do filtering
     atoms_list_pt_filtered = [atoms_list_pt[ind] for ind in indices_pt_filtered]
