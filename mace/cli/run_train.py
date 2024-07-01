@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from mpi4py import MPI
 
 import argparse
 import ast
@@ -40,8 +41,9 @@ from mace.tools.scripts_utils import (
     print_git_commit,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
+from mace.tools.mpi_distributed import MPIDistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
-
+import datetime
 
 def main() -> None:
     """
@@ -57,17 +59,49 @@ def run(args: argparse.Namespace) -> None:
     """
     tag = tools.get_tag(name=args.name, seed=args.seed)
     if args.distributed:
-        try:
-            distr_env = DistributedEnvironment()
-        except Exception as e:  # pylint: disable=W0703
-            logging.error(f"Failed to initialize distributed environment: {e}")
-            return
+        if args.use_mpi:
+            try:
+                distr_env = MPIDistributedEnvironment()
+                print('MPI Environment set: ', distr_env)
+                print('World size: ', distr_env.world_size)
+                print('Rank: ', distr_env.rank)
+                print('Local rank: ', distr_env.local_rank)
+
+            except Exception as e:  # pylint: disable=W0703
+                print('MPI Environment set: ', distr_env)
+                print('World size: ', distr_env.world_size)
+                print('Rank: ', distr_env.rank)
+                print('Local rank: ', distr_env.local_rank)
+                logging.error(f"Failed to initialize distributed environment with mpi: {e}")
+                return
+        else:
+            try:
+                distr_env = DistributedEnvironment()
+            except Exception as e:  # pylint: disable=W0703
+                logging.error(f"Failed to initialize distributed environment with slurm: {e}")
+                return
         world_size = distr_env.world_size
         local_rank = distr_env.local_rank
         rank = distr_env.rank
         if rank == 0:
             print(distr_env)
-        torch.distributed.init_process_group(backend="nccl")
+        if args.use_mpi:
+            init_method = 'env://'
+            backend = 'nccl'
+            torch.distributed.init_process_group(
+                backend     = backend,
+                init_method = init_method,
+                world_size  = world_size,
+                rank        = rank,
+                timeout     = datetime.timedelta(seconds=120)
+            )
+
+
+
+
+
+        else:
+            torch.distributed.init_process_group(backend="nccl")
     else:
         rank = int(0)
 
@@ -755,7 +789,7 @@ def run(args: argparse.Namespace) -> None:
 
     for test_name, test_set in test_sets.items():
         test_sampler = None
-        if args.distributed:
+        if args.distributed or args.mpi_distributed:
             test_sampler = torch.utils.data.distributed.DistributedSampler(
                 test_set,
                 num_replicas=world_size,
