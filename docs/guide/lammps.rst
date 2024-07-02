@@ -25,7 +25,7 @@ Instructions for GPU
 Installation
 ------------
 
-These instructions are for Cambridge-relevant machines and should be adapted as needed. In particular, take note of the architecture settings listed in the [LAMMPS-Kokkos documentation](https://docs.lammps.org/Build_extras.html#kokkos).
+These instructions are for Cambridge-relevant machines and should be adapted as needed. In particular, take note of the architecture settings listed in the `LAMMPS-Kokkos documentation <https://docs.lammps.org/Build_extras.html#kokkos>`.
 
 CSD3 Ampere Nodes
 ^^^^^^^^^^^^^^^^^
