@@ -15,7 +15,7 @@ MUCH better performance (at least at present).
 Preparing your model
 ====================
 
-Train the model using the `develop` branch. Afterwards, use the `create_lammps_model.py` script to prepare a torchscript-compiled LAMMPS_MACE model::
+Train the model using the `main` branch. Afterwards, use the `create_lammps_model.py` script to prepare a torchscript-compiled LAMMPS_MACE model::
 
     python <mace_repo_dir>/mace/cli/create_lammps_model.py my_mace.model
 
@@ -25,7 +25,7 @@ Instructions for GPU
 Installation
 ------------
 
-These instructions are for Cambridge-relevant machines and should be adapted as needed.
+These instructions are for Cambridge-relevant machines and should be adapted as needed. In particular, take note of the architecture settings listed in the [LAMMPS-Kokkos documentation](https://docs.lammps.org/Build_extras.html#kokkos).
 
 CSD3 Ampere Nodes
 ^^^^^^^^^^^^^^^^^
