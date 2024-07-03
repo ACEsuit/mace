@@ -21,7 +21,7 @@ An example is given here:
         --h5_prefix="processed_data/" \
         --compute_statistics \
         --E0s="average" \
-        --seed=123 \ preprocess_data.py --data_path path_to_your_data --out_path path_to_save_preprocessed_data
+        --seed=123 \
 
 This will create a directory processed_data with the preprocessed data as h5 files. 
 There will be one folder for training, one for validation and a separate one for each config_type in the test set.
@@ -29,15 +29,31 @@ To see all options and a little description of them run ``python ./mace/scripts/
 The statistics of the dataset will be saved in a json file in the same directory.
 
 The preprocessed data can be used for training the model using the on-line dataloader as shown in the example below.
+If the pre-processing is done on multiple threads, you should end up with multiple files in the processed_data directory. For example, if you have 4 threads, you should see the following files:
 
 .. code-block:: bash
-    
+
+    ls processed_data/
+    statistics.json  test  train  val
+
+    ls processed_data/test/
+
+    ls processed_data/train/
+    train_0.h5  train_1.h5  train_2.h5  train_3.h5
+
+    ls processed_data/val/
+    val_0.h5  val_1.h5  val_2.h5  val_3.h5
+
+In this case, you should use the following command to train the model:
+
+.. code-block:: bash
+
     python <mace_repo_dir>/mace/cli/run_train.py \
     --name="MACE_on_big_data" \
     --num_workers=16 \
-    --train_file="./processed_data/train.h5" \
-    --valid_file="./processed_data/valid.h5" \
-    --test_dir="./processed_data" \
+    --train_file="./processed_data/train" \
+    --valid_file="./processed_data/val" \
+    --test_dir="./processed_data/test" \
     --statistics_file="./processed_data/statistics.json" \
     --model="ScaleShiftMACE" \
     --num_interactions=2 \
@@ -55,3 +71,4 @@ The preprocessed data can be used for training the model using the on-line datal
     --error_table='PerAtomMAE' \
     --device=cuda \
     --seed=123 \
+    
