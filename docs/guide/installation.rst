@@ -1,33 +1,38 @@
 .. _installation:
 
-==============
+============
 Installation
-==============
+============
 
 Requirements:
-* Python >= 3.7
-* [PyTorch](https://pytorch.org/) >= 1.12
+
+- Python >= 3.7
+- [PyTorch](https://pytorch.org/) >= 1.12 **(training with float64 is not supported with PyTorch 2.1 but is supported with 2.2 and later.)**.
 
 (for openMM, use Python = 3.9)
 
-
-pip installation
+pypi installation
 ----------------
 
+This is the **recommended** way to install MACE. 
+
+**First, make sure to install PyTorch.** Please refer to the [official PyTorch installation](https://pytorch.org/get-started/locally/) for the installation instructions. Select the appropriate options for your system. For GPU installation, make sure to select pip + the appropriate CUDA version for your system. For recent GPUs, the latest cuda version is usually the best choice.
+
 To install via `pip`, follow the steps below:
+
 
 .. code-block:: bash
 
     pip install --upgrade pip
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
     pip install mace-torch
+
 
 For CPU or MPS (Apple Silicon) installation, use `pip install torch torchvision torchaudio` instead.
 
 conda installation
 -------------------
 
-If you do not have CUDA pre-installed, it is **recommended** to follow the conda installation process:
+To install via `conda` (not recommended), follow the steps below:
 
 .. code-block:: bash
 
