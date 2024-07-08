@@ -27,17 +27,18 @@ def get_neighborhood(
     max_positions = np.max(np.absolute(positions)) + 1
     # Extend cell in non-periodic directions
     # For models with more than 5 layers, the multiplicative constant needs to be increased.
+    temp_cell = np.copy(cell)
     if not pbc_x:
-        cell[:, 0] = max_positions * 5 * cutoff * identity[:, 0]
+        temp_cell[0, :] = max_positions * 5 * cutoff * identity[0, :]
     if not pbc_y:
-        cell[:, 1] = max_positions * 5 * cutoff * identity[:, 1]
+        temp_cell[1, :] = max_positions * 5 * cutoff * identity[1, :]
     if not pbc_z:
-        cell[:, 2] = max_positions * 5 * cutoff * identity[:, 2]
+        temp_cell[2, :] = max_positions * 5 * cutoff * identity[2, :]
 
     sender, receiver, unit_shifts = neighbour_list(
         quantities="ijS",
         pbc=pbc,
-        cell=cell,
+        cell=temp_cell,
         positions=positions,
         cutoff=cutoff,
         # self_interaction=True,  # we want edges from atom to itself in different periodic images
