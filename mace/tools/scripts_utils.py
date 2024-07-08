@@ -383,6 +383,12 @@ class LRScheduler:
                 factor=args.lr_factor,
                 patience=args.scheduler_patience,
             )
+        elif args.scheduler == "CosineLR":
+            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer=optimizer,
+                T_max=args.max_num_epochs,
+                eta_min=args.eta_min,
+            )
         else:
             raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 

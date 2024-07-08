@@ -151,3 +151,13 @@ class MetricsLogger:
         with open(self.path, mode="a", encoding="utf-8") as f:
             f.write(json.dumps(d, cls=UniversalEncoder))
             f.write("\n")
+
+
+def get_gpu_memory():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()  # Wait for all CUDA kernels to finish
+        allocated = torch.cuda.max_memory_allocated(0) / (1024 ** 3)  # Convert bytes to GB
+        cached = torch.cuda.max_memory_reserved(0) / (1024 ** 3)  # Convert bytes to GB
+        return f"Alloc: {allocated:.2f} GB, Cache: {cached:.2f} GB"
+    else:
+        return "CUDA not available"

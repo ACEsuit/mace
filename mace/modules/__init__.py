@@ -25,10 +25,12 @@ from .loss import (
     UniversalLoss,
     WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesLoss,
+    WeightedEnergyForcesDistillLoss,
     WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
+    WeightedEnergyForcesDistillLoss_Linear,
 )
 from .models import (
     MACE,
@@ -93,6 +95,7 @@ __all__ = [
     "AtomicDipolesMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
+    "WeightedEnergyForcesDistillLoss",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
     "WeightedEnergyForcesStressLoss",
@@ -106,4 +109,5 @@ __all__ = [
     "compute_avg_num_neighbors",
     "compute_statistics",
     "compute_fixed_charge_dipole",
+    "WeightedEnergyForcesDistillLoss_Linear",
 ]

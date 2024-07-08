@@ -311,7 +311,7 @@ class MACECalculator(Calculator):
                     .numpy()
                 )
 
-    def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
+    def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1, node_energy=False):
         """Extracts the descriptors from MACE model.
         :param atoms: ase.Atoms object
         :param invariants_only: bool, if True only the invariant descriptors are returned
@@ -327,7 +327,9 @@ class MACECalculator(Calculator):
         if num_layers == -1:
             num_layers = int(self.models[0].num_interactions)
         batch = self._atoms_to_batch(atoms)
-        descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+        outputs = [model(batch.to_dict()) for model in self.models] 
+        descriptors = [output["node_feats"] for output in outputs]
+        
         if invariants_only:
             irreps_out = self.models[0].products[0].linear.__dict__["irreps_out"]
             l_max = irreps_out.lmax
@@ -343,6 +345,31 @@ class MACECalculator(Calculator):
             ]
         descriptors = [descriptor.detach().cpu().numpy() for descriptor in descriptors]
 
+        if node_energy:
+            node_energy = [output["node_energy"] for output in outputs]
+            node_energy = [ne.detach().cpu().numpy() for ne in node_energy]
+            if self.num_models == 1:
+                return descriptors[0], node_energy[0]
+            return descriptors, node_energy
+
         if self.num_models == 1:
             return descriptors[0]
         return descriptors
+    
+    def get_node_energy(self, atoms=None):
+        """Extracts the node_energy from MACE model.
+        :param atoms: ase.Atoms object
+        :return: np.ndarray (num_atoms, num_interactions, invariant_features) of invariant descriptors if num_models is 1 or list[np.ndarray] otherwise
+        """
+        if atoms is None and self.atoms is None:
+            raise ValueError("atoms not set")
+        if atoms is None:
+            atoms = self.atoms
+        if self.model_type != "MACE":
+            raise NotImplementedError("Only implemented for MACE models")
+        batch = self._atoms_to_batch(atoms)
+        node_energy = [model(batch.to_dict())["node_energy"] for model in self.models]
+        node_energy = [ne.detach().cpu().numpy() for ne in node_energy]
+        if self.num_models == 1:
+            return node_energy[0]
+        return node_energy

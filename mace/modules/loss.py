@@ -8,7 +8,7 @@ import torch
 
 from mace.tools import TensorDict
 from mace.tools.torch_geometric import Batch
-
+from mace.modules.utils import extract_invariant
 
 def mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
@@ -68,6 +68,43 @@ def mean_squared_error_forces(ref: Batch, pred: TensorDict) -> torch.Tensor:
         * torch.square(ref["forces"] - pred["forces"])
     )  # []
 
+
+def mean_squared_error_node_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
+    configs_weight = torch.repeat_interleave(
+        ref.weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+    configs_node_energy_weight = torch.repeat_interleave(
+        ref.node_energy_weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+    return torch.mean(
+        configs_weight
+        * configs_node_energy_weight
+        * torch.square(ref["node_energy"] - pred["node_energy"])
+    )
+
+def mean_squared_error_node_feats(ref: Batch, pred: TensorDict) -> torch.Tensor:
+    configs_weight = torch.repeat_interleave(
+        ref.weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+    configs_node_feats_weight = torch.repeat_interleave(
+        ref.descriptors_weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+    return torch.mean(
+        configs_weight
+        * configs_node_feats_weight
+        * torch.square(ref['descriptors'] - descriptors_from_node_feats(pred['node_feats'])) 
+    )
+
+def descriptors_from_node_feats(node_feats: torch.Tensor) -> torch.Tensor:
+    return extract_invariant(node_feats, num_layers=2, num_features=224, l_max=0) # TODO: pass through args
 
 def weighted_mean_squared_error_dipole(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # dipole: [n_graphs, ]
@@ -169,6 +206,79 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
             f"forces_weight={self.forces_weight:.3f})"
         )
+
+
+class WeightedEnergyForcesDistillLoss(torch.nn.Module):
+    def __init__(self, energy_weight=1.0, forces_weight=1.0, distill_weight=[1.0, 1.0]) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "distill_weight_node_energy",
+            torch.tensor(distill_weight[0], dtype=torch.get_default_dtype()), 
+        )
+        self.register_buffer(
+            "distill_weight_node_feats",
+            torch.tensor(distill_weight[1], dtype=torch.get_default_dtype()),  
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        tol_e_mse = self.energy_weight * weighted_mean_squared_error_energy(ref, pred)
+        node_f_mse = self.forces_weight * mean_squared_error_forces(ref, pred)
+        node_e_mse = self.distill_weight_node_energy * mean_squared_error_node_energy(ref, pred) if self.distill_weight_node_energy > 0. else 0.0
+        node_feats_mse = self.distill_weight_node_feats * mean_squared_error_node_feats(ref, pred) if self.distill_weight_node_feats > 0. else 0.0
+        return tol_e_mse + node_f_mse + node_e_mse + node_feats_mse 
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f})"
+        )
+
+
+class WeightedEnergyForcesDistillLoss_Linear(torch.nn.Module):
+    def __init__(self, energy_weight=1.0, forces_weight=1.0, distill_weight=[1.0, 1.0]) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "distill_weight_node_energy",
+            torch.tensor(distill_weight[0], dtype=torch.get_default_dtype()), 
+        )
+        self.register_buffer(
+            "distill_weight_node_feats",
+            torch.tensor(distill_weight[1], dtype=torch.get_default_dtype()),  
+        )
+        self.linear1 = torch.nn.Linear(224, 224)
+        self.linear2 = torch.nn.Linear(224, 224)
+
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        tol_e_mse = self.energy_weight * weighted_mean_squared_error_energy(ref, pred)
+        node_f_mse = self.forces_weight * mean_squared_error_forces(ref, pred)
+        node_e_mse = self.distill_weight_node_energy * mean_squared_error_node_energy(ref, pred) if self.distill_weight_node_energy > 0. else 0.0
+        node_feats_mse = self.distill_weight_node_feats * mean_squared_error_node_feats(ref, self.project(pred)) if self.distill_weight_node_feats > 0. else 0.0
+        return tol_e_mse + node_f_mse + node_e_mse + node_feats_mse
+    
+    def project(self, pred):
+        pred_feats = pred["node_feats"]
+        p1, p2 = pred_feats.split([224, 224], dim=-1)
+        proj1 = self.linear1(p1)
+        proj2 = self.linear2(p2)
+        pred["node_feats"] = torch.cat([proj1, proj2], dim=-1)
+        return pred
 
 
 class WeightedForcesLoss(torch.nn.Module):

@@ -375,6 +375,10 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         subgroup["stress_weight"] = write_value(config.stress_weight)
         subgroup["virials_weight"] = write_value(config.virials_weight)
         subgroup["config_type"] = write_value(config.config_type)
+        if hasattr(config, "descriptors"):
+            subgroup["descriptors"] = write_value(config.descriptors)
+        if hasattr(config, "node_energy"):
+            subgroup["node_energy"] = write_value(config.node_energy) 
 
 
 def write_value(value):

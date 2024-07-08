@@ -237,9 +237,14 @@ def run(args: argparse.Namespace) -> None:
             data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
             for config in collections.valid
         ]
-    elif args.train_file.endswith(".h5"):
+    elif args.train_file.endswith(".h5") and args.valid_file.endswith(".h5"):
         train_set = data.HDF5Dataset(args.train_file, r_max=args.r_max, z_table=z_table)
         valid_set = data.HDF5Dataset(args.valid_file, r_max=args.r_max, z_table=z_table)
+    elif args.train_file.endswith(".h5") and not args.valid_file.endswith(".h5"):
+        train_set = data.HDF5Dataset(args.train_file, r_max=args.r_max, z_table=z_table) 
+        valid_set = data.dataset_from_sharded_hdf5(
+            args.valid_file, r_max=args.r_max, z_table=z_table
+        )
     else:  # This case would be for when the file path is to a directory of multiple .h5 files
         train_set = data.dataset_from_sharded_hdf5(
             args.train_file, r_max=args.r_max, z_table=z_table
@@ -332,6 +337,20 @@ def run(args: argparse.Namespace) -> None:
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             dipole_weight=args.dipole_weight,
+        )
+    elif args.loss == "weighted_distill":
+        distill_weight = ast.literal_eval(args.distill_weight)
+        loss_fn = modules.WeightedEnergyForcesDistillLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            distill_weight=distill_weight
+        )
+    elif args.loss == "weighted_distill_linear":
+        distill_weight = ast.literal_eval(args.distill_weight)
+        loss_fn = modules.WeightedEnergyForcesDistillLoss_Linear(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            distill_weight=distill_weight
         )
     else:
         # Unweighted Energy and Forces loss by default
@@ -518,6 +537,9 @@ def run(args: argparse.Namespace) -> None:
             max_L=args.max_L,
         )
     model.to(device)
+    
+    if [p for p in loss_fn.parameters()]:
+        loss_fn.to(device)
 
     # Optimizer
     decay_interactions = {}
@@ -528,8 +550,7 @@ def run(args: argparse.Namespace) -> None:
         else:
             no_decay_interactions[name] = param
 
-    param_options = dict(
-        params=[
+    params = [
             {
                 "name": "embedding",
                 "params": model.node_embedding.parameters(),
@@ -555,7 +576,15 @@ def run(args: argparse.Namespace) -> None:
                 "params": model.readouts.parameters(),
                 "weight_decay": 0.0,
             },
-        ],
+            {
+                "name": "loss",
+                "params": loss_fn.parameters(),
+                "weight_decay": 0.0,
+            } if [p for p in loss_fn.parameters()] else None, # fill in None if loss_fn has no weights
+        ]
+
+    param_options = dict(
+        params=[p for p in params if p is not None],          # get rid of None in the list
         lr=args.lr,
         amsgrad=args.amsgrad,
     )
@@ -569,6 +598,32 @@ def run(args: argparse.Namespace) -> None:
     logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + "_train")
 
     lr_scheduler = LRScheduler(optimizer, args)
+
+
+    checkpoint_handler = tools.CheckpointHandler(
+        directory=args.checkpoints_dir,
+        tag=tag,
+        keep=args.keep_checkpoints,
+        swa_start=args.start_swa,
+    )
+    
+    start_epoch = 0
+    if args.restart_latest:
+        try:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=True,
+                device=device,
+            )
+        except Exception:  # pylint: disable=W0703
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=False,
+                device=device,
+            )
+        if opt_start_epoch is not None:
+            start_epoch = opt_start_epoch
+
 
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
@@ -607,6 +662,17 @@ def run(args: argparse.Namespace) -> None:
             logging.info(
                 f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
             )
+
+        elif args.loss == "weighted_distill":
+            swa_distill_weight = ast.literal_eval(args.swa_distill_weight)
+            loss_fn_energy = modules.WeightedEnergyForcesDistillLoss(
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+                distill_weight=swa_distill_weight,
+            )
+            logging.info(
+                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, distill weight: {args.swa_distill_weight} and learning rate : {args.swa_lr}"
+            )
         else:
             loss_fn_energy = modules.WeightedEnergyForcesLoss(
                 energy_weight=args.swa_energy_weight,
@@ -615,6 +681,7 @@ def run(args: argparse.Namespace) -> None:
             logging.info(
                 f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
             )
+        
         swa = tools.SWAContainer(
             model=AveragedModel(model),
             scheduler=SWALR(
@@ -627,29 +694,7 @@ def run(args: argparse.Namespace) -> None:
             loss_fn=loss_fn_energy,
         )
 
-    checkpoint_handler = tools.CheckpointHandler(
-        directory=args.checkpoints_dir,
-        tag=tag,
-        keep=args.keep_checkpoints,
-        swa_start=args.start_swa,
-    )
-
-    start_epoch = 0
-    if args.restart_latest:
-        try:
-            opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
-                swa=True,
-                device=device,
-            )
-        except Exception:  # pylint: disable=W0703
-            opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
-                swa=False,
-                device=device,
-            )
-        if opt_start_epoch is not None:
-            start_epoch = opt_start_epoch
+    
 
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
@@ -683,33 +728,34 @@ def run(args: argparse.Namespace) -> None:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
         distributed_model = None
-
-    tools.train(
-        model=model,
-        loss_fn=loss_fn,
-        train_loader=train_loader,
-        valid_loader=valid_loader,
-        optimizer=optimizer,
-        lr_scheduler=lr_scheduler,
-        checkpoint_handler=checkpoint_handler,
-        eval_interval=args.eval_interval,
-        start_epoch=start_epoch,
-        max_num_epochs=args.max_num_epochs,
-        logger=logger,
-        patience=args.patience,
-        save_all_checkpoints=args.save_all_checkpoints,
-        output_args=output_args,
-        device=device,
-        swa=swa,
-        ema=ema,
-        max_grad_norm=args.clip_grad,
-        log_errors=args.error_table,
-        log_wandb=args.wandb,
-        distributed=args.distributed,
-        distributed_model=distributed_model,
-        train_sampler=train_sampler,
-        rank=rank,
-    )
+    
+    if not args.eval_mode:
+        tools.train(
+            model=model,
+            loss_fn=loss_fn,
+            train_loader=train_loader,
+            valid_loader=valid_loader,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            checkpoint_handler=checkpoint_handler,
+            eval_interval=args.eval_interval,
+            start_epoch=start_epoch,
+            max_num_epochs=args.max_num_epochs,
+            logger=logger,
+            patience=args.patience,
+            save_all_checkpoints=args.save_all_checkpoints,
+            output_args=output_args,
+            device=device,
+            swa=swa,
+            ema=ema,
+            max_grad_norm=args.clip_grad,
+            log_errors=args.error_table,
+            log_wandb=args.wandb,
+            distributed=args.distributed,
+            distributed_model=distributed_model,
+            train_sampler=train_sampler,
+            rank=rank,
+        )
 
     logging.info("Computing metrics for training, validation, and test sets")
 
@@ -733,12 +779,10 @@ def run(args: argparse.Namespace) -> None:
                 test_file, r_max=args.r_max, z_table=z_table
             )
     else:
-        test_folders = glob(args.test_dir + "/*")
+        test_folders = glob.glob(args.test_dir + "/*")
         for folder in test_folders:
-            name = os.path.splitext(os.path.basename(test_file))[0]
-            test_sets[name] = data.dataset_from_sharded_hdf5(
-                folder, r_max=args.r_max, z_table=z_table
-            )
+            name = os.path.splitext(os.path.basename(folder))[0]
+            test_sets[name] = data.dataset_from_sharded_hdf5(folder, r_max=args.r_max, z_table=z_table)
 
     for test_name, test_set in test_sets.items():
         test_sampler = None
@@ -765,7 +809,7 @@ def run(args: argparse.Namespace) -> None:
         )
         all_data_loaders[test_name] = test_loader
 
-    for swa_eval in swas:
+    for swa_eval in swas[1:]:
         epoch = checkpoint_handler.load_latest(
             state=tools.CheckpointState(model, optimizer, lr_scheduler),
             swa=swa_eval,
@@ -774,6 +818,7 @@ def run(args: argparse.Namespace) -> None:
         model.to(device)
         if args.distributed:
             distributed_model = DDP(model, device_ids=[local_rank])
+            loss_fn = DDP(loss_fn, device_ids=[local_rank]) if [p for p in loss_fn.parameters()] else loss_fn # distributed loss module
         model_to_evaluate = model if not args.distributed else distributed_model
         logging.info(f"Loaded model from epoch {epoch}")
 

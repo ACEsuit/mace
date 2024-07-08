@@ -42,6 +42,10 @@ class AtomicData(torch_geometric.data.Data):
     forces_weight: torch.Tensor
     stress_weight: torch.Tensor
     virials_weight: torch.Tensor
+    descriptors: torch.Tensor
+    node_energy: torch.Tensor
+    descriptors_weight: torch.Tensor
+    node_energy_weight: torch.Tensor
 
     def __init__(
         self,
@@ -62,6 +66,10 @@ class AtomicData(torch_geometric.data.Data):
         virials: Optional[torch.Tensor],  # [1,3,3]
         dipole: Optional[torch.Tensor],  # [, 3]
         charges: Optional[torch.Tensor],  # [n_nodes, ]
+        descriptors: Optional[torch.Tensor],
+        node_energy: Optional[torch.Tensor],
+        descriptors_weight: Optional[torch.Tensor],
+        node_energy_weight: Optional[torch.Tensor],
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -71,11 +79,11 @@ class AtomicData(torch_geometric.data.Data):
         assert shifts.shape[1] == 3
         assert unit_shifts.shape[1] == 3
         assert len(node_attrs.shape) == 2
-        assert weight is None or len(weight.shape) == 0
-        assert energy_weight is None or len(energy_weight.shape) == 0
-        assert forces_weight is None or len(forces_weight.shape) == 0
-        assert stress_weight is None or len(stress_weight.shape) == 0
-        assert virials_weight is None or len(virials_weight.shape) == 0
+        assert weight is 1 or len(weight.shape) == 0
+        assert energy_weight is 1 or len(energy_weight.shape) == 0
+        assert forces_weight is 1 or len(forces_weight.shape) == 0
+        assert stress_weight is 1 or len(stress_weight.shape) == 0
+        assert virials_weight is 1 or len(virials_weight.shape) == 0
         assert cell is None or cell.shape == (3, 3)
         assert forces is None or forces.shape == (num_nodes, 3)
         assert energy is None or len(energy.shape) == 0
@@ -103,6 +111,10 @@ class AtomicData(torch_geometric.data.Data):
             "virials": virials,
             "dipole": dipole,
             "charges": charges,
+            "descriptors": descriptors,
+            "node_energy": node_energy,
+            "descriptors_weight": descriptors_weight,
+            "node_energy_weight": node_energy_weight,
         }
         super().__init__(**data)
 
@@ -191,26 +203,54 @@ class AtomicData(torch_geometric.data.Data):
             if config.charges is not None
             else None
         )
-
-        return cls(
-            edge_index=torch.tensor(edge_index, dtype=torch.long),
-            positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
-            shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),
-            unit_shifts=torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),
-            cell=cell,
-            node_attrs=one_hot,
-            weight=weight,
-            energy_weight=energy_weight,
-            forces_weight=forces_weight,
-            stress_weight=stress_weight,
-            virials_weight=virials_weight,
-            forces=forces,
-            energy=energy,
-            stress=stress,
-            virials=virials,
-            dipole=dipole,
-            charges=charges,
+        args_dict = {
+            'edge_index': torch.tensor(edge_index, dtype=torch.long),
+            'positions': torch.tensor(config.positions, dtype=torch.get_default_dtype()),
+            'shifts': torch.tensor(shifts, dtype=torch.get_default_dtype()),
+            'unit_shifts': torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),
+            'cell': cell,
+            'node_attrs': one_hot,
+            'weight': weight,
+            'energy_weight': energy_weight,
+            'forces_weight': forces_weight,
+            'stress_weight': stress_weight,
+            'virials_weight': virials_weight,
+            'forces': forces,
+            'energy': energy,
+            'stress': stress,
+            'virials': virials,
+            'dipole': dipole,
+            'charges': charges,
+        }
+        
+        descriptors = (
+            torch.tensor(config.descriptors, dtype=torch.get_default_dtype())
+            if hasattr(config, "descriptors")
+            else None
         )
+        descriptors_weight = (
+            torch.tensor(config.descriptors_weight, dtype=torch.get_default_dtype())
+            if hasattr(config, "descriptors_weight")
+            else torch.tensor(1, dtype=torch.get_default_dtype())
+        )
+        args_dict["descriptors"] = descriptors
+        args_dict["descriptors_weight"] = descriptors_weight
+
+        node_energy = (
+            torch.tensor(config.node_energy, dtype=torch.get_default_dtype())
+            if hasattr(config, "node_energy")
+            else None
+        )        
+        node_energy_weight = (
+            torch.tensor(config.node_energy_weight, dtype=torch.get_default_dtype())
+            if hasattr(config, "node_energy_weight")
+            else torch.tensor(1, dtype=torch.get_default_dtype())
+        )
+        args_dict["node_energy"] = node_energy
+        args_dict["node_energy_weight"] = node_energy_weight
+
+        
+        return cls(**args_dict)
 
 
 def get_data_loader(

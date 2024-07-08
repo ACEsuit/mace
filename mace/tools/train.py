@@ -30,8 +30,10 @@ from .utils import (
     compute_rel_mae,
     compute_rel_rmse,
     compute_rmse,
+    get_gpu_memory,
 )
 
+from tqdm import tqdm
 
 @dataclasses.dataclass
 class SWAContainer:
@@ -151,6 +153,7 @@ def train(
             data_loader=valid_loader,
             output_args=output_args,
             device=device,
+            rank=rank,
         )
         valid_err_log(valid_loss, eval_metrics, logger, log_errors, None)
 
@@ -208,6 +211,7 @@ def train(
                     data_loader=valid_loader,
                     output_args=output_args,
                     device=device,
+                    rank=rank,
                 )
             if rank == 0:
                 valid_err_log(
@@ -283,9 +287,18 @@ def train_one_epoch(
     device: torch.device,
     distributed_model: Optional[DistributedDataParallel] = None,
     rank: Optional[int] = 0,
+    progress_bar: bool = True,
 ) -> None:
     model_to_train = model if distributed_model is None else distributed_model
-    for batch in data_loader:
+
+    if rank == 0 and progress_bar:
+        pbar = tqdm(data_loader, desc=f"[TRAIN] Epoch {epoch} ")
+        iterator = pbar
+        pbar.set_postfix_str(f"Loss: {0:.5f} " + get_gpu_memory())
+    else:
+        iterator = data_loader
+
+    for batch in iterator:
         _, opt_metrics = take_step(
             model=model_to_train,
             loss_fn=loss_fn,
@@ -300,6 +313,8 @@ def train_one_epoch(
         opt_metrics["epoch"] = epoch
         if rank == 0:
             logger.log(opt_metrics)
+            if progress_bar:
+                pbar.set_postfix_str(f"Loss: {opt_metrics['loss']:.5f} " + get_gpu_memory())
 
 
 def take_step(
@@ -346,14 +361,23 @@ def evaluate(
     data_loader: DataLoader,
     output_args: Dict[str, bool],
     device: torch.device,
+    progress_bar: bool = True,
+    rank: int = 0,
 ) -> Tuple[float, Dict[str, Any]]:
     for param in model.parameters():
         param.requires_grad = False
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
+    if progress_bar and rank == 0:
+        pbar = tqdm(data_loader, desc=f"[EVAL] ")
+        iterator = pbar
+        pbar.set_postfix_str(f"Loss: {0:.5f} " + get_gpu_memory())
+    else:
+        iterator = data_loader
+
     start_time = time.time()
-    for batch in data_loader:
+    for batch in iterator:
         batch = batch.to(device)
         batch_dict = batch.to_dict()
         output = model(
@@ -364,6 +388,8 @@ def evaluate(
             compute_stress=output_args["stress"],
         )
         avg_loss, aux = metrics(batch, output)
+        if progress_bar and rank == 0:
+            pbar.set_postfix_str(f"Loss: {avg_loss:.5f} " + get_gpu_memory())
 
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time

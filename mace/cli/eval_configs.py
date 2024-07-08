@@ -13,7 +13,7 @@ import torch
 
 from mace import data
 from mace.tools import torch_geometric, torch_tools, utils
-
+from tqdm import tqdm
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -130,7 +130,7 @@ def run(args: argparse.Namespace) -> None:
         assert len(atoms_list) == contributions.shape[0]
 
     # Store data in atoms objects
-    for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
+    for i, (atoms, energy, forces) in tqdm(enumerate(zip(atoms_list, energies, forces_list))):
         atoms.calc = None  # crucial
         atoms.info[args.info_prefix + "energy"] = energy
         atoms.arrays[args.info_prefix + "forces"] = forces

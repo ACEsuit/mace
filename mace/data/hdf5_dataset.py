@@ -66,6 +66,12 @@ class HDF5Dataset(Dataset):
             pbc=unpack_value(subgrp["pbc"][()]),
             cell=unpack_value(subgrp["cell"][()]),
         )
+        if "descriptors" in subgrp:
+            config.descriptors = unpack_value(subgrp["descriptors"][()])
+            config.node_feats_weight = 1.0 if "node_feats_weight" not in subgrp else unpack_value(subgrp["node_feats_weight"][()])
+        if "node_energy" in subgrp:
+            config.node_energy = unpack_value(subgrp["node_energy"][()]) 
+            config.node_energy_weight = 1.0 if "node_energy_weight" not in subgrp else unpack_value(subgrp["node_energy_weight"][()])
         atomic_data = AtomicData.from_config(
             config, z_table=self.z_table, cutoff=self.r_max
         )
