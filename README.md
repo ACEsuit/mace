@@ -53,7 +53,7 @@ A partial documentation is available at: https://mace-docs.readthedocs.io
 Requirements:
 
 - Python >= 3.7
-- [PyTorch](https://pytorch.org/) >= 1.12 **(training with float64 is not supported with PyTorch 2.1 but is supported with 2.2 and later.)**.
+- [PyTorch](https://pytorch.org/) >= 1.12 **(training with float64 is not supported with PyTorch 2.1)**.
 
 (for openMM, use Python = 3.9)
 
