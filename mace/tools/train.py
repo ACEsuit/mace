@@ -53,13 +53,13 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
-        and eval_metrics["rmse_stress_per_atom"] is not None
+        and eval_metrics["rmse_stress"] is not None
     ):
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
-        error_stress = eval_metrics["rmse_stress_per_atom"] * 1e3
+        error_stress = eval_metrics["rmse_stress"] * 1e3
         logging.info(
-            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress_per_atom={error_stress:.1f} meV / A^3"
+            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress={error_stress:.1f} meV / A^3"
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
