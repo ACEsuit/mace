@@ -91,6 +91,10 @@ def main() -> None:
     device = tools.init_device(args.device)
 
     if args.foundation_model is not None:
+        if args.multiheads_finetuning:
+            assert (
+                args.E0s != "average"
+            ), "average atomic energies cannot be used for multiheads finetuning"
         if args.foundation_model in ["small", "medium", "large"]:
             logging.info(
                 f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
