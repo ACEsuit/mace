@@ -636,6 +636,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "forces_weight",
         ],
     )
+    parser.add_argument(
+        "--force",
+        help="Ignore checks for inconsistency in arguments. Should only be used for testing.",
+        action="store_true",
+        default=False,
+    )
     return parser
 
 
@@ -784,3 +790,16 @@ def check_float_or_none(value: str) -> Optional[float]:
                 f"{value} is an invalid value (float or None)"
             ) from None
         return None
+
+
+def __check_e0s_and_finetuning(e0s: str, finetuning: bool) -> None:
+    if e0s == "average" and finetuning:
+        raise ValueError(
+            "Cannot use average E0s with finetuning, please provide E0s for each element."
+        )
+
+
+def check_args(args: argparse.Namespace) -> None:
+    if args.force:
+        return
+    __check_e0s_and_finetuning(args.E0s, args.foundation_model is not None)
