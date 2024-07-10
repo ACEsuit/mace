@@ -134,16 +134,6 @@ class MACECalculator(Calculator):
                 for model_path in model_paths
             ]
             self.use_compile = True
-        if model_type in ["DipoleMACE", "DipolePolarizabilityMACE"]:
-            print("Disabling E3NN codegen for DipoleMACE and DipolePolarizabilityMACE")
-            self.models = [
-                torch.compile(
-                    prepare(extract_load)(f=model_path, map_location=device),
-                    mode=compile_mode,
-                )
-                for model_path in model_paths
-            ]
-            self.use_compile = False
         else:
             self.models = [
                 torch.load(f=model_path, map_location=device)
