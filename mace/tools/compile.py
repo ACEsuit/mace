@@ -2,7 +2,10 @@ from contextlib import contextmanager
 from functools import wraps
 from typing import Callable, Tuple
 
-import torch._dynamo as dynamo
+try:
+    import torch._dynamo as dynamo
+except ImportError:
+    dynamo = None
 from e3nn import get_optimization_defaults, set_optimization_defaults
 from torch import autograd, nn
 from torch.fx import symbolic_trace

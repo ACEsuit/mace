@@ -1,6 +1,7 @@
-import pytest
 import numpy as np
+import pytest
 from ase.build import fcc111
+
 from mace.calculators import mace_mp
 
 
