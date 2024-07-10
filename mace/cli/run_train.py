@@ -484,10 +484,12 @@ def run(args: argparse.Namespace) -> None:
             MLP_irreps=o3.Irreps(args.MLP_irreps),
         )
     elif args.model == "AtomicDipolesMACE":
+        if compute_polarizability:
+            args.error_table = "DipolePolarRMSE"
         # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
         assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
         assert (
-            args.error_table == "DipoleRMSE"
+            args.error_table == "DipoleRMSE" or args.error_table == "DipolePolarRMSE"
         ), "Use error_table DipoleRMSE with AtomicDipolesMACE model"
         model = modules.AtomicDipolesMACE(
             **model_config,

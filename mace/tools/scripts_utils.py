@@ -477,6 +477,12 @@ def create_error_table(
             "config_type",
             "RMSE MU / mDebye / atom",
             "relative MU RMSE %",
+        ]
+    elif table_type == "DipolePolarRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE MU / mDebye / atom",
+            "relative MU RMSE %",
             "RMSE ALPHA e / A^3",
         ]
     elif table_type == "DipoleMAE":
@@ -583,6 +589,14 @@ def create_error_table(
                 ]
             )
         elif table_type == "DipoleRMSE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_mu_per_atom'] * 1000:.2f}",
+                    f"{metrics['rel_rmse_mu']:.1f}",
+                ]
+            )
+        elif table_type == "DipolePolarRMSE":
             table.add_row(
                 [
                     name,
