@@ -375,8 +375,10 @@ class MACECalculator(Calculator):
             raise ValueError("atoms not set")
         if atoms is None:
             atoms = self.atoms
-        if self.model_type != "DipoleMACE":
-            raise NotImplementedError("Only implemented for DipoleMACE models")
+        if self.model_type not in ["DipoleMACE", "DipolePolarizabilityMACE"]:
+            raise NotImplementedError(
+                "Only implemented for DipoleMACE or DipolePolarizabilityMACE models"
+            )
         batch = self._atoms_to_batch(atoms)
         outputs = [
             model(
