@@ -869,6 +869,8 @@ class AtomicDipolesMACE(torch.nn.Module):
                     dielectric=total_dipole,
                     positions=data["positions"],
                 )
+            else:
+                dmu_dr = None
             total_polarizability = None
             total_polarizability_spherical = None
             dalpha_dr = None
