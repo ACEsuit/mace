@@ -417,6 +417,7 @@ def compute_fixed_charge_dipole(
     )  # [N_graphs,3]
 
 
+@torch.jit.unused
 def compute_dielectric_gradients(
     dielectric: torch.Tensor,
     positions: torch.Tensor,

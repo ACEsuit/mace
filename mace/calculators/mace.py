@@ -42,7 +42,7 @@ class MACECalculator(Calculator):
         default_dtype: str, default dtype of model
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
-                    Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+                    Options: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE]
 
     Dipoles are returned in units of Debye
     """
@@ -94,7 +94,7 @@ class MACECalculator(Calculator):
             ]
         else:
             raise ValueError(
-                f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
+                f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
         if "model_path" in kwargs:
@@ -200,7 +200,7 @@ class MACECalculator(Calculator):
             dipole = torch.zeros(num_models, 3, device=self.device)
             dict_of_tensors.update({"dipole": dipole})
         if model_type in ["DipolePolarizabilityMACE"]:
-            polarizability = torch.zeros(num_models, 6, device=self.device)
+            polarizability = torch.zeros(num_models, 3, 3, device=self.device)
             polarizability_sh = torch.zeros(num_models, 6, device=self.device)
             dict_of_tensors.update(
                 {
@@ -270,13 +270,15 @@ class MACECalculator(Calculator):
                 ret_tensors["forces"][i] = out["forces"].detach()
                 if out["stress"] is not None:
                     ret_tensors["stress"][i] = out["stress"].detach()
-            if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
+            if self.model_type in [
+                "DipoleMACE",
+                "EnergyDipoleMACE",
+                "DipolePolarizabilityMACE",
+            ]:
                 ret_tensors["dipole"][i] = out["dipole"].detach()
-                if self.model_type == "DipolePolarizabilityMACE":
-                    ret_tensors["polarizability"][i] = out["polarizability"].detach()
-                    ret_tensors["polarizability_sh"][i] = out[
-                        "polarizability_sh"
-                    ].detach()
+            if self.model_type == "DipolePolarizabilityMACE":
+                ret_tensors["polarizability"][i] = out["polarizability"].detach()
+                ret_tensors["polarizability_sh"][i] = out["polarizability_sh"].detach()
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
