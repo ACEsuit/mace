@@ -14,6 +14,7 @@ import torch.utils.data
 from scipy.constants import c, e
 
 from mace.tools import to_numpy
+from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
 from mace.tools.torch_geometric.batch import Batch
 
@@ -417,7 +418,7 @@ def compute_fixed_charge_dipole(
     )  # [N_graphs,3]
 
 
-@torch.jit.unused
+# @simplify_if_compile
 def compute_dielectric_gradients(
     dielectric: torch.Tensor,
     positions: torch.Tensor,
@@ -429,14 +430,32 @@ def compute_dielectric_gradients(
             positions,
             v,
             retain_graph=True,
-            create_graph=False,
+            create_graph=True,
             allow_unused=False,
         )
 
     I_N = torch.eye(dielectric.shape[-1]).to(dielectric.device)
-    print("dielectric", dielectric)
-    print("positions", positions)
-    gradient = torch.vmap(get_vjp, in_dims=1, out_dims=-1)(I_N)[0]
+    gradient = torch.vmap(get_vjp, in_dims=1, out_dims=-1, chunk_size=1)(I_N)[0]
     if gradient is None:
         return torch.zeros((positions.shape[0], dielectric.shape[-1], 3))
     return gradient
+
+
+def compute_dielectric_gradients_loop(
+    dielectric: torch.Tensor,
+    positions: torch.Tensor,
+) -> torch.Tensor:
+    gradients = []
+    for i in range(dielectric.shape[-1]):
+        gradient = torch.autograd.grad(
+            dielectric[:, i].sum(),
+            positions,
+            retain_graph=True,
+            create_graph=True,
+            allow_unused=False,
+        )[0]
+        if gradient is None:
+            gradients.append(torch.zeros_like(positions))
+        else:
+            gradients.append(gradient)
+    return torch.stack(gradients)
