@@ -111,7 +111,7 @@ def test_dipole_mace():
         num_interactions=2,
         num_elements=2,
         hidden_irreps=o3.Irreps("16x0e + 16x1o + 16x2e"),
-        MLP_irreps=o3.Irreps("16x0e"),
+        MLP_irreps=o3.Irreps("16x0e + 16x1o"),
         gate=torch.nn.functional.silu,
         atomic_energies=None,
         avg_num_neighbors=3,
@@ -119,7 +119,7 @@ def test_dipole_mace():
         correlation=3,
         radial_type="gaussian",
     )
-    model = modules.AtomicDipolesMACE(**model_config)
+    model = modules.AtomicDielectricMACE(**model_config)
 
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
     atomic_data2 = data.AtomicData.from_config(

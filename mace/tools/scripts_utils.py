@@ -140,7 +140,7 @@ def print_git_commit():
 
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
-    if model.__class__.__name__ != "ScaleShiftMACE":
+    if model.__class__.__name__ not in ["ScaleShiftMACE", "AtomicDielectricMACE"]:
         return {"error": "Model is not a ScaleShiftMACE model"}
 
     def radial_to_name(radial_type):
@@ -176,14 +176,6 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             if model.num_interactions.item() > 1
             else 1
         ),
-        "gate": (
-            model.readouts[-1]  # pylint: disable=protected-access
-            .non_linearity._modules["acts"][0]
-            .f
-            if model.num_interactions.item() > 1
-            else None
-        ),
-        "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
         "atomic_numbers": model.atomic_numbers,
         "correlation": len(
@@ -196,9 +188,26 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
         "distance_transform": radial_to_transform(model.radial_embedding),
-        "atomic_inter_scale": model.scale_shift.scale.item(),
-        "atomic_inter_shift": model.scale_shift.shift.item(),
     }
+    if model.__class__.__name__ == "AtomicDielectricMACE":
+        config["use_polarizability"] = model.use_polarizability
+        config["use_dipole"] = model.use_dipole
+        config["gate"] = torch.nn.functional.silu
+    else:
+        config["gate"] = (
+            (
+                model.readouts[-1]  # pylint: disable=protected-access
+                .non_linearity._modules["acts"][0]
+                .f
+                if model.num_interactions.item() > 1
+                else None
+            ),
+        )
+        config["atomic_energies"] = (
+            model.atomic_energies_fn.atomic_energies.cpu().numpy()
+        )
+        config["atomic_inter_scale"] = (model.scale_shift.scale.item(),)
+        config["atomic_inter_shift"] = (model.scale_shift.shift.item(),)
     return config
 
 
@@ -351,7 +360,7 @@ def get_loss_fn(
     elif loss == "dipole":
         assert (
             dipole_only is True
-        ), "dipole loss can only be used with AtomicDipolesMACE model"
+        ), "dipole loss can only be used with AtomicDielectricMACE model"
         loss_fn = modules.DipoleSingleLoss(
             dipole_weight=dipole_weight,
         )
@@ -475,20 +484,20 @@ def create_error_table(
     elif table_type == "DipoleRMSE":
         table.field_names = [
             "config_type",
-            "RMSE MU / mDebye / atom",
+            "RMSE MU / me A / atom",
             "relative MU RMSE %",
         ]
     elif table_type == "DipolePolarRMSE":
         table.field_names = [
             "config_type",
-            "RMSE MU / mDebye / atom",
+            "RMSE MU / me A / atom",
             "relative MU RMSE %",
             "RMSE ALPHA e / A^3",
         ]
     elif table_type == "DipoleMAE":
         table.field_names = [
             "config_type",
-            "MAE MU / mDebye / atom",
+            "MAE MU / me A / atom",
             "relative MU MAE %",
             "RMSE ALPHA e / A^3",
         ]
@@ -498,7 +507,7 @@ def create_error_table(
             "RMSE E / meV / atom",
             "RMSE F / meV / A",
             "rel F RMSE %",
-            "RMSE MU / mDebye / atom",
+            "RMSE MU / me A / atom",
             "rel MU RMSE %",
         ]
 

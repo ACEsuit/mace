@@ -41,6 +41,7 @@ class MACECalculator(Calculator):
         length_units_to_A: float, conversion factor from model length units to Angstroms
         default_dtype: str, default dtype of model
         charges_key: str, Array field of atoms object where atomic charges are stored
+        compile_mode: str, mode for torch compile
         model_type: str, type of model to load
                     Options: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE]
 
@@ -75,10 +76,12 @@ class MACECalculator(Calculator):
             ]
         elif model_type == "DipoleMACE":
             self.implemented_properties = [
+                "charges",
                 "dipole",
             ]
         elif model_type == "DipolePolarizabilityMACE":
             self.implemented_properties = [
+                "charges",
                 "dipole",
                 "polarizability",
                 "polarizability_sh",
@@ -131,6 +134,13 @@ class MACECalculator(Calculator):
                 for model_path in model_paths
             ]
             self.use_compile = True
+        # if model_type in ["DipoleMACE", "DipolePolarizabilityMACE"]:
+        #     print("Disabling E3NN codegen for DipoleMACE and DipolePolarizabilityMACE")
+        #     self.models = [
+        #         prepare(extract_load)(f=model_path, map_location=device)
+        #         for model_path in model_paths
+        #     ]
+        #     self.use_compile = False
         else:
             self.models = [
                 torch.load(f=model_path, map_location=device)
@@ -197,8 +207,14 @@ class MACECalculator(Calculator):
                 }
             )
         if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
+            charges = torch.zeros(num_models, num_atoms, device=self.device)
             dipole = torch.zeros(num_models, 3, device=self.device)
-            dict_of_tensors.update({"dipole": dipole})
+            dict_of_tensors.update(
+                {
+                    "charges": charges,
+                    "dipole": dipole,
+                }
+            )
         if model_type in ["DipolePolarizabilityMACE"]:
             polarizability = torch.zeros(num_models, 3, 3, device=self.device)
             polarizability_sh = torch.zeros(num_models, 6, device=self.device)
@@ -275,6 +291,7 @@ class MACECalculator(Calculator):
                 "EnergyDipoleMACE",
                 "DipolePolarizabilityMACE",
             ]:
+                ret_tensors["charges"][i] = out["charges"].detach()
                 ret_tensors["dipole"][i] = out["dipole"].detach()
             if self.model_type == "DipolePolarizabilityMACE":
                 ret_tensors["polarizability"][i] = out["polarizability"].detach()
@@ -329,6 +346,9 @@ class MACECalculator(Calculator):
             "EnergyDipoleMACE",
             "DipolePolarizabilityMACE",
         ]:
+            self.results["charges"] = (
+                torch.mean(ret_tensors["charges"], dim=0).cpu().numpy()
+            )
             self.results["dipole"] = (
                 torch.mean(ret_tensors["dipole"], dim=0).cpu().numpy()
             )
@@ -389,18 +409,20 @@ class MACECalculator(Calculator):
             for model in self.models
         ]
         dipole_derivatives = [
-            output["dmu_dr"].detach().cpu().numpy() for output in outputs
+            output["dmu_dr"].clone().detach().cpu().numpy() for output in outputs
         ]
         if self.models[0].use_polarizability:
             polarizability_derivatives = [
-                output["dalpha_dr"].detach().cpu().numpy() for output in outputs
+                output["dalpha_dr"].clone().detach().cpu().numpy() for output in outputs
             ]
             if self.num_models == 1:
                 dipoles_derivatives = dipole_derivatives[0]
                 polarizability_derivatives = polarizability_derivatives[0]
-            return dipole_derivatives, polarizability_derivatives
+            del outputs, batch, atoms
+            return dipoles_derivatives, polarizability_derivatives
         if self.num_models == 1:
             return dipole_derivatives[0]
+        del outputs, batch, atoms
         return dipole_derivatives
 
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):

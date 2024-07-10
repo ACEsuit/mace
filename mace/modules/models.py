@@ -614,7 +614,7 @@ class ScaleShiftBOTNet(BOTNet):
 
 
 @compile_mode("script")
-class AtomicDipolesMACE(torch.nn.Module):
+class AtomicDielectricMACE(torch.nn.Module):
     def __init__(
         self,
         r_max: float,
@@ -631,12 +631,11 @@ class AtomicDipolesMACE(torch.nn.Module):
         atomic_numbers: List[int],
         correlation: int,
         gate: Optional[Callable],
-        atomic_energies: Optional[
-            None
-        ],  # Just here to make it compatible with energy models, MUST be None
         radial_type: Optional[str] = "bessel",
         radial_MLP: Optional[List[int]] = None,
         use_polarizability: bool = False,
+        use_dipole: bool = False,
+        **kwargs,
     ):
         super().__init__()
         self.register_buffer(
@@ -647,7 +646,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
         self.use_polarizability = use_polarizability
-        assert atomic_energies is None
+        self.use_dipole = use_dipole
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -703,18 +702,23 @@ class AtomicDipolesMACE(torch.nn.Module):
         self.readouts = torch.nn.ModuleList()
         self.readouts.append(
             LinearDipoleReadoutBlock(
-                hidden_irreps, dipole_only=True, dipole_polar=use_polarizability
+                hidden_irreps,
+                use_charge=True,
+                use_dipole=use_dipole,
+                use_polarizability=use_polarizability,
             )
         )
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
-                assert (
-                    len(hidden_irreps) > 1
-                ), "To predict dipoles use at least l=1 hidden_irreps"
-                hidden_irreps_out = str(
-                    hidden_irreps[1]
-                )  # Select only l=1 vectors for last layer
+                if use_dipole or use_polarizability:
+                    assert (
+                        len(hidden_irreps) > 1
+                    ), "To predict dipoles use at least l=1 hidden_irreps"
+                # hidden_irreps_out = str(
+                #     hidden_irreps[1]
+                # )  # Select only l=1 vectors for last layer
+                hidden_irreps_out = hidden_irreps
             else:
                 hidden_irreps_out = hidden_irreps
             inter = interaction_cls(
@@ -742,14 +746,18 @@ class AtomicDipolesMACE(torch.nn.Module):
                         hidden_irreps_out,
                         MLP_irreps,
                         gate,
-                        dipole_only=True,
-                        dipole_polar=use_polarizability,
+                        use_charge=True,
+                        use_dipole=use_dipole,
+                        use_polarizability=use_polarizability,
                     )
                 )
             else:
                 self.readouts.append(
                     LinearDipoleReadoutBlock(
-                        hidden_irreps, dipole_only=True, dipole_polar=use_polarizability
+                        hidden_irreps,
+                        use_charge=True,
+                        use_dipole=use_dipole,
+                        use_polarizability=use_polarizability,
                     )
                 )
 
@@ -785,6 +793,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         )
 
         # Interactions
+        charges = []
         dipoles = []
         polarizabilities = []
         for interaction, product, readout in zip(
@@ -803,22 +812,25 @@ class AtomicDipolesMACE(torch.nn.Module):
                 node_attrs=data["node_attrs"],
             )
             node_out = readout(node_feats).squeeze(-1)  # [n_nodes,3]
+            charges.append(node_out[:, 0])
             if self.use_polarizability:
                 node_dipoles = node_out[:, 1:4]
                 node_polarizability = torch.cat(
-                    (node_out[:, 0].unsqueeze(-1), node_out[:, 4:]), dim=-1
+                    (node_out[:, 1].unsqueeze(-1), node_out[:, 5:]), dim=-1
                 )
                 polarizabilities.append(node_polarizability)
                 dipoles.append(node_dipoles)
-            else:
-                node_dipoles = node_out[:, :3]
+            if self.use_dipole and not self.use_polarizability:
+                node_dipoles = node_out[:, 1:4]
                 dipoles.append(node_dipoles)
-
+            else:
+                dipoles.append(torch.zeros_like(data["positions"]))
         # Compute the dipoles
         contributions_dipoles = torch.stack(
             dipoles, dim=-1
         )  # [n_nodes,3,n_contributions]
         atomic_dipoles = torch.sum(contributions_dipoles, dim=-1)  # [n_nodes,3]
+        atomic_charges = torch.stack(charges, dim=-1).sum(-1)  # [n_nodes,]
         total_dipole = scatter_sum(
             src=atomic_dipoles,
             index=data["batch"],
@@ -826,7 +838,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             dim_size=num_graphs,
         )  # [n_graphs,3]
         baseline = compute_fixed_charge_dipole(
-            charges=data["charges"],
+            charges=atomic_charges,
             positions=data["positions"],
             batch=data["batch"],
             num_graphs=num_graphs,
@@ -876,6 +888,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             dalpha_dr = None
 
         output = {
+            "charges": atomic_charges,
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
             "polarizability": total_polarizability,
@@ -967,7 +980,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        self.readouts.append(LinearDipoleReadoutBlock(hidden_irreps, dipole_only=False))
+        self.readouts.append(LinearDipoleReadoutBlock(hidden_irreps))
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
@@ -1000,14 +1013,10 @@ class EnergyDipolesMACE(torch.nn.Module):
             self.products.append(prod)
             if i == num_interactions - 2:
                 self.readouts.append(
-                    NonLinearDipoleReadoutBlock(
-                        hidden_irreps_out, MLP_irreps, gate, dipole_only=False
-                    )
+                    NonLinearDipoleReadoutBlock(hidden_irreps_out, MLP_irreps, gate)
                 )
             else:
-                self.readouts.append(
-                    LinearDipoleReadoutBlock(hidden_irreps, dipole_only=False)
-                )
+                self.readouts.append(LinearDipoleReadoutBlock(hidden_irreps))
 
     def forward(
         self,

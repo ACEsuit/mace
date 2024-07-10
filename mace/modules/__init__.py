@@ -33,7 +33,7 @@ from .loss import (
 )
 from .models import (
     MACE,
-    AtomicDipolesMACE,
+    AtomicDielectricMACE,
     BOTNet,
     EnergyDipolesMACE,
     ScaleShiftBOTNet,
@@ -92,7 +92,7 @@ __all__ = [
     "ScaleShiftMACE",
     "BOTNet",
     "ScaleShiftBOTNet",
-    "AtomicDipolesMACE",
+    "AtomicDielectricMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",

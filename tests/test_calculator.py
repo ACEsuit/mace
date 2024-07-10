@@ -182,7 +182,7 @@ def trained_dipole_fixture(tmp_path_factory, fitting_configs):
         "energy_weight": 1.0,
         "forces_weight": 10.0,
         "stress_weight": 1.0,
-        "model": "AtomicDipolesMACE",
+        "model": "AtomicDielectricMACE",
         "num_channels": 8,
         "max_L": 2,
         "r_max": 3.5,

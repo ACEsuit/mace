@@ -205,7 +205,7 @@ def run(args: argparse.Namespace) -> None:
             else:
                 atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table)
 
-    if args.model == "AtomicDipolesMACE":
+    if args.model == "AtomicDielectricMACE":
         atomic_energies = None
         dipole_only = True
         compute_dipole = True
@@ -326,7 +326,7 @@ def run(args: argparse.Namespace) -> None:
     elif args.loss == "dipole":
         assert (
             dipole_only is True
-        ), "dipole loss can only be used with AtomicDipolesMACE model"
+        ), "dipole loss can only be used with AtomicDielectricMACE model"
         if compute_polarizability:
             loss_fn = modules.DipolePolarLoss(
                 dipole_weight=args.dipole_weight,
@@ -382,7 +382,9 @@ def run(args: argparse.Namespace) -> None:
     if args.scaling == "no_scaling":
         args.std = 1.0
         logging.info("No scaling selected")
-    elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
+    elif (
+        args.mean is None or args.std is None
+    ) and args.model != "AtomicDielectricMACE":
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
         )
@@ -483,15 +485,15 @@ def run(args: argparse.Namespace) -> None:
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
         )
-    elif args.model == "AtomicDipolesMACE":
+    elif args.model == "AtomicDielectricMACE":
         if compute_polarizability:
             args.error_table = "DipolePolarRMSE"
         # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
-        assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
+        assert args.loss == "dipole", "Use dipole loss with AtomicDielectricMACE model"
         assert (
             args.error_table == "DipoleRMSE" or args.error_table == "DipolePolarRMSE"
-        ), "Use error_table DipoleRMSE with AtomicDipolesMACE model"
-        model = modules.AtomicDipolesMACE(
+        ), "Use error_table DipoleRMSE with AtomicDielectricMACE model"
+        model = modules.AtomicDielectricMACE(
             **model_config,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
@@ -500,6 +502,7 @@ def run(args: argparse.Namespace) -> None:
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             use_polarizability=compute_polarizability,
+            use_dipole=args.compute_atomic_dipole,
             # dipole_scale=1,
             # dipole_shift=0,
         )
@@ -510,7 +513,7 @@ def run(args: argparse.Namespace) -> None:
         ), "Use energy_forces_dipole loss with EnergyDipolesMACE model"
         assert (
             args.error_table == "EnergyDipoleRMSE"
-        ), "Use error_table EnergyDipoleRMSE with AtomicDipolesMACE model"
+        ), "Use error_table EnergyDipoleRMSE with AtomicDielectricMACE model"
         model = modules.EnergyDipolesMACE(
             **model_config,
             correlation=args.correlation,

@@ -99,7 +99,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "MACE",
             "ScaleShiftMACE",
             "ScaleShiftBOTNet",
-            "AtomicDipolesMACE",
+            "AtomicDielectricMACE",
             "EnergyDipolesMACE",
         ],
     )
@@ -239,6 +239,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compute_polarizability",
         help="Select True to compute polarizability",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_atomic_dipole",
+        help="Select True to compute dipoles",
         action="store_true",
         default=False,
     )
