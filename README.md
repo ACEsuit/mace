@@ -71,26 +71,7 @@ pip install mace-torch
 
 For CPU or MPS (Apple Silicon) installation, use `pip install torch torchvision torchaudio` instead.
 
-### conda installation from source
-
-To install from source using `conda`, follow the steps below:
-```sh
-# Create a virtual environment and activate it
-conda create --name mace_env
-conda activate mace_env
-
-# Install PyTorch
-conda install pytorch torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia
-
-# (optional) Install MACE's dependencies from Conda as well
-conda install numpy scipy matplotlib ase opt_einsum prettytable pandas e3nn
-
-# Clone and install MACE (and all required packages)
-git clone https://github.com/ACEsuit/mace.git
-pip install ./mace
-```
-For the Pytorch version, use the appropriate version for your CUDA version.
-### pip installation from source
+### Installation from source
 
 To install via `pip`, follow the steps below:
 
