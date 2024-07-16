@@ -10,6 +10,7 @@ import glob
 import json
 import logging
 import os
+import inspect
 from copy import deepcopy
 from pathlib import Path
 from typing import Optional
@@ -598,35 +599,24 @@ def run(args: argparse.Namespace) -> None:
                 logging.info(f"Setting start swa to {args.start_swa}")
         if args.loss == "forces_only":
             raise ValueError("Can not select swa with forces only loss.")
-        if args.loss == "virials":
-            loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                virials_weight=args.swa_virials_weight,
-            )
-        elif args.loss == "stress":
-            loss_fn_energy = modules.WeightedEnergyForcesStressLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                stress_weight=args.swa_stress_weight,
-            )
-        elif args.loss == "energy_forces_dipole":
-            loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
-                args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                dipole_weight=args.swa_dipole_weight,
-            )
-            logging.info(
-                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
-            )
-        else:
-            loss_fn_energy = modules.WeightedEnergyForcesLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-            )
-            logging.info(
-                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
-            )
+        # switch the weights for swa while keeping the choice of loss function unchanged
+        loss_class = type(loss_fn)
+        signature = inspect.signature(loss_class.__init__)
+        parameters = signature.parameters
+        params = {name: getattr(args, name) for name in parameters if name != 'self'}
+        weight_params = {
+             'energy_weight': 'swa_energy_weight',
+             'forces_weight': 'swa_forces_weight',
+             'virials_weight': 'swa_virials_weight',
+             'stress_weight': 'swa_stress_weight',
+             'dipole_weight': 'swa_dipole_weight',
+        }
+        for old_param, new_param in weight_params.items():
+            if old_param in params:
+               params[old_param] = getattr(args, new_param)
+        loss_fn_energy = loss_class(**params)
+        logging.info(f"Using stochastic weight averaging (after {args.start_swa} epochs) with {loss_fn_energy}")
+        # weights in loss function updated, creating the swa container
         swa = tools.SWAContainer(
             model=AveragedModel(model),
             scheduler=SWALR(
