@@ -1,3 +1,5 @@
+.. _foundation_models:
+
 =================
 Foundation models
 =================
