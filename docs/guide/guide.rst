@@ -11,7 +11,6 @@ User Guide
     installation
     load
     training
-    finetuning
     evaluation
     ase
     descriptors
@@ -19,5 +18,6 @@ User Guide
     openmm
     lammps
     foundation_models
+    finetuning
     multipreprocessing
     multigpu
