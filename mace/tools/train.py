@@ -168,6 +168,8 @@ def train(
                 swa_start = False
                 keep_last = True
             loss_fn = swa.loss_fn
+            print("EsztiBUG: ")
+            print(swa.model)
             swa.model.update_parameters(model)
             if epoch > start_epoch:
                 swa.scheduler.step()
