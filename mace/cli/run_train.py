@@ -807,7 +807,7 @@ def run(args: argparse.Namespace) -> None:
         if rank == 0:
             # Save entire model
             if swa_eval:
-                model_path = Path(args.checkpoints_dir) / (tag + "_s2.model")
+                model_path = Path(args.checkpoints_dir) / (tag + "_stagetwo.model")
             else:
                 model_path = Path(args.checkpoints_dir) / (tag + ".model")
             logging.info(f"Saving model to {model_path}")
@@ -821,10 +821,10 @@ def run(args: argparse.Namespace) -> None:
                 ),
             }
             if swa_eval:
-                torch.save(model, Path(args.model_dir) / (args.name + "_s2.model"))
+                torch.save(model, Path(args.model_dir) / (args.name + "_stagetwo.model"))
                 try:
                     path_complied = Path(args.model_dir) / (
-                        args.name + "_s2_compiled.model"
+                        args.name + "_stagetwo_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata {path_complied}")
                     model_compiled = jit.compile(deepcopy(model))
