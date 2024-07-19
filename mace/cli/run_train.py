@@ -26,7 +26,7 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
-from mace.tools import torch_geometric
+from mace.tools import torch_geometric, add_all_parameters_to_optimizer
 from mace.tools.finetuning_utils import load_foundations
 from mace.tools.scripts_utils import (
     LRScheduler,
@@ -859,41 +859,6 @@ def run(args: argparse.Namespace) -> None:
     logging.info("Done")
     if args.distributed:
         torch.distributed.destroy_process_group()
-
-
-def add_all_parameters_to_optimizer(optimizer_params, all_named_params) -> None:
-    """Adds parameters in all_named_parameters to optimizer_parameters with default settings
-
-    Args:
-        optimizer_params: dict, optimizer parameters
-        all_named_params: dict, all named parameters [eg. model.named_parameters()]
-    """
-    if not isinstance(all_named_params, dict):
-        all_named_params = dict(all_named_params)
-
-    all_params = set(all_named_params.values())
-    explicit_params = set()
-    for group in optimizer_params["params"]:
-        explicit_params.update(group["params"])
-    implicit_params = all_params - explicit_params
-    if implicit_params:
-        implicit_param_names = [
-            name for name, param in all_named_params.items() if param in implicit_params
-        ]
-        logging.warning(
-            f"Adding {len(implicit_params)} Parameters to Optimizer - Previously not added:"
-        )
-        for name in implicit_param_names:
-            logging.warning(f"  Adding: {name}")
-        optimizer_params["params"].append(
-            {
-                "name": "default",
-                "params": list(implicit_params),
-                "weight_decay": 0.0,  # default weight decay
-            }
-        )
-
-    return optimizer_params
 
 
 if __name__ == "__main__":

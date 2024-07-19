@@ -14,6 +14,7 @@ from .torch_tools import (
     to_numpy,
     to_one_hot,
     voigt_to_matrix,
+    add_all_parameters_to_optimizer,
 )
 from .train import SWAContainer, evaluate, train
 from .utils import (
@@ -67,4 +68,5 @@ __all__ = [
     "init_wandb",
     "load_foundations",
     "build_preprocess_arg_parser",
+    "add_all_parameters_to_optimizer",
 ]
