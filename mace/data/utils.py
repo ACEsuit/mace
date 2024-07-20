@@ -389,7 +389,6 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         subgroup["virials"] = write_value(config.virials)
         subgroup["dipole"] = write_value(config.dipole)
         subgroup["charges"] = write_value(config.charges)
-        subgroup["charges"] = write_value(config.charges)
         subgroup["cell"] = write_value(config.cell)
         subgroup["pbc"] = write_value(config.pbc)
         subgroup["weight"] = write_value(config.weight)

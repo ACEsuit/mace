@@ -64,7 +64,8 @@ class HDF5Dataset(Dataset):
             virials_weight=unpack_value(subgrp["virials_weight"][()]),
             dipole_weight=unpack_value(subgrp["dipole_weight"][()]),
             polarizability_weight=unpack_value(subgrp["polarizability_weight"][()]),
-            polarizability=unpack_value(subgrp["polarizability"][()]),
+            # temporary fix. this should ideally be addressed in the i/o stage. 
+            polarizability=unpack_value(subgrp["polarizability"][()]) if "polarizability" in subgrp else None,
             config_type=unpack_value(subgrp["config_type"][()]),
             pbc=unpack_value(subgrp["pbc"][()]),
             cell=unpack_value(subgrp["cell"][()]),
