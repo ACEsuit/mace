@@ -72,9 +72,9 @@ def random_train_valid_split(
 
 def config_from_atoms_list(
     atoms_list: List[ase.Atoms],
-    energy_key="energy",
-    forces_key="forces",
-    stress_key="stress",
+    energy_key="REF_energy",
+    forces_key="REF_forces",
+    stress_key="REF_stress",
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
@@ -103,9 +103,9 @@ def config_from_atoms_list(
 
 def config_from_atoms(
     atoms: ase.Atoms,
-    energy_key="energy",
-    forces_key="forces",
-    stress_key="stress",
+    energy_key="REF_energy",
+    forces_key="REF_forces",
+    stress_key="REF_stress",
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
@@ -192,9 +192,9 @@ def test_config_types(
 def load_from_xyz(
     file_path: str,
     config_type_weights: Dict,
-    energy_key: str = "energy",
-    forces_key: str = "forces",
-    stress_key: str = "stress",
+    energy_key: str = "REF_energy",
+    forces_key: str = "REF_forces",
+    stress_key: str = "REF_stress",
     virials_key: str = "virials",
     dipole_key: str = "dipole",
     charges_key: str = "charges",
@@ -204,7 +204,7 @@ def load_from_xyz(
     atoms_list = ase.io.read(file_path, index=":")
     if energy_key == "energy":
         logging.warning(
-            "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_energy'. You need to use --energy_key='REF_energy', to tell the key name chosen."
+            "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'energy' to 'REF_energy'. You need to use --energy_key='REF_energy' to specify the chosen key name."
         )
         energy_key = "REF_energy"
         for atoms in atoms_list:
@@ -215,7 +215,7 @@ def load_from_xyz(
                 atoms.info["REF_energy"] = None
     if forces_key == "forces":
         logging.warning(
-            "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_forces'. You need to use --forces_key='REF_forces', to tell the key name chosen."
+            "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'forces' to 'REF_forces'. You need to use --forces_key='REF_forces' to specify the chosen key name."
         )
         forces_key = "REF_forces"
         for atoms in atoms_list:
@@ -226,7 +226,7 @@ def load_from_xyz(
                 atoms.arrays["REF_forces"] = None
     if stress_key == "stress":
         logging.warning(
-            "Since ASE version 3.23.0b1, using stress_key 'stress' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_stress'. You need to use --stress_key='REF_stress', to tell the key name chosen."
+            "Since ASE version 3.23.0b1, using stress_key 'stress' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'stress' to 'REF_stress'. You need to use --stress_key='REF_stress' to specify the chosen key name."
         )
         stress_key = "REF_stress"
         for atoms in atoms_list:
