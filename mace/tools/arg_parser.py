@@ -334,13 +334,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--energy_key",
         help="Key of reference energies in training xyz",
         type=str,
-        default="energy",
+        default="REF_energy",
     )
     parser.add_argument(
         "--forces_key",
         help="Key of reference forces in training xyz",
         type=str,
-        default="forces",
+        default="REF_forces",
     )
     parser.add_argument(
         "--virials_key",
@@ -352,7 +352,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--stress_key",
         help="Key of reference stress in training xyz",
         type=str,
-        default="stress",
+        default="REF_stress",
     )
     parser.add_argument(
         "--dipole_key",
