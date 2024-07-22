@@ -350,7 +350,10 @@ def run(args: argparse.Namespace) -> None:
             args.avg_num_neighbors = (num_neighbors / num_graphs).item()
         else:
             args.avg_num_neighbors = avg_num_neighbors
-    logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
+    if args.avg_num_neighbors < 2 or args.avg_num_neighbors > 100:
+        logging.warning(f"Unusual average number of neighbors: {int(args.avg_num_neighbors)}")
+    else:
+        logging.info(f"Average number of neighbors: {int(args.avg_num_neighbors)}")
 
     # Selecting outputs
     compute_virials = False
