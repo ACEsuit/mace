@@ -128,10 +128,10 @@ def print_git_commit():
 
         repo = git.Repo(search_parent_directories=True)
         commit = repo.head.commit.hexsha
-        logging.info(f"Current Git commit: {commit}")
+        logging.debug(f"Current Git commit: {commit}")
         return commit
     except Exception as e:  # pylint: disable=W0703
-        logging.info(f"Error accessing Git repository: {e}")
+        logging.debug(f"Error accessing Git repository: {e}")
         return "None"
 
 
