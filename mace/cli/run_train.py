@@ -84,7 +84,7 @@ def run(args: argparse.Namespace) -> None:
         logging.info(f"MACE version: {mace.__version__}")
     except AttributeError:
         logging.info("Cannot find MACE version, please install MACE via pip")
-    logging.info(f"Configuration: {args}")
+    logging.debug(f"Configuration: {args}")
 
     tools.set_default_dtype(args.default_dtype)
     device = tools.init_device(args.device)
@@ -406,7 +406,7 @@ def run(args: argparse.Namespace) -> None:
             len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
         ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
 
-        logging.info(f"Hidden irreps: {args.hidden_irreps}")
+        logging.debug(f"Hidden irreps: {args.hidden_irreps}")
 
         model_config = dict(
             r_max=args.r_max,
@@ -670,9 +670,9 @@ def run(args: argparse.Namespace) -> None:
         for group in optimizer.param_groups:
             group["lr"] = args.lr
 
-    logging.info(model)
+    logging.debug(model)
     logging.info(f"Number of parameters: {tools.count_parameters(model)}")
-    logging.info(f"Optimizer: {optimizer}")
+    logging.debug(f"Optimizer: {optimizer}")
 
     if args.wandb:
         logging.info("Using Weights and Biases for logging")

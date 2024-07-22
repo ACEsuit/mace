@@ -52,27 +52,42 @@ def setup_logger(
     directory: Optional[str] = None,
     rank: Optional[int] = 0,
 ):
+    # Create a logger
     logger = logging.getLogger()
-    logger.setLevel(level)
+    logger.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels
 
+    # Create formatters
     formatter = logging.Formatter(
         "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+    # Add filter for rank
+    logger.addFilter(lambda _: rank == 0)
+
+    # Create console handler
     ch = logging.StreamHandler(stream=sys.stdout)
+    ch.setLevel(level)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    logger.addFilter(lambda _: (rank == 0))
-
-    if (directory is not None) and (tag is not None):
+    if directory is not None and tag is not None:
         os.makedirs(name=directory, exist_ok=True)
-        path = os.path.join(directory, tag + ".log")
-        fh = logging.FileHandler(path)
-        fh.setFormatter(formatter)
 
-        logger.addHandler(fh)
+        # Create file handler for non-debug logs
+        main_log_path = os.path.join(directory, f"{tag}.log")
+        fh_main = logging.FileHandler(main_log_path)
+        fh_main.setLevel(level)
+        fh_main.setFormatter(formatter)
+        logger.addHandler(fh_main)
+
+        # Create file handler for debug logs
+        debug_log_path = os.path.join(directory, f"{tag}_debug.log")
+        fh_debug = logging.FileHandler(debug_log_path)
+        fh_debug.setLevel(logging.DEBUG)
+        fh_debug.setFormatter(formatter)
+        fh_debug.addFilter(lambda record: record.levelno >= logging.DEBUG)
+        logger.addHandler(fh_debug)
 
 
 class AtomicNumberTable:

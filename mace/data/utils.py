@@ -203,7 +203,7 @@ def load_from_xyz(
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
     if energy_key == "energy":
-        logging.info(
+        logging.warning(
             "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_energy'. You need to use --energy_key='REF_energy', to tell the key name chosen."
         )
         energy_key = "REF_energy"
@@ -211,10 +211,10 @@ def load_from_xyz(
             try:
                 atoms.info["REF_energy"] = atoms.get_potential_energy()
             except Exception as e:  # pylint: disable=W0703
-                logging.warning(f"Failed to extract energy: {e}")
+                logging.error(f"Failed to extract energy: {e}")
                 atoms.info["REF_energy"] = None
     if forces_key == "forces":
-        logging.info(
+        logging.warning(
             "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_forces'. You need to use --forces_key='REF_forces', to tell the key name chosen."
         )
         forces_key = "REF_forces"
@@ -222,10 +222,10 @@ def load_from_xyz(
             try:
                 atoms.arrays["REF_forces"] = atoms.get_forces()
             except Exception as e:  # pylint: disable=W0703
-                logging.warning(f"Failed to extract forces: {e}")
+                logging.error(f"Failed to extract forces: {e}")
                 atoms.arrays["REF_forces"] = None
     if stress_key == "stress":
-        logging.info(
+        logging.warning(
             "Since ASE version 3.23.0b1, using stress_key 'stress' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_stress'. You need to use --stress_key='REF_stress', to tell the key name chosen."
         )
         stress_key = "REF_stress"
@@ -298,7 +298,7 @@ def compute_average_E0s(
         for i, z in enumerate(z_table.zs):
             atomic_energies_dict[z] = E0s[i]
     except np.linalg.LinAlgError:
-        logging.warning(
+        logging.error(
             "Failed to compute E0s using least squares regression, using the same for all atoms"
         )
         atomic_energies_dict = {}
