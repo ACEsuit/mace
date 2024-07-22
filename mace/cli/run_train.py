@@ -594,7 +594,7 @@ def run(args: argparse.Namespace) -> None:
             args.start_swa = max(1, args.max_num_epochs // 4 * 3)
         else:
             if args.start_swa > args.max_num_epochs:
-                logging.info(
+                logging.warning(
                     f"Start swa must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
                 )
                 args.start_swa = max(1, args.max_num_epochs // 4 * 3)
