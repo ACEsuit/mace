@@ -388,46 +388,51 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--forces_weight", help="weight of forces loss", type=float, default=100.0
     )
     parser.add_argument(
-        "--swa_forces_weight",
-        help="weight of forces loss after starting swa",
+        "--swa_forces_weight","--stage_two_forces_weight",
+        help="weight of forces loss after starting Stage Two (previously called swa)",
         type=float,
         default=100.0,
+        dest="swa_forces_weight",
     )
     parser.add_argument(
         "--energy_weight", help="weight of energy loss", type=float, default=1.0
     )
     parser.add_argument(
-        "--swa_energy_weight",
-        help="weight of energy loss after starting swa",
+        "--swa_energy_weight","--stage_two_energy_weight",
+        help="weight of energy loss after starting Stage Two (previously called swa)",
         type=float,
         default=1000.0,
+        dest="swa_energy_weight",
     )
     parser.add_argument(
         "--virials_weight", help="weight of virials loss", type=float, default=1.0
     )
     parser.add_argument(
-        "--swa_virials_weight",
-        help="weight of virials loss after starting swa",
+        "--swa_virials_weight", "--stage_two_virials_weight",
+        help="weight of virials loss after starting Stage Two (previously called swa)",
         type=float,
         default=10.0,
+        dest="swa_virials_weight",
     )
     parser.add_argument(
         "--stress_weight", help="weight of virials loss", type=float, default=1.0
     )
     parser.add_argument(
-        "--swa_stress_weight",
-        help="weight of stress loss after starting swa",
+        "--swa_stress_weight", "--stage_two_stress_weight",
+        help="weight of stress loss after starting Stage Two (previously called swa)",
         type=float,
         default=10.0,
+        dest="swa_stress_weight",
     )
     parser.add_argument(
         "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0
     )
     parser.add_argument(
-        "--swa_dipole_weight",
-        help="weight of dipoles after starting swa",
+        "--swa_dipole_weight","--stage_two_dipole_weight",
+        help="weight of dipoles after starting Stage Two (previously called swa)",
         type=float,
         default=1.0,
+        dest="swa_dipole_weight",
     )
     parser.add_argument(
         "--config_type_weights",
@@ -462,7 +467,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--lr", help="Learning rate of optimizer", type=float, default=0.01
     )
     parser.add_argument(
-        "--swa_lr", help="Learning rate of optimizer in swa", type=float, default=1e-3
+        "--swa_lr", "--stage_two_lr", help="Learning rate of optimizer in Stage Two (previously called swa)", type=float, default=1e-3, dest="swa_lr"
     )
     parser.add_argument(
         "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
@@ -489,16 +494,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=0.9993,
     )
     parser.add_argument(
-        "--swa",
-        help="use Stochastic Weight Averaging, which decreases the learning rate and increases the energy weight at the end of the training to help converge them",
+        "--swa", "--stage_two",
+        help="use Stage Two loss weight, which decreases the learning rate and increases the energy weight at the end of the training to help converge them",
         action="store_true",
         default=False,
+        dest="swa",
     )
     parser.add_argument(
-        "--start_swa",
-        help="Number of epochs before switching to swa",
+        "--start_swa","--start_stage_two",
+        help="Number of epochs before changing to Stage Two loss weights",
         type=int,
         default=None,
+        dest="start_swa",
     )
     parser.add_argument(
         "--ema",
