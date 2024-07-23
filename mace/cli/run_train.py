@@ -131,7 +131,9 @@ def run(args: argparse.Namespace) -> None:
         args.avg_num_neighbors = statistics["avg_num_neighbors"]
         args.compute_avg_num_neighbors = False
         args.E0s = statistics["atomic_energies"]
-
+        
+    logging.info("")
+    logging.info("===========LOADING INPUT DATA===========")
     # Data preparation
     if args.train_file.endswith(".xyz"):
         if args.valid_file is not None:
@@ -154,11 +156,7 @@ def run(args: argparse.Namespace) -> None:
             charges_key=args.charges_key,
             keep_isolated_atoms=args.keep_isolated_atoms,
         )
-
-        logging.info(
-            f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
-            f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}]"
-        )
+        
     else:
         atomic_energies_dict = None
 
@@ -286,7 +284,8 @@ def run(args: argparse.Namespace) -> None:
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
     )
-
+    logging.info("")
+    logging.info("===========MODEL DETAILS===========")
     if args.loss == "weighted":
         loss_fn = modules.WeightedEnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
@@ -666,6 +665,7 @@ def run(args: argparse.Namespace) -> None:
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
+
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
@@ -726,7 +726,8 @@ def run(args: argparse.Namespace) -> None:
         train_sampler=train_sampler,
         rank=rank,
     )
-
+    logging.info("")
+    logging.info("===========RESULTS===========")
     logging.info("Computing metrics for training, validation, and test sets")
 
     all_data_loaders = {

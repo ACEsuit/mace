@@ -141,8 +141,12 @@ def train(
     if log_wandb:
         import wandb
 
+    
     if max_grad_norm is not None:
         logging.info(f"Using gradient clipping with tolerance={max_grad_norm:.3f}")
+
+    logging.info("")
+    logging.info("===========TRAINING===========")
     logging.info("Started training")
     epoch = start_epoch
 
