@@ -163,7 +163,7 @@ def train(
                 )  # Can break if exponential LR, TODO fix that!
         else:
             if swa_start:
-                logging.info("Changing loss based on SWA")
+                logging.info("Changing loss based on Stage Two Weights")
                 lowest_loss = np.inf
                 swa_start = False
                 keep_last = True
@@ -233,7 +233,7 @@ def train(
                     patience_counter += 1
                     if patience_counter >= patience and epoch < swa.start:
                         logging.info(
-                            f"Stopping optimization after {patience_counter} epochs without improvement and starting swa"
+                            f"Stopping optimization after {patience_counter} epochs without improvement and starting Stage Two"
                         )
                         epoch = swa.start
                     elif patience_counter >= patience and epoch >= swa.start:
