@@ -109,7 +109,7 @@ def trained_model_fixture(tmp_path_factory, fitting_configs):
 
     assert p.returncode == 0
 
-    return MACECalculator(tmp_path / "MACE.model", device="cpu")
+    return MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
 
 @pytest.fixture(scope="module", name="trained_equivariant_model")
@@ -171,7 +171,7 @@ def trained_model_equivariant_fixture(tmp_path_factory, fitting_configs):
 
     assert p.returncode == 0
 
-    return MACECalculator(tmp_path / "MACE.model", device="cpu")
+    return MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
 
 @pytest.fixture(scope="module", name="trained_dipole_model")
@@ -235,7 +235,7 @@ def trained_dipole_fixture(tmp_path_factory, fitting_configs):
     assert p.returncode == 0
 
     return MACECalculator(
-        tmp_path / "MACE.model", device="cpu", model_type="DipoleMACE"
+        model_paths=tmp_path / "MACE.model", device="cpu", model_type="DipoleMACE"
     )
 
 
@@ -300,7 +300,7 @@ def trained_energy_dipole_fixture(tmp_path_factory, fitting_configs):
     assert p.returncode == 0
 
     return MACECalculator(
-        tmp_path / "MACE.model", device="cpu", model_type="EnergyDipoleMACE"
+        model_paths=tmp_path / "MACE.model", device="cpu", model_type="EnergyDipoleMACE"
     )
 
 
@@ -368,7 +368,7 @@ def trained_committee_fixture(tmp_path_factory, fitting_configs):
 
         _model_paths.append(tmp_path / f"MACE{seed}.model")
 
-    return MACECalculator(_model_paths, device="cpu")
+    return MACECalculator(model_paths=_model_paths, device="cpu")
 
 
 def test_calculator_node_energy(fitting_configs, trained_model):
