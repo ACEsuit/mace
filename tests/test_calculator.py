@@ -426,6 +426,19 @@ def test_calculator_committee(fitting_configs, trained_committee):
     assert forces_var.shape == at.calc.results["forces"].shape
 
 
+def test_calculator_from_model(fitting_configs, trained_committee):
+    # test single model
+    test_calculator_forces(
+        fitting_configs,
+        MACECalculator(models=trained_committee.models[0], device="cpu")
+    )
+
+    # test committee model
+    test_calculator_committee(
+        fitting_configs,
+        MACECalculator(models=trained_committee.models, device="cpu")
+    )
+
 def test_calculator_dipole(fitting_configs, trained_dipole_model):
     at = fitting_configs[2].copy()
     at.calc = trained_dipole_model
