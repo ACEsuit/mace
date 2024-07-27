@@ -11,7 +11,7 @@ from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
 local_model_path = os.path.join(
-    module_dir, "foundations_models/2023-12-03-mace-mp.model"
+    module_dir, "foundation_models/2023-12-03-mace-mp.model"
 )
 
 
@@ -222,7 +222,7 @@ def mace_anicc(
     """
     if model_path is None:
         model_path = os.path.join(
-            module_dir, "foundations_models/ani500k_large_CC.model"
+            module_dir, "foundation_models/ani500k_large_CC.model"
         )
         print(
             "Using ANI couple cluster model for MACECalculator, see https://doi.org/10.1063/5.0155322"
