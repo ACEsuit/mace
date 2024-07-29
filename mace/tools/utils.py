@@ -3,12 +3,13 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import json
 import logging
 import os
 import sys
-from typing import Any, Dict, Iterable, Optional, Sequence, Union
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 import torch
@@ -47,10 +48,10 @@ def get_tag(name: str, seed: int) -> str:
 
 
 def setup_logger(
-    level: Union[int, str] = logging.INFO,
-    tag: Optional[str] = None,
-    directory: Optional[str] = None,
-    rank: Optional[int] = 0,
+    level: int | str = logging.INFO,
+    tag: str | None = None,
+    directory: str | None = None,
+    rank: int | None = 0,
 ):
     logger = logging.getLogger()
     logger.setLevel(level)
@@ -96,7 +97,7 @@ def get_atomic_number_table_from_zs(zs: Iterable[int]) -> AtomicNumberTable:
     z_set = set()
     for z in zs:
         z_set.add(z)
-    return AtomicNumberTable(sorted(list(z_set)))
+    return AtomicNumberTable(sorted(z_set))
 
 
 def atomic_numbers_to_indices(
@@ -145,7 +146,7 @@ class MetricsLogger:
         self.filename = tag + ".txt"
         self.path = os.path.join(self.directory, self.filename)
 
-    def log(self, d: Dict[str, Any]) -> None:
+    def log(self, d: dict[str, Any]) -> None:
         logging.debug(f"Saving info: {self.path}")
         os.makedirs(name=self.directory, exist_ok=True)
         with open(self.path, mode="a", encoding="utf-8") as f:

@@ -1,12 +1,10 @@
+from __future__ import annotations
+
 import os
 import os.path as osp
 import ssl
 import urllib
 import zipfile
-
-
-def makedirs(dir):
-    os.makedirs(dir, exist_ok=True)
 
 
 def download_url(url, folder, log=True):
@@ -18,7 +16,6 @@ def download_url(url, folder, log=True):
         log (bool, optional): If :obj:`False`, will not print anything to the
             console. (default: :obj:`True`)
     """
-
     filename = url.rpartition("/")[2].split("?")[0]
     path = osp.join(folder, filename)
 
@@ -30,7 +27,7 @@ def download_url(url, folder, log=True):
     if log:
         print("Downloading", url)
 
-    makedirs(folder)
+    os.makedirs(folder, exist_ok=True)
 
     context = ssl._create_unverified_context()
     data = urllib.request.urlopen(url, context=context)

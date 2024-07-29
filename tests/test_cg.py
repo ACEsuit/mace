@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from e3nn import o3
 
 from mace.tools import cg

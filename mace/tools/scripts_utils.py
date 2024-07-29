@@ -3,13 +3,14 @@
 # Authors: David Kovacs, Ilyes Batatia
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import ast
 import dataclasses
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import torch
@@ -25,15 +26,15 @@ from mace.tools import evaluate
 class SubsetCollection:
     train: data.Configurations
     valid: data.Configurations
-    tests: List[Tuple[str, data.Configurations]]
+    tests: list[tuple[str, data.Configurations]]
 
 
 def get_dataset_from_xyz(
     train_path: str,
     valid_path: str,
     valid_fraction: float,
-    config_type_weights: Dict,
-    test_path: str = None,
+    config_type_weights: dict,
+    test_path: str | None = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     energy_key: str = "energy",
@@ -42,7 +43,7 @@ def get_dataset_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
-) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
+) -> tuple[SubsetCollection, dict[int, float] | None]:
     """Load training and test dataset from xyz file"""
     atomic_energies_dict, all_train_configs = data.load_from_xyz(
         file_path=train_path,
@@ -114,7 +115,7 @@ def get_config_type_weights(ct_weights):
     try:
         config_type_weights = ast.literal_eval(ct_weights)
         assert isinstance(config_type_weights, dict)
-    except Exception as e:  # pylint: disable=W0703
+    except Exception as e:
         logging.warning(
             f"Config type weights not specified correctly ({e}), using Default"
         )
@@ -130,12 +131,12 @@ def print_git_commit():
         commit = repo.head.commit.hexsha
         logging.info(f"Current Git commit: {commit}")
         return commit
-    except Exception as e:  # pylint: disable=W0703
+    except Exception as e:
         logging.info(f"Error accessing Git repository: {e}")
         return "None"
 
 
-def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
+def extract_config_mace_model(model: torch.nn.Module) -> dict[str, Any]:
     if model.__class__.__name__ != "ScaleShiftMACE":
         return {"error": "Model is not a ScaleShiftMACE model"}
 
@@ -157,11 +158,11 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             return "Soft"
         return radial.distance_transform.__class__.__name__
 
-    config = {
+    return {
         "r_max": model.r_max.item(),
         "num_bessel": len(model.radial_embedding.bessel_fn.bessel_weights),
         "num_polynomial_cutoff": model.radial_embedding.cutoff_fn.p.item(),
-        "max_ell": model.spherical_harmonics._lmax,  # pylint: disable=protected-access
+        "max_ell": model.spherical_harmonics._lmax,
         "interaction_cls": model.interactions[-1].__class__,
         "interaction_cls_first": model.interactions[0].__class__,
         "num_interactions": model.num_interactions.item(),
@@ -173,7 +174,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             else 1
         ),
         "gate": (
-            model.readouts[-1]  # pylint: disable=protected-access
+            model.readouts[-1]
             .non_linearity._modules["acts"][0]
             .f
             if model.num_interactions.item() > 1
@@ -195,7 +196,6 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "atomic_inter_scale": model.scale_shift.scale.item(),
         "atomic_inter_shift": model.scale_shift.shift.item(),
     }
-    return config
 
 
 def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
@@ -352,7 +352,8 @@ def get_loss_fn(
             dipole_weight=dipole_weight,
         )
     elif loss == "energy_forces_dipole":
-        assert dipole_only is False and compute_dipole is True
+        assert dipole_only is False
+        assert compute_dipole is True
         loss_fn = modules.WeightedEnergyForcesDipoleLoss(
             energy_weight=energy_weight,
             forces_weight=forces_weight,
@@ -365,7 +366,7 @@ def get_loss_fn(
     return loss_fn
 
 
-def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
+def get_files_with_suffix(dir_path: str, suffix: str) -> list[str]:
     return [
         os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(suffix)
     ]
@@ -403,13 +404,13 @@ class LRScheduler:
         else:
             raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 
-    def step(self, metrics=None, epoch=None):  # pylint: disable=E1123
+    def step(self, metrics=None, epoch=None):
         if self._optimizer_type == "schedulefree":
             return  # In principle, schedulefree optimizer can be used with a scheduler but the paper suggests it's not necessary
         if self.scheduler == "ExponentialLR":
             self.lr_scheduler.step(epoch=epoch)
         elif self.scheduler == "ReduceLROnPlateau":
-            self.lr_scheduler.step(  # pylint: disable=E1123
+            self.lr_scheduler.step(
                 metrics=metrics, epoch=epoch
             )
 
@@ -424,7 +425,7 @@ def create_error_table(
     all_data_loaders: dict,
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     log_wandb: bool,
     device: str,
     distributed: bool = False,

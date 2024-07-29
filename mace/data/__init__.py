@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .atomic_data import AtomicData
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
 from .neighborhood import get_neighborhood

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import collections
 import copy
 import re
@@ -21,7 +23,7 @@ def size_repr(key, item, indent=0):
         out = item.item()
     elif torch.is_tensor(item):
         out = str(list(item.size()))
-    elif isinstance(item, list) or isinstance(item, tuple):
+    elif isinstance(item, (list, tuple)):
         out = str([len(item)])
     elif isinstance(item, dict):
         lines = [indent_str + size_repr(k, v, 2) for k, v in item.items()]
@@ -34,7 +36,7 @@ def size_repr(key, item, indent=0):
     return f"{indent_str}{key}={out}"
 
 
-class Data(object):
+class Data:
     r"""A plain old python object modeling a single graph with various
     (optional) attributes:
 
@@ -90,18 +92,18 @@ class Data(object):
 
         if edge_index is not None and edge_index.dtype != torch.long:
             raise ValueError(
-                (
+
                     f"Argument `edge_index` needs to be of type `torch.long` but "
                     f"found type `{edge_index.dtype}`."
-                )
+
             )
 
         if face is not None and face.dtype != torch.long:
             raise ValueError(
-                (
+
                     f"Argument `face` needs to be of type `torch.long` but found "
                     f"type `{face.dtype}`."
-                )
+
             )
 
     @classmethod
@@ -115,7 +117,7 @@ class Data(object):
         return data
 
     def to_dict(self):
-        return {key: item for key, item in self}
+        return dict(self)
 
     def to_namedtuple(self):
         keys = self.keys
@@ -137,9 +139,8 @@ class Data(object):
     @property
     def keys(self):
         r"""Returns all names of graph attributes."""
-        keys = [key for key in self.__dict__.keys() if self[key] is not None]
-        keys = [key for key in keys if key[:2] != "__" and key[-2:] != "__"]
-        return keys
+        keys = [key for key in self.__dict__ if self[key] is not None]
+        return [key for key in keys if key[:2] != "__" and key[-2:] != "__"]
 
     def __len__(self):
         r"""Returns the number of all present attributes."""
@@ -147,12 +148,14 @@ class Data(object):
 
     def __contains__(self, key):
         r"""Returns :obj:`True`, if the attribute :obj:`key` is present in the
-        data."""
+        data.
+        """
         return key in self.keys
 
     def __iter__(self):
         r"""Iterates over all present attributes in the data, yielding their
-        attribute names and content."""
+        attribute names and content.
+        """
         for key in sorted(self.keys):
             yield key, self[key]
 
@@ -160,8 +163,9 @@ class Data(object):
         r"""Iterates over all attributes :obj:`*keys` in the data, yielding
         their attribute names and content.
         If :obj:`*keys` is not given this method will iterative over all
-        present attributes."""
-        for key in sorted(self.keys) if not keys else keys:
+        present attributes.
+        """
+        for key in keys if keys else sorted(self.keys):
             if key in self:
                 yield key, self[key]
 
@@ -239,8 +243,10 @@ class Data(object):
         """
         for key, item in self("edge_index", "edge_attr"):
             return item.size(self.__cat_dim__(key, item))
-        for key, item in self("adj", "adj_t"):
+
+        for _, item in self("adj", "adj_t"):
             return item.nnz()
+
         return None
 
     @property
@@ -291,26 +297,30 @@ class Data(object):
     def contiguous(self, *keys):
         r"""Ensures a contiguous memory layout for all attributes :obj:`*keys`.
         If :obj:`*keys` is not given, all present attributes are ensured to
-        have a contiguous memory layout."""
+        have a contiguous memory layout.
+        """
         return self.apply(lambda x: x.contiguous(), *keys)
 
     def to(self, device, *keys, **kwargs):
         r"""Performs tensor dtype and/or device conversion to all attributes
         :obj:`*keys`.
         If :obj:`*keys` is not given, the conversion is applied to all present
-        attributes."""
+        attributes.
+        """
         return self.apply(lambda x: x.to(device, **kwargs), *keys)
 
     def cpu(self, *keys):
         r"""Copies all attributes :obj:`*keys` to CPU memory.
         If :obj:`*keys` is not given, the conversion is applied to all present
-        attributes."""
+        attributes.
+        """
         return self.apply(lambda x: x.cpu(), *keys)
 
     def cuda(self, device=None, non_blocking=False, *keys):
         r"""Copies all attributes :obj:`*keys` to CUDA memory.
         If :obj:`*keys` is not given, the conversion is applied to all present
-        attributes."""
+        attributes.
+        """
         return self.apply(
             lambda x: x.cuda(device=device, non_blocking=non_blocking), *keys
         )
@@ -327,34 +337,32 @@ class Data(object):
     def pin_memory(self, *keys):
         r"""Copies all attributes :obj:`*keys` to pinned memory.
         If :obj:`*keys` is not given, the conversion is applied to all present
-        attributes."""
+        attributes.
+        """
         return self.apply(lambda x: x.pin_memory(), *keys)
 
     def debug(self):
-        if self.edge_index is not None:
-            if self.edge_index.dtype != torch.long:
-                raise RuntimeError(
-                    (
-                        "Expected edge indices of dtype {}, but found dtype " " {}"
-                    ).format(torch.long, self.edge_index.dtype)
-                )
+        if self.edge_index is not None and self.edge_index.dtype != torch.long:
+            raise RuntimeError(
 
-        if self.face is not None:
-            if self.face.dtype != torch.long:
-                raise RuntimeError(
-                    (
-                        "Expected face indices of dtype {}, but found dtype " " {}"
-                    ).format(torch.long, self.face.dtype)
-                )
+                    f"Expected edge indices of dtype {torch.long}, but found dtype  {self.edge_index.dtype}"
 
-        if self.edge_index is not None:
-            if self.edge_index.dim() != 2 or self.edge_index.size(0) != 2:
-                raise RuntimeError(
-                    (
-                        "Edge indices should have shape [2, num_edges] but found"
-                        " shape {}"
-                    ).format(self.edge_index.size())
-                )
+            )
+
+        if self.face is not None and self.face.dtype != torch.long:
+            raise RuntimeError(
+
+                    f"Expected face indices of dtype {torch.long}, but found dtype  {self.face.dtype}"
+
+            )
+
+        if self.edge_index is not None and (self.edge_index.dim() != 2 or self.edge_index.size(0) != 2):
+            raise RuntimeError(
+
+                    "Edge indices should have shape [2, num_edges] but found"
+                    f" shape {self.edge_index.size()}"
+
+            )
 
         if self.edge_index is not None and self.num_nodes is not None:
             if self.edge_index.numel() > 0:
@@ -364,20 +372,19 @@ class Data(object):
                 min_index = max_index = 0
             if min_index < 0 or max_index > self.num_nodes - 1:
                 raise RuntimeError(
-                    (
-                        "Edge indices must lay in the interval [0, {}]"
-                        " but found them in the interval [{}, {}]"
-                    ).format(self.num_nodes - 1, min_index, max_index)
+
+                        f"Edge indices must lay in the interval [0, {self.num_nodes - 1}]"
+                        f" but found them in the interval [{min_index}, {max_index}]"
+
                 )
 
-        if self.face is not None:
-            if self.face.dim() != 2 or self.face.size(0) != 3:
-                raise RuntimeError(
-                    (
-                        "Face indices should have shape [3, num_faces] but found"
-                        " shape {}"
-                    ).format(self.face.size())
-                )
+        if self.face is not None and (self.face.dim() != 2 or self.face.size(0) != 3):
+            raise RuntimeError(
+
+                    "Face indices should have shape [3, num_faces] but found"
+                    f" shape {self.face.size()}"
+
+            )
 
         if self.face is not None and self.num_nodes is not None:
             if self.face.numel() > 0:
@@ -387,51 +394,51 @@ class Data(object):
                 min_index = max_index = 0
             if min_index < 0 or max_index > self.num_nodes - 1:
                 raise RuntimeError(
-                    (
-                        "Face indices must lay in the interval [0, {}]"
-                        " but found them in the interval [{}, {}]"
-                    ).format(self.num_nodes - 1, min_index, max_index)
+
+                        f"Face indices must lay in the interval [0, {self.num_nodes - 1}]"
+                        f" but found them in the interval [{min_index}, {max_index}]"
+
                 )
 
-        if self.edge_index is not None and self.edge_attr is not None:
-            if self.edge_index.size(1) != self.edge_attr.size(0):
-                raise RuntimeError(
-                    (
-                        "Edge indices and edge attributes hold a differing "
-                        "number of edges, found {} and {}"
-                    ).format(self.edge_index.size(), self.edge_attr.size())
-                )
+        if (
+            (self.edge_index is not None)
+            and (self.edge_attr is not None)
+            and (self.edge_index.size(1) != self.edge_attr.size(0))
+        ):
+            raise RuntimeError(
 
-        if self.x is not None and self.num_nodes is not None:
-            if self.x.size(0) != self.num_nodes:
-                raise RuntimeError(
-                    (
-                        "Node features should hold {} elements in the first "
-                        "dimension but found {}"
-                    ).format(self.num_nodes, self.x.size(0))
-                )
+                    "Edge indices and edge attributes hold a differing "
+                    f"number of edges, found {self.edge_index.size()} and {self.edge_attr.size()}"
 
-        if self.pos is not None and self.num_nodes is not None:
-            if self.pos.size(0) != self.num_nodes:
-                raise RuntimeError(
-                    (
-                        "Node positions should hold {} elements in the first "
-                        "dimension but found {}"
-                    ).format(self.num_nodes, self.pos.size(0))
-                )
+            )
 
-        if self.normal is not None and self.num_nodes is not None:
-            if self.normal.size(0) != self.num_nodes:
-                raise RuntimeError(
-                    (
-                        "Node normals should hold {} elements in the first "
-                        "dimension but found {}"
-                    ).format(self.num_nodes, self.normal.size(0))
-                )
+        if self.x is not None and self.num_nodes is not None and self.x.size(0) != self.num_nodes:
+            raise RuntimeError(
+
+                    f"Node features should hold {self.num_nodes} elements in the first "
+                    f"dimension but found {self.x.size(0)}"
+
+            )
+
+        if self.pos is not None and self.num_nodes is not None and self.pos.size(0) != self.num_nodes:
+            raise RuntimeError(
+
+                    f"Node positions should hold {self.num_nodes} elements in the first "
+                    f"dimension but found {self.pos.size(0)}"
+
+            )
+
+        if self.normal is not None and self.num_nodes is not None and self.normal.size(0) != self.num_nodes:
+            raise RuntimeError(
+
+                    f"Node normals should hold {self.num_nodes} elements in the first "
+                    f"dimension but found {self.normal.size(0)}"
+
+            )
 
     def __repr__(self):
         cls = str(self.__class__.__name__)
-        has_dict = any([isinstance(item, dict) for _, item in self])
+        has_dict = any(isinstance(item, dict) for _, item in self)
 
         if not has_dict:
             info = [size_repr(key, item) for key, item in self]

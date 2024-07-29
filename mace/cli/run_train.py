@@ -3,8 +3,8 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
-import argparse
 import ast
 import glob
 import json
@@ -12,7 +12,7 @@ import logging
 import os
 from copy import deepcopy
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch.distributed
@@ -42,6 +42,9 @@ from mace.tools.scripts_utils import (
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
 
+if TYPE_CHECKING:
+    import argparse
+
 
 def main() -> None:
     """
@@ -59,8 +62,8 @@ def run(args: argparse.Namespace) -> None:
     if args.distributed:
         try:
             distr_env = DistributedEnvironment()
-        except Exception as e:  # pylint: disable=W0703
-            logging.error(f"Failed to initialize distributed environment: {e}")
+        except Exception as e:
+            logging.exception(f"Failed to initialize distributed environment: {e}")
             return
         world_size = distr_env.world_size
         local_rank = distr_env.local_rank
@@ -69,7 +72,7 @@ def run(args: argparse.Namespace) -> None:
             print(distr_env)
         torch.distributed.init_process_group(backend="nccl")
     else:
-        rank = int(0)
+        rank = 0
 
     # Setup
     tools.set_seeds(args.seed)
@@ -119,7 +122,7 @@ def run(args: argparse.Namespace) -> None:
         args.r_max = model_foundation.r_max.item()
 
     if args.statistics_file is not None:
-        with open(args.statistics_file, "r") as f:  # pylint: disable=W1514
+        with open(args.statistics_file) as f:
             statistics = json.load(f)
         logging.info("Using statistics json file")
         args.r_max = (
@@ -196,13 +199,12 @@ def run(args: argparse.Namespace) -> None:
                 ].item()
                 for z in z_table.zs
             }
+        elif args.train_file.endswith(".xyz"):
+            atomic_energies_dict = get_atomic_energies(
+                args.E0s, collections.train, z_table
+            )
         else:
-            if args.train_file.endswith(".xyz"):
-                atomic_energies_dict = get_atomic_energies(
-                    args.E0s, collections.train, z_table
-                )
-            else:
-                atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table)
+            atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table)
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
@@ -327,7 +329,8 @@ def run(args: argparse.Namespace) -> None:
             dipole_weight=args.dipole_weight,
         )
     elif args.loss == "energy_forces_dipole":
-        assert dipole_only is False and compute_dipole is True
+        assert dipole_only is False
+        assert compute_dipole is True
         loss_fn = modules.WeightedEnergyForcesDipoleLoss(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
@@ -578,24 +581,23 @@ def run(args: argparse.Namespace) -> None:
 
     logger = tools.MetricsLogger(
         directory=args.results_dir, tag=tag + "_train"
-    )  # pylint: disable=E1123
+    )
 
     lr_scheduler = LRScheduler(optimizer, args)
 
-    swa: Optional[tools.SWAContainer] = None
+    swa: tools.SWAContainer | None = None
     swas = [False]
     if args.swa:
         assert dipole_only is False, "Stage Two for dipole fitting not implemented"
         swas.append(True)
         if args.start_swa is None:
             args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-        else:
-            if args.start_swa > args.max_num_epochs:
-                logging.info(
-                    f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
-                )
-                args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-                logging.info(f"Setting start Stage Two to {args.start_swa}")
+        elif args.start_swa > args.max_num_epochs:
+            logging.info(
+                f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+            )
+            args.start_swa = max(1, args.max_num_epochs // 4 * 3)
+            logging.info(f"Setting start Stage Two to {args.start_swa}")
         if args.loss == "forces_only":
             raise ValueError("Can not select Stage Two with forces only loss.")
         if args.loss == "virials":
@@ -654,7 +656,7 @@ def run(args: argparse.Namespace) -> None:
                 swa=True,
                 device=device,
             )
-        except Exception:  # pylint: disable=W0703
+        except Exception:
             opt_start_epoch = checkpoint_handler.load_latest(
                 state=tools.CheckpointState(model, optimizer, lr_scheduler),
                 swa=False,
@@ -663,7 +665,7 @@ def run(args: argparse.Namespace) -> None:
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
-    ema: Optional[ExponentialMovingAverage] = None
+    ema: ExponentialMovingAverage | None = None
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
     else:
@@ -692,10 +694,7 @@ def run(args: argparse.Namespace) -> None:
         )
         wandb.run.summary["params"] = args_dict_json
 
-    if args.distributed:
-        distributed_model = DDP(model, device_ids=[local_rank])
-    else:
-        distributed_model = None
+    distributed_model = DDP(model, device_ids=[local_rank]) if args.distributed else None
 
     tools.train(
         model=model,
@@ -766,7 +765,7 @@ def run(args: argparse.Namespace) -> None:
             )
         try:
             drop_last = test_set.drop_last
-        except AttributeError as e:  # pylint: disable=W0612
+        except AttributeError:
             drop_last = False
         test_loader = torch_geometric.dataloader.DataLoader(
             test_set,
@@ -833,7 +832,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception:
                     pass
             else:
                 torch.save(model, Path(args.model_dir) / (args.name + ".model"))
@@ -848,7 +847,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception:
                     pass
 
         if args.distributed:

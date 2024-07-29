@@ -3,15 +3,14 @@
 # Authors: Ilyes Batatia, Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Callable
 
-import numpy as np
 import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
-from mace.data import AtomicData
 from mace.modules.radial import ZBLBasis
 from mace.tools.scatter import scatter_sum
 
@@ -35,7 +34,10 @@ from .utils import (
     get_symmetric_displacement,
 )
 
-# pylint: disable=C0302
+if TYPE_CHECKING:
+    import numpy as np
+
+    from mace.data import AtomicData
 
 
 @compile_mode("script")
@@ -46,21 +48,21 @@ class MACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         atomic_energies: np.ndarray,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
-        correlation: Union[int, List[int]],
-        gate: Optional[Callable],
+        atomic_numbers: list[int],
+        correlation: int | list[int],
+        gate: Callable | None,
         pair_repulsion: bool = False,
         distance_transform: str = "None",
-        radial_MLP: Optional[List[int]] = None,
-        radial_type: Optional[str] = "bessel",
+        radial_MLP: list[int] | None = None,
+        radial_type: str | None = "bessel",
     ):
         super().__init__()
         self.register_buffer(
@@ -168,17 +170,17 @@ class MACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         # Setup
-        data["node_attrs"].requires_grad_(True)
-        data["positions"].requires_grad_(True)
+        data["node_attrs"].requires_grad_(requires_grad=True)
+        data["positions"].requires_grad_(requires_grad=True)
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3),
@@ -303,17 +305,17 @@ class ScaleShiftMACE(MACE):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         # Setup
-        data["positions"].requires_grad_(True)
-        data["node_attrs"].requires_grad_(True)
+        data["positions"].requires_grad_(requires_grad=True)
+        data["node_attrs"].requires_grad_(requires_grad=True)
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3),
@@ -403,7 +405,7 @@ class ScaleShiftMACE(MACE):
             compute_stress=compute_stress,
             compute_hessian=compute_hessian,
         )
-        output = {
+        return {
             "energy": total_energy,
             "node_energy": node_energy,
             "interaction_energy": inter_e,
@@ -415,7 +417,6 @@ class ScaleShiftMACE(MACE):
             "node_feats": node_feats_out,
         }
 
-        return output
 
 
 class BOTNet(torch.nn.Module):
@@ -425,16 +426,16 @@ class BOTNet(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         atomic_energies: np.ndarray,
-        gate: Optional[Callable],
+        gate: Callable | None,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
+        atomic_numbers: list[int],
     ):
         super().__init__()
         self.r_max = r_max
@@ -491,7 +492,7 @@ class BOTNet(torch.nn.Module):
             else:
                 self.readouts.append(LinearReadoutBlock(inter.irreps_out))
 
-    def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
+    def forward(self, data: AtomicData, training=False) -> dict[str, Any]:
         # Setup
         data.positions.requires_grad = True
 
@@ -531,7 +532,7 @@ class BOTNet(torch.nn.Module):
         contributions = torch.stack(energies, dim=-1)
         total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
 
-        output = {
+        return {
             "energy": total_energy,
             "contributions": contributions,
             "forces": compute_forces(
@@ -539,7 +540,6 @@ class BOTNet(torch.nn.Module):
             ),
         }
 
-        return output
 
 
 class ScaleShiftBOTNet(BOTNet):
@@ -554,7 +554,7 @@ class ScaleShiftBOTNet(BOTNet):
             scale=atomic_inter_scale, shift=atomic_inter_shift
         )
 
-    def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
+    def forward(self, data: AtomicData, training=False) -> dict[str, Any]:
         # Setup
         data.positions.requires_grad = True
 
@@ -601,14 +601,13 @@ class ScaleShiftBOTNet(BOTNet):
         # Add E_0 and (scaled) interaction energy
         total_e = e0 + inter_e
 
-        output = {
+        return {
             "energy": total_e,
             "forces": compute_forces(
                 energy=inter_e, positions=data.positions, training=training
             ),
         }
 
-        return output
 
 
 @compile_mode("script")
@@ -619,21 +618,19 @@ class AtomicDipolesMACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
+        atomic_numbers: list[int],
         correlation: int,
-        gate: Optional[Callable],
-        atomic_energies: Optional[
-            None
-        ],  # Just here to make it compatible with energy models, MUST be None
-        radial_type: Optional[str] = "bessel",
-        radial_MLP: Optional[List[int]] = None,
+        gate: Callable | None,
+        atomic_energies: None,  # Just here to make it compatible with energy models, MUST be None
+        radial_type: str | None = "bessel",
+        radial_MLP: list[int] | None = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -741,20 +738,20 @@ class AtomicDipolesMACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
-        training: bool = False,  # pylint: disable=W0613
+        data: dict[str, torch.Tensor],
+        training: bool = False,
         compute_force: bool = False,
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         assert compute_force is False
         assert compute_virials is False
         assert compute_stress is False
         assert compute_displacement is False
         # Setup
-        data["node_attrs"].requires_grad_(True)
-        data["positions"].requires_grad_(True)
+        data["node_attrs"].requires_grad_(requires_grad=True)
+        data["positions"].requires_grad_(requires_grad=True)
         num_graphs = data["ptr"].numel() - 1
 
         # Embeddings
@@ -808,11 +805,10 @@ class AtomicDipolesMACE(torch.nn.Module):
         )  # [n_graphs,3]
         total_dipole = total_dipole + baseline
 
-        output = {
+        return {
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
         }
-        return output
 
 
 @compile_mode("script")
@@ -823,18 +819,18 @@ class EnergyDipolesMACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
+        atomic_numbers: list[int],
         correlation: int,
-        gate: Optional[Callable],
-        atomic_energies: Optional[np.ndarray],
-        radial_MLP: Optional[List[int]] = None,
+        gate: Callable | None,
+        atomic_energies: np.ndarray | None,
+        radial_MLP: list[int] | None = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -940,16 +936,16 @@ class EnergyDipolesMACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         # Setup
-        data["node_attrs"].requires_grad_(True)
-        data["positions"].requires_grad_(True)
+        data["node_attrs"].requires_grad_(requires_grad=True)
+        data["positions"].requires_grad_(requires_grad=True)
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3),
@@ -1051,7 +1047,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             compute_stress=compute_stress,
         )
 
-        output = {
+        return {
             "energy": total_energy,
             "node_energy": node_energy,
             "contributions": contributions,
@@ -1062,4 +1058,3 @@ class EnergyDipolesMACE(torch.nn.Module):
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
         }
-        return output

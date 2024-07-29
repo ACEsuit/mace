@@ -1,12 +1,16 @@
+from __future__ import annotations
+
 from collections.abc import Sequence
-from typing import List
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from torch import Tensor
 
 from .data import Data
-from .dataset import IndexType
+
+if TYPE_CHECKING:
+    from .dataset import IndexType
 
 
 class Batch(Data):
@@ -18,7 +22,7 @@ class Batch(Data):
     """
 
     def __init__(self, batch=None, ptr=None, **kwargs):
-        super(Batch, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         for key, item in kwargs.items():
             if key == "num_nodes":
@@ -36,25 +40,30 @@ class Batch(Data):
         self.__num_graphs__ = None
 
     @classmethod
-    def from_data_list(cls, data_list, follow_batch=[], exclude_keys=[]):
+    def from_data_list(cls, data_list, follow_batch=None, exclude_keys=None):
         r"""Constructs a batch object from a python list holding
         :class:`torch_geometric.data.Data` objects.
         The assignment vector :obj:`batch` is created on the fly.
         Additionally, creates assignment batch vectors for each key in
         :obj:`follow_batch`.
-        Will exclude any keys given in :obj:`exclude_keys`."""
-
+        Will exclude any keys given in :obj:`exclude_keys`.
+        """
+        if exclude_keys is None:
+            exclude_keys = []
+        if follow_batch is None:
+            follow_batch = []
         keys = list(set(data_list[0].keys) - set(exclude_keys))
-        assert "batch" not in keys and "ptr" not in keys
+        assert "batch" not in keys
+        assert "ptr" not in keys
 
         batch = cls()
-        for key in data_list[0].__dict__.keys():
+        for key in data_list[0].__dict__:
             if key[:2] != "__" and key[-2:] != "__":
                 batch[key] = None
 
         batch.__num_graphs__ = len(data_list)
         batch.__data_class__ = data_list[0].__class__
-        for key in keys + ["batch"]:
+        for key in [*keys, "batch"]:
             batch[key] = []
         batch["ptr"] = [0]
 
@@ -154,37 +163,35 @@ class Batch(Data):
         r"""Reconstructs the :class:`torch_geometric.data.Data` object at index
         :obj:`idx` from the batch object.
         The batch object must have been created via :meth:`from_data_list` in
-        order to be able to reconstruct the initial objects."""
-
+        order to be able to reconstruct the initial objects.
+        """
         if self.__slices__ is None:
             raise RuntimeError(
-                (
+
                     "Cannot reconstruct data list from batch because the batch "
                     "object was not created using `Batch.from_data_list()`."
-                )
+
             )
 
         data = self.__data_class__()
         idx = self.num_graphs + idx if idx < 0 else idx
 
-        for key in self.__slices__.keys():
+        for key in self.__slices__:
             item = self[key]
             if self.__cat_dims__[key] is None:
                 # The item was concatenated along a new batch dimension,
                 # so just index in that dimension:
                 item = item[idx]
+            elif isinstance(item, Tensor):
+                dim = self.__cat_dims__[key]
+                start = self.__slices__[key][idx]
+                end = self.__slices__[key][idx + 1]
+                item = item.narrow(dim, start, end - start)
             else:
-                # Narrow the item based on the values in `__slices__`.
-                if isinstance(item, Tensor):
-                    dim = self.__cat_dims__[key]
-                    start = self.__slices__[key][idx]
-                    end = self.__slices__[key][idx + 1]
-                    item = item.narrow(dim, start, end - start)
-                else:
-                    start = self.__slices__[key][idx]
-                    end = self.__slices__[key][idx + 1]
-                    item = item[start:end]
-                    item = item[0] if len(item) == 1 else item
+                start = self.__slices__[key][idx]
+                end = self.__slices__[key][idx + 1]
+                item = item[start:end]
+                item = item[0] if len(item) == 1 else item
 
             # Decrease its value by `cumsum` value:
             cum = self.__cumsum__[key][idx]
@@ -201,7 +208,7 @@ class Batch(Data):
 
         return data
 
-    def index_select(self, idx: IndexType) -> List[Data]:
+    def index_select(self, idx: IndexType) -> list[Data]:
         if isinstance(idx, slice):
             idx = list(range(self.num_graphs)[idx])
 
@@ -231,17 +238,18 @@ class Batch(Data):
 
     def __getitem__(self, idx):
         if isinstance(idx, str):
-            return super(Batch, self).__getitem__(idx)
+            return super().__getitem__(idx)
         elif isinstance(idx, (int, np.integer)):
             return self.get_example(idx)
         else:
             return self.index_select(idx)
 
-    def to_data_list(self) -> List[Data]:
+    def to_data_list(self) -> list[Data]:
         r"""Reconstructs the list of :class:`torch_geometric.data.Data` objects
         from the batch object.
         The batch object must have been created via :meth:`from_data_list` in
-        order to be able to reconstruct the initial objects."""
+        order to be able to reconstruct the initial objects.
+        """
         return [self.get_example(i) for i in range(self.num_graphs)]
 
     @property

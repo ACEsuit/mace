@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import pytest
 import torch
@@ -127,6 +129,6 @@ def test_extract_config(model):
     output = model(batch)
     output_copy = model_copy(batch)
     # assert all items of the output dicts are equal
-    for key in output.keys():
+    for key in output:
         if isinstance(output[key], torch.Tensor):
             assert torch.allclose(output[key], output_copy[key], atol=1e-5)

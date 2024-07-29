@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import tempfile
 
 import numpy as np
@@ -5,12 +7,7 @@ import torch
 import torch.nn.functional
 from torch import nn, optim
 
-from mace.tools import (
-    AtomicNumberTable,
-    CheckpointHandler,
-    CheckpointState,
-    atomic_numbers_to_indices,
-)
+from mace.tools import AtomicNumberTable, CheckpointHandler, CheckpointState, atomic_numbers_to_indices
 
 
 def test_atomic_number_table():
