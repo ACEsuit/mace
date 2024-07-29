@@ -3,11 +3,10 @@
 # Authors: Ilyes Batatia, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
-
+from __future__ import annotations
 
 from glob import glob
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 import torch
@@ -49,7 +48,7 @@ class MACECalculator(Calculator):
 
     def __init__(
         self,
-        model_paths: Union[list, str],
+        model_paths: list | str,
         device: str,
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
@@ -205,17 +204,15 @@ class MACECalculator(Calculator):
             shuffle=False,
             drop_last=False,
         )
-        batch = next(iter(data_loader)).to(self.device)
-        return batch
+        return next(iter(data_loader)).to(self.device)
 
     def _clone_batch(self, batch):
         batch_clone = batch.clone()
         if self.use_compile:
-            batch_clone["node_attrs"].requires_grad_(True)
-            batch_clone["positions"].requires_grad_(True)
+            batch_clone["node_attrs"].requires_grad_(requires_grad=True)
+            batch_clone["positions"].requires_grad_(requires_grad=True)
         return batch_clone
 
-    # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         """
         Calculate properties.

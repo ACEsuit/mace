@@ -3,10 +3,10 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import argparse
 import os
-from typing import Optional
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -762,7 +762,7 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def check_float_or_none(value: str) -> Optional[float]:
+def check_float_or_none(value: str) -> float | None:
     try:
         return float(value)
     except ValueError:

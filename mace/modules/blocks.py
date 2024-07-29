@@ -3,9 +3,10 @@
 # Authors: Ilyes Batatia, Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable
 
 import numpy as np
 import torch.nn.functional
@@ -15,19 +16,8 @@ from e3nn.util.jit import compile_mode
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
 
-from .irreps_tools import (
-    linear_out_irreps,
-    reshape_irreps,
-    tp_out_irreps_with_instructions,
-)
-from .radial import (
-    AgnesiTransform,
-    BesselBasis,
-    ChebychevBasis,
-    GaussianBasis,
-    PolynomialCutoff,
-    SoftTransform,
-)
+from .irreps_tools import linear_out_irreps, reshape_irreps, tp_out_irreps_with_instructions
+from .radial import AgnesiTransform, BesselBasis, ChebychevBasis, GaussianBasis, PolynomialCutoff, SoftTransform
 from .symmetric_contraction import SymmetricContraction
 
 
@@ -58,7 +48,7 @@ class LinearReadoutBlock(torch.nn.Module):
 @compile_mode("script")
 class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
-        self, irreps_in: o3.Irreps, MLP_irreps: o3.Irreps, gate: Optional[Callable]
+        self, irreps_in: o3.Irreps, MLP_irreps: o3.Irreps, gate: Callable | None
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -131,7 +121,7 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
 class AtomicEnergiesBlock(torch.nn.Module):
     atomic_energies: torch.Tensor
 
-    def __init__(self, atomic_energies: Union[np.ndarray, torch.Tensor]):
+    def __init__(self, atomic_energies: np.ndarray | torch.Tensor):
         super().__init__()
         assert len(atomic_energies.shape) == 1
 
@@ -198,7 +188,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         target_irreps: o3.Irreps,
         correlation: int,
         use_sc: bool = True,
-        num_elements: Optional[int] = None,
+        num_elements: int | None = None,
     ) -> None:
         super().__init__()
 
@@ -220,7 +210,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
     def forward(
         self,
         node_feats: torch.Tensor,
-        sc: Optional[torch.Tensor],
+        sc: torch.Tensor | None,
         node_attrs: torch.Tensor,
     ) -> torch.Tensor:
         node_feats = self.symmetric_contractions(node_feats, node_attrs)
@@ -240,7 +230,7 @@ class InteractionBlock(torch.nn.Module):
         target_irreps: o3.Irreps,
         hidden_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        radial_MLP: Optional[List[int]] = None,
+        radial_MLP: list[int] | None = None,
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -392,7 +382,7 @@ class AgnosticNonlinearInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            [input_dim, *self.radial_MLP, self.conv_tp.weight_numel],
             torch.nn.functional.silu,
         )
 
@@ -429,8 +419,7 @@ class AgnosticNonlinearInteractionBlock(InteractionBlock):
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
         message = self.linear(message) / self.avg_num_neighbors
-        message = self.skip_tp(message, node_attrs)
-        return message  # [n_nodes, irreps]
+        return self.skip_tp(message, node_attrs)
 
 
 @compile_mode("script")
@@ -459,7 +448,7 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            [input_dim, *self.radial_MLP, self.conv_tp.weight_numel],
             torch.nn.functional.silu,
         )
 
@@ -497,8 +486,7 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
         message = self.linear(message) / self.avg_num_neighbors
-        message = message + sc
-        return message  # [n_nodes, irreps]
+        return message + sc
 
 
 @compile_mode("script")
@@ -529,7 +517,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            [input_dim, *self.radial_MLP, self.conv_tp.weight_numel],
             torch.nn.functional.silu,
         )
 
@@ -553,7 +541,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor, None]:
+    ) -> tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
@@ -601,7 +589,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            [input_dim, *self.radial_MLP, self.conv_tp.weight_numel],
             torch.nn.functional.silu,
         )
 
@@ -625,7 +613,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
@@ -709,7 +697,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor, None]:
+    ) -> tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]

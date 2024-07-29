@@ -3,17 +3,19 @@
 # Authors: Ilyes Batatia, Gregor Simm and David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, List, Sequence
 
 import ase.data
 import ase.io
 import h5py
 import numpy as np
 
-from mace.tools import AtomicNumberTable
+if TYPE_CHECKING:
+    from mace.tools import AtomicNumberTable
 
 Vector = np.ndarray  # [3,]
 Positions = np.ndarray  # [..., 3]
@@ -32,21 +34,21 @@ DEFAULT_CONFIG_TYPE_WEIGHTS = {DEFAULT_CONFIG_TYPE: 1.0}
 class Configuration:
     atomic_numbers: np.ndarray
     positions: Positions  # Angstrom
-    energy: Optional[float] = None  # eV
-    forces: Optional[Forces] = None  # eV/Angstrom
-    stress: Optional[Stress] = None  # eV/Angstrom^3
-    virials: Optional[Virials] = None  # eV
-    dipole: Optional[Vector] = None  # Debye
-    charges: Optional[Charges] = None  # atomic unit
-    cell: Optional[Cell] = None
-    pbc: Optional[Pbc] = None
+    energy: float | None = None  # eV
+    forces: Forces | None = None  # eV/Angstrom
+    stress: Stress | None = None  # eV/Angstrom^3
+    virials: Virials | None = None  # eV
+    dipole: Vector | None = None  # Debye
+    charges: Charges | None = None  # atomic unit
+    cell: Cell | None = None
+    pbc: Pbc | None = None
 
     weight: float = 1.0  # weight of config in loss
     energy_weight: float = 1.0  # weight of config energy in loss
     forces_weight: float = 1.0  # weight of config forces in loss
     stress_weight: float = 1.0  # weight of config stress in loss
     virials_weight: float = 1.0  # weight of config virial in loss
-    config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
+    config_type: str | None = DEFAULT_CONFIG_TYPE  # config_type of config
 
 
 Configurations = List[Configuration]
@@ -54,7 +56,7 @@ Configurations = List[Configuration]
 
 def random_train_valid_split(
     items: Sequence, valid_fraction: float, seed: int
-) -> Tuple[List, List]:
+) -> tuple[list, list]:
     assert 0.0 < valid_fraction < 1.0
 
     size = len(items)
@@ -71,14 +73,14 @@ def random_train_valid_split(
 
 
 def config_from_atoms_list(
-    atoms_list: List[ase.Atoms],
+    atoms_list: list[ase.Atoms],
     energy_key="energy",
     forces_key="forces",
     stress_key="stress",
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
-    config_type_weights: Dict[str, float] = None,
+    config_type_weights: dict[str, float] | None = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
     if config_type_weights is None:
@@ -109,7 +111,7 @@ def config_from_atoms(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
-    config_type_weights: Dict[str, float] = None,
+    config_type_weights: dict[str, float] | None = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
     if config_type_weights is None:
@@ -175,7 +177,7 @@ def config_from_atoms(
 
 def test_config_types(
     test_configs: Configurations,
-) -> List[Tuple[Optional[str], List[Configuration]]]:
+) -> list[tuple[str | None, list[Configuration]]]:
     """Split test set based on config_type-s"""
     test_by_ct = []
     all_cts = []
@@ -191,7 +193,7 @@ def test_config_types(
 
 def load_from_xyz(
     file_path: str,
-    config_type_weights: Dict,
+    config_type_weights: dict,
     energy_key: str = "energy",
     forces_key: str = "forces",
     stress_key: str = "stress",
@@ -200,7 +202,7 @@ def load_from_xyz(
     charges_key: str = "charges",
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
-) -> Tuple[Dict[int, float], Configurations]:
+) -> tuple[dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
     if energy_key == "energy":
         logging.info(
@@ -210,7 +212,7 @@ def load_from_xyz(
         for atoms in atoms_list:
             try:
                 atoms.info["REF_energy"] = atoms.get_potential_energy()
-            except Exception as e:  # pylint: disable=W0703
+            except Exception as e:
                 logging.warning(f"Failed to extract energy: {e}")
                 atoms.info["REF_energy"] = None
     if forces_key == "forces":
@@ -221,7 +223,7 @@ def load_from_xyz(
         for atoms in atoms_list:
             try:
                 atoms.arrays["REF_forces"] = atoms.get_forces()
-            except Exception as e:  # pylint: disable=W0703
+            except Exception as e:
                 logging.warning(f"Failed to extract forces: {e}")
                 atoms.arrays["REF_forces"] = None
     if stress_key == "stress":
@@ -232,7 +234,7 @@ def load_from_xyz(
         for atoms in atoms_list:
             try:
                 atoms.info["REF_stress"] = atoms.get_stress()
-            except Exception as e:  # pylint: disable=W0703
+            except Exception:
                 atoms.info["REF_stress"] = None
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
@@ -246,7 +248,7 @@ def load_from_xyz(
                 len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
             )
             if isolated_atom_config:
-                if energy_key in atoms.info.keys():
+                if energy_key in atoms.info:
                     atomic_energies_dict[atoms.get_atomic_numbers()[0]] = atoms.info[
                         energy_key
                     ]
@@ -279,7 +281,7 @@ def load_from_xyz(
 
 def compute_average_E0s(
     collections_train: Configurations, z_table: AtomicNumberTable
-) -> Dict[int, float]:
+) -> dict[int, float]:
     """
     Function to compute the average interaction energy of each chemical element
     returns dictionary of E0s
@@ -307,7 +309,7 @@ def compute_average_E0s(
     return atomic_energies_dict
 
 
-def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
+def save_dataset_as_HDF5(dataset: list, out_name: str) -> None:
     with h5py.File(out_name, "w") as f:
         for i, data in enumerate(dataset):
             grp = f.create_group(f"config_{i}")

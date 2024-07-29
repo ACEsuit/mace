@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from functools import wraps
 from typing import Callable
@@ -67,14 +69,13 @@ def create_batch(device: str):
     )
     batch = next(iter(data_loader))
     batch = batch.to(device)
-    batch = batch.to_dict()
-    return batch
+    return batch.to_dict()
 
 
 def time_func(func: Callable):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        torch._inductor.cudagraph_mark_step_begin()  # pylint: disable=W0212
+        torch._inductor.cudagraph_mark_step_begin()
         outputs = func(*args, **kwargs)
         torch.cuda.synchronize()
         return outputs
@@ -91,7 +92,7 @@ def default_dtype(request):
 # skip if on windows
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
-def test_mace(device, default_dtype):  # pylint: disable=W0621
+def test_mace(device, default_dtype):
     print(f"using default dtype = {default_dtype}")
     if device == "cuda" and not torch.cuda.is_available():
         pytest.skip(reason="cuda is not available")
@@ -109,7 +110,7 @@ def test_mace(device, default_dtype):  # pylint: disable=W0621
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
-def test_eager_benchmark(benchmark, default_dtype):  # pylint: disable=W0621
+def test_eager_benchmark(benchmark, default_dtype):
     print(f"using default dtype = {default_dtype}")
     batch = create_batch("cuda")
     model = create_mace("cuda")

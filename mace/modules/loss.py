@@ -3,11 +3,15 @@
 # Authors: Ilyes Batatia, Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import torch
 
-from mace.tools import TensorDict
-from mace.tools.torch_geometric import Batch
+if TYPE_CHECKING:
+    from mace.tools import TensorDict
+    from mace.tools.torch_geometric import Batch
 
 
 def mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
@@ -183,7 +187,7 @@ class WeightedForcesLoss(torch.nn.Module):
         return self.forces_weight * mean_squared_error_forces(ref, pred)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(" f"forces_weight={self.forces_weight:.3f})"
+        return f"{self.__class__.__name__}(forces_weight={self.forces_weight:.3f})"
 
 
 class WeightedEnergyForcesStressLoss(torch.nn.Module):
@@ -334,7 +338,7 @@ class DipoleSingleLoss(torch.nn.Module):
         )  # multiply by 100 to have the right scale for the loss
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(" f"dipole_weight={self.dipole_weight:.3f})"
+        return f"{self.__class__.__name__}(dipole_weight={self.dipole_weight:.3f})"
 
 
 class WeightedEnergyForcesDipoleLoss(torch.nn.Module):

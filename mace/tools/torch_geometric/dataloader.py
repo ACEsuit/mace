@@ -1,12 +1,16 @@
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
-from typing import List, Optional, Union
+from typing import TYPE_CHECKING
 
 import torch.utils.data
 from torch.utils.data.dataloader import default_collate
 
 from .batch import Batch
 from .data import Data
-from .dataset import Dataset
+
+if TYPE_CHECKING:
+    from .dataset import Dataset
 
 
 class Collater:
@@ -48,6 +52,7 @@ class DataLoader(torch.utils.data.DataLoader):
     :class:`torch_geometric.data.Dataset` to a mini-batch.
     Data objects can be either of type :class:`~torch_geometric.data.Data` or
     :class:`~torch_geometric.data.HeteroData`.
+
     Args:
         dataset (Dataset): The dataset from which to load the data.
         batch_size (int, optional): How many samples per batch to load.
@@ -67,10 +72,14 @@ class DataLoader(torch.utils.data.DataLoader):
         dataset: Dataset,
         batch_size: int = 1,
         shuffle: bool = False,
-        follow_batch: Optional[List[str]] = [None],
-        exclude_keys: Optional[List[str]] = [None],
+        follow_batch: list[str] | None = None,
+        exclude_keys: list[str] | None = None,
         **kwargs,
     ):
+        if exclude_keys is None:
+            exclude_keys = [None]
+        if follow_batch is None:
+            follow_batch = [None]
         if "collate_fn" in kwargs:
             del kwargs["collate_fn"]
 

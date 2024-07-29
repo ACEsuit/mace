@@ -1,20 +1,24 @@
+from __future__ import annotations
+
 from glob import glob
-from typing import List
+from typing import TYPE_CHECKING
 
 import h5py
 from torch.utils.data import ConcatDataset, Dataset
 
 from mace.data.atomic_data import AtomicData
 from mace.data.utils import Configuration
-from mace.tools.utils import AtomicNumberTable
+
+if TYPE_CHECKING:
+    from mace.tools.utils import AtomicNumberTable
 
 
 class HDF5Dataset(Dataset):
     def __init__(self, file_path, r_max, z_table, **kwargs):
-        super(HDF5Dataset, self).__init__()  # pylint: disable=super-with-arguments
+        super().__init__()
         self.file_path = file_path
         self._file = None
-        batch_key = list(self.file.keys())[0]
+        batch_key = next(iter(self.file.keys()))
         self.batch_size = len(self.file[batch_key].keys())
         self.length = len(self.file.keys()) * self.batch_size
         self.r_max = r_max
@@ -66,19 +70,17 @@ class HDF5Dataset(Dataset):
             pbc=unpack_value(subgrp["pbc"][()]),
             cell=unpack_value(subgrp["cell"][()]),
         )
-        atomic_data = AtomicData.from_config(
+        return AtomicData.from_config(
             config, z_table=self.z_table, cutoff=self.r_max
         )
-        return atomic_data
 
 
-def dataset_from_sharded_hdf5(files: List, z_table: AtomicNumberTable, r_max: float):
+def dataset_from_sharded_hdf5(files: list, z_table: AtomicNumberTable, r_max: float):
     files = glob(files + "/*")
     datasets = []
     for file in files:
         datasets.append(HDF5Dataset(file, z_table=z_table, r_max=r_max))
-    full_dataset = ConcatDataset(datasets)
-    return full_dataset
+    return ConcatDataset(datasets)
 
 
 def unpack_value(value):

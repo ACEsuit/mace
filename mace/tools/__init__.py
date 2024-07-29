@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState

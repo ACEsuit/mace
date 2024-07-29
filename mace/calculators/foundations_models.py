@@ -1,13 +1,17 @@
+from __future__ import annotations
+
 import os
 import urllib.request
-from pathlib import Path
-from typing import Union
+from typing import TYPE_CHECKING
 
 import torch
 from ase import units
 from ase.calculators.mixing import SumCalculator
 
 from .mace import MACECalculator
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 module_dir = os.path.dirname(__file__)
 local_model_path = os.path.join(
@@ -16,7 +20,7 @@ local_model_path = os.path.join(
 
 
 def mace_mp(
-    model: Union[str, Path] = None,
+    model: str | Path | None = None,
     device: str = "",
     default_dtype: str = "float32",
     dispersion: bool = False,
@@ -28,6 +32,7 @@ def mace_mp(
     """
     Constructs a MACECalculator with a pretrained model based on the Materials Project (89 elements).
     The model is released under the MIT license. See https://github.com/ACEsuit/mace-mp for all models.
+
     Note:
         If you are using this function, please cite the relevant paper for the Materials Project,
         any paper associated with the MACE model, and also the following:
@@ -129,12 +134,11 @@ def mace_mp(
             cutoff=dispersion_cutoff,
             **kwargs,
         )
-    calc = mace_calc if not dispersion else SumCalculator([mace_calc, d3_calc])
-    return calc
+    return mace_calc if not dispersion else SumCalculator([mace_calc, d3_calc])
 
 
 def mace_off(
-    model: Union[str, Path] = None,
+    model: str | Path | None = None,
     device: str = "",
     default_dtype: str = "float64",
     return_raw_model: bool = False,
@@ -143,6 +147,7 @@ def mace_off(
     """
     Constructs a MACECalculator with a pretrained model based on the MACE-OFF23 models.
     The model is released under the ASL license.
+
     Note:
         If you are using this function, please cite the relevant paper by Kovacs et.al., arXiv:2312.15211
 
@@ -203,19 +208,19 @@ def mace_off(
         print(
             "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization."
         )
-    mace_calc = MACECalculator(
+    return MACECalculator(
         model_paths=model, device=device, default_dtype=default_dtype, **kwargs
     )
-    return mace_calc
 
 
 def mace_anicc(
     device: str = "cuda",
-    model_path: str = None,
+    model_path: str | None = None,
 ) -> MACECalculator:
     """
     Constructs a MACECalculator with a pretrained model based on the ANI (H, C, N, O).
     The model is released under the MIT license.
+
     Note:
         If you are using this function, please cite the relevant paper associated with the MACE model, ANI dataset, and also the following:
         - "Evaluation of the MACE Force Field Architecture by Dávid Péter Kovács, Ilyes Batatia, Eszter Sára Arany, and Gábor Csányi, The Journal of Chemical Physics, 2023, URL: https://doi.org/10.1063/5.0155322

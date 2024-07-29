@@ -1,4 +1,6 @@
-from typing import Callable, Dict, Optional, Type
+from __future__ import annotations
+
+from typing import Callable
 
 import torch
 
@@ -30,14 +32,7 @@ from .loss import (
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
 )
-from .models import (
-    MACE,
-    AtomicDipolesMACE,
-    BOTNet,
-    EnergyDipolesMACE,
-    ScaleShiftBOTNet,
-    ScaleShiftMACE,
-)
+from .models import MACE, AtomicDipolesMACE, BOTNet, EnergyDipolesMACE, ScaleShiftBOTNet, ScaleShiftMACE
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
@@ -49,7 +44,7 @@ from .utils import (
     compute_statistics,
 )
 
-interaction_classes: Dict[str, Type[InteractionBlock]] = {
+interaction_classes: dict[str, type[InteractionBlock]] = {
     "AgnosticNonlinearInteractionBlock": AgnosticNonlinearInteractionBlock,
     "ResidualElementDependentInteractionBlock": ResidualElementDependentInteractionBlock,
     "AgnosticResidualNonlinearInteractionBlock": AgnosticResidualNonlinearInteractionBlock,
@@ -58,13 +53,13 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
 }
 
-scaling_classes: Dict[str, Callable] = {
+scaling_classes: dict[str, Callable] = {
     "std_scaling": compute_mean_std_atomic_inter_energy,
     "rms_forces_scaling": compute_mean_rms_energy_forces,
     "rms_dipoles_scaling": compute_rms_dipoles,
 }
 
-gate_dict: Dict[str, Optional[Callable]] = {
+gate_dict: dict[str, Callable | None] = {
     "abs": torch.abs,
     "tanh": torch.tanh,
     "silu": torch.nn.functional.silu,

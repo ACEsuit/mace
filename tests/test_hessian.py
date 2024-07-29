@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import pytest
 from ase.build import fcc111
@@ -7,10 +9,9 @@ from mace.calculators import mace_mp
 
 @pytest.fixture(name="setup_calculator_")
 def setup_calculator():
-    calc = mace_mp(
+    return mace_mp(
         model="medium", dispersion=False, default_dtype="float64", device="cpu"
     )
-    return calc
 
 
 @pytest.fixture(name="setup_structure_")

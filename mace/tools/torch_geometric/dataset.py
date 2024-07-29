@@ -1,16 +1,19 @@
+from __future__ import annotations
+
 import copy
+import os
 import os.path as osp
 import re
 import warnings
 from collections.abc import Sequence
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Union
 
 import numpy as np
 import torch.utils.data
 from torch import Tensor
 
-from .data import Data
-from .utils import makedirs
+if TYPE_CHECKING:
+    from .data import Data
 
 IndexType = Union[slice, Tensor, np.ndarray, Sequence]
 
@@ -38,15 +41,17 @@ class Dataset(torch.utils.data.Dataset):
     """
 
     @property
-    def raw_file_names(self) -> Union[str, List[str], Tuple]:
+    def raw_file_names(self) -> str | list[str] | tuple:
         r"""The name of the files to find in the :obj:`self.raw_dir` folder in
-        order to skip the download."""
+        order to skip the download.
+        """
         raise NotImplementedError
 
     @property
-    def processed_file_names(self) -> Union[str, List[str], Tuple]:
+    def processed_file_names(self) -> str | list[str] | tuple:
         r"""The name of the files to find in the :obj:`self.processed_dir`
-        folder in order to skip the processing."""
+        folder in order to skip the processing.
+        """
         raise NotImplementedError
 
     def download(self):
@@ -66,10 +71,10 @@ class Dataset(torch.utils.data.Dataset):
 
     def __init__(
         self,
-        root: Optional[str] = None,
-        transform: Optional[Callable] = None,
-        pre_transform: Optional[Callable] = None,
-        pre_filter: Optional[Callable] = None,
+        root: str | None = None,
+        transform: Callable | None = None,
+        pre_transform: Callable | None = None,
+        pre_filter: Callable | None = None,
     ):
         super().__init__()
 
@@ -80,12 +85,12 @@ class Dataset(torch.utils.data.Dataset):
         self.transform = transform
         self.pre_transform = pre_transform
         self.pre_filter = pre_filter
-        self._indices: Optional[Sequence] = None
+        self._indices: Sequence | None = None
 
-        if "download" in self.__class__.__dict__.keys():
+        if "download" in self.__class__.__dict__:
             self._download()
 
-        if "process" in self.__class__.__dict__.keys():
+        if "process" in self.__class__.__dict__:
             self._process()
 
     def indices(self) -> Sequence:
@@ -127,15 +132,16 @@ class Dataset(torch.utils.data.Dataset):
         )
 
     @property
-    def raw_paths(self) -> List[str]:
+    def raw_paths(self) -> list[str]:
         r"""The filepaths to find in order to skip the download."""
         files = to_list(self.raw_file_names)
         return [osp.join(self.raw_dir, f) for f in files]
 
     @property
-    def processed_paths(self) -> List[str]:
+    def processed_paths(self) -> list[str]:
         r"""The filepaths to find in the :obj:`self.processed_dir`
-        folder in order to skip the processing."""
+        folder in order to skip the processing.
+        """
         files = to_list(self.processed_file_names)
         return [osp.join(self.processed_dir, f) for f in files]
 
@@ -143,7 +149,7 @@ class Dataset(torch.utils.data.Dataset):
         if files_exist(self.raw_paths):  # pragma: no cover
             return
 
-        makedirs(self.raw_dir)
+        os.makedirs(self.raw_dir, exist_ok=True)
         self.download()
 
     def _process(self):
@@ -170,7 +176,7 @@ class Dataset(torch.utils.data.Dataset):
 
         print("Processing...")
 
-        makedirs(self.processed_dir)
+        os.makedirs(self.processed_dir, exist_ok=True)
         self.process()
 
         path = osp.join(self.processed_dir, "pre_transform.pt")
@@ -186,28 +192,28 @@ class Dataset(torch.utils.data.Dataset):
 
     def __getitem__(
         self,
-        idx: Union[int, np.integer, IndexType],
-    ) -> Union["Dataset", Data]:
+        idx: int | np.integer | IndexType,
+    ) -> Dataset | Data:
         r"""In case :obj:`idx` is of type integer, will return the data object
         at index :obj:`idx` (and transforms it in case :obj:`transform` is
         present).
         In case :obj:`idx` is a slicing object, *e.g.*, :obj:`[2:5]`, a list, a
         tuple, a PyTorch :obj:`LongTensor` or a :obj:`BoolTensor`, or a numpy
         :obj:`np.array`, will return a subset of the dataset at the specified
-        indices."""
+        indices.
+        """
         if (
             isinstance(idx, (int, np.integer))
             or (isinstance(idx, Tensor) and idx.dim() == 0)
             or (isinstance(idx, np.ndarray) and np.isscalar(idx))
         ):
             data = self.get(self.indices()[idx])
-            data = data if self.transform is None else self.transform(data)
-            return data
+            return data if self.transform is None else self.transform(data)
 
         else:
             return self.index_select(idx)
 
-    def index_select(self, idx: IndexType) -> "Dataset":
+    def index_select(self, idx: IndexType) -> Dataset:
         indices = self.indices()
 
         if isinstance(idx, slice):
@@ -244,7 +250,7 @@ class Dataset(torch.utils.data.Dataset):
     def shuffle(
         self,
         return_perm: bool = False,
-    ) -> Union["Dataset", Tuple["Dataset", Tensor]]:
+    ) -> Dataset | tuple[Dataset, Tensor]:
         r"""Randomly shuffles the examples in the dataset.
 
         Args:
@@ -268,10 +274,10 @@ def to_list(value: Any) -> Sequence:
         return [value]
 
 
-def files_exist(files: List[str]) -> bool:
+def files_exist(files: list[str]) -> bool:
     # NOTE: We return `False` in case `files` is empty, leading to a
     # re-processing of files on every instantiation.
-    return len(files) != 0 and all([osp.exists(f) for f in files])
+    return len(files) != 0 and all(osp.exists(f) for f in files)
 
 
 def _repr(obj: Any) -> str:

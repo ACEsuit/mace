@@ -3,34 +3,31 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import dataclasses
 import logging
 import time
 from contextlib import nullcontext
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 import torch.distributed
-from torch.nn.parallel import DistributedDataParallel
-from torch.optim.swa_utils import SWALR, AveragedModel
-from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
-from torch_ema import ExponentialMovingAverage
 from torchmetrics import Metric
 
-from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
 from .torch_tools import to_numpy
-from .utils import (
-    MetricsLogger,
-    compute_mae,
-    compute_q95,
-    compute_rel_mae,
-    compute_rel_rmse,
-    compute_rmse,
-)
+from .utils import MetricsLogger, compute_mae, compute_q95, compute_rel_mae, compute_rel_rmse, compute_rmse
+
+if TYPE_CHECKING:
+    from torch.nn.parallel import DistributedDataParallel
+    from torch.optim.swa_utils import SWALR, AveragedModel
+    from torch.utils.data import DataLoader
+    from torch.utils.data.distributed import DistributedSampler
+    from torch_ema import ExponentialMovingAverage
+
+    from . import torch_geometric
 
 
 @dataclasses.dataclass
@@ -107,7 +104,7 @@ def train(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     train_loader: DataLoader,
-    valid_loader: Dict[str, DataLoader],
+    valid_loader: dict[str, DataLoader],
     optimizer: torch.optim.Optimizer,
     lr_scheduler: torch.optim.lr_scheduler.ExponentialLR,
     start_epoch: int,
@@ -116,18 +113,18 @@ def train(
     checkpoint_handler: CheckpointHandler,
     logger: MetricsLogger,
     eval_interval: int,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     device: torch.device,
     log_errors: str,
-    swa: Optional[SWAContainer] = None,
-    ema: Optional[ExponentialMovingAverage] = None,
-    max_grad_norm: Optional[float] = 10.0,
+    swa: SWAContainer | None = None,
+    ema: ExponentialMovingAverage | None = None,
+    max_grad_norm: float | None = 10.0,
     log_wandb: bool = False,
     distributed: bool = False,
     save_all_checkpoints: bool = False,
-    distributed_model: Optional[DistributedDataParallel] = None,
-    train_sampler: Optional[DistributedSampler] = None,
-    rank: Optional[int] = 0,
+    distributed_model: DistributedDataParallel | None = None,
+    train_sampler: DistributedSampler | None = None,
+    rank: int | None = 0,
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
@@ -279,13 +276,13 @@ def train_one_epoch(
     data_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     epoch: int,
-    output_args: Dict[str, bool],
-    max_grad_norm: Optional[float],
-    ema: Optional[ExponentialMovingAverage],
+    output_args: dict[str, bool],
+    max_grad_norm: float | None,
+    ema: ExponentialMovingAverage | None,
     logger: MetricsLogger,
     device: torch.device,
-    distributed_model: Optional[DistributedDataParallel] = None,
-    rank: Optional[int] = 0,
+    distributed_model: DistributedDataParallel | None = None,
+    rank: int | None = 0,
 ) -> None:
     model_to_train = model if distributed_model is None else distributed_model
     for batch in data_loader:
@@ -310,11 +307,11 @@ def take_step(
     loss_fn: torch.nn.Module,
     batch: torch_geometric.batch.Batch,
     optimizer: torch.optim.Optimizer,
-    ema: Optional[ExponentialMovingAverage],
-    output_args: Dict[str, bool],
-    max_grad_norm: Optional[float],
+    ema: ExponentialMovingAverage | None,
+    output_args: dict[str, bool],
+    max_grad_norm: float | None,
     device: torch.device,
-) -> Tuple[float, Dict[str, Any]]:
+) -> tuple[float, dict[str, Any]]:
     start_time = time.time()
     batch = batch.to(device)
     optimizer.zero_grad(set_to_none=True)
@@ -347,9 +344,9 @@ def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     data_loader: DataLoader,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     device: torch.device,
-) -> Tuple[float, Dict[str, Any]]:
+) -> tuple[float, dict[str, Any]]:
     for param in model.parameters():
         param.requires_grad = False
 
@@ -405,7 +402,7 @@ class MACELoss(Metric):
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
 
-    def update(self, batch, output):  # pylint: disable=arguments-differ
+    def update(self, batch, output):
         loss = self.loss_fn(pred=output, ref=batch)
         self.total_loss += loss
         self.num_data += batch.num_graphs
@@ -443,7 +440,7 @@ class MACELoss(Metric):
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
 
-    def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
+    def convert(self, delta: torch.Tensor | list[torch.Tensor]) -> np.ndarray:
         if isinstance(delta, list):
             delta = torch.cat(delta)
         return to_numpy(delta)

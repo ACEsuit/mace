@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from contextlib import contextmanager
 from functools import wraps
 from typing import Callable, Tuple
@@ -44,8 +46,7 @@ def prepare(func: ModuleFactory, allow_autograd: bool = True) -> ModuleFactory:
         with disable_e3nn_codegen():
             model = func(*args, **kwargs)
 
-        model = simplify(model)
-        return model
+        return simplify(model)
 
     return wrapper
 

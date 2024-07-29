@@ -1,7 +1,7 @@
 # This file loads an xyz dataset and prepares
 # new hdf5 file that is ready for training with on-the-fly dataloading
+from __future__ import annotations
 
-import argparse
 import ast
 import json
 import logging
@@ -10,7 +10,7 @@ import os
 import random
 from functools import partial
 from glob import glob
-from typing import List, Tuple
+from typing import TYPE_CHECKING
 
 import h5py
 import numpy as np
@@ -21,14 +21,18 @@ from mace.data.utils import save_configurations_as_HDF5
 from mace.modules import compute_statistics
 from mace.tools import torch_geometric
 from mace.tools.scripts_utils import get_atomic_energies, get_dataset_from_xyz
-from mace.tools.utils import AtomicNumberTable
+
+if TYPE_CHECKING:
+    import argparse
+
+    from mace.tools.utils import AtomicNumberTable
 
 
 def compute_stats_target(
     file: str,
     z_table: AtomicNumberTable,
     r_max: float,
-    atomic_energies: Tuple,
+    atomic_energies: tuple,
     batch_size: int,
 ):
     train_dataset = data.HDF5Dataset(file, z_table=z_table, r_max=r_max)
@@ -40,11 +44,10 @@ def compute_stats_target(
     )
 
     avg_num_neighbors, mean, std = compute_statistics(train_loader, atomic_energies)
-    output = [avg_num_neighbors, mean, std]
-    return output
+    return [avg_num_neighbors, mean, std]
 
 
-def pool_compute_stats(inputs: List):
+def pool_compute_stats(inputs: list):
     path_to_files, z_table, r_max, atomic_energies, batch_size, num_process = inputs
 
     with mp.Pool(processes=num_process) as pool:
@@ -77,7 +80,7 @@ def split_array(a: np.ndarray, max_size: int):
     factors = get_prime_factors(len(a))
     max_factor = 1
     for i in range(1, len(factors) + 1):
-        for j in range(0, len(factors) - i + 1):
+        for j in range(len(factors) - i + 1):
             if np.prod(factors[j : j + i]) <= max_size:
                 test = np.prod(factors[j : j + i])
                 max_factor = max(test, max_factor)
@@ -128,7 +131,6 @@ def run(args: argparse.Namespace):
     This script loads an xyz dataset and prepares
     new hdf5 file that is ready for training with on-the-fly dataloading
     """
-
     # Setup
     tools.set_seeds(args.seed)
     random.seed(args.seed)
@@ -142,7 +144,7 @@ def run(args: argparse.Namespace):
     try:
         config_type_weights = ast.literal_eval(args.config_type_weights)
         assert isinstance(config_type_weights, dict)
-    except Exception as e:  # pylint: disable=W0703
+    except Exception as e:
         logging.warning(
             f"Config type weights not specified correctly ({e}), using Default"
         )
@@ -212,7 +214,7 @@ def run(args: argparse.Namespace):
             [atomic_energies_dict[z] for z in z_table.zs]
         )
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
-        _inputs = [args.h5_prefix+'train', z_table, args.r_max, atomic_energies, args.batch_size, args.num_process]
+        _inputs = [args.h5_prefix+"train", z_table, args.r_max, atomic_energies, args.batch_size, args.num_process]
         avg_num_neighbors, mean, std=pool_compute_stats(_inputs)
         logging.info(f"Average number of neighbors: {avg_num_neighbors}")
         logging.info(f"Mean: {mean}")
@@ -228,7 +230,7 @@ def run(args: argparse.Namespace):
             "r_max": args.r_max,
         }
 
-        with open(args.h5_prefix + "statistics.json", "w") as f: # pylint: disable=W1514
+        with open(args.h5_prefix + "statistics.json", "w") as f:
             json.dump(statistics, f)
 
     logging.info("Preparing validation set")

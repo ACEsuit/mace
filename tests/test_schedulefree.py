@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import tempfile
 from unittest.mock import MagicMock
 
@@ -73,8 +75,7 @@ def create_batch(device: str):
     )
     batch = next(iter(data_loader))
     batch = batch.to(device)
-    batch = batch.to_dict()
-    return batch
+    return batch.to_dict()
 
 
 def do_optimization_step(
