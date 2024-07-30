@@ -45,15 +45,16 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
     eval_metrics["mode"] = "eval"
     eval_metrics["epoch"] = epoch
     logger.log(eval_metrics)
+    logging_level=logging.INFO
     if epoch is None:
-        logging_level=logging.DEBUG
+        initial_phrase = "Initial loss on validation set:"
     else:
-        logging_level=logging.INFO
+        initial_phrase = f"Epoch {epoch}:"
     if log_errors == "PerAtomRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.log(level=logging_level,
-            msg=f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
+            msg=f"{initial_phrase} loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -147,7 +148,7 @@ def train(
 
     logging.info("")
     logging.info("===========TRAINING===========")
-    logging.info("Started training")
+    logging.info("Started training, reporting errors on validation set")
     epoch = start_epoch
 
     # # log validation loss before _any_ training
