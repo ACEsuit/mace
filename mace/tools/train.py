@@ -46,10 +46,8 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
     eval_metrics["epoch"] = epoch
     logger.log(eval_metrics)
     logging_level=logging.INFO
-    if epoch is None:
-        initial_phrase = "Initial loss on validation set:"
-    else:
-        initial_phrase = f"Epoch {epoch}:"
+    initial_phrase = "Initial loss on validation set:" if epoch is None else f"Epoch {epoch}:"
+    
     if log_errors == "PerAtomRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
