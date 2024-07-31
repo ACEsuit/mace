@@ -75,9 +75,9 @@ def config_from_atoms_list(
     energy_key="REF_energy",
     forces_key="REF_forces",
     stress_key="REF_stress",
-    virials_key="virials",
-    dipole_key="dipole",
-    charges_key="charges",
+    virials_key="REF_virials",
+    dipole_key="REF_dipole",
+    charges_key="REF_charges",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -106,9 +106,9 @@ def config_from_atoms(
     energy_key="REF_energy",
     forces_key="REF_forces",
     stress_key="REF_stress",
-    virials_key="virials",
-    dipole_key="dipole",
-    charges_key="charges",
+    virials_key="REF_virials",
+    dipole_key="REF_dipole",
+    charges_key="REF_charges",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -195,9 +195,9 @@ def load_from_xyz(
     energy_key: str = "REF_energy",
     forces_key: str = "REF_forces",
     stress_key: str = "REF_stress",
-    virials_key: str = "virials",
-    dipole_key: str = "dipole",
-    charges_key: str = "charges",
+    virials_key: str = "REF_virials",
+    dipole_key: str = "REF_dipole",
+    charges_key: str = "REF_charges",
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
