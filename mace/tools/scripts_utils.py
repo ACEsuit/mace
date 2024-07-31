@@ -291,7 +291,7 @@ def load_from_json(f: str, map_location: str = "cpu") -> torch.nn.Module:
 def get_atomic_energies(E0s, train_collection, z_table) -> dict:
     if E0s is not None:
         logging.info(
-            "Atomic Energies not in training file, using command line argument E0s"
+            "Isolated Atomic Energies (E0s) not in training file, using command line argument"
         )
         if E0s.lower() == "average":
             logging.info(
