@@ -179,12 +179,11 @@ def run(args: argparse.Namespace) -> None:
         assert isinstance(zs_list, list)
         z_table = tools.get_atomic_number_table_from_zs(zs_list)
     # yapf: enable
-    logging.info(z_table)
+    logging.info(f"Atomic Numbers used: {z_table.zs}")
 
     if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
         if args.E0s.lower() == "foundation":
             assert args.foundation_model is not None
-            logging.info("Using atomic energies from foundation model")
             z_table_foundation = AtomicNumberTable(
                 [int(z) for z in model_foundation.atomic_numbers]
             )
@@ -194,6 +193,7 @@ def run(args: argparse.Namespace) -> None:
                 ].item()
                 for z in z_table.zs
             }
+            logging.info(f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table_foundation.zs])}")
         else:
             if args.train_file.endswith(".xyz"):
                 atomic_energies_dict = get_atomic_energies(
@@ -224,8 +224,8 @@ def run(args: argparse.Namespace) -> None:
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
-        logging.info(f"Atomic energies: {atomic_energies.tolist()}")
-
+        logging.info(f"Atomic Energies used [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table.zs])}")
+        
     if args.train_file.endswith(".xyz"):
         train_set = [
             data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
@@ -368,7 +368,8 @@ def run(args: argparse.Namespace) -> None:
         "stress": args.compute_stress,
         "dipoles": compute_dipole,
     }
-    logging.info(f"Selected the following outputs: {output_args}")
+
+    logging.info(f"Selected the following values to use and report: {[report for report, value in output_args.items() if value]}")
 
     if args.scaling == "no_scaling":
         args.std = 1.0
