@@ -21,6 +21,9 @@ repos:
       - id: black
         name: Black Formating
         exclude: *exclude_files
+        args: [
+          '--line-length=100',
+        ]
 
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2
