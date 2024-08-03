@@ -215,6 +215,7 @@ class MACE(torch.nn.Module):
         edge_feats = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
@@ -310,10 +311,14 @@ class ScaleShiftMACE(MACE):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
+        decouple_indices: Optional[torch.Tensor] = None,
+        lmbda: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
+        #  if lmbda is not None:  -- disabled to reduce computational cost
+        #     lmbda.requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3),
@@ -351,6 +356,23 @@ class ScaleShiftMACE(MACE):
         edge_feats = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+        # scale edge attrs and edge feats by lambda according to the alchemical mask
+        if lmbda is not None and decouple_indices is not None:
+            max_alchemical_atom_idx = torch.max(decouple_indices)
+            alchemical_mask = torch.logical_or(
+                torch.logical_and(
+                    data["edge_index"][0, :] <= max_alchemical_atom_idx,
+                    data["edge_index"][1, :] > max_alchemical_atom_idx,
+                ),
+                torch.logical_and(
+                    data["edge_index"][1, :] <= max_alchemical_atom_idx,
+                    data["edge_index"][0, :] > max_alchemical_atom_idx,
+                ),
+            )
+
+            edge_attrs[alchemical_mask] *= lmbda
+            edge_feats[alchemical_mask] *= lmbda
+
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
