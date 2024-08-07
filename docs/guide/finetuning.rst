@@ -32,7 +32,7 @@ For example to finetune the small model on a new dataset, you can use:
         --ema \
         --ema_decay=0.99 \
         --amsgrad \
-        --default_dtype="float32" \
+        --default_dtype="float64" \
         --device=cuda \
         --seed=3 
 
