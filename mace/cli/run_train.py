@@ -791,6 +791,16 @@ def main() -> None:
             logging.info(
                 f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
             )
+        elif args.loss == "universal":
+            loss_fn_energy = modules.UniversalLoss(
+                energy_weight=args.swa_energy_weight,
+                forces_weight=args.swa_forces_weight,
+                stress_weight=args.swa_stress_weight,
+                huber_delta=args.huber_delta,
+            )
+            logging.info(
+                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
+            )
         else:
             loss_fn_energy = modules.WeightedEnergyForcesLoss(
                 energy_weight=args.swa_energy_weight,
