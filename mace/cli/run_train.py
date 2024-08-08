@@ -4,6 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import argparse
 import ast
 import glob
 import json
@@ -45,11 +46,18 @@ from mace.tools.finetuning_utils import (
 )
 from mace.tools.utils import AtomicNumberTable
 
-
 def main() -> None:
+    """
+    This script runs the training/fine tuning for mace
+    """
     args = tools.build_default_arg_parser().parse_args()
-    tag = tools.get_tag(name=args.name, seed=args.seed)
+    run(args)
 
+
+def run(args: argparse.Namespace) -> None:
+
+    tag = tools.get_tag(name=args.name, seed=args.seed)
+    
     if args.device == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
