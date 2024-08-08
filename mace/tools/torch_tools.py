@@ -68,7 +68,6 @@ def init_device(device_str: str) -> torch.device:
         torch.xpu.is_available()
         return torch.device("xpu")
 
-
     logging.info("Using CPU")
     return torch.device("cpu")
 

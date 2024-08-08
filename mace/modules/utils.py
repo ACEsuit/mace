@@ -144,7 +144,6 @@ def compute_hessians_loop(
     forces: torch.Tensor,
     positions: torch.Tensor,
 ) -> torch.Tensor:
-
     hessian = []
     for grad_elem in forces.view(-1):
         hess_row = torch.autograd.grad(
