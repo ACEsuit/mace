@@ -191,7 +191,6 @@ class MACE(torch.nn.Module):
         # Setup
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
-        print("head", data["head"])
         num_atoms_arange = torch.arange(data["positions"].shape[0])
         num_graphs = data["ptr"].numel() - 1
         node_heads = data["head"][data["batch"]]
@@ -218,7 +217,6 @@ class MACE(torch.nn.Module):
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
         ]
-        # print("node e0", node_e0.shape)
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
         )  # [n_graphs, n_heads]
@@ -245,8 +243,6 @@ class MACE(torch.nn.Module):
             pair_energy = torch.zeros_like(e0)
 
         # Interactions
-        print("pair_energy", pair_energy)
-        print("pair_node_energy", pair_node_energy)
         energies = [e0, pair_energy]
         node_energies_list = [node_e0, pair_node_energy]
         node_feats_list = []
@@ -277,7 +273,6 @@ class MACE(torch.nn.Module):
             )  # [n_graphs,]
             energies.append(energy)
             node_energies_list.append(node_energies)
-        print("node_energies", node_energies)
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
 
@@ -409,12 +404,10 @@ class ScaleShiftMACE(MACE):
 
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
-        # print("node_es_list", node_es_list)
         # Sum over interactions
         node_inter_es = torch.sum(
             torch.stack(node_es_list, dim=0), dim=0
         )  # [n_nodes, ]
-        # print("node_inter_es", node_inter_es.shape)
         node_inter_es = self.scale_shift(node_inter_es, node_heads)
 
         # Sum over nodes in graph

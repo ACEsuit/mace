@@ -294,7 +294,7 @@ def load_from_json(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return model_load_yaml.to(map_location)
 
 
-def get_atomic_energies(E0s, train_collection, z_table) -> dict:
+def get_atomic_energies(E0s, train_collection, z_table, heads) -> dict:
     if E0s is not None:
         logging.info(
             "Atomic Energies not in training file, using command line argument E0s"
