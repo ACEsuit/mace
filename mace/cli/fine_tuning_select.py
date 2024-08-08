@@ -6,7 +6,6 @@ import argparse
 import logging
 from typing import List
 
-
 import ase.data
 import ase.io
 import numpy as np

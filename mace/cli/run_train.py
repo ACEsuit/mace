@@ -10,11 +10,10 @@ import glob
 import json
 import logging
 import os
+import urllib.request
 from copy import deepcopy
 from pathlib import Path
 from typing import Optional
-import urllib.request
-
 
 import numpy as np
 import torch.distributed
@@ -30,26 +29,21 @@ from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.cli.fine_tuning_select import select_samples
 from mace.tools import torch_geometric
-from mace.tools.finetuning_utils import load_foundations
+from mace.tools.finetuning_utils import load_foundations, load_foundations_elements
 from mace.tools.scripts_utils import (
     LRScheduler,
+    check_folder_subfolder,
     convert_to_json_format,
     create_error_table,
+    dict_to_array,
     dict_to_namespace,
     extract_config_mace_model,
     get_atomic_energies,
     get_config_type_weights,
     get_dataset_from_xyz,
     get_files_with_suffix,
-    dict_to_array,
-    check_folder_subfolder,
     print_git_commit,
 )
-from mace.tools.slurm_distributed import DistributedEnvironment
-from mace.tools.finetuning_utils import (
-    load_foundations_elements,
-)
-
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
 
