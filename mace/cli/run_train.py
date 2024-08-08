@@ -576,18 +576,18 @@ def run(args: argparse.Namespace) -> None:
     # Build model
     if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
         logging.info("Building model")
-        model_config = extract_config_mace_model(model_foundation)
-        model_config["atomic_energies"] = atomic_energies
-        model_config["atomic_numbers"] = z_table.zs
-        model_config["num_elements"] = len(z_table)
-        args.max_L = model_config["hidden_irreps"].lmax
+        model_config_foundation = extract_config_mace_model(model_foundation)
+        model_config_foundation["atomic_energies"] = atomic_energies
+        model_config_foundation["atomic_numbers"] = z_table.zs
+        model_config_foundation["num_elements"] = len(z_table)
+        args.max_L = model_config_foundation["hidden_irreps"].lmax
         if args.model == "MACE" and model_foundation.__class__.__name__ == "MACE":
-            model_config["atomic_inter_shift"] = [0.0] * len(heads)
+            model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
         else:
-            model_config["atomic_inter_shift"] = [args.mean] * len(heads)
-        model_config["atomic_inter_scale"] = [1.0] * len(heads)
+            model_config_foundation["atomic_inter_shift"] = [args.mean] * len(heads)
+        model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.model = "FoundationMACE"
-        model_config["heads"] = args.heads
+        model_config_foundation["heads"] = args.heads
         logging.info("Model configuration extracted from foundation model")
         logging.info("Using universal loss function for fine-tuning")
     else:
