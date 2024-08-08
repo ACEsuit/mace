@@ -56,8 +56,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     args = parse_args()
+    run(args)
+
+
+def run(args: argparse.Namespace) -> None:
+
     torch_tools.set_default_dtype(args.default_dtype)
     device = torch_tools.init_device(args.device)
 

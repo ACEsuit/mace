@@ -4,11 +4,13 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import argparse
 import ast
 import glob
 import json
 import logging
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Optional
 import urllib.request
@@ -18,6 +20,7 @@ import numpy as np
 import torch.distributed
 import torch.nn.functional
 from e3nn import o3
+from e3nn.util import jit
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
@@ -27,27 +30,42 @@ from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.cli.fine_tuning_select import select_samples
 from mace.tools import torch_geometric
+from mace.tools.finetuning_utils import load_foundations
 from mace.tools.scripts_utils import (
     LRScheduler,
+    convert_to_json_format,
     create_error_table,
     dict_to_namespace,
+    extract_config_mace_model,
     get_atomic_energies,
     get_config_type_weights,
     get_dataset_from_xyz,
     get_files_with_suffix,
     dict_to_array,
     check_folder_subfolder,
+    print_git_commit,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.finetuning_utils import (
     load_foundations_elements,
-    extract_config_mace_model,
 )
+
+from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
 
 
 def main() -> None:
+    """
+    This script runs the training/fine tuning for mace
+    """
     args = tools.build_default_arg_parser().parse_args()
+    run(args)
+
+
+def run(args: argparse.Namespace) -> None:
+    """
+    This script runs the training/fine tuning for mace
+    """
     tag = tools.get_tag(name=args.name, seed=args.seed)
 
     if args.device == "xpu":
@@ -89,7 +107,7 @@ def main() -> None:
 
     tools.set_default_dtype(args.default_dtype)
     device = tools.init_device(args.device)
-
+    commit = print_git_commit()
     if args.foundation_model is not None:
         if args.multiheads_finetuning:
             assert (
@@ -110,12 +128,12 @@ def main() -> None:
             logging.info(
                 f"Using foundation model mace-off-2023 {model_type} as initial checkpoint. ASL license."
             )
-            model_foundation = mace_off(
+            calc = mace_off(
                 model=model_type,
                 device=args.device,
                 default_dtype=args.default_dtype,
-                return_raw_model=True,
             )
+            model_foundation = calc.models[0]
         else:
             model_foundation = torch.load(
                 args.foundation_model, map_location=args.device
@@ -312,6 +330,18 @@ def main() -> None:
             atomic_energies_dict = get_atomic_energies(
                 args.E0s, collections.train, z_table, heads
             )
+        if args.E0s.lower() == "foundation":
+            assert args.foundation_model is not None
+            logging.info("Using atomic energies from foundation model")
+            z_table_foundation = AtomicNumberTable(
+                [int(z) for z in model_foundation.atomic_numbers]
+            )
+            atomic_energies_dict = {
+                z: model_foundation.atomic_energies_fn.atomic_energies[
+                    z_table_foundation.z_to_index(z)
+                ].item()
+                for z in z_table.zs
+            }
         else:
             atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table, heads)
     if args.multiheads_finetuning:
@@ -544,7 +574,7 @@ def main() -> None:
             train_loader, atomic_energies
         )
     # Build model
-    if args.foundation_model is not None:
+    if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
         logging.info("Building model")
         model_config = extract_config_mace_model(model_foundation)
         model_config["atomic_energies"] = atomic_energies
@@ -626,7 +656,7 @@ def main() -> None:
             heads=heads,
         )
     elif args.model == "FoundationMACE":
-        model = modules.ScaleShiftMACE(**model_config)
+        model = modules.ScaleShiftMACE(**model_config_foundation)
     elif args.model == "ScaleShiftBOTNet":
         model = modules.ScaleShiftBOTNet(
             **model_config,
@@ -738,39 +768,49 @@ def main() -> None:
         ],
         lr=args.lr,
         amsgrad=args.amsgrad,
+        betas=(args.beta, 0.999),
     )
 
     optimizer: torch.optim.Optimizer
     if args.optimizer == "adamw":
         optimizer = torch.optim.AdamW(**param_options)
+    elif args.optimizer == "schedulefree":
+        try:
+            from schedulefree import adamw_schedulefree
+        except ImportError as exc:
+            raise ImportError(
+                "`schedulefree` is not installed. Please install it via `pip install schedulefree` or `pip install mace-torch[schedulefree]`"
+            ) from exc
+        _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
+        optimizer = adamw_schedulefree.AdamWScheduleFree(**_param_options)
     else:
         optimizer = torch.optim.Adam(**param_options)
     if args.device == "xpu":
         logging.info("Optimzing model and optimzier for XPU")
         model, optimizer = ipex.optimize(model, optimizer=optimizer)
-    logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + "_train")
+    logger = tools.MetricsLogger(
+        directory=args.results_dir, tag=tag + "_train"
+    )  # pylint: disable=E1123
 
     lr_scheduler = LRScheduler(optimizer, args)
 
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
     if args.swa:
-        assert dipole_only is False, "swa for dipole fitting not implemented"
+        assert dipole_only is False, "Stage Two for dipole fitting not implemented"
         swas.append(True)
         if args.start_swa is None:
-            args.start_swa = (
-                args.max_num_epochs // 4 * 3
-            )  # if not set start swa at 75% of training
+            args.start_swa = max(1, args.max_num_epochs // 4 * 3)
         else:
             if args.start_swa > args.max_num_epochs:
                 logging.info(
-                    f"Start swa must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+                    f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
                 )
-                args.start_swa = args.max_num_epochs // 4 * 3
-                logging.info(f"Setting start swa to {args.start_swa}")
+                args.start_swa = max(1, args.max_num_epochs // 4 * 3)
+                logging.info(f"Setting start Stage Two to {args.start_swa}")
         if args.loss == "forces_only":
-            logging.info("Can not select swa with forces only loss.")
-        elif args.loss == "virials":
+            raise ValueError("Can not select Stage Two with forces only loss.")
+        if args.loss == "virials":
             loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
                 energy_weight=args.swa_energy_weight,
                 forces_weight=args.swa_forces_weight,
@@ -789,7 +829,7 @@ def main() -> None:
                 dipole_weight=args.swa_dipole_weight,
             )
             logging.info(
-                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
+                f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
             )
         elif args.loss == "universal":
             loss_fn_energy = modules.UniversalLoss(
@@ -807,7 +847,7 @@ def main() -> None:
                 forces_weight=args.swa_forces_weight,
             )
             logging.info(
-                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
+                f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
             )
         swa = tools.SWAContainer(
             model=AveragedModel(model),
@@ -875,6 +915,7 @@ def main() -> None:
             entity=args.wandb_entity,
             name=args.wandb_name,
             config=wandb_config,
+            directory=args.wandb_dir,
         )
         wandb.run.summary["params"] = args_dict_json
 
@@ -955,7 +996,7 @@ def main() -> None:
             )
         try:
             drop_last = test_set.drop_last
-        except AttributeError as e:
+        except AttributeError as e:  # pylint: disable=W0612
             drop_last = False
         test_loader = torch_geometric.dataloader.DataLoader(
             test_set,
@@ -996,18 +1037,51 @@ def main() -> None:
         if rank == 0:
             # Save entire model
             if swa_eval:
-                model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
+                model_path = Path(args.checkpoints_dir) / (tag + "_stagetwo.model")
             else:
                 model_path = Path(args.checkpoints_dir) / (tag + ".model")
             logging.info(f"Saving model to {model_path}")
             if args.save_cpu:
                 model = model.to("cpu")
             torch.save(model, model_path)
-
+            extra_files = {
+                "commit.txt": commit.encode("utf-8") if commit is not None else b"",
+                "config.yaml": json.dumps(
+                    convert_to_json_format(extract_config_mace_model(model))
+                ),
+            }
             if swa_eval:
-                torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
+                torch.save(
+                    model, Path(args.model_dir) / (args.name + "_stagetwo.model")
+                )
+                try:
+                    path_complied = Path(args.model_dir) / (
+                        args.name + "_stagetwo_compiled.model"
+                    )
+                    logging.info(f"Compiling model, saving metadata {path_complied}")
+                    model_compiled = jit.compile(deepcopy(model))
+                    torch.jit.save(
+                        model_compiled,
+                        path_complied,
+                        _extra_files=extra_files,
+                    )
+                except Exception as e:  # pylint: disable=W0703
+                    pass
             else:
                 torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+                try:
+                    path_complied = Path(args.model_dir) / (
+                        args.name + "_compiled.model"
+                    )
+                    logging.info(f"Compiling model, saving metadata to {path_complied}")
+                    model_compiled = jit.compile(deepcopy(model))
+                    torch.jit.save(
+                        model_compiled,
+                        path_complied,
+                        _extra_files=extra_files,
+                    )
+                except Exception as e:  # pylint: disable=W0703
+                    pass
 
         if args.distributed:
             torch.distributed.barrier()

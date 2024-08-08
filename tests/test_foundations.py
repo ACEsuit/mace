@@ -16,6 +16,8 @@ from mace.tools.finetuning_utils import (
     load_foundations_elements,
     extract_config_mace_model,
 )
+from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.utils import AtomicNumberTable
 
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
