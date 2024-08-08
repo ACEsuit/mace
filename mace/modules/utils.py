@@ -59,11 +59,7 @@ def compute_forces_virials(
     stress = torch.zeros_like(displacement)
     if compute_stress and virials is not None:
         cell = cell.view(-1, 3, 3)
-        volume = torch.einsum(
-            "zi,zi->z",
-            cell[:, 0, :],
-            torch.cross(cell[:, 1, :], cell[:, 2, :], dim=1),
-        ).unsqueeze(-1)
+        volume = torch.linalg.det(cell).abs().unsqueeze(-1)
         stress = virials / (volume.view(-1, 1, 1) + 1e-16)
         stress = torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
     if forces is None:
