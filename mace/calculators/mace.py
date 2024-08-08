@@ -15,10 +15,10 @@ from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
 
 from mace import data
-from mace.tools.compile import prepare
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
-from mace.tools.finetuning_utils import extract_load
+from mace.tools.compile import prepare
+from mace.tools.scripts_utils import extract_load
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
@@ -57,6 +57,7 @@ class MACECalculator(Calculator):
         charges_key="Qs",
         model_type="MACE",
         compile_mode=None,
+        fullgraph=True,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
@@ -117,7 +118,7 @@ class MACECalculator(Calculator):
                 torch.compile(
                     prepare(extract_load)(f=model_path, map_location=device),
                     mode=compile_mode,
-                    fullgraph=True,
+                    fullgraph=fullgraph,
                 )
                 for model_path in model_paths
             ]
@@ -196,7 +197,22 @@ class MACECalculator(Calculator):
             dict_of_tensors.update({"dipole": dipole})
         return dict_of_tensors
 
-    def _prepare_batch(self, batch):
+    def _atoms_to_batch(self, atoms):
+        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
+        data_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[
+                data.AtomicData.from_config(
+                    config, z_table=self.z_table, cutoff=self.r_max, heads=self.heads
+                )
+            ],
+            batch_size=1,
+            shuffle=False,
+            drop_last=False,
+        )
+        batch = next(iter(data_loader)).to(self.device)
+        return batch
+
+    def _clone_batch(self, batch):
         batch_clone = batch.clone()
         if self.use_compile:
             batch_clone["node_attrs"].requires_grad_(True)
@@ -215,39 +231,21 @@ class MACECalculator(Calculator):
         # call to base-class to set atoms attribute
         Calculator.calculate(self, atoms)
 
-        # prepare data
-        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                data.AtomicData.from_config(
-                    config,
-                    z_table=self.z_table,
-                    cutoff=self.r_max,
-                    heads=self.heads,
-                )
-            ],
-            batch_size=1,
-            shuffle=False,
-            drop_last=False,
-        )
+        batch_base = self._atoms_to_batch(atoms)
 
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
-            batch = next(iter(data_loader)).to(self.device)
+            batch = self._clone_batch(batch_base)
             node_heads = batch["head"][batch["batch"]]
-            num_atoms_arange = torch.arange(batch["positions"].shape[0])
-            node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])[
-                num_atoms_arange, node_heads
-            ]
+            node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"], node_heads)
             compute_stress = not self.use_compile
         else:
             compute_stress = False
 
-        batch_base = next(iter(data_loader)).to(self.device)
         ret_tensors = self._create_result_tensors(
             self.model_type, self.num_models, len(atoms)
         )
         for i, model in enumerate(self.models):
-            batch = self._prepare_batch(batch_base)
+            batch = self._clone_batch(batch_base)
             out = model(
                 batch.to_dict(),
                 compute_stress=compute_stress,
@@ -270,7 +268,7 @@ class MACECalculator(Calculator):
             )
             self.results["free_energy"] = self.results["energy"]
             self.results["node_energy"] = (
-                torch.mean(ret_tensors["node_energy"] - node_e0, dim=0).cpu().numpy()
+                torch.mean(ret_tensors["node_energy"], dim=0).cpu().numpy()
             )
             self.results["forces"] = (
                 torch.mean(ret_tensors["forces"], dim=0).cpu().numpy()
@@ -317,6 +315,28 @@ class MACECalculator(Calculator):
                     .numpy()
                 )
 
+    def get_hessian(self, atoms=None):
+        if atoms is None and self.atoms is None:
+            raise ValueError("atoms not set")
+        if atoms is None:
+            atoms = self.atoms
+        if self.model_type != "MACE":
+            raise NotImplementedError("Only implemented for MACE models")
+        batch = self._atoms_to_batch(atoms)
+        hessians = [
+            model(
+                self._clone_batch(batch).to_dict(),
+                compute_hessian=True,
+                compute_stress=False,
+                training=self.use_compile,
+            )["hessian"]
+            for model in self.models
+        ]
+        hessians = [hessian.detach().cpu().numpy() for hessian in hessians]
+        if self.num_models == 1:
+            return hessians[0]
+        return hessians
+
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
         """Extracts the descriptors from MACE model.
         :param atoms: ase.Atoms object
@@ -332,21 +352,7 @@ class MACECalculator(Calculator):
             raise NotImplementedError("Only implemented for MACE models")
         if num_layers == -1:
             num_layers = int(self.models[0].num_interactions)
-        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                data.AtomicData.from_config(
-                    config,
-                    z_table=self.z_table,
-                    cutoff=self.r_max,
-                    heads=self.heads,
-                )
-            ],
-            batch_size=1,
-            shuffle=False,
-            drop_last=False,
-        )
-        batch = next(iter(data_loader)).to(self.device)
+        batch = self._atoms_to_batch(atoms)
         descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
         if invariants_only:
             irreps_out = self.models[0].products[0].linear.__dict__["irreps_out"]

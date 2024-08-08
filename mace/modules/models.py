@@ -186,6 +186,7 @@ class MACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        compute_hessian: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)
@@ -287,7 +288,7 @@ class MACE(torch.nn.Module):
         node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
 
         # Outputs
-        forces, virials, stress = get_outputs(
+        forces, virials, stress, hessian = get_outputs(
             energy=total_energy,
             positions=data["positions"],
             displacement=displacement,
@@ -296,6 +297,7 @@ class MACE(torch.nn.Module):
             compute_force=compute_force,
             compute_virials=compute_virials,
             compute_stress=compute_stress,
+            compute_hessian=compute_hessian,
         )
 
         return {
@@ -306,6 +308,7 @@ class MACE(torch.nn.Module):
             "virials": virials,
             "stress": stress,
             "displacement": displacement,
+            "hessian": hessian,
             "node_feats": node_feats_out,
         }
 
@@ -331,6 +334,7 @@ class ScaleShiftMACE(MACE):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        compute_hessian: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
@@ -421,8 +425,7 @@ class ScaleShiftMACE(MACE):
         # Add E_0 and (scaled) interaction energy
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
-        # print("node_energy", node_energy.shape)
-        forces, virials, stress = get_outputs(
+        forces, virials, stress, hessian = get_outputs(
             energy=inter_e,
             positions=data["positions"],
             displacement=displacement,
@@ -431,6 +434,7 @@ class ScaleShiftMACE(MACE):
             compute_force=compute_force,
             compute_virials=compute_virials,
             compute_stress=compute_stress,
+            compute_hessian=compute_hessian,
         )
         output = {
             "energy": total_energy,
@@ -439,6 +443,7 @@ class ScaleShiftMACE(MACE):
             "forces": forces,
             "virials": virials,
             "stress": stress,
+            "hessian": hessian,
             "displacement": displacement,
             "node_feats": node_feats_out,
         }
@@ -1076,7 +1081,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         )  # [n_graphs,3]
         total_dipole = total_dipole + baseline
 
-        forces, virials, stress = get_outputs(
+        forces, virials, stress, _ = get_outputs(
             energy=total_energy,
             positions=data["positions"],
             displacement=displacement,

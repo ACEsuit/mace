@@ -173,7 +173,7 @@ def train(
                 )  # Can break if exponential LR, TODO fix that!
         else:
             if swa_start:
-                logging.info("Changing loss based on SWA")
+                logging.info("Changing loss based on Stage Two Weights")
                 lowest_loss = np.inf
                 swa_start = False
                 keep_last = True
@@ -185,7 +185,8 @@ def train(
         # Train
         if distributed:
             train_sampler.set_epoch(epoch)
-
+        if "ScheduleFree" in type(optimizer).__name__:
+            optimizer.train()
         train_one_epoch(
             model=model,
             loss_fn=loss_fn,
@@ -211,6 +212,8 @@ def train(
             param_context = (
                 ema.average_parameters() if ema is not None else nullcontext()
             )
+            if "ScheduleFree" in type(optimizer).__name__:
+                optimizer.eval()
             with param_context:
                 valid_loss = 0.0
                 wandb_log_dict = {}
@@ -223,42 +226,55 @@ def train(
                         device=device,
                     )
                     valid_loss += valid_loss_head
-                    valid_err_log(
-                        valid_loss_head,
-                        eval_metrics,
-                        logger,
-                        log_errors,
-                        epoch,
-                        valid_loader_name,
-                    )
-                    if log_wandb:
-                        wandb_log_dict[valid_loader_name] = {
-                            "epoch": epoch,
-                            "valid_loss": valid_loss_head,
-                            "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
-                            "valid_rmse_f": eval_metrics["rmse_f"],
-                        }
+                    if rank == 0:
+                        valid_err_log(
+                            valid_loss_head,
+                            eval_metrics,
+                            logger,
+                            log_errors,
+                            epoch,
+                            valid_loader_name,
+                        )
+                        if log_wandb:
+                            wandb_log_dict[valid_loader_name] = {
+                                "epoch": epoch,
+                                "valid_loss": valid_loss_head,
+                                "valid_rmse_e_per_atom": eval_metrics[
+                                    "rmse_e_per_atom"
+                                ],
+                                "valid_rmse_f": eval_metrics["rmse_f"],
+                            }
 
             if log_wandb:
                 wandb.log(wandb_log_dict)
-
-            if valid_loss >= lowest_loss:
-                patience_counter += 1
-                if patience_counter >= patience and (
-                    swa is not None and epoch < swa.start
-                ):
-                    logging.info(
-                        f"Stopping optimization after {patience_counter} epochs without improvement and starting swa"
-                    )
-                    epoch = swa.start
-                elif patience_counter >= patience and (
-                    swa is None or epoch >= swa.start
-                ):
-                    logging.info(
-                        f"Stopping optimization after {patience_counter} epochs without improvement"
-                    )
-                    break
-                if save_all_checkpoints:
+            if rank == 0:
+                if valid_loss >= lowest_loss:
+                    patience_counter += 1
+                    if patience_counter >= patience and epoch < swa.start:
+                        logging.info(
+                            f"Stopping optimization after {patience_counter} epochs without improvement and starting Stage Two"
+                        )
+                        epoch = swa.start
+                    elif patience_counter >= patience and epoch >= swa.start:
+                        logging.info(
+                            f"Stopping optimization after {patience_counter} epochs without improvement"
+                        )
+                        break
+                    if save_all_checkpoints:
+                        param_context = (
+                            ema.average_parameters()
+                            if ema is not None
+                            else nullcontext()
+                        )
+                        with param_context:
+                            checkpoint_handler.save(
+                                state=CheckpointState(model, optimizer, lr_scheduler),
+                                epochs=epoch,
+                                keep_last=True,
+                            )
+                else:
+                    lowest_loss = valid_loss
+                    patience_counter = 0
                     param_context = (
                         ema.average_parameters() if ema is not None else nullcontext()
                     )
@@ -266,21 +282,9 @@ def train(
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
                             epochs=epoch,
-                            keep_last=True,
+                            keep_last=keep_last,
                         )
-            else:
-                lowest_loss = valid_loss
-                patience_counter = 0
-                param_context = (
-                    ema.average_parameters() if ema is not None else nullcontext()
-                )
-                with param_context:
-                    checkpoint_handler.save(
-                        state=CheckpointState(model, optimizer, lr_scheduler),
-                        epochs=epoch,
-                        keep_last=keep_last,
-                    )
-                    keep_last = False or save_all_checkpoints
+                        keep_last = False or save_all_checkpoints
         if distributed:
             torch.distributed.barrier()
         epoch += 1

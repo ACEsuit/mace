@@ -1,7 +1,7 @@
 import os
 import urllib.request
 from pathlib import Path
-from typing import Literal, Union
+from typing import Union
 
 import torch
 from ase import units
@@ -20,7 +20,7 @@ def mace_mp(
     device: str = "",
     default_dtype: str = "float32",
     dispersion: bool = False,
-    damping: Literal["zero", "bj", "zerom", "bjm"] = "bj",
+    damping: str = "bj",  # choices: ["zero", "bj", "zerom", "bjm"]
     dispersion_xc: str = "pbe",
     dispersion_cutoff: float = 40.0 * units.Bohr,
     **kwargs,
@@ -108,6 +108,7 @@ def mace_mp(
     mace_calc = MACECalculator(
         model_paths=model, device=device, default_dtype=default_dtype, **kwargs
     )
+    d3_calc = None
     if dispersion:
         gh_url = "https://github.com/pfnet-research/torch-dftd"
         try:

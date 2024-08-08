@@ -233,14 +233,12 @@ class AgnesiTransform(torch.nn.Module):
         q: float = 0.9183,
         p: float = 4.5791,
         a: float = 1.0805,
-        b: float = 0.5,
         trainable=False,
     ):
         super().__init__()
         self.register_buffer("q", torch.tensor(q, dtype=torch.get_default_dtype()))
         self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
         self.register_buffer("a", torch.tensor(a, dtype=torch.get_default_dtype()))
-        self.b = b
         self.register_buffer(
             "covalent_radii",
             torch.tensor(
@@ -267,9 +265,7 @@ class AgnesiTransform(torch.nn.Module):
         )
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
-        if not hasattr(self, "b"):  # TODO: remove this, only for backward compatibility
-            self.b = 0.5
-        r_0 = self.b * (self.covalent_radii[Z_u] + self.covalent_radii[Z_v])
+        r_0 = 0.5 * (self.covalent_radii[Z_u] + self.covalent_radii[Z_v])
         return (
             1 + (self.a * ((x / r_0) ** self.q) / (1 + (x / r_0) ** (self.q - self.p)))
         ) ** (-1)

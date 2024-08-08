@@ -31,9 +31,9 @@ def fitting_configs_fixture():
         Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6] * 3),
         Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6] * 3),
     ]
-    fit_configs[0].info["REF_energy"] = 0.0
+    fit_configs[0].info["REF_energy"] = 1.0
     fit_configs[0].info["config_type"] = "IsolatedAtom"
-    fit_configs[1].info["REF_energy"] = 0.0
+    fit_configs[1].info["REF_energy"] = -0.5
     fit_configs[1].info["config_type"] = "IsolatedAtom"
 
     np.random.seed(5)
@@ -369,6 +369,22 @@ def trained_committee_fixture(tmp_path_factory, fitting_configs):
         _model_paths.append(tmp_path / f"MACE{seed}.model")
 
     return MACECalculator(_model_paths, device="cpu")
+
+
+def test_calculator_node_energy(fitting_configs, trained_model):
+    for at in fitting_configs:
+        trained_model.calculate(at)
+        node_energies = trained_model.results["node_energy"]
+        batch = trained_model._atoms_to_batch(at)  # pylint: disable=protected-access
+        node_e0 = (
+            trained_model.models[0]
+            .atomic_energies_fn(batch["node_attrs"])
+            .detach()
+            .numpy()
+        )
+        energy_via_nodes = np.sum(node_energies + node_e0)
+        energy = trained_model.results["energy"]
+        np.testing.assert_allclose(energy, energy_via_nodes, atol=1e-6)
 
 
 def test_calculator_forces(fitting_configs, trained_model):

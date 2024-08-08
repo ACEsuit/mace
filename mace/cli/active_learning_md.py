@@ -1,4 +1,5 @@
 """Demonstrates active learning molecular dynamics with constant temperature."""
+
 import argparse
 import os
 import time
@@ -137,8 +138,12 @@ def stop_error(dyn, threshold, reg=0.2):
         dyn.max_steps = 0
 
 
-def main():
+def main() -> None:
     args = parse_args()
+    run(args)
+
+
+def run(args: argparse.Namespace) -> None:
 
     mace_fname = args.model
     atoms_fname = args.config

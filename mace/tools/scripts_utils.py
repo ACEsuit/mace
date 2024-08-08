@@ -10,11 +10,12 @@ import dataclasses
 import json
 import logging
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.distributed
+from e3nn import o3
 from prettytable import PrettyTable
 
 from mace import data, modules
@@ -99,6 +100,8 @@ def get_dataset_from_xyz(
             forces_key=forces_key,
             stress_key=stress_key,
             dipole_key=dipole_key,
+            stress_key=stress_key,
+            virials_key=virials_key,
             charges_key=charges_key,
             extract_atomic_energies=False,
         )
@@ -129,7 +132,169 @@ def get_config_type_weights(ct_weights):
     return config_type_weights
 
 
-def get_atomic_energies(E0s, train_collection, z_table, heads) -> dict:
+def print_git_commit():
+    try:
+        import git
+
+        repo = git.Repo(search_parent_directories=True)
+        commit = repo.head.commit.hexsha
+        logging.info(f"Current Git commit: {commit}")
+        return commit
+    except Exception as e:  # pylint: disable=W0703
+        logging.info(f"Error accessing Git repository: {e}")
+        return "None"
+
+
+def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
+    if model.__class__.__name__ != "ScaleShiftMACE":
+        return {"error": "Model is not a ScaleShiftMACE model"}
+
+    def radial_to_name(radial_type):
+        if radial_type == "BesselBasis":
+            return "bessel"
+        if radial_type == "GaussianBasis":
+            return "gaussian"
+        if radial_type == "ChebychevBasis":
+            return "chebyshev"
+        return radial_type
+
+    def radial_to_transform(radial):
+        if not hasattr(radial, "distance_transform"):
+            return None
+        if radial.distance_transform.__class__.__name__ == "AgnesiTransform":
+            return "Agnesi"
+        if radial.distance_transform.__class__.__name__ == "SoftTransform":
+            return "Soft"
+        return radial.distance_transform.__class__.__name__
+
+    config = {
+        "r_max": model.r_max.item(),
+        "num_bessel": len(model.radial_embedding.bessel_fn.bessel_weights),
+        "num_polynomial_cutoff": model.radial_embedding.cutoff_fn.p.item(),
+        "max_ell": model.spherical_harmonics._lmax,  # pylint: disable=protected-access
+        "interaction_cls": model.interactions[-1].__class__,
+        "interaction_cls_first": model.interactions[0].__class__,
+        "num_interactions": model.num_interactions.item(),
+        "num_elements": len(model.atomic_numbers),
+        "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
+        "MLP_irreps": (
+            o3.Irreps(str(model.readouts[-1].hidden_irreps))
+            if model.num_interactions.item() > 1
+            else 1
+        ),
+        "gate": (
+            model.readouts[-1]  # pylint: disable=protected-access
+            .non_linearity._modules["acts"][0]
+            .f
+            if model.num_interactions.item() > 1
+            else None
+        ),
+        "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
+        "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
+        "atomic_numbers": model.atomic_numbers,
+        "correlation": len(
+            model.products[0].symmetric_contractions.contractions[0].weights
+        )
+        + 1,
+        "radial_type": radial_to_name(
+            model.radial_embedding.bessel_fn.__class__.__name__
+        ),
+        "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
+        "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
+        "distance_transform": radial_to_transform(model.radial_embedding),
+        "atomic_inter_scale": model.scale_shift.scale.item(),
+        "atomic_inter_shift": model.scale_shift.shift.item(),
+    }
+    return config
+
+
+def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
+    model = torch.load(f=f, map_location=map_location)
+    model_copy = model.__class__(**extract_config_mace_model(model))
+    model_copy.load_state_dict(model.state_dict())
+    return model_copy.to(map_location)
+
+
+def extract_model(model: torch.nn.Module, map_location: str = "cpu") -> torch.nn.Module:
+    model_copy = model.__class__(**extract_config_mace_model(model))
+    model_copy.load_state_dict(model.state_dict())
+    return model_copy.to(map_location)
+
+
+def convert_to_json_format(dict_input):
+    for key, value in dict_input.items():
+        if isinstance(value, (np.ndarray, torch.Tensor)):
+            dict_input[key] = value.tolist()
+        # # check if the value is a class and convert it to a string
+        elif hasattr(value, "__class__"):
+            dict_input[key] = str(value)
+    return dict_input
+
+
+def convert_from_json_format(dict_input):
+    dict_output = dict_input.copy()
+    if (
+        dict_input["interaction_cls"]
+        == "<class 'mace.modules.blocks.RealAgnosticResidualInteractionBlock'>"
+    ):
+        dict_output["interaction_cls"] = (
+            modules.blocks.RealAgnosticResidualInteractionBlock
+        )
+    if (
+        dict_input["interaction_cls"]
+        == "<class 'mace.modules.blocks.RealAgnosticInteractionBlock'>"
+    ):
+        dict_output["interaction_cls"] = modules.blocks.RealAgnosticInteractionBlock
+    if (
+        dict_input["interaction_cls_first"]
+        == "<class 'mace.modules.blocks.RealAgnosticResidualInteractionBlock'>"
+    ):
+        dict_output["interaction_cls_first"] = (
+            modules.blocks.RealAgnosticResidualInteractionBlock
+        )
+    if (
+        dict_input["interaction_cls_first"]
+        == "<class 'mace.modules.blocks.RealAgnosticInteractionBlock'>"
+    ):
+        dict_output["interaction_cls_first"] = (
+            modules.blocks.RealAgnosticInteractionBlock
+        )
+    dict_output["r_max"] = float(dict_input["r_max"])
+    dict_output["num_bessel"] = int(dict_input["num_bessel"])
+    dict_output["num_polynomial_cutoff"] = float(dict_input["num_polynomial_cutoff"])
+    dict_output["max_ell"] = int(dict_input["max_ell"])
+    dict_output["num_interactions"] = int(dict_input["num_interactions"])
+    dict_output["num_elements"] = int(dict_input["num_elements"])
+    dict_output["hidden_irreps"] = o3.Irreps(dict_input["hidden_irreps"])
+    dict_output["MLP_irreps"] = o3.Irreps(dict_input["MLP_irreps"])
+    dict_output["avg_num_neighbors"] = float(dict_input["avg_num_neighbors"])
+    dict_output["gate"] = torch.nn.functional.silu
+    dict_output["atomic_energies"] = np.array(dict_input["atomic_energies"])
+    dict_output["atomic_numbers"] = dict_input["atomic_numbers"]
+    dict_output["correlation"] = int(dict_input["correlation"])
+    dict_output["radial_type"] = dict_input["radial_type"]
+    dict_output["radial_MLP"] = ast.literal_eval(dict_input["radial_MLP"])
+    dict_output["pair_repulsion"] = ast.literal_eval(dict_input["pair_repulsion"])
+    dict_output["distance_transform"] = dict_input["distance_transform"]
+    dict_output["atomic_inter_scale"] = float(dict_input["atomic_inter_scale"])
+    dict_output["atomic_inter_shift"] = float(dict_input["atomic_inter_shift"])
+
+    return dict_output
+
+
+def load_from_json(f: str, map_location: str = "cpu") -> torch.nn.Module:
+    extra_files_extract = {"commit.txt": None, "config.json": None}
+    model_jit_load = torch.jit.load(
+        f, _extra_files=extra_files_extract, map_location=map_location
+    )
+    model_load_yaml = modules.ScaleShiftMACE(
+        **convert_from_json_format(json.loads(extra_files_extract["config.json"]))
+    )
+    model_load_yaml.load_state_dict(model_jit_load.state_dict())
+    return model_load_yaml.to(map_location)
+
+
+def get_atomic_energies(E0s, train_collection, z_table) -> dict:
     if E0s is not None:
         logging.info(
             "Atomic Energies not in training file, using command line argument E0s"
@@ -262,6 +427,9 @@ def dict_to_array(data, heads):
 class LRScheduler:
     def __init__(self, optimizer, args) -> None:
         self.scheduler = args.scheduler
+        self._optimizer_type = (
+            args.optimizer
+        )  # Schedulefree does not need an optimizer but checkpoint handler does.
         if args.scheduler == "ExponentialLR":
             self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
                 optimizer=optimizer, gamma=args.lr_scheduler_gamma
@@ -276,12 +444,14 @@ class LRScheduler:
             raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
 
     def step(self, metrics=None, epoch=None):  # pylint: disable=E1123
+        if self._optimizer_type == "schedulefree":
+            return  # In principle, schedulefree optimizer can be used with a scheduler but the paper suggests it's not necessary
         if self.scheduler == "ExponentialLR":
             self.lr_scheduler.step(epoch=epoch)
         elif self.scheduler == "ReduceLROnPlateau":
-            self.lr_scheduler.step(
+            self.lr_scheduler.step(  # pylint: disable=E1123
                 metrics=metrics, epoch=epoch
-            )  # pylint: disable=E1123
+            )
 
     def __getattr__(self, name):
         if name == "step":
