@@ -31,7 +31,7 @@ class SubsetCollection:
 
 def get_dataset_from_xyz(
     train_path: str,
-    valid_path: str,
+    valid_path: Optional[str],
     valid_fraction: float,
     config_type_weights: Dict,
     test_path: str = None,
@@ -237,9 +237,9 @@ def convert_from_json_format(dict_input):
         dict_input["interaction_cls"]
         == "<class 'mace.modules.blocks.RealAgnosticResidualInteractionBlock'>"
     ):
-        dict_output[
-            "interaction_cls"
-        ] = modules.blocks.RealAgnosticResidualInteractionBlock
+        dict_output["interaction_cls"] = (
+            modules.blocks.RealAgnosticResidualInteractionBlock
+        )
     if (
         dict_input["interaction_cls"]
         == "<class 'mace.modules.blocks.RealAgnosticInteractionBlock'>"
@@ -249,16 +249,16 @@ def convert_from_json_format(dict_input):
         dict_input["interaction_cls_first"]
         == "<class 'mace.modules.blocks.RealAgnosticResidualInteractionBlock'>"
     ):
-        dict_output[
-            "interaction_cls_first"
-        ] = modules.blocks.RealAgnosticResidualInteractionBlock
+        dict_output["interaction_cls_first"] = (
+            modules.blocks.RealAgnosticResidualInteractionBlock
+        )
     if (
         dict_input["interaction_cls_first"]
         == "<class 'mace.modules.blocks.RealAgnosticInteractionBlock'>"
     ):
-        dict_output[
-            "interaction_cls_first"
-        ] = modules.blocks.RealAgnosticInteractionBlock
+        dict_output["interaction_cls_first"] = (
+            modules.blocks.RealAgnosticInteractionBlock
+        )
     dict_output["r_max"] = float(dict_input["r_max"])
     dict_output["num_bessel"] = int(dict_input["num_bessel"])
     dict_output["num_polynomial_cutoff"] = float(dict_input["num_polynomial_cutoff"])
