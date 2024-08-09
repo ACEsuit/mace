@@ -94,9 +94,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def calculate_descriptors(
-    atoms: List[ase.Atoms], calc: MACECalculator, cutoffs: None
-) -> None:
+def calculate_descriptors(atoms: List[ase.Atoms], calc: MACECalculator) -> None:
     logging.info("Calculating descriptors")
     for mol in atoms:
         descriptors = calc.get_descriptors(mol.copy(), invariants_only=True)
@@ -128,23 +126,22 @@ def filter_atoms(
     """
     if filtering_type == "none":
         return True
-    elif filtering_type == "combinations":
+    if filtering_type == "combinations":
         atom_symbols = np.unique(atoms.symbols)
         return all(
-            [x in element_subset for x in atom_symbols]
+            x in element_subset for x in atom_symbols
         )  # atoms must *only* contain elements in the subset
-    elif filtering_type == "exclusive":
-        atom_symbols = set([x for x in atoms.symbols])
+    if filtering_type == "exclusive":
+        atom_symbols = set(list(atoms.symbols))
         return atom_symbols == set(element_subset)
-    elif filtering_type == "inclusive":
+    if filtering_type == "inclusive":
         atom_symbols = np.unique(atoms.symbols)
         return all(
-            [x in atom_symbols for x in element_subset]
+            x in atom_symbols for x in element_subset
         )  # atoms must *at least* contain elements in the subset
-    else:
-        raise ValueError(
-            f"Filtering type {filtering_type} not recognised. Must be one of 'none', 'exclusive', or 'inclusive'."
-        )
+    raise ValueError(
+        f"Filtering type {filtering_type} not recognised. Must be one of 'none', 'exclusive', or 'inclusive'."
+    )
 
 
 class FPS:
@@ -206,7 +203,7 @@ def select_samples(
         )
     atoms_list_ft = ase.io.read(args.configs_ft, index=":")
 
-    if args.filtering_type != None:
+    if args.filtering_type is not None:
         all_species_ft = np.unique([x.symbol for atoms in atoms_list_ft for x in atoms])
         logging.info(
             "Filtering configurations based on the finetuning set, "
@@ -265,7 +262,7 @@ def select_samples(
     if args.num_samples is not None and args.num_samples < len(atoms_list_pt):
         if args.descriptors is None:
             logging.info("Calculating descriptors for the pretraining set")
-            calculate_descriptors(atoms_list_pt, calc, None)
+            calculate_descriptors(atoms_list_pt, calc)
             descriptors_list = [
                 atoms.info["mace_descriptors"] for atoms in atoms_list_pt
             ]
