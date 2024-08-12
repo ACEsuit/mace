@@ -460,6 +460,14 @@ def create_error_table(
             "relative F RMSE %",
             "RMSE Stress (Virials) / meV / A (A^3)",
         ]
+    elif table_type == "PerAtomMAEstressvirials":
+        table.field_names = [
+            "config_type",
+            "MAE E / meV / atom",
+            "MAE F / meV / A",
+            "relative F MAE %",
+            "MAE Stress (Virials) / meV / A (A^3)",
+        ]
     elif table_type == "TotalMAE":
         table.field_names = [
             "config_type",
@@ -562,6 +570,32 @@ def create_error_table(
                     f"{metrics['rmse_f'] * 1000:.1f}",
                     f"{metrics['rel_rmse_f']:.2f}",
                     f"{metrics['rmse_virials'] * 1000:.1f}",
+                ]
+            )
+        elif (
+            table_type == "PerAtomMAEstressvirials"
+            and metrics["mae_stress"] is not None
+        ):
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['mae_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['mae_f'] * 1000:.1f}",
+                    f"{metrics['rel_mae_f']:.2f}",
+                    f"{metrics['mae_stress'] * 1000:.1f}",
+                ]
+            )
+        elif (
+            table_type == "PerAtomMAEstressvirials"
+            and metrics["mae_virials"] is not None
+        ):
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['mae_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['mae_f'] * 1000:.1f}",
+                    f"{metrics['rel_mae_f']:.2f}",
+                    f"{metrics['mae_virials'] * 1000:.1f}",
                 ]
             )
         elif table_type == "TotalMAE":
