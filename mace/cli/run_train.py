@@ -357,7 +357,10 @@ def run(args: argparse.Namespace) -> None:
     if args.loss in ("stress", "virials", "huber", "universal"):
         compute_virials = True
         args.compute_stress = True
-        args.error_table = "PerAtomRMSEstressvirials"
+        if "MAE" in args.error_table:
+            args.error_table = "PerAtomMAEstressvirials"
+        else:
+            args.error_table = "PerAtomRMSEstressvirials"
 
     output_args = {
         "energy": compute_energy,
@@ -821,7 +824,9 @@ def run(args: argparse.Namespace) -> None:
                 ),
             }
             if swa_eval:
-                torch.save(model, Path(args.model_dir) / (args.name + "_stagetwo.model"))
+                torch.save(
+                    model, Path(args.model_dir) / (args.name + "_stagetwo.model")
+                )
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_stagetwo_compiled.model"
