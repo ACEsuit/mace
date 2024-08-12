@@ -9,10 +9,9 @@ import glob
 import json
 import logging
 import os
+import urllib.request
 from pathlib import Path
 from typing import Optional
-import urllib.request
-
 
 import numpy as np
 import torch.distributed
@@ -27,27 +26,28 @@ from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.cli.fine_tuning_select import select_samples
 from mace.tools import torch_geometric
+from mace.tools.finetuning_utils import (
+    extract_config_mace_model,
+    load_foundations_elements,
+)
 from mace.tools.scripts_utils import (
     LRScheduler,
+    check_folder_subfolder,
     create_error_table,
+    dict_to_array,
     dict_to_namespace,
     get_atomic_energies,
     get_config_type_weights,
     get_dataset_from_xyz,
     get_files_with_suffix,
-    dict_to_array,
-    check_folder_subfolder,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
-from mace.tools.finetuning_utils import (
-    load_foundations_elements,
-    extract_config_mace_model,
-)
 from mace.tools.utils import AtomicNumberTable
 
 
 def main() -> None:
     args = tools.build_default_arg_parser().parse_args()
+    tools.check_args(args)
     tag = tools.get_tag(name=args.name, seed=args.seed)
 
     if args.device == "xpu":
