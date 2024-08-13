@@ -61,7 +61,7 @@ class MACE(torch.nn.Module):
         distance_transform: str = "None",
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
-        heads: Optional[List[str]] = ["Default"],
+        heads: Optional[List[str]] = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -73,6 +73,8 @@ class MACE(torch.nn.Module):
         self.register_buffer(
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
+        if heads is None:
+            heads = ["default"]
         self.heads = heads
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions

@@ -115,8 +115,10 @@ class AtomicData(torch_geometric.data.Data):
         config: Configuration,
         z_table: AtomicNumberTable,
         cutoff: float,
-        heads: Optional[list] = ["Default"],
+        heads: Optional[list] = None,
     ) -> "AtomicData":
+        if heads is None:
+            heads = ["default"]
         edge_index, shifts, unit_shifts = get_neighborhood(
             positions=config.positions, cutoff=cutoff, pbc=config.pbc, cell=config.cell
         )
@@ -127,7 +129,7 @@ class AtomicData(torch_geometric.data.Data):
         )
         try:
             head = torch.tensor(heads.index(config.head), dtype=torch.long)
-        except:
+        except ValueError:
             head = torch.tensor(len(heads) - 1, dtype=torch.long)
 
         cell = (

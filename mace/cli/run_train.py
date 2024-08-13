@@ -21,7 +21,6 @@ import torch.nn.functional
 from e3nn import o3
 from e3nn.util import jit
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.optim.swa_utils import SWALR, AveragedModel
 from torch_ema import ExponentialMovingAverage
 
 import mace
@@ -29,7 +28,7 @@ from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.cli.fine_tuning_select import select_samples
 from mace.tools import torch_geometric
-from mace.tools.finetuning_utils import load_foundations, load_foundations_elements
+from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import (
     LRScheduler,
     check_folder_subfolder,
@@ -42,6 +41,8 @@ from mace.tools.scripts_utils import (
     get_config_type_weights,
     get_dataset_from_xyz,
     get_files_with_suffix,
+    get_loss_fn,
+    get_swa,
     print_git_commit,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
@@ -65,10 +66,10 @@ def run(args: argparse.Namespace) -> None:
     if args.device == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"
-            )
+            ) from e
     if args.distributed:
         try:
             distr_env = DistributedEnvironment()
@@ -469,65 +470,8 @@ def run(args: argparse.Namespace) -> None:
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
         )
-    # valid_loader = torch_geometric.dataloader.DataLoader(
-    #     dataset=valid_set,
-    #     batch_size=args.valid_batch_size,
-    #     sampler=valid_sampler,
-    #     shuffle=(valid_sampler is None),
-    #     drop_last=False,
-    #     pin_memory=args.pin_memory,
-    #     num_workers=args.num_workers,
-    # )
 
-    if args.loss == "weighted":
-        loss_fn = modules.WeightedEnergyForcesLoss(
-            energy_weight=args.energy_weight, forces_weight=args.forces_weight
-        )
-    elif args.loss == "forces_only":
-        loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
-    elif args.loss == "virials":
-        loss_fn = modules.WeightedEnergyForcesVirialsLoss(
-            energy_weight=args.energy_weight,
-            forces_weight=args.forces_weight,
-            virials_weight=args.virials_weight,
-        )
-    elif args.loss == "stress":
-        loss_fn = modules.WeightedEnergyForcesStressLoss(
-            energy_weight=args.energy_weight,
-            forces_weight=args.forces_weight,
-            stress_weight=args.stress_weight,
-        )
-    elif args.loss == "huber":
-        loss_fn = modules.WeightedHuberEnergyForcesStressLoss(
-            energy_weight=args.energy_weight,
-            forces_weight=args.forces_weight,
-            stress_weight=args.stress_weight,
-            huber_delta=args.huber_delta,
-        )
-    elif args.loss == "universal":
-        loss_fn = modules.UniversalLoss(
-            energy_weight=args.energy_weight,
-            forces_weight=args.forces_weight,
-            stress_weight=args.stress_weight,
-            huber_delta=args.huber_delta,
-        )
-    elif args.loss == "dipole":
-        assert (
-            dipole_only is True
-        ), "dipole loss can only be used with AtomicDipolesMACE model"
-        loss_fn = modules.DipoleSingleLoss(
-            dipole_weight=args.dipole_weight,
-        )
-    elif args.loss == "energy_forces_dipole":
-        assert dipole_only is False and compute_dipole is True
-        loss_fn = modules.WeightedEnergyForcesDipoleLoss(
-            energy_weight=args.energy_weight,
-            forces_weight=args.forces_weight,
-            dipole_weight=args.dipole_weight,
-        )
-    else:
-        # Unweighted Energy and Forces loss by default
-        loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
+    loss_fn = get_loss_fn(args.loss, dipole_only, compute_dipole)
     logging.info(loss_fn)
 
     if args.compute_avg_num_neighbors:
@@ -791,69 +735,7 @@ def run(args: argparse.Namespace) -> None:
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
     if args.swa:
-        assert dipole_only is False, "Stage Two for dipole fitting not implemented"
-        swas.append(True)
-        if args.start_swa is None:
-            args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-        else:
-            if args.start_swa > args.max_num_epochs:
-                logging.info(
-                    f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
-                )
-                args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-                logging.info(f"Setting start Stage Two to {args.start_swa}")
-        if args.loss == "forces_only":
-            raise ValueError("Can not select Stage Two with forces only loss.")
-        if args.loss == "virials":
-            loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                virials_weight=args.swa_virials_weight,
-            )
-        elif args.loss == "stress":
-            loss_fn_energy = modules.WeightedEnergyForcesStressLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                stress_weight=args.swa_stress_weight,
-            )
-        elif args.loss == "energy_forces_dipole":
-            loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
-                args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                dipole_weight=args.swa_dipole_weight,
-            )
-            logging.info(
-                f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
-            )
-        elif args.loss == "universal":
-            loss_fn_energy = modules.UniversalLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                stress_weight=args.swa_stress_weight,
-                huber_delta=args.huber_delta,
-            )
-            logging.info(
-                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
-            )
-        else:
-            loss_fn_energy = modules.WeightedEnergyForcesLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-            )
-            logging.info(
-                f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
-            )
-        swa = tools.SWAContainer(
-            model=AveragedModel(model),
-            scheduler=SWALR(
-                optimizer=optimizer,
-                swa_lr=args.swa_lr,
-                anneal_epochs=1,
-                anneal_strategy="linear",
-            ),
-            start=args.start_swa,
-            loss_fn=loss_fn_energy,
-        )
+        swa, swas = get_swa(args, model, optimizer, swas, dipole_only)
 
     checkpoint_handler = tools.CheckpointHandler(
         directory=args.checkpoints_dir,

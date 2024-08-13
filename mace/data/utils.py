@@ -274,9 +274,9 @@ def load_from_xyz(
                     head = atoms.info.get(head_key, "Default")
                     if head not in atomic_energies_dict:
                         atomic_energies_dict[head] = {}
-                    atomic_energies_dict[head][
-                        atoms.get_atomic_numbers()[0]
-                    ] = atoms.info[energy_key]
+                    atomic_energies_dict[head][atoms.get_atomic_numbers()[0]] = (
+                        atoms.info[energy_key]
+                    )
                 else:
                     logging.warning(
                         f"Configuration '{idx}' is marked as 'IsolatedAtom' "
@@ -285,9 +285,9 @@ def load_from_xyz(
                     head = atoms.info.get(head_key, "Default")
                     if head not in atomic_energies_dict:
                         atomic_energies_dict[head] = {}
-                    atomic_energies_dict[head][
-                        atoms.get_atomic_numbers()[0]
-                    ] = np.zeros(1)
+                    atomic_energies_dict[head][atoms.get_atomic_numbers()[0]] = (
+                        np.zeros(1)
+                    )
             else:
                 atoms_without_iso_atoms.append(atoms)
 

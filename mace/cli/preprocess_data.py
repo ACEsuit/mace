@@ -207,7 +207,7 @@ def run(args: argparse.Namespace):
     if args.compute_statistics:
         logging.info("Computing statistics")
         if len(atomic_energies_dict) == 0:
-            atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
+            atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table, ["Default"])
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )

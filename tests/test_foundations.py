@@ -9,10 +9,7 @@ from scipy.spatial.transform import Rotation as R
 from mace import data, modules, tools
 from mace.calculators import mace_mp, mace_off
 from mace.tools import torch_geometric
-from mace.tools.finetuning_utils import (
-    extract_config_mace_model,
-    load_foundations_elements,
-)
+from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.utils import AtomicNumberTable
 
@@ -100,7 +97,7 @@ def test_foundations():
 
 
 def test_multi_reference():
-    config = data.Configuration(
+    config_multi = data.Configuration(
         atomic_numbers=molecule("H2COH").numbers,
         positions=molecule("H2COH").positions,
         forces=molecule("H2COH").positions,
@@ -109,8 +106,8 @@ def test_multi_reference():
         dipole=np.array([-1.5, 1.5, 2.0]),
         head="MP2",
     )
-    table = tools.AtomicNumberTable([1, 6, 8])
-    atomic_energies = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=float)
+    table_multi = tools.AtomicNumberTable([1, 6, 8])
+    atomic_energies_multi = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=float)
 
     # Create MACE model
     model_config = dict(
@@ -129,7 +126,7 @@ def test_multi_reference():
         hidden_irreps=o3.Irreps("128x0e + 128x1o"),
         MLP_irreps=o3.Irreps("16x0e"),
         gate=torch.nn.functional.silu,
-        atomic_energies=atomic_energies,
+        atomic_energies=atomic_energies_multi,
         avg_num_neighbors=61,
         atomic_numbers=table.zs,
         correlation=3,
@@ -149,7 +146,7 @@ def test_multi_reference():
         max_L=1,
     )
     atomic_data = data.AtomicData.from_config(
-        config, z_table=table, cutoff=6.0, heads=["MP2", "DFT"]
+        config_multi, z_table=table_multi, cutoff=6.0, heads=["MP2", "DFT"]
     )
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data, atomic_data],
@@ -185,9 +182,6 @@ def test_extract_config(model):
     model_copy.load_state_dict(model.state_dict())
     z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
     atomic_data = data.AtomicData.from_config(config, z_table=z_table, cutoff=6.0)
-    atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=z_table, cutoff=6.0
-    )
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data, atomic_data],
         batch_size=2,

@@ -199,7 +199,7 @@ def test_energy_dipole_mace():
 
 
 def test_mace_multi_reference():
-    atomic_energies = np.array([[1.0, 3.0], [0.0, 0.0]], dtype=float)
+    atomic_energies_multi = np.array([[1.0, 3.0], [0.0, 0.0]], dtype=float)
     model_config = dict(
         r_max=5,
         num_bessel=8,
@@ -216,7 +216,7 @@ def test_mace_multi_reference():
         hidden_irreps=o3.Irreps("96x0e + 96x1o"),
         MLP_irreps=o3.Irreps("16x0e"),
         gate=torch.nn.functional.silu,
-        atomic_energies=atomic_energies,
+        atomic_energies=atomic_energies_multi,
         avg_num_neighbors=8,
         atomic_numbers=table.zs,
         distance_transform=True,
