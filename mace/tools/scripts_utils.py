@@ -17,9 +17,11 @@ import torch
 import torch.distributed
 from e3nn import o3
 from prettytable import PrettyTable
+from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules
 from mace.tools import evaluate
+from mace.tools.train import SWAContainer
 
 
 @dataclasses.dataclass
@@ -316,7 +318,8 @@ def get_atomic_energies(E0s, train_collection, z_table, heads) -> dict:
         else:
             if E0s.endswith(".json"):
                 logging.info(f"Loading atomic energies from {E0s}")
-                atomic_energies_dict = json.load(open(E0s, "r"))
+                with open(E0s, "r", encoding="utf-8") as f:
+                    atomic_energies_dict = json.load(f)
             else:
                 try:
                     atomic_energies_eval = ast.literal_eval(E0s)
@@ -340,52 +343,132 @@ def get_atomic_energies(E0s, train_collection, z_table, heads) -> dict:
 
 
 def get_loss_fn(
-    loss: str,
-    energy_weight: float,
-    forces_weight: float,
-    stress_weight: float,
-    virials_weight: float,
-    dipole_weight: float,
+    args: argparse.Namespace,
     dipole_only: bool,
     compute_dipole: bool,
 ) -> torch.nn.Module:
-    if loss == "weighted":
+    if args.loss == "weighted":
         loss_fn = modules.WeightedEnergyForcesLoss(
-            energy_weight=energy_weight, forces_weight=forces_weight
+            energy_weight=args.energy_weight, forces_weight=args.forces_weight
         )
-    elif loss == "forces_only":
-        loss_fn = modules.WeightedForcesLoss(forces_weight=forces_weight)
-    elif loss == "virials":
+    elif args.loss == "forces_only":
+        loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
+    elif args.loss == "virials":
         loss_fn = modules.WeightedEnergyForcesVirialsLoss(
-            energy_weight=energy_weight,
-            forces_weight=forces_weight,
-            virials_weight=virials_weight,
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            virials_weight=args.virials_weight,
         )
-    elif loss == "stress":
+    elif args.loss == "stress":
         loss_fn = modules.WeightedEnergyForcesStressLoss(
-            energy_weight=energy_weight,
-            forces_weight=forces_weight,
-            stress_weight=stress_weight,
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
         )
-    elif loss == "dipole":
+    elif args.loss == "huber":
+        loss_fn = modules.WeightedHuberEnergyForcesStressLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            huber_delta=args.huber_delta,
+        )
+    elif args.loss == "universal":
+        loss_fn = modules.UniversalLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            huber_delta=args.huber_delta,
+        )
+    elif args.loss == "dipole":
         assert (
             dipole_only is True
         ), "dipole loss can only be used with AtomicDipolesMACE model"
         loss_fn = modules.DipoleSingleLoss(
-            dipole_weight=dipole_weight,
+            dipole_weight=args.dipole_weight,
         )
-    elif loss == "energy_forces_dipole":
+    elif args.loss == "energy_forces_dipole":
         assert dipole_only is False and compute_dipole is True
         loss_fn = modules.WeightedEnergyForcesDipoleLoss(
-            energy_weight=energy_weight,
-            forces_weight=forces_weight,
-            dipole_weight=dipole_weight,
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            dipole_weight=args.dipole_weight,
         )
     else:
-        loss_fn = modules.EnergyForcesLoss(
-            energy_weight=energy_weight, forces_weight=forces_weight
-        )
+        loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
     return loss_fn
+
+
+def get_swa(
+    args: argparse.Namespace,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    swas: List[bool],
+    dipole_only: bool = False,
+):
+    assert dipole_only is False, "Stage Two for dipole fitting not implemented"
+    swas.append(True)
+    if args.start_swa is None:
+        args.start_swa = max(1, args.max_num_epochs // 4 * 3)
+    else:
+        if args.start_swa > args.max_num_epochs:
+            logging.info(
+                f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+            )
+            args.start_swa = max(1, args.max_num_epochs // 4 * 3)
+            logging.info(f"Setting start Stage Two to {args.start_swa}")
+    if args.loss == "forces_only":
+        raise ValueError("Can not select Stage Two with forces only loss.")
+    if args.loss == "virials":
+        loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
+            energy_weight=args.swa_energy_weight,
+            forces_weight=args.swa_forces_weight,
+            virials_weight=args.swa_virials_weight,
+        )
+    elif args.loss == "stress":
+        loss_fn_energy = modules.WeightedEnergyForcesStressLoss(
+            energy_weight=args.swa_energy_weight,
+            forces_weight=args.swa_forces_weight,
+            stress_weight=args.swa_stress_weight,
+        )
+    elif args.loss == "energy_forces_dipole":
+        loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
+            args.swa_energy_weight,
+            forces_weight=args.swa_forces_weight,
+            dipole_weight=args.swa_dipole_weight,
+        )
+        logging.info(
+            f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
+        )
+    elif args.loss == "universal":
+        loss_fn_energy = modules.UniversalLoss(
+            energy_weight=args.swa_energy_weight,
+            forces_weight=args.swa_forces_weight,
+            stress_weight=args.swa_stress_weight,
+            huber_delta=args.huber_delta,
+        )
+        logging.info(
+            f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
+        )
+    else:
+        loss_fn_energy = modules.WeightedEnergyForcesLoss(
+            energy_weight=args.swa_energy_weight,
+            forces_weight=args.swa_forces_weight,
+        )
+        logging.info(
+            f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
+        )
+    swa = SWAContainer(
+        model=AveragedModel(model),
+        scheduler=SWALR(
+            optimizer=optimizer,
+            swa_lr=args.swa_lr,
+            anneal_epochs=1,
+            anneal_strategy="linear",
+        ),
+        start=args.start_swa,
+        loss_fn=loss_fn_energy,
+    )
+    return swa, swas
 
 
 def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
@@ -407,16 +490,16 @@ def custom_key(key):
     return (2, key)
 
 
-def dict_to_array(data, heads):
-    if not all(isinstance(value, dict) for value in data.values()):
-        return np.array(list(data.values()))
+def dict_to_array(input_data, heads):
+    if not all(isinstance(value, dict) for value in input_data.values()):
+        return np.array(list(input_data.values()))
     unique_keys = set()
-    for inner_dict in data.values():
+    for inner_dict in input_data.values():
         unique_keys.update(inner_dict.keys())
     unique_keys = list(unique_keys)
     sorted_keys = sorted([int(key) for key in unique_keys])
-    result_array = np.zeros((len(data), len(sorted_keys)))
-    for _, (head_name, inner_dict) in enumerate(data.items()):
+    result_array = np.zeros((len(input_data), len(sorted_keys)))
+    for _, (head_name, inner_dict) in enumerate(input_data.items()):
         for key, value in inner_dict.items():
             key_index = sorted_keys.index(int(key))
             head_index = heads.index(head_name)
