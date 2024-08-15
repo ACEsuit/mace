@@ -55,6 +55,7 @@ def run(args: argparse.Namespace) -> None:
     """
     This script runs the training/fine tuning for mace
     """
+    args, input_log_messages = tools.check_args(args)
     tag = tools.get_tag(name=args.name, seed=args.seed)
     if args.distributed:
         try:
@@ -74,6 +75,16 @@ def run(args: argparse.Namespace) -> None:
     # Setup
     tools.set_seeds(args.seed)
     tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
+    logging.info("===========CHECKING SETTINGS===========")
+    for message, level in input_log_messages:
+        if level == "debug":
+            logging.debug(message)
+        elif level == "warning":
+            logging.warning(message)
+        elif level == "error":
+            logging.error(message)
+        else:
+            logging.info(message)
 
     if args.distributed:
         torch.cuda.set_device(local_rank)
@@ -380,7 +391,7 @@ def run(args: argparse.Namespace) -> None:
         )
     # Build model
     if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
-        logging.info("Building model")
+        logging.debug("Building model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_numbers"] = z_table.zs
         model_config_foundation["num_elements"] = len(z_table)
@@ -395,7 +406,7 @@ def run(args: argparse.Namespace) -> None:
         args.model = "FoundationMACE"
         model_config = model_config_foundation  # pylint
     else:
-        logging.info("Building model")
+        logging.debug("Building model")
         if args.num_channels is not None and args.max_L is not None:
             assert args.num_channels > 0, "num_channels must be positive integer"
             assert args.max_L >= 0, "max_L must be non-negative integer"
@@ -409,7 +420,8 @@ def run(args: argparse.Namespace) -> None:
             len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
         ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
 
-        logging.debug(f"Hidden irreps: {args.hidden_irreps}")
+        logging.info(f"Hidden irreps: {args.hidden_irreps} (Number of channel: {args.num_channels}, max_L: {args.max_L})")
+
 
         model_config = dict(
             r_max=args.r_max,

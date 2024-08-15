@@ -7,8 +7,23 @@
 import argparse
 import os
 from typing import Optional
+from e3nn import o3
 
+def check_args(args):
+    """
+    Check input arguments, update them if necessary for valid and consistent inputs, and return a tuple containing
+    the (potentially) modified args and a list of log messages.
+    """
+    log_messages = []
+    # Check if hidden_irreps, num_channels and max_L are consistent
+    if args.hidden_irreps is None and args.num_channels is None and args.max_L is None:
+        args.hidden_irreps, args.num_channels, args.max_L = "128x0e + 128x1o", 128, 1 
+    elif args.hidden_irreps is not None and args.num_channels is not None and args.max_L is not None:
+        args.hidden_irreps = o3.Irreps((args.num_channels * o3.Irreps.spherical_harmonics(args.max_L)).sort().irreps.simplify())
+        log_messages.append((f"Both hidden_irreps, num_channels and max_L are specified. Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.","info"))
 
+    return args, log_messages
+    
 def build_default_arg_parser() -> argparse.ArgumentParser:
     try:
         import configargparse
@@ -183,7 +198,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--hidden_irreps",
         help="irreps for hidden node states",
         type=str,
-        default="128x0e + 128x1o",
+        default=None,
     )
     # add option to specify irreps by channel number and max L
     parser.add_argument(
