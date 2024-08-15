@@ -22,6 +22,19 @@ def check_args(args):
         args.hidden_irreps = o3.Irreps((args.num_channels * o3.Irreps.spherical_harmonics(args.max_L)).sort().irreps.simplify())
         log_messages.append((f"Both hidden_irreps, num_channels and max_L are specified. Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.","info"))
 
+    # Use work_dir for all other directories as well, unless they were specified by the user
+    if args.work_dir != ".":
+        if args.log_dir ==None:
+            args.log_dir = os.path.join(args.work_dir,  "logs")
+        if args.model_dir == None:
+            args.model_dir = args.work_dir
+        if args.checkpoints_dir == None :
+            args.checkpoints_dir = os.path.join(args.work_dir, "checkpoints")
+        if args.results_dir == None:
+            args.results_dir = os.path.join(args.work_dir,  "results")
+        if args.downloads_dir == None:
+            args.downloads_dir = os.path.join(args.work_dir, "downloads")
+    
     return args, log_messages
     
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -46,22 +59,22 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
 
     # Directories
     parser.add_argument(
-        "--log_dir", help="directory for log files", type=str, default="logs"
+        "--work_dir", help="set directory for all files and folders", type=str, default="."
     )
     parser.add_argument(
-        "--model_dir", help="directory for final model", type=str, default="."
+        "--log_dir", help="directory for log files", type=str, default=None
     )
     parser.add_argument(
-        "--checkpoints_dir",
-        help="directory for checkpoint files",
-        type=str,
-        default="checkpoints",
+        "--model_dir", help="directory for final model", type=str, default=None
     )
     parser.add_argument(
-        "--results_dir", help="directory for results", type=str, default="results"
+        "--checkpoints_dir", help="directory for checkpoint files", type=str, default=None
     )
     parser.add_argument(
-        "--downloads_dir", help="directory for downloads", type=str, default="downloads"
+        "--results_dir", help="directory for results", type=str, default=None
+    )
+    parser.add_argument(
+        "--downloads_dir", help="directory for downloads", type=str, default=None
     )
 
     # Device and logging
