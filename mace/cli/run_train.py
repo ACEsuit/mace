@@ -379,7 +379,10 @@ def run(args: argparse.Namespace) -> None:
     if args.loss in ("stress", "virials", "huber", "universal"):
         compute_virials = True
         args.compute_stress = True
-        args.error_table = "PerAtomRMSEstressvirials"
+        if "MAE" in args.error_table:
+            args.error_table = "PerAtomMAEstressvirials"
+        else:
+            args.error_table = "PerAtomRMSEstressvirials"
 
     output_args = {
         "energy": compute_energy,
@@ -609,19 +612,19 @@ def run(args: argparse.Namespace) -> None:
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
     if args.swa:
-        assert dipole_only is False, "swa for dipole fitting not implemented"
+        assert dipole_only is False, "Stage Two for dipole fitting not implemented"
         swas.append(True)
         if args.start_swa is None:
             args.start_swa = max(1, args.max_num_epochs // 4 * 3)
         else:
             if args.start_swa > args.max_num_epochs:
-                logging.warning(
-                    f"Start swa must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+                logging.info(
+                    f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
                 )
                 args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-                logging.info(f"Setting start swa to {args.start_swa}")
+                logging.info(f"Setting start Stage Two to {args.start_swa}")
         if args.loss == "forces_only":
-            raise ValueError("Can not select swa with forces only loss.")
+            raise ValueError("Can not select Stage Two with forces only loss.")
         if args.loss == "virials":
             loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
                 energy_weight=args.swa_energy_weight,
@@ -641,7 +644,7 @@ def run(args: argparse.Namespace) -> None:
                 dipole_weight=args.swa_dipole_weight,
             )
             logging.info(
-                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
+                f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
             )
         else:
             loss_fn_energy = modules.WeightedEnergyForcesLoss(
@@ -649,7 +652,7 @@ def run(args: argparse.Namespace) -> None:
                 forces_weight=args.swa_forces_weight,
             )
             logging.info(
-                f"Using stochastic weight averaging (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
+                f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
             )
         swa = tools.SWAContainer(
             model=AveragedModel(model),
@@ -845,7 +848,7 @@ def run(args: argparse.Namespace) -> None:
         if rank == 0:
             # Save entire model
             if swa_eval:
-                model_path = Path(args.checkpoints_dir) / (tag + "_swa.model")
+                model_path = Path(args.checkpoints_dir) / (tag + "_stagetwo.model")
             else:
                 model_path = Path(args.checkpoints_dir) / (tag + ".model")
             logging.info(f"Saving model to {model_path}")
@@ -859,10 +862,12 @@ def run(args: argparse.Namespace) -> None:
                 ),
             }
             if swa_eval:
-                torch.save(model, Path(args.model_dir) / (args.name + "_swa.model"))
+                torch.save(
+                    model, Path(args.model_dir) / (args.name + "_stagetwo.model")
+                )
                 try:
                     path_complied = Path(args.model_dir) / (
-                        args.name + "_swa_compiled.model"
+                        args.name + "_stagetwo_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata {path_complied}")
                     model_compiled = jit.compile(deepcopy(model))

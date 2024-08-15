@@ -308,11 +308,18 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                     f"Could not compute average E0s if no training xyz given, error {e} occured"
                 ) from e
         else:
-            try:
-                atomic_energies_dict = ast.literal_eval(E0s)
-                assert isinstance(atomic_energies_dict, dict)
-            except Exception as e:
-                raise RuntimeError(f"E0s specified invalidly, error {e} occured") from e
+            if E0s.endswith(".json"):
+                logging.info(f"Loading atomic energies from {E0s}")
+                with open(E0s, "r", encoding="utf-8") as f:
+                    atomic_energies_dict = json.load(f)
+            else:
+                try:
+                    atomic_energies_dict = ast.literal_eval(E0s)
+                    assert isinstance(atomic_energies_dict, dict)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"E0s specified invalidly, error {e} occured"
+                    ) from e
     else:
         raise RuntimeError(
             "E0s not found in training file and not specified in command line"
@@ -458,6 +465,14 @@ def create_error_table(
             "relative F RMSE %",
             "RMSE Stress (Virials) / meV / A (A^3)",
         ]
+    elif table_type == "PerAtomMAEstressvirials":
+        table.field_names = [
+            "config_type",
+            "MAE E / meV / atom",
+            "MAE F / meV / A",
+            "relative F MAE %",
+            "MAE Stress (Virials) / meV / A (A^3)",
+        ]
     elif table_type == "TotalMAE":
         table.field_names = [
             "config_type",
@@ -560,6 +575,32 @@ def create_error_table(
                     f"{metrics['rmse_f'] * 1000:.1f}",
                     f"{metrics['rel_rmse_f']:.2f}",
                     f"{metrics['rmse_virials'] * 1000:.1f}",
+                ]
+            )
+        elif (
+            table_type == "PerAtomMAEstressvirials"
+            and metrics["mae_stress"] is not None
+        ):
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['mae_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['mae_f'] * 1000:.1f}",
+                    f"{metrics['rel_mae_f']:.2f}",
+                    f"{metrics['mae_stress'] * 1000:.1f}",
+                ]
+            )
+        elif (
+            table_type == "PerAtomMAEstressvirials"
+            and metrics["mae_virials"] is not None
+        ):
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['mae_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['mae_f'] * 1000:.1f}",
+                    f"{metrics['rel_mae_f']:.2f}",
+                    f"{metrics['mae_virials'] * 1000:.1f}",
                 ]
             )
         elif table_type == "TotalMAE":
