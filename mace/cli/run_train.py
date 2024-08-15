@@ -170,6 +170,15 @@ def run(args: argparse.Namespace) -> None:
         
     else:
         atomic_energies_dict = None
+    
+    if len(collections.train)<args.batch_size:
+        logging.warning(f"Batch size ({args.batch_size}) is larger than the number of training data ({len(collections.train)})")
+        args.batch_size = int(len(collections.train)*0.1)
+        logging.warning(f"Batch size changed to {args.batch_size}")
+    if len(collections.train)<len(collections.valid):
+        logging.warning(f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({len(collections.valid)})")
+        args.valid_batch_size = int(len(collections.valid)*0.1)
+        logging.warning(f"Validation batch size changed to {args.valid_batch_size}")
 
     # Atomic number table
     # yapf: disable
