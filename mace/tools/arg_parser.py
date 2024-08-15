@@ -23,17 +23,16 @@ def check_args(args):
         log_messages.append((f"Both hidden_irreps, num_channels and max_L are specified. Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.","info"))
 
     # Use work_dir for all other directories as well, unless they were specified by the user
-    if args.work_dir != ".":
-        if args.log_dir ==None:
-            args.log_dir = os.path.join(args.work_dir,  "logs")
-        if args.model_dir == None:
-            args.model_dir = args.work_dir
-        if args.checkpoints_dir == None :
-            args.checkpoints_dir = os.path.join(args.work_dir, "checkpoints")
-        if args.results_dir == None:
-            args.results_dir = os.path.join(args.work_dir,  "results")
-        if args.downloads_dir == None:
-            args.downloads_dir = os.path.join(args.work_dir, "downloads")
+    if args.log_dir ==None:
+        args.log_dir = os.path.join(args.work_dir,  "logs")
+    if args.model_dir == None:
+        args.model_dir = args.work_dir
+    if args.checkpoints_dir == None :
+        args.checkpoints_dir = os.path.join(args.work_dir, "checkpoints")
+    if args.results_dir == None:
+        args.results_dir = os.path.join(args.work_dir,  "results")
+    if args.downloads_dir == None:
+        args.downloads_dir = os.path.join(args.work_dir, "downloads")
     
     return args, log_messages
     
