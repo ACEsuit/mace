@@ -696,9 +696,21 @@ def run(args: argparse.Namespace) -> None:
             group["lr"] = args.lr
 
     logging.debug(model)
-    logging.info(f"Number of parameters: {tools.count_parameters(model)}")
-    logging.debug(f"Optimizer: {optimizer}")
+    logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
+    logging.info(f"Batch size: {args.batch_size}, validation batch size: {args.valid_batch_size}")
+    logging.info(f"Number of gradient updates: {args.max_num_epochs*len(collections.train)/args.batch_size}")
+    logging.info(f"Radial cutoff: {args.r_max}, num_radial_basis: {args.num_radial_basis}, num_cutoff_basis: {args.num_cutoff_basis}")
+    logging.info(f"Polynomial cutoff: {args.num_cutoff_basis}, max_L: {args.max_L}, num_interactions: {args.num_interactions}")
+    logging.info(f"Correlation: {args.correlation}, distance transform: {args.distance_transform}")
 
+    logging.info("")
+    logging.info("===========OPTIMIZER INFORMATION===========")
+    logging.info(f"Optimizer for parameter optimization: {args.optimizer.upper()}")
+    logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
+    logging.debug(
+            f"{'\n '.join([f'{group["name"]}: learning rate: {group["lr"]} and weight decay: {group["weight_decay"]}' for group in optimizer.param_groups])}"
+        )
+    
     if args.wandb:
         logging.info("Using Weights and Biases for logging")
         import wandb
