@@ -616,13 +616,6 @@ def run(args: argparse.Namespace) -> None:
         swas.append(True)
         if args.start_swa is None:
             args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-        else:
-            if args.start_swa > args.max_num_epochs:
-                logging.info(
-                    f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
-                )
-                args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-                logging.info(f"Setting start Stage Two to {args.start_swa}")
         if args.loss == "forces_only":
             raise ValueError("Can not select Stage Two with forces only loss.")
         if args.loss == "virials":
