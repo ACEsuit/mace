@@ -812,9 +812,6 @@ def run(args: argparse.Namespace) -> None:
         )
         all_data_loaders[test_name] = test_loader
 
-    train_valid_data_loader = {k: v for k, v in all_data_loaders.items() if k in ["train", "valid"]}
-    test_data_loader = {k: v for k, v in all_data_loaders.items() if k not in ["train", "valid"]}
-
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
             state=tools.CheckpointState(model, optimizer, lr_scheduler),
@@ -825,17 +822,13 @@ def run(args: argparse.Namespace) -> None:
         if args.distributed:
             distributed_model = DDP(model, device_ids=[local_rank])
         model_to_evaluate = model if not args.distributed else distributed_model
-        if swa_eval:
-            logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
-        else:
-            logging.info(f"Loaded model from epoch {epoch} for evaluation")
+        logging.info(f"Loaded model from epoch {epoch}")
 
         for param in model.parameters():
             param.requires_grad = False
-
-        table_train = create_error_table(
+        table = create_error_table(
             table_type=args.error_table,
-            all_data_loaders=train_valid_data_loader,
+            all_data_loaders=all_data_loaders,
             model=model_to_evaluate,
             loss_fn=loss_fn,
             output_args=output_args,
@@ -843,19 +836,7 @@ def run(args: argparse.Namespace) -> None:
             device=device,
             distributed=args.distributed,
         )
-        table_test = create_error_table(
-            table_type=args.error_table,
-            all_data_loaders=test_data_loader,
-            model=model_to_evaluate,
-            loss_fn=loss_fn,
-            output_args=output_args,
-            log_wandb=args.wandb,
-            device=device,
-            distributed=args.distributed,
-        )
-        logging.info("Error-table on TRAIN and VALID:\n" + str(table_train))
-        logging.info("Error-table on TEST:\n" + str(table_test))
-        
+        logging.info("\n" + str(table))
 
         if rank == 0:
             # Save entire model
