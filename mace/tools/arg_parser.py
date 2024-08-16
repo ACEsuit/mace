@@ -7,7 +7,9 @@
 import argparse
 import os
 from typing import Optional
+
 from e3nn import o3
+
 
 def check_args(args):
     """
@@ -15,38 +17,59 @@ def check_args(args):
     the (potentially) modified args and a list of log messages.
     """
     log_messages = []
-    
+
     # Directories
     # Use work_dir for all other directories as well, unless they were specified by the user
-    if args.log_dir ==None:
-        args.log_dir = os.path.join(args.work_dir,  "logs")
-    if args.model_dir == None:
+    if args.log_dir is None:
+        args.log_dir = os.path.join(args.work_dir, "logs")
+    if args.model_dir is None:
         args.model_dir = args.work_dir
-    if args.checkpoints_dir == None :
+    if args.checkpoints_dir is None:
         args.checkpoints_dir = os.path.join(args.work_dir, "checkpoints")
-    if args.results_dir == None:
-        args.results_dir = os.path.join(args.work_dir,  "results")
-    if args.downloads_dir == None:
+    if args.results_dir is None:
+        args.results_dir = os.path.join(args.work_dir, "results")
+    if args.downloads_dir is None:
         args.downloads_dir = os.path.join(args.work_dir, "downloads")
 
     # Model
     # Check if hidden_irreps, num_channels and max_L are consistent
     if args.hidden_irreps is None and args.num_channels is None and args.max_L is None:
-        args.hidden_irreps, args.num_channels, args.max_L = "128x0e + 128x1o", 128, 1 
-    elif args.hidden_irreps is not None and args.num_channels is not None and args.max_L is not None:
-        args.hidden_irreps = o3.Irreps((args.num_channels * o3.Irreps.spherical_harmonics(args.max_L)).sort().irreps.simplify())
-        log_messages.append((f"Both hidden_irreps, num_channels and max_L are specified.","info"))
-        log_messages.append((f"Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.","warning"))
+        args.hidden_irreps, args.num_channels, args.max_L = "128x0e + 128x1o", 128, 1
+    elif (
+        args.hidden_irreps is not None
+        and args.num_channels is not None
+        and args.max_L is not None
+    ):
+        args.hidden_irreps = o3.Irreps(
+            (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+            .sort()
+            .irreps.simplify()
+        )
+        log_messages.append(
+            ("Both hidden_irreps, num_channels and max_L are specified", "info")
+        )
+        log_messages.append(
+            (
+                f"Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.",
+                "warning",
+            )
+        )
 
     # Loss and optimization
     # Check Stage Two loss start
     if args.start_swa > args.max_num_epochs:
-        log_messages.append(( f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}", "info"))
-        log_messages.append(( f"Stage Two will not start", "warning"))
+        log_messages.append(
+            (
+                f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}",
+                "info",
+            )
+        )
+        log_messages.append(("Stage Two will not start", "warning"))
         args.swa = None
-    
+
     return args, log_messages
-    
+
+
 def build_default_arg_parser() -> argparse.ArgumentParser:
     try:
         import configargparse
@@ -69,7 +92,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
 
     # Directories
     parser.add_argument(
-        "--work_dir", help="set directory for all files and folders", type=str, default="."
+        "--work_dir",
+        help="set directory for all files and folders",
+        type=str,
+        default=".",
     )
     parser.add_argument(
         "--log_dir", help="directory for log files", type=str, default=None
@@ -78,7 +104,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--model_dir", help="directory for final model", type=str, default=None
     )
     parser.add_argument(
-        "--checkpoints_dir", help="directory for checkpoint files", type=str, default=None
+        "--checkpoints_dir",
+        help="directory for checkpoint files",
+        type=str,
+        default=None,
     )
     parser.add_argument(
         "--results_dir", help="directory for results", type=str, default=None
