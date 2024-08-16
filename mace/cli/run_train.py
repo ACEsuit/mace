@@ -703,9 +703,6 @@ def run(args: argparse.Namespace) -> None:
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Optimizer for parameter optimization: {args.optimizer.upper()}")
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
-    logging.debug(
-            f"{'\n '.join([f'{group["name"]}: learning rate: {group["lr"]} and weight decay: {group["weight_decay"]}' for group in optimizer.param_groups])}"
-        )
     
     if args.wandb:
         logging.info("Using Weights and Biases for logging")
