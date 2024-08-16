@@ -142,7 +142,7 @@ def run(args: argparse.Namespace) -> None:
         args.avg_num_neighbors = statistics["avg_num_neighbors"]
         args.compute_avg_num_neighbors = False
         args.E0s = statistics["atomic_energies"]
-        
+
     logging.info("")
     logging.info("===========LOADING INPUT DATA===========")
     # Data preparation
@@ -167,18 +167,21 @@ def run(args: argparse.Namespace) -> None:
             charges_key=args.charges_key,
             keep_isolated_atoms=args.keep_isolated_atoms,
         )
-        
+        if len(collections.train) < args.batch_size:
+            logging.warning(
+                f"Batch size ({args.batch_size}) is larger than the number of training data ({len(collections.train)})"
+            )
+            args.batch_size = int(len(collections.train) * 0.1)
+            logging.warning(f"Batch size changed to {args.batch_size}")
+        if len(collections.train) < len(collections.valid):
+            logging.warning(
+                f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({len(collections.valid)})"
+            )
+            args.valid_batch_size = int(len(collections.valid) * 0.1)
+            logging.warning(f"Validation batch size changed to {args.valid_batch_size}")
+
     else:
         atomic_energies_dict = None
-    
-    if len(collections.train)<args.batch_size:
-        logging.warning(f"Batch size ({args.batch_size}) is larger than the number of training data ({len(collections.train)})")
-        args.batch_size = int(len(collections.train)*0.1)
-        logging.warning(f"Batch size changed to {args.batch_size}")
-    if len(collections.train)<len(collections.valid):
-        logging.warning(f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({len(collections.valid)})")
-        args.valid_batch_size = int(len(collections.valid)*0.1)
-        logging.warning(f"Validation batch size changed to {args.valid_batch_size}")
 
     # Atomic number table
     # yapf: disable
@@ -213,7 +216,9 @@ def run(args: argparse.Namespace) -> None:
                 ].item()
                 for z in z_table.zs
             }
-            logging.info(f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table_foundation.zs])}")
+            logging.info(
+                f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table_foundation.zs])}"
+            )
         else:
             if args.train_file.endswith(".xyz"):
                 atomic_energies_dict = get_atomic_energies(
@@ -244,8 +249,10 @@ def run(args: argparse.Namespace) -> None:
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
-        logging.info(f"Atomic Energies used [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table.zs])}")
-        
+        logging.info(
+            f"Atomic Energies used [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table.zs])}"
+        )
+
     if args.train_file.endswith(".xyz"):
         train_set = [
             data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
@@ -370,7 +377,9 @@ def run(args: argparse.Namespace) -> None:
         else:
             args.avg_num_neighbors = avg_num_neighbors
     if args.avg_num_neighbors < 2 or args.avg_num_neighbors > 100:
-        logging.warning(f"Unusual average number of neighbors: {args.avg_num_neighbors:.1f}")
+        logging.warning(
+            f"Unusual average number of neighbors: {args.avg_num_neighbors:.1f}"
+        )
     else:
         logging.info(f"Average number of neighbors: {args.avg_num_neighbors:.1f}")
 
@@ -392,7 +401,9 @@ def run(args: argparse.Namespace) -> None:
         "dipoles": compute_dipole,
     }
 
-    logging.info(f"Selected the following values to use and report: {[report for report, value in output_args.items() if value]}")
+    logging.info(
+        f"Selected the following values to use and report: {[report for report, value in output_args.items() if value]}"
+    )
 
     if args.scaling == "no_scaling":
         args.std = 1.0
@@ -432,8 +443,9 @@ def run(args: argparse.Namespace) -> None:
             len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
         ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
 
-        logging.info(f"Hidden irreps: {args.hidden_irreps} (Number of channel: {args.num_channels}, max_L: {args.max_L})")
-
+        logging.info(
+            f"Hidden irreps: {args.hidden_irreps} (Number of channel: {args.num_channels}, max_L: {args.max_L})"
+        )
 
         model_config = dict(
             r_max=args.r_max,
@@ -683,7 +695,6 @@ def run(args: argparse.Namespace) -> None:
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
-
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
@@ -693,17 +704,27 @@ def run(args: argparse.Namespace) -> None:
 
     logging.debug(model)
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
-    logging.info(f"Batch size: {args.batch_size}, validation batch size: {args.valid_batch_size}")
-    logging.info(f"Number of gradient updates: {args.max_num_epochs*len(collections.train)/args.batch_size}")
-    logging.info(f"Radial cutoff: {args.r_max}, num_radial_basis: {args.num_radial_basis}, num_cutoff_basis: {args.num_cutoff_basis}")
-    logging.info(f"Polynomial cutoff: {args.num_cutoff_basis}, max_L: {args.max_L}, num_interactions: {args.num_interactions}")
-    logging.info(f"Correlation: {args.correlation}, distance transform: {args.distance_transform}")
+    logging.info(
+        f"Batch size: {args.batch_size}, validation batch size: {args.valid_batch_size}"
+    )
+    logging.info(
+        f"Number of gradient updates: {args.max_num_epochs*len(collections.train)/args.batch_size}"
+    )
+    logging.info(
+        f"Radial cutoff: {args.r_max}, num_radial_basis: {args.num_radial_basis}, num_cutoff_basis: {args.num_cutoff_basis}"
+    )
+    logging.info(
+        f"Polynomial cutoff: {args.num_cutoff_basis}, max_L: {args.max_L}, num_interactions: {args.num_interactions}"
+    )
+    logging.info(
+        f"Correlation: {args.correlation}, distance transform: {args.distance_transform}"
+    )
 
     logging.info("")
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Optimizer for parameter optimization: {args.optimizer.upper()}")
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
-    
+
     if args.wandb:
         logging.info("Using Weights and Biases for logging")
         import wandb
@@ -809,6 +830,13 @@ def run(args: argparse.Namespace) -> None:
         )
         all_data_loaders[test_name] = test_loader
 
+    train_valid_data_loader = {
+        k: v for k, v in all_data_loaders.items() if k in ["train", "valid"]
+    }
+    test_data_loader = {
+        k: v for k, v in all_data_loaders.items() if k not in ["train", "valid"]
+    }
+
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
             state=tools.CheckpointState(model, optimizer, lr_scheduler),
@@ -819,13 +847,17 @@ def run(args: argparse.Namespace) -> None:
         if args.distributed:
             distributed_model = DDP(model, device_ids=[local_rank])
         model_to_evaluate = model if not args.distributed else distributed_model
-        logging.info(f"Loaded model from epoch {epoch}")
+        if swa_eval:
+            logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
+        else:
+            logging.info(f"Loaded model from epoch {epoch} for evaluation")
 
         for param in model.parameters():
             param.requires_grad = False
-        table = create_error_table(
+
+        table_train = create_error_table(
             table_type=args.error_table,
-            all_data_loaders=all_data_loaders,
+            all_data_loaders=train_valid_data_loader,
             model=model_to_evaluate,
             loss_fn=loss_fn,
             output_args=output_args,
@@ -833,7 +865,18 @@ def run(args: argparse.Namespace) -> None:
             device=device,
             distributed=args.distributed,
         )
-        logging.info("\n" + str(table))
+        table_test = create_error_table(
+            table_type=args.error_table,
+            all_data_loaders=test_data_loader,
+            model=model_to_evaluate,
+            loss_fn=loss_fn,
+            output_args=output_args,
+            log_wandb=args.wandb,
+            device=device,
+            distributed=args.distributed,
+        )
+        logging.info("Error-table on TRAIN and VALID:\n" + str(table_train))
+        logging.info("Error-table on TEST:\n" + str(table_test))
 
         if rank == 0:
             # Save entire model
