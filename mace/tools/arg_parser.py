@@ -15,13 +15,8 @@ def check_args(args):
     the (potentially) modified args and a list of log messages.
     """
     log_messages = []
-    # Check if hidden_irreps, num_channels and max_L are consistent
-    if args.hidden_irreps is None and args.num_channels is None and args.max_L is None:
-        args.hidden_irreps, args.num_channels, args.max_L = "128x0e + 128x1o", 128, 1 
-    elif args.hidden_irreps is not None and args.num_channels is not None and args.max_L is not None:
-        args.hidden_irreps = o3.Irreps((args.num_channels * o3.Irreps.spherical_harmonics(args.max_L)).sort().irreps.simplify())
-        log_messages.append((f"Both hidden_irreps, num_channels and max_L are specified. Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.","info"))
-
+    
+    # Directories
     # Use work_dir for all other directories as well, unless they were specified by the user
     if args.log_dir ==None:
         args.log_dir = os.path.join(args.work_dir,  "logs")
@@ -33,6 +28,22 @@ def check_args(args):
         args.results_dir = os.path.join(args.work_dir,  "results")
     if args.downloads_dir == None:
         args.downloads_dir = os.path.join(args.work_dir, "downloads")
+
+    # Model
+    # Check if hidden_irreps, num_channels and max_L are consistent
+    if args.hidden_irreps is None and args.num_channels is None and args.max_L is None:
+        args.hidden_irreps, args.num_channels, args.max_L = "128x0e + 128x1o", 128, 1 
+    elif args.hidden_irreps is not None and args.num_channels is not None and args.max_L is not None:
+        args.hidden_irreps = o3.Irreps((args.num_channels * o3.Irreps.spherical_harmonics(args.max_L)).sort().irreps.simplify())
+        log_messages.append((f"Both hidden_irreps, num_channels and max_L are specified.","info"))
+        log_messages.append((f"Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.","warning"))
+
+    # Loss and optimization
+    # Check Stage Two loss start
+    if args.start_swa > args.max_num_epochs:
+        log_messages.append(( f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}", "info"))
+        log_messages.append(( f"Stage Two will not start", "warning"))
+        args.swa = None
     
     return args, log_messages
     
