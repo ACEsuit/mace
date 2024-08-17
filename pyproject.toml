@@ -38,3 +38,6 @@ ignore-paths = [
     "^mace/tools/torch_geometric/.*$",
     "^mace/tools/scatter.py$",
 ]
+
+[tool.setuptools.package-data]
+mace = ["py.typed"]
