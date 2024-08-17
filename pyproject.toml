@@ -1,3 +1,6 @@
+[project]
+name = "mace"
+
 [build-system]
 requires = [
     "setuptools>=42",
