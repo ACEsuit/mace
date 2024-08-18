@@ -5,11 +5,11 @@
 ###########################################################################################
 
 import argparse
+import logging
 import os
 from typing import Optional
 
 from e3nn import o3
-import logging
 
 
 def check_args(args):
@@ -52,10 +52,9 @@ def check_args(args):
         log_messages.append(
             (
                 f"Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.",
-                logging.WARNING
+                logging.WARNING,
             )
         )
-        
 
     # Loss and optimization
     # Check Stage Two loss start
