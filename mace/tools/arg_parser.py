@@ -9,6 +9,7 @@ import os
 from typing import Optional
 
 from e3nn import o3
+import logging
 
 
 def check_args(args):
@@ -46,14 +47,15 @@ def check_args(args):
             .irreps.simplify()
         )
         log_messages.append(
-            ("Both hidden_irreps, num_channels and max_L are specified", "info")
+            ("Both hidden_irreps, num_channels and max_L are specified", logging.INFO)
         )
         log_messages.append(
             (
                 f"Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.",
-                "warning",
+                logging.WARNING
             )
         )
+        
 
     # Loss and optimization
     # Check Stage Two loss start
@@ -64,10 +66,10 @@ def check_args(args):
             log_messages.append(
                 (
                     f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}",
-                    "info",
+                    logging.INFO,
                 )
             )
-            log_messages.append(("Stage Two will not start", "warning"))
+            log_messages.append(("Stage Two will not start", logging.WARNING))
             args.swa = False
 
     return args, log_messages

@@ -76,15 +76,8 @@ def run(args: argparse.Namespace) -> None:
     tools.set_seeds(args.seed)
     tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
     logging.info("===========CHECKING SETTINGS===========")
-    for message, level in input_log_messages:
-        if level == "debug":
-            logging.debug(message)
-        elif level == "warning":
-            logging.warning(message)
-        elif level == "error":
-            logging.error(message)
-        else:
-            logging.info(message)
+    for message, loglevel in input_log_messages:
+        logging.log(level=loglevel,msg=message)
 
     if args.distributed:
         torch.cuda.set_device(local_rank)
