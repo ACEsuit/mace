@@ -77,7 +77,7 @@ def run(args: argparse.Namespace) -> None:
     tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
     logging.info("===========CHECKING SETTINGS===========")
     for message, loglevel in input_log_messages:
-        logging.log(level=loglevel,msg=message)
+        logging.log(level=loglevel, msg=message)
 
     if args.distributed:
         torch.cuda.set_device(local_rank)
