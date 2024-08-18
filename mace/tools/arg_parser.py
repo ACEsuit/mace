@@ -57,15 +57,18 @@ def check_args(args):
 
     # Loss and optimization
     # Check Stage Two loss start
-    if args.start_swa > args.max_num_epochs:
-        log_messages.append(
-            (
-                f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}",
-                "info",
+    if args.swa:
+        if args.start_swa is None:
+            args.start_swa = max(1, args.max_num_epochs // 4 * 3)
+        if args.start_swa > args.max_num_epochs:
+            log_messages.append(
+                (
+                    f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}",
+                    "info",
+                )
             )
-        )
-        log_messages.append(("Stage Two will not start", "warning"))
-        args.swa = None
+            log_messages.append(("Stage Two will not start", "warning"))
+            args.swa = False
 
     return args, log_messages
 
