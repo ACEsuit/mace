@@ -45,7 +45,6 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
     eval_metrics["mode"] = "eval"
     eval_metrics["epoch"] = epoch
     logger.log(eval_metrics)
-    logging_level = logging.INFO
     if epoch is None:
         inintial_phrase = "Initial loss on validation set"
     else:
