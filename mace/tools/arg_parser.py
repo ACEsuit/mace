@@ -621,7 +621,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
-        "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
+        "--eval_interval", help="evaluate model every <n> epochs", type=int, default=2
     )
     parser.add_argument(
         "--keep_checkpoints",
