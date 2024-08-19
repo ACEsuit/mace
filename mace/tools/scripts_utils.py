@@ -80,7 +80,7 @@ def get_dataset_from_xyz(
             all_train_configs, valid_fraction, seed
         )
         logging.info(
-            f"Using random {100 * valid_fraction:.0f}% of training set for validation [{len(valid_configs)} configurations, {np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
+            f"Loaded {len(valid_configs)} validation configurations [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
         )
 
     test_configs = []
