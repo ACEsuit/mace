@@ -164,13 +164,13 @@ def run(args: argparse.Namespace) -> None:
             logging.info(
                 f"Batch size ({args.batch_size}) is larger than the number of training data ({len(collections.train)})"
             )
-            args.batch_size = int(len(collections.train) * 0.1)
+            args.batch_size = max(1, int(len(collections.train) * 0.1))
             logging.warning(f"Batch size changed to {args.batch_size}")
         if len(collections.valid) < args.valid_batch_size:
             logging.info(
                 f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({len(collections.valid)})"
             )
-            args.valid_batch_size = int(len(collections.valid) * 0.1)
+            args.batch_size = max(1, int(len(collections.train) * 0.1))
             logging.warning(f"Validation batch size changed to {args.valid_batch_size}")
 
     else:
