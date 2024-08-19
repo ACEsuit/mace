@@ -64,7 +64,7 @@ def random_train_valid_split(
     rng = np.random.default_rng(seed)
     rng.shuffle(indices)
     logging.info(
-            f"Using random {100 * valid_fraction:.0f}% of training set for validation"
+        f"Using random {100 * valid_fraction:.0f}% of training set for validation"
     )
     logging.info(f"Validation set created using indices: {indices[train_size:]}")
     return (
