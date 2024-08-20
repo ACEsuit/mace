@@ -38,6 +38,7 @@ class Configuration:
     virials: Optional[Virials] = None  # eV
     dipole: Optional[Vector] = None  # Debye
     charges: Optional[Charges] = None  # atomic unit
+    total_charge: Optional[Charges] = None  # atomic unit
     polarizability: Optional[Vector] = None  # Angstrom^3
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
@@ -81,6 +82,7 @@ def config_from_atoms_list(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    total_charge_key="total_charge",
     polarizability_key="polarizability",
     config_type_weights: Dict[str, float] = None,
 ) -> Configurations:
@@ -99,6 +101,7 @@ def config_from_atoms_list(
                 virials_key=virials_key,
                 dipole_key=dipole_key,
                 charges_key=charges_key,
+                total_charge_key=total_charge_key,
                 polarizability_key=polarizability_key,
                 config_type_weights=config_type_weights,
             )
@@ -114,6 +117,7 @@ def config_from_atoms(
     virials_key="virials",
     dipole_key="dipole",
     charges_key="charges",
+    total_charge_key="total_charge",
     polarizability_key="polarizability",
     config_type_weights: Dict[str, float] = None,
 ) -> Configuration:
@@ -129,6 +133,8 @@ def config_from_atoms(
     polarizability = atoms.info.get(polarizability_key, None)  # Angstrom^3
     # Charges default to 0 instead of None if not found
     charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
+    # Assumes a total charge of 0 instead of None if not found
+    total_charge = atoms.info.get(total_charge_key , 0.0)  # atomic unit
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -174,6 +180,7 @@ def config_from_atoms(
         virials=virials,
         dipole=dipole,
         charges=charges,
+        total_charge=total_charge,
         polarizability=polarizability,
         weight=weight,
         energy_weight=energy_weight,
@@ -213,6 +220,7 @@ def load_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipole",
     charges_key: str = "charges",
+    total_charge_key: str = "total_charge",
     polarizability_key: str = "polarizability",
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
@@ -289,6 +297,7 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        total_charge_key=total_charge_key,
         polarizability_key=polarizability_key,
     )
     return atomic_energies_dict, configs
@@ -348,6 +357,7 @@ def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
             grp["virials"] = data.virials
             grp["dipole"] = data.dipole
             grp["charges"] = data.charges
+            grp["total_charge"] = data.total_charge
             grp["polarizability"] = data.polarizability
 
 
@@ -373,6 +383,7 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["virials"] = data.virials
     grp["dipole"] = data.dipole
     grp["charges"] = data.charges
+    grp["total_charge"] = data.total_charge
     grp["polarizability"] = data.polarizability
 
 
@@ -389,6 +400,7 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         subgroup["virials"] = write_value(config.virials)
         subgroup["dipole"] = write_value(config.dipole)
         subgroup["charges"] = write_value(config.charges)
+        subgroup["total_charge"] = write_value(config.total_charge)
         subgroup["cell"] = write_value(config.cell)
         subgroup["pbc"] = write_value(config.pbc)
         subgroup["weight"] = write_value(config.weight)
