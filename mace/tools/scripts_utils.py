@@ -42,6 +42,7 @@ def get_dataset_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
+    total_charge_key: str = "total_charge",
     polarizability_key: str = "polarizability",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
@@ -54,6 +55,7 @@ def get_dataset_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        total_charge_key=total_charge_key,
         polarizability_key=polarizability_key,
         extract_atomic_energies=True,
         keep_isolated_atoms=keep_isolated_atoms,
@@ -71,6 +73,7 @@ def get_dataset_from_xyz(
             virials_key=virials_key,
             dipole_key=dipole_key,
             charges_key=charges_key,
+            total_charge_key=total_charge_key,
             polarizability_key=polarizability_key,
             extract_atomic_energies=False,
         )
@@ -97,6 +100,7 @@ def get_dataset_from_xyz(
             stress_key=stress_key,
             virials_key=virials_key,
             charges_key=charges_key,
+            total_charge_key=total_charge_key,
             polarizability_key=polarizability_key,
             extract_atomic_energies=False,
         )
