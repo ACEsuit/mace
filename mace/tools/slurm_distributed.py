@@ -42,12 +42,13 @@ class DistributedEnvironment:
         hostname = "localhost"
         os.environ["MASTER_ADDR"] = hostname
         os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "33333")
-        os.environ["WORLD_SIZE"] = os.environ.get(
-            "SLURM_NTASKS",
-            str(
-                int(os.environ["SLURM_NTASKS_PER_NODE"])
-                * 1
-            ),
-        )
+        os.environ["WORLD_SIZE"] = os.environ["OMPI_COMM_WORLD_SIZE"]
+        # os.environ["WORLD_SIZE"] = os.environ.get(
+        #     "SLURM_NTASKS",
+        #     str(
+        #         int(os.environ["W"])
+        #         * 1
+        #     ),
+        # )
         os.environ["LOCAL_RANK"] = os.environ["OMPI_COMM_WORLD_LOCAL_RANK"]
         os.environ["RANK"] = os.environ["OMPI_COMM_WORLD_LOCAL_RANK"]
