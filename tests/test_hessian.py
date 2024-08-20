@@ -7,9 +7,7 @@ from mace.calculators import mace_mp
 
 @pytest.fixture(name="setup_calculator_")
 def setup_calculator():
-    calc = mace_mp(
-        model="medium", dispersion=False, default_dtype="float64", device="cpu"
-    )
+    calc = mace_mp(model="medium", dispersion=False, default_dtype="float64", device="cpu")
     return calc
 
 
@@ -44,9 +42,7 @@ def test_finite_difference_hessian(setup_structure_):
             atoms_j.calc = initial.calc
             forces_j = atoms_j.get_forces()
 
-            hessian[:, i * ndim + j] = -(forces_i - forces_j)[indicies].flatten() / (
-                2 * delta
-            )
+            hessian[:, i * ndim + j] = -(forces_i - forces_j)[indicies].flatten() / (2 * delta)
 
     hessian = hessian.reshape((-1, len(initial), 3))
     h_autograd = initial.calc.get_hessian(atoms=initial)

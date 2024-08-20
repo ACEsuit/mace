@@ -10,9 +10,7 @@ from ase.calculators.mixing import SumCalculator
 from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
-local_model_path = os.path.join(
-    module_dir, "foundations_models/2023-12-03-mace-mp.model"
-)
+local_model_path = os.path.join(module_dir, "foundations_models/2023-12-03-mace-mp.model")
 
 
 def mace_mp(
@@ -55,9 +53,7 @@ def mace_mp(
     """
     if model in (None, "medium") and os.path.isfile(local_model_path):
         model = local_model_path
-        print(
-            f"Using local medium Materials Project MACE model for MACECalculator {model}"
-        )
+        print(f"Using local medium Materials Project MACE model for MACECalculator {model}")
     elif model in (None, "small", "medium", "large") or str(model).startswith("https:"):
         try:
             # checkpoints release: https://github.com/ACEsuit/mace-mp/releases/tag/mace_mp_0
@@ -66,35 +62,23 @@ def mace_mp(
                 medium="https://tinyurl.com/5yyxdm76",  # 2023-12-03-mace-128-L1_epoch-199.model
                 large="https://tinyurl.com/5f5yavf3",  # MACE_MPtrj_2022.9.model
             )
-            checkpoint_url = (
-                urls.get(model, urls["medium"])
-                if model in (None, "small", "medium", "large")
-                else model
-            )
+            checkpoint_url = urls.get(model, urls["medium"]) if model in (None, "small", "medium", "large") else model
             cache_dir = os.path.expanduser("~/.cache/mace")
-            checkpoint_url_name = "".join(
-                c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
-            )
+            checkpoint_url_name = "".join(c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_")
             cached_model_path = f"{cache_dir}/{checkpoint_url_name}"
             if not os.path.isfile(cached_model_path):
                 os.makedirs(cache_dir, exist_ok=True)
                 # download and save to disk
                 print(f"Downloading MACE model from {checkpoint_url!r}")
-                _, http_msg = urllib.request.urlretrieve(
-                    checkpoint_url, cached_model_path
-                )
+                _, http_msg = urllib.request.urlretrieve(checkpoint_url, cached_model_path)
                 if "Content-Type: text/html" in http_msg:
-                    raise RuntimeError(
-                        f"Model download failed, please check the URL {checkpoint_url}"
-                    )
+                    raise RuntimeError(f"Model download failed, please check the URL {checkpoint_url}")
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
             msg = f"Using Materials Project MACE for MACECalculator with {model}"
             print(msg)
         except Exception as exc:
-            raise RuntimeError(
-                "Model download failed and no local model found"
-            ) from exc
+            raise RuntimeError("Model download failed and no local model found") from exc
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     if default_dtype == "float64":
@@ -105,9 +89,7 @@ def mace_mp(
         print(
             "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization."
         )
-    mace_calc = MACECalculator(
-        model_paths=model, device=device, default_dtype=default_dtype, **kwargs
-    )
+    mace_calc = MACECalculator(model_paths=model, device=device, default_dtype=default_dtype, **kwargs)
     d3_calc = None
     if dispersion:
         gh_url = "https://github.com/pfnet-research/torch-dftd"
@@ -117,9 +99,7 @@ def mace_mp(
             raise RuntimeError(
                 f"Please install torch-dftd to use dispersion corrections (see {gh_url} from {exc})"
             ) from exc
-        print(
-            f"Using TorchDFTD3Calculator for D3 dispersion corrections (see {gh_url})"
-        )
+        print(f"Using TorchDFTD3Calculator for D3 dispersion corrections (see {gh_url})")
         dtype = torch.float32 if default_dtype == "float32" else torch.float64
         d3_calc = TorchDFTD3Calculator(
             device=device,
@@ -164,11 +144,7 @@ def mace_off(
             medium="https://github.com/ACEsuit/mace-off/raw/main/mace_off23/MACE-OFF23_medium.model?raw=true",
             large="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model?raw=true",
         )
-        checkpoint_url = (
-            urls.get(model, urls["medium"])
-            if model in (None, "small", "medium", "large")
-            else model
-        )
+        checkpoint_url = urls.get(model, urls["medium"]) if model in (None, "small", "medium", "large") else model
         cache_dir = os.path.expanduser("~/.cache/mace")
         checkpoint_url_name = os.path.basename(checkpoint_url).split("?")[0]
         cached_model_path = f"{cache_dir}/{checkpoint_url_name}"
@@ -179,9 +155,7 @@ def mace_off(
             print(
                 "The model is distributed under the Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use the model you accept the terms of the license."
             )
-            print(
-                "ASL is based on the Gnu Public License, but does not permit commercial use"
-            )
+            print("ASL is based on the Gnu Public License, but does not permit commercial use")
             urllib.request.urlretrieve(checkpoint_url, cached_model_path)
             print(f"Cached MACE model to {cached_model_path}")
         model = cached_model_path
@@ -203,9 +177,7 @@ def mace_off(
         print(
             "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization."
         )
-    mace_calc = MACECalculator(
-        model_paths=model, device=device, default_dtype=default_dtype, **kwargs
-    )
+    mace_calc = MACECalculator(model_paths=model, device=device, default_dtype=default_dtype, **kwargs)
     return mace_calc
 
 
@@ -221,10 +193,6 @@ def mace_anicc(
         - "Evaluation of the MACE Force Field Architecture by Dávid Péter Kovács, Ilyes Batatia, Eszter Sára Arany, and Gábor Csányi, The Journal of Chemical Physics, 2023, URL: https://doi.org/10.1063/5.0155322
     """
     if model_path is None:
-        model_path = os.path.join(
-            module_dir, "foundations_models/ani500k_large_CC.model"
-        )
-        print(
-            "Using ANI couple cluster model for MACECalculator, see https://doi.org/10.1063/5.0155322"
-        )
+        model_path = os.path.join(module_dir, "foundations_models/ani500k_large_CC.model")
+        print("Using ANI couple cluster model for MACECalculator, see https://doi.org/10.1063/5.0155322")
     return MACECalculator(model_path, device=device, default_dtype="float64")

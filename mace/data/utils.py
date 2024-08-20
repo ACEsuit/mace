@@ -52,9 +52,7 @@ class Configuration:
 Configurations = List[Configuration]
 
 
-def random_train_valid_split(
-    items: Sequence, valid_fraction: float, seed: int
-) -> Tuple[List, List]:
+def random_train_valid_split(items: Sequence, valid_fraction: float, seed: int) -> Tuple[List, List]:
     assert 0.0 < valid_fraction < 1.0
 
     size = len(items)
@@ -122,15 +120,11 @@ def config_from_atoms(
     dipole = atoms.info.get(dipole_key, None)  # Debye
     # Charges default to 0 instead of None if not found
     charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
-    atomic_numbers = np.array(
-        [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
-    )
+    atomic_numbers = np.array([ase.data.atomic_numbers[symbol] for symbol in atoms.symbols])
     pbc = tuple(atoms.get_pbc())
     cell = np.array(atoms.get_cell())
     config_type = atoms.info.get("config_type", "Default")
-    weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(
-        config_type, 1.0
-    )
+    weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(config_type, 1.0)
     energy_weight = atoms.info.get("config_energy_weight", 1.0)
     forces_weight = atoms.info.get("config_forces_weight", 1.0)
     stress_weight = atoms.info.get("config_stress_weight", 1.0)
@@ -242,14 +236,10 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
-            isolated_atom_config = (
-                len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
-            )
+            isolated_atom_config = len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
             if isolated_atom_config:
                 if energy_key in atoms.info.keys():
-                    atomic_energies_dict[atoms.get_atomic_numbers()[0]] = atoms.info[
-                        energy_key
-                    ]
+                    atomic_energies_dict[atoms.get_atomic_numbers()[0]] = atoms.info[energy_key]
                 else:
                     logging.warning(
                         f"Configuration '{idx}' is marked as 'IsolatedAtom' "
@@ -277,9 +267,7 @@ def load_from_xyz(
     return atomic_energies_dict, configs
 
 
-def compute_average_E0s(
-    collections_train: Configurations, z_table: AtomicNumberTable
-) -> Dict[int, float]:
+def compute_average_E0s(collections_train: Configurations, z_table: AtomicNumberTable) -> Dict[int, float]:
     """
     Function to compute the average interaction energy of each chemical element
     returns dictionary of E0s
@@ -298,9 +286,7 @@ def compute_average_E0s(
         for i, z in enumerate(z_table.zs):
             atomic_energies_dict[z] = E0s[i]
     except np.linalg.LinAlgError:
-        logging.warning(
-            "Failed to compute E0s using least squares regression, using the same for all atoms"
-        )
+        logging.warning("Failed to compute E0s using least squares regression, using the same for all atoms")
         atomic_energies_dict = {}
         for i, z in enumerate(z_table.zs):
             atomic_energies_dict[z] = 0.0

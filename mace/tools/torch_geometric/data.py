@@ -90,19 +90,11 @@ class Data(object):
 
         if edge_index is not None and edge_index.dtype != torch.long:
             raise ValueError(
-                (
-                    f"Argument `edge_index` needs to be of type `torch.long` but "
-                    f"found type `{edge_index.dtype}`."
-                )
+                (f"Argument `edge_index` needs to be of type `torch.long` but " f"found type `{edge_index.dtype}`.")
             )
 
         if face is not None and face.dtype != torch.long:
-            raise ValueError(
-                (
-                    f"Argument `face` needs to be of type `torch.long` but found "
-                    f"type `{face.dtype}`."
-                )
-            )
+            raise ValueError((f"Argument `face` needs to be of type `torch.long` but found " f"type `{face.dtype}`."))
 
     @classmethod
     def from_dict(cls, dictionary):
@@ -311,17 +303,12 @@ class Data(object):
         r"""Copies all attributes :obj:`*keys` to CUDA memory.
         If :obj:`*keys` is not given, the conversion is applied to all present
         attributes."""
-        return self.apply(
-            lambda x: x.cuda(device=device, non_blocking=non_blocking), *keys
-        )
+        return self.apply(lambda x: x.cuda(device=device, non_blocking=non_blocking), *keys)
 
     def clone(self):
         r"""Performs a deep-copy of the data object."""
         return self.__class__.from_dict(
-            {
-                k: v.clone() if torch.is_tensor(v) else copy.deepcopy(v)
-                for k, v in self.__dict__.items()
-            }
+            {k: v.clone() if torch.is_tensor(v) else copy.deepcopy(v) for k, v in self.__dict__.items()}
         )
 
     def pin_memory(self, *keys):
@@ -334,26 +321,23 @@ class Data(object):
         if self.edge_index is not None:
             if self.edge_index.dtype != torch.long:
                 raise RuntimeError(
-                    (
-                        "Expected edge indices of dtype {}, but found dtype " " {}"
-                    ).format(torch.long, self.edge_index.dtype)
+                    ("Expected edge indices of dtype {}, but found dtype " " {}").format(
+                        torch.long, self.edge_index.dtype
+                    )
                 )
 
         if self.face is not None:
             if self.face.dtype != torch.long:
                 raise RuntimeError(
-                    (
-                        "Expected face indices of dtype {}, but found dtype " " {}"
-                    ).format(torch.long, self.face.dtype)
+                    ("Expected face indices of dtype {}, but found dtype " " {}").format(torch.long, self.face.dtype)
                 )
 
         if self.edge_index is not None:
             if self.edge_index.dim() != 2 or self.edge_index.size(0) != 2:
                 raise RuntimeError(
-                    (
-                        "Edge indices should have shape [2, num_edges] but found"
-                        " shape {}"
-                    ).format(self.edge_index.size())
+                    ("Edge indices should have shape [2, num_edges] but found" " shape {}").format(
+                        self.edge_index.size()
+                    )
                 )
 
         if self.edge_index is not None and self.num_nodes is not None:
@@ -364,19 +348,15 @@ class Data(object):
                 min_index = max_index = 0
             if min_index < 0 or max_index > self.num_nodes - 1:
                 raise RuntimeError(
-                    (
-                        "Edge indices must lay in the interval [0, {}]"
-                        " but found them in the interval [{}, {}]"
-                    ).format(self.num_nodes - 1, min_index, max_index)
+                    ("Edge indices must lay in the interval [0, {}]" " but found them in the interval [{}, {}]").format(
+                        self.num_nodes - 1, min_index, max_index
+                    )
                 )
 
         if self.face is not None:
             if self.face.dim() != 2 or self.face.size(0) != 3:
                 raise RuntimeError(
-                    (
-                        "Face indices should have shape [3, num_faces] but found"
-                        " shape {}"
-                    ).format(self.face.size())
+                    ("Face indices should have shape [3, num_faces] but found" " shape {}").format(self.face.size())
                 )
 
         if self.face is not None and self.num_nodes is not None:
@@ -387,46 +367,41 @@ class Data(object):
                 min_index = max_index = 0
             if min_index < 0 or max_index > self.num_nodes - 1:
                 raise RuntimeError(
-                    (
-                        "Face indices must lay in the interval [0, {}]"
-                        " but found them in the interval [{}, {}]"
-                    ).format(self.num_nodes - 1, min_index, max_index)
+                    ("Face indices must lay in the interval [0, {}]" " but found them in the interval [{}, {}]").format(
+                        self.num_nodes - 1, min_index, max_index
+                    )
                 )
 
         if self.edge_index is not None and self.edge_attr is not None:
             if self.edge_index.size(1) != self.edge_attr.size(0):
                 raise RuntimeError(
-                    (
-                        "Edge indices and edge attributes hold a differing "
-                        "number of edges, found {} and {}"
-                    ).format(self.edge_index.size(), self.edge_attr.size())
+                    ("Edge indices and edge attributes hold a differing " "number of edges, found {} and {}").format(
+                        self.edge_index.size(), self.edge_attr.size()
+                    )
                 )
 
         if self.x is not None and self.num_nodes is not None:
             if self.x.size(0) != self.num_nodes:
                 raise RuntimeError(
-                    (
-                        "Node features should hold {} elements in the first "
-                        "dimension but found {}"
-                    ).format(self.num_nodes, self.x.size(0))
+                    ("Node features should hold {} elements in the first " "dimension but found {}").format(
+                        self.num_nodes, self.x.size(0)
+                    )
                 )
 
         if self.pos is not None and self.num_nodes is not None:
             if self.pos.size(0) != self.num_nodes:
                 raise RuntimeError(
-                    (
-                        "Node positions should hold {} elements in the first "
-                        "dimension but found {}"
-                    ).format(self.num_nodes, self.pos.size(0))
+                    ("Node positions should hold {} elements in the first " "dimension but found {}").format(
+                        self.num_nodes, self.pos.size(0)
+                    )
                 )
 
         if self.normal is not None and self.num_nodes is not None:
             if self.normal.size(0) != self.num_nodes:
                 raise RuntimeError(
-                    (
-                        "Node normals should hold {} elements in the first "
-                        "dimension but found {}"
-                    ).format(self.num_nodes, self.normal.size(0))
+                    ("Node normals should hold {} elements in the first " "dimension but found {}").format(
+                        self.num_nodes, self.normal.size(0)
+                    )
                 )
 
     def __repr__(self):

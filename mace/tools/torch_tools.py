@@ -55,9 +55,7 @@ def init_device(device_str: str) -> torch.device:
         if ":" in device_str:
             # Check if the desired device is available
             assert int(device_str.split(":")[-1]) < torch.cuda.device_count()
-        logging.info(
-            f"CUDA version: {torch.version.cuda}, CUDA device: {torch.cuda.current_device()}"
-        )
+        logging.info(f"CUDA version: {torch.version.cuda}, CUDA device: {torch.cuda.current_device()}")
         torch.cuda.init()
         return torch.device(device_str)
     if device_str == "mps":
@@ -114,9 +112,7 @@ def voigt_to_matrix(t: torch.Tensor):
     if t.shape == (9,):
         return t.view(3, 3)
 
-    raise ValueError(
-        f"Stress tensor must be of shape (6,) or (3, 3), or (9,) but has shape {t.shape}"
-    )
+    raise ValueError(f"Stress tensor must be of shape (6,) or (3, 3), or (9,) but has shape {t.shape}")
 
 
 def init_wandb(project: str, entity: str, name: str, config: dict, directory: str):

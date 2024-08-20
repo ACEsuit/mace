@@ -73,9 +73,7 @@ class TestSymmetricContract:
         )
         torch.manual_seed(123)
         features = torch.randn(30, 16, 9)
-        one_hots = torch.nn.functional.one_hot(torch.arange(0, 30) % 2).to(
-            torch.get_default_dtype()
-        )
+        one_hots = torch.nn.functional.one_hot(torch.arange(0, 30) % 2).to(torch.get_default_dtype())
         out = operation(features, one_hots)
         assert out.shape == (30, 64)
         assert operation.contractions[0].weights_max.shape == (2, 11, 16)

@@ -107,9 +107,7 @@ def multi_valid_hdf5(process, args, split_valid, drop_last):
 
 
 def multi_test_hdf5(process, name, args, split_test, drop_last):
-    with h5py.File(
-        args.h5_prefix + "test/" + name + "_" + str(process) + ".h5", "w"
-    ) as f:
+    with h5py.File(args.h5_prefix + "test/" + name + "_" + str(process) + ".h5", "w") as f:
         f.attrs["drop_last"] = drop_last
         save_configurations_as_HDF5(split_test[process], process, f)
 
@@ -143,9 +141,7 @@ def run(args: argparse.Namespace):
         config_type_weights = ast.literal_eval(args.config_type_weights)
         assert isinstance(config_type_weights, dict)
     except Exception as e:  # pylint: disable=W0703
-        logging.warning(
-            f"Config type weights not specified correctly ({e}), using Default"
-        )
+        logging.warning(f"Config type weights not specified correctly ({e}), using Default")
         config_type_weights = {"Default": 1.0}
 
     folders = ["train", "val", "test"]

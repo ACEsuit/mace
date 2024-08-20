@@ -37,9 +37,7 @@ class BesselBasis(torch.nn.Module):
         else:
             self.register_buffer("bessel_weights", bessel_weights)
 
-        self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
-        )
+        self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.get_default_dtype()))
         self.register_buffer(
             "prefactor",
             torch.tensor(np.sqrt(2.0 / r_max), dtype=torch.get_default_dtype()),
@@ -66,9 +64,7 @@ class ChebychevBasis(torch.nn.Module):
         super().__init__()
         self.register_buffer(
             "n",
-            torch.arange(1, num_basis + 1, dtype=torch.get_default_dtype()).unsqueeze(
-                0
-            ),
+            torch.arange(1, num_basis + 1, dtype=torch.get_default_dtype()).unsqueeze(0),
         )
         self.num_basis = num_basis
         self.r_max = r_max
@@ -79,9 +75,7 @@ class ChebychevBasis(torch.nn.Module):
         return torch.special.chebyshev_polynomial_t(x, n)
 
     def __repr__(self):
-        return (
-            f"{self.__class__.__name__}(r_max={self.r_max}, num_basis={self.num_basis},"
-        )
+        return f"{self.__class__.__name__}(r_max={self.r_max}, num_basis={self.num_basis},"
 
 
 @compile_mode("script")
@@ -92,13 +86,9 @@ class GaussianBasis(torch.nn.Module):
 
     def __init__(self, r_max: float, num_basis=128, trainable=False):
         super().__init__()
-        gaussian_weights = torch.linspace(
-            start=0.0, end=r_max, steps=num_basis, dtype=torch.get_default_dtype()
-        )
+        gaussian_weights = torch.linspace(start=0.0, end=r_max, steps=num_basis, dtype=torch.get_default_dtype())
         if trainable:
-            self.gaussian_weights = torch.nn.Parameter(
-                gaussian_weights, requires_grad=True
-            )
+            self.gaussian_weights = torch.nn.Parameter(gaussian_weights, requires_grad=True)
         else:
             self.register_buffer("gaussian_weights", gaussian_weights)
         self.coeff = -0.5 / (r_max / (num_basis - 1)) ** 2
@@ -120,9 +110,7 @@ class PolynomialCutoff(torch.nn.Module):
     def __init__(self, r_max: float, p=6):
         super().__init__()
         self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
-        self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
-        )
+        self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.get_default_dtype()))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # yapf: disable
@@ -152,15 +140,11 @@ class ZBLBasis(torch.nn.Module):
 
     def __init__(self, r_max: float, p=6, trainable=False):
         super().__init__()
-        self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
-        )
+        self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.get_default_dtype()))
         # Pre-calculate the p coefficients for the ZBL potential
         self.register_buffer(
             "c",
-            torch.tensor(
-                [0.1818, 0.5099, 0.2802, 0.02817], dtype=torch.get_default_dtype()
-            ),
+            torch.tensor([0.1818, 0.5099, 0.2802, 0.02817], dtype=torch.get_default_dtype()),
         )
         self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
         self.register_buffer(
@@ -173,9 +157,7 @@ class ZBLBasis(torch.nn.Module):
         self.cutoff = PolynomialCutoff(r_max, p)
         if trainable:
             self.a_exp = torch.nn.Parameter(torch.tensor(0.300, requires_grad=True))
-            self.a_prefactor = torch.nn.Parameter(
-                torch.tensor(0.4543, requires_grad=True)
-            )
+            self.a_prefactor = torch.nn.Parameter(torch.tensor(0.4543, requires_grad=True))
         else:
             self.register_buffer("a_exp", torch.tensor(0.300))
             self.register_buffer("a_prefactor", torch.tensor(0.4543))
@@ -189,16 +171,10 @@ class ZBLBasis(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
-            -1
-        )
+        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(-1)
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
-        a = (
-            self.a_prefactor
-            * 0.529
-            / (torch.pow(Z_u, self.a_exp) + torch.pow(Z_v, self.a_exp))
-        )
+        a = self.a_prefactor * 0.529 / (torch.pow(Z_u, self.a_exp) + torch.pow(Z_v, self.a_exp))
         r_over_a = x / a
         phi = (
             self.c[0] * torch.exp(-3.2 * r_over_a)
@@ -260,15 +236,11 @@ class AgnesiTransform(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
-            -1
-        )
+        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(-1)
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         r_0 = 0.5 * (self.covalent_radii[Z_u] + self.covalent_radii[Z_v])
-        return (
-            1 + (self.a * ((x / r_0) ** self.q) / (1 + (x / r_0) ** (self.q - self.p)))
-        ) ** (-1)
+        return (1 + (self.a * ((x / r_0) ** self.q) / (1 + (x / r_0) ** (self.q - self.p)))) ** (-1)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(a={self.a}, q={self.q}, p={self.p})"
@@ -306,17 +278,11 @@ class SoftTransform(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
-            -1
-        )
+        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(-1)
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 4
-        y = (
-            x
-            + (1 / 2) * torch.tanh(-(x / r_0) - self.a * ((x / r_0) ** self.b))
-            + 1 / 2
-        )
+        y = x + (1 / 2) * torch.tanh(-(x / r_0) - self.a * ((x / r_0) ** self.b)) + 1 / 2
         return y
 
     def __repr__(self):

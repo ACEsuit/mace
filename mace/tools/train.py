@@ -51,40 +51,28 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
         logging.info(
             f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
         )
-    elif (
-        log_errors == "PerAtomRMSEstressvirials"
-        and eval_metrics["rmse_stress_per_atom"] is not None
-    ):
+    elif log_errors == "PerAtomRMSEstressvirials" and eval_metrics["rmse_stress_per_atom"] is not None:
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         error_stress = eval_metrics["rmse_stress_per_atom"] * 1e3
         logging.info(
             f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress_per_atom={error_stress:.1f} meV / A^3"
         )
-    elif (
-        log_errors == "PerAtomRMSEstressvirials"
-        and eval_metrics["rmse_virials_per_atom"] is not None
-    ):
+    elif log_errors == "PerAtomRMSEstressvirials" and eval_metrics["rmse_virials_per_atom"] is not None:
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         error_virials = eval_metrics["rmse_virials_per_atom"] * 1e3
         logging.info(
             f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_virials_per_atom={error_virials:.1f} meV"
         )
-    elif (
-        log_errors == "PerAtomMAEstressvirials"
-        and eval_metrics["mae_stress_per_atom"] is not None
-    ):
+    elif log_errors == "PerAtomMAEstressvirials" and eval_metrics["mae_stress_per_atom"] is not None:
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         error_stress = eval_metrics["mae_stress"] * 1e3
         logging.info(
             f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E_per_atom={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A, MAE_stress={error_stress:.1f} meV / A^3"
         )
-    elif (
-        log_errors == "PerAtomMAEstressvirials"
-        and eval_metrics["mae_virials_per_atom"] is not None
-    ):
+    elif log_errors == "PerAtomMAEstressvirials" and eval_metrics["mae_virials_per_atom"] is not None:
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         error_virials = eval_metrics["mae_virials"] * 1e3
@@ -94,9 +82,7 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
     elif log_errors == "TotalRMSE":
         error_e = eval_metrics["rmse_e"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
-        logging.info(
-            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A"
-        )
+        logging.info(f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A")
     elif log_errors == "PerAtomMAE":
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
@@ -106,14 +92,10 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
     elif log_errors == "TotalMAE":
         error_e = eval_metrics["mae_e"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
-        logging.info(
-            f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A"
-        )
+        logging.info(f"Epoch {epoch}: loss={valid_loss:.4f}, MAE_E={error_e:.1f} meV, MAE_F={error_f:.1f} meV / A")
     elif log_errors == "DipoleRMSE":
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
-        logging.info(
-            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye"
-        )
+        logging.info(f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} mDebye")
     elif log_errors == "EnergyDipoleRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
@@ -178,9 +160,7 @@ def train(
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
             if epoch > start_epoch:
-                lr_scheduler.step(
-                    metrics=valid_loss
-                )  # Can break if exponential LR, TODO fix that!
+                lr_scheduler.step(metrics=valid_loss)  # Can break if exponential LR, TODO fix that!
         else:
             if swa_start:
                 logging.info("Changing loss based on Stage Two Weights")
@@ -216,12 +196,8 @@ def train(
 
         # Validate
         if epoch % eval_interval == 0:
-            model_to_evaluate = (
-                model if distributed_model is None else distributed_model
-            )
-            param_context = (
-                ema.average_parameters() if ema is not None else nullcontext()
-            )
+            model_to_evaluate = model if distributed_model is None else distributed_model
+            param_context = ema.average_parameters() if ema is not None else nullcontext()
             if "ScheduleFree" in type(optimizer).__name__:
                 optimizer.eval()
             with param_context:
@@ -257,16 +233,10 @@ def train(
                         )
                         epoch = swa.start
                     elif patience_counter >= patience and epoch >= swa.start:
-                        logging.info(
-                            f"Stopping optimization after {patience_counter} epochs without improvement"
-                        )
+                        logging.info(f"Stopping optimization after {patience_counter} epochs without improvement")
                         break
                     if save_all_checkpoints:
-                        param_context = (
-                            ema.average_parameters()
-                            if ema is not None
-                            else nullcontext()
-                        )
+                        param_context = ema.average_parameters() if ema is not None else nullcontext()
                         with param_context:
                             checkpoint_handler.save(
                                 state=CheckpointState(model, optimizer, lr_scheduler),
@@ -276,9 +246,7 @@ def train(
                 else:
                     lowest_loss = valid_loss
                     patience_counter = 0
-                    param_context = (
-                        ema.average_parameters() if ema is not None else nullcontext()
-                    )
+                    param_context = ema.average_parameters() if ema is not None else nullcontext()
                     with param_context:
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
@@ -410,14 +378,10 @@ class MACELoss(Metric):
         self.add_state("Fs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("fs", default=[], dist_reduce_fx="cat")
         self.add_state("delta_fs", default=[], dist_reduce_fx="cat")
-        self.add_state(
-            "stress_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
-        )
+        self.add_state("stress_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("delta_stress", default=[], dist_reduce_fx="cat")
         self.add_state("delta_stress_per_atom", default=[], dist_reduce_fx="cat")
-        self.add_state(
-            "virials_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
-        )
+        self.add_state("virials_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("delta_virials", default=[], dist_reduce_fx="cat")
         self.add_state("delta_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("Mus_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
@@ -433,9 +397,7 @@ class MACELoss(Metric):
         if output.get("energy") is not None and batch.energy is not None:
             self.E_computed += 1.0
             self.delta_es.append(batch.energy - output["energy"])
-            self.delta_es_per_atom.append(
-                (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
-            )
+            self.delta_es_per_atom.append((batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1]))
         if output.get("forces") is not None and batch.forces is not None:
             self.Fs_computed += 1.0
             self.fs.append(batch.forces)
@@ -444,23 +406,20 @@ class MACELoss(Metric):
             self.stress_computed += 1.0
             self.delta_stress.append(batch.stress - output["stress"])
             self.delta_stress_per_atom.append(
-                (batch.stress - output["stress"])
-                / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
+                (batch.stress - output["stress"]) / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
             )
         if output.get("virials") is not None and batch.virials is not None:
             self.virials_computed += 1.0
             self.delta_virials.append(batch.virials - output["virials"])
             self.delta_virials_per_atom.append(
-                (batch.virials - output["virials"])
-                / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
+                (batch.virials - output["virials"]) / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
             )
         if output.get("dipole") is not None and batch.dipole is not None:
             self.Mus_computed += 1.0
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
             self.delta_mus_per_atom.append(
-                (batch.dipole - output["dipole"])
-                / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
+                (batch.dipole - output["dipole"]) / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:

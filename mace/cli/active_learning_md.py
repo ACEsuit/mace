@@ -16,25 +16,15 @@ from mace.calculators.mace import MACECalculator
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", help="path to XYZ configurations", required=True)
-    parser.add_argument(
-        "--config_index", help="index of configuration", type=int, default=-1
-    )
-    parser.add_argument(
-        "--error_threshold", help="error threshold", type=float, default=0.1
-    )
+    parser.add_argument("--config_index", help="index of configuration", type=int, default=-1)
+    parser.add_argument("--error_threshold", help="error threshold", type=float, default=0.1)
     parser.add_argument("--temperature_K", help="temperature", type=float, default=300)
     parser.add_argument("--friction", help="friction", type=float, default=0.01)
     parser.add_argument("--timestep", help="timestep", type=float, default=1)
     parser.add_argument("--nsteps", help="number of steps", type=int, default=1000)
-    parser.add_argument(
-        "--nprint", help="number of steps between prints", type=int, default=10
-    )
-    parser.add_argument(
-        "--nsave", help="number of steps between saves", type=int, default=10
-    )
-    parser.add_argument(
-        "--ncheckerror", help="number of steps between saves", type=int, default=10
-    )
+    parser.add_argument("--nprint", help="number of steps between prints", type=int, default=10)
+    parser.add_argument("--nsave", help="number of steps between saves", type=int, default=10)
+    parser.add_argument("--ncheckerror", help="number of steps between saves", type=int, default=10)
 
     parser.add_argument(
         "--model",
@@ -144,7 +134,6 @@ def main() -> None:
 
 
 def run(args: argparse.Namespace) -> None:
-
     mace_fname = args.model
     atoms_fname = args.config
     atoms_index = args.config_index
@@ -181,9 +170,7 @@ def run(args: argparse.Namespace) -> None:
 
     dyn.attach(printenergy, interval=args.nsave, dyn=dyn, start_time=time.time())
     dyn.attach(save_config, interval=args.nsave, dyn=dyn, fname=args.output)
-    dyn.attach(
-        stop_error, interval=args.ncheckerror, dyn=dyn, threshold=args.error_threshold
-    )
+    dyn.attach(stop_error, interval=args.ncheckerror, dyn=dyn, threshold=args.error_threshold)
     # Now run the dynamics
     dyn.run(NSTEPS)
 

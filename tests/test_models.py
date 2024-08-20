@@ -57,12 +57,8 @@ def test_mace():
         num_bessel=8,
         num_polynomial_cutoff=6,
         max_ell=2,
-        interaction_cls=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
-        interaction_cls_first=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
+        interaction_cls=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
+        interaction_cls_first=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
         num_interactions=5,
         num_elements=2,
         hidden_irreps=o3.Irreps("32x0e + 32x1o"),
@@ -78,9 +74,7 @@ def test_mace():
     model_compiled = jit.compile(model)
 
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
-    atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=table, cutoff=3.0
-    )
+    atomic_data2 = data.AtomicData.from_config(config_rotated, z_table=table, cutoff=3.0)
 
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data, atomic_data2],
@@ -102,12 +96,8 @@ def test_dipole_mace():
         num_bessel=8,
         num_polynomial_cutoff=5,
         max_ell=2,
-        interaction_cls=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
-        interaction_cls_first=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
+        interaction_cls=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
+        interaction_cls_first=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
         num_interactions=2,
         num_elements=2,
         hidden_irreps=o3.Irreps("16x0e + 16x1o + 16x2e"),
@@ -122,9 +112,7 @@ def test_dipole_mace():
     model = modules.AtomicDipolesMACE(**model_config)
 
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
-    atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=table, cutoff=3.0
-    )
+    atomic_data2 = data.AtomicData.from_config(config_rotated, z_table=table, cutoff=3.0)
 
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data, atomic_data2],
@@ -153,12 +141,8 @@ def test_energy_dipole_mace():
         num_bessel=8,
         num_polynomial_cutoff=5,
         max_ell=2,
-        interaction_cls=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
-        interaction_cls_first=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
+        interaction_cls=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
+        interaction_cls_first=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
         num_interactions=2,
         num_elements=2,
         hidden_irreps=o3.Irreps("16x0e + 16x1o + 16x2e"),
@@ -172,9 +156,7 @@ def test_energy_dipole_mace():
     model = modules.EnergyDipolesMACE(**model_config)
 
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
-    atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=table, cutoff=3.0
-    )
+    atomic_data2 = data.AtomicData.from_config(config_rotated, z_table=table, cutoff=3.0)
 
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data, atomic_data2],

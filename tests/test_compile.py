@@ -26,12 +26,8 @@ def create_mace(device: str, seed: int = 1702):
         "num_bessel": 8,
         "num_polynomial_cutoff": 6,
         "max_ell": 3,
-        "interaction_cls": modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
-        "interaction_cls_first": modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
+        "interaction_cls": modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
+        "interaction_cls_first": modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
         "num_interactions": 2,
         "num_elements": 1,
         "hidden_irreps": o3.Irreps("128x0e + 128x1o"),
@@ -57,10 +53,7 @@ def create_batch(device: str):
 
     configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
     data_loader = torch_geometric.dataloader.DataLoader(
-        dataset=[
-            data.AtomicData.from_config(config, z_table=table, cutoff=cutoff)
-            for config in configs
-        ],
+        dataset=[data.AtomicData.from_config(config, z_table=table, cutoff=cutoff) for config in configs],
         batch_size=1,
         shuffle=False,
         drop_last=False,

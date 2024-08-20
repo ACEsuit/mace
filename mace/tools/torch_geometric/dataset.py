@@ -105,10 +105,7 @@ class Dataset(torch.utils.data.Dataset):
         data = self[0]
         if hasattr(data, "num_node_features"):
             return data.num_node_features
-        raise AttributeError(
-            f"'{data.__class__.__name__}' object has no "
-            f"attribute 'num_node_features'"
-        )
+        raise AttributeError(f"'{data.__class__.__name__}' object has no " f"attribute 'num_node_features'")
 
     @property
     def num_features(self) -> int:
@@ -121,10 +118,7 @@ class Dataset(torch.utils.data.Dataset):
         data = self[0]
         if hasattr(data, "num_edge_features"):
             return data.num_edge_features
-        raise AttributeError(
-            f"'{data.__class__.__name__}' object has no "
-            f"attribute 'num_edge_features'"
-        )
+        raise AttributeError(f"'{data.__class__.__name__}' object has no " f"attribute 'num_edge_features'")
 
     @property
     def raw_paths(self) -> List[str]:

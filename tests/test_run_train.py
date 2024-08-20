@@ -88,12 +88,7 @@ def test_run_train(tmp_path, fitting_configs):
         + " "
         + str(run_train)
         + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
+        + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
@@ -159,12 +154,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
         + " "
         + str(run_train)
         + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
+        + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
@@ -230,12 +220,7 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
         + " "
         + str(run_train)
         + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
+        + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
@@ -302,20 +287,13 @@ def test_run_train_foundation(tmp_path, fitting_configs):
         + " "
         + str(run_train)
         + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
+        + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(
-        tmp_path / "MACE.model", device="cpu", default_dtype="float32"
-    )
+    calc = MACECalculator(tmp_path / "MACE.model", device="cpu", default_dtype="float32")
 
     Es = []
     for at in fitting_configs:

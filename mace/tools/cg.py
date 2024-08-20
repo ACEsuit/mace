@@ -57,9 +57,7 @@ def _wigner_nj(
                     C *= ir_left.dim**0.5 * ir.dim**0.5
 
                 C = torch.einsum("jk,ijl->ikl", C_left.flatten(1), C)
-                C = C.reshape(
-                    ir_out.dim, *(irreps.dim for irreps in irrepss_left), ir.dim
-                )
+                C = C.reshape(ir_out.dim, *(irreps.dim for irreps in irrepss_left), ir.dim)
                 for u in range(mul):
                     E = torch.zeros(
                         ir_out.dim,

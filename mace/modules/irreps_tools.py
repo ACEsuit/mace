@@ -34,10 +34,7 @@ def tp_out_irreps_with_instructions(
     irreps_out, permut, _ = irreps_out.sort()
 
     # Permute the output indexes of the instructions to match the sorted irreps:
-    instructions = [
-        (i_in1, i_in2, permut[i_out], mode, train)
-        for i_in1, i_in2, i_out, mode, train in instructions
-    ]
+    instructions = [(i_in1, i_in2, permut[i_out], mode, train) for i_in1, i_in2, i_out, mode, train in instructions]
 
     instructions = sorted(instructions, key=lambda x: x[2])
 

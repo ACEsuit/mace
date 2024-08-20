@@ -62,15 +62,12 @@ def main() -> None:
 
 
 def run(args: argparse.Namespace) -> None:
-
     torch_tools.set_default_dtype(args.default_dtype)
     device = torch_tools.init_device(args.device)
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
-    model = model.to(
-        args.device
-    )  # shouldn't be necessary but seems to help with CUDA problems
+    model = model.to(args.device)  # shouldn't be necessary but seems to help with CUDA problems
 
     for param in model.parameters():
         param.requires_grad = False
@@ -82,12 +79,7 @@ def run(args: argparse.Namespace) -> None:
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
     data_loader = torch_geometric.dataloader.DataLoader(
-        dataset=[
-            data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=float(model.r_max)
-            )
-            for config in configs
-        ],
+        dataset=[data.AtomicData.from_config(config, z_table=z_table, cutoff=float(model.r_max)) for config in configs],
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
@@ -117,9 +109,7 @@ def run(args: argparse.Namespace) -> None:
         forces_collection.append(forces[:-1])  # drop last as its empty
 
     energies = np.concatenate(energies_list, axis=0)
-    forces_list = [
-        forces for forces_list in forces_collection for forces in forces_list
-    ]
+    forces_list = [forces for forces_list in forces_collection for forces in forces_list]
     assert len(atoms_list) == len(energies) == len(forces_list)
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)

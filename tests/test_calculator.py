@@ -97,12 +97,7 @@ def trained_model_fixture(tmp_path_factory, fitting_configs):
         + " "
         + str(run_train)
         + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
+        + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
@@ -159,12 +154,7 @@ def trained_model_equivariant_fixture(tmp_path_factory, fitting_configs):
         + " "
         + str(run_train)
         + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
+        + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
@@ -222,21 +212,14 @@ def trained_dipole_fixture(tmp_path_factory, fitting_configs):
         + " "
         + str(run_train)
         + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
+        + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
 
     assert p.returncode == 0
 
-    return MACECalculator(
-        tmp_path / "MACE.model", device="cpu", model_type="DipoleMACE"
-    )
+    return MACECalculator(tmp_path / "MACE.model", device="cpu", model_type="DipoleMACE")
 
 
 @pytest.fixture(scope="module", name="trained_energy_dipole_model")
@@ -287,21 +270,14 @@ def trained_energy_dipole_fixture(tmp_path_factory, fitting_configs):
         + " "
         + str(run_train)
         + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
+        + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
     )
 
     p = subprocess.run(cmd.split(), env=run_env, check=True)
 
     assert p.returncode == 0
 
-    return MACECalculator(
-        tmp_path / "MACE.model", device="cpu", model_type="EnergyDipoleMACE"
-    )
+    return MACECalculator(tmp_path / "MACE.model", device="cpu", model_type="EnergyDipoleMACE")
 
 
 @pytest.fixture(scope="module", name="trained_committee")
@@ -354,12 +330,7 @@ def trained_committee_fixture(tmp_path_factory, fitting_configs):
             + " "
             + str(run_train)
             + " "
-            + " ".join(
-                [
-                    (f"--{k}={v}" if v is not None else f"--{k}")
-                    for k, v in mace_params.items()
-                ]
-            )
+            + " ".join([(f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()])
         )
 
         p = subprocess.run(cmd.split(), env=run_env, check=True)
@@ -376,12 +347,7 @@ def test_calculator_node_energy(fitting_configs, trained_model):
         trained_model.calculate(at)
         node_energies = trained_model.results["node_energy"]
         batch = trained_model._atoms_to_batch(at)  # pylint: disable=protected-access
-        node_e0 = (
-            trained_model.models[0]
-            .atomic_energies_fn(batch["node_attrs"])
-            .detach()
-            .numpy()
-        )
+        node_e0 = trained_model.models[0].atomic_energies_fn(batch["node_attrs"]).detach().numpy()
         energy_via_nodes = np.sum(node_energies + node_e0)
         energy = trained_model.results["energy"]
         np.testing.assert_allclose(energy, energy_via_nodes, atol=1e-6)

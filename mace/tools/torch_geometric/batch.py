@@ -106,15 +106,11 @@ class Batch(Data):
                         for j, size in enumerate(size.tolist()):
                             tmp = f"{key}_{j}_batch"
                             batch[tmp] = [] if i == 0 else batch[tmp]
-                            batch[tmp].append(
-                                torch.full((size,), i, dtype=torch.long, device=device)
-                            )
+                            batch[tmp].append(torch.full((size,), i, dtype=torch.long, device=device))
                     else:
                         tmp = f"{key}_batch"
                         batch[tmp] = [] if i == 0 else batch[tmp]
-                        batch[tmp].append(
-                            torch.full((size,), i, dtype=torch.long, device=device)
-                        )
+                        batch[tmp].append(torch.full((size,), i, dtype=torch.long, device=device))
 
             if hasattr(data, "__num_nodes__"):
                 num_nodes_list.append(data.__num_nodes__)
