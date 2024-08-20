@@ -1,5 +1,6 @@
 # This file loads an xyz dataset and prepares
 # new hdf5 file that is ready for training with on-the-fly dataloading
+from __future__ import annotations
 
 import argparse
 import ast
@@ -77,7 +78,7 @@ def split_array(a: np.ndarray, max_size: int):
     factors = get_prime_factors(len(a))
     max_factor = 1
     for i in range(1, len(factors) + 1):
-        for j in range(0, len(factors) - i + 1):
+        for j in range(len(factors) - i + 1):
             if np.prod(factors[j : j + i]) <= max_size:
                 test = np.prod(factors[j : j + i])
                 max_factor = max(test, max_factor)
@@ -107,9 +108,7 @@ def multi_valid_hdf5(process, args, split_valid, drop_last):
 
 
 def multi_test_hdf5(process, name, args, split_test, drop_last):
-    with h5py.File(
-        args.h5_prefix + "test/" + name + "_" + str(process) + ".h5", "w"
-    ) as f:
+    with h5py.File(args.h5_prefix + "test/" + name + "_" + str(process) + ".h5", "w") as f:
         f.attrs["drop_last"] = drop_last
         save_configurations_as_HDF5(split_test[process], process, f)
 
@@ -143,9 +142,7 @@ def run(args: argparse.Namespace):
         config_type_weights = ast.literal_eval(args.config_type_weights)
         assert isinstance(config_type_weights, dict)
     except Exception as e:  # pylint: disable=W0703
-        logging.warning(
-            f"Config type weights not specified correctly ({e}), using Default"
-        )
+        logging.warning(f"Config type weights not specified correctly ({e}), using Default")
         config_type_weights = {"Default": 1.0}
 
     folders = ["train", "val", "test"]
@@ -212,7 +209,7 @@ def run(args: argparse.Namespace):
             [atomic_energies_dict[z] for z in z_table.zs]
         )
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
-        _inputs = [args.h5_prefix+'train', z_table, args.r_max, atomic_energies, args.batch_size, args.num_process]
+        _inputs = [args.h5_prefix+"train", z_table, args.r_max, atomic_energies, args.batch_size, args.num_process]
         avg_num_neighbors, mean, std=pool_compute_stats(_inputs)
         logging.info(f"Average number of neighbors: {avg_num_neighbors}")
         logging.info(f"Mean: {mean}")

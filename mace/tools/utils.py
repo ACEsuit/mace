@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import json
 import logging
@@ -99,9 +100,7 @@ def get_atomic_number_table_from_zs(zs: Iterable[int]) -> AtomicNumberTable:
     return AtomicNumberTable(sorted(list(z_set)))
 
 
-def atomic_numbers_to_indices(
-    atomic_numbers: np.ndarray, z_table: AtomicNumberTable
-) -> np.ndarray:
+def atomic_numbers_to_indices(atomic_numbers: np.ndarray, z_table: AtomicNumberTable) -> np.ndarray:
     to_index_fn = np.vectorize(z_table.z_to_index)
     return to_index_fn(atomic_numbers)
 
@@ -114,14 +113,10 @@ def get_optimizer(
     parameters: Iterable[torch.Tensor],
 ) -> torch.optim.Optimizer:
     if name == "adam":
-        return torch.optim.Adam(
-            parameters, lr=learning_rate, amsgrad=amsgrad, weight_decay=weight_decay
-        )
+        return torch.optim.Adam(parameters, lr=learning_rate, amsgrad=amsgrad, weight_decay=weight_decay)
 
     if name == "adamw":
-        return torch.optim.AdamW(
-            parameters, lr=learning_rate, amsgrad=amsgrad, weight_decay=weight_decay
-        )
+        return torch.optim.AdamW(parameters, lr=learning_rate, amsgrad=amsgrad, weight_decay=weight_decay)
 
     raise RuntimeError(f"Unknown optimizer '{name}'")
 

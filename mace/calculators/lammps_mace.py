@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Dict, List, Optional
 
 import torch
@@ -49,13 +51,9 @@ class LAMMPS_MACE(torch.nn.Module):
         virials: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
         # accumulate energies of local atoms
         node_energy_local = node_energy * local_or_ghost
-        total_energy_local = scatter_sum(
-            src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs
-        )
+        total_energy_local = scatter_sum(src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs)
         # compute partial forces and (possibly) partial virials
-        grad_outputs: List[Optional[torch.Tensor]] = [
-            torch.ones_like(total_energy_local)
-        ]
+        grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(total_energy_local)]
         if compute_virials and displacement is not None:
             forces, virials = torch.autograd.grad(
                 outputs=[total_energy_local],

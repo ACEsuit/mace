@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import argparse
 import os
@@ -30,24 +31,16 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", help="random seed", type=int, default=123)
 
     # Directories
-    parser.add_argument(
-        "--log_dir", help="directory for log files", type=str, default="logs"
-    )
-    parser.add_argument(
-        "--model_dir", help="directory for final model", type=str, default="."
-    )
+    parser.add_argument("--log_dir", help="directory for log files", type=str, default="logs")
+    parser.add_argument("--model_dir", help="directory for final model", type=str, default=".")
     parser.add_argument(
         "--checkpoints_dir",
         help="directory for checkpoint files",
         type=str,
         default="checkpoints",
     )
-    parser.add_argument(
-        "--results_dir", help="directory for results", type=str, default="results"
-    )
-    parser.add_argument(
-        "--downloads_dir", help="directory for downloads", type=str, default="downloads"
-    )
+    parser.add_argument("--results_dir", help="directory for results", type=str, default="results")
+    parser.add_argument("--downloads_dir", help="directory for downloads", type=str, default="downloads")
 
     # Device and logging
     parser.add_argument(
@@ -104,9 +97,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "EnergyDipolesMACE",
         ],
     )
-    parser.add_argument(
-        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
-    )
+    parser.add_argument("--r_max", help="distance cutoff (in Ang)", type=float, default=5.0)
     parser.add_argument(
         "--radial_type",
         help="type of radial basis functions",
@@ -159,15 +150,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticInteractionBlock",
         ],
     )
-    parser.add_argument(
-        "--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3
-    )
-    parser.add_argument(
-        "--correlation", help="correlation order at each layer", type=int, default=3
-    )
-    parser.add_argument(
-        "--num_interactions", help="number of interactions", type=int, default=2
-    )
+    parser.add_argument("--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3)
+    parser.add_argument("--correlation", help="correlation order at each layer", type=int, default=3)
+    parser.add_argument("--num_interactions", help="number of interactions", type=int, default=2)
     parser.add_argument(
         "--MLP_irreps",
         help="hidden irreps of the MLP in last readout",
@@ -385,9 +370,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "energy_forces_dipole",
         ],
     )
-    parser.add_argument(
-        "--forces_weight", help="weight of forces loss", type=float, default=100.0
-    )
+    parser.add_argument("--forces_weight", help="weight of forces loss", type=float, default=100.0)
     parser.add_argument(
         "--swa_forces_weight",
         "--stage_two_forces_weight",
@@ -396,9 +379,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=100.0,
         dest="swa_forces_weight",
     )
-    parser.add_argument(
-        "--energy_weight", help="weight of energy loss", type=float, default=1.0
-    )
+    parser.add_argument("--energy_weight", help="weight of energy loss", type=float, default=1.0)
     parser.add_argument(
         "--swa_energy_weight",
         "--stage_two_energy_weight",
@@ -407,9 +388,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=1000.0,
         dest="swa_energy_weight",
     )
-    parser.add_argument(
-        "--virials_weight", help="weight of virials loss", type=float, default=1.0
-    )
+    parser.add_argument("--virials_weight", help="weight of virials loss", type=float, default=1.0)
     parser.add_argument(
         "--swa_virials_weight",
         "--stage_two_virials_weight",
@@ -418,9 +397,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=10.0,
         dest="swa_virials_weight",
     )
-    parser.add_argument(
-        "--stress_weight", help="weight of virials loss", type=float, default=1.0
-    )
+    parser.add_argument("--stress_weight", help="weight of virials loss", type=float, default=1.0)
     parser.add_argument(
         "--swa_stress_weight",
         "--stage_two_stress_weight",
@@ -429,9 +406,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=10.0,
         dest="swa_stress_weight",
     )
-    parser.add_argument(
-        "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0
-    )
+    parser.add_argument("--dipole_weight", help="weight of dipoles loss", type=float, default=1.0)
     parser.add_argument(
         "--swa_dipole_weight",
         "--stage_two_dipole_weight",
@@ -466,12 +441,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=0.9,
     )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
-    parser.add_argument(
-        "--valid_batch_size", help="Validation batch size", type=int, default=10
-    )
-    parser.add_argument(
-        "--lr", help="Learning rate of optimizer", type=float, default=0.01
-    )
+    parser.add_argument("--valid_batch_size", help="Validation batch size", type=int, default=10)
+    parser.add_argument("--lr", help="Learning rate of optimizer", type=float, default=0.01)
     parser.add_argument(
         "--swa_lr",
         "--stage_two_lr",
@@ -480,24 +451,16 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=1e-3,
         dest="swa_lr",
     )
-    parser.add_argument(
-        "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
-    )
+    parser.add_argument("--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7)
     parser.add_argument(
         "--amsgrad",
         help="use amsgrad variant of optimizer",
         action="store_true",
         default=True,
     )
-    parser.add_argument(
-        "--scheduler", help="Type of scheduler", type=str, default="ReduceLROnPlateau"
-    )
-    parser.add_argument(
-        "--lr_factor", help="Learning rate factor", type=float, default=0.8
-    )
-    parser.add_argument(
-        "--scheduler_patience", help="Learning rate factor", type=int, default=50
-    )
+    parser.add_argument("--scheduler", help="Type of scheduler", type=str, default="ReduceLROnPlateau")
+    parser.add_argument("--lr_factor", help="Learning rate factor", type=float, default=0.8)
+    parser.add_argument("--scheduler_patience", help="Learning rate factor", type=int, default=50)
     parser.add_argument(
         "--lr_scheduler_gamma",
         help="Gamma of learning rate scheduler",
@@ -532,9 +495,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.99,
     )
-    parser.add_argument(
-        "--max_num_epochs", help="Maximum number of epochs", type=int, default=2048
-    )
+    parser.add_argument("--max_num_epochs", help="Maximum number of epochs", type=int, default=2048)
     parser.add_argument(
         "--patience",
         help="Maximum number of consecutive epochs of increasing loss",
@@ -553,9 +514,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         action="store_false",
         default=True,
     )
-    parser.add_argument(
-        "--eval_interval", help="evaluate model every <n> epochs", type=int, default=2
-    )
+    parser.add_argument("--eval_interval", help="evaluate model every <n> epochs", type=int, default=2)
     parser.add_argument(
         "--keep_checkpoints",
         help="keep all checkpoints",
@@ -681,9 +640,7 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="",
     )
-    parser.add_argument(
-        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
-    )
+    parser.add_argument("--r_max", help="distance cutoff (in Ang)", type=float, default=5.0)
     parser.add_argument(
         "--config_type_weights",
         help="String of dictionary containing the weights for each config type",
@@ -780,7 +737,5 @@ def check_float_or_none(value: str) -> Optional[float]:
         return float(value)
     except ValueError:
         if value != "None":
-            raise argparse.ArgumentTypeError(
-                f"{value} is an invalid value (float or None)"
-            ) from None
+            raise argparse.ArgumentTypeError(f"{value} is an invalid value (float or None)") from None
         return None

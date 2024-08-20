@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import pytest
 import torch
@@ -45,12 +47,8 @@ def test_foundations():
         num_bessel=10,
         num_polynomial_cutoff=5,
         max_ell=3,
-        interaction_cls=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
-        interaction_cls_first=modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
+        interaction_cls=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
+        interaction_cls_first=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
         num_interactions=2,
         num_elements=3,
         hidden_irreps=o3.Irreps("128x0e"),
@@ -80,9 +78,7 @@ def test_foundations():
         max_L=0,
     )
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=6.0)
-    atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=table, cutoff=6.0
-    )
+    atomic_data2 = data.AtomicData.from_config(config_rotated, z_table=table, cutoff=6.0)
 
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data, atomic_data2],
@@ -113,9 +109,7 @@ def test_extract_config(model):
     model_copy.load_state_dict(model.state_dict())
     z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
     atomic_data = data.AtomicData.from_config(config, z_table=z_table, cutoff=6.0)
-    atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=z_table, cutoff=6.0
-    )
+    atomic_data2 = data.AtomicData.from_config(config_rotated, z_table=z_table, cutoff=6.0)
 
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data, atomic_data2],

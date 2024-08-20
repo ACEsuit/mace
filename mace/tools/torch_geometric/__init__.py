@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .batch import Batch
 from .data import Data
 from .dataloader import DataLoader

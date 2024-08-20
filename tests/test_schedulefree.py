@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import tempfile
 from unittest.mock import MagicMock
 
@@ -13,9 +15,7 @@ from mace.tools import scripts_utils, torch_geometric
 try:
     import schedulefree
 except ImportError:
-    pytest.skip(
-        "Skipping schedulefree tests due to ImportError", allow_module_level=True
-    )
+    pytest.skip("Skipping schedulefree tests due to ImportError", allow_module_level=True)
 
 torch.set_default_dtype(torch.float64)
 
@@ -32,12 +32,8 @@ def create_mace(device: str, seed: int = 1702):
         "num_bessel": 8,
         "num_polynomial_cutoff": 6,
         "max_ell": 3,
-        "interaction_cls": modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
-        "interaction_cls_first": modules.interaction_classes[
-            "RealAgnosticResidualInteractionBlock"
-        ],
+        "interaction_cls": modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
+        "interaction_cls_first": modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
         "num_interactions": 2,
         "num_elements": 1,
         "hidden_irreps": o3.Irreps("8x0e + 8x1o"),
@@ -63,10 +59,7 @@ def create_batch(device: str):
 
     configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
     data_loader = torch_geometric.dataloader.DataLoader(
-        dataset=[
-            data.AtomicData.from_config(config, z_table=table, cutoff=cutoff)
-            for config in configs
-        ],
+        dataset=[data.AtomicData.from_config(config, z_table=table, cutoff=cutoff) for config in configs],
         batch_size=1,
         shuffle=False,
         drop_last=False,
@@ -104,18 +97,14 @@ def test_can_load_checkpoint(device):
     args.lr_scheduler_gamma = 0.9
     lr_scheduler = scripts_utils.LRScheduler(optimizer, args)
     with tempfile.TemporaryDirectory() as d:
-        checkpoint_handler = tools.CheckpointHandler(
-            directory=d, keep=False, tag="schedulefree"
-        )
+        checkpoint_handler = tools.CheckpointHandler(directory=d, keep=False, tag="schedulefree")
         for _ in range(10):
             do_optimization_step(model, optimizer, device)
         batch = create_batch(device)
         output = model(batch)
         energy = output["energy"].detach().cpu().numpy()
 
-        state = tools.CheckpointState(
-            model=model, optimizer=optimizer, lr_scheduler=lr_scheduler
-        )
+        state = tools.CheckpointState(model=model, optimizer=optimizer, lr_scheduler=lr_scheduler)
         checkpoint_handler.save(state, epochs=0, keep_last=False)
         checkpoint_handler.load_latest(
             state=tools.CheckpointState(model, optimizer, lr_scheduler),

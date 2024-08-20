@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import argparse
 import ast
@@ -60,7 +61,7 @@ def run(args: argparse.Namespace) -> None:
         try:
             distr_env = DistributedEnvironment()
         except Exception as e:  # pylint: disable=W0703
-            logging.error(f"Failed to initialize distributed environment: {e}")
+            logging.exception(f"Failed to initialize distributed environment: {e}")
             return
         world_size = distr_env.world_size
         local_rank = distr_env.local_rank
@@ -69,7 +70,7 @@ def run(args: argparse.Namespace) -> None:
             print(distr_env)
         torch.distributed.init_process_group(backend="nccl")
     else:
-        rank = int(0)
+        rank = 0
 
     # Setup
     tools.set_seeds(args.seed)
@@ -91,9 +92,7 @@ def run(args: argparse.Namespace) -> None:
     commit = print_git_commit()
     if args.foundation_model is not None:
         if args.foundation_model in ["small", "medium", "large"]:
-            logging.info(
-                f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
-            )
+            logging.info(f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint.")
             calc = mace_mp(
                 model=args.foundation_model,
                 device=args.device,
@@ -102,9 +101,7 @@ def run(args: argparse.Namespace) -> None:
             model_foundation = calc.models[0]
         elif args.foundation_model in ["small_off", "medium_off", "large_off"]:
             model_type = args.foundation_model.split("_")[0]
-            logging.info(
-                f"Using foundation model mace-off-2023 {model_type} as initial checkpoint. ASL license."
-            )
+            logging.info(f"Using foundation model mace-off-2023 {model_type} as initial checkpoint. ASL license.")
             calc = mace_off(
                 model=model_type,
                 device=args.device,
@@ -113,18 +110,14 @@ def run(args: argparse.Namespace) -> None:
             model_foundation = calc.models[0]
         else:
             model_foundation = torch.load(args.foundation_model, map_location=device)
-            logging.info(
-                f"Using foundation model {args.foundation_model} as initial checkpoint."
-            )
+            logging.info(f"Using foundation model {args.foundation_model} as initial checkpoint.")
         args.r_max = model_foundation.r_max.item()
 
     if args.statistics_file is not None:
-        with open(args.statistics_file, "r") as f:  # pylint: disable=W1514
+        with open(args.statistics_file) as f:  # pylint: disable=W1514
             statistics = json.load(f)
         logging.info("Using statistics json file")
-        args.r_max = (
-            statistics["r_max"] if args.foundation_model is None else args.r_max
-        )
+        args.r_max = statistics["r_max"] if args.foundation_model is None else args.r_max
         args.atomic_numbers = statistics["atomic_numbers"]
         args.mean = statistics["mean"]
         args.std = statistics["std"]
@@ -135,9 +128,7 @@ def run(args: argparse.Namespace) -> None:
     # Data preparation
     if args.train_file.endswith(".xyz"):
         if args.valid_file is not None:
-            assert args.valid_file.endswith(
-                ".xyz"
-            ), "valid_file if given must be same format as train_file"
+            assert args.valid_file.endswith(".xyz"), "valid_file if given must be same format as train_file"
         config_type_weights = get_config_type_weights(args.config_type_weights)
         collections, atomic_energies_dict = get_dataset_from_xyz(
             train_path=args.train_file,
@@ -187,22 +178,15 @@ def run(args: argparse.Namespace) -> None:
         if args.E0s.lower() == "foundation":
             assert args.foundation_model is not None
             logging.info("Using atomic energies from foundation model")
-            z_table_foundation = AtomicNumberTable(
-                [int(z) for z in model_foundation.atomic_numbers]
-            )
+            z_table_foundation = AtomicNumberTable([int(z) for z in model_foundation.atomic_numbers])
             atomic_energies_dict = {
-                z: model_foundation.atomic_energies_fn.atomic_energies[
-                    z_table_foundation.z_to_index(z)
-                ].item()
+                z: model_foundation.atomic_energies_fn.atomic_energies[z_table_foundation.z_to_index(z)].item()
                 for z in z_table.zs
             }
+        elif args.train_file.endswith(".xyz"):
+            atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
         else:
-            if args.train_file.endswith(".xyz"):
-                atomic_energies_dict = get_atomic_energies(
-                    args.E0s, collections.train, z_table
-                )
-            else:
-                atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table)
+            atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table)
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
@@ -223,30 +207,22 @@ def run(args: argparse.Namespace) -> None:
         else:
             compute_energy = True
             compute_dipole = False
-        atomic_energies: np.ndarray = np.array(
-            [atomic_energies_dict[z] for z in z_table.zs]
-        )
+        atomic_energies: np.ndarray = np.array([atomic_energies_dict[z] for z in z_table.zs])
         logging.info(f"Atomic energies: {atomic_energies.tolist()}")
 
     if args.train_file.endswith(".xyz"):
         train_set = [
-            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
-            for config in collections.train
+            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max) for config in collections.train
         ]
         valid_set = [
-            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
-            for config in collections.valid
+            data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max) for config in collections.valid
         ]
     elif args.train_file.endswith(".h5"):
         train_set = data.HDF5Dataset(args.train_file, r_max=args.r_max, z_table=z_table)
         valid_set = data.HDF5Dataset(args.valid_file, r_max=args.r_max, z_table=z_table)
     else:  # This case would be for when the file path is to a directory of multiple .h5 files
-        train_set = data.dataset_from_sharded_hdf5(
-            args.train_file, r_max=args.r_max, z_table=z_table
-        )
-        valid_set = data.dataset_from_sharded_hdf5(
-            args.valid_file, r_max=args.r_max, z_table=z_table
-        )
+        train_set = data.dataset_from_sharded_hdf5(args.train_file, r_max=args.r_max, z_table=z_table)
+        valid_set = data.dataset_from_sharded_hdf5(args.valid_file, r_max=args.r_max, z_table=z_table)
 
     train_sampler, valid_sampler = None, None
     if args.distributed:
@@ -288,9 +264,7 @@ def run(args: argparse.Namespace) -> None:
     )
 
     if args.loss == "weighted":
-        loss_fn = modules.WeightedEnergyForcesLoss(
-            energy_weight=args.energy_weight, forces_weight=args.forces_weight
-        )
+        loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=args.energy_weight, forces_weight=args.forces_weight)
     elif args.loss == "forces_only":
         loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
     elif args.loss == "virials":
@@ -320,9 +294,7 @@ def run(args: argparse.Namespace) -> None:
             huber_delta=args.huber_delta,
         )
     elif args.loss == "dipole":
-        assert (
-            dipole_only is True
-        ), "dipole loss can only be used with AtomicDipolesMACE model"
+        assert dipole_only is True, "dipole loss can only be used with AtomicDipolesMACE model"
         loss_fn = modules.DipoleSingleLoss(
             dipole_weight=args.dipole_weight,
         )
@@ -344,9 +316,7 @@ def run(args: argparse.Namespace) -> None:
             num_graphs = torch.tensor(len(train_loader.dataset)).to(device)
             num_neighbors = num_graphs * torch.tensor(avg_num_neighbors).to(device)
             torch.distributed.all_reduce(num_graphs, op=torch.distributed.ReduceOp.SUM)
-            torch.distributed.all_reduce(
-                num_neighbors, op=torch.distributed.ReduceOp.SUM
-            )
+            torch.distributed.all_reduce(num_neighbors, op=torch.distributed.ReduceOp.SUM)
             args.avg_num_neighbors = (num_neighbors / num_graphs).item()
         else:
             args.avg_num_neighbors = avg_num_neighbors
@@ -375,9 +345,7 @@ def run(args: argparse.Namespace) -> None:
         args.std = 1.0
         logging.info("No scaling selected")
     elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
-        args.mean, args.std = modules.scaling_classes[args.scaling](
-            train_loader, atomic_energies
-        )
+        args.mean, args.std = modules.scaling_classes[args.scaling](train_loader, atomic_energies)
     # Build model
     if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
         logging.info("Building model")
@@ -385,12 +353,8 @@ def run(args: argparse.Namespace) -> None:
         model_config_foundation["atomic_numbers"] = z_table.zs
         model_config_foundation["num_elements"] = len(z_table)
         args.max_L = model_config_foundation["hidden_irreps"].lmax
-        model_config_foundation["atomic_inter_shift"] = (
-            model_foundation.scale_shift.shift.item()
-        )
-        model_config_foundation["atomic_inter_scale"] = (
-            model_foundation.scale_shift.scale.item()
-        )
+        model_config_foundation["atomic_inter_shift"] = model_foundation.scale_shift.shift.item()
+        model_config_foundation["atomic_inter_scale"] = model_foundation.scale_shift.scale.item()
         model_config_foundation["atomic_energies"] = atomic_energies
         args.model = "FoundationMACE"
         model_config = model_config_foundation  # pylint
@@ -400,9 +364,7 @@ def run(args: argparse.Namespace) -> None:
             assert args.num_channels > 0, "num_channels must be positive integer"
             assert args.max_L >= 0, "max_L must be non-negative integer"
             args.hidden_irreps = o3.Irreps(
-                (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
-                .sort()
-                .irreps.simplify()
+                (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L)).sort().irreps.simplify()
             )
 
         assert (
@@ -434,9 +396,7 @@ def run(args: argparse.Namespace) -> None:
             distance_transform=args.distance_transform,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[
-                "RealAgnosticInteractionBlock"
-            ],
+            interaction_cls_first=modules.interaction_classes["RealAgnosticInteractionBlock"],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
             atomic_inter_shift=0.0,
@@ -478,35 +438,25 @@ def run(args: argparse.Namespace) -> None:
     elif args.model == "AtomicDipolesMACE":
         # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
         assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
-        assert (
-            args.error_table == "DipoleRMSE"
-        ), "Use error_table DipoleRMSE with AtomicDipolesMACE model"
+        assert args.error_table == "DipoleRMSE", "Use error_table DipoleRMSE with AtomicDipolesMACE model"
         model = modules.AtomicDipolesMACE(
             **model_config,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[
-                "RealAgnosticInteractionBlock"
-            ],
+            interaction_cls_first=modules.interaction_classes["RealAgnosticInteractionBlock"],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             # dipole_scale=1,
             # dipole_shift=0,
         )
     elif args.model == "EnergyDipolesMACE":
         # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
-        assert (
-            args.loss == "energy_forces_dipole"
-        ), "Use energy_forces_dipole loss with EnergyDipolesMACE model"
-        assert (
-            args.error_table == "EnergyDipoleRMSE"
-        ), "Use error_table EnergyDipoleRMSE with AtomicDipolesMACE model"
+        assert args.loss == "energy_forces_dipole", "Use energy_forces_dipole loss with EnergyDipolesMACE model"
+        assert args.error_table == "EnergyDipoleRMSE", "Use error_table EnergyDipoleRMSE with AtomicDipolesMACE model"
         model = modules.EnergyDipolesMACE(
             **model_config,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[
-                "RealAgnosticInteractionBlock"
-            ],
+            interaction_cls_first=modules.interaction_classes["RealAgnosticInteractionBlock"],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
         )
     else:
@@ -579,9 +529,7 @@ def run(args: argparse.Namespace) -> None:
     else:
         optimizer = torch.optim.Adam(**param_options)
 
-    logger = tools.MetricsLogger(
-        directory=args.results_dir, tag=tag + "_train"
-    )  # pylint: disable=E1123
+    logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + "_train")  # pylint: disable=E1123
 
     lr_scheduler = LRScheduler(optimizer, args)
 
@@ -592,13 +540,12 @@ def run(args: argparse.Namespace) -> None:
         swas.append(True)
         if args.start_swa is None:
             args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-        else:
-            if args.start_swa > args.max_num_epochs:
-                logging.info(
-                    f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
-                )
-                args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-                logging.info(f"Setting start Stage Two to {args.start_swa}")
+        elif args.start_swa > args.max_num_epochs:
+            logging.info(
+                f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+            )
+            args.start_swa = max(1, args.max_num_epochs // 4 * 3)
+            logging.info(f"Setting start Stage Two to {args.start_swa}")
         if args.loss == "forces_only":
             raise ValueError("Can not select Stage Two with forces only loss.")
         if args.loss == "virials":
@@ -738,23 +685,18 @@ def run(args: argparse.Namespace) -> None:
     if args.train_file.endswith(".xyz"):
         for name, subset in collections.tests:
             test_sets[name] = [
-                data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max)
-                for config in subset
+                data.AtomicData.from_config(config, z_table=z_table, cutoff=args.r_max) for config in subset
             ]
     elif not args.multi_processed_test:
         test_files = get_files_with_suffix(args.test_dir, "_test.h5")
         for test_file in test_files:
             name = os.path.splitext(os.path.basename(test_file))[0]
-            test_sets[name] = data.HDF5Dataset(
-                test_file, r_max=args.r_max, z_table=z_table
-            )
+            test_sets[name] = data.HDF5Dataset(test_file, r_max=args.r_max, z_table=z_table)
     else:
         test_folders = glob(args.test_dir + "/*")
         for folder in test_folders:
             name = os.path.splitext(os.path.basename(test_file))[0]
-            test_sets[name] = data.dataset_from_sharded_hdf5(
-                folder, r_max=args.r_max, z_table=z_table
-            )
+            test_sets[name] = data.dataset_from_sharded_hdf5(folder, r_max=args.r_max, z_table=z_table)
 
     for test_name, test_set in test_sets.items():
         test_sampler = None
@@ -769,7 +711,7 @@ def run(args: argparse.Namespace) -> None:
             )
         try:
             drop_last = test_set.drop_last
-        except AttributeError as e:  # pylint: disable=W0612
+        except AttributeError:  # pylint: disable=W0612
             drop_last = False
         test_loader = torch_geometric.dataloader.DataLoader(
             test_set,
@@ -819,18 +761,12 @@ def run(args: argparse.Namespace) -> None:
             torch.save(model, model_path)
             extra_files = {
                 "commit.txt": commit.encode("utf-8") if commit is not None else b"",
-                "config.yaml": json.dumps(
-                    convert_to_json_format(extract_config_mace_model(model))
-                ),
+                "config.yaml": json.dumps(convert_to_json_format(extract_config_mace_model(model))),
             }
             if swa_eval:
-                torch.save(
-                    model, Path(args.model_dir) / (args.name + "_stagetwo.model")
-                )
+                torch.save(model, Path(args.model_dir) / (args.name + "_stagetwo.model"))
                 try:
-                    path_complied = Path(args.model_dir) / (
-                        args.name + "_stagetwo_compiled.model"
-                    )
+                    path_complied = Path(args.model_dir) / (args.name + "_stagetwo_compiled.model")
                     logging.info(f"Compiling model, saving metadata {path_complied}")
                     model_compiled = jit.compile(deepcopy(model))
                     torch.jit.save(
@@ -838,14 +774,12 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception:  # pylint: disable=W0703
                     pass
             else:
                 torch.save(model, Path(args.model_dir) / (args.name + ".model"))
                 try:
-                    path_complied = Path(args.model_dir) / (
-                        args.name + "_compiled.model"
-                    )
+                    path_complied = Path(args.model_dir) / (args.name + "_compiled.model")
                     logging.info(f"Compiling model, saving metadata to {path_complied}")
                     model_compiled = jit.compile(deepcopy(model))
                     torch.jit.save(
@@ -853,7 +787,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception:  # pylint: disable=W0703
                     pass
 
         if args.distributed:

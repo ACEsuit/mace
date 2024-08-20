@@ -3,18 +3,13 @@
 # Authors: Ilyes Batatia, Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 from typing import Optional, Sequence
 
 import torch.utils.data
 
-from mace.tools import (
-    AtomicNumberTable,
-    atomic_numbers_to_indices,
-    to_one_hot,
-    torch_geometric,
-    voigt_to_matrix,
-)
+from mace.tools import AtomicNumberTable, atomic_numbers_to_indices, to_one_hot, torch_geometric, voigt_to_matrix
 
 from .neighborhood import get_neighborhood
 from .utils import Configuration
@@ -107,9 +102,7 @@ class AtomicData(torch_geometric.data.Data):
         super().__init__(**data)
 
     @classmethod
-    def from_config(
-        cls, config: Configuration, z_table: AtomicNumberTable, cutoff: float
-    ) -> "AtomicData":
+    def from_config(cls, config: Configuration, z_table: AtomicNumberTable, cutoff: float) -> AtomicData:
         edge_index, shifts, unit_shifts = get_neighborhood(
             positions=config.positions, cutoff=cutoff, pbc=config.pbc, cell=config.cell
         )
@@ -122,16 +115,10 @@ class AtomicData(torch_geometric.data.Data):
         cell = (
             torch.tensor(config.cell, dtype=torch.get_default_dtype())
             if config.cell is not None
-            else torch.tensor(
-                3 * [0.0, 0.0, 0.0], dtype=torch.get_default_dtype()
-            ).view(3, 3)
+            else torch.tensor(3 * [0.0, 0.0, 0.0], dtype=torch.get_default_dtype()).view(3, 3)
         )
 
-        weight = (
-            torch.tensor(config.weight, dtype=torch.get_default_dtype())
-            if config.weight is not None
-            else 1
-        )
+        weight = torch.tensor(config.weight, dtype=torch.get_default_dtype()) if config.weight is not None else 1
 
         energy_weight = (
             torch.tensor(config.energy_weight, dtype=torch.get_default_dtype())
@@ -157,27 +144,15 @@ class AtomicData(torch_geometric.data.Data):
             else 1
         )
 
-        forces = (
-            torch.tensor(config.forces, dtype=torch.get_default_dtype())
-            if config.forces is not None
-            else None
-        )
-        energy = (
-            torch.tensor(config.energy, dtype=torch.get_default_dtype())
-            if config.energy is not None
-            else None
-        )
+        forces = torch.tensor(config.forces, dtype=torch.get_default_dtype()) if config.forces is not None else None
+        energy = torch.tensor(config.energy, dtype=torch.get_default_dtype()) if config.energy is not None else None
         stress = (
-            voigt_to_matrix(
-                torch.tensor(config.stress, dtype=torch.get_default_dtype())
-            ).unsqueeze(0)
+            voigt_to_matrix(torch.tensor(config.stress, dtype=torch.get_default_dtype())).unsqueeze(0)
             if config.stress is not None
             else None
         )
         virials = (
-            voigt_to_matrix(
-                torch.tensor(config.virials, dtype=torch.get_default_dtype())
-            ).unsqueeze(0)
+            voigt_to_matrix(torch.tensor(config.virials, dtype=torch.get_default_dtype())).unsqueeze(0)
             if config.virials is not None
             else None
         )
@@ -186,11 +161,7 @@ class AtomicData(torch_geometric.data.Data):
             if config.dipole is not None
             else None
         )
-        charges = (
-            torch.tensor(config.charges, dtype=torch.get_default_dtype())
-            if config.charges is not None
-            else None
-        )
+        charges = torch.tensor(config.charges, dtype=torch.get_default_dtype()) if config.charges is not None else None
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),

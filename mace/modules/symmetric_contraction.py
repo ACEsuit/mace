@@ -4,6 +4,7 @@
 # Authors: Ilyes Batatia
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 from typing import Dict, Optional, Union
 
@@ -129,28 +130,21 @@ class Contraction(torch.nn.Module):
                     + [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1) - 1)]
                 )
                 graph_module_main = torch.fx.symbolic_trace(
-                    lambda x, y, w, z: torch.einsum(
-                        "".join(parse_subscript_main), x, y, w, z
-                    )
+                    lambda x, y, w, z: torch.einsum("".join(parse_subscript_main), x, y, w, z)
                 )
 
                 # Optimizing the contractions
                 self.graph_opt_main = opt_einsum_fx.optimize_einsums_full(
                     model=graph_module_main,
                     example_inputs=(
-                        torch.randn(
-                            [num_equivariance] + [num_ell] * i + [num_params]
-                        ).squeeze(0),
+                        torch.randn([num_equivariance] + [num_ell] * i + [num_params]).squeeze(0),
                         torch.randn((num_elements, num_params, self.num_features)),
                         torch.randn((BATCH_EXAMPLE, self.num_features, num_ell)),
                         torch.randn((BATCH_EXAMPLE, num_elements)),
                     ),
                 )
                 # Parameters for the product basis
-                w = torch.nn.Parameter(
-                    torch.randn((num_elements, num_params, self.num_features))
-                    / num_params
-                )
+                w = torch.nn.Parameter(torch.randn((num_elements, num_params, self.num_features)) / num_params)
                 self.weights_max = w
             else:
                 # Generate optimized contractions equations
@@ -168,9 +162,7 @@ class Contraction(torch.nn.Module):
 
                 # Symbolic tracing of contractions
                 graph_module_weighting = torch.fx.symbolic_trace(
-                    lambda x, y, z: torch.einsum(
-                        "".join(parse_subscript_weighting), x, y, z
-                    )
+                    lambda x, y, z: torch.einsum("".join(parse_subscript_weighting), x, y, z)
                 )
                 graph_module_features = torch.fx.symbolic_trace(
                     lambda x, y: torch.einsum("".join(parse_subscript_features), x, y)
@@ -180,9 +172,7 @@ class Contraction(torch.nn.Module):
                 graph_opt_weighting = opt_einsum_fx.optimize_einsums_full(
                     model=graph_module_weighting,
                     example_inputs=(
-                        torch.randn(
-                            [num_equivariance] + [num_ell] * i + [num_params]
-                        ).squeeze(0),
+                        torch.randn([num_equivariance] + [num_ell] * i + [num_params]).squeeze(0),
                         torch.randn((num_elements, num_params, self.num_features)),
                         torch.randn((BATCH_EXAMPLE, num_elements)),
                     ),
@@ -190,20 +180,14 @@ class Contraction(torch.nn.Module):
                 graph_opt_features = opt_einsum_fx.optimize_einsums_full(
                     model=graph_module_features,
                     example_inputs=(
-                        torch.randn(
-                            [BATCH_EXAMPLE, self.num_features, num_equivariance]
-                            + [num_ell] * i
-                        ).squeeze(2),
+                        torch.randn([BATCH_EXAMPLE, self.num_features, num_equivariance] + [num_ell] * i).squeeze(2),
                         torch.randn((BATCH_EXAMPLE, self.num_features, num_ell)),
                     ),
                 )
                 self.contractions_weighting.append(graph_opt_weighting)
                 self.contractions_features.append(graph_opt_features)
                 # Parameters for the product basis
-                w = torch.nn.Parameter(
-                    torch.randn((num_elements, num_params, self.num_features))
-                    / num_params
-                )
+                w = torch.nn.Parameter(torch.randn((num_elements, num_params, self.num_features)) / num_params)
                 self.weights.append(w)
         if not internal_weights:
             self.weights = weights[:-1]

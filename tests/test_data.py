@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from copy import deepcopy
 from pathlib import Path
 
@@ -95,9 +97,7 @@ class TestAtomicData:
         # get path of the mace package
         with h5py.File(str(mace_path) + "test.h5", "w") as f:
             save_configurations_as_HDF5(datasets, 0, f)
-        train_dataset = HDF5Dataset(
-            str(mace_path) + "test.h5", z_table=self.table, r_max=3.0
-        )
+        train_dataset = HDF5Dataset(str(mace_path) + "test.h5", z_table=self.table, r_max=3.0)
         train_loader = torch_geometric.dataloader.DataLoader(
             dataset=train_dataset,
             batch_size=2,
@@ -117,10 +117,7 @@ class TestAtomicData:
         print(batch_count, len(train_loader), len(train_dataset))
         assert batch_count == len(train_loader) == len(train_dataset) / 2
         train_loader_direct = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                AtomicData.from_config(config, z_table=self.table, cutoff=3.0)
-                for config in datasets
-            ],
+            dataset=[AtomicData.from_config(config, z_table=self.table, cutoff=3.0) for config in datasets],
             batch_size=2,
             shuffle=False,
             drop_last=False,
@@ -158,9 +155,7 @@ class TestNeighborhood:
         )
 
         cell = np.array([[2.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
-        edge_index, shifts, unit_shifts = get_neighborhood(
-            positions, cutoff=3.5, pbc=(True, False, False), cell=cell
-        )
+        edge_index, shifts, unit_shifts = get_neighborhood(positions, cutoff=3.5, pbc=(True, False, False), cell=cell)
         num_edges = 10
         assert edge_index.shape == (2, num_edges)
         assert shifts.shape == (num_edges, 3)
@@ -176,9 +171,7 @@ def test_periodic_edge():
         config.positions, cutoff=1.05 * dist, pbc=(True, True, True), cell=config.cell
     )
     sender, receiver = edge_index
-    vectors = (
-        config.positions[receiver] - config.positions[sender] + shifts
-    )  # [n_edges, 3]
+    vectors = config.positions[receiver] - config.positions[sender] + shifts  # [n_edges, 3]
     assert vectors.shape == (12, 3)  # 12 neighbors in close-packed bulk
     assert np.allclose(
         np.linalg.norm(vectors, axis=-1),
@@ -190,13 +183,9 @@ def test_half_periodic():
     atoms = ase.build.fcc111("Al", size=(3, 3, 1), vacuum=0.0)
     assert all(atoms.pbc == (True, True, False))
     config = config_from_atoms(atoms)  # first shell dist is 2.864A
-    edge_index, shifts, _ = get_neighborhood(
-        config.positions, cutoff=2.9, pbc=(True, True, False), cell=config.cell
-    )
+    edge_index, shifts, _ = get_neighborhood(config.positions, cutoff=2.9, pbc=(True, True, False), cell=config.cell)
     sender, receiver = edge_index
-    vectors = (
-        config.positions[receiver] - config.positions[sender] + shifts
-    )  # [n_edges, 3]
+    vectors = config.positions[receiver] - config.positions[sender] + shifts  # [n_edges, 3]
     # Check number of neighbors:
     _, neighbor_count = np.unique(edge_index[0], return_counts=True)
     assert (neighbor_count == 6).all()  # 6 neighbors

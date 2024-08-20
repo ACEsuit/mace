@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import dataclasses
 import glob
@@ -49,7 +51,7 @@ def parse_path(path: str) -> RunInfo:
 def parse_training_results(path: str) -> List[dict]:
     run_info = parse_path(path)
     results = []
-    with open(path, mode="r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             d = json.loads(line)
             d["name"] = run_info.name
@@ -61,12 +63,8 @@ def parse_training_results(path: str) -> List[dict]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot mace training statistics")
-    parser.add_argument(
-        "--path", help="path to results file or directory", required=True
-    )
-    parser.add_argument(
-        "--min_epoch", help="minimum epoch", default=50, type=int, required=False
-    )
+    parser.add_argument("--path", help="path to results file or directory", required=True)
+    parser.add_argument("--min_epoch", help="minimum epoch", default=50, type=int, required=False)
     return parser.parse_args()
 
 
@@ -78,9 +76,7 @@ def plot(data: pd.DataFrame, min_epoch: int, output_path: str) -> None:
     valid_data = data[data["mode"] == "eval"]
     train_data = data[data["mode"] == "opt"]
 
-    fig, axes = plt.subplots(
-        nrows=1, ncols=2, figsize=(2 * fig_width, fig_height), constrained_layout=True
-    )
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(2 * fig_width, fig_height), constrained_layout=True)
 
     ax = axes[0]
     ax.plot(
@@ -176,11 +172,7 @@ def main() -> None:
 
 
 def run(args: argparse.Namespace) -> None:
-    data = pd.DataFrame(
-        results
-        for path in get_paths(args.path)
-        for results in parse_training_results(path)
-    )
+    data = pd.DataFrame(results for path in get_paths(args.path) for results in parse_training_results(path))
 
     for name, group in data.groupby("name"):
         plot(group, min_epoch=args.min_epoch, output_path=f"{name}.pdf")

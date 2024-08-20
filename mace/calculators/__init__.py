@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .foundations_models import mace_anicc, mace_mp, mace_off
 from .lammps_mace import LAMMPS_MACE
 from .mace import MACECalculator

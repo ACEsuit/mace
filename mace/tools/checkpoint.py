@@ -3,6 +3,7 @@
 # Authors: Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import dataclasses
 import logging
@@ -34,9 +35,7 @@ class CheckpointBuilder:
         }
 
     @staticmethod
-    def load_checkpoint(
-        state: CheckpointState, checkpoint: Checkpoint, strict: bool
-    ) -> None:
+    def load_checkpoint(state: CheckpointState, checkpoint: Checkpoint, strict: bool) -> None:
         state.model.load_state_dict(checkpoint["model"], strict=strict)  # type: ignore
         state.optimizer.load_state_dict(checkpoint["optimizer"])
         state.lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
@@ -51,9 +50,7 @@ class CheckpointPathInfo:
 
 
 class CheckpointIO:
-    def __init__(
-        self, directory: str, tag: str, keep: bool = False, swa_start: int = None
-    ) -> None:
+    def __init__(self, directory: str, tag: str, keep: bool = False, swa_start: int = None) -> None:
         self.directory = directory
         self.tag = tag
         self.keep = keep
@@ -65,38 +62,19 @@ class CheckpointIO:
 
     def _get_checkpoint_filename(self, epochs: int, swa_start=None) -> str:
         if swa_start is not None and epochs > swa_start:
-            return (
-                self.tag
-                + self._epochs_string
-                + str(epochs)
-                + "_swa"
-                + "."
-                + self._filename_extension
-            )
-        return (
-            self.tag
-            + self._epochs_string
-            + str(epochs)
-            + "."
-            + self._filename_extension
-        )
+            return self.tag + self._epochs_string + str(epochs) + "_swa" + "." + self._filename_extension
+        return self.tag + self._epochs_string + str(epochs) + "." + self._filename_extension
 
     def _list_file_paths(self) -> List[str]:
         if not os.path.isdir(self.directory):
             return []
-        all_paths = [
-            os.path.join(self.directory, f) for f in os.listdir(self.directory)
-        ]
+        all_paths = [os.path.join(self.directory, f) for f in os.listdir(self.directory)]
         return [path for path in all_paths if os.path.isfile(path)]
 
     def _parse_checkpoint_path(self, path: str) -> Optional[CheckpointPathInfo]:
         filename = os.path.basename(path)
-        regex = re.compile(
-            rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)\.{self._filename_extension}$"
-        )
-        regex2 = re.compile(
-            rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)_swa\.{self._filename_extension}$"
-        )
+        regex = re.compile(rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)\.{self._filename_extension}$")
+        regex2 = re.compile(rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)_swa\.{self._filename_extension}$")
         match = regex.match(filename)
         match2 = regex2.match(filename)
         swa = False
@@ -115,17 +93,11 @@ class CheckpointIO:
 
     def _get_latest_checkpoint_path(self, swa) -> Optional[str]:
         all_file_paths = self._list_file_paths()
-        checkpoint_info_list = [
-            self._parse_checkpoint_path(path) for path in all_file_paths
-        ]
-        selected_checkpoint_info_list = [
-            info for info in checkpoint_info_list if info and info.tag == self.tag
-        ]
+        checkpoint_info_list = [self._parse_checkpoint_path(path) for path in all_file_paths]
+        selected_checkpoint_info_list = [info for info in checkpoint_info_list if info and info.tag == self.tag]
 
         if len(selected_checkpoint_info_list) == 0:
-            logging.warning(
-                f"Cannot find checkpoint with tag '{self.tag}' in '{self.directory}'"
-            )
+            logging.warning(f"Cannot find checkpoint with tag '{self.tag}' in '{self.directory}'")
             return None
 
         selected_checkpoint_info_list_swa = []
@@ -138,22 +110,16 @@ class CheckpointIO:
                 selected_checkpoint_info_list_no_swa.append(ckp)
         if swa:
             try:
-                latest_checkpoint_info = max(
-                    selected_checkpoint_info_list_swa, key=lambda info: info.epochs
-                )
+                latest_checkpoint_info = max(selected_checkpoint_info_list_swa, key=lambda info: info.epochs)
             except ValueError:
                 logging.warning(
                     "No SWA checkpoint found, while SWA is enabled. Compare the swa_start parameter and the latest checkpoint."
                 )
         else:
-            latest_checkpoint_info = max(
-                selected_checkpoint_info_list_no_swa, key=lambda info: info.epochs
-            )
+            latest_checkpoint_info = max(selected_checkpoint_info_list_no_swa, key=lambda info: info.epochs)
         return latest_checkpoint_info.path
 
-    def save(
-        self, checkpoint: Checkpoint, epochs: int, keep_last: bool = False
-    ) -> None:
+    def save(self, checkpoint: Checkpoint, epochs: int, keep_last: bool = False) -> None:
         if not self.keep and self.old_path and not keep_last:
             logging.debug(f"Deleting old checkpoint file: {self.old_path}")
             os.remove(self.old_path)
@@ -174,9 +140,7 @@ class CheckpointIO:
 
         return self.load(path, device=device)
 
-    def load(
-        self, path: str, device: Optional[torch.device] = None
-    ) -> Tuple[Checkpoint, int]:
+    def load(self, path: str, device: Optional[torch.device] = None) -> Tuple[Checkpoint, int]:
         checkpoint_info = self._parse_checkpoint_path(path)
 
         if checkpoint_info is None:
@@ -194,9 +158,7 @@ class CheckpointHandler:
         self.io = CheckpointIO(*args, **kwargs)
         self.builder = CheckpointBuilder()
 
-    def save(
-        self, state: CheckpointState, epochs: int, keep_last: bool = False
-    ) -> None:
+    def save(self, state: CheckpointState, epochs: int, keep_last: bool = False) -> None:
         checkpoint = self.builder.create_checkpoint(state)
         self.io.save(checkpoint, epochs, keep_last)
 
