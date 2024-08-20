@@ -832,7 +832,7 @@ class AtomicDielectricMACE(torch.nn.Module):
         atomic_dipoles = torch.sum(contributions_dipoles, dim=-1)  # [n_nodes,3]
         atomic_charges = torch.stack(charges, dim=-1).sum(-1)  # [n_nodes,]
         # The idea is to normalize the charges so that they sum to the net charge in the system before predicting the dipole.  
-        total_charge = 0.0
+        total_charge = data["total_charge"]
         atomic_charges = atomic_charges - (scatter_mean(src=atomic_charges, index=data["batch"], dim_size=num_graphs) - total_charge) # This assumes the net charge is zero.
         total_dipole = scatter_sum(
             src=atomic_dipoles,
