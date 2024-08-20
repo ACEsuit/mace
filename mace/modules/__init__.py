@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Callable, Dict, Optional, Type
 
 import torch
@@ -30,14 +32,7 @@ from .loss import (
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
 )
-from .models import (
-    MACE,
-    AtomicDipolesMACE,
-    BOTNet,
-    EnergyDipolesMACE,
-    ScaleShiftBOTNet,
-    ScaleShiftMACE,
-)
+from .models import MACE, AtomicDipolesMACE, BOTNet, EnergyDipolesMACE, ScaleShiftBOTNet, ScaleShiftMACE
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
 from .utils import (

@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import argparse
 import ast
@@ -60,7 +61,7 @@ def run(args: argparse.Namespace) -> None:
         try:
             distr_env = DistributedEnvironment()
         except Exception as e:  # pylint: disable=W0703
-            logging.error(f"Failed to initialize distributed environment: {e}")
+            logging.exception(f"Failed to initialize distributed environment: {e}")
             return
         world_size = distr_env.world_size
         local_rank = distr_env.local_rank
@@ -69,7 +70,7 @@ def run(args: argparse.Namespace) -> None:
             print(distr_env)
         torch.distributed.init_process_group(backend="nccl")
     else:
-        rank = int(0)
+        rank = 0
 
     # Setup
     tools.set_seeds(args.seed)
@@ -113,7 +114,7 @@ def run(args: argparse.Namespace) -> None:
         args.r_max = model_foundation.r_max.item()
 
     if args.statistics_file is not None:
-        with open(args.statistics_file, "r") as f:  # pylint: disable=W1514
+        with open(args.statistics_file) as f:  # pylint: disable=W1514
             statistics = json.load(f)
         logging.info("Using statistics json file")
         args.r_max = statistics["r_max"] if args.foundation_model is None else args.r_max
@@ -182,11 +183,10 @@ def run(args: argparse.Namespace) -> None:
                 z: model_foundation.atomic_energies_fn.atomic_energies[z_table_foundation.z_to_index(z)].item()
                 for z in z_table.zs
             }
+        elif args.train_file.endswith(".xyz"):
+            atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
         else:
-            if args.train_file.endswith(".xyz"):
-                atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
-            else:
-                atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table)
+            atomic_energies_dict = get_atomic_energies(args.E0s, None, z_table)
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
@@ -540,13 +540,12 @@ def run(args: argparse.Namespace) -> None:
         swas.append(True)
         if args.start_swa is None:
             args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-        else:
-            if args.start_swa > args.max_num_epochs:
-                logging.info(
-                    f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
-                )
-                args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-                logging.info(f"Setting start Stage Two to {args.start_swa}")
+        elif args.start_swa > args.max_num_epochs:
+            logging.info(
+                f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+            )
+            args.start_swa = max(1, args.max_num_epochs // 4 * 3)
+            logging.info(f"Setting start Stage Two to {args.start_swa}")
         if args.loss == "forces_only":
             raise ValueError("Can not select Stage Two with forces only loss.")
         if args.loss == "virials":
@@ -712,7 +711,7 @@ def run(args: argparse.Namespace) -> None:
             )
         try:
             drop_last = test_set.drop_last
-        except AttributeError as e:  # pylint: disable=W0612
+        except AttributeError:  # pylint: disable=W0612
             drop_last = False
         test_loader = torch_geometric.dataloader.DataLoader(
             test_set,
@@ -775,7 +774,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception:  # pylint: disable=W0703
                     pass
             else:
                 torch.save(model, Path(args.model_dir) / (args.name + ".model"))
@@ -788,7 +787,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception:  # pylint: disable=W0703
                     pass
 
         if args.distributed:

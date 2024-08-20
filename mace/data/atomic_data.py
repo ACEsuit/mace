@@ -3,18 +3,13 @@
 # Authors: Ilyes Batatia, Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 from typing import Optional, Sequence
 
 import torch.utils.data
 
-from mace.tools import (
-    AtomicNumberTable,
-    atomic_numbers_to_indices,
-    to_one_hot,
-    torch_geometric,
-    voigt_to_matrix,
-)
+from mace.tools import AtomicNumberTable, atomic_numbers_to_indices, to_one_hot, torch_geometric, voigt_to_matrix
 
 from .neighborhood import get_neighborhood
 from .utils import Configuration
@@ -107,7 +102,7 @@ class AtomicData(torch_geometric.data.Data):
         super().__init__(**data)
 
     @classmethod
-    def from_config(cls, config: Configuration, z_table: AtomicNumberTable, cutoff: float) -> "AtomicData":
+    def from_config(cls, config: Configuration, z_table: AtomicNumberTable, cutoff: float) -> AtomicData:
         edge_index, shifts, unit_shifts = get_neighborhood(
             positions=config.positions, cutoff=cutoff, pbc=config.pbc, cell=config.cell
         )

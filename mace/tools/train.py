@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import dataclasses
 import logging
@@ -23,14 +24,7 @@ from torchmetrics import Metric
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
 from .torch_tools import to_numpy
-from .utils import (
-    MetricsLogger,
-    compute_mae,
-    compute_q95,
-    compute_rel_mae,
-    compute_rel_rmse,
-    compute_rmse,
-)
+from .utils import MetricsLogger, compute_mae, compute_q95, compute_rel_mae, compute_rel_rmse, compute_rmse
 
 
 @dataclasses.dataclass

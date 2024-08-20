@@ -1,4 +1,5 @@
 """Demonstrates active learning molecular dynamics with constant temperature."""
+from __future__ import annotations
 
 import argparse
 import os

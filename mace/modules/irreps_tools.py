@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia, Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 from typing import List, Tuple
 

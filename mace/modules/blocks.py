@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia, Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 from abc import abstractmethod
 from typing import Callable, List, Optional, Tuple, Union
@@ -15,19 +16,8 @@ from e3nn.util.jit import compile_mode
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
 
-from .irreps_tools import (
-    linear_out_irreps,
-    reshape_irreps,
-    tp_out_irreps_with_instructions,
-)
-from .radial import (
-    AgnesiTransform,
-    BesselBasis,
-    ChebychevBasis,
-    GaussianBasis,
-    PolynomialCutoff,
-    SoftTransform,
-)
+from .irreps_tools import linear_out_irreps, reshape_irreps, tp_out_irreps_with_instructions
+from .radial import AgnesiTransform, BesselBasis, ChebychevBasis, GaussianBasis, PolynomialCutoff, SoftTransform
 from .symmetric_contraction import SymmetricContraction
 
 

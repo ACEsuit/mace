@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import torch.utils.data
 from torch.utils.data.dataloader import default_collate

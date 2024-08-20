@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Sequence
 from typing import List
 
@@ -154,10 +156,10 @@ class Batch(Data):
 
         if self.__slices__ is None:
             raise RuntimeError(
-                (
+
                     "Cannot reconstruct data list from batch because the batch "
                     "object was not created using `Batch.from_data_list()`."
-                )
+
             )
 
         data = self.__data_class__()
@@ -169,18 +171,16 @@ class Batch(Data):
                 # The item was concatenated along a new batch dimension,
                 # so just index in that dimension:
                 item = item[idx]
+            elif isinstance(item, Tensor):
+                dim = self.__cat_dims__[key]
+                start = self.__slices__[key][idx]
+                end = self.__slices__[key][idx + 1]
+                item = item.narrow(dim, start, end - start)
             else:
-                # Narrow the item based on the values in `__slices__`.
-                if isinstance(item, Tensor):
-                    dim = self.__cat_dims__[key]
-                    start = self.__slices__[key][idx]
-                    end = self.__slices__[key][idx + 1]
-                    item = item.narrow(dim, start, end - start)
-                else:
-                    start = self.__slices__[key][idx]
-                    end = self.__slices__[key][idx + 1]
-                    item = item[start:end]
-                    item = item[0] if len(item) == 1 else item
+                start = self.__slices__[key][idx]
+                end = self.__slices__[key][idx + 1]
+                item = item[start:end]
+                item = item[0] if len(item) == 1 else item
 
             # Decrease its value by `cumsum` value:
             cum = self.__cumsum__[key][idx]

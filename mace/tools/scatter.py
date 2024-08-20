@@ -6,6 +6,7 @@ to make installation simpler, we need this pure python set of wrappers
 that don't require installing PyTorch C++ extensions.
 See https://github.com/pytorch/pytorch/issues/63780.
 """
+from __future__ import annotations
 
 from typing import Optional
 
@@ -16,7 +17,7 @@ def _broadcast(src: torch.Tensor, other: torch.Tensor, dim: int):
     if dim < 0:
         dim = other.dim() + dim
     if src.dim() == 1:
-        for _ in range(0, dim):
+        for _ in range(dim):
             src = src.unsqueeze(0)
     for _ in range(src.dim(), other.dim()):
         src = src.unsqueeze(-1)

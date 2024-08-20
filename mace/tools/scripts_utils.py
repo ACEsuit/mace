@@ -3,6 +3,7 @@
 # Authors: David Kovacs, Ilyes Batatia
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import ast
 import dataclasses
@@ -252,17 +253,16 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                 atomic_energies_dict = data.compute_average_E0s(train_collection, z_table)
             except Exception as e:
                 raise RuntimeError(f"Could not compute average E0s if no training xyz given, error {e} occured") from e
+        elif E0s.endswith(".json"):
+            logging.info(f"Loading atomic energies from {E0s}")
+            with open(E0s, encoding="utf-8") as f:
+                atomic_energies_dict = json.load(f)
         else:
-            if E0s.endswith(".json"):
-                logging.info(f"Loading atomic energies from {E0s}")
-                with open(E0s, "r", encoding="utf-8") as f:
-                    atomic_energies_dict = json.load(f)
-            else:
-                try:
-                    atomic_energies_dict = ast.literal_eval(E0s)
-                    assert isinstance(atomic_energies_dict, dict)
-                except Exception as e:
-                    raise RuntimeError(f"E0s specified invalidly, error {e} occured") from e
+            try:
+                atomic_energies_dict = ast.literal_eval(E0s)
+                assert isinstance(atomic_energies_dict, dict)
+            except Exception as e:
+                raise RuntimeError(f"E0s specified invalidly, error {e} occured") from e
     else:
         raise RuntimeError("E0s not found in training file and not specified in command line")
     return atomic_energies_dict
