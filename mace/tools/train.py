@@ -46,7 +46,7 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
     eval_metrics["epoch"] = epoch
     logger.log(eval_metrics)
     if epoch is None:
-        inintial_phrase = "Initial loss on validation set"
+        inintial_phrase = "Initial metrics on validation set"
     else:
         inintial_phrase = f"Epoch {epoch}"
     if log_errors == "PerAtomRMSE":

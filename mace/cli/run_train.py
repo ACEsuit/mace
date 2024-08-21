@@ -545,10 +545,12 @@ def run(args: argparse.Namespace) -> None:
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
     logging.info("")
     logging.info("===========OPTIMIZER INFORMATION===========")
-    logging.info(f"Optimizer for parameter optimization: {args.optimizer.upper()}")
+    logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
     logging.info(f"Batch size: {args.batch_size}")
+    if args.ema:
+        logging.info(f"Using Exponential Moving Average with decay: {args.ema_decay}")
     logging.info(
-        f"Number of gradient updates: {args.max_num_epochs*len(collections.train)/args.batch_size}"
+        f"Number of gradient updates: {int(args.max_num_epochs*len(collections.train)/args.batch_size)}"
     )
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
@@ -820,7 +822,7 @@ def run(args: argparse.Namespace) -> None:
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
         else:
-            logging.info(f"Loaded model from epoch {epoch} for evaluation")
+            logging.info(f"Loaded Stage one model from epoch {epoch} for evaluation")
 
         for param in model.parameters():
             param.requires_grad = False
