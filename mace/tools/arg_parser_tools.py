@@ -1,6 +1,8 @@
-import os
-from e3nn import o3
 import logging
+import os
+
+from e3nn import o3
+
 
 def check_args(args):
     """
@@ -37,11 +39,14 @@ def check_args(args):
             .irreps.simplify()
         )
         log_messages.append(
-            ("All of hidden_irreps, num_channels and max_L are specified", logging.WARNING)
+            (
+                "All of hidden_irreps, num_channels and max_L are specified",
+                logging.WARNING,
+            )
         )
         log_messages.append(
             (
-                f"Using num_channels and max_L to create hidden irreps: {args.hidden_irreps}.",
+                f"Using num_channels and max_L to create hidden_irreps: {args.hidden_irreps}.",
                 logging.WARNING,
             )
         )
@@ -53,9 +58,9 @@ def check_args(args):
         assert args.max_L >= 0, "max_L must be non-negative integer"
         args.hidden_irreps = o3.Irreps(
             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
-                .sort()
-                .irreps.simplify()
-            )
+            .sort()
+            .irreps.simplify()
+        )
         assert (
             len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
         ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
@@ -64,9 +69,10 @@ def check_args(args):
             len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
         ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
 
-        args.num_channels=list({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)})[0]
-        args.max_L=o3.Irreps(args.hidden_irreps).lmax
-    
+        args.num_channels = list(
+            {irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}
+        )[0]
+        args.max_L = o3.Irreps(args.hidden_irreps).lmax
 
     # Loss and optimization
     # Check Stage Two loss start
@@ -76,11 +82,16 @@ def check_args(args):
         if args.start_swa > args.max_num_epochs:
             log_messages.append(
                 (
-                    f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}",
-                    logging.INFO,
+                    f"start_stage_two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}",
+                    logging.WARNING,
                 )
             )
-            log_messages.append(("Stage Two will not start", logging.WARNING))
+            log_messages.append(
+                (
+                    "Stage Two will not start, as start_stage_two > max_num_epochs",
+                    logging.WARNING,
+                )
+            )
             args.swa = False
 
     return args, log_messages

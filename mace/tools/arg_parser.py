@@ -9,9 +9,6 @@ import os
 from typing import Optional
 
 
-
-
-
 def build_default_arg_parser() -> argparse.ArgumentParser:
     try:
         import configargparse
