@@ -13,7 +13,7 @@ from e3nn.util.jit import compile_mode
 
 from mace.data import AtomicData
 from mace.modules.radial import ZBLBasis
-from mace.tools.scatter import scatter_sum
+from mace.tools.scatter import scatter_sum, scatter_mean
 from mace.tools.torch_tools import spherical_to_cartesian
 
 from .blocks import (
@@ -779,6 +779,7 @@ class AtomicDielectricMACE(torch.nn.Module):
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
+        num_atoms = data.ptr[1:] - data.ptr[:-1]
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -831,9 +832,11 @@ class AtomicDielectricMACE(torch.nn.Module):
         )  # [n_nodes,3,n_contributions]
         atomic_dipoles = torch.sum(contributions_dipoles, dim=-1)  # [n_nodes,3]
         atomic_charges = torch.stack(charges, dim=-1).sum(-1)  # [n_nodes,]
-        # The idea is to normalize the charges so that they sum to the net charge in the system before predicting the dipole.  
-        total_charge = data["total_charge"]
-        atomic_charges = atomic_charges - (scatter_mean(src=atomic_charges, index=data["batch"], dim_size=num_graphs) - total_charge) # This assumes the net charge is zero.
+        # The idea is to normalize the charges so that they sum to the net charge in the system before predicting the dipole.
+        total_charge_excess = scatter_mean(
+            src=atomic_charges, index=data["batch"], dim_size=num_graphs
+        ) - (data["total_charge"] / num_atoms)
+        atomic_charges = atomic_charges - total_charge_excess[data["batch"]]
         total_dipole = scatter_sum(
             src=atomic_dipoles,
             index=data["batch"],
