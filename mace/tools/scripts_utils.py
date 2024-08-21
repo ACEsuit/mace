@@ -15,9 +15,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 import torch.distributed
+from torch.optim.swa_utils import SWALR, AveragedModel
 from e3nn import o3
 from prettytable import PrettyTable
-from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules
 from mace.tools import evaluate
@@ -47,7 +47,7 @@ def get_dataset_from_xyz(
     charges_key: str = "charges",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
-    atomic_energies_dict, all_train_configs, heads = data.load_from_xyz(
+    atomic_energies_dict, all_train_configs = data.load_from_xyz(
         file_path=train_path,
         config_type_weights=config_type_weights,
         energy_key=energy_key,
@@ -63,7 +63,7 @@ def get_dataset_from_xyz(
         f"Loaded {len(all_train_configs)} training configurations from '{train_path}'"
     )
     if valid_path is not None:
-        _, valid_configs, _ = data.load_from_xyz(
+        _, valid_configs = data.load_from_xyz(
             file_path=valid_path,
             config_type_weights=config_type_weights,
             energy_key=energy_key,
@@ -82,25 +82,17 @@ def get_dataset_from_xyz(
         logging.info(
             "Using random %s%% of training set for validation", 100 * valid_fraction
         )
-        train_configs, valid_configs = [], []
-        for head in heads:
-            all_train_configs_head = [
-                config for config in all_train_configs if config.head == head
-            ]
-            train_configs_head, valid_configs_head = data.random_train_valid_split(
-                all_train_configs_head, valid_fraction, seed
-            )
-            train_configs.extend(train_configs_head)
-            valid_configs.extend(valid_configs_head)
+        train_configs, valid_configs = data.random_train_valid_split(
+            all_train_configs, valid_fraction, seed
+        )
 
     test_configs = []
     if test_path is not None:
-        _, all_test_configs, _ = data.load_from_xyz(
+        _, all_test_configs = data.load_from_xyz(
             file_path=test_path,
             config_type_weights=config_type_weights,
             energy_key=energy_key,
             forces_key=forces_key,
-            stress_key=stress_key,
             dipole_key=dipole_key,
             stress_key=stress_key,
             virials_key=virials_key,
@@ -115,7 +107,6 @@ def get_dataset_from_xyz(
     return (
         SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
         atomic_energies_dict,
-        heads,
     )
 
 
@@ -169,6 +160,8 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             return "Soft"
         return radial.distance_transform.__class__.__name__
 
+    scale = model.scale_shift.scale
+    shift = model.scale_shift.shift
     config = {
         "r_max": model.r_max.item(),
         "num_bessel": len(model.radial_embedding.bessel_fn.bessel_weights),
@@ -204,8 +197,8 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
         "distance_transform": radial_to_transform(model.radial_embedding),
-        "atomic_inter_scale": model.scale_shift.scale.item(),
-        "atomic_inter_shift": model.scale_shift.shift.item(),
+        "atomic_inter_scale": scale.cpu().numpy(),
+        "atomic_inter_shift": shift.cpu().numpy(),
     }
     return config
 
@@ -490,16 +483,16 @@ def custom_key(key):
     return (2, key)
 
 
-def dict_to_array(input_data, heads):
-    if not all(isinstance(value, dict) for value in input_data.values()):
-        return np.array(list(input_data.values()))
+def dict_to_array(data, heads):
+    if not all(isinstance(value, dict) for value in data.values()):
+        return np.array(list(data.values()))
     unique_keys = set()
-    for inner_dict in input_data.values():
+    for inner_dict in data.values():
         unique_keys.update(inner_dict.keys())
     unique_keys = list(unique_keys)
     sorted_keys = sorted([int(key) for key in unique_keys])
-    result_array = np.zeros((len(input_data), len(sorted_keys)))
-    for _, (head_name, inner_dict) in enumerate(input_data.items()):
+    result_array = np.zeros((len(data), len(sorted_keys)))
+    for _, (head_name, inner_dict) in enumerate(data.items()):
         for key, value in inner_dict.items():
             key_index = sorted_keys.index(int(key))
             head_index = heads.index(head_name)

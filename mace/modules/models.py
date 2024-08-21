@@ -195,7 +195,11 @@ class MACE(torch.nn.Module):
         data["positions"].requires_grad_(True)
         num_atoms_arange = torch.arange(data["positions"].shape[0])
         num_graphs = data["ptr"].numel() - 1
-        node_heads = data["head"][data["batch"]]
+        node_heads = (
+            data["head"][data["batch"]]
+            if "head" in data
+            else torch.zeros_like(data["batch"])
+        )
         displacement = torch.zeros(
             (num_graphs, 3, 3),
             dtype=data["positions"].dtype,
@@ -338,7 +342,11 @@ class ScaleShiftMACE(MACE):
         data["node_attrs"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
         num_atoms_arange = torch.arange(data["positions"].shape[0])
-        node_heads = data["head"][data["batch"]]
+        node_heads = (
+            data["head"][data["batch"]]
+            if "head" in data
+            else torch.zeros_like(data["batch"])
+        )
         displacement = torch.zeros(
             (num_graphs, 3, 3),
             dtype=data["positions"].dtype,

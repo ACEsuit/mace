@@ -221,19 +221,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compute_avg_num_neighbors",
         help="normalization factor for the message",
-        type=bool,
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
         "--compute_stress",
         help="Select True to compute stress",
-        type=bool,
+        type=str2bool,
         default=False,
     )
     parser.add_argument(
         "--compute_forces",
         help="Select True to compute forces",
-        type=bool,
+        type=str2bool,
         default=True,
     )
 
@@ -273,7 +273,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--multi_processed_test",
         help="Boolean value for whether the test data was multiprocessed",
-        type=bool,
+        type=str2bool,
         default=False,
         required=False,
     )
@@ -287,7 +287,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--pin_memory",
         help="Pin memory for data loading",
         default=True,
-        type=bool,
+        type=str2bool,
     )
     parser.add_argument(
         "--atomic_numbers",
@@ -327,7 +327,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--foundation_filter_elements",
         help="Filter element during fine-tuning",
-        type=bool,
+        type=str2bool,
         default=True,
         required=False,
     )
@@ -335,13 +335,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--heads",
         help="List of heads in the training set",
         type=str,
-        default=None,
+        default='["Default"]',
         required=False,
     )
     parser.add_argument(
         "--multiheads_finetuning",
         help="Boolean value for whether the model is multiheaded",
-        type=bool,
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
@@ -357,9 +357,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=1000,
     )
     parser.add_argument(
+        "--subselect_pt",
+        help="Method to subselect the configurations of the pretraining set",
+        choices=["fps", "random"],
+        default="random",
+    )
+    parser.add_argument(
         "--keep_isolated_atoms",
         help="Keep isolated atoms in the dataset, useful for transfer learning",
-        type=bool,
+        type=str2bool,
         default=False,
     )
     parser.add_argument(
@@ -794,7 +800,7 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--shuffle",
         help="Shuffle the training dataset",
-        type=bool,
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
@@ -815,3 +821,14 @@ def check_float_or_none(value: str) -> Optional[float]:
                 f"{value} is an invalid value (float or None)"
             ) from None
         return None
+
+
+def str2bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif value.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
