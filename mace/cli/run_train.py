@@ -29,6 +29,7 @@ from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.cli.fine_tuning_select import select_samples
 from mace.tools import torch_geometric
 from mace.tools.finetuning_utils import load_foundations_elements
+from mace.tools.multihead_tools import dict_head_to_dataclass, prepare_default_head
 from mace.tools.scripts_utils import (
     LRScheduler,
     check_folder_subfolder,
@@ -140,164 +141,157 @@ def run(args: argparse.Namespace) -> None:
     else:
         args.multiheads_finetuning = False
 
-    if args.statistics_file is not None:
-        with open(args.statistics_file, "r") as f:  # pylint: disable=W1514
-            statistics = json.load(f)
-        logging.info("Using statistics json file")
-        args.r_max = (
-            statistics["r_max"] if args.foundation_model is None else args.r_max
-        )
-        args.atomic_numbers = statistics["atomic_numbers"]
-        args.mean = statistics["mean"]
-        args.std = statistics["std"]
-        args.avg_num_neighbors = statistics["avg_num_neighbors"]
-        args.compute_avg_num_neighbors = False
-        args.E0s = (
-            statistics["atomic_energies"]
-            if not args.E0s.endswith(".json")
-            else args.E0s
-        )
-
-    # Data preparation
-    if args.train_file.endswith(".xyz"):
-        if args.valid_file is not None:
-            assert args.valid_file.endswith(
-                ".xyz"
-            ), "valid_file if given must be same format as train_file"
-        config_type_weights = get_config_type_weights(args.config_type_weights)
-        collections, atomic_energies_dict, heads = get_dataset_from_xyz(
-            train_path=args.train_file,
-            valid_path=args.valid_file,
-            valid_fraction=args.valid_fraction,
-            config_type_weights=config_type_weights,
-            test_path=args.test_file,
-            seed=args.seed,
-            energy_key=args.energy_key,
-            forces_key=args.forces_key,
-            stress_key=args.stress_key,
-            virials_key=args.virials_key,
-            dipole_key=args.dipole_key,
-            charges_key=args.charges_key,
-            keep_isolated_atoms=args.keep_isolated_atoms,
-        )
-        if args.heads is not None:
-            args.heads = ast.literal_eval(args.heads)
-            assert set(heads) == set(args.heads), (
-                "heads from command line and data do not match,"
-                f"{set(heads)} != {set(args.heads)}"
+    if args.heads is not None:
+        args.heads = ast.literal_eval(args.heads)
+    else:
+        args.heads = prepare_default_head(args)
+    for head, head_args in args.heads.items():
+        logging.info(f"=============    Processing head {head}     ===========")
+        head_config = dict_head_to_dataclass(head_args)
+        if head_config.statistics_file is not None:
+            with open(head_config.statistics_file, "r") as f:  # pylint: disable=W1514
+                statistics = json.load(f)
+            logging.info("Using statistics json file")
+            head_config.r_max = (
+                statistics["r_max"] if args.foundation_model is None else args.r_max
             )
-            logging.info(
-                "Using heads from command line argument," f" heads used: {args.heads}"
-            )
-            heads = args.heads
-        else:
-            logging.info(
-                "Using heads extracted from data files," f" heads used: {heads}"
+            head_config.atomic_numbers = statistics["atomic_numbers"]
+            head_config.mean = statistics["mean"]
+            head_config.std = statistics["std"]
+            head_config.avg_num_neighbors = statistics["avg_num_neighbors"]
+            head_config.compute_avg_num_neighbors = False
+            head_config.E0s = (
+                statistics["atomic_energies"]
+                if not head_config.E0s.endswith(".json")
+                else head_config.E0s
             )
 
-        if args.multiheads_finetuning:
-            logging.info("Using multiheads finetuning mode")
-            args.loss = "universal"
-            if heads is not None:
-                heads = list(dict.fromkeys(["pbe_mp"] + heads))
-                args.heads = heads
-            else:
-                heads = ["pbe_mp", "Default"]
-                args.heads = heads
-            logging.info(f"Using heads: {heads}")
-            try:
-                checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mp_traj_combined.xyz"
-                descriptors_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/descriptors.npy"
-                cache_dir = os.path.expanduser("~/.cache/mace")
-                checkpoint_url_name = "".join(
-                    c
-                    for c in os.path.basename(checkpoint_url)
-                    if c.isalnum() or c in "_"
-                )
-                cached_dataset_path = f"{cache_dir}/{checkpoint_url_name}"
-                descriptors_url_name = "".join(
-                    c
-                    for c in os.path.basename(descriptors_url)
-                    if c.isalnum() or c in "_"
-                )
-                cached_descriptors_path = f"{cache_dir}/{descriptors_url_name}"
-                if not os.path.isfile(cached_dataset_path):
-                    os.makedirs(cache_dir, exist_ok=True)
-                    # download and save to disk
-                    logging.info("Downloading MP structures for finetuning")
-                    _, http_msg = urllib.request.urlretrieve(
-                        checkpoint_url, cached_dataset_path
-                    )
-                    if "Content-Type: text/html" in http_msg:
-                        raise RuntimeError(
-                            f"Dataset download failed, please check the URL {checkpoint_url}"
-                        )
-                    logging.info(f"Materials Project dataset to {cached_dataset_path}")
-                if not os.path.isfile(cached_descriptors_path):
-                    os.makedirs(cache_dir, exist_ok=True)
-                    # download and save to disk
-                    logging.info("Downloading MP descriptors for finetuning")
-                    _, http_msg = urllib.request.urlretrieve(
-                        descriptors_url, cached_descriptors_path
-                    )
-                    if "Content-Type: text/html" in http_msg:
-                        raise RuntimeError(
-                            f"Descriptors download failed, please check the URL {descriptors_url}"
-                        )
-                    logging.info(
-                        f"Materials Project descriptors to {cached_descriptors_path}"
-                    )
-                dataset_mp = cached_dataset_path
-                descriptors_mp = cached_descriptors_path
-                msg = f"Using Materials Project dataset with {dataset_mp}"
-                logging.info(msg)
-                msg = f"Using Materials Project descriptors with {descriptors_mp}"
-                logging.info(msg)
-                args_samples = {
-                    "configs_pt": dataset_mp,
-                    "configs_ft": args.train_file,
-                    "num_samples": args.num_samples_pt,
-                    "seed": args.seed,
-                    "model": args.foundation_model,
-                    "head_pt": "pbe_mp",
-                    "head_ft": "Default",
-                    "weight_pt": args.weight_pt_head,
-                    "weight_ft": 1.0,
-                    "filtering_type": "combination",
-                    "output": f"mp_finetuning-{tag}.xyz",
-                    "descriptors": descriptors_mp,
-                    "device": args.device,
-                    "default_dtype": args.default_dtype,
-                }
-                select_samples(dict_to_namespace(args_samples))
-                collections_mp, _, _ = get_dataset_from_xyz(
-                    train_path=f"mp_finetuning-{tag}.xyz",
-                    valid_path=None,
-                    valid_fraction=args.valid_fraction,
-                    config_type_weights=config_type_weights,
-                    test_path=None,
-                    seed=args.seed,
-                    energy_key="energy",
-                    forces_key="forces",
-                    stress_key="stress",
-                    virials_key=args.virials_key,
-                    dipole_key=args.dipole_key,
-                    charges_key=args.charges_key,
-                    keep_isolated_atoms=args.keep_isolated_atoms,
-                )
-                collections.train += collections_mp.train
-                collections.valid += collections_mp.valid
-            except Exception as exc:
-                raise RuntimeError(
-                    "Model download failed and no local model found"
-                ) from exc
-
+        # Data preparation
+        if head_config.train_file.endswith(".xyz"):
+            if head_config.valid_file is not None:
+                assert head_config.valid_file.endswith(
+                    ".xyz"
+                ), "valid_file if given must be same format as train_file"
+            config_type_weights = get_config_type_weights(
+                head_config.config_type_weights
+            )
+            collections, atomic_energies_dict = get_dataset_from_xyz(
+                train_path=head_config.train_file,
+                valid_path=head_config.valid_file,
+                valid_fraction=head_config.valid_fraction,
+                config_type_weights=config_type_weights,
+                test_path=head_config.test_file,
+                seed=args.seed,
+                energy_key=head_config.energy_key,
+                forces_key=head_config.forces_key,
+                stress_key=head_config.stress_key,
+                virials_key=head_config.virials_key,
+                dipole_key=head_config.dipole_key,
+                charges_key=head_config.charges_key,
+                keep_isolated_atoms=head_config.keep_isolated_atoms,
+            )
         logging.info(
             f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
             f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
         )
     else:
         atomic_energies_dict = None
+
+    if args.multiheads_finetuning:
+        logging.info(
+            "==================Using multiheads finetuning mode=================="
+        )
+        args.loss = "universal"
+        if heads is not None:
+            heads = list(dict.fromkeys(["pbe_mp"] + heads))
+            args.heads = heads
+        else:
+            heads = ["pbe_mp", "Default"]
+            args.heads = heads
+        logging.info(f"Using heads: {heads}")
+        try:
+            checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mp_traj_combined.xyz"
+            descriptors_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/descriptors.npy"
+            cache_dir = os.path.expanduser("~/.cache/mace")
+            checkpoint_url_name = "".join(
+                c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
+            )
+            cached_dataset_path = f"{cache_dir}/{checkpoint_url_name}"
+            descriptors_url_name = "".join(
+                c for c in os.path.basename(descriptors_url) if c.isalnum() or c in "_"
+            )
+            cached_descriptors_path = f"{cache_dir}/{descriptors_url_name}"
+            if not os.path.isfile(cached_dataset_path):
+                os.makedirs(cache_dir, exist_ok=True)
+                # download and save to disk
+                logging.info("Downloading MP structures for finetuning")
+                _, http_msg = urllib.request.urlretrieve(
+                    checkpoint_url, cached_dataset_path
+                )
+                if "Content-Type: text/html" in http_msg:
+                    raise RuntimeError(
+                        f"Dataset download failed, please check the URL {checkpoint_url}"
+                    )
+                logging.info(f"Materials Project dataset to {cached_dataset_path}")
+            if not os.path.isfile(cached_descriptors_path):
+                os.makedirs(cache_dir, exist_ok=True)
+                # download and save to disk
+                logging.info("Downloading MP descriptors for finetuning")
+                _, http_msg = urllib.request.urlretrieve(
+                    descriptors_url, cached_descriptors_path
+                )
+                if "Content-Type: text/html" in http_msg:
+                    raise RuntimeError(
+                        f"Descriptors download failed, please check the URL {descriptors_url}"
+                    )
+                logging.info(
+                    f"Materials Project descriptors to {cached_descriptors_path}"
+                )
+            dataset_mp = cached_dataset_path
+            descriptors_mp = cached_descriptors_path
+            msg = f"Using Materials Project dataset with {dataset_mp}"
+            logging.info(msg)
+            msg = f"Using Materials Project descriptors with {descriptors_mp}"
+            logging.info(msg)
+            args_samples = {
+                "configs_pt": dataset_mp,
+                "configs_ft": args.train_file,
+                "num_samples": args.num_samples_pt,
+                "seed": args.seed,
+                "model": args.foundation_model,
+                "head_pt": "pbe_mp",
+                "head_ft": "Default",
+                "weight_pt": args.weight_pt_head,
+                "weight_ft": 1.0,
+                "filtering_type": "combination",
+                "output": f"mp_finetuning-{tag}.xyz",
+                "descriptors": descriptors_mp,
+                "subselect": args.subselect_pt,
+                "device": args.device,
+                "default_dtype": args.default_dtype,
+            }
+            select_samples(dict_to_namespace(args_samples))
+            collections_mp, _, _ = get_dataset_from_xyz(
+                train_path=f"mp_finetuning-{tag}.xyz",
+                valid_path=None,
+                valid_fraction=args.valid_fraction,
+                config_type_weights=config_type_weights,
+                test_path=None,
+                seed=args.seed,
+                energy_key="energy",
+                forces_key="forces",
+                stress_key="stress",
+                virials_key=args.virials_key,
+                dipole_key=args.dipole_key,
+                charges_key=args.charges_key,
+                keep_isolated_atoms=args.keep_isolated_atoms,
+            )
+            collections.train += collections_mp.train
+            collections.valid += collections_mp.valid
+        except Exception as exc:
+            raise RuntimeError(
+                "Model download failed and no local model found"
+            ) from exc
 
     # Atomic number table
     # yapf: disable
@@ -471,7 +465,7 @@ def run(args: argparse.Namespace) -> None:
             generator=torch.Generator().manual_seed(args.seed),
         )
 
-    loss_fn = get_loss_fn(args.loss, dipole_only, compute_dipole)
+    loss_fn = get_loss_fn(args, dipole_only, compute_dipole)
     logging.info(loss_fn)
 
     if args.compute_avg_num_neighbors:
@@ -522,7 +516,24 @@ def run(args: argparse.Namespace) -> None:
         if args.model == "MACE" and model_foundation.__class__.__name__ == "MACE":
             model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
         else:
-            model_config_foundation["atomic_inter_shift"] = [args.mean] * len(heads)
+            if isinstance(args.mean, np.ndarray):
+                if args.mean.size == 1:
+                    model_config_foundation["atomic_inter_shift"] = args.mean.item()
+                elif args.mean.size == len(heads):
+                    model_config_foundation["atomic_inter_shift"] = args.mean.tolist()
+                else:
+                    logging.info(
+                        "Mean not in correct format, using default value of 0.0"
+                    )
+                    model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
+            elif isinstance(args.mean, list) and len(args.mean) == len(heads):
+                model_config_foundation["atomic_inter_shift"] = args.mean
+            elif isinstance(args.mean, float):
+                model_config_foundation["atomic_inter_shift"] = [args.mean] * len(heads)
+            else:
+                logging.info("Mean not in correct format, using default value of 0.0")
+                model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
+
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.model = "FoundationMACE"
         model_config_foundation["heads"] = args.heads

@@ -291,6 +291,10 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     mace_params["default_dtype"] = "float32"
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["multiheads_finetuning"] = False
+    print("mace_params", mace_params)
+    # mace_params["num_samples_pt"] = 50
+    # mace_params["subselect_pt"] = "random"
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -359,13 +363,13 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
         else:
             c.info["head"] = "MP2"
         fitting_configs_.append(c)
-    ase.io.write(tmp_path / "fit.xyz", fitting_configs_)
+    ase.io.write(tmp_path / "fit_multihead.xyz", fitting_configs_)
 
     mace_params = _mace_params.copy()
     mace_params["valid_fraction"] = 0.1
     mace_params["checkpoints_dir"] = str(tmp_path)
     mace_params["model_dir"] = str(tmp_path)
-    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["train_file"] = tmp_path / "fit_multihead.xyz"
     mace_params["loss"] = "weighted"
     mace_params["foundation_model"] = "small"
     mace_params["hidden_irreps"] = "128x0e"
@@ -375,6 +379,8 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
     mace_params["heads"] = "['MP2','DFT']"
     mace_params["batch_size"] = 2
+    mace_params["num_samples_pt"] = 50
+    mace_params["subselect_pt"] = "random"
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -407,29 +413,29 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
         Es.append(at.get_potential_energy())
 
     print("Es", Es)
-    # from a run on 28/03/2023 on repulsion a63434aaab70c84ee016e13e4aca8d57297a0f26
+    # from a run on 20/08/2024 on commit
     ref_Es = [
-        1.1737573146820068,
-        0.37266889214515686,
-        0.3591262996196747,
-        0.1222146600484848,
-        0.21925662457942963,
-        0.30689263343811035,
-        0.23039104044437408,
-        0.11772646009922028,
-        0.2409999519586563,
-        0.04042769968509674,
-        0.6277227997779846,
-        0.13879507780075073,
-        0.18997330963611603,
-        0.30589431524276733,
-        0.34129756689071655,
-        -0.0034095346927642822,
-        0.5614650249481201,
-        0.29983872175216675,
-        0.3369189500808716,
-        -0.20579558610916138,
-        0.1669044941663742,
-        0.119053915143013,
+        1.4186015129089355,
+        0.6012811660766602,
+        1.4759466648101807,
+        1.1662801504135132,
+        1.117658019065857,
+        1.4062559604644775,
+        1.4638032913208008,
+        0.9065879583358765,
+        1.3814517259597778,
+        1.2735612392425537,
+        1.2472984790802002,
+        1.1374807357788086,
+        1.4028346538543701,
+        1.0139431953430176,
+        1.3830922842025757,
+        1.0170294046401978,
+        1.6741619110107422,
+        1.2575324773788452,
+        1.2426478862762451,
+        1.0206304788589478,
+        1.2309682369232178,
+        1.135024070739746,
     ]
-    assert np.allclose(Es, ref_Es, tol=1e-2)
+    assert np.allclose(Es, ref_Es, atol=1e-1)

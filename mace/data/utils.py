@@ -206,88 +206,64 @@ def load_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipole",
     charges_key: str = "charges",
-    head_key: str = "head",
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
-
-    energy_from_calc = False
-    forces_from_calc = False
-    stress_from_calc = False
-
-    # Perform initial checks and log warnings
     if energy_key == "energy":
         logging.info(
-            "Using energy_key 'energy' is unsafe, consider using a different key, rewriting energies to '_REF_energy'"
+            "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_energy'. You need to use --energy_key='REF_energy', to tell the key name chosen."
         )
-        energy_from_calc = True
-        energy_key = "_REF_energy"
-
-    if forces_key == "forces":
-        logging.info(
-            "Using forces_key 'forces' is unsafe, consider using a different key, rewriting forces to '_REF_forces'"
-        )
-        forces_from_calc = True
-        forces_key = "_REF_forces"
-
-    if stress_key == "stress":
-        logging.info(
-            "Using stress_key 'stress' is unsafe, consider using a different key, rewriting stress to '_REF_stress'"
-        )
-        stress_from_calc = True
-        stress_key = "_REF_stress"
-
-    for atoms in atoms_list:
-        if energy_from_calc:
+        energy_key = "REF_energy"
+        for atoms in atoms_list:
             try:
-                atoms.info["_REF_energy"] = atoms.get_potential_energy()
+                atoms.info["REF_energy"] = atoms.get_potential_energy()
             except Exception as e:  # pylint: disable=W0703
                 logging.warning(f"Failed to extract energy: {e}")
-                atoms.info["_REF_energy"] = None
-
-        if forces_from_calc:
+                atoms.info["REF_energy"] = None
+    if forces_key == "forces":
+        logging.info(
+            "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_forces'. You need to use --forces_key='REF_forces', to tell the key name chosen."
+        )
+        forces_key = "REF_forces"
+        for atoms in atoms_list:
             try:
-                atoms.arrays["_REF_forces"] = atoms.get_forces()
+                atoms.arrays["REF_forces"] = atoms.get_forces()
             except Exception as e:  # pylint: disable=W0703
                 logging.warning(f"Failed to extract forces: {e}")
-                atoms.arrays["_REF_forces"] = None
-
-        if stress_from_calc:
+                atoms.arrays["REF_forces"] = None
+    if stress_key == "stress":
+        logging.info(
+            "Since ASE version 3.23.0b1, using stress_key 'stress' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting energies to 'REF_stress'. You need to use --stress_key='REF_stress', to tell the key name chosen."
+        )
+        stress_key = "REF_stress"
+        for atoms in atoms_list:
             try:
-                atoms.info["_REF_stress"] = atoms.get_stress()
+                atoms.info["REF_stress"] = atoms.get_stress()
             except Exception as e:  # pylint: disable=W0703
-                atoms.info["_REF_stress"] = None
-
+                atoms.info["REF_stress"] = None
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
+
     atomic_energies_dict = {}
     if extract_atomic_energies:
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
-            if atoms.info.get("config_type") == "IsolatedAtom":
-                assert (
-                    len(atoms) == 1
-                ), f"Got config_type=IsolatedAtom for a config with len {len(atoms)}"
+            isolated_atom_config = (
+                len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
+            )
+            if isolated_atom_config:
                 if energy_key in atoms.info.keys():
-                    head = atoms.info.get(head_key, "Default")
-                    if head not in atomic_energies_dict:
-                        atomic_energies_dict[head] = {}
-                    atomic_energies_dict[head][atoms.get_atomic_numbers()[0]] = (
-                        atoms.info[energy_key]
-                    )
+                    atomic_energies_dict[atoms.get_atomic_numbers()[0]] = atoms.info[
+                        energy_key
+                    ]
                 else:
                     logging.warning(
                         f"Configuration '{idx}' is marked as 'IsolatedAtom' "
                         "but does not contain an energy. Zero energy will be used."
                     )
-                    head = atoms.info.get(head_key, "Default")
-                    if head not in atomic_energies_dict:
-                        atomic_energies_dict[head] = {}
-                    atomic_energies_dict[head][atoms.get_atomic_numbers()[0]] = (
-                        np.zeros(1)
-                    )
+                    atomic_energies_dict[atoms.get_atomic_numbers()[0]] = np.zeros(1)
             else:
                 atoms_without_iso_atoms.append(atoms)
 
@@ -295,10 +271,7 @@ def load_from_xyz(
             logging.info("Using isolated atom energies from training file")
         if not keep_isolated_atoms:
             atoms_list = atoms_without_iso_atoms
-    heads = set()
-    for atoms in atoms_list:
-        heads.add(atoms.info.get(head_key, "Default"))
-    heads = list(heads)
+
     configs = config_from_atoms_list(
         atoms_list,
         config_type_weights=config_type_weights,
@@ -308,13 +281,12 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
-        head_key=head_key,
     )
-    return atomic_energies_dict, configs, heads
+    return atomic_energies_dict, configs
 
 
 def compute_average_E0s(
-    collections_train: Configurations, z_table: AtomicNumberTable, heads: List[str]
+    collections_train: Configurations, z_table: AtomicNumberTable
 ) -> Dict[int, float]:
     """
     Function to compute the average interaction energy of each chemical element
@@ -322,28 +294,24 @@ def compute_average_E0s(
     """
     len_train = len(collections_train)
     len_zs = len(z_table)
-    atomic_energies_dict = {}
-    for head in heads:
-        A = np.zeros((len_train, len_zs))
-        B = np.zeros(len_train)
-        if head not in atomic_energies_dict:
-            atomic_energies_dict[head] = {}
-        for i in range(len_train):
-            if collections_train[i].head != head:
-                continue
-            B[i] = collections_train[i].energy
-            for j, z in enumerate(z_table.zs):
-                A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
-        try:
-            E0s = np.linalg.lstsq(A, B, rcond=None)[0]
-            for i, z in enumerate(z_table.zs):
-                atomic_energies_dict[head][z] = E0s[i]
-        except np.linalg.LinAlgError:
-            logging.warning(
-                "Failed to compute E0s using least squares regression, using the same for all atoms"
-            )
-            for i, z in enumerate(z_table.zs):
-                atomic_energies_dict[head][z] = 0.0
+    A = np.zeros((len_train, len_zs))
+    B = np.zeros(len_train)
+    for i in range(len_train):
+        B[i] = collections_train[i].energy
+        for j, z in enumerate(z_table.zs):
+            A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
+    try:
+        E0s = np.linalg.lstsq(A, B, rcond=None)[0]
+        atomic_energies_dict = {}
+        for i, z in enumerate(z_table.zs):
+            atomic_energies_dict[z] = E0s[i]
+    except np.linalg.LinAlgError:
+        logging.warning(
+            "Failed to compute E0s using least squares regression, using the same for all atoms"
+        )
+        atomic_energies_dict = {}
+        for i, z in enumerate(z_table.zs):
+            atomic_energies_dict[z] = 0.0
     return atomic_energies_dict
 
 

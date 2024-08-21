@@ -39,6 +39,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
     )
     parser.add_argument(
+        "--subselect",
+        help="method to subselect the configurations of the pretraining set",
+        type=str,
+        choices=["fps", "random"],
+        default="fps",
+    )
+    parser.add_argument(
         "--model", help="path to model", default="small", required=False
     )
     parser.add_argument("--output", help="output path", required=True)
@@ -187,9 +194,11 @@ class FPS:
         ).astype(np.float32)
 
         for i, atoms in enumerate(self.atoms_list):
-            descriptors = np.array(atoms.info["mace_descriptors"]).astype(np.float32)
+            descriptors = atoms.info["mace_descriptors"]
             for z in descriptors:
-                self.descriptors_dataset[i, self.species_dict[z]] = descriptors[z]
+                self.descriptors_dataset[i, self.species_dict[z]] = np.array(
+                    descriptors[z]
+                ).astype(np.float32)
 
 
 def select_samples(
@@ -260,27 +269,39 @@ def select_samples(
                 atoms.info["mace_descriptors"] = descriptors[i]
 
     if args.num_samples is not None and args.num_samples < len(atoms_list_pt):
-        if args.descriptors is None:
-            logging.info("Calculating descriptors for the pretraining set")
-            calculate_descriptors(atoms_list_pt, calc)
-            descriptors_list = [
-                atoms.info["mace_descriptors"] for atoms in atoms_list_pt
-            ]
-            logging.info(
-                f"Saving descriptors at {args.output.replace('.xyz', '_descriptors.npy')}"
-            )
-            np.save(args.output.replace(".xyz", "_descriptors.npy"), descriptors_list)
-        logging.info("Selecting configurations using Farthest Point Sampling")
-        try:
-            fps_pt = FPS(atoms_list_pt, args.num_samples)
-            idx_pt = fps_pt.run()
-            logging.info(f"Selected {len(idx_pt)} configurations")
-        except Exception as e:  # pylint: disable=W0703
-            logging.error(f"FPS failed, selecting random configurations instead: {e}")
+        if args.subselect == "fps":
+            if args.descriptors is None:
+                logging.info("Calculating descriptors for the pretraining set")
+                calculate_descriptors(atoms_list_pt, calc)
+                descriptors_list = [
+                    atoms.info["mace_descriptors"] for atoms in atoms_list_pt
+                ]
+                logging.info(
+                    f"Saving descriptors at {args.output.replace('.xyz', '_descriptors.npy')}"
+                )
+                np.save(
+                    args.output.replace(".xyz", "_descriptors.npy"), descriptors_list
+                )
+            logging.info("Selecting configurations using Farthest Point Sampling")
+            try:
+                fps_pt = FPS(atoms_list_pt, args.num_samples)
+                idx_pt = fps_pt.run()
+                logging.info(f"Selected {len(idx_pt)} configurations")
+            except Exception as e:  # pylint: disable=W0703
+                logging.error(
+                    f"FPS failed, selecting random configurations instead: {e}"
+                )
+                idx_pt = np.random.choice(
+                    list(range(len(atoms_list_pt))), args.num_samples, replace=False
+                )
+            atoms_list_pt = [atoms_list_pt[i] for i in idx_pt]
+        else:
+            logging.info("Selecting random configurations")
             idx_pt = np.random.choice(
-                list(range(len(atoms_list_pt)), args.num_samples, replace=False)
+                list(range(len(atoms_list_pt))), args.num_samples, replace=False
             )
-        atoms_list_pt = [atoms_list_pt[i] for i in idx_pt]
+            print("idx_pt", idx_pt)
+            atoms_list_pt = [atoms_list_pt[i] for i in idx_pt]
     for atoms in atoms_list_pt:
         # del atoms.info["mace_descriptors"]
         atoms.info["pretrained"] = True
