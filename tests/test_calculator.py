@@ -75,6 +75,7 @@ def trained_model_fixture(tmp_path_factory, fitting_configs):
         "energy_key": "REF_energy",
         "forces_key": "REF_forces",
         "stress_key": "REF_stress",
+        "eval_interval": 2,
     }
 
     tmp_path = tmp_path_factory.mktemp("run_")
@@ -137,6 +138,7 @@ def trained_model_equivariant_fixture(tmp_path_factory, fitting_configs):
         "energy_key": "REF_energy",
         "forces_key": "REF_forces",
         "stress_key": "REF_stress",
+        "eval_interval": 2,
     }
 
     tmp_path = tmp_path_factory.mktemp("run_")
@@ -200,6 +202,7 @@ def trained_dipole_fixture(tmp_path_factory, fitting_configs):
         "stress_key": "",
         "dipole_key": "REF_dipole",
         "error_table": "DipoleRMSE",
+        "eval_interval": 2,
     }
 
     tmp_path = tmp_path_factory.mktemp("run_")
@@ -265,6 +268,7 @@ def trained_energy_dipole_fixture(tmp_path_factory, fitting_configs):
         "stress_key": "",
         "dipole_key": "REF_dipole",
         "error_table": "EnergyDipoleRMSE",
+        "eval_interval": 2,
     }
 
     tmp_path = tmp_path_factory.mktemp("run_")
@@ -332,6 +336,7 @@ def trained_committee_fixture(tmp_path_factory, fitting_configs):
             "energy_key": "REF_energy",
             "forces_key": "REF_forces",
             "stress_key": "REF_stress",
+            "eval_interval": 2,
         }
 
         tmp_path = tmp_path_factory.mktemp(f"run{seed}_")
