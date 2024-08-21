@@ -351,7 +351,6 @@ def run(args: argparse.Namespace) -> None:
     else:
         # Unweighted Energy and Forces loss by default
         loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
-    logging.info(loss_fn)
 
     if args.compute_avg_num_neighbors:
         avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
@@ -391,7 +390,7 @@ def run(args: argparse.Namespace) -> None:
     }
 
     logging.info(
-        f"Selected the following values to use and report: {[report for report, value in output_args.items() if value]}"
+        f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
     )
 
     if args.scaling == "no_scaling":
@@ -403,7 +402,7 @@ def run(args: argparse.Namespace) -> None:
         )
     # Build model
     if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
-        logging.debug("Building model")
+        logging.info("Loading foundation model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_numbers"] = z_table.zs
         model_config_foundation["num_elements"] = len(z_table)
@@ -418,11 +417,19 @@ def run(args: argparse.Namespace) -> None:
         args.model = "FoundationMACE"
         model_config = model_config_foundation  # pylint
     else:
-        logging.debug("Building model")
+        logging.info("Building model")
         logging.info(
-            f"Hidden irreps: {args.hidden_irreps} (Number of channel: {args.num_channels}, max_L: {args.max_L})"
+            f"Message passing with {args.num_channels} channels and max_L={args.max_L} ({args.hidden_irreps})"
         )
-
+        logging.info(
+            f"{args.num_interactions} layers with correlation: {args.correlation} and spherical harmonics up to: {args.max_ell}"
+        )
+        logging.info(
+            f"Radial cutoff: {args.r_max} Å, {args.num_radial_basis} radial and {args.num_cutoff_basis} basis functions"
+        )
+        logging.info(
+            f"Distance transform for radial basis functions: {args.distance_transform}"
+        )
         model_config = dict(
             r_max=args.r_max,
             num_bessel=args.num_radial_basis,
@@ -534,6 +541,18 @@ def run(args: argparse.Namespace) -> None:
         )
     model.to(device)
 
+    logging.debug(model)
+    logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
+    logging.info("")
+    logging.info("===========OPTIMIZER INFORMATION===========")
+    logging.info(f"Optimizer for parameter optimization: {args.optimizer.upper()}")
+    logging.info(f"Batch size: {args.batch_size}")
+    logging.info(
+        f"Number of gradient updates: {args.max_num_epochs*len(collections.train)/args.batch_size}"
+    )
+    logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
+    logging.info(loss_fn)
+
     # Optimizer
     decay_interactions = {}
     no_decay_interactions = {}
@@ -604,6 +623,9 @@ def run(args: argparse.Namespace) -> None:
         swas.append(True)
         if args.start_swa is None:
             args.start_swa = max(1, args.max_num_epochs // 4 * 3)
+        logging.info(
+            f"Stage Two will start after {args.start_swa} epochs with loss function:"
+        )
         if args.loss == "forces_only":
             raise ValueError("Can not select Stage Two with forces only loss.")
         if args.loss == "virials":
@@ -624,17 +646,12 @@ def run(args: argparse.Namespace) -> None:
                 forces_weight=args.swa_forces_weight,
                 dipole_weight=args.swa_dipole_weight,
             )
-            logging.info(
-                f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
-            )
         else:
             loss_fn_energy = modules.WeightedEnergyForcesLoss(
                 energy_weight=args.swa_energy_weight,
                 forces_weight=args.swa_forces_weight,
             )
-            logging.info(
-                f"Stage Two (after {args.start_swa} epochs) with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
-            )
+        logging.info(loss_fn_energy)
         swa = tools.SWAContainer(
             model=AveragedModel(model),
             scheduler=SWALR(
@@ -677,29 +694,6 @@ def run(args: argparse.Namespace) -> None:
     else:
         for group in optimizer.param_groups:
             group["lr"] = args.lr
-
-    logging.debug(model)
-    logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
-    logging.info(
-        f"Batch size: {args.batch_size}, validation batch size: {args.valid_batch_size}"
-    )
-    logging.info(
-        f"Number of gradient updates: {args.max_num_epochs*len(collections.train)/args.batch_size}"
-    )
-    logging.info(
-        f"Radial cutoff: {args.r_max}, num_radial_basis: {args.num_radial_basis}, num_cutoff_basis: {args.num_cutoff_basis}"
-    )
-    logging.info(
-        f"Polynomial cutoff: {args.num_cutoff_basis}, max_L: {args.max_L}, num_interactions: {args.num_interactions}"
-    )
-    logging.info(
-        f"Correlation: {args.correlation}, distance transform: {args.distance_transform}"
-    )
-
-    logging.info("")
-    logging.info("===========OPTIMIZER INFORMATION===========")
-    logging.info(f"Optimizer for parameter optimization: {args.optimizer.upper()}")
-    logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
 
     if args.wandb:
         logging.info("Using Weights and Biases for logging")
