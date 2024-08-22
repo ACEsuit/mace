@@ -127,8 +127,6 @@ class AtomicData(torch_geometric.data.Data):
             torch.tensor(indices, dtype=torch.long).unsqueeze(-1),
             num_classes=len(z_table),
         )
-        print("HEADS", heads)
-        print("config.head", config.head)
         try:
             head = torch.tensor(heads.index(config.head), dtype=torch.long)
         except ValueError:

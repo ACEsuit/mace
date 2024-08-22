@@ -305,7 +305,6 @@ def select_samples(
             idx_pt = np.random.choice(
                 list(range(len(atoms_list_pt))), args.num_samples, replace=False
             )
-            print("idx_pt", idx_pt)
             atoms_list_pt = [atoms_list_pt[i] for i in idx_pt]
     for atoms in atoms_list_pt:
         # del atoms.info["mace_descriptors"]
