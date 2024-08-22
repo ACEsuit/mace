@@ -1,8 +1,8 @@
 import argparse
+import dataclasses
 import logging
 import os
 import urllib.request
-import dataclasses
 from typing import Any, Dict, List, Optional, Union
 
 import torch
