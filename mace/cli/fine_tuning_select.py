@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--configs_ft",
-        help="path to XYZ configurations for the finetuning",
+        help="path or list of paths to XYZ configurations for the finetuning",
         required=True,
     )
     parser.add_argument(
@@ -212,7 +212,12 @@ def select_samples(
         calc = MACECalculator(
             model_paths=args.model, device=args.device, default_dtype=args.default_dtype
         )
-    atoms_list_ft = ase.io.read(args.configs_ft, index=":")
+    if isinstance(args.configs_ft, str):
+        atoms_list_ft = ase.io.read(args.configs_ft, index=":")
+    else:
+        atoms_list_ft = []
+        for path in args.configs_ft:
+            atoms_list_ft += ase.io.read(path, index=":")
 
     if args.filtering_type is not None:
         all_species_ft = np.unique([x.symbol for atoms in atoms_list_ft for x in atoms])
