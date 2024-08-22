@@ -308,7 +308,7 @@ def test_run_train_multihead(tmp_path, fitting_configs):
         for sub_key, sub_value in value.items():
             yaml_str += f"    {sub_key}: {sub_value}\n"
     filename = tmp_path / "config.yaml"
-    with open(filename, "w") as file:
+    with open(filename, "w", encoding="utf-8") as file:
         file.write(yaml_str)
 
     mace_params = _mace_params.copy()
@@ -486,7 +486,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
         for sub_key, sub_value in value.items():
             yaml_str += f"    {sub_key}: {sub_value}\n"
     filename = tmp_path / "config.yaml"
-    with open(filename, "w") as file:
+    with open(filename, "w", encoding="utf-8") as file:
         file.write(yaml_str)
     mace_params = _mace_params.copy()
     mace_params["valid_fraction"] = 0.1
