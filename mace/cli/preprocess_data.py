@@ -155,6 +155,7 @@ def run(args: argparse.Namespace):
 
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
+        work_dir=args.work_dir,
         train_path=args.train_file,
         valid_path=args.valid_file,
         valid_fraction=args.valid_fraction,

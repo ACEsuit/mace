@@ -69,7 +69,7 @@ def random_train_valid_split(
         )
     else:
         # Save indices to file
-        with open(work_dir + f"/valid_indices_{seed}.txt", "w") as f:
+        with open(work_dir + f"/valid_indices_{seed}.txt", "w", encoding="utf-8") as f:
             for index in indices[train_size:]:
                 f.write(f"{index}\n")
 
