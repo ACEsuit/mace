@@ -146,6 +146,7 @@ def run(args: argparse.Namespace) -> None:
             ), "valid_file if given must be same format as train_file"
         config_type_weights = get_config_type_weights(args.config_type_weights)
         collections, atomic_energies_dict = get_dataset_from_xyz(
+            work_dir=args.work_dir,
             train_path=args.train_file,
             valid_path=args.valid_file,
             valid_fraction=args.valid_fraction,
@@ -161,13 +162,14 @@ def run(args: argparse.Namespace) -> None:
             keep_isolated_atoms=args.keep_isolated_atoms,
         )
         if len(collections.train) < args.batch_size:
-            logging.warning(
+            logging.error(
                 f"Batch size ({args.batch_size}) is larger than the number of training data ({len(collections.train)})"
             )
         if len(collections.valid) < args.valid_batch_size:
             logging.warning(
                 f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({len(collections.valid)})"
             )
+            args.valid_batch_size = len(collections.valid)
 
     else:
         atomic_energies_dict = None
@@ -239,7 +241,7 @@ def run(args: argparse.Namespace) -> None:
             [atomic_energies_dict[z] for z in z_table.zs]
         )
         logging.info(
-            f"Atomic Energies used [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table.zs])}"
+            f"Atomic Energies used (z: eV): {{{', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table.zs])}}}"
         )
 
     if args.train_file.endswith(".xyz"):

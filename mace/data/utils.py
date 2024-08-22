@@ -53,7 +53,7 @@ Configurations = List[Configuration]
 
 
 def random_train_valid_split(
-    items: Sequence, valid_fraction: float, seed: int
+    items: Sequence, valid_fraction: float, seed: int, work_dir: str
 ) -> Tuple[List, List]:
     assert 0.0 < valid_fraction < 1.0
 
@@ -63,10 +63,20 @@ def random_train_valid_split(
     indices = list(range(size))
     rng = np.random.default_rng(seed)
     rng.shuffle(indices)
-    logging.info(
-        f"Using random {100 * valid_fraction:.0f}% of training set for validation"
-    )
-    logging.info(f"Validation set created using indices: {indices[train_size:]}")
+    if len(indices[train_size:]) < 10:
+        logging.info(
+            f"Using random {100 * valid_fraction:.0f}% of training set for validation with following indices: {indices[train_size:]}"
+        )
+    else:
+        # Save indices to file
+        with open(work_dir + f"/valid_indices_{seed}.txt", "w") as f:
+            for index in indices[train_size:]:
+                f.write(f"{index}\n")
+
+        logging.info(
+            f"Using random {100 * valid_fraction:.0f}% of training set for validation with indices saved in: {work_dir}/valid_indices_{seed}.txt"
+        )
+
     return (
         [items[i] for i in indices[:train_size]],
         [items[i] for i in indices[train_size:]],

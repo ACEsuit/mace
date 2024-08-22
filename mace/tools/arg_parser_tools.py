@@ -73,6 +73,22 @@ def check_args(args):
             {irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}
         )[0]
         args.max_L = o3.Irreps(args.hidden_irreps).lmax
+    elif args.max_L is not None and args.num_channels is None:
+        assert args.max_L >= 0, "max_L must be non-negative integer"
+        args.num_channels = 128
+        args.hidden_irreps = o3.Irreps(
+            (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+            .sort()
+            .irreps.simplify()
+        )
+    elif args.max_L is None and args.num_channels is not None:
+        assert args.num_channels > 0, "num_channels must be positive integer"
+        args.max_L = 1
+        args.hidden_irreps = o3.Irreps(
+            (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+            .sort()
+            .irreps.simplify()
+        )
 
     # Loss and optimization
     # Check Stage Two loss start
