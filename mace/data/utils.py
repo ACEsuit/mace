@@ -206,6 +206,8 @@ def load_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipole",
     charges_key: str = "charges",
+    head_key: str = "head",
+    head_name: str = "Default",
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
@@ -250,11 +252,13 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
+            atoms.info[head_key] = head_name
             isolated_atom_config = (
                 len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
             )
             if isolated_atom_config:
                 if energy_key in atoms.info.keys():
+                    print(atoms)
                     atomic_energies_dict[atoms.get_atomic_numbers()[0]] = atoms.info[
                         energy_key
                     ]
@@ -281,6 +285,7 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        head_key=head_key,
     )
     return atomic_energies_dict, configs
 

@@ -277,6 +277,114 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
     assert np.allclose(Es, ref_Es)
 
 
+def test_run_train_multihead(tmp_path, fitting_configs):
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
+    fitting_configs_ccd = []
+    for _, c in enumerate(fitting_configs):
+        c_dft = c.copy()
+        c_dft.info["head"] = "DFT"
+        fitting_configs_dft.append(c_dft)
+
+        c_mp2 = c.copy()
+        c_mp2.info["head"] = "MP2"
+        fitting_configs_mp2.append(c_mp2)
+
+        c_ccd = c.copy()
+        c_ccd.info["head"] = "CCD"
+        fitting_configs_ccd.append(c_ccd)
+    ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
+    ase.io.write(tmp_path / "fit_multihead_ccd.xyz", fitting_configs_ccd)
+
+    heads = {
+        "DFT": {"train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz"},
+        "MP2": {"train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz"},
+        "CCD": {"train_file": f"{str(tmp_path)}/fit_multihead_ccd.xyz"},
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    filename = tmp_path / "config.yaml"
+    with open(filename, "w") as file:
+        file.write(yaml_str)
+
+    mace_params = _mace_params.copy()
+    mace_params["valid_fraction"] = 0.1
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["loss"] = "weighted"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float32"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["config"] = tmp_path / "config.yaml"
+    mace_params["batch_size"] = 2
+    mace_params["num_samples_pt"] = 50
+    mace_params["subselect_pt"] = "random"
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        tmp_path / "MACE.model", device="cpu", default_dtype="float32"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+    # from a run on 22/08/2024 on commit
+    ref_Es = [
+        0.0,
+        0.0,
+        0.1492728888988495,
+        0.12760481238365173,
+        0.18094804883003235,
+        0.2017526775598526,
+        0.09473809599876404,
+        0.20055484771728516,
+        0.1673969328403473,
+        0.1053609699010849,
+        0.29178786277770996,
+        0.06670654565095901,
+        0.09736010432243347,
+        0.23458734154701233,
+        0.09877493232488632,
+        -0.022957436740398407,
+        0.2738725543022156,
+        0.13694337010383606,
+        0.12737643718719482,
+        -0.07650933414697647,
+        -0.012938144616782665,
+        0.061228662729263306,
+    ]
+    assert np.allclose(Es, ref_Es)
+
+
 def test_run_train_foundation(tmp_path, fitting_configs):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
@@ -356,20 +464,35 @@ def test_run_train_foundation(tmp_path, fitting_configs):
 
 
 def test_run_train_foundation_multihead(tmp_path, fitting_configs):
-    fitting_configs_ = []
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
     for i, c in enumerate(fitting_configs):
         if i % 2 == 0:
             c.info["head"] = "DFT"
+            fitting_configs_dft.append(c)
         else:
             c.info["head"] = "MP2"
-        fitting_configs_.append(c)
-    ase.io.write(tmp_path / "fit_multihead.xyz", fitting_configs_)
+            fitting_configs_mp2.append(c)
+    ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
 
+    heads = {
+        "DFT": {"train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz"},
+        "MP2": {"train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz"},
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    filename = tmp_path / "config.yaml"
+    with open(filename, "w") as file:
+        file.write(yaml_str)
     mace_params = _mace_params.copy()
     mace_params["valid_fraction"] = 0.1
     mace_params["checkpoints_dir"] = str(tmp_path)
     mace_params["model_dir"] = str(tmp_path)
-    mace_params["train_file"] = tmp_path / "fit_multihead.xyz"
+    mace_params["config"] = tmp_path / "config.yaml"
     mace_params["loss"] = "weighted"
     mace_params["foundation_model"] = "small"
     mace_params["hidden_irreps"] = "128x0e"
@@ -377,7 +500,6 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     mace_params["default_dtype"] = "float32"
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
-    mace_params["heads"] = "['MP2','DFT']"
     mace_params["batch_size"] = 2
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"

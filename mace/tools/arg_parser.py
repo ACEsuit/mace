@@ -242,7 +242,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--train_file",
         help="Training set file, format is .xyz or .h5",
         type=str,
-        required=True,
+        required=False,
     )
     parser.add_argument(
         "--valid_file",
@@ -333,9 +333,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--heads",
-        help="List of heads in the training set",
+        help="Dict of heads: containing individual files and E0s",
         type=str,
-        default='["Default"]',
+        default=None,
         required=False,
     )
     parser.add_argument(
@@ -828,7 +828,6 @@ def str2bool(value):
         return value
     if value.lower() in ("yes", "true", "t", "y", "1"):
         return True
-    elif value.lower() in ("no", "false", "f", "n", "0"):
+    if value.lower() in ("no", "false", "f", "n", "0"):
         return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
+    raise argparse.ArgumentTypeError("Boolean value expected.")

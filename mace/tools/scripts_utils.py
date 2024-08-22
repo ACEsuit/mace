@@ -15,9 +15,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 import torch.distributed
-from torch.optim.swa_utils import SWALR, AveragedModel
 from e3nn import o3
 from prettytable import PrettyTable
+from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules
 from mace.tools import evaluate
@@ -39,12 +39,14 @@ def get_dataset_from_xyz(
     test_path: str = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
+    head_name: str = "Default",
     energy_key: str = "energy",
     forces_key: str = "forces",
     stress_key: str = "stress",
     virials_key: str = "virials",
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
+    head_key: str = "head",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
     atomic_energies_dict, all_train_configs = data.load_from_xyz(
@@ -56,8 +58,10 @@ def get_dataset_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        head_key=head_key,
         extract_atomic_energies=True,
         keep_isolated_atoms=keep_isolated_atoms,
+        head_name=head_name,
     )
     logging.info(
         f"Loaded {len(all_train_configs)} training configurations from '{train_path}'"
@@ -72,7 +76,9 @@ def get_dataset_from_xyz(
             virials_key=virials_key,
             dipole_key=dipole_key,
             charges_key=charges_key,
+            head_key=head_key,
             extract_atomic_energies=False,
+            head_name=head_name,
         )
         logging.info(
             f"Loaded {len(valid_configs)} validation configurations from '{valid_path}'"
@@ -97,7 +103,9 @@ def get_dataset_from_xyz(
             stress_key=stress_key,
             virials_key=virials_key,
             charges_key=charges_key,
+            head_key=head_key,
             extract_atomic_energies=False,
+            head_name=head_name,
         )
         # create list of tuples (config_type, list(Atoms))
         test_configs = data.test_config_types(all_test_configs)
@@ -289,7 +297,7 @@ def load_from_json(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return model_load_yaml.to(map_location)
 
 
-def get_atomic_energies(E0s, train_collection, z_table, heads) -> dict:
+def get_atomic_energies(E0s, train_collection, z_table) -> dict:
     if E0s is not None:
         logging.info(
             "Atomic Energies not in training file, using command line argument E0s"
@@ -302,7 +310,7 @@ def get_atomic_energies(E0s, train_collection, z_table, heads) -> dict:
             try:
                 assert train_collection is not None
                 atomic_energies_dict = data.compute_average_E0s(
-                    train_collection, z_table, heads
+                    train_collection, z_table
                 )
             except Exception as e:
                 raise RuntimeError(
@@ -483,16 +491,16 @@ def custom_key(key):
     return (2, key)
 
 
-def dict_to_array(data, heads):
-    if not all(isinstance(value, dict) for value in data.values()):
-        return np.array(list(data.values()))
+def dict_to_array(input_data, heads):
+    if not all(isinstance(value, dict) for value in input_data.values()):
+        return np.array(list(input_data.values()))
     unique_keys = set()
-    for inner_dict in data.values():
+    for inner_dict in input_data.values():
         unique_keys.update(inner_dict.keys())
     unique_keys = list(unique_keys)
     sorted_keys = sorted([int(key) for key in unique_keys])
-    result_array = np.zeros((len(data), len(sorted_keys)))
-    for _, (head_name, inner_dict) in enumerate(data.items()):
+    result_array = np.zeros((len(input_data), len(sorted_keys)))
+    for _, (head_name, inner_dict) in enumerate(input_data.items()):
         for key, value in inner_dict.items():
             key_index = sorted_keys.index(int(key))
             head_index = heads.index(head_name)

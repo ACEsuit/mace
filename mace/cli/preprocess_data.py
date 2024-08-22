@@ -154,7 +154,7 @@ def run(args: argparse.Namespace):
             os.makedirs(args.h5_prefix + sub_dir)
 
     # Data preparation
-    collections, atomic_energies_dict, _ = get_dataset_from_xyz(
+    collections, atomic_energies_dict = get_dataset_from_xyz(
         train_path=args.train_file,
         valid_path=args.valid_file,
         valid_fraction=args.valid_fraction,
@@ -207,7 +207,7 @@ def run(args: argparse.Namespace):
     if args.compute_statistics:
         logging.info("Computing statistics")
         if len(atomic_energies_dict) == 0:
-            atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table, ["Default"])
+            atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
