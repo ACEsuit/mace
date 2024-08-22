@@ -328,7 +328,7 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                         isinstance(value, dict)
                         for value in atomic_energies_eval.values()
                     ):
-                        atomic_energies_dict = {"Default": atomic_energies_eval}
+                        atomic_energies_dict = atomic_energies_eval
                     else:
                         atomic_energies_dict = atomic_energies_eval
                     assert isinstance(atomic_energies_dict, dict)

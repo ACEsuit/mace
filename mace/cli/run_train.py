@@ -317,7 +317,7 @@ def run(args: argparse.Namespace) -> None:
             else:
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(head_config.E0s, None, head_config.z_table)
         else:
-            atomic_energies_dict[head_config.head_name] = head_config.atomic_energies_dict
+            atomic_energies_dict[head_config.head_name] = head_config.E0s
 
     # Atomic energies for multiheads finetuning
     if args.multiheads_finetuning:
@@ -381,17 +381,17 @@ def run(args: argparse.Namespace) -> None:
 
         elif args.train_file.endswith(".h5"):
             train_sets[head_config.head_name] = data.HDF5Dataset(
-                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads
+                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
             valid_sets[head_config.head_name] = data.HDF5Dataset(
-                head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads
+                head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
         else:  # This case would be for when the file path is to a directory of multiple .h5 files
             train_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
-                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads
+                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
             valid_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
-                head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads
+                head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
         train_loader_head = torch_geometric.dataloader.DataLoader(
             dataset=train_sets[head_config.head_name],
@@ -863,14 +863,14 @@ def run(args: argparse.Namespace) -> None:
                 for test_file in test_files:
                     name = os.path.splitext(os.path.basename(test_file))[0]
                     test_sets[name] = data.HDF5Dataset(
-                        test_file, r_max=args.r_max, z_table=z_table, heads=heads
+                        test_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
             else:
                 test_folders = glob(head_config.test_dir + "/*")
                 for folder in test_folders:
                     name = os.path.splitext(os.path.basename(test_file))[0]
                     test_sets[name] = data.dataset_from_sharded_hdf5(
-                        folder, r_max=args.r_max, z_table=z_table, heads=heads
+                        folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
 
             for test_name, test_set in test_sets.items():
