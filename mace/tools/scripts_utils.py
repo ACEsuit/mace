@@ -29,6 +29,7 @@ class SubsetCollection:
 
 
 def get_dataset_from_xyz(
+    work_dir: str,
     train_path: str,
     valid_path: str,
     valid_fraction: float,
@@ -57,7 +58,7 @@ def get_dataset_from_xyz(
         keep_isolated_atoms=keep_isolated_atoms,
     )
     logging.info(
-        f"Loaded {len(all_train_configs)} training configurations [{np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, {np.sum([config.forces.size for config in all_train_configs])} forces] from '{train_path}'"
+        f"Training set [{len(all_train_configs)} configs, {np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, {np.sum([config.forces.size for config in all_train_configs])} forces] loaded from '{train_path}'"
     )
     if valid_path is not None:
         _, valid_configs = data.load_from_xyz(
@@ -72,15 +73,15 @@ def get_dataset_from_xyz(
             extract_atomic_energies=False,
         )
         logging.info(
-            f"Loaded {len(valid_configs)} validation configurations [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces] from '{valid_path}'"
+            f"Validation set [{len(valid_configs)} configs, {np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces] loaded from '{valid_path}'"
         )
         train_configs = all_train_configs
     else:
         train_configs, valid_configs = data.random_train_valid_split(
-            all_train_configs, valid_fraction, seed
+            all_train_configs, valid_fraction, seed, work_dir
         )
         logging.info(
-            f"Selected {len(valid_configs)} configurations for validation [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
+            f"Validaton set contains {len(valid_configs)} configurations [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
         )
 
     test_configs = []
@@ -99,11 +100,12 @@ def get_dataset_from_xyz(
         # create list of tuples (config_type, list(Atoms))
         test_configs = data.test_config_types(all_test_configs)
         logging.info(
-            f"Loaded {len(all_test_configs)} test configurations from '{test_path}':"
+            f"Test set ({len(all_test_configs)} configs) loaded from '{test_path}':"
         )
-        logging.info(
-            f"{'; '.join([f'{name}: {len(test_configs)} configs, {np.sum([1 if config.energy else 0 for config in test_configs])} energy, {np.sum([config.forces.size for config in test_configs])} forces' for name, test_configs in test_configs])}"
-        )
+        for name, tmp_configs in test_configs:
+            logging.info(
+                f"{name}: {len(tmp_configs)} configs, {np.sum([1 if config.energy else 0 for config in tmp_configs])} energy, {np.sum([config.forces.size for config in tmp_configs])} forces"
+            )
 
     return (
         SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
