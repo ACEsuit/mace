@@ -58,7 +58,6 @@ class HDF5Dataset(Dataset):
             dipole=unpack_value(subgrp["dipole"][()]),
             charges=unpack_value(subgrp["charges"][()]),
             weight=unpack_value(subgrp["weight"][()]),
-            head=unpack_value(subgrp["head"][()]),
             energy_weight=unpack_value(subgrp["energy_weight"][()]),
             forces_weight=unpack_value(subgrp["forces_weight"][()]),
             stress_weight=unpack_value(subgrp["stress_weight"][()]),
