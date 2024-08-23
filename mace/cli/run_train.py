@@ -168,7 +168,7 @@ def run(args: argparse.Namespace) -> None:
             if isinstance(statistics["atomic_energies"], str) and statistics[
                 "atomic_energies"
             ].endswith(".json"):
-                with open(statistics["atomic_energies"], "r", format="utf-8") as f:
+                with open(statistics["atomic_energies"], "r", encoding="utf-8") as f:
                     atomic_energies = json.load(f)
                 head_config.E0s = atomic_energies
                 head_config.atomic_energies_dict = ast.literal_eval(atomic_energies)
@@ -463,7 +463,7 @@ def run(args: argparse.Namespace) -> None:
 
     loss_fn = get_loss_fn(args, dipole_only, compute_dipole)
     logging.info(loss_fn)
-    if all([head_config.compute_avg_num_neighbors for head_config in head_configs]):
+    if all(head_config.compute_avg_num_neighbors for head_config in head_configs):
         logging.info("Computing average number of neighbors")
         avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
         if args.distributed:
@@ -478,7 +478,7 @@ def run(args: argparse.Namespace) -> None:
             args.avg_num_neighbors = avg_num_neighbors
     else:
         assert any(head_config.avg_num_neighbors is not None for head_config in head_configs), "Average number of neighbors must be provided in the configuration"
-        args.avg_num_neighbors = max([head_config.avg_num_neighbors for head_config in head_configs if head_config.avg_num_neighbors is not None])
+        args.avg_num_neighbors = max(head_config.avg_num_neighbors for head_config in head_configs if head_config.avg_num_neighbors is not None)
     logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
 
     # Selecting outputs
