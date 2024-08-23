@@ -225,6 +225,8 @@ def run(args: argparse.Namespace) -> None:
                 head_name="pt_head",
                 E0s="foundation",
                 statistics_file=args.statistics_file,
+                compute_avg_num_neighbors=False,
+                avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
             )
             collections = assemble_mp_data(args, tag, head_configs)
             head_config_pt.collections = collections
@@ -264,6 +266,8 @@ def run(args: argparse.Namespace) -> None:
                 charges_key=args.charges_key,
                 keep_isolated_atoms=args.keep_isolated_atoms,
                 collections=collections,
+                avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
+                compute_avg_num_neighbors=False,
             )
             head_config_pt.collections = collections
         logging.info(
@@ -473,7 +477,7 @@ def run(args: argparse.Namespace) -> None:
         else:
             args.avg_num_neighbors = avg_num_neighbors
     else:
-        assert not any(head_config.avg_num_neighbors is None for head_config in head_configs), "Average number of neighbors must be provided in the configuration"
+        assert any(head_config.avg_num_neighbors is not None for head_config in head_configs), "Average number of neighbors must be provided in the configuration"
         args.avg_num_neighbors = max([head_config.avg_num_neighbors for head_config in head_configs if head_config.avg_num_neighbors is not None])
     logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
 
