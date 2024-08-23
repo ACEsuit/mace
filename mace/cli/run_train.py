@@ -165,11 +165,18 @@ def run(args: argparse.Namespace) -> None:
             head_config.std = statistics["std"]
             head_config.avg_num_neighbors = statistics["avg_num_neighbors"]
             head_config.compute_avg_num_neighbors = False
-            head_config.E0s = (
-                statistics["atomic_energies"]
-                if not head_config.E0s.endswith(".json")
-                else head_config.E0s
-            )
+            if isinstance(statistics["atomic_energies"], str) and statistics[
+                "atomic_energies"
+            ].endswith(".json"):
+                with open(statistics["atomic_energies"], "r", format="utf-8") as f:
+                    atomic_energies = json.load(f)
+                head_config.E0s = atomic_energies
+                head_config.atomic_energies_dict = ast.literal_eval(atomic_energies)
+            else:
+                head_config.E0s = statistics["atomic_energies"]
+                head_config.atomic_energies_dict = ast.literal_eval(
+                    statistics["atomic_energies"]
+                )
 
         # Data preparation
         if head_config.train_file.endswith(".xyz"):
@@ -198,12 +205,11 @@ def run(args: argparse.Namespace) -> None:
             )
             head_config.collections = collections
             head_config.atomic_energies_dict = atomic_energies_dict
-            print("ATOMIC ENERGIES DICT", atomic_energies_dict)
-            head_configs.append(head_config)
-        logging.info(
-            f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
-            f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
-        )
+            logging.info(
+                f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
+                f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
+            )
+        head_configs.append(head_config)
 
     if args.multiheads_finetuning:
         logging.info(
@@ -317,7 +323,7 @@ def run(args: argparse.Namespace) -> None:
             else:
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(head_config.E0s, None, head_config.z_table)
         else:
-            atomic_energies_dict[head_config.head_name] = head_config.E0s
+            atomic_energies_dict[head_config.head_name] = head_config.atomic_energies_dict
 
     # Atomic energies for multiheads finetuning
     if args.multiheads_finetuning:
@@ -379,7 +385,7 @@ def run(args: argparse.Namespace) -> None:
                     for config in head_config.collections.valid
                 ]
 
-        elif args.train_file.endswith(".h5"):
+        elif head_config.train_file.endswith(".h5"):
             train_sets[head_config.head_name] = data.HDF5Dataset(
                 head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
@@ -453,8 +459,8 @@ def run(args: argparse.Namespace) -> None:
 
     loss_fn = get_loss_fn(args, dipole_only, compute_dipole)
     logging.info(loss_fn)
-
-    if args.compute_avg_num_neighbors:
+    if all([head_config.compute_avg_num_neighbors for head_config in head_configs]):
+        logging.info("Computing average number of neighbors")
         avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
         if args.distributed:
             num_graphs = torch.tensor(len(train_loader.dataset)).to(device)
@@ -466,6 +472,9 @@ def run(args: argparse.Namespace) -> None:
             args.avg_num_neighbors = (num_neighbors / num_graphs).item()
         else:
             args.avg_num_neighbors = avg_num_neighbors
+    else:
+        assert not any(head_config.avg_num_neighbors is None for head_config in head_configs), "Average number of neighbors must be provided in the configuration"
+        args.avg_num_neighbors = max([head_config.avg_num_neighbors for head_config in head_configs if head_config.avg_num_neighbors is not None])
     logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
 
     # Selecting outputs
