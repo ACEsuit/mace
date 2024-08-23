@@ -58,6 +58,13 @@ def dict_head_to_dataclass(
         statistics_file=head.get("statistics_file", args.statistics_file),
         valid_fraction=head.get("valid_fraction", args.valid_fraction),
         config_type_weights=head.get("config_type_weights", args.config_type_weights),
+        compute_avg_num_neighbors=head.get(
+            "compute_avg_num_neighbors", args.compute_avg_num_neighbors
+        ),
+        atomic_numbers=head.get("atomic_numbers", args.atomic_numbers),
+        mean=head.get("mean", args.mean),
+        std=head.get("std", args.std),
+        avg_num_neighbors=head.get("avg_num_neighbors", args.avg_num_neighbors),
         energy_key=head.get("energy_key", args.energy_key),
         forces_key=head.get("forces_key", args.forces_key),
         stress_key=head.get("stress_key", args.stress_key),
