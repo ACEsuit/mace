@@ -110,8 +110,8 @@ class GaussianBasis(torch.nn.Module):
 
 @compile_mode("script")
 class PolynomialCutoff(torch.nn.Module):
-    """
-    Equation (8)
+    """Polynomial cutoff function that goes from 1 to 0 as x goes from 0 to r_max.
+    Equation (8) -- TODO: from where?
     """
 
     p: torch.Tensor
@@ -125,17 +125,21 @@ class PolynomialCutoff(torch.nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # yapf: disable
+        return self._calculate_envelope(x, self.r_max, self.p)
+
+    @staticmethod
+    def _calculate_envelope(x: torch.Tensor, r_max: float, p: int) -> torch.Tensor:
+        r_over_r_max = x / r_max
         envelope = (
-                1.0
-                - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / self.r_max, self.p)
-                + self.p * (self.p + 2.0) * torch.pow(x / self.r_max, self.p + 1)
-                - (self.p * (self.p + 1.0) / 2) * torch.pow(x / self.r_max, self.p + 2)
+            1.0
+            - ((p + 1.0) * (p + 2.0) / 2.0) * torch.pow(r_over_r_max, p)
+            + p * (p + 2.0) * torch.pow(r_over_r_max, p + 1)
+            - (p * (p + 1.0) / 2) * torch.pow(r_over_r_max, p + 2)
         )
         # yapf: enable
 
         # noinspection PyUnresolvedReferences
-        return envelope * (x < self.r_max)
+        return envelope * (x < r_max)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
@@ -143,8 +147,8 @@ class PolynomialCutoff(torch.nn.Module):
 
 @compile_mode("script")
 class ZBLBasis(torch.nn.Module):
-    """
-    Implementation of the Ziegler-Biersack-Littmark (ZBL) potential
+    """Implementation of the Ziegler-Biersack-Littmark (ZBL) potential
+    with a polynomial cutoff envelope.
     """
 
     p: torch.Tensor
@@ -224,8 +228,8 @@ class ZBLBasis(torch.nn.Module):
 
 @compile_mode("script")
 class AgnesiTransform(torch.nn.Module):
-    """
-    Agnesi transform see ACEpotentials.jl, JCP 2023, p. 160
+    """Agnesi transform - see section on Radial transformations in
+    ACEpotentials.jl, JCP 2023 (https://doi.org/10.1063/5.0158783).
     """
 
     def __init__(
@@ -265,21 +269,27 @@ class AgnesiTransform(torch.nn.Module):
         )
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
-        r_0 = 0.5 * (self.covalent_radii[Z_u] + self.covalent_radii[Z_v])
+        r_0: torch.Tensor = 0.5 * (self.covalent_radii[Z_u] + self.covalent_radii[Z_v])
+        r_over_r_0 = x / r_0
         return (
-            1 + (self.a * ((x / r_0) ** self.q) / (1 + (x / r_0) ** (self.q - self.p)))
-        ) ** (-1)
+            1
+            + (
+                self.a
+                * torch.pow(r_over_r_0, self.q)
+                / (1 + torch.pow(r_over_r_0, self.q - self.p))
+            )
+        ).reciprocal_()
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(a={self.a}, q={self.q}, p={self.p})"
+        return (
+            f"{self.__class__.__name__}(a={self.a:.4f}, q={self.q:.4f}, p={self.p:.4f})"
+        )
 
 
 @simplify_if_compile
 @compile_mode("script")
 class SoftTransform(torch.nn.Module):
-    """
-    Soft Transform
-    """
+    """Soft Transform."""
 
     def __init__(self, a: float = 0.2, b: float = 3.0, trainable=False):
         super().__init__()
@@ -312,9 +322,10 @@ class SoftTransform(torch.nn.Module):
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 4
+        r_over_r_0 = x / r_0
         y = (
             x
-            + (1 / 2) * torch.tanh(-(x / r_0) - self.a * ((x / r_0) ** self.b))
+            + (1 / 2) * torch.tanh(-r_over_r_0 - self.a * torch.pow(r_over_r_0, self.b))
             + 1 / 2
         )
         return y
