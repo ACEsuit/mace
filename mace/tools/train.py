@@ -46,7 +46,7 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
     eval_metrics["epoch"] = epoch
     logger.log(eval_metrics)
     if epoch is None:
-        inintial_phrase = "Initial metrics on validation set"
+        inintial_phrase = "Initial"
     else:
         inintial_phrase = f"Epoch {epoch}"
     if log_errors == "PerAtomRMSE":
@@ -167,6 +167,7 @@ def train(
     logging.info("")
     logging.info("===========TRAINING===========")
     logging.info("Started training, reporting errors on validation set")
+    logging.info("Loss metrics on validation set")
     epoch = start_epoch
 
     # # log validation loss before _any_ training
