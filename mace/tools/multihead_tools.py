@@ -153,9 +153,9 @@ def assemble_mp_data(
             "head_ft": "Default",
             "weight_pt": args.weight_pt_head,
             "weight_ft": 1.0,
-            "filtering_type": "combination",
             "output": f"mp_finetuning-{tag}.xyz",
             "descriptors": descriptors_mp,
+            "filtering_type": args.filtering_type_pt,
             "subselect": args.subselect_pt,
             "device": args.device,
             "default_dtype": args.default_dtype,
@@ -179,4 +179,4 @@ def assemble_mp_data(
         )
         return collections_mp
     except Exception as exc:
-        raise RuntimeError("Model download failed and no local model found") from exc
+        raise RuntimeError("Failed to assemble pretrained data") from exc

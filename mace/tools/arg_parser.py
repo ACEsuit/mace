@@ -357,6 +357,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=1000,
     )
     parser.add_argument(
+        "--filtering_type_pt",
+        help="strategy for filtering of configurations for pretrained head",
+        choices=["none", "subset", "exact", "superset", "any_overlap"],
+        default="subset"
+    )
+    parser.add_argument(
         "--subselect_pt",
         help="Method to subselect the configurations of the pretraining set",
         choices=["fps", "random"],
