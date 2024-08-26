@@ -125,10 +125,10 @@ class PolynomialCutoff(torch.nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._calculate_envelope(x, self.r_max, self.p)
+        return self.calculate_envelope(x, self.r_max, self.p)
 
     @staticmethod
-    def _calculate_envelope(x: torch.Tensor, r_max: float, p: int) -> torch.Tensor:
+    def calculate_envelope(x: torch.Tensor, r_max: float, p: int) -> torch.Tensor:
         r_over_r_max = x / r_max
         envelope = (
             1.0
@@ -152,13 +152,9 @@ class ZBLBasis(torch.nn.Module):
     """
 
     p: torch.Tensor
-    r_max: torch.Tensor
 
-    def __init__(self, r_max: float, p=6, trainable=False):
+    def __init__(self, p=6, trainable=False):
         super().__init__()
-        self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
-        )
         # Pre-calculate the p coefficients for the ZBL potential
         self.register_buffer(
             "c",
@@ -174,7 +170,6 @@ class ZBLBasis(torch.nn.Module):
                 dtype=torch.get_default_dtype(),
             ),
         )
-        self.cutoff = PolynomialCutoff(r_max, p)
         if trainable:
             self.a_exp = torch.nn.Parameter(torch.tensor(0.300, requires_grad=True))
             self.a_prefactor = torch.nn.Parameter(
@@ -212,12 +207,7 @@ class ZBLBasis(torch.nn.Module):
         )
         v_edges = (14.3996 * Z_u * Z_v) / x * phi
         r_max = self.covalent_radii[Z_u] + self.covalent_radii[Z_v]
-        envelope = (
-            1.0
-            - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / r_max, self.p)
-            + self.p * (self.p + 2.0) * torch.pow(x / r_max, self.p + 1)
-            - (self.p * (self.p + 1.0) / 2) * torch.pow(x / r_max, self.p + 2)
-        ) * (x < r_max)
+        envelope = PolynomialCutoff.calculate_envelope(x, r_max, self.p)
         v_edges = 0.5 * v_edges * envelope
         V_ZBL = scatter_sum(v_edges, receiver, dim=0, dim_size=node_attrs.size(0))
         return V_ZBL.squeeze(-1)
