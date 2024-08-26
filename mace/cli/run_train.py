@@ -404,11 +404,14 @@ def run(args: argparse.Namespace) -> None:
         )
     # Build model
     if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
-        logging.info("Loading foundation model")
+        logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_numbers"] = z_table.zs
         model_config_foundation["num_elements"] = len(z_table)
         args.max_L = model_config_foundation["hidden_irreps"].lmax
+        args.num_channels = list(
+            {irrep.mul for irrep in o3.Irreps(model_config_foundation["hidden_irreps"])}
+        )[0]
         model_config_foundation["atomic_inter_shift"] = (
             model_foundation.scale_shift.shift.item()
         )
@@ -418,16 +421,31 @@ def run(args: argparse.Namespace) -> None:
         model_config_foundation["atomic_energies"] = atomic_energies
         args.model = "FoundationMACE"
         model_config = model_config_foundation  # pylint
+        logging.info(
+            f"Message passing with {args.num_channels} channels and max_L={args.max_L} ({model_config_foundation['hidden_irreps']})"
+        )
+        logging.info(
+            f"{model_config_foundation['num_interactions']} layers, each with correlation order: {model_config_foundation['correlation']} (body order: {model_config_foundation['correlation']+1}) and spherical harmonics up to: l={model_config_foundation['max_ell']}"
+        )
+        logging.info(
+            f"Radial cutoff: {model_config_foundation['r_max']} Å (total receptive field for each atom: {model_config_foundation['r_max'] * model_config_foundation['num_interactions']} Å)"
+        )
+        logging.info(
+            f"Distance transform for radial basis functions: {model_config_foundation['distance_transform']}"
+        )
     else:
         logging.info("Building model")
         logging.info(
             f"Message passing with {args.num_channels} channels and max_L={args.max_L} ({args.hidden_irreps})"
         )
         logging.info(
-            f"{args.num_interactions} layers with correlation: {args.correlation} and spherical harmonics up to: {args.max_ell}"
+            f"{args.num_interactions} layers, each with correlation order: {args.correlation} (body order: {args.correlation+1}) and spherical harmonics up to: l={args.max_ell}"
         )
         logging.info(
-            f"Radial cutoff: {args.r_max} Å, {args.num_radial_basis} radial and {args.num_cutoff_basis} basis functions"
+            f"{args.num_radial_basis} radial and {args.num_cutoff_basis} basis functions"
+        )
+        logging.info(
+            f"Radial cutoff: {args.r_max} Å (total receptive field for each atom: {args.r_max * args.num_interactions} Å)"
         )
         logging.info(
             f"Distance transform for radial basis functions: {args.distance_transform}"
