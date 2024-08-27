@@ -17,7 +17,7 @@ class LAMMPS_MACE(torch.nn.Module):
         self.register_buffer(
             "head",
             torch.tensor(
-                self.model.heads.index(kwargs.get("head", self.model.heads[0])),
+                self.model.heads.index(kwargs.get("head", self.model.heads[-1])),
                 dtype=torch.long,
             ),
         )
