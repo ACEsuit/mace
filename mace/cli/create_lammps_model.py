@@ -1,10 +1,9 @@
-import sys
+import argparse
 
 import torch
 from e3nn.util import jit
 
 from mace.calculators import LAMMPS_MACE
-import argparse
 
 
 def parse_args():
