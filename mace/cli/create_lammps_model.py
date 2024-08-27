@@ -19,7 +19,7 @@ def parse_args():
         type=str,
         nargs="?",
         help="Head of the model to be converted to LAMMPS",
-        default="default",
+        default=None,
     )
     return parser.parse_args()
 
@@ -30,7 +30,9 @@ def main():
     head = args.head
     model = torch.load(model_path)
     model = model.double().to("cpu")
-    lammps_model = LAMMPS_MACE(model, head=head)
+    lammps_model = (
+        LAMMPS_MACE(model, head=head) if head is not None else LAMMPS_MACE(model)
+    )
     lammps_model_compiled = jit.compile(lammps_model)
     lammps_model_compiled.save(model_path + "-lammps.pt")
 

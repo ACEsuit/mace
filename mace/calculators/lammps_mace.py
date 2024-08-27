@@ -19,7 +19,7 @@ class LAMMPS_MACE(torch.nn.Module):
             torch.tensor(
                 self.model.heads.index(kwargs.get("head", self.model.heads[-1])),
                 dtype=torch.long,
-            ),
+            ).unsqueeze(0),
         )
 
         for param in self.model.parameters():
