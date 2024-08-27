@@ -60,6 +60,9 @@ def main():
         head = select_head(model)
     else:
         head = args.head
+        print(
+            f"Selected head: {head} from command line in the list available heads: {model.heads}"
+        )
 
     lammps_model = (
         LAMMPS_MACE(model, head=head) if head is not None else LAMMPS_MACE(model)
