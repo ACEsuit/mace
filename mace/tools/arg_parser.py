@@ -31,22 +31,28 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
 
     # Directories
     parser.add_argument(
-        "--log_dir", help="directory for log files", type=str, default="logs"
+        "--work_dir",
+        help="set directory for all files and folders",
+        type=str,
+        default=".",
     )
     parser.add_argument(
-        "--model_dir", help="directory for final model", type=str, default="."
+        "--log_dir", help="directory for log files", type=str, default=None
+    )
+    parser.add_argument(
+        "--model_dir", help="directory for final model", type=str, default=None
     )
     parser.add_argument(
         "--checkpoints_dir",
         help="directory for checkpoint files",
         type=str,
-        default="checkpoints",
+        default=None,
     )
     parser.add_argument(
-        "--results_dir", help="directory for results", type=str, default="results"
+        "--results_dir", help="directory for results", type=str, default=None
     )
     parser.add_argument(
-        "--downloads_dir", help="directory for downloads", type=str, default="downloads"
+        "--downloads_dir", help="directory for downloads", type=str, default=None
     )
 
     # Device and logging
@@ -184,7 +190,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--hidden_irreps",
         help="irreps for hidden node states",
         type=str,
-        default="128x0e + 128x1o",
+        default=None,
     )
     # add option to specify irreps by channel number and max L
     parser.add_argument(
@@ -335,37 +341,37 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--energy_key",
         help="Key of reference energies in training xyz",
         type=str,
-        default="energy",
+        default="REF_energy",
     )
     parser.add_argument(
         "--forces_key",
         help="Key of reference forces in training xyz",
         type=str,
-        default="forces",
+        default="REF_forces",
     )
     parser.add_argument(
         "--virials_key",
         help="Key of reference virials in training xyz",
         type=str,
-        default="virials",
+        default="REF_virials",
     )
     parser.add_argument(
         "--stress_key",
         help="Key of reference stress in training xyz",
         type=str,
-        default="stress",
+        default="REF_stress",
     )
     parser.add_argument(
         "--dipole_key",
         help="Key of reference dipoles in training xyz",
         type=str,
-        default="dipole",
+        default="REF_dipole",
     )
     parser.add_argument(
         "--charges_key",
         help="Key of atomic charges in training xyz",
         type=str,
-        default="charges",
+        default="REF_charges",
     )
 
     # Loss and optimization
@@ -554,7 +560,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
-        "--eval_interval", help="evaluate model every <n> epochs", type=int, default=2
+        "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
     )
     parser.add_argument(
         "--keep_checkpoints",
@@ -694,37 +700,37 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         "--energy_key",
         help="Key of reference energies in training xyz",
         type=str,
-        default="energy",
+        default="REF_energy",
     )
     parser.add_argument(
         "--forces_key",
         help="Key of reference forces in training xyz",
         type=str,
-        default="forces",
+        default="REF_forces",
     )
     parser.add_argument(
         "--virials_key",
         help="Key of reference virials in training xyz",
         type=str,
-        default="virials",
+        default="REF_virials",
     )
     parser.add_argument(
         "--stress_key",
         help="Key of reference stress in training xyz",
         type=str,
-        default="stress",
+        default="REF_stress",
     )
     parser.add_argument(
         "--dipole_key",
         help="Key of reference dipoles in training xyz",
         type=str,
-        default="dipole",
+        default="REF_dipole",
     )
     parser.add_argument(
         "--charges_key",
         help="Key of atomic charges in training xyz",
         type=str,
-        default="charges",
+        default="REF_charges",
     )
     parser.add_argument(
         "--atomic_numbers",
