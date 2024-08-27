@@ -37,7 +37,7 @@ def select_head(model):
 
     # Ask the user to select a head
     selected = input(
-        f"Select a head by number (default: {len(heads)}, press Enter to skip): "
+        f"Select a head by number (Defaulting to head: {len(heads)}, press Enter to accept): "
     )
 
     if selected.isdigit() and 1 <= int(selected) <= len(heads):
