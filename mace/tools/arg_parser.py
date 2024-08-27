@@ -134,7 +134,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--pair_repulsion",
-        help="use amsgrad variant of optimizer",
+        help="use pair repulsion term with ZBL potential",
         action="store_true",
         default=False,
     )
