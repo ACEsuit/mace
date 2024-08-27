@@ -26,7 +26,7 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, modules, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
-from mace.tools import torch_geometric
+from mace.tools import torch_geometric, add_all_parameters_to_optimizer
 from mace.tools.finetuning_utils import load_foundations
 from mace.tools.scripts_utils import (
     LRScheduler,
@@ -616,6 +616,8 @@ def run(args: argparse.Namespace) -> None:
         amsgrad=args.amsgrad,
         betas=(args.beta, 0.999),
     )
+
+    param_options = add_all_parameters_to_optimizer(param_options, model.named_parameters())
 
     optimizer: torch.optim.Optimizer
     if args.optimizer == "adamw":
