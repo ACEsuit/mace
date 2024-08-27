@@ -14,6 +14,8 @@ class LAMMPS_MACE(torch.nn.Module):
         self.register_buffer("atomic_numbers", model.atomic_numbers)
         self.register_buffer("r_max", model.r_max)
         self.register_buffer("num_interactions", model.num_interactions)
+        if not hasattr(model, "head"):
+            model.heads = [None]
         self.register_buffer(
             "head",
             torch.tensor(

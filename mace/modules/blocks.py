@@ -81,8 +81,9 @@ class NonLinearReadoutBlock(torch.nn.Module):
         self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
-        if hasattr(self, "num_heads") and self.num_heads > 1 and heads is not None:
-            x = mask_head(x, heads, self.num_heads)
+        if hasattr(self, "num_heads"):
+            if self.num_heads > 1 and heads is not None:
+                x = mask_head(x, heads, self.num_heads)
         return self.linear_2(x)  # [n_nodes, len(heads)]
 
 
@@ -620,7 +621,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
             [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
-            torch.nn.functional.silu,
+            torch.nn.functional.silu,  # gate
         )
 
         # Linear
