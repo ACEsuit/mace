@@ -32,6 +32,7 @@ class SubsetCollection:
 
 
 def get_dataset_from_xyz(
+    work_dir: str,
     train_path: str,
     valid_path: Optional[str],
     valid_fraction: float,
@@ -40,9 +41,9 @@ def get_dataset_from_xyz(
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
-    energy_key: str = "energy",
-    forces_key: str = "forces",
-    stress_key: str = "stress",
+    energy_key: str = "REF_energy",
+    forces_key: str = "REF_forces",
+    stress_key: str = "REF_stress",
     virials_key: str = "virials",
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
@@ -64,7 +65,7 @@ def get_dataset_from_xyz(
         head_name=head_name,
     )
     logging.info(
-        f"Loaded {len(all_train_configs)} training configurations from '{train_path}'"
+        f"Training set [{len(all_train_configs)} configs, {np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, {np.sum([config.forces.size for config in all_train_configs])} forces] loaded from '{train_path}'"
     )
     if valid_path is not None:
         _, valid_configs = data.load_from_xyz(
@@ -81,15 +82,15 @@ def get_dataset_from_xyz(
             head_name=head_name,
         )
         logging.info(
-            f"Loaded {len(valid_configs)} validation configurations from '{valid_path}'"
+            f"Validation set [{len(valid_configs)} configs, {np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces] loaded from '{valid_path}'"
         )
         train_configs = all_train_configs
     else:
-        logging.info(
-            "Using random %s%% of training set for validation", 100 * valid_fraction
-        )
         train_configs, valid_configs = data.random_train_valid_split(
-            all_train_configs, valid_fraction, seed
+            all_train_configs, valid_fraction, seed, work_dir
+        )
+        logging.info(
+            f"Validaton set contains {len(valid_configs)} configurations [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
         )
 
     test_configs = []
@@ -110,8 +111,13 @@ def get_dataset_from_xyz(
         # create list of tuples (config_type, list(Atoms))
         test_configs = data.test_config_types(all_test_configs)
         logging.info(
-            f"Loaded {len(all_test_configs)} test configurations from '{test_path}'"
+            f"Test set ({len(all_test_configs)} configs) loaded from '{test_path}':"
         )
+        for name, tmp_configs in test_configs:
+            logging.info(
+                f"{name}: {len(tmp_configs)} configs, {np.sum([1 if config.energy else 0 for config in tmp_configs])} energy, {np.sum([config.forces.size for config in tmp_configs])} forces"
+            )
+
     return (
         SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
         atomic_energies_dict,
@@ -139,10 +145,10 @@ def print_git_commit():
 
         repo = git.Repo(search_parent_directories=True)
         commit = repo.head.commit.hexsha
-        logging.info(f"Current Git commit: {commit}")
+        logging.debug(f"Current Git commit: {commit}")
         return commit
     except Exception as e:  # pylint: disable=W0703
-        logging.info(f"Error accessing Git repository: {e}")
+        logging.debug(f"Error accessing Git repository: {e}")
         return "None"
 
 
@@ -300,7 +306,7 @@ def load_from_json(f: str, map_location: str = "cpu") -> torch.nn.Module:
 def get_atomic_energies(E0s, train_collection, z_table) -> dict:
     if E0s is not None:
         logging.info(
-            "Atomic Energies not in training file, using command line argument E0s"
+            "Isolated Atomic Energies (E0s) not in training file, using command line argument"
         )
         if E0s.lower() == "average":
             logging.info(
@@ -578,6 +584,14 @@ def create_error_table(
             "relative F RMSE %",
             "RMSE Stress (Virials) / meV / A (A^3)",
         ]
+    elif table_type == "PerAtomMAEstressvirials":
+        table.field_names = [
+            "config_type",
+            "MAE E / meV / atom",
+            "MAE F / meV / A",
+            "relative F MAE %",
+            "MAE Stress (Virials) / meV / A (A^3)",
+        ]
     elif table_type == "TotalMAE":
         table.field_names = [
             "config_type",
@@ -642,18 +656,18 @@ def create_error_table(
             table.add_row(
                 [
                     name,
-                    f"{metrics['rmse_e'] * 1000:.1f}",
-                    f"{metrics['rmse_f'] * 1000:.1f}",
-                    f"{metrics['rel_rmse_f']:.2f}",
+                    f"{metrics['rmse_e'] * 1000:8.1f}",
+                    f"{metrics['rmse_f'] * 1000:8.1f}",
+                    f"{metrics['rel_rmse_f']:8.2f}",
                 ]
             )
         elif table_type == "PerAtomRMSE":
             table.add_row(
                 [
                     name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
-                    f"{metrics['rmse_f'] * 1000:.1f}",
-                    f"{metrics['rel_rmse_f']:.2f}",
+                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
+                    f"{metrics['rmse_f'] * 1000:8.1f}",
+                    f"{metrics['rel_rmse_f']:8.2f}",
                 ]
             )
         elif (
@@ -663,10 +677,10 @@ def create_error_table(
             table.add_row(
                 [
                     name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
-                    f"{metrics['rmse_f'] * 1000:.1f}",
-                    f"{metrics['rel_rmse_f']:.2f}",
-                    f"{metrics['rmse_stress'] * 1000:.1f}",
+                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
+                    f"{metrics['rmse_f'] * 1000:8.1f}",
+                    f"{metrics['rel_rmse_f']:8.2f}",
+                    f"{metrics['rmse_stress'] * 1000:8.1f}",
                 ]
             )
         elif (
@@ -676,55 +690,81 @@ def create_error_table(
             table.add_row(
                 [
                     name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
-                    f"{metrics['rmse_f'] * 1000:.1f}",
-                    f"{metrics['rel_rmse_f']:.2f}",
-                    f"{metrics['rmse_virials'] * 1000:.1f}",
+                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
+                    f"{metrics['rmse_f'] * 1000:8.1f}",
+                    f"{metrics['rel_rmse_f']:8.2f}",
+                    f"{metrics['rmse_virials'] * 1000:8.1f}",
+                ]
+            )
+        elif (
+            table_type == "PerAtomMAEstressvirials"
+            and metrics["mae_stress"] is not None
+        ):
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
+                    f"{metrics['mae_f'] * 1000:8.1f}",
+                    f"{metrics['rel_mae_f']:8.2f}",
+                    f"{metrics['mae_stress'] * 1000:8.1f}",
+                ]
+            )
+        elif (
+            table_type == "PerAtomMAEstressvirials"
+            and metrics["mae_virials"] is not None
+        ):
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
+                    f"{metrics['mae_f'] * 1000:8.1f}",
+                    f"{metrics['rel_mae_f']:8.2f}",
+                    f"{metrics['mae_virials'] * 1000:8.1f}",
                 ]
             )
         elif table_type == "TotalMAE":
             table.add_row(
                 [
                     name,
-                    f"{metrics['mae_e'] * 1000:.1f}",
-                    f"{metrics['mae_f'] * 1000:.1f}",
-                    f"{metrics['rel_mae_f']:.2f}",
+                    f"{metrics['mae_e'] * 1000:8.1f}",
+                    f"{metrics['mae_f'] * 1000:8.1f}",
+                    f"{metrics['rel_mae_f']:8.2f}",
                 ]
             )
         elif table_type == "PerAtomMAE":
             table.add_row(
                 [
                     name,
-                    f"{metrics['mae_e_per_atom'] * 1000:.1f}",
-                    f"{metrics['mae_f'] * 1000:.1f}",
-                    f"{metrics['rel_mae_f']:.2f}",
+                    f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
+                    f"{metrics['mae_f'] * 1000:8.1f}",
+                    f"{metrics['rel_mae_f']:8.2f}",
                 ]
             )
         elif table_type == "DipoleRMSE":
             table.add_row(
                 [
                     name,
-                    f"{metrics['rmse_mu_per_atom'] * 1000:.2f}",
-                    f"{metrics['rel_rmse_mu']:.1f}",
+                    f"{metrics['rmse_mu_per_atom'] * 1000:8.2f}",
+                    f"{metrics['rel_rmse_mu']:8.1f}",
                 ]
             )
         elif table_type == "DipoleMAE":
             table.add_row(
                 [
                     name,
-                    f"{metrics['mae_mu_per_atom'] * 1000:.2f}",
-                    f"{metrics['rel_mae_mu']:.1f}",
+                    f"{metrics['mae_mu_per_atom'] * 1000:8.2f}",
+                    f"{metrics['rel_mae_mu']:8.1f}",
                 ]
             )
         elif table_type == "EnergyDipoleRMSE":
             table.add_row(
                 [
                     name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
-                    f"{metrics['rmse_f'] * 1000:.1f}",
-                    f"{metrics['rel_rmse_f']:.1f}",
-                    f"{metrics['rmse_mu_per_atom'] * 1000:.1f}",
-                    f"{metrics['rel_rmse_mu']:.1f}",
+                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
+                    f"{metrics['rmse_f'] * 1000:8.1f}",
+                    f"{metrics['rel_rmse_f']:8.1f}",
+                    f"{metrics['rmse_mu_per_atom'] * 1000:8.1f}",
+                    f"{metrics['rel_rmse_mu']:8.1f}",
                 ]
             )
     return table

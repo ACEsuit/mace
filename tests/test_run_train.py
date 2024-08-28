@@ -66,6 +66,7 @@ _mace_params = {
     "energy_key": "REF_energy",
     "forces_key": "REF_forces",
     "stress_key": "REF_stress",
+    "eval_interval": 2,
 }
 
 
