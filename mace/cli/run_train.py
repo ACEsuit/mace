@@ -350,7 +350,7 @@ def run(args: argparse.Namespace) -> None:
                         z_table_foundation.z_to_index(z)
                     ].item()
                     for z in z_table.zs
-                }                    
+                }
             else:
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(head_config.E0s, None, head_config.z_table)
         else:
@@ -370,7 +370,7 @@ def run(args: argparse.Namespace) -> None:
             ].item()
             for z in z_table.zs
         }
-        
+
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
         dipole_only = True
