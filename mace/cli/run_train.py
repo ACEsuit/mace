@@ -65,6 +65,7 @@ def run(args: argparse.Namespace) -> None:
     This script runs the training/fine tuning for mace
     """
     tag = tools.get_tag(name=args.name, seed=args.seed)
+    args, input_log_messages = tools.check_args(args)
 
     if args.device == "xpu":
         try:
@@ -91,6 +92,9 @@ def run(args: argparse.Namespace) -> None:
     # Setup
     tools.set_seeds(args.seed)
     tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
+    logging.info("===========VERIFYING SETTINGS===========")
+    for message, loglevel in input_log_messages:
+        logging.log(level=loglevel, msg=message)
 
     if args.distributed:
         torch.cuda.set_device(local_rank)
@@ -101,7 +105,7 @@ def run(args: argparse.Namespace) -> None:
         logging.info(f"MACE version: {mace.__version__}")
     except AttributeError:
         logging.info("Cannot find MACE version, please install MACE via pip")
-    logging.info(f"Configuration: {args}")
+    logging.debug(f"Configuration: {args}")
 
     tools.set_default_dtype(args.default_dtype)
     device = tools.init_device(args.device)
@@ -147,6 +151,8 @@ def run(args: argparse.Namespace) -> None:
         args.heads = ast.literal_eval(args.heads)
     else:
         args.heads = prepare_default_head(args)
+
+    logging.info("===========LOADING INPUT DATA===========")
     heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
     head_configs: List[HeadConfig] = []
@@ -210,6 +216,22 @@ def run(args: argparse.Namespace) -> None:
                 f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
             )
         head_configs.append(head_config)
+
+    if all(head_config.train_file.endswith(".xyz") for head_config in head_configs):
+        size_collections_train = sum(
+            [len(head_config.collections.train) for head_config in head_configs]
+        )
+        size_collections_valid = sum(
+            [len(head_config.collections.valid) for head_config in head_configs]
+        )
+        if size_collections_train < args.batch_size:
+            logging.error(
+                f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train})"
+            )
+        if size_collections_valid < args.valid_batch_size:
+            logging.warning(
+                f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({size_collections_valid})"
+            )
 
     if args.multiheads_finetuning:
         logging.info(
@@ -302,7 +324,7 @@ def run(args: argparse.Namespace) -> None:
     for head_config in head_configs:
         all_atomic_numbers.update(head_config.atomic_numbers)
     z_table = AtomicNumberTable(sorted(list(all_atomic_numbers)))
-    logging.info(z_table)
+    logging.info(f"Atomic Numbers used: {z_table.zs}")
 
     # Atomic energies
     atomic_energies_dict = {}
@@ -314,7 +336,6 @@ def run(args: argparse.Namespace) -> None:
                 )
             elif head_config.E0s.lower() == "foundation":
                 assert args.foundation_model is not None
-                logging.info("Using atomic energies from foundation model")
                 z_table_foundation = AtomicNumberTable(
                     [int(z) for z in model_foundation.atomic_numbers]
                 )
@@ -324,6 +345,9 @@ def run(args: argparse.Namespace) -> None:
                     ].item()
                     for z in z_table.zs
                 }
+                logging.info(
+                    f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table_foundation.zs])}"
+                )
             else:
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(head_config.E0s, None, head_config.z_table)
         else:
@@ -334,9 +358,6 @@ def run(args: argparse.Namespace) -> None:
         assert (
             model_foundation is not None
         ), "Model foundation must be provided for multiheads finetuning"
-        logging.info(
-            "Using atomic energies from foundation model for multiheads finetuning"
-        )
         z_table_foundation = AtomicNumberTable(
             [int(z) for z in model_foundation.atomic_numbers]
         )
@@ -346,6 +367,9 @@ def run(args: argparse.Namespace) -> None:
             ].item()
             for z in z_table.zs
         }
+        logging.info(
+            f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table_foundation.zs])}"
+        )
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
@@ -370,7 +394,9 @@ def run(args: argparse.Namespace) -> None:
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
         atomic_energies = dict_to_array(atomic_energies_dict, heads)
-        logging.info(f"Atomic energies: {atomic_energies.tolist()}")
+        logging.info(
+            f"Atomic Energies used (z: eV): {{{', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table.zs])}}}"
+        )
 
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
@@ -462,7 +488,7 @@ def run(args: argparse.Namespace) -> None:
         )
 
     loss_fn = get_loss_fn(args, dipole_only, compute_dipole)
-    logging.info(loss_fn)
+
     if all(head_config.compute_avg_num_neighbors for head_config in head_configs):
         logging.info("Computing average number of neighbors")
         avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
@@ -479,7 +505,13 @@ def run(args: argparse.Namespace) -> None:
     else:
         assert any(head_config.avg_num_neighbors is not None for head_config in head_configs), "Average number of neighbors must be provided in the configuration"
         args.avg_num_neighbors = max(head_config.avg_num_neighbors for head_config in head_configs if head_config.avg_num_neighbors is not None)
-    logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
+    
+    if args.avg_num_neighbors < 2 or args.avg_num_neighbors > 100:
+        logging.warning(
+            f"Unusual average number of neighbors: {args.avg_num_neighbors:.1f}"
+        )
+    else:
+        logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
 
     # Selecting outputs
     compute_virials = False
@@ -495,8 +527,10 @@ def run(args: argparse.Namespace) -> None:
         "stress": args.compute_stress,
         "dipoles": compute_dipole,
     }
-    logging.info(f"Selected the following outputs: {output_args}")
-
+    logging.info(
+        f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
+    )
+    logging.info("===========MODEL DETAILS===========")
     if args.scaling == "no_scaling":
         args.std = 1.0
         logging.info("No scaling selected")
@@ -506,7 +540,7 @@ def run(args: argparse.Namespace) -> None:
         )
     # Build model
     if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
-        logging.info("Building model")
+        logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
         model_config_foundation["atomic_numbers"] = z_table.zs
@@ -539,17 +573,35 @@ def run(args: argparse.Namespace) -> None:
         model_config_foundation["heads"] = heads
         logging.info("Model configuration extracted from foundation model")
         logging.info("Using universal loss function for fine-tuning")
+        logging.info(
+            f"Message passing with hidden irreps {model_config_foundation['hidden_irreps']})"
+        )
+        logging.info(
+            f"{model_config_foundation['num_interactions']} layers, each with correlation order: {model_config_foundation['correlation']} (body order: {model_config_foundation['correlation']+1}) and spherical harmonics up to: l={model_config_foundation['max_ell']}"
+        )
+        logging.info(
+            f"Radial cutoff: {model_config_foundation['r_max']} Å (total receptive field for each atom: {model_config_foundation['r_max'] * model_config_foundation['num_interactions']} Å)"
+        )
+        logging.info(
+            f"Distance transform for radial basis functions: {model_config_foundation['distance_transform']}"
+        )
     else:
         logging.info("Building model")
-        if args.num_channels is not None and args.max_L is not None:
-            assert args.num_channels > 0, "num_channels must be positive integer"
-            assert args.max_L >= 0, "max_L must be non-negative integer"
-            args.hidden_irreps = o3.Irreps(
-                (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
-                .sort()
-                .irreps.simplify()
-            )
-
+        logging.info(
+            f"Message passing with {args.num_channels} channels and max_L={args.max_L} ({args.hidden_irreps})"
+        )
+        logging.info(
+            f"{args.num_interactions} layers, each with correlation order: {args.correlation} (body order: {args.correlation+1}) and spherical harmonics up to: l={args.max_ell}"
+        )
+        logging.info(
+            f"{args.num_radial_basis} radial and {args.num_cutoff_basis} basis functions"
+        )
+        logging.info(
+            f"Radial cutoff: {args.r_max} Å (total receptive field for each atom: {args.r_max * args.num_interactions} Å)"
+        )
+        logging.info(
+            f"Distance transform for radial basis functions: {args.distance_transform}"
+        )
         assert (
             len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
         ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
@@ -678,6 +730,20 @@ def run(args: argparse.Namespace) -> None:
             )
     model.to(device)
 
+    logging.debug(model)
+    logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
+    logging.info("")
+    logging.info("===========OPTIMIZER INFORMATION===========")
+    logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
+    logging.info(f"Batch size: {args.batch_size}")
+    if args.ema:
+        logging.info(f"Using Exponential Moving Average with decay: {args.ema_decay}")
+    logging.info(
+        f"Number of gradient updates: {int(args.max_num_epochs*len(collections.train)/args.batch_size)}"
+    )
+    logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
+    logging.info(loss_fn)
+
     # Optimizer
     decay_interactions = {}
     no_decay_interactions = {}
@@ -779,10 +845,6 @@ def run(args: argparse.Namespace) -> None:
         for group in optimizer.param_groups:
             group["lr"] = args.lr
 
-    logging.info(model)
-    logging.info(f"Number of parameters: {tools.count_parameters(model)}")
-    logging.info(f"Optimizer: {optimizer}")
-
     if args.wandb:
         logging.info("Using Weights and Biases for logging")
         import wandb
@@ -838,19 +900,21 @@ def run(args: argparse.Namespace) -> None:
         rank=rank,
     )
 
+    logging.info("")
+    logging.info("===========RESULTS===========")
     logging.info("Computing metrics for training, validation, and test sets")
 
-    all_data_loaders = {}
+    train_valid_data_loader = {}
     for head_config in head_configs:
         data_loader_name = "train_" + head_config.head_name
-        all_data_loaders[data_loader_name] = head_config.train_loader
+        train_valid_data_loader[data_loader_name] = head_config.train_loader
     for head, valid_loader in valid_loaders.items():
         data_load_name = "valid_" + head
-        all_data_loaders[data_load_name] = valid_loader
+        train_valid_data_loader[data_load_name] = valid_loader
 
     test_sets = {}
     stop_first_test = False
-    # check if all head have same test set
+    test_data_loader = {}
     if all(
         head_config.test_file == head_configs[0].test_file
         for head_config in head_configs
@@ -909,7 +973,7 @@ def run(args: argparse.Namespace) -> None:
                     num_workers=args.num_workers,
                     pin_memory=args.pin_memory,
                 )
-                all_data_loaders[test_name] = test_loader
+                test_data_loader[test_name] = test_loader
             if stop_first_test:
                 break
 
@@ -923,13 +987,16 @@ def run(args: argparse.Namespace) -> None:
         if args.distributed:
             distributed_model = DDP(model, device_ids=[local_rank])
         model_to_evaluate = model if not args.distributed else distributed_model
-        logging.info(f"Loaded model from epoch {epoch}")
+        if swa_eval:
+            logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
+        else:
+            logging.info(f"Loaded Stage one model from epoch {epoch} for evaluation")
 
         for param in model.parameters():
             param.requires_grad = False
-        table = create_error_table(
+        table_train_valid = create_error_table(
             table_type=args.error_table,
-            all_data_loaders=all_data_loaders,
+            all_data_loaders=train_valid_data_loader,
             model=model_to_evaluate,
             loss_fn=loss_fn,
             output_args=output_args,
@@ -937,7 +1004,18 @@ def run(args: argparse.Namespace) -> None:
             device=device,
             distributed=args.distributed,
         )
-        logging.info("\n" + str(table))
+        logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
+        table_test = create_error_table(
+            table_type=args.error_table,
+            all_data_loaders=test_data_loader,
+            model=model_to_evaluate,
+            loss_fn=loss_fn,
+            output_args=output_args,
+            log_wandb=args.wandb,
+            device=device,
+            distributed=args.distributed,
+        )
+        logging.info("Error-table on TEST:\n" + str(table_test))
 
         if rank == 0:
             # Save entire model
