@@ -28,7 +28,6 @@ from .utils import (
     compute_rel_rmse,
     compute_rmse,
     get_atomic_number_table_from_zs,
-    get_optimizer,
     get_tag,
     setup_logger,
 )
@@ -46,7 +45,6 @@ __all__ = [
     "setup_logger",
     "get_tag",
     "count_parameters",
-    "get_optimizer",
     "MetricsLogger",
     "get_atomic_number_table_from_zs",
     "train",

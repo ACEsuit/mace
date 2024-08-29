@@ -162,6 +162,7 @@ def assemble_mp_data(
         }
         select_samples(dict_to_namespace(args_samples))
         collections_mp, _ = get_dataset_from_xyz(
+            work_dir=args.work_dir,
             train_path=f"mp_finetuning-{tag}.xyz",
             valid_path=None,
             valid_fraction=args.valid_fraction,

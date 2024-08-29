@@ -41,12 +41,16 @@ from mace.tools.scripts_utils import (
     dict_to_array,
     extract_config_mace_model,
     get_atomic_energies,
+    get_avg_num_neighbors,
     get_config_type_weights,
     get_dataset_from_xyz,
     get_files_with_suffix,
     get_loss_fn,
+    get_optimizer,
+    get_params_options,
     get_swa,
     print_git_commit,
+    setup_wandb,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
@@ -194,6 +198,7 @@ def run(args: argparse.Namespace) -> None:
                 head_config.config_type_weights
             )
             collections, atomic_energies_dict = get_dataset_from_xyz(
+                work_dir=args.work_dir,
                 train_path=head_config.train_file,
                 valid_path=head_config.valid_file,
                 valid_fraction=head_config.valid_fraction,
@@ -219,10 +224,10 @@ def run(args: argparse.Namespace) -> None:
 
     if all(head_config.train_file.endswith(".xyz") for head_config in head_configs):
         size_collections_train = sum(
-            [len(head_config.collections.train) for head_config in head_configs]
+            len(head_config.collections.train) for head_config in head_configs
         )
         size_collections_valid = sum(
-            [len(head_config.collections.valid) for head_config in head_configs]
+            len(head_config.collections.valid) for head_config in head_configs
         )
         if size_collections_train < args.batch_size:
             logging.error(
@@ -257,6 +262,7 @@ def run(args: argparse.Namespace) -> None:
         else:
             heads = list(dict.fromkeys(["pt_head"] + heads))
             collections, atomic_energies_dict = get_dataset_from_xyz(
+                work_dir=args.work_dir,
                 train_path=args.pt_train_file,
                 valid_path=args.pt_valid_file,
                 valid_fraction=args.valid_fraction,
@@ -367,8 +373,9 @@ def run(args: argparse.Namespace) -> None:
             ].item()
             for z in z_table.zs
         }
+        atomic_energies_dict_pt = atomic_energies_dict["pt_head"]
         logging.info(
-            f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table_foundation.zs])}"
+            f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict_pt[z]}' for z in z_table_foundation.zs])}"
         )
 
     if args.model == "AtomicDipolesMACE":
@@ -394,9 +401,14 @@ def run(args: argparse.Namespace) -> None:
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
         atomic_energies = dict_to_array(atomic_energies_dict, heads)
-        logging.info(
-            f"Atomic Energies used (z: eV): {{{', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table.zs])}}}"
+        result = "\n".join(
+            [
+                f"Atomic Energies used (z: eV) for head {head_config.head_name}: " +
+                "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}"
+                for head_config in head_configs
+            ]
         )
+        logging.info(result)
 
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
@@ -488,30 +500,7 @@ def run(args: argparse.Namespace) -> None:
         )
 
     loss_fn = get_loss_fn(args, dipole_only, compute_dipole)
-
-    if all(head_config.compute_avg_num_neighbors for head_config in head_configs):
-        logging.info("Computing average number of neighbors")
-        avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
-        if args.distributed:
-            num_graphs = torch.tensor(len(train_loader.dataset)).to(device)
-            num_neighbors = num_graphs * torch.tensor(avg_num_neighbors).to(device)
-            torch.distributed.all_reduce(num_graphs, op=torch.distributed.ReduceOp.SUM)
-            torch.distributed.all_reduce(
-                num_neighbors, op=torch.distributed.ReduceOp.SUM
-            )
-            args.avg_num_neighbors = (num_neighbors / num_graphs).item()
-        else:
-            args.avg_num_neighbors = avg_num_neighbors
-    else:
-        assert any(head_config.avg_num_neighbors is not None for head_config in head_configs), "Average number of neighbors must be provided in the configuration"
-        args.avg_num_neighbors = max(head_config.avg_num_neighbors for head_config in head_configs if head_config.avg_num_neighbors is not None)
-    
-    if args.avg_num_neighbors < 2 or args.avg_num_neighbors > 100:
-        logging.warning(
-            f"Unusual average number of neighbors: {args.avg_num_neighbors:.1f}"
-        )
-    else:
-        logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
+    args.avg_num_neighbors = get_avg_num_neighbors(head_configs, args, train_loader, device)
 
     # Selecting outputs
     compute_virials = False
@@ -745,61 +734,9 @@ def run(args: argparse.Namespace) -> None:
     logging.info(loss_fn)
 
     # Optimizer
-    decay_interactions = {}
-    no_decay_interactions = {}
-    for name, param in model.interactions.named_parameters():
-        if "linear.weight" in name or "skip_tp_full.weight" in name:
-            decay_interactions[name] = param
-        else:
-            no_decay_interactions[name] = param
-
-    param_options = dict(
-        params=[
-            {
-                "name": "embedding",
-                "params": model.node_embedding.parameters(),
-                "weight_decay": 0.0,
-            },
-            {
-                "name": "interactions_decay",
-                "params": list(decay_interactions.values()),
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "name": "interactions_no_decay",
-                "params": list(no_decay_interactions.values()),
-                "weight_decay": 0.0,
-            },
-            {
-                "name": "products",
-                "params": model.products.parameters(),
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "name": "readouts",
-                "params": model.readouts.parameters(),
-                "weight_decay": 0.0,
-            },
-        ],
-        lr=args.lr,
-        amsgrad=args.amsgrad,
-        betas=(args.beta, 0.999),
-    )
-
+    param_options = get_params_options(args, model)
     optimizer: torch.optim.Optimizer
-    if args.optimizer == "adamw":
-        optimizer = torch.optim.AdamW(**param_options)
-    elif args.optimizer == "schedulefree":
-        try:
-            from schedulefree import adamw_schedulefree
-        except ImportError as exc:
-            raise ImportError(
-                "`schedulefree` is not installed. Please install it via `pip install schedulefree` or `pip install mace-torch[schedulefree]`"
-            ) from exc
-        _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
-        optimizer = adamw_schedulefree.AdamWScheduleFree(**_param_options)
-    else:
-        optimizer = torch.optim.Adam(**param_options)
+    optimizer = get_optimizer(args, param_options)
     if args.device == "xpu":
         logging.info("Optimzing model and optimzier for XPU")
         model, optimizer = ipex.optimize(model, optimizer=optimizer)
@@ -846,27 +783,7 @@ def run(args: argparse.Namespace) -> None:
             group["lr"] = args.lr
 
     if args.wandb:
-        logging.info("Using Weights and Biases for logging")
-        import wandb
-
-        wandb_config = {}
-        args_dict = vars(args)
-
-        for key, value in args_dict.items():
-            if isinstance(value, np.ndarray):
-                args_dict[key] = value.tolist()
-
-        args_dict_json = json.dumps(args_dict)
-        for key in args.wandb_log_hypers:
-            wandb_config[key] = args_dict[key]
-        tools.init_wandb(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=args.wandb_name,
-            config=wandb_config,
-            directory=args.wandb_dir,
-        )
-        wandb.run.summary["params"] = args_dict_json
+        setup_wandb(args)
 
     if args.distributed:
         distributed_model = DDP(model, device_ids=[local_rank])
