@@ -350,10 +350,7 @@ def run(args: argparse.Namespace) -> None:
                         z_table_foundation.z_to_index(z)
                     ].item()
                     for z in z_table.zs
-                }
-                logging.info(
-                    f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table_foundation.zs])}"
-                )
+                }                    
             else:
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(head_config.E0s, None, head_config.z_table)
         else:
@@ -373,11 +370,7 @@ def run(args: argparse.Namespace) -> None:
             ].item()
             for z in z_table.zs
         }
-        atomic_energies_dict_pt = atomic_energies_dict["pt_head"]
-        logging.info(
-            f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict_pt[z]}' for z in z_table_foundation.zs])}"
-        )
-
+        
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
         dipole_only = True
@@ -560,6 +553,7 @@ def run(args: argparse.Namespace) -> None:
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
         args.model = "FoundationMACE"
         model_config_foundation["heads"] = heads
+        model_config = model_config_foundation
         logging.info("Model configuration extracted from foundation model")
         logging.info("Using universal loss function for fine-tuning")
         logging.info(

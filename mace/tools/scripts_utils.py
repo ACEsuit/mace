@@ -19,8 +19,7 @@ from e3nn import o3
 from prettytable import PrettyTable
 from torch.optim.swa_utils import SWALR, AveragedModel
 
-from mace import data, modules
-from mace import tools
+from mace import data, modules, tools
 from mace.tools import evaluate
 from mace.tools.train import SWAContainer
 
