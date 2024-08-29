@@ -64,7 +64,6 @@ def run(args: argparse.Namespace) -> None:
     """
     This script runs the training/fine tuning for mace
     """
-    args, input_log_messages = tools.check_args(args)
     tag = tools.get_tag(name=args.name, seed=args.seed)
 
     if args.device == "xpu":
@@ -92,9 +91,6 @@ def run(args: argparse.Namespace) -> None:
     # Setup
     tools.set_seeds(args.seed)
     tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
-    logging.info("===========VERIFYING SETTINGS===========")
-    for message, loglevel in input_log_messages:
-        logging.log(level=loglevel, msg=message)
 
     if args.distributed:
         torch.cuda.set_device(local_rank)
@@ -105,7 +101,7 @@ def run(args: argparse.Namespace) -> None:
         logging.info(f"MACE version: {mace.__version__}")
     except AttributeError:
         logging.info("Cannot find MACE version, please install MACE via pip")
-    logging.debug(f"Configuration: {args}")
+    logging.info(f"Configuration: {args}")
 
     tools.set_default_dtype(args.default_dtype)
     device = tools.init_device(args.device)
@@ -277,43 +273,6 @@ def run(args: argparse.Namespace) -> None:
         logging.info(
             f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}"
         )
-    logging.info("")
-    logging.info("===========LOADING INPUT DATA===========")
-    # Data preparation
-    if args.train_file.endswith(".xyz"):
-        if args.valid_file is not None:
-            assert args.valid_file.endswith(
-                ".xyz"
-            ), "valid_file if given must be same format as train_file"
-        config_type_weights = get_config_type_weights(args.config_type_weights)
-        collections, atomic_energies_dict = get_dataset_from_xyz(
-            work_dir=args.work_dir,
-            train_path=args.train_file,
-            valid_path=args.valid_file,
-            valid_fraction=args.valid_fraction,
-            config_type_weights=config_type_weights,
-            test_path=args.test_file,
-            seed=args.seed,
-            energy_key=args.energy_key,
-            forces_key=args.forces_key,
-            stress_key=args.stress_key,
-            virials_key=args.virials_key,
-            dipole_key=args.dipole_key,
-            charges_key=args.charges_key,
-            keep_isolated_atoms=args.keep_isolated_atoms,
-        )
-        if len(collections.train) < args.batch_size:
-            logging.error(
-                f"Batch size ({args.batch_size}) is larger than the number of training data ({len(collections.train)})"
-            )
-        if len(collections.valid) < args.valid_batch_size:
-            logging.warning(
-                f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({len(collections.valid)})"
-            )
-            args.valid_batch_size = len(collections.valid)
-
-    else:
-        atomic_energies_dict = None
 
     # Atomic number table
     # yapf: disable
@@ -343,7 +302,7 @@ def run(args: argparse.Namespace) -> None:
     for head_config in head_configs:
         all_atomic_numbers.update(head_config.atomic_numbers)
     z_table = AtomicNumberTable(sorted(list(all_atomic_numbers)))
-    logging.info(f"Atomic Numbers used: {z_table.zs}")
+    logging.info(z_table)
 
     # Atomic energies
     atomic_energies_dict = {}
@@ -355,7 +314,8 @@ def run(args: argparse.Namespace) -> None:
                 )
             elif head_config.E0s.lower() == "foundation":
                 assert args.foundation_model is not None
-                    z_table_foundation = AtomicNumberTable(
+                logging.info("Using atomic energies from foundation model")
+                z_table_foundation = AtomicNumberTable(
                     [int(z) for z in model_foundation.atomic_numbers]
                 )
                 atomic_energies_dict[head_config.head_name] = {
@@ -364,10 +324,7 @@ def run(args: argparse.Namespace) -> None:
                     ].item()
                     for z in z_table.zs
                 }
-                logging.info(
-                f"Using Atomic Energies from foundation model [z, eV]: {', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table_foundation.zs])}"
-            )
-        else:
+            else:
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(head_config.E0s, None, head_config.z_table)
         else:
             atomic_energies_dict[head_config.head_name] = head_config.atomic_energies_dict
@@ -413,9 +370,7 @@ def run(args: argparse.Namespace) -> None:
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
         atomic_energies = dict_to_array(atomic_energies_dict, heads)
-        logging.info(
-            f"Atomic Energies used (z: eV): {{{', '.join([f'{z}: {atomic_energies_dict[z]}' for z in z_table.zs])}}}"
-        )
+        logging.info(f"Atomic energies: {atomic_energies.tolist()}")
 
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
@@ -505,9 +460,9 @@ def run(args: argparse.Namespace) -> None:
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
         )
-    logging.info("")
-    logging.info("===========MODEL DETAILS===========")
+
     loss_fn = get_loss_fn(args, dipole_only, compute_dipole)
+    logging.info(loss_fn)
     if all(head_config.compute_avg_num_neighbors for head_config in head_configs):
         logging.info("Computing average number of neighbors")
         avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
@@ -524,22 +479,14 @@ def run(args: argparse.Namespace) -> None:
     else:
         assert any(head_config.avg_num_neighbors is not None for head_config in head_configs), "Average number of neighbors must be provided in the configuration"
         args.avg_num_neighbors = max(head_config.avg_num_neighbors for head_config in head_configs if head_config.avg_num_neighbors is not None)
-    if args.avg_num_neighbors < 2 or args.avg_num_neighbors > 100:
-        logging.warning(
-            f"Unusual average number of neighbors: {args.avg_num_neighbors:.1f}"
-        )
-    else:
-        logging.info(f"Average number of neighbors: {args.avg_num_neighbors:.1f}")
+    logging.info(f"Average number of neighbors: {args.avg_num_neighbors}")
 
     # Selecting outputs
     compute_virials = False
     if args.loss in ("stress", "virials", "huber", "universal"):
         compute_virials = True
         args.compute_stress = True
-        if "MAE" in args.error_table:
-            args.error_table = "PerAtomMAEstressvirials"
-        else:
-            args.error_table = "PerAtomRMSEstressvirials"
+        args.error_table = "PerAtomRMSEstressvirials"
 
     output_args = {
         "energy": compute_energy,
@@ -548,10 +495,7 @@ def run(args: argparse.Namespace) -> None:
         "stress": args.compute_stress,
         "dipoles": compute_dipole,
     }
-
-    logging.info(
-        f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
-    )
+    logging.info(f"Selected the following outputs: {output_args}")
 
     if args.scaling == "no_scaling":
         args.std = 1.0
@@ -562,15 +506,12 @@ def run(args: argparse.Namespace) -> None:
         )
     # Build model
     if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
-        logging.info("Loading FOUNDATION model")
+        logging.info("Building model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
         model_config_foundation["atomic_numbers"] = z_table.zs
         model_config_foundation["num_elements"] = len(z_table)
         args.max_L = model_config_foundation["hidden_irreps"].lmax
-        args.num_channels = list(
-            {irrep.mul for irrep in o3.Irreps(model_config_foundation["hidden_irreps"])}
-        )[0]
         if args.model == "MACE" and model_foundation.__class__.__name__ == "MACE":
             model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
         else:
@@ -598,35 +539,23 @@ def run(args: argparse.Namespace) -> None:
         model_config_foundation["heads"] = heads
         logging.info("Model configuration extracted from foundation model")
         logging.info("Using universal loss function for fine-tuning")
-        logging.info(
-            f"Message passing with {args.num_channels} channels and max_L={args.max_L} ({model_config_foundation['hidden_irreps']})"
-        )
-        logging.info(
-            f"{model_config_foundation['num_interactions']} layers, each with correlation order: {model_config_foundation['correlation']} (body order: {model_config_foundation['correlation']+1}) and spherical harmonics up to: l={model_config_foundation['max_ell']}"
-        )
-        logging.info(
-            f"Radial cutoff: {model_config_foundation['r_max']} Å (total receptive field for each atom: {model_config_foundation['r_max'] * model_config_foundation['num_interactions']} Å)"
-        )
-        logging.info(
-            f"Distance transform for radial basis functions: {model_config_foundation['distance_transform']}"
-        )
     else:
         logging.info("Building model")
-        logging.info(
-            f"Message passing with {args.num_channels} channels and max_L={args.max_L} ({args.hidden_irreps})"
-        )
-        logging.info(
-            f"{args.num_interactions} layers, each with correlation order: {args.correlation} (body order: {args.correlation+1}) and spherical harmonics up to: l={args.max_ell}"
-        )
-        logging.info(
-            f"{args.num_radial_basis} radial and {args.num_cutoff_basis} basis functions"
-        )
-        logging.info(
-            f"Radial cutoff: {args.r_max} Å (total receptive field for each atom: {args.r_max * args.num_interactions} Å)"
-        )
-        logging.info(
-            f"Distance transform for radial basis functions: {args.distance_transform}"
-        )
+        if args.num_channels is not None and args.max_L is not None:
+            assert args.num_channels > 0, "num_channels must be positive integer"
+            assert args.max_L >= 0, "max_L must be non-negative integer"
+            args.hidden_irreps = o3.Irreps(
+                (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
+                .sort()
+                .irreps.simplify()
+            )
+
+        assert (
+            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+
+        logging.info(f"Hidden irreps: {args.hidden_irreps}")
+
         model_config = dict(
             r_max=args.r_max,
             num_bessel=args.num_radial_basis,
@@ -749,20 +678,6 @@ def run(args: argparse.Namespace) -> None:
             )
     model.to(device)
 
-    logging.debug(model)
-    logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
-    logging.info("")
-    logging.info("===========OPTIMIZER INFORMATION===========")
-    logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
-    logging.info(f"Batch size: {args.batch_size}")
-    if args.ema:
-        logging.info(f"Using Exponential Moving Average with decay: {args.ema_decay}")
-    logging.info(
-        f"Number of gradient updates: {int(args.max_num_epochs*len(collections.train)/args.batch_size)}"
-    )
-    logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
-    logging.info(loss_fn)
-
     # Optimizer
     decay_interactions = {}
     no_decay_interactions = {}
@@ -831,50 +746,6 @@ def run(args: argparse.Namespace) -> None:
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
     if args.swa:
-        assert dipole_only is False, "Stage Two for dipole fitting not implemented"
-        swas.append(True)
-        if args.start_swa is None:
-            args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-        logging.info(
-            f"Stage Two will start after {args.start_swa} epochs with loss function:"
-        )
-        if args.loss == "forces_only":
-            raise ValueError("Can not select Stage Two with forces only loss.")
-        if args.loss == "virials":
-            loss_fn_energy = modules.WeightedEnergyForcesVirialsLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                virials_weight=args.swa_virials_weight,
-            )
-        elif args.loss == "stress":
-            loss_fn_energy = modules.WeightedEnergyForcesStressLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                stress_weight=args.swa_stress_weight,
-            )
-        elif args.loss == "energy_forces_dipole":
-            loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
-                args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-                dipole_weight=args.swa_dipole_weight,
-            )
-        else:
-            loss_fn_energy = modules.WeightedEnergyForcesLoss(
-                energy_weight=args.swa_energy_weight,
-                forces_weight=args.swa_forces_weight,
-            )
-        logging.info(loss_fn_energy)
-        swa = tools.SWAContainer(
-            model=AveragedModel(model),
-            scheduler=SWALR(
-                optimizer=optimizer,
-                swa_lr=args.swa_lr,
-                anneal_epochs=1,
-                anneal_strategy="linear",
-            ),
-            start=args.start_swa,
-            loss_fn=loss_fn_energy,
-        )
         swa, swas = get_swa(args, model, optimizer, swas, dipole_only)
 
     checkpoint_handler = tools.CheckpointHandler(
@@ -907,6 +778,10 @@ def run(args: argparse.Namespace) -> None:
     else:
         for group in optimizer.param_groups:
             group["lr"] = args.lr
+
+    logging.info(model)
+    logging.info(f"Number of parameters: {tools.count_parameters(model)}")
+    logging.info(f"Optimizer: {optimizer}")
 
     if args.wandb:
         logging.info("Using Weights and Biases for logging")
@@ -962,8 +837,7 @@ def run(args: argparse.Namespace) -> None:
         train_sampler=train_sampler,
         rank=rank,
     )
-    logging.info("")
-    logging.info("===========RESULTS===========")
+
     logging.info("Computing metrics for training, validation, and test sets")
 
     all_data_loaders = {}
@@ -1039,13 +913,6 @@ def run(args: argparse.Namespace) -> None:
             if stop_first_test:
                 break
 
-    train_valid_data_loader = {
-        k: v for k, v in all_data_loaders.items() if k in ["train", "valid"]
-    }
-    test_data_loader = {
-        k: v for k, v in all_data_loaders.items() if k not in ["train", "valid"]
-    }
-
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
             state=tools.CheckpointState(model, optimizer, lr_scheduler),
@@ -1056,17 +923,13 @@ def run(args: argparse.Namespace) -> None:
         if args.distributed:
             distributed_model = DDP(model, device_ids=[local_rank])
         model_to_evaluate = model if not args.distributed else distributed_model
-        if swa_eval:
-            logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
-        else:
-            logging.info(f"Loaded Stage one model from epoch {epoch} for evaluation")
+        logging.info(f"Loaded model from epoch {epoch}")
 
         for param in model.parameters():
             param.requires_grad = False
-
-        table_train = create_error_table(
+        table = create_error_table(
             table_type=args.error_table,
-            all_data_loaders=train_valid_data_loader,
+            all_data_loaders=all_data_loaders,
             model=model_to_evaluate,
             loss_fn=loss_fn,
             output_args=output_args,
@@ -1074,18 +937,7 @@ def run(args: argparse.Namespace) -> None:
             device=device,
             distributed=args.distributed,
         )
-        table_test = create_error_table(
-            table_type=args.error_table,
-            all_data_loaders=test_data_loader,
-            model=model_to_evaluate,
-            loss_fn=loss_fn,
-            output_args=output_args,
-            log_wandb=args.wandb,
-            device=device,
-            distributed=args.distributed,
-        )
-        logging.info("Error-table on TRAIN and VALID:\n" + str(table_train))
-        logging.info("Error-table on TEST:\n" + str(table_test))
+        logging.info("\n" + str(table))
 
         if rank == 0:
             # Save entire model
@@ -1105,9 +957,7 @@ def run(args: argparse.Namespace) -> None:
             }
             if swa_eval:
                 torch.save(
-                    
                     model, Path(args.model_dir) / (args.name + "_stagetwo.model")
-                
                 )
                 try:
                     path_complied = Path(args.model_dir) / (
