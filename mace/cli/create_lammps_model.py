@@ -1,6 +1,8 @@
 import argparse
+
 import torch
 from e3nn.util import jit
+
 from mace.calculators import LAMMPS_MACE
 
 
@@ -42,12 +44,11 @@ def select_head(model):
 
     if selected.isdigit() and 1 <= int(selected) <= len(heads):
         return heads[int(selected) - 1]
-    elif selected == "":
+    if selected == "":
         print("No head selected. Proceeding without specifying a head.")
         return None
-    else:
-        print(f"No valid selection made. Defaulting to the last head: {heads[-1]}")
-        return heads[-1]
+    print(f"No valid selection made. Defaulting to the last head: {heads[-1]}")
+    return heads[-1]
 
 
 def main():

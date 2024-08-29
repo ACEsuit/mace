@@ -20,6 +20,7 @@ from prettytable import PrettyTable
 from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules
+from mace import tools
 from mace.tools import evaluate
 from mace.tools.train import SWAContainer
 
@@ -349,6 +350,38 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
     return atomic_energies_dict
 
 
+def get_avg_num_neighbors(head_configs, args, train_loader, device):
+    if all(head_config.compute_avg_num_neighbors for head_config in head_configs):
+        logging.info("Computing average number of neighbors")
+        avg_num_neighbors = modules.compute_avg_num_neighbors(train_loader)
+        if args.distributed:
+            num_graphs = torch.tensor(len(train_loader.dataset)).to(device)
+            num_neighbors = num_graphs * torch.tensor(avg_num_neighbors).to(device)
+            torch.distributed.all_reduce(num_graphs, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.all_reduce(
+                num_neighbors, op=torch.distributed.ReduceOp.SUM
+            )
+            avg_num_neighbors_out = (num_neighbors / num_graphs).item()
+        else:
+            avg_num_neighbors_out = avg_num_neighbors
+    else:
+        assert any(
+            head_config.avg_num_neighbors is not None for head_config in head_configs
+        ), "Average number of neighbors must be provided in the configuration"
+        avg_num_neighbors_out = max(
+            head_config.avg_num_neighbors
+            for head_config in head_configs
+            if head_config.avg_num_neighbors is not None
+        )
+    if avg_num_neighbors_out < 2 or avg_num_neighbors_out > 100:
+        logging.warning(
+            f"Unusual average number of neighbors: {avg_num_neighbors_out:.1f}"
+        )
+    else:
+        logging.info(f"Average number of neighbors: {avg_num_neighbors_out}")
+    return avg_num_neighbors_out
+
+
 def get_loss_fn(
     args: argparse.Namespace,
     dipole_only: bool,
@@ -480,6 +513,95 @@ def get_swa(
         loss_fn=loss_fn_energy,
     )
     return swa, swas
+
+
+def get_params_options(
+    args: argparse.Namespace, model: torch.nn.Module
+) -> Dict[str, Any]:
+    decay_interactions = {}
+    no_decay_interactions = {}
+    for name, param in model.interactions.named_parameters():
+        if "linear.weight" in name or "skip_tp_full.weight" in name:
+            decay_interactions[name] = param
+        else:
+            no_decay_interactions[name] = param
+
+    param_options = dict(
+        params=[
+            {
+                "name": "embedding",
+                "params": model.node_embedding.parameters(),
+                "weight_decay": 0.0,
+            },
+            {
+                "name": "interactions_decay",
+                "params": list(decay_interactions.values()),
+                "weight_decay": args.weight_decay,
+            },
+            {
+                "name": "interactions_no_decay",
+                "params": list(no_decay_interactions.values()),
+                "weight_decay": 0.0,
+            },
+            {
+                "name": "products",
+                "params": model.products.parameters(),
+                "weight_decay": args.weight_decay,
+            },
+            {
+                "name": "readouts",
+                "params": model.readouts.parameters(),
+                "weight_decay": 0.0,
+            },
+        ],
+        lr=args.lr,
+        amsgrad=args.amsgrad,
+        betas=(args.beta, 0.999),
+    )
+    return param_options
+
+
+def get_optimizer(
+    args: argparse.Namespace, param_options: Dict[str, Any]
+) -> torch.optim.Optimizer:
+    if args.optimizer == "adamw":
+        optimizer = torch.optim.AdamW(**param_options)
+    elif args.optimizer == "schedulefree":
+        try:
+            from schedulefree import adamw_schedulefree
+        except ImportError as exc:
+            raise ImportError(
+                "`schedulefree` is not installed. Please install it via `pip install schedulefree` or `pip install mace-torch[schedulefree]`"
+            ) from exc
+        _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
+        optimizer = adamw_schedulefree.AdamWScheduleFree(**_param_options)
+    else:
+        optimizer = torch.optim.Adam(**param_options)
+    return optimizer
+
+
+def setup_wandb(args: argparse.Namespace):
+    logging.info("Using Weights and Biases for logging")
+    import wandb
+
+    wandb_config = {}
+    args_dict = vars(args)
+
+    for key, value in args_dict.items():
+        if isinstance(value, np.ndarray):
+            args_dict[key] = value.tolist()
+
+    args_dict_json = json.dumps(args_dict)
+    for key in args.wandb_log_hypers:
+        wandb_config[key] = args_dict[key]
+    tools.init_wandb(
+        project=args.wandb_project,
+        entity=args.wandb_entity,
+        name=args.wandb_name,
+        config=wandb_config,
+        directory=args.wandb_dir,
+    )
+    wandb.run.summary["params"] = args_dict_json
 
 
 def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
