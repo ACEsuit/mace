@@ -321,7 +321,7 @@ def compute_average_E0s(
         E0s = np.linalg.lstsq(A, B, rcond=None)[0]
         atomic_energies_dict = {}
         for i, z in enumerate(z_table.zs):
-            atomic_energies_dict[z] = E0s[i]
+            atomic_energies_dict[z] = float(E0s[i])
     except np.linalg.LinAlgError:
         logging.error(
             "Failed to compute E0s using least squares regression, using the same for all atoms"

@@ -702,6 +702,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
 def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--work_dir",
+        help="set directory for all files and folders",
+        type=str,
+        default=".",
+    )
+    parser.add_argument(
         "--train_file",
         help="Training set h5 file",
         type=str,
