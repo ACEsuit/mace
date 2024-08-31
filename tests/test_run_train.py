@@ -506,10 +506,11 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     mace_params["foundation_model"] = "small"
     mace_params["hidden_irreps"] = "128x0e"
     mace_params["r_max"] = 6.0
-    mace_params["default_dtype"] = "float32"
+    mace_params["default_dtype"] = "float64"
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
     mace_params["batch_size"] = 2
+    mace_params["valid_batch_size"] = 1
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"
     # make sure run_train.py is using the mace that is currently being tested
@@ -546,27 +547,27 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     print("Es", Es)
     # from a run on 20/08/2024 on commit
     ref_Es = [
-        1.7100412845611572,
-        0.4079246520996094,
-        0.9405305981636047,
-        0.6698582768440247,
-        0.8035168647766113,
-        0.9693648219108582,
-        0.9276483654975891,
-        0.6999133229255676,
-        0.8872858285903931,
-        0.7888250946998596,
-        0.7887940406799316,
-        0.617201566696167,
-        0.919223427772522,
-        0.5526964664459229,
-        0.8903999328613281,
-        0.5131919980049133,
-        1.1887052059173584,
-        0.7943968176841736,
-        0.7528715133666992,
-        0.6052684187889099,
-        0.743116557598114,
-        0.6587133407592773,
+        1.654685616493225,
+        0.44693732261657715,
+        0.8741313815116882,
+        0.569085955619812,
+        0.7161882519721985,
+        0.8654778599739075,
+        0.8722733855247498,
+        0.49582308530807495,
+        0.814422607421875,
+        0.7027317881584167,
+        0.7196993827819824,
+        0.517953097820282,
+        0.8631765246391296,
+        0.4679797887802124,
+        0.8163984417915344,
+        0.4252359867095947,
+        1.0861445665359497,
+        0.6829671263694763,
+        0.7136879563331604,
+        0.5160345435142517,
+        0.7002358436584473,
+        0.5574042201042175,
     ]
     assert np.allclose(Es, ref_Es, atol=1e-1)

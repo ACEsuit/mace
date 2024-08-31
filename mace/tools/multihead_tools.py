@@ -180,4 +180,6 @@ def assemble_mp_data(
         )
         return collections_mp
     except Exception as exc:
-        raise RuntimeError("Model download failed and no local model found") from exc
+        raise RuntimeError(
+            "Model or descriptors download failed and no local model found"
+        ) from exc

@@ -918,7 +918,7 @@ def run(args: argparse.Namespace) -> None:
             distributed=args.distributed,
         )
         logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
-        if not test_data_loader:
+        if test_data_loader:
             table_test = create_error_table(
                 table_type=args.error_table,
                 all_data_loaders=test_data_loader,
