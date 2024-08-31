@@ -64,6 +64,9 @@ def init_device(device_str: str) -> torch.device:
         assert torch.backends.mps.is_available(), "No MPS backend is available!"
         logging.info("Using MPS GPU acceleration")
         return torch.device("mps")
+    if device_str == "xpu":
+        torch.xpu.is_available()
+        return torch.device("xpu")
 
     logging.info("Using CPU")
     return torch.device("cpu")

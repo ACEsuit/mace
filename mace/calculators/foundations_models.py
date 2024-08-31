@@ -62,9 +62,9 @@ def mace_mp(
         try:
             # checkpoints release: https://github.com/ACEsuit/mace-mp/releases/tag/mace_mp_0
             urls = dict(
-                small="https://tinyurl.com/46jrkm3v",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
-                medium="https://tinyurl.com/5yyxdm76",  # 2023-12-03-mace-128-L1_epoch-199.model
-                large="https://tinyurl.com/5f5yavf3",  # MACE_MPtrj_2022.9.model
+                small="https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model",  # 2023-12-10-mace-128-L0_energy_epoch-249.model
+                medium="https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model",  # 2023-12-03-mace-128-L1_epoch-199.model
+                large="https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/MACE_MPtrj_2022.9.model",  # MACE_MPtrj_2022.9.model
             )
             checkpoint_url = (
                 urls.get(model, urls["medium"])

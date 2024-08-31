@@ -144,7 +144,6 @@ def main() -> None:
 
 
 def run(args: argparse.Namespace) -> None:
-
     mace_fname = args.model
     atoms_fname = args.config
     atoms_index = args.config_index
