@@ -468,7 +468,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
     for i, c in enumerate(fitting_configs):
-        if i == 0 or i == 1:
+        if i in (0, 1):
             c_dft = c.copy()
             c_dft.info["head"] = "DFT"
             fitting_configs_dft.append(c_dft)
