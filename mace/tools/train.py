@@ -70,7 +70,7 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         error_stress = eval_metrics["rmse_stress"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A, RMSE_stress_per_atom={error_stress:8.1f} meV / A^3",
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A, RMSE_stress={error_stress:8.1f} meV / A^3",
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
