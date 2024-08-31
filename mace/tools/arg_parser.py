@@ -331,6 +331,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=None,
         required=False,
     )
+
+    # Fine-tuning
     parser.add_argument(
         "--foundation_filter_elements",
         help="Filter element during fine-tuning",
@@ -370,11 +372,25 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="random",
     )
     parser.add_argument(
+        "--pt_train_file",
+        help="Training set file for the pretrained head",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--pt_valid_file",
+        help="Validation set file for the pretrained head",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         "--keep_isolated_atoms",
         help="Keep isolated atoms in the dataset, useful for transfer learning",
         type=str2bool,
         default=False,
     )
+
+    # Keys
     parser.add_argument(
         "--energy_key",
         help="Key of reference energies in training xyz",
