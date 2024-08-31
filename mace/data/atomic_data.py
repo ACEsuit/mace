@@ -52,6 +52,7 @@ class AtomicData(torch_geometric.data.Data):
         unit_shifts: torch.Tensor,  # [n_edges, 3]
         cell: Optional[torch.Tensor],  # [3,3]
         weight: Optional[torch.Tensor],  # [,]
+        head: Optional[torch.Tensor],  # [,]
         energy_weight: Optional[torch.Tensor],  # [,]
         forces_weight: Optional[torch.Tensor],  # [,]
         stress_weight: Optional[torch.Tensor],  # [,]
@@ -72,6 +73,7 @@ class AtomicData(torch_geometric.data.Data):
         assert unit_shifts.shape[1] == 3
         assert len(node_attrs.shape) == 2
         assert weight is None or len(weight.shape) == 0
+        assert head is None or len(head.shape) == 0
         assert energy_weight is None or len(energy_weight.shape) == 0
         assert forces_weight is None or len(forces_weight.shape) == 0
         assert stress_weight is None or len(stress_weight.shape) == 0
@@ -93,6 +95,7 @@ class AtomicData(torch_geometric.data.Data):
             "cell": cell,
             "node_attrs": node_attrs,
             "weight": weight,
+            "head": head,
             "energy_weight": energy_weight,
             "forces_weight": forces_weight,
             "stress_weight": stress_weight,
@@ -108,8 +111,14 @@ class AtomicData(torch_geometric.data.Data):
 
     @classmethod
     def from_config(
-        cls, config: Configuration, z_table: AtomicNumberTable, cutoff: float
+        cls,
+        config: Configuration,
+        z_table: AtomicNumberTable,
+        cutoff: float,
+        heads: Optional[list] = None,
     ) -> "AtomicData":
+        if heads is None:
+            heads = ["default"]
         edge_index, shifts, unit_shifts = get_neighborhood(
             positions=config.positions, cutoff=cutoff, pbc=config.pbc, cell=config.cell
         )
@@ -118,6 +127,10 @@ class AtomicData(torch_geometric.data.Data):
             torch.tensor(indices, dtype=torch.long).unsqueeze(-1),
             num_classes=len(z_table),
         )
+        try:
+            head = torch.tensor(heads.index(config.head), dtype=torch.long)
+        except ValueError:
+            head = torch.tensor(len(heads) - 1, dtype=torch.long)
 
         cell = (
             torch.tensor(config.cell, dtype=torch.get_default_dtype())
@@ -200,6 +213,7 @@ class AtomicData(torch_geometric.data.Data):
             cell=cell,
             node_attrs=one_hot,
             weight=weight,
+            head=head,
             energy_weight=energy_weight,
             forces_weight=forces_weight,
             stress_weight=stress_weight,

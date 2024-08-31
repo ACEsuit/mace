@@ -66,17 +66,24 @@ class HDF5Dataset(Dataset):
             pbc=unpack_value(subgrp["pbc"][()]),
             cell=unpack_value(subgrp["cell"][()]),
         )
+        if config.head is None:
+            config.head = self.kwargs.get("head")
         atomic_data = AtomicData.from_config(
-            config, z_table=self.z_table, cutoff=self.r_max
+            config,
+            z_table=self.z_table,
+            cutoff=self.r_max,
+            heads=self.kwargs.get("heads", ["Default"]),
         )
         return atomic_data
 
 
-def dataset_from_sharded_hdf5(files: List, z_table: AtomicNumberTable, r_max: float):
+def dataset_from_sharded_hdf5(
+    files: List, z_table: AtomicNumberTable, r_max: float, **kwargs
+):
     files = glob(files + "/*")
     datasets = []
     for file in files:
-        datasets.append(HDF5Dataset(file, z_table=z_table, r_max=r_max))
+        datasets.append(HDF5Dataset(file, z_table=z_table, r_max=r_max, **kwargs))
     full_dataset = ConcatDataset(datasets)
     return full_dataset
 

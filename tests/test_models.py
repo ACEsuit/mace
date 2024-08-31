@@ -196,3 +196,56 @@ def test_energy_dipole_mace():
         np.array(rot @ output["dipole"][0].detach().numpy()),
         output["dipole"][1].detach().numpy(),
     )
+
+
+def test_mace_multi_reference():
+    atomic_energies_multi = np.array([[1.0, 3.0], [0.0, 0.0]], dtype=float)
+    model_config = dict(
+        r_max=5,
+        num_bessel=8,
+        num_polynomial_cutoff=6,
+        max_ell=3,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("96x0e + 96x1o"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies_multi,
+        avg_num_neighbors=8,
+        atomic_numbers=table.zs,
+        distance_transform=True,
+        pair_repulsion=True,
+        correlation=3,
+        heads=["Default", "dft"],
+        # radial_type="chebyshev",
+        atomic_inter_scale=[1.0, 1.0],
+        atomic_inter_shift=[0.0, 0.1],
+    )
+    model = modules.ScaleShiftMACE(**model_config)
+    model_compiled = jit.compile(model)
+    config.head = "Default"
+    config_rotated.head = "dft"
+    atomic_data = data.AtomicData.from_config(
+        config, z_table=table, cutoff=3.0, heads=["Default", "dft"]
+    )
+    atomic_data2 = data.AtomicData.from_config(
+        config_rotated, z_table=table, cutoff=3.0, heads=["Default", "dft"]
+    )
+
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data, atomic_data2],
+        batch_size=2,
+        shuffle=True,
+        drop_last=False,
+    )
+    batch = next(iter(data_loader))
+    output1 = model(batch.to_dict(), training=True)
+    output2 = model_compiled(batch.to_dict(), training=True)
+    assert torch.allclose(output1["energy"][0], output2["energy"][0])
+    assert output2["energy"].shape[0] == 2

@@ -278,7 +278,11 @@ class UniversalLoss(torch.nn.Module):
             * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
             + self.forces_weight
             * conditional_huber_forces(ref, pred, huber_delta=self.huber_delta)
-            + self.stress_weight * self.huber_loss(ref["stress"], pred["stress"])
+            + self.stress_weight
+            * self.huber_loss(
+                ref["stress"],
+                pred["stress"],
+            )
         )
 
     def __repr__(self):

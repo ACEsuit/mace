@@ -41,7 +41,14 @@ class SWAContainer:
     loss_fn: torch.nn.Module
 
 
-def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
+def valid_err_log(
+    valid_loss,
+    eval_metrics,
+    logger,
+    log_errors,
+    epoch=None,
+    valid_loader_name="Default",
+):
     eval_metrics["mode"] = "eval"
     eval_metrics["epoch"] = epoch
     logger.log(eval_metrics)
@@ -53,17 +60,17 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A"
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A"
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
-        and eval_metrics["rmse_stress_per_atom"] is not None
+        and eval_metrics["rmse_stress"] is not None
     ):
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
-        error_stress = eval_metrics["rmse_stress_per_atom"] * 1e3
+        error_stress = eval_metrics["rmse_stress"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A, RMSE_stress_per_atom={error_stress:8.1f} meV / A^3",
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A, RMSE_stress={error_stress:8.1f} meV / A^3",
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -73,7 +80,7 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
         error_f = eval_metrics["rmse_f"] * 1e3
         error_virials = eval_metrics["rmse_virials_per_atom"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A, RMSE_virials_per_atom={error_virials:8.1f} meV",
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A, RMSE_virials_per_atom={error_virials:8.1f} meV",
         )
     elif (
         log_errors == "PerAtomMAEstressvirials"
@@ -99,31 +106,31 @@ def valid_err_log(valid_loss, eval_metrics, logger, log_errors, epoch=None):
         error_e = eval_metrics["rmse_e"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.4f}, RMSE_E={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A",
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_E={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A",
         )
     elif log_errors == "PerAtomMAE":
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.4f}, MAE_E_per_atom={error_e:8.1f} meV, MAE_F={error_f:8.1f} meV / A",
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, MAE_E_per_atom={error_e:8.1f} meV, MAE_F={error_f:8.1f} meV / A",
         )
     elif log_errors == "TotalMAE":
         error_e = eval_metrics["mae_e"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.4f}, MAE_E={error_e:8.1f} meV, MAE_F={error_f:8.1f} meV / A",
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, MAE_E={error_e:8.1f} meV, MAE_F={error_f:8.1f} meV / A",
         )
     elif log_errors == "DipoleRMSE":
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.4f}, RMSE_MU_per_atom={error_mu:8.2f} mDebye",
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_MU_per_atom={error_mu:8.2f} mDebye",
         )
     elif log_errors == "EnergyDipoleRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A, RMSE_Mu_per_atom={error_mu:8.2f} mDebye",
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A, RMSE_Mu_per_atom={error_mu:8.2f} mDebye",
         )
 
 
@@ -131,7 +138,7 @@ def train(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     train_loader: DataLoader,
-    valid_loader: Dict[str, DataLoader],
+    valid_loaders: Dict[str, DataLoader],
     optimizer: torch.optim.Optimizer,
     lr_scheduler: torch.optim.lr_scheduler.ExponentialLR,
     start_epoch: int,
@@ -170,17 +177,20 @@ def train(
     logging.info("Loss metrics on validation set")
     epoch = start_epoch
 
-    # # log validation loss before _any_ training
-    param_context = ema.average_parameters() if ema is not None else nullcontext()
-    with param_context:
-        valid_loss, eval_metrics = evaluate(
+    # log validation loss before _any_ training
+    valid_loss = 0.0
+    for valid_loader_name, valid_loader in valid_loaders.items():
+        valid_loss_head, eval_metrics = evaluate(
             model=model,
             loss_fn=loss_fn,
             data_loader=valid_loader,
             output_args=output_args,
             device=device,
         )
-        valid_err_log(valid_loss, eval_metrics, logger, log_errors, None)
+        valid_err_log(
+            valid_loss_head, eval_metrics, logger, log_errors, None, valid_loader_name
+        )
+    valid_loss = valid_loss_head  # consider only the last head for the checkpoint
 
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
@@ -233,30 +243,39 @@ def train(
             if "ScheduleFree" in type(optimizer).__name__:
                 optimizer.eval()
             with param_context:
-                valid_loss, eval_metrics = evaluate(
-                    model=model_to_evaluate,
-                    loss_fn=loss_fn,
-                    data_loader=valid_loader,
-                    output_args=output_args,
-                    device=device,
-                )
-            if rank == 0:
-                valid_err_log(
-                    valid_loss,
-                    eval_metrics,
-                    logger,
-                    log_errors,
-                    epoch,
-                )
-                if log_wandb:
-                    wandb_log_dict = {
-                        "epoch": epoch,
-                        "valid_loss": valid_loss,
-                        "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
-                        "valid_rmse_f": eval_metrics["rmse_f"],
-                    }
-                    wandb.log(wandb_log_dict)
+                valid_loss = 0.0
+                wandb_log_dict = {}
+                for valid_loader_name, valid_loader in valid_loaders.items():
+                    valid_loss_head, eval_metrics = evaluate(
+                        model=model_to_evaluate,
+                        loss_fn=loss_fn,
+                        data_loader=valid_loader,
+                        output_args=output_args,
+                        device=device,
+                    )
+                    valid_loss += valid_loss_head
+                    if rank == 0:
+                        valid_err_log(
+                            valid_loss_head,
+                            eval_metrics,
+                            logger,
+                            log_errors,
+                            epoch,
+                            valid_loader_name,
+                        )
+                        if log_wandb:
+                            wandb_log_dict[valid_loader_name] = {
+                                "epoch": epoch,
+                                "valid_loss": valid_loss_head,
+                                "valid_rmse_e_per_atom": eval_metrics[
+                                    "rmse_e_per_atom"
+                                ],
+                                "valid_rmse_f": eval_metrics["rmse_f"],
+                            }
 
+            if log_wandb:
+                wandb.log(wandb_log_dict)
+            if rank == 0:
                 if valid_loss >= lowest_loss:
                     patience_counter += 1
                     if patience_counter >= patience and epoch < swa.start:
@@ -422,7 +441,6 @@ class MACELoss(Metric):
             "stress_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
         )
         self.add_state("delta_stress", default=[], dist_reduce_fx="cat")
-        self.add_state("delta_stress_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state(
             "virials_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
         )
@@ -451,10 +469,6 @@ class MACELoss(Metric):
         if output.get("stress") is not None and batch.stress is not None:
             self.stress_computed += 1.0
             self.delta_stress.append(batch.stress - output["stress"])
-            self.delta_stress_per_atom.append(
-                (batch.stress - output["stress"])
-                / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
-            )
         if output.get("virials") is not None and batch.virials is not None:
             self.virials_computed += 1.0
             self.delta_virials.append(batch.virials - output["virials"])
@@ -497,10 +511,8 @@ class MACELoss(Metric):
             aux["q95_f"] = compute_q95(delta_fs)
         if self.stress_computed:
             delta_stress = self.convert(self.delta_stress)
-            delta_stress_per_atom = self.convert(self.delta_stress_per_atom)
             aux["mae_stress"] = compute_mae(delta_stress)
             aux["rmse_stress"] = compute_rmse(delta_stress)
-            aux["rmse_stress_per_atom"] = compute_rmse(delta_stress_per_atom)
             aux["q95_stress"] = compute_q95(delta_stress)
         if self.virials_computed:
             delta_virials = self.convert(self.delta_virials)
