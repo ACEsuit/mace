@@ -509,9 +509,10 @@ def run(args: argparse.Namespace) -> None:
     logging.info(f"Batch size: {args.batch_size}")
     if args.ema:
         logging.info(f"Using Exponential Moving Average with decay: {args.ema_decay}")
-    logging.info(
-        f"Number of gradient updates: {int(args.max_num_epochs*len(collections.train)/args.batch_size)}"
-    )
+    if args.train_file.endswith(".xyz"):
+        logging.info(
+            f"Number of gradient updates: {int(args.max_num_epochs*len(collections.train)/args.batch_size)}"
+        )
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
 
