@@ -245,7 +245,11 @@ def run(args: argparse.Namespace) -> None:
         if (
             args.foundation_model in ["small", "medium", "large"]
             or "mp" in args.foundation_model
+            or args.pt_train_file is None
         ):
+            logging.info(
+                "Using foundation model for multiheads finetuning with Materials Project data"
+            )
             heads = list(dict.fromkeys(["pt_head"] + heads))
             head_config_pt = HeadConfig(
                 head_name="pt_head",
@@ -259,6 +263,9 @@ def run(args: argparse.Namespace) -> None:
             head_config_pt.train_file = f"mp_finetuning-{tag}.xyz"
             head_configs.append(head_config_pt)
         else:
+            logging.info(
+                f"Using foundation model for multiheads finetuning with {args.pt_train_file}"
+            )
             heads = list(dict.fromkeys(["pt_head"] + heads))
             collections, atomic_energies_dict = get_dataset_from_xyz(
                 work_dir=args.work_dir,
@@ -385,14 +392,9 @@ def run(args: argparse.Namespace) -> None:
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
         atomic_energies = dict_to_array(atomic_energies_dict, heads)
-        result = "\n".join(
-            [
-                f"Atomic Energies used (z: eV) for head {head_config.head_name}: " +
-                "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}"
-                for head_config in head_configs
-            ]
-        )
-        logging.info(result)
+        for head_config in head_configs:
+            logging.info(f"Atomic Energies used (z: eV) for head {head_config.head_name}: " + "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}")
+
 
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
@@ -554,7 +556,7 @@ def run(args: argparse.Namespace) -> None:
             f"{model_config_foundation['num_interactions']} layers, each with correlation order: {model_config_foundation['correlation']} (body order: {model_config_foundation['correlation']+1}) and spherical harmonics up to: l={model_config_foundation['max_ell']}"
         )
         logging.info(
-            f"Radial cutoff: {model_config_foundation['r_max']} Å (total receptive field for each atom: {model_config_foundation['r_max'] * model_config_foundation['num_interactions']} Å)"
+            f"Radial cutoff: {model_config_foundation['r_max']} A (total receptive field for each atom: {model_config_foundation['r_max'] * model_config_foundation['num_interactions']} A)"
         )
         logging.info(
             f"Distance transform for radial basis functions: {model_config_foundation['distance_transform']}"
@@ -571,7 +573,7 @@ def run(args: argparse.Namespace) -> None:
             f"{args.num_radial_basis} radial and {args.num_cutoff_basis} basis functions"
         )
         logging.info(
-            f"Radial cutoff: {args.r_max} Å (total receptive field for each atom: {args.r_max * args.num_interactions} Å)"
+            f"Radial cutoff: {args.r_max} A (total receptive field for each atom: {args.r_max * args.num_interactions} A)"
         )
         logging.info(
             f"Distance transform for radial basis functions: {args.distance_transform}"
@@ -907,17 +909,18 @@ def run(args: argparse.Namespace) -> None:
             distributed=args.distributed,
         )
         logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
-        table_test = create_error_table(
-            table_type=args.error_table,
-            all_data_loaders=test_data_loader,
-            model=model_to_evaluate,
-            loss_fn=loss_fn,
-            output_args=output_args,
-            log_wandb=args.wandb,
-            device=device,
-            distributed=args.distributed,
-        )
-        logging.info("Error-table on TEST:\n" + str(table_test))
+        if test_data_loader:
+            table_test = create_error_table(
+                table_type=args.error_table,
+                all_data_loaders=test_data_loader,
+                model=model_to_evaluate,
+                loss_fn=loss_fn,
+                output_args=output_args,
+                log_wandb=args.wandb,
+                device=device,
+                distributed=args.distributed,
+            )
+            logging.info("Error-table on TEST:\n" + str(table_test))
 
         if rank == 0:
             # Save entire model

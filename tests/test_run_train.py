@@ -468,7 +468,15 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
     for i, c in enumerate(fitting_configs):
-        if i % 2 == 0:
+        if i in (0, 1):
+            c_dft = c.copy()
+            c_dft.info["head"] = "DFT"
+            fitting_configs_dft.append(c_dft)
+            fitting_configs_dft.append(c)
+            c_mp2 = c.copy()
+            c_mp2.info["head"] = "MP2"
+            fitting_configs_mp2.append(c_mp2)
+        elif i % 2 == 0:
             c.info["head"] = "DFT"
             fitting_configs_dft.append(c)
         else:
@@ -498,10 +506,11 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     mace_params["foundation_model"] = "small"
     mace_params["hidden_irreps"] = "128x0e"
     mace_params["r_max"] = 6.0
-    mace_params["default_dtype"] = "float32"
+    mace_params["default_dtype"] = "float64"
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
     mace_params["batch_size"] = 2
+    mace_params["valid_batch_size"] = 1
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"
     # make sure run_train.py is using the mace that is currently being tested
@@ -538,27 +547,27 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     print("Es", Es)
     # from a run on 20/08/2024 on commit
     ref_Es = [
-        1.4186015129089355,
-        0.6012811660766602,
-        1.4759466648101807,
-        1.1662801504135132,
-        1.117658019065857,
-        1.4062559604644775,
-        1.4638032913208008,
-        0.9065879583358765,
-        1.3814517259597778,
-        1.2735612392425537,
-        1.2472984790802002,
-        1.1374807357788086,
-        1.4028346538543701,
-        1.0139431953430176,
-        1.3830922842025757,
-        1.0170294046401978,
-        1.6741619110107422,
-        1.2575324773788452,
-        1.2426478862762451,
-        1.0206304788589478,
-        1.2309682369232178,
-        1.135024070739746,
+        1.654685616493225,
+        0.44693732261657715,
+        0.8741313815116882,
+        0.569085955619812,
+        0.7161882519721985,
+        0.8654778599739075,
+        0.8722733855247498,
+        0.49582308530807495,
+        0.814422607421875,
+        0.7027317881584167,
+        0.7196993827819824,
+        0.517953097820282,
+        0.8631765246391296,
+        0.4679797887802124,
+        0.8163984417915344,
+        0.4252359867095947,
+        1.0861445665359497,
+        0.6829671263694763,
+        0.7136879563331604,
+        0.5160345435142517,
+        0.7002358436584473,
+        0.5574042201042175,
     ]
     assert np.allclose(Es, ref_Es, atol=1e-1)
