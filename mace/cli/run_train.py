@@ -250,14 +250,21 @@ def run(args: argparse.Namespace) -> None:
                 "Using foundation model for multiheads finetuning with Materials Project data"
             )
             heads = list(dict.fromkeys(["pt_head"] + heads))
+            mp_keyspec = KeySpecification()
+            update_keyspec_from_kwargs(mp_keyspec, vars(args))
+            mp_keyspec.update(
+                info_keys={"energy":"energy", "stress":"stress"},
+                arrays_keys={"forces":"forces"},
+            )
             head_config_pt = HeadConfig(
                 head_name="pt_head",
                 E0s="foundation",
                 statistics_file=args.statistics_file,
+                key_specification=mp_keyspec,
                 compute_avg_num_neighbors=False,
                 avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
             )
-            collections = assemble_mp_data(args, tag, head_configs)
+            collections = assemble_mp_data(args, tag, head_configs, head_config_pt)
             head_config_pt.collections = collections
             head_config_pt.train_file = f"mp_finetuning-{tag}.xyz"
             head_configs.append(head_config_pt)
