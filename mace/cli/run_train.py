@@ -14,20 +14,18 @@ from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional
 
-import numpy as np
 import torch.distributed
 import torch.nn.functional
-from e3nn import o3
 from e3nn.util import jit
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
 
 import mace
-from mace import data, modules, tools
+from mace import data, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.tools import torch_geometric
-from mace.tools.finetuning_utils import load_foundations_elements
+from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
     assemble_mp_data,
@@ -119,6 +117,7 @@ def run(args: argparse.Namespace) -> None:
     tools.set_default_dtype(args.default_dtype)
     device = tools.init_device(args.device)
     commit = print_git_commit()
+    model_foundation: Optional[torch.nn.Module] = None
     if args.foundation_model is not None:
         if args.multiheads_finetuning:
             assert (
@@ -294,6 +293,7 @@ def run(args: argparse.Namespace) -> None:
                 compute_avg_num_neighbors=False,
             )
             head_config_pt.collections = collections
+            head_configs.append(head_config_pt)
         logging.info(
             f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}"
         )
@@ -372,22 +372,22 @@ def run(args: argparse.Namespace) -> None:
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
         dipole_only = True
-        compute_dipole = True
-        compute_energy = False
+        args.compute_dipole = True
+        args.compute_energy = False
         args.compute_forces = False
-        compute_virials = False
+        args.compute_virials = False
         args.compute_stress = False
     else:
         dipole_only = False
         if args.model == "EnergyDipolesMACE":
-            compute_dipole = True
-            compute_energy = True
+            args.compute_dipole = True
+            args.compute_energy = True
             args.compute_forces = True
-            compute_virials = False
+            args.compute_virials = False
             args.compute_stress = False
         else:
-            compute_energy = True
-            compute_dipole = False
+            args.compute_energy = True
+            args.compute_dipole = False
         # atomic_energies: np.ndarray = np.array(
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
@@ -485,225 +485,11 @@ def run(args: argparse.Namespace) -> None:
             generator=torch.Generator().manual_seed(args.seed),
         )
 
-    loss_fn = get_loss_fn(args, dipole_only, compute_dipole)
+    loss_fn = get_loss_fn(args, dipole_only, args.compute_dipole)
     args.avg_num_neighbors = get_avg_num_neighbors(head_configs, args, train_loader, device)
 
-    # Selecting outputs
-    compute_virials = False
-    if args.loss in ("stress", "virials", "huber", "universal"):
-        compute_virials = True
-        args.compute_stress = True
-        args.error_table = "PerAtomRMSEstressvirials"
-
-    output_args = {
-        "energy": compute_energy,
-        "forces": args.compute_forces,
-        "virials": compute_virials,
-        "stress": args.compute_stress,
-        "dipoles": compute_dipole,
-    }
-    logging.info(
-        f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
-    )
-    logging.info("===========MODEL DETAILS===========")
-    if args.scaling == "no_scaling":
-        args.std = 1.0
-        logging.info("No scaling selected")
-    elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
-        args.mean, args.std = modules.scaling_classes[args.scaling](
-            train_loader, atomic_energies
-        )
-    # Build model
-    if args.foundation_model is not None and args.model in ["MACE", "ScaleShiftMACE"]:
-        logging.info("Loading FOUNDATION model")
-        model_config_foundation = extract_config_mace_model(model_foundation)
-        model_config_foundation["atomic_energies"] = atomic_energies
-        model_config_foundation["atomic_numbers"] = z_table.zs
-        model_config_foundation["num_elements"] = len(z_table)
-        args.max_L = model_config_foundation["hidden_irreps"].lmax
-        if args.model == "MACE" and model_foundation.__class__.__name__ == "MACE":
-            model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
-        else:
-            if isinstance(args.mean, np.ndarray):
-                if args.mean.size == 1:
-                    model_config_foundation["atomic_inter_shift"] = args.mean.item()
-                elif args.mean.size == len(heads):
-                    model_config_foundation["atomic_inter_shift"] = args.mean.tolist()
-                else:
-                    logging.info(
-                        "Mean not in correct format, using default value of 0.0"
-                    )
-                    model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
-            elif isinstance(args.mean, list) and len(args.mean) == len(heads):
-                model_config_foundation["atomic_inter_shift"] = args.mean
-            elif isinstance(args.mean, float):
-                model_config_foundation["atomic_inter_shift"] = [args.mean] * len(heads)
-            else:
-                logging.info("Mean not in correct format, using default value of 0.0")
-                model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
-
-        model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
-        args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
-        args.model = "FoundationMACE"
-        model_config_foundation["heads"] = heads
-        model_config = model_config_foundation
-        logging.info("Model configuration extracted from foundation model")
-        logging.info("Using universal loss function for fine-tuning")
-        logging.info(
-            f"Message passing with hidden irreps {model_config_foundation['hidden_irreps']})"
-        )
-        logging.info(
-            f"{model_config_foundation['num_interactions']} layers, each with correlation order: {model_config_foundation['correlation']} (body order: {model_config_foundation['correlation']+1}) and spherical harmonics up to: l={model_config_foundation['max_ell']}"
-        )
-        logging.info(
-            f"Radial cutoff: {model_config_foundation['r_max']} A (total receptive field for each atom: {model_config_foundation['r_max'] * model_config_foundation['num_interactions']} A)"
-        )
-        logging.info(
-            f"Distance transform for radial basis functions: {model_config_foundation['distance_transform']}"
-        )
-    else:
-        logging.info("Building model")
-        logging.info(
-            f"Message passing with {args.num_channels} channels and max_L={args.max_L} ({args.hidden_irreps})"
-        )
-        logging.info(
-            f"{args.num_interactions} layers, each with correlation order: {args.correlation} (body order: {args.correlation+1}) and spherical harmonics up to: l={args.max_ell}"
-        )
-        logging.info(
-            f"{args.num_radial_basis} radial and {args.num_cutoff_basis} basis functions"
-        )
-        logging.info(
-            f"Radial cutoff: {args.r_max} A (total receptive field for each atom: {args.r_max * args.num_interactions} A)"
-        )
-        logging.info(
-            f"Distance transform for radial basis functions: {args.distance_transform}"
-        )
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
-
-        logging.info(f"Hidden irreps: {args.hidden_irreps}")
-
-        model_config = dict(
-            r_max=args.r_max,
-            num_bessel=args.num_radial_basis,
-            num_polynomial_cutoff=args.num_cutoff_basis,
-            max_ell=args.max_ell,
-            interaction_cls=modules.interaction_classes[args.interaction],
-            num_interactions=args.num_interactions,
-            num_elements=len(z_table),
-            hidden_irreps=o3.Irreps(args.hidden_irreps),
-            atomic_energies=atomic_energies,
-            avg_num_neighbors=args.avg_num_neighbors,
-            atomic_numbers=z_table.zs,
-        )
-
-    model: torch.nn.Module
-
-    if args.model == "MACE":
-        model = modules.ScaleShiftMACE(
-            **model_config,
-            pair_repulsion=args.pair_repulsion,
-            distance_transform=args.distance_transform,
-            correlation=args.correlation,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[
-                "RealAgnosticInteractionBlock"
-            ],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=args.std,
-            atomic_inter_shift=[0.0] * len(heads),
-            radial_MLP=ast.literal_eval(args.radial_MLP),
-            radial_type=args.radial_type,
-            heads=heads,
-        )
-    elif args.model == "ScaleShiftMACE":
-        model = modules.ScaleShiftMACE(
-            **model_config,
-            pair_repulsion=args.pair_repulsion,
-            distance_transform=args.distance_transform,
-            correlation=args.correlation,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[args.interaction_first],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=args.std,
-            atomic_inter_shift=args.mean,
-            radial_MLP=ast.literal_eval(args.radial_MLP),
-            radial_type=args.radial_type,
-            heads=heads,
-        )
-    elif args.model == "FoundationMACE":
-        model = modules.ScaleShiftMACE(**model_config_foundation)
-    elif args.model == "ScaleShiftBOTNet":
-        model = modules.ScaleShiftBOTNet(
-            **model_config,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[args.interaction_first],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=args.std,
-            atomic_inter_shift=args.mean,
-        )
-    elif args.model == "BOTNet":
-        model = modules.BOTNet(
-            **model_config,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[args.interaction_first],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-        )
-    elif args.model == "AtomicDipolesMACE":
-        # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
-        assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
-        assert (
-            args.error_table == "DipoleRMSE"
-        ), "Use error_table DipoleRMSE with AtomicDipolesMACE model"
-        model = modules.AtomicDipolesMACE(
-            **model_config,
-            correlation=args.correlation,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[
-                "RealAgnosticInteractionBlock"
-            ],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-            # dipole_scale=1,
-            # dipole_shift=0,
-        )
-    elif args.model == "EnergyDipolesMACE":
-        # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
-        assert (
-            args.loss == "energy_forces_dipole"
-        ), "Use energy_forces_dipole loss with EnergyDipolesMACE model"
-        assert (
-            args.error_table == "EnergyDipoleRMSE"
-        ), "Use error_table EnergyDipoleRMSE with AtomicDipolesMACE model"
-        model = modules.EnergyDipolesMACE(
-            **model_config,
-            correlation=args.correlation,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[
-                "RealAgnosticInteractionBlock"
-            ],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-        )
-    else:
-        raise RuntimeError(f"Unknown model: '{args.model}'")
-
-    if args.foundation_model is not None:
-        if args.foundation_filter_elements:
-            model = load_foundations_elements(
-                model,
-                model_foundation,
-                z_table,
-                load_readout=True,
-                max_L=args.max_L,
-            )
-        else:
-            model = load_foundations_elements(
-                model,
-                model_foundation,
-                z_table,
-                load_readout=False,
-                max_L=args.max_L,
-            )
+    # Model
+    model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table)
     model.to(device)
 
     logging.debug(model)

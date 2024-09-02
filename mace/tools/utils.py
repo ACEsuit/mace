@@ -141,7 +141,6 @@ class MetricsLogger:
         self.path = os.path.join(self.directory, self.filename)
 
     def log(self, d: Dict[str, Any]) -> None:
-        logging.debug(f"Saving info: {self.path}")
         os.makedirs(name=self.directory, exist_ok=True)
         with open(self.path, mode="a", encoding="utf-8") as f:
             f.write(json.dumps(d, cls=UniversalEncoder))
