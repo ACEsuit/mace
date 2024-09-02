@@ -4,6 +4,7 @@ from .neighborhood import get_neighborhood
 from .utils import (
     Configuration,
     Configurations,
+    KeySpecification,
     compute_average_E0s,
     config_from_atoms,
     config_from_atoms_list,
@@ -13,7 +14,6 @@ from .utils import (
     save_configurations_as_HDF5,
     save_dataset_as_HDF5,
     test_config_types,
-    KeySpecification,
     update_keyspec_from_kwargs,
 )
 

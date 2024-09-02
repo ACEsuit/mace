@@ -32,7 +32,7 @@ config = Configuration(
             ]
         ),
         "energy": -1.5,
-        "stress":np.array([1.0, 0.0, 0.5, 0.0, -1.0, 0.0]),
+        "stress": np.array([1.0, 0.0, 0.5, 0.0, -1.0, 0.0]),
     },
     property_weights={
         "forces": 1.0,

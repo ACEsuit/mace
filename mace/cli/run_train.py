@@ -24,6 +24,7 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
+from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -52,7 +53,6 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
-from mace.data import update_keyspec_from_kwargs, KeySpecification
 
 
 def main() -> None:
@@ -71,7 +71,7 @@ def run(args: argparse.Namespace) -> None:
     args, input_log_messages = tools.check_args(args)
 
     # default keyspec to update using heads dictionary
-    args.key_specification = KeySpecification() 
+    args.key_specification = KeySpecification()
     update_keyspec_from_kwargs(args.key_specification, vars(args))
 
     if args.device == "xpu":
@@ -156,12 +156,12 @@ def run(args: argparse.Namespace) -> None:
         args.multiheads_finetuning = False
 
     if args.heads is not None:
-        args.heads = ast.literal_eval(args.heads) # strings from command line
+        args.heads = ast.literal_eval(args.heads)
     else:
         args.heads = prepare_default_head(args)
 
     logging.info("===========LOADING INPUT DATA===========")
-    heads = list(args.heads.keys())
+    heads = list(args.heads.keys())  # TODO: rename to heads_names
     logging.info(f"Using heads: {heads}")
     head_configs: List[HeadConfig] = []
     for head, head_args in args.heads.items():
@@ -208,7 +208,7 @@ def run(args: argparse.Namespace) -> None:
                 config_type_weights=config_type_weights,
                 test_path=head_config.test_file,
                 seed=args.seed,
-                key_specification=args.key_specification,
+                key_specification=head_config.key_specification,
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
             )
@@ -253,8 +253,8 @@ def run(args: argparse.Namespace) -> None:
             mp_keyspec = KeySpecification()
             update_keyspec_from_kwargs(mp_keyspec, vars(args))
             mp_keyspec.update(
-                info_keys={"energy":"energy", "stress":"stress"},
-                arrays_keys={"forces":"forces"},
+                info_keys={"energy": "energy", "stress": "stress"},
+                arrays_keys={"forces": "forces"},
             )
             head_config_pt = HeadConfig(
                 head_name="pt_head",
@@ -273,6 +273,7 @@ def run(args: argparse.Namespace) -> None:
                 f"Using foundation model for multiheads finetuning with {args.pt_train_file}"
             )
             heads = list(dict.fromkeys(["pt_head"] + heads))
+            # TODO: new interface so that pretrained head has a seperate keyspec and does not rely on args
             collections, atomic_energies_dict = get_dataset_from_xyz(
                 work_dir=args.work_dir,
                 train_path=args.pt_train_file,
@@ -373,8 +374,6 @@ def run(args: argparse.Namespace) -> None:
             ].item()
             for z in z_table.zs
         }
-
-    print('hey')
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None

@@ -27,7 +27,7 @@ config = data.Configuration(
             ]
         ),
         "energy": -1.5,
-        "charges":np.array([-2.0, 1.0, 1.0]),
+        "charges": np.array([-2.0, 1.0, 1.0]),
         "dipole": np.array([-1.5, 1.5, 2.0]),
     },
     property_weights={
@@ -52,7 +52,7 @@ config_rotated = data.Configuration(
             ]
         ),
         "energy": -1.5,
-        "charges":np.array([-2.0, 1.0, 1.0]),
+        "charges": np.array([-2.0, 1.0, 1.0]),
         "dipole": np.array([-1.5, 1.5, 2.0]),
     },
     property_weights={
