@@ -253,7 +253,6 @@ def train(
                         output_args=output_args,
                         device=device,
                     )
-                    valid_loss += valid_loss_head
                     if rank == 0:
                         valid_err_log(
                             valid_loss_head,
@@ -272,7 +271,9 @@ def train(
                                 ],
                                 "valid_rmse_f": eval_metrics["rmse_f"],
                             }
-
+                valid_loss = (
+                    valid_loss_head  # consider only the last head for the checkpoint
+                )
             if log_wandb:
                 wandb.log(wandb_log_dict)
             if rank == 0:
