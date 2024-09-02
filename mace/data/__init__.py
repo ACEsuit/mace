@@ -14,7 +14,7 @@ from .utils import (
     save_dataset_as_HDF5,
     test_config_types,
     KeySpecification,
-    get_keyspec_from_args,
+    update_keyspec_from_kwargs,
 )
 
 __all__ = [
@@ -34,5 +34,5 @@ __all__ = [
     "save_AtomicData_to_HDF5",
     "save_configurations_as_HDF5",
     "KeySpecification",
-    "get_keyspec_from_args",
+    "update_keyspec_from_kwargs",
 ]

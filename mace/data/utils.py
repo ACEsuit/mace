@@ -5,8 +5,8 @@
 ###########################################################################################
 
 import logging
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Sequence, Tuple, Any
 
 import ase.data
 import ase.io
@@ -25,8 +25,8 @@ DEFAULT_CONFIG_TYPE_WEIGHTS = {DEFAULT_CONFIG_TYPE: 1.0}
 
 @dataclass
 class KeySpecification:
-    info_keys: Dict[str, str]
-    arrays_keys: Dict[str, str]
+    info_keys: Dict[str, str] = field(default_factory=dict)
+    arrays_keys: Dict[str, str] = field(default_factory=dict)
 
     def update(
         self,
@@ -40,27 +40,27 @@ class KeySpecification:
         return self
 
 
-def get_keyspec_from_args(args) -> KeySpecification:
-    """ info/array beheviour of new keys is set here """
-    info_keys = {
-        "energy": args.energy_key,
-        "stress": args.stress_key,
-        "virials": args.virials_key,
-        "dipole": args.dipole_key,
-        "head": args.head_key,
-    }
-    arrays_keys = {
-        "forces": args.forces_key,
-        "charges": args.charges_key,
-    }
-    return KeySpecification(info_keys=info_keys, arrays_keys=arrays_keys)
+def update_keyspec_from_kwargs(keyspec, keydict) -> KeySpecification:
+    # convert command line style property_key arguments into a keyspec
+    infos = ["energy_key", "stress_key", "virials_key", "dipole_key", "head_key"]
+    arrays = ["forces_key", "charges_key"]
+    info_keys = {}
+    arrays_keys = {}
+    for key in infos:
+        if key in keydict:
+            info_keys[key[:-4]] = keydict[key]
+    for key in arrays:
+        if key in keydict:
+            arrays_keys[key[:-4]] = keydict[key]
+    keyspec.update(info_keys=info_keys, arrays_keys=arrays_keys)
+    return keyspec
 
 
 @dataclass
 class Configuration:
     atomic_numbers: np.ndarray
     positions: Positions  # Angstrom
-    properties: Dict[str, np.ndarray]
+    properties: Dict[str, Any]
     property_weights: Dict[str, float]
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
@@ -143,23 +143,26 @@ def config_from_atoms(
     weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(
         config_type, 1.0
     )
-    head = atoms.info.get(key_specification.info_keys["head"], "Default")
+    head_key = key_specification.info_keys.get("head", "default")
+    head = atoms.info.get(head_key, "Default")
     properties = {}
     property_weights = {}
     for name in list(key_specification.arrays_keys) + list(key_specification.info_keys):
         property_weights[name] = atoms.info.get("config_" + name + "_weight", 1.0)
+
     for name, atoms_key in key_specification.info_keys.items():
         properties[name] = atoms.info.get(atoms_key, None)
         if not atoms_key in atoms.info:
             property_weights[name] = 0.0
+
     for name, atoms_key in key_specification.arrays_keys.items():
         properties[name] = atoms.arrays.get(atoms_key, None)
         if not atoms_key in atoms.arrays:
             property_weights[name] = 0.0
-
     
-    del properties["head"]
-    del property_weights["head"]
+    if "head" in properties:
+        del properties["head"]
+        del property_weights["head"]
 
     return Configuration(
         atomic_numbers=atomic_numbers,

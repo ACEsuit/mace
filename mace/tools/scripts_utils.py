@@ -55,7 +55,7 @@ def get_dataset_from_xyz(
         head_name=head_name,
     )
     num_energies = int(np.sum([config.property_weights["energy"] for config in all_train_configs]))
-    num_forces = int(np.sum([config.property_weights["forces"] * config.atomic_numbers.size for config in all_train_configs]))
+    num_forces = int(np.sum([config.property_weights["forces"] for config in all_train_configs]))
     logging.info(
         f"Training set [{len(all_train_configs)} configs, {num_energies} energy, {num_forces} forces] loaded from '{train_path}'"
     )
@@ -68,7 +68,7 @@ def get_dataset_from_xyz(
             head_name=head_name,
         )
         num_energies = int(np.sum([config.property_weights["energy"] for config in valid_configs]))
-        num_forces = int(np.sum([config.property_weights["forces"] * config.atomic_numbers.size for config in valid_configs]))
+        num_forces = int(np.sum([config.property_weights["forces"] for config in valid_configs]))
         logging.info(
             f"Training set [{len(valid_configs)} configs, {num_energies} energy, {num_forces} forces] loaded from '{valid_path}'"
         )
@@ -78,7 +78,7 @@ def get_dataset_from_xyz(
             all_train_configs, valid_fraction, seed, work_dir
         )
         num_energies = int(np.sum([config.property_weights["energy"] for config in valid_configs]))
-        num_forces = int(np.sum([config.property_weights["forces"] * config.atomic_numbers.size for config in valid_configs]))
+        num_forces = int(np.sum([config.property_weights["forces"] for config in valid_configs]))
         logging.info(
             f"Validation set contains {len(valid_configs)} configs, [{num_energies} energy, {num_forces} forces]"
         )
@@ -98,7 +98,7 @@ def get_dataset_from_xyz(
         )
         for name, tmp_configs in test_configs:
             num_energies = int(np.sum([config.property_weights["energy"] for config in tmp_configs]))
-            num_forces = int(np.sum([config.property_weights["forces"] * config.atomic_numbers.size for config in tmp_configs]))
+            num_forces = int(np.sum([config.property_weights["forces"] for config in tmp_configs]))
             logging.info(
                 f"{name}: {len(tmp_configs)} configs, {num_energies} energy, {num_forces} forces"
             )

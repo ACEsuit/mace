@@ -13,7 +13,8 @@ from mace.tools.scripts_utils import (
     dict_to_namespace,
     get_dataset_from_xyz,
 )
-from mace.data import get_keyspec_from_args, KeySpecification
+from mace.data import update_keyspec_from_kwargs, KeySpecification
+from copy import deepcopy
 
 @dataclasses.dataclass
 class HeadConfig:
@@ -42,6 +43,10 @@ class HeadConfig:
 def dict_head_to_dataclass(
     head: Dict[str, Any], head_name: str, args: argparse.Namespace
 ) -> HeadConfig:
+    # priority is global args < head property_key values < head info_keys+arrays_keys
+    head_keyspec = deepcopy(args.key_specification)
+    update_keyspec_from_kwargs(head_keyspec, head)
+    head_keyspec.update(info_keys=head.get("info_keys", {}), arrays_keys=head.get("arrays_keys", {}))
 
     return HeadConfig(
         head_name=head_name,
@@ -60,7 +65,7 @@ def dict_head_to_dataclass(
         mean=head.get("mean", args.mean),
         std=head.get("std", args.std),
         avg_num_neighbors=head.get("avg_num_neighbors", args.avg_num_neighbors),
-        key_specification=head.get("key_specification", args.key_specification),
+        key_specification=head_keyspec,
         keep_isolated_atoms=head.get("keep_isolated_atoms", args.keep_isolated_atoms),
     )
 
@@ -76,7 +81,6 @@ def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
             "statistics_file": args.statistics_file,
             "valid_fraction": args.valid_fraction,
             "config_type_weights": args.config_type_weights,
-            "key_specification": args.key_specification,
             "keep_isolated_atoms": args.keep_isolated_atoms,
         }
     }
@@ -146,7 +150,8 @@ def assemble_mp_data(
             "default_dtype": args.default_dtype,
         }
         select_samples(dict_to_namespace(args_samples))
-        mp_keyspec = get_keyspec_from_args(args)
+        mp_keyspec = KeySpecification()
+        update_keyspec_from_kwargs(mp_keyspec, vars(args))
         mp_keyspec.update(
             info_keys={"energy":"energy", "stress":"stress"},
             arrays_keys={"forces":"forces"},
