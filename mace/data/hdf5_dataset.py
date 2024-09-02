@@ -10,7 +10,7 @@ from mace.tools.utils import AtomicNumberTable
 
 
 class HDF5Dataset(Dataset):
-    def __init__(self, file_path, r_max, z_table, **kwargs):
+    def __init__(self, file_path, r_max, z_table, atomic_dataclass=AtomicData, **kwargs):
         super(HDF5Dataset, self).__init__()  # pylint: disable=super-with-arguments
         self.file_path = file_path
         self._file = None
@@ -19,6 +19,7 @@ class HDF5Dataset(Dataset):
         self.length = len(self.file.keys()) * self.batch_size
         self.r_max = r_max
         self.z_table = z_table
+        self.atomic_dataclass = atomic_dataclass
         try:
             self.drop_last = bool(self.file.attrs["drop_last"])
         except KeyError:
@@ -68,7 +69,7 @@ class HDF5Dataset(Dataset):
         )
         if config.head is None:
             config.head = self.kwargs.get("head")
-        atomic_data = AtomicData.from_config(
+        atomic_data = self.atomic_dataclass.from_config(
             config,
             z_table=self.z_table,
             cutoff=self.r_max,

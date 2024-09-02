@@ -54,7 +54,7 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
-from mace.data import get_keyspec_from_args
+from mace.data import update_keyspec_from_kwargs, KeySpecification
 
 
 def main() -> None:
@@ -72,8 +72,9 @@ def run(args: argparse.Namespace) -> None:
     tag = tools.get_tag(name=args.name, seed=args.seed)
     args, input_log_messages = tools.check_args(args)
 
-    # set keyspec in args
-    args.key_specification = get_keyspec_from_args(args)
+    # default keyspec to update using heads dictionary
+    args.key_specification = KeySpecification() 
+    update_keyspec_from_kwargs(args.key_specification, vars(args))
 
     if args.device == "xpu":
         try:
@@ -290,9 +291,6 @@ def run(args: argparse.Namespace) -> None:
             f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}"
         )
 
-    #print(args.heads)
-    print(head_configs)
-
     # Atomic number table
     # yapf: disable
     for head_config in head_configs:
@@ -361,6 +359,8 @@ def run(args: argparse.Namespace) -> None:
             ].item()
             for z in z_table.zs
         }
+
+    print('hey')
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
