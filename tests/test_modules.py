@@ -23,16 +23,22 @@ config = Configuration(
             [0.0, 1.0, 0.0],
         ]
     ),
-    forces=np.array(
-        [
-            [0.0, -1.3, 0.0],
-            [1.0, 0.2, 0.0],
-            [0.0, 1.1, 0.3],
-        ]
-    ),
-    energy=-1.5,
-    # stress if voigt 6 notation
-    stress=np.array([1.0, 0.0, 0.5, 0.0, -1.0, 0.0]),
+    properties={
+        "forces": np.array(
+            [
+                [0.0, -1.3, 0.0],
+                [1.0, 0.2, 0.0],
+                [0.0, 1.1, 0.3],
+            ]
+        ),
+        "energy": -1.5,
+        "stress":np.array([1.0, 0.0, 0.5, 0.0, -1.0, 0.0]),
+    },
+    property_weights={
+        "forces": 1.0,
+        "energy": 1.0,
+        "stress": 1.0,
+    },
 )
 
 table = AtomicNumberTable([1, 8])

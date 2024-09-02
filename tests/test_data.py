@@ -29,14 +29,20 @@ class TestAtomicData:
                 [0.0, 1.0, 0.0],
             ]
         ),
-        forces=np.array(
-            [
-                [0.0, -1.3, 0.0],
-                [1.0, 0.2, 0.0],
-                [0.0, 1.1, 0.3],
-            ]
-        ),
-        energy=-1.5,
+        properties={
+            "forces": np.array(
+                [
+                    [0.0, -1.3, 0.0],
+                    [1.0, 0.2, 0.0],
+                    [0.0, 1.1, 0.3],
+                ]
+            ),
+            "energy": -1.5,
+        },
+        property_weights={
+            "forces": 1.0,
+            "energy": 1.0,
+        },
     )
     config_2 = deepcopy(config)
     config_2.positions = config.positions + 0.01

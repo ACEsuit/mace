@@ -127,7 +127,7 @@ def config_from_atoms_list(
 
 def config_from_atoms(
     atoms: ase.Atoms,
-    key_specification: KeySpecification,
+    key_specification: KeySpecification = KeySpecification(),
     config_type_weights: Optional[Dict[str, float]] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -143,7 +143,7 @@ def config_from_atoms(
     weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(
         config_type, 1.0
     )
-    head_key = key_specification.info_keys.get("head", "default")
+    head_key = key_specification.info_keys.get("head", "head")
     head = atoms.info.get(head_key, "Default")
     properties = {}
     property_weights = {}
