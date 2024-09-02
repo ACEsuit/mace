@@ -3,18 +3,19 @@ import dataclasses
 import logging
 import os
 import urllib.request
+from copy import deepcopy
 from typing import Any, Dict, List, Optional, Union
 
 import torch
 
 from mace.cli.fine_tuning_select import select_samples
+from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools.scripts_utils import (
     SubsetCollection,
     dict_to_namespace,
     get_dataset_from_xyz,
 )
-from mace.data import update_keyspec_from_kwargs, KeySpecification
-from copy import deepcopy
+
 
 @dataclasses.dataclass
 class HeadConfig:
@@ -46,7 +47,9 @@ def dict_head_to_dataclass(
     # priority is global args < head property_key values < head info_keys+arrays_keys
     head_keyspec = deepcopy(args.key_specification)
     update_keyspec_from_kwargs(head_keyspec, head)
-    head_keyspec.update(info_keys=head.get("info_keys", {}), arrays_keys=head.get("arrays_keys", {}))
+    head_keyspec.update(
+        info_keys=head.get("info_keys", {}), arrays_keys=head.get("arrays_keys", {})
+    )
 
     return HeadConfig(
         head_name=head_name,
@@ -79,6 +82,7 @@ def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
             "test_dir": args.test_dir,
             "E0s": args.E0s,
             "statistics_file": args.statistics_file,
+            "key_specification": args.key_specification,
             "valid_fraction": args.valid_fraction,
             "config_type_weights": args.config_type_weights,
             "keep_isolated_atoms": args.keep_isolated_atoms,
@@ -87,7 +91,10 @@ def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def assemble_mp_data(
-    args: argparse.Namespace, tag: str, head_configs: List[HeadConfig], head_config_pt: HeadConfig
+    args: argparse.Namespace,
+    tag: str,
+    head_configs: List[HeadConfig],
+    head_config_pt: HeadConfig,
 ) -> Dict[str, Any]:
     try:
         checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mp_traj_combined.xyz"

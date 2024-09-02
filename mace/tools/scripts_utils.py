@@ -20,10 +20,9 @@ from prettytable import PrettyTable
 from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules, tools
+from mace.data import KeySpecification
 from mace.tools import evaluate
 from mace.tools.train import SWAContainer
-
-from mace.data import KeySpecification
 
 
 @dataclasses.dataclass
@@ -54,8 +53,12 @@ def get_dataset_from_xyz(
         keep_isolated_atoms=keep_isolated_atoms,
         head_name=head_name,
     )
-    num_energies = int(np.sum([config.property_weights["energy"] for config in all_train_configs]))
-    num_forces = int(np.sum([config.property_weights["forces"] for config in all_train_configs]))
+    num_energies = int(
+        np.sum([config.property_weights["energy"] for config in all_train_configs])
+    )
+    num_forces = int(
+        np.sum([config.property_weights["forces"] for config in all_train_configs])
+    )
     logging.info(
         f"Training set [{len(all_train_configs)} configs, {num_energies} energy, {num_forces} forces] loaded from '{train_path}'"
     )
@@ -67,8 +70,12 @@ def get_dataset_from_xyz(
             extract_atomic_energies=False,
             head_name=head_name,
         )
-        num_energies = int(np.sum([config.property_weights["energy"] for config in valid_configs]))
-        num_forces = int(np.sum([config.property_weights["forces"] for config in valid_configs]))
+        num_energies = int(
+            np.sum([config.property_weights["energy"] for config in valid_configs])
+        )
+        num_forces = int(
+            np.sum([config.property_weights["forces"] for config in valid_configs])
+        )
         logging.info(
             f"Training set [{len(valid_configs)} configs, {num_energies} energy, {num_forces} forces] loaded from '{valid_path}'"
         )
@@ -77,8 +84,12 @@ def get_dataset_from_xyz(
         train_configs, valid_configs = data.random_train_valid_split(
             all_train_configs, valid_fraction, seed, work_dir
         )
-        num_energies = int(np.sum([config.property_weights["energy"] for config in valid_configs]))
-        num_forces = int(np.sum([config.property_weights["forces"] for config in valid_configs]))
+        num_energies = int(
+            np.sum([config.property_weights["energy"] for config in valid_configs])
+        )
+        num_forces = int(
+            np.sum([config.property_weights["forces"] for config in valid_configs])
+        )
         logging.info(
             f"Validation set contains {len(valid_configs)} configs, [{num_energies} energy, {num_forces} forces]"
         )
@@ -97,8 +108,12 @@ def get_dataset_from_xyz(
             f"Test set ({len(all_test_configs)} configs) loaded from '{test_path}':"
         )
         for name, tmp_configs in test_configs:
-            num_energies = int(np.sum([config.property_weights["energy"] for config in tmp_configs]))
-            num_forces = int(np.sum([config.property_weights["forces"] for config in tmp_configs]))
+            num_energies = int(
+                np.sum([config.property_weights["energy"] for config in tmp_configs])
+            )
+            num_forces = int(
+                np.sum([config.property_weights["forces"] for config in tmp_configs])
+            )
             logging.info(
                 f"{name}: {len(tmp_configs)} configs, {num_energies} energy, {num_forces} forces"
             )

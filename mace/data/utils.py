@@ -6,7 +6,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple, Any
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import ase.data
 import ase.io
@@ -133,7 +133,7 @@ def config_from_atoms(
     """Convert ase.Atoms to Configuration"""
     if config_type_weights is None:
         config_type_weights = DEFAULT_CONFIG_TYPE_WEIGHTS
-    
+
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -159,7 +159,7 @@ def config_from_atoms(
         properties[name] = atoms.arrays.get(atoms_key, None)
         if not atoms_key in atoms.arrays:
             property_weights[name] = 0.0
-    
+
     if "head" in properties:
         del properties["head"]
         del property_weights["head"]

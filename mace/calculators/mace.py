@@ -198,7 +198,9 @@ class MACECalculator(Calculator):
         return dict_of_tensors
 
     def _atoms_to_batch(self, atoms):
-        keyspec = data.KeySpecification(info_keys={}, arrays_keys={"charges": self.charges_key})
+        keyspec = data.KeySpecification(
+            info_keys={}, arrays_keys={"charges": self.charges_key}
+        )
         config = data.config_from_atoms(atoms, key_specification=keyspec)
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[

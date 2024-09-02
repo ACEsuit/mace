@@ -129,7 +129,7 @@ def test_multi_reference():
             "charges": 1.0,
             "dipole": 1.0,
         },
-        head='MP2'
+        head="MP2",
     )
     table_multi = tools.AtomicNumberTable([1, 6, 8])
     atomic_energies_multi = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=float)
