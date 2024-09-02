@@ -87,7 +87,7 @@ def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def assemble_mp_data(
-    args: argparse.Namespace, tag: str, head_configs: List[HeadConfig]
+    args: argparse.Namespace, tag: str, head_configs: List[HeadConfig], head_config_pt: HeadConfig
 ) -> Dict[str, Any]:
     try:
         checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mp_traj_combined.xyz"
@@ -150,12 +150,6 @@ def assemble_mp_data(
             "default_dtype": args.default_dtype,
         }
         select_samples(dict_to_namespace(args_samples))
-        mp_keyspec = KeySpecification()
-        update_keyspec_from_kwargs(mp_keyspec, vars(args))
-        mp_keyspec.update(
-            info_keys={"energy":"energy", "stress":"stress"},
-            arrays_keys={"forces":"forces"},
-        )
         collections_mp, _ = get_dataset_from_xyz(
             work_dir=args.work_dir,
             train_path=f"mp_finetuning-{tag}.xyz",
@@ -164,7 +158,7 @@ def assemble_mp_data(
             config_type_weights=None,
             test_path=None,
             seed=args.seed,
-            key_specification=mp_keyspec,
+            key_specification=head_config_pt.key_specification,
             head_name="pt_head",
             keep_isolated_atoms=args.keep_isolated_atoms,
         )
