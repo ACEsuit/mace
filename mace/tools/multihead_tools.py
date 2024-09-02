@@ -13,7 +13,7 @@ from mace.tools.scripts_utils import (
     dict_to_namespace,
     get_dataset_from_xyz,
 )
-
+from mace.data import get_keyspec_from_args, KeySpecification
 
 @dataclasses.dataclass
 class HeadConfig:
@@ -26,12 +26,7 @@ class HeadConfig:
     statistics_file: Optional[str] = None
     valid_fraction: Optional[float] = None
     config_type_weights: Optional[Dict[str, float]] = None
-    energy_key: Optional[str] = None
-    forces_key: Optional[str] = None
-    stress_key: Optional[str] = None
-    virials_key: Optional[str] = None
-    dipole_key: Optional[str] = None
-    charges_key: Optional[str] = None
+    key_specification: Optional[KeySpecification] = None
     keep_isolated_atoms: Optional[bool] = None
     atomic_numbers: Optional[Union[List[int], List[str]]] = None
     mean: Optional[float] = None
@@ -65,12 +60,7 @@ def dict_head_to_dataclass(
         mean=head.get("mean", args.mean),
         std=head.get("std", args.std),
         avg_num_neighbors=head.get("avg_num_neighbors", args.avg_num_neighbors),
-        energy_key=head.get("energy_key", args.energy_key),
-        forces_key=head.get("forces_key", args.forces_key),
-        stress_key=head.get("stress_key", args.stress_key),
-        virials_key=head.get("virials_key", args.virials_key),
-        dipole_key=head.get("dipole_key", args.dipole_key),
-        charges_key=head.get("charges_key", args.charges_key),
+        key_specification=head.get("key_specification", args.key_specification),
         keep_isolated_atoms=head.get("keep_isolated_atoms", args.keep_isolated_atoms),
     )
 
@@ -86,12 +76,7 @@ def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
             "statistics_file": args.statistics_file,
             "valid_fraction": args.valid_fraction,
             "config_type_weights": args.config_type_weights,
-            "energy_key": args.energy_key,
-            "forces_key": args.forces_key,
-            "stress_key": args.stress_key,
-            "virials_key": args.virials_key,
-            "dipole_key": args.dipole_key,
-            "charges_key": args.charges_key,
+            "key_specification": args.key_specification,
             "keep_isolated_atoms": args.keep_isolated_atoms,
         }
     }
@@ -161,6 +146,11 @@ def assemble_mp_data(
             "default_dtype": args.default_dtype,
         }
         select_samples(dict_to_namespace(args_samples))
+        mp_keyspec = get_keyspec_from_args(args)
+        mp_keyspec.update(
+            info_keys={"energy":"energy", "stress":"stress"},
+            arrays_keys={"forces":"forces"},
+        )
         collections_mp, _ = get_dataset_from_xyz(
             work_dir=args.work_dir,
             train_path=f"mp_finetuning-{tag}.xyz",
@@ -169,13 +159,8 @@ def assemble_mp_data(
             config_type_weights=None,
             test_path=None,
             seed=args.seed,
-            energy_key="energy",
-            forces_key="forces",
-            stress_key="stress",
+            key_specification=mp_keyspec,
             head_name="pt_head",
-            virials_key=args.virials_key,
-            dipole_key=args.dipole_key,
-            charges_key=args.charges_key,
             keep_isolated_atoms=args.keep_isolated_atoms,
         )
         return collections_mp

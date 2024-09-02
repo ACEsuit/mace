@@ -48,20 +48,20 @@ class HDF5Dataset(Dataset):
         config_index = index % self.batch_size
         grp = self.file["config_batch_" + str(batch_index)]
         subgrp = grp["config_" + str(config_index)]
+
+        properties = {}
+        property_weights = {}
+        for key in subgrp["properties"]:
+            properties[key] = unpack_value(subgrp["properties"][key][()])
+        for key in subgrp["property_weights"]:
+            property_weights[key] = unpack_value(subgrp["property_weights"][key][()])
+
         config = Configuration(
             atomic_numbers=subgrp["atomic_numbers"][()],
             positions=subgrp["positions"][()],
-            energy=unpack_value(subgrp["energy"][()]),
-            forces=unpack_value(subgrp["forces"][()]),
-            stress=unpack_value(subgrp["stress"][()]),
-            virials=unpack_value(subgrp["virials"][()]),
-            dipole=unpack_value(subgrp["dipole"][()]),
-            charges=unpack_value(subgrp["charges"][()]),
+            properties=properties,
             weight=unpack_value(subgrp["weight"][()]),
-            energy_weight=unpack_value(subgrp["energy_weight"][()]),
-            forces_weight=unpack_value(subgrp["forces_weight"][()]),
-            stress_weight=unpack_value(subgrp["stress_weight"][()]),
-            virials_weight=unpack_value(subgrp["virials_weight"][()]),
+            property_weights=property_weights,
             config_type=unpack_value(subgrp["config_type"][()]),
             pbc=unpack_value(subgrp["pbc"][()]),
             cell=unpack_value(subgrp["cell"][()]),
@@ -73,6 +73,7 @@ class HDF5Dataset(Dataset):
             z_table=self.z_table,
             cutoff=self.r_max,
             heads=self.kwargs.get("heads", ["Default"]),
+            **self.kwargs,
         )
         return atomic_data
 
