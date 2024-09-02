@@ -23,6 +23,8 @@ from mace import data, modules, tools
 from mace.tools import evaluate
 from mace.tools.train import SWAContainer
 
+from mace.data import KeySpecification
+
 
 @dataclasses.dataclass
 class SubsetCollection:
@@ -37,74 +39,55 @@ def get_dataset_from_xyz(
     valid_path: Optional[str],
     valid_fraction: float,
     config_type_weights: Dict,
+    key_specification: KeySpecification,
     test_path: str = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
-    energy_key: str = "REF_energy",
-    forces_key: str = "REF_forces",
-    stress_key: str = "REF_stress",
-    virials_key: str = "virials",
-    dipole_key: str = "dipoles",
-    charges_key: str = "charges",
-    head_key: str = "head",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
     atomic_energies_dict, all_train_configs = data.load_from_xyz(
         file_path=train_path,
         config_type_weights=config_type_weights,
-        energy_key=energy_key,
-        forces_key=forces_key,
-        stress_key=stress_key,
-        virials_key=virials_key,
-        dipole_key=dipole_key,
-        charges_key=charges_key,
-        head_key=head_key,
+        key_specification=key_specification,
         extract_atomic_energies=True,
         keep_isolated_atoms=keep_isolated_atoms,
         head_name=head_name,
     )
+    num_energies = int(np.sum([config.property_weights["energy"] for config in all_train_configs]))
+    num_forces = int(np.sum([config.property_weights["forces"] * config.atomic_numbers.size for config in all_train_configs]))
     logging.info(
-        f"Training set [{len(all_train_configs)} configs, {np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, {np.sum([config.forces.size for config in all_train_configs])} forces] loaded from '{train_path}'"
+        f"Training set [{len(all_train_configs)} configs, {num_energies} energy, {num_forces} forces] loaded from '{train_path}'"
     )
     if valid_path is not None:
         _, valid_configs = data.load_from_xyz(
             file_path=valid_path,
             config_type_weights=config_type_weights,
-            energy_key=energy_key,
-            forces_key=forces_key,
-            stress_key=stress_key,
-            virials_key=virials_key,
-            dipole_key=dipole_key,
-            charges_key=charges_key,
-            head_key=head_key,
+            key_specification=key_specification,
             extract_atomic_energies=False,
             head_name=head_name,
         )
+        num_energies = int(np.sum([config.property_weights["energy"] for config in valid_configs]))
+        num_forces = int(np.sum([config.property_weights["forces"] * config.atomic_numbers.size for config in valid_configs]))
         logging.info(
-            f"Validation set [{len(valid_configs)} configs, {np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces] loaded from '{valid_path}'"
+            f"Training set [{len(valid_configs)} configs, {num_energies} energy, {num_forces} forces] loaded from '{valid_path}'"
         )
         train_configs = all_train_configs
     else:
         train_configs, valid_configs = data.random_train_valid_split(
             all_train_configs, valid_fraction, seed, work_dir
         )
+        num_energies = int(np.sum([config.property_weights["energy"] for config in valid_configs]))
+        num_forces = int(np.sum([config.property_weights["forces"] * config.atomic_numbers.size for config in valid_configs]))
         logging.info(
-            f"Validaton set contains {len(valid_configs)} configurations [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
+            f"Validation set contains {len(valid_configs)} configs, [{num_energies} energy, {num_forces} forces]"
         )
-
     test_configs = []
     if test_path is not None:
         _, all_test_configs = data.load_from_xyz(
             file_path=test_path,
             config_type_weights=config_type_weights,
-            energy_key=energy_key,
-            forces_key=forces_key,
-            dipole_key=dipole_key,
-            stress_key=stress_key,
-            virials_key=virials_key,
-            charges_key=charges_key,
-            head_key=head_key,
+            key_specification=key_specification,
             extract_atomic_energies=False,
             head_name=head_name,
         )
@@ -114,8 +97,10 @@ def get_dataset_from_xyz(
             f"Test set ({len(all_test_configs)} configs) loaded from '{test_path}':"
         )
         for name, tmp_configs in test_configs:
+            num_energies = int(np.sum([config.property_weights["energy"] for config in tmp_configs]))
+            num_forces = int(np.sum([config.property_weights["forces"] * config.atomic_numbers.size for config in tmp_configs]))
             logging.info(
-                f"{name}: {len(tmp_configs)} configs, {np.sum([1 if config.energy else 0 for config in tmp_configs])} energy, {np.sum([config.forces.size for config in tmp_configs])} forces"
+                f"{name}: {len(tmp_configs)} configs, {num_energies} energy, {num_forces} forces"
             )
 
     return (

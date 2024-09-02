@@ -228,6 +228,7 @@ def select_samples(
         if args.descriptors is not None:
             logging.info("Loading descriptors")
             descriptors = np.load(args.descriptors, allow_pickle=True)
+            print(args.configs_pt)
             atoms_list_pt = ase.io.read(args.configs_pt, index=":")
             for i, atoms in enumerate(atoms_list_pt):
                 atoms.info["mace_descriptors"] = descriptors[i]

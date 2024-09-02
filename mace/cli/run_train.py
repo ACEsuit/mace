@@ -54,6 +54,7 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
+from mace.data import get_keyspec_from_args
 
 
 def main() -> None:
@@ -70,6 +71,9 @@ def run(args: argparse.Namespace) -> None:
     """
     tag = tools.get_tag(name=args.name, seed=args.seed)
     args, input_log_messages = tools.check_args(args)
+
+    # set keyspec in args
+    args.key_specification = get_keyspec_from_args(args)
 
     if args.device == "xpu":
         try:
@@ -152,7 +156,7 @@ def run(args: argparse.Namespace) -> None:
         args.multiheads_finetuning = False
 
     if args.heads is not None:
-        args.heads = ast.literal_eval(args.heads)
+        args.heads = ast.literal_eval(args.heads) # strings from command line
     else:
         args.heads = prepare_default_head(args)
 
@@ -187,7 +191,6 @@ def run(args: argparse.Namespace) -> None:
                 head_config.atomic_energies_dict = ast.literal_eval(
                     statistics["atomic_energies"]
                 )
-
         # Data preparation
         if head_config.train_file.endswith(".xyz"):
             if head_config.valid_file is not None:
@@ -205,12 +208,7 @@ def run(args: argparse.Namespace) -> None:
                 config_type_weights=config_type_weights,
                 test_path=head_config.test_file,
                 seed=args.seed,
-                energy_key=head_config.energy_key,
-                forces_key=head_config.forces_key,
-                stress_key=head_config.stress_key,
-                virials_key=head_config.virials_key,
-                dipole_key=head_config.dipole_key,
-                charges_key=head_config.charges_key,
+                key_specification=args.key_specification,
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
             )
@@ -269,12 +267,7 @@ def run(args: argparse.Namespace) -> None:
                 config_type_weights=None,
                 test_path=None,
                 seed=args.seed,
-                energy_key=args.energy_key,
-                forces_key=args.forces_key,
-                stress_key=args.stress_key,
-                virials_key=args.virials_key,
-                dipole_key=args.dipole_key,
-                charges_key=args.charges_key,
+                key_specification=args.key_specification,
                 head_name="pt_head",
                 keep_isolated_atoms=args.keep_isolated_atoms,
             )
@@ -286,12 +279,7 @@ def run(args: argparse.Namespace) -> None:
                 statistics_file=args.statistics_file,
                 valid_fraction=args.valid_fraction,
                 config_type_weights=None,
-                energy_key=args.energy_key,
-                forces_key=args.forces_key,
-                stress_key=args.stress_key,
-                virials_key=args.virials_key,
-                dipole_key=args.dipole_key,
-                charges_key=args.charges_key,
+                key_specification=args.key_specification,
                 keep_isolated_atoms=args.keep_isolated_atoms,
                 collections=collections,
                 avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
@@ -301,6 +289,9 @@ def run(args: argparse.Namespace) -> None:
         logging.info(
             f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}"
         )
+
+    #print(args.heads)
+    print(head_configs)
 
     # Atomic number table
     # yapf: disable
