@@ -237,6 +237,7 @@ class MACECalculator(Calculator):
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
             batch = self._clone_batch(batch_base)
             node_heads = batch["head"][batch["batch"]]
+            print(node_heads)
             num_atoms_arange = torch.arange(batch["positions"].shape[0])
             node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])[
                 num_atoms_arange, node_heads

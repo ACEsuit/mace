@@ -319,7 +319,7 @@ def test_run_train_multihead(tmp_path, fitting_configs):
     mace_params["loss"] = "weighted"
     mace_params["hidden_irreps"] = "128x0e"
     mace_params["r_max"] = 6.0
-    mace_params["default_dtype"] = "float32"
+    mace_params["default_dtype"] = "float64"
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
     mace_params["config"] = tmp_path / "config.yaml"
@@ -349,7 +349,7 @@ def test_run_train_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        tmp_path / "MACE.model", device="cpu", default_dtype="float32"
+        tmp_path / "MACE.model", device="cpu", default_dtype="float64"
     )
 
     Es = []
