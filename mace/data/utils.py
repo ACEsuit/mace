@@ -210,7 +210,7 @@ def load_from_xyz(
         logging.warning(
             "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'energy' to 'REF_energy'. You need to use --energy_key='REF_energy' to specify the chosen key name."
         )
-        energy_key = "REF_energy"
+        key_specification.info_keys["energy"] = "REF_energy"
         for atoms in atoms_list:
             try:
                 atoms.info["REF_energy"] = atoms.get_potential_energy()
@@ -221,7 +221,7 @@ def load_from_xyz(
         logging.warning(
             "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'forces' to 'REF_forces'. You need to use --forces_key='REF_forces' to specify the chosen key name."
         )
-        forces_key = "REF_forces"
+        key_specification.info_keys["forces"] = "REF_forces"
         for atoms in atoms_list:
             try:
                 atoms.arrays["REF_forces"] = atoms.get_forces()
@@ -232,7 +232,7 @@ def load_from_xyz(
         logging.warning(
             "Since ASE version 3.23.0b1, using stress_key 'stress' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'stress' to 'REF_stress'. You need to use --stress_key='REF_stress' to specify the chosen key name."
         )
-        stress_key = "REF_stress"
+        key_specification.info_keys["stress"] = "REF_stress"
         for atoms in atoms_list:
             try:
                 atoms.info["REF_stress"] = atoms.get_stress()
