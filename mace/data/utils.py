@@ -221,7 +221,7 @@ def load_from_xyz(
         logging.warning(
             "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'forces' to 'REF_forces'. You need to use --forces_key='REF_forces' to specify the chosen key name."
         )
-        key_specification.info_keys["forces"] = "REF_forces"
+        key_specification.arrays_keys["forces"] = "REF_forces"
         for atoms in atoms_list:
             try:
                 atoms.arrays["REF_forces"] = atoms.get_forces()
