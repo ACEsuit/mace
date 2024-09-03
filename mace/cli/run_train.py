@@ -626,7 +626,9 @@ def run(args: argparse.Namespace) -> None:
         stop_first_test = True
     for head_config in head_configs:
         if head_config.train_file.endswith(".xyz"):
+            print(head_config.test_file)
             for name, subset in head_config.collections.tests:
+                print(name)
                 test_sets[name] = [
                     data.AtomicData.from_config(
                         config, z_table=z_table, cutoff=args.r_max, heads=heads
@@ -648,33 +650,33 @@ def run(args: argparse.Namespace) -> None:
                     test_sets[name] = data.dataset_from_sharded_hdf5(
                         folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
-
-            for test_name, test_set in test_sets.items():
-                test_sampler = None
-                if args.distributed:
-                    test_sampler = torch.utils.data.distributed.DistributedSampler(
-                        test_set,
-                        num_replicas=world_size,
-                        rank=rank,
-                        shuffle=True,
-                        drop_last=True,
-                        seed=args.seed,
-                    )
-                try:
-                    drop_last = test_set.drop_last
-                except AttributeError as e:  # pylint: disable=W0612
-                    drop_last = False
-                test_loader = torch_geometric.dataloader.DataLoader(
+        for test_name, test_set in test_sets.items():
+            print(test_name)
+            test_sampler = None
+            if args.distributed:
+                test_sampler = torch.utils.data.distributed.DistributedSampler(
                     test_set,
-                    batch_size=args.valid_batch_size,
-                    shuffle=(test_sampler is None),
-                    drop_last=drop_last,
-                    num_workers=args.num_workers,
-                    pin_memory=args.pin_memory,
+                    num_replicas=world_size,
+                    rank=rank,
+                    shuffle=True,
+                    drop_last=True,
+                    seed=args.seed,
                 )
-                test_data_loader[test_name] = test_loader
-            if stop_first_test:
-                break
+            try:
+                drop_last = test_set.drop_last
+            except AttributeError as e:  # pylint: disable=W0612
+                drop_last = False
+            test_loader = torch_geometric.dataloader.DataLoader(
+                test_set,
+                batch_size=args.valid_batch_size,
+                shuffle=(test_sampler is None),
+                drop_last=drop_last,
+                num_workers=args.num_workers,
+                pin_memory=args.pin_memory,
+            )
+            test_data_loader[test_name] = test_loader
+        if stop_first_test:
+            break
 
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
@@ -704,6 +706,7 @@ def run(args: argparse.Namespace) -> None:
             distributed=args.distributed,
         )
         logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
+
         if test_data_loader:
             table_test = create_error_table(
                 table_type=args.error_table,
