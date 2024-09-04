@@ -17,6 +17,7 @@ from mace.tools.scatter import scatter_sum
 
 from .irreps_tools import (
     linear_out_irreps,
+    mask_head,
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
@@ -46,11 +47,15 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
 
 @compile_mode("script")
 class LinearReadoutBlock(torch.nn.Module):
-    def __init__(self, irreps_in: o3.Irreps):
+    def __init__(self, irreps_in: o3.Irreps, irrep_out: o3.Irreps = o3.Irreps("0e")):
         super().__init__()
-        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=o3.Irreps("0e"))
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+    def forward(
+        self,
+        x: torch.Tensor,
+        heads: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         return self.linear(x)  # [n_nodes, 1]
 
 
@@ -58,19 +63,28 @@ class LinearReadoutBlock(torch.nn.Module):
 @compile_mode("script")
 class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
-        self, irreps_in: o3.Irreps, MLP_irreps: o3.Irreps, gate: Optional[Callable]
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Optional[Callable],
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        num_heads: int = 1,
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
+        self.num_heads = num_heads
         self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
         self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
-        self.linear_2 = o3.Linear(
-            irreps_in=self.hidden_irreps, irreps_out=o3.Irreps("0e")
-        )
+        self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=irrep_out)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+    def forward(
+        self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
-        return self.linear_2(x)  # [n_nodes, 1]
+        if hasattr(self, "num_heads"):
+            if self.num_heads > 1 and heads is not None:
+                x = mask_head(x, heads, self.num_heads)
+        return self.linear_2(x)  # [n_nodes, len(heads)]
 
 
 @compile_mode("script")
@@ -133,20 +147,25 @@ class AtomicEnergiesBlock(torch.nn.Module):
 
     def __init__(self, atomic_energies: Union[np.ndarray, torch.Tensor]):
         super().__init__()
-        assert len(atomic_energies.shape) == 1
+        # assert len(atomic_energies.shape) == 1
 
         self.register_buffer(
             "atomic_energies",
             torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
-        )  # [n_elements, ]
+        )  # [n_elements, n_heads]
 
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
-        return torch.matmul(x, self.atomic_energies)
+        return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
 
     def __repr__(self):
-        formatted_energies = ", ".join([f"{x:.4f}" for x in self.atomic_energies])
+        formatted_energies = ", ".join(
+            [
+                "[" + ", ".join([f"{x:.4f}" for x in group]) + "]"
+                for group in torch.atleast_2d(self.atomic_energies)
+            ]
+        )
         return f"{self.__class__.__name__}(energies=[{formatted_energies}])"
 
 
@@ -602,7 +621,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = nn.FullyConnectedNet(
             [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
-            torch.nn.functional.silu,
+            torch.nn.functional.silu,  # gate
         )
 
         # Linear
@@ -743,16 +762,28 @@ class ScaleShiftBlock(torch.nn.Module):
     def __init__(self, scale: float, shift: float):
         super().__init__()
         self.register_buffer(
-            "scale", torch.tensor(scale, dtype=torch.get_default_dtype())
+            "scale",
+            torch.tensor(scale, dtype=torch.get_default_dtype()),
         )
         self.register_buffer(
-            "shift", torch.tensor(shift, dtype=torch.get_default_dtype())
+            "shift",
+            torch.tensor(shift, dtype=torch.get_default_dtype()),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.scale * x + self.shift
+    def forward(self, x: torch.Tensor, head: torch.Tensor) -> torch.Tensor:
+        return (
+            torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]
+        )
 
     def __repr__(self):
-        return (
-            f"{self.__class__.__name__}(scale={self.scale:.6f}, shift={self.shift:.6f})"
+        formatted_scale = (
+            ", ".join([f"{x:.4f}" for x in self.scale])
+            if self.scale.numel() > 1
+            else f"{self.scale.item():.4f}"
         )
+        formatted_shift = (
+            ", ".join([f"{x:.4f}" for x in self.shift])
+            if self.shift.numel() > 1
+            else f"{self.shift.item():.4f}"
+        )
+        return f"{self.__class__.__name__}(scale={formatted_scale}, shift={formatted_shift})"

@@ -47,6 +47,7 @@ class Configuration:
     stress_weight: float = 1.0  # weight of config stress in loss
     virials_weight: float = 1.0  # weight of config virial in loss
     config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
+    head: Optional[str] = "Default"  # head used to compute the config
 
 
 Configurations = List[Configuration]
@@ -91,7 +92,8 @@ def config_from_atoms_list(
     virials_key="REF_virials",
     dipole_key="REF_dipole",
     charges_key="REF_charges",
-    config_type_weights: Dict[str, float] = None,
+    head_key="head",
+    config_type_weights: Optional[Dict[str, float]] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
     if config_type_weights is None:
@@ -108,6 +110,7 @@ def config_from_atoms_list(
                 virials_key=virials_key,
                 dipole_key=dipole_key,
                 charges_key=charges_key,
+                head_key=head_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -122,7 +125,8 @@ def config_from_atoms(
     virials_key="REF_virials",
     dipole_key="REF_dipole",
     charges_key="REF_charges",
-    config_type_weights: Dict[str, float] = None,
+    head_key="head",
+    config_type_weights: Optional[Dict[str, float]] = None,
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
     if config_type_weights is None:
@@ -148,6 +152,8 @@ def config_from_atoms(
     forces_weight = atoms.info.get("config_forces_weight", 1.0)
     stress_weight = atoms.info.get("config_stress_weight", 1.0)
     virials_weight = atoms.info.get("config_virials_weight", 1.0)
+
+    head = atoms.info.get(head_key, "Default")
 
     # fill in missing quantities but set their weight to 0.0
     if energy is None:
@@ -176,6 +182,7 @@ def config_from_atoms(
         dipole=dipole,
         charges=charges,
         weight=weight,
+        head=head,
         energy_weight=energy_weight,
         forces_weight=forces_weight,
         stress_weight=stress_weight,
@@ -193,11 +200,12 @@ def test_config_types(
     test_by_ct = []
     all_cts = []
     for conf in test_configs:
-        if conf.config_type not in all_cts:
-            all_cts.append(conf.config_type)
-            test_by_ct.append((conf.config_type, [conf]))
+        config_type_name = conf.config_type + "_" + conf.head
+        if config_type_name not in all_cts:
+            all_cts.append(config_type_name)
+            test_by_ct.append((config_type_name, [conf]))
         else:
-            ind = all_cts.index(conf.config_type)
+            ind = all_cts.index(config_type_name)
             test_by_ct[ind][1].append(conf)
     return test_by_ct
 
@@ -211,6 +219,8 @@ def load_from_xyz(
     virials_key: str = "REF_virials",
     dipole_key: str = "REF_dipole",
     charges_key: str = "REF_charges",
+    head_key: str = "head",
+    head_name: str = "Default",
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
@@ -255,6 +265,7 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
+            atoms.info[head_key] = head_name
             isolated_atom_config = (
                 len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
             )
@@ -286,6 +297,7 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        head_key=head_key,
     )
     return atomic_energies_dict, configs
 
@@ -342,6 +354,7 @@ def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
             grp["virials"] = data.virials
             grp["dipole"] = data.dipole
             grp["charges"] = data.charges
+            grp["head"] = data.head
 
 
 def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
@@ -364,6 +377,7 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["virials"] = data.virials
     grp["dipole"] = data.dipole
     grp["charges"] = data.charges
+    grp["head"] = data.head
 
 
 def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> None:
@@ -377,6 +391,7 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         subgroup["forces"] = write_value(config.forces)
         subgroup["stress"] = write_value(config.stress)
         subgroup["virials"] = write_value(config.virials)
+        subgroup["head"] = write_value(config.head)
         subgroup["dipole"] = write_value(config.dipole)
         subgroup["charges"] = write_value(config.charges)
         subgroup["cell"] = write_value(config.cell)
