@@ -161,7 +161,7 @@ def run(args: argparse.Namespace) -> None:
         args.heads = prepare_default_head(args)
 
     logging.info("===========LOADING INPUT DATA===========")
-    heads = list(args.heads.keys())  # TODO: rename to heads_names
+    heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
     head_configs: List[HeadConfig] = []
     for head, head_args in args.heads.items():
@@ -273,7 +273,6 @@ def run(args: argparse.Namespace) -> None:
                 f"Using foundation model for multiheads finetuning with {args.pt_train_file}"
             )
             heads = list(dict.fromkeys(["pt_head"] + heads))
-            # TODO: new interface so that pretrained head has a seperate keyspec and does not rely on args
             collections, atomic_energies_dict = get_dataset_from_xyz(
                 work_dir=args.work_dir,
                 train_path=args.pt_train_file,
