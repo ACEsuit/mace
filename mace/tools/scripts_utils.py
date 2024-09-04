@@ -77,7 +77,7 @@ def get_dataset_from_xyz(
             np.sum([config.property_weights["forces"] for config in valid_configs])
         )
         logging.info(
-            f"Training set [{len(valid_configs)} configs, {num_energies} energy, {num_forces} forces] loaded from '{valid_path}'"
+            f"Validation set [{len(valid_configs)} configs, {num_energies} energy, {num_forces} forces] loaded from '{valid_path}'"
         )
         train_configs = all_train_configs
     else:

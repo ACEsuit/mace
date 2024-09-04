@@ -108,6 +108,7 @@ def config_from_atoms_list(
     atoms_list: List[ase.Atoms],
     key_specification: KeySpecification,
     config_type_weights: Optional[Dict[str, float]] = None,
+    head_name: str = "Default"
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
     if config_type_weights is None:
@@ -120,6 +121,7 @@ def config_from_atoms_list(
                 atoms,
                 key_specification=key_specification,
                 config_type_weights=config_type_weights,
+                head_name=head_name
             )
         )
     return all_configs
@@ -129,6 +131,7 @@ def config_from_atoms(
     atoms: ase.Atoms,
     key_specification: KeySpecification = KeySpecification(),
     config_type_weights: Optional[Dict[str, float]] = None,
+    head_name: str = "Default"
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
     if config_type_weights is None:
@@ -143,8 +146,7 @@ def config_from_atoms(
     weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(
         config_type, 1.0
     )
-    head_key = key_specification.info_keys.get("head", "head")
-    head = atoms.info.get(head_key, "Default")
+
     properties = {}
     property_weights = {}
     for name in list(key_specification.arrays_keys) + list(key_specification.info_keys):
@@ -160,17 +162,13 @@ def config_from_atoms(
         if not atoms_key in atoms.arrays:
             property_weights[name] = 0.0
 
-    if "head" in properties:
-        del properties["head"]
-        del property_weights["head"]
-
     return Configuration(
         atomic_numbers=atomic_numbers,
         positions=atoms.get_positions(),
         properties=properties,
         weight=weight,
         property_weights=property_weights,
-        head=head,
+        head=head_name,
         config_type=config_type,
         pbc=pbc,
         cell=cell,
@@ -273,6 +271,7 @@ def load_from_xyz(
         atoms_list,
         config_type_weights=config_type_weights,
         key_specification=key_specification,
+        head_name=head_name,
     )
     return atomic_energies_dict, configs
 
