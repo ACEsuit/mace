@@ -114,34 +114,34 @@ def conditional_mse_forces(ref: Batch, pred: TensorDict) -> torch.Tensor:
 
 
 def conditional_huber_forces(
-    ref: Batch, pred: TensorDict, huber_delta: float
+    ref_forces: Batch, pred_forces: TensorDict, huber_delta: float
 ) -> torch.Tensor:
     # Define the multiplication factors for each condition
     factors = huber_delta * torch.tensor([1.0, 0.7, 0.4, 0.1])
 
     # Apply multiplication factors based on conditions
-    c1 = torch.norm(ref["forces"], dim=-1) < 100
-    c2 = (torch.norm(ref["forces"], dim=-1) >= 100) & (
-        torch.norm(ref["forces"], dim=-1) < 200
+    c1 = torch.norm(ref_forces, dim=-1) < 100
+    c2 = (torch.norm(ref_forces, dim=-1) >= 100) & (
+        torch.norm(ref_forces, dim=-1) < 200
     )
-    c3 = (torch.norm(ref["forces"], dim=-1) >= 200) & (
-        torch.norm(ref["forces"], dim=-1) < 300
+    c3 = (torch.norm(ref_forces, dim=-1) >= 200) & (
+        torch.norm(ref_forces, dim=-1) < 300
     )
     c4 = ~(c1 | c2 | c3)
 
-    se = torch.zeros_like(pred["forces"])
+    se = torch.zeros_like(pred_forces)
 
     se[c1] = torch.nn.functional.huber_loss(
-        ref["forces"][c1], pred["forces"][c1], reduction="none", delta=factors[0]
+        ref_forces[c1], pred_forces[c1], reduction="none", delta=factors[0]
     )
     se[c2] = torch.nn.functional.huber_loss(
-        ref["forces"][c2], pred["forces"][c2], reduction="none", delta=factors[1]
+        ref_forces[c2], pred_forces[c2], reduction="none", delta=factors[1]
     )
     se[c3] = torch.nn.functional.huber_loss(
-        ref["forces"][c3], pred["forces"][c3], reduction="none", delta=factors[2]
+        ref_forces[c3], pred_forces[c3], reduction="none", delta=factors[2]
     )
     se[c4] = torch.nn.functional.huber_loss(
-        ref["forces"][c4], pred["forces"][c4], reduction="none", delta=factors[3]
+        ref_forces[c4], pred_forces[c4], reduction="none", delta=factors[3]
     )
 
     return torch.mean(se)
@@ -273,15 +273,27 @@ class UniversalLoss(torch.nn.Module):
 
     def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
+        configs_stress_weight = ref.stress_weight.view(-1, 1, 1)  # [n_graphs, ]
+        configs_energy_weight = ref.energy_weight  # [n_graphs, ]
+        configs_forces_weight = torch.repeat_interleave(
+            ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
+        ).unsqueeze(-1)
         return (
             self.energy_weight
-            * self.huber_loss(ref["energy"] / num_atoms, pred["energy"] / num_atoms)
+            * self.huber_loss(
+                configs_energy_weight * ref["energy"] / num_atoms,
+                configs_energy_weight * pred["energy"] / num_atoms,
+            )
             + self.forces_weight
-            * conditional_huber_forces(ref, pred, huber_delta=self.huber_delta)
+            * conditional_huber_forces(
+                configs_forces_weight * ref["forces"],
+                configs_forces_weight * pred["forces"],
+                huber_delta=self.huber_delta,
+            )
             + self.stress_weight
             * self.huber_loss(
-                ref["stress"],
-                pred["stress"],
+                configs_stress_weight * ref["stress"],
+                configs_stress_weight * pred["stress"],
             )
         )
 
