@@ -77,7 +77,7 @@ def dict_head_to_dataclass(
 
 def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
     return {
-        "default": {
+        "Default": {
             "train_file": args.train_file,
             "valid_file": args.valid_file,
             "test_file": args.test_file,
