@@ -225,17 +225,25 @@ def select_samples(
             "Filtering configurations based on the finetuning set, "
             f"filtering type: combinations, elements: {all_species_ft}"
         )
-        if args.descriptors is not None:
-            logging.info("Loading descriptors")
-            descriptors = np.load(args.descriptors, allow_pickle=True)
-            atoms_list_pt = ase.io.read(args.configs_pt, index=":")
-            for i, atoms in enumerate(atoms_list_pt):
-                atoms.info["mace_descriptors"] = descriptors[i]
-            atoms_list_pt_filtered = [
-                x
-                for x in atoms_list_pt
-                if filter_atoms(x, all_species_ft, "combinations")
-            ]
+        if args.subselect != "random":
+            if args.descriptors is not None:
+                logging.info("Loading descriptors")
+                descriptors = np.load(args.descriptors, allow_pickle=True)
+                atoms_list_pt = ase.io.read(args.configs_pt, index=":")
+                for i, atoms in enumerate(atoms_list_pt):
+                    atoms.info["mace_descriptors"] = descriptors[i]
+                atoms_list_pt_filtered = [
+                    x
+                    for x in atoms_list_pt
+                    if filter_atoms(x, all_species_ft, "combinations")
+                ]
+            else:
+                atoms_list_pt = ase.io.read(args.configs_pt, index=":")
+                atoms_list_pt_filtered = [
+                    x
+                    for x in atoms_list_pt
+                    if filter_atoms(x, all_species_ft, "combinations")
+                ]
         else:
             atoms_list_pt = ase.io.read(args.configs_pt, index=":")
             atoms_list_pt_filtered = [
