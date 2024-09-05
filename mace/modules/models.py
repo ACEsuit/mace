@@ -74,7 +74,7 @@ class MACE(torch.nn.Module):
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
         if heads is None:
-            heads = ["default"]
+            heads = ["Default"]
         self.heads = heads
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
