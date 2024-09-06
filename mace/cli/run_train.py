@@ -87,7 +87,8 @@ def run(args: argparse.Namespace) -> None:
         rank = distr_env.rank
         if rank == 0:
             print(distr_env)
-        torch.distributed.init_process_group(backend="nccl")
+
+        torch.distributed.init_process_group(backend=args.distributed_backend)
     else:
         rank = int(0)
 
