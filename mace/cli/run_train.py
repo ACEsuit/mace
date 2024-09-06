@@ -575,7 +575,7 @@ def run(args: argparse.Namespace) -> None:
     if args.wandb:
         setup_wandb(args)
 
-    if args.distributed:
+    if args.distributed and args.device == "cuda":
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
         distributed_model = None
@@ -693,7 +693,7 @@ def run(args: argparse.Namespace) -> None:
             device=device,
         )
         model.to(device)
-        if args.distributed:
+        if args.distributed and args.device == "cuda":
             distributed_model = DDP(model, device_ids=[local_rank])
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
