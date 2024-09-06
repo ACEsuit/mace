@@ -83,6 +83,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=["nccl", "gloo", "mpi"],
         default="nccl",
     )
+    parser.add_argument(
+        "--distributed_env",
+        help="HPC cluster's job scheduler",
+        type=str,
+        choices=["slurm", "openmpi"],
+        default="slurm",
+    )
 
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 

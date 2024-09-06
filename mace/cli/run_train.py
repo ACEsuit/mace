@@ -50,7 +50,10 @@ from mace.tools.scripts_utils import (
     print_git_commit,
     setup_wandb,
 )
-from mace.tools.slurm_distributed import DistributedEnvironment
+from mace.tools.slurm_distributed import (
+    DistributedEnvironmentOpenmpi,
+    DistributedEnvironmentSlurm,
+)
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -78,7 +81,10 @@ def run(args: argparse.Namespace) -> None:
             ) from e
     if args.distributed:
         try:
-            distr_env = DistributedEnvironment()
+            if args.distributed_env == "slurm":
+                distr_env = DistributedEnvironmentSlurm()
+            elif args.distributed_env == "openmpi":
+                distr_env = DistributedEnvironmentOpenmpi()
         except Exception as e:  # pylint: disable=W0703
             logging.error(f"Failed to initialize distributed environment: {e}")
             return
