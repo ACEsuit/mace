@@ -1,20 +1,17 @@
 import os
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 import ase.io
 import numpy as np
 import pytest
 from ase.atoms import Atoms
-from copy import deepcopy
 
 from mace.calculators.mace import MACECalculator
-import mace
-np.random.seed(0)
 
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
-
 
 
 _mace_params = {
@@ -44,6 +41,7 @@ _mace_params = {
 
 
 def configs_numbered_keys():
+    np.random.seed(0)
     water = Atoms(
         numbers=[8, 1, 1],
         positions=[[0, -2.0, 0], [1, 0, 0], [0, 1, 0]],
@@ -56,23 +54,27 @@ def configs_numbered_keys():
 
     trial_configs_lists = []
     # some keys present, some not
-    keys_to_use = ["REF_energy"] + \
-        ["2_energy"]*2 + \
-        ["3_energy"]*3 + \
-        ["4_energy"]*4 + \
-        ["5_energy"]*5
+    keys_to_use = (
+        ["REF_energy"]
+        + ["2_energy"] * 2
+        + ["3_energy"] * 3
+        + ["4_energy"] * 4
+        + ["5_energy"] * 5
+    )
 
-    force_keys_to_use = ["REF_forces"] + \
-        ["2_forces"]*2 + \
-        ["3_forces"]*3 + \
-        ["4_forces"]*4 + \
-        ["5_forces"]*5
+    force_keys_to_use = (
+        ["REF_forces"]
+        + ["2_forces"] * 2
+        + ["3_forces"] * 3
+        + ["4_forces"] * 4
+        + ["5_forces"] * 5
+    )
 
     for ind in range(15):
         c = deepcopy(water)
         c.info[keys_to_use[ind]] = energies[ind]
         c.arrays[force_keys_to_use[ind]] = forces[ind]
-        c.positions += np.random.normal(0.1, size=(3,3))
+        c.positions += np.random.normal(0.1, size=(3, 3))
         trial_configs_lists.append(c)
 
     return trial_configs_lists
@@ -140,9 +142,9 @@ def trial_yamls_and_and_expected():
         "with_command_line": {
             key: {**command_line_kwargs, **value} for key, value in yamls.items()
         },
-        "without_command_line": {key: value for key, value in yamls.items()},
+        "without_command_line": yamls,
     }
-    
+
     all_expected_outputs = {
         "with_command_line": {
             "no_heads": [
@@ -163,170 +165,171 @@ def trial_yamls_and_and_expected():
                 0.9998734173248169,
             ],
             "one_head_no_dicts": [
-                1.0000166263499473,
-                1.0021620416915131,
-                1.0046772896383978,
-                1.001465441141607,
-                1.0055517812192685,
-                1.0015992637882436,
-                1.0020402319259156,
-                1.0054369609690694,
-                1.0048820789691186,
-                1.004069245195459,
-                1.0036930315433792,
-                1.0045657994185517,
-                1.0049657202069904,
-                1.0054495991318766,
-                1.0059574240719107,
+                1.0028437510688613,
+                1.0514693378041775,
+                1.059933403321331,
+                1.034719940573569,
+                1.0438040675561824,
+                1.019719477728329,
+                0.9841759692947915,
+                1.0435266573857496,
+                1.0339501989779065,
+                1.0501795448530264,
+                1.0402594216704781,
+                1.0604998765679152,
+                1.0633411200246015,
+                1.0539071190201297,
+                1.0393496428177804,
             ],
             "one_head_with_dicts": [
-                0.9824761809087968,
-                0.982723323954806,
-                0.9804037844582393,
-                0.9892979892015554,
-                0.990123250174031,
-                0.9872765633686582,
-                0.9792985720223041,
-                0.9834849185579561,
-                0.9855709706241268,
-                0.9838176625524332,
-                0.9802380433794929,
-                0.9798924747115749,
-                0.9941246312362003,
-                0.9843619552495816,
-                1.0234402440454935,
+                0.8638341551096959,
+                1.0078341354784144,
+                1.0149701178418595,
+                0.9945723048460148,
+                1.0184158011731292,
+                0.9992135295205004,
+                0.8943420783639198,
+                1.0327920054084088,
+                0.9905731198078909,
+                0.9838325204450648,
+                1.0018725575620482,
+                1.007263052421034,
+                1.0335213929231966,
+                1.0033503312511205,
+                1.0174433894759563,
             ],
             "two_heads_no_dicts": [
-                0.9533172241443488,
-                0.971143149409332,
-                0.9591034423596022,
-                0.9259180388268078,
-                0.9866672025915887,
-                0.9468387512978088,
-                0.972806503955744,
-                0.9268821579802152,
-                0.9399783569634511,
-                0.9566909477955546,
-                1.0280484765877604,
-                0.9638781804485581,
-                0.9386762390303685,
-                0.9513720471682103,
-                1.061099519224079,
+                0.9836377578288774,
+                1.0196844186291318,
+                1.0151628222871238,
+                0.957307281711648,
+                0.985574141310865,
+                0.9629670134047853,
+                0.9242583185138095,
+                0.9807770070311039,
+                0.9973679440479541,
+                1.0221127246963275,
+                1.0031807967874216,
+                1.0358701219543687,
+                1.0434208761164758,
+                1.0235606028124515,
+                0.9797494630655053,
             ],
             "two_heads_mixed": [
-                1.0008821794271117,
-                0.9921658975489234,
-                1.0128605897789047,
-                1.0177680320432732,
-                1.0040635968372489,
-                1.0134535284156263,
-                0.9900156994903402,
-                0.9950077226207892,
-                0.9931748657782218,
-                0.9970869871816835,
-                1.0036266515981311,
-                0.9882332649269495,
-                0.9973620987054619,
-                1.0089283927259747,
-                0.9984375026446699,
+                0.8664108574741868,
+                0.9907166576278023,
+                1.0051969372365164,
+                0.978702477000018,
+                1.025500166764692,
+                0.9940095566375018,
+                0.9034029726954119,
+                1.0391739502744488,
+                0.9717327061183668,
+                0.972292103670355,
+                1.0012510461663253,
+                0.9978051155885286,
+                1.0378611651753475,
+                1.0003207628186224,
+                1.0209509292189651,
             ],
         },
         "without_command_line": {
             "no_heads": [
-                0.9723249939003304,
-                0.99830004939027,
-                0.9976857883262907,
-                1.0026915904907623,
-                0.9986047122447201,
-                1.0056392530400915,
-                0.9955992271879338,
-                0.9925618058915322,
-                0.9992873743817391,
-                1.0017751144824205,
-                0.9965424145952742,
-                0.9980104982304532,
-                0.996970035434205,
-                1.0017462160896793,
-                1.00453025524217,
+                0.9352605307451007,
+                0.991084559389268,
+                0.9940350095024881,
+                0.9953849198103668,
+                0.9954705498032904,
+                0.9964815693808411,
+                0.9663142667436776,
+                0.9947223808739147,
+                0.9897776682803257,
+                0.989027769690667,
+                0.9910280920241263,
+                0.992067980667518,
+                0.9917276132506404,
+                0.9902848752169671,
+                0.9928585982942544,
             ],
             "one_head_no_dicts": [
-                0.9668728328024694,
-                0.9559554052674338,
-                0.9558003309868804,
-                0.9568681942948057,
-                0.9471374531635678,
-                0.9573665902279203,
-                0.9509504944430629,
-                0.9449430732494284,
-                0.9487872001503757,
-                0.9515435134805473,
-                0.9616246560028083,
-                0.9652201708552365,
-                0.9518567860504985,
-                0.9695448453855497,
-                0.9595931614125687,
+                0.9425342207393083,
+                1.0149788456087416,
+                1.0249228965652788,
+                1.0247924743285792,
+                1.02732103964481,
+                1.0168852937950326,
+                0.9771283495170653,
+                1.0261776335561517,
+                1.0130461033368028,
+                1.0162619153561783,
+                1.019995179866916,
+                1.0209512298344965,
+                1.0219971755636952,
+                1.0195791901659124,
+                1.0234662527729408,
             ],
             "one_head_with_dicts": [
-                0.9904238487805224,
-                0.9787489784129528,
-                0.9980000798872206,
-                1.0081047579760913,
-                0.970990405481672,
-                1.0296635919726917,
-                1.0070991842774164,
-                0.9977357706770508,
-                0.9729041794133619,
-                0.9952167479342705,
-                1.0256795692987708,
-                1.0005027614317226,
-                1.0042896304620599,
-                0.9933015438418198,
-                0.9941762126172496,
+                0.8638341551096959,
+                1.0078341354784144,
+                1.0149701178418595,
+                0.9945723048460148,
+                1.0184158011731292,
+                0.9992135295205004,
+                0.8943420783639198,
+                1.0327920054084088,
+                0.9905731198078909,
+                0.9838325204450648,
+                1.0018725575620482,
+                1.007263052421034,
+                1.0335213929231966,
+                1.0033503312511205,
+                1.0174433894759563,
             ],
             "two_heads_no_dicts": [
-                0.8234141049979373,
-                0.8486132642907047,
-                0.8761921831858267,
-                0.8086446850523645,
-                0.8185616207749478,
-                0.8349295066652644,
-                0.8695339796701849,
-                0.8783625449137391,
-                0.8513575832201994,
-                0.8428073015147357,
-                0.8514345324682252,
-                0.8774982178381736,
-                0.8724648944295484,
-                0.9071025824523504,
-                0.8671562526370659,
+                0.9933763730233168,
+                0.9986480398559268,
+                1.0042486164355315,
+                1.0025568793877726,
+                1.0032598081704625,
+                0.9926714183717912,
+                0.9920385249670881,
+                1.0020278841030676,
+                1.0012474150830537,
+                1.0039289677261019,
+                1.0022718878661814,
+                1.003586385624809,
+                1.003436450009097,
+                1.003805673887942,
+                1.001450261102316,
             ],
             "two_heads_mixed": [
-                1.0142275963817828,
-                0.9252946269851097,
-                0.9905802472120683,
-                1.0104854763203601,
-                1.0627569806879018,
-                0.894635070244004,
-                0.9570335273959514,
-                0.9917699286224028,
-                0.9731498108644769,
-                1.02712188692559,
-                1.0255958579172193,
-                1.0134291318470228,
-                0.9601947878290134,
-                0.9593860448787849,
-                1.0044099804202045,
+                0.8781767864616707,
+                0.9843563603794138,
+                1.0145197579049248,
+                0.9835060778675391,
+                1.0419060462994596,
+                0.9917393978520056,
+                0.9091521032773944,
+                1.0605463095070453,
+                0.9685381713826684,
+                0.9866493058823766,
+                1.00305061187164,
+                1.0051273128414386,
+                1.037964258398104,
+                1.0106663924241408,
+                1.0274351814133602,
             ],
         },
     }
-
 
     list_of_all = []
     for key, value in all_arg_sets.items():
         print(key)
         for key2, value2 in value.items():
-            print('  ', key2)
-            list_of_all.append((value2, (key, key2), np.asarray(all_expected_outputs[key][key2])))
+            print("  ", key2)
+            list_of_all.append(
+                (value2, (key, key2), np.asarray(all_expected_outputs[key][key2]))
+            )
 
     return list_of_all
 
@@ -344,8 +347,13 @@ def dict_to_yaml_str(data, indent=0):
 
 _trial_yamls_and_and_expected = trial_yamls_and_and_expected()
 
-@pytest.mark.parametrize("yaml_contents, name, expected_value", _trial_yamls_and_and_expected)
-def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value, debug_test=False):
+
+@pytest.mark.parametrize(
+    "yaml_contents, name, expected_value", _trial_yamls_and_and_expected
+)
+def test_key_specification_methods(
+    tmp_path, yaml_contents, name, expected_value, debug_test=False
+):
     fitting_configs = configs_numbered_keys()
 
     ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs)
@@ -370,7 +378,7 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
     mace_params["E0s"] = "{1:0.0,8:1.0}"
     mace_params["valid_file"] = "duplicated_fit_multihead_dft.xyz"
     del mace_params["valid_fraction"]
-    mace_params["max_num_epochs"] = 1 # many tests to do
+    mace_params["max_num_epochs"] = 1  # many tests to do
     del mace_params["energy_key"]
     del mace_params["forces_key"]
     del mace_params["stress_key"]
@@ -402,18 +410,18 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
     )
 
     if debug_test:
-        new_cmd = cmd.replace('--', '\n--')
-        print('calling run train with {name}')
-        print('command line args:\n', new_cmd)
-        print('config.yaml:\n', dict_to_yaml_str(yaml_contents), flush=True)
+        new_cmd = cmd.replace("--", "\n--")
+        print(f"calling run train with {name}")
+        print("command line args:\n", new_cmd)
+        print("config.yaml:\n", dict_to_yaml_str(yaml_contents), flush=True)
 
     p = subprocess.run(cmd.split(), env=run_env, cwd=tmp_path, check=True)
     assert p.returncode == 0
 
-    if 'heads' in yaml_contents:
-        headname = list(yaml_contents['heads'].keys())[0]
+    if "heads" in yaml_contents:
+        headname = list(yaml_contents["heads"].keys())[0]
     else:
-        headname = 'Default'
+        headname = "Default"
 
     calc = MACECalculator(
         tmp_path / "MACE_.model", device="cpu", default_dtype="float64", head=headname
@@ -423,9 +431,22 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
     for at in fitting_configs:
         at.calc = calc
         Es.append(at.get_potential_energy())
-    
-    print(np.asarray(Es))
-    print(expected_value)
-    print(type(np.asarray(Es)))
-    print(type(expected_value))
+
+    if debug_test:
+        return Es
+
     assert np.allclose(np.asarray(Es), expected_value)
+    return 0
+
+
+# for creating values
+def make_output():
+    outputs = {}
+    for yaml_contents, name, expected_value in _trial_yamls_and_and_expected:
+        if name[0] not in outputs:
+            outputs[name[0]] = {}
+        expected = test_key_specification_methods(
+            Path("."), yaml_contents, name, expected_value, debug_test=False
+        )
+        outputs[name[0]][name[1]] = expected
+    print(outputs)
