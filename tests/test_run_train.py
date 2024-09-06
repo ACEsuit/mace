@@ -537,9 +537,12 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
 
     Es = []
     for at in fitting_configs:
-        config_head = at.info.get('head', 'MP2')
+        config_head = at.info.get("head", "MP2")
         calc = MACECalculator(
-            tmp_path / "MACE.model", device="cpu", default_dtype="float64", head=config_head
+            tmp_path / "MACE.model",
+            device="cpu",
+            default_dtype="float64",
+            head=config_head,
         )
         at.calc = calc
         Es.append(at.get_potential_energy())
