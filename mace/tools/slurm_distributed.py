@@ -34,8 +34,8 @@ class DistributedEnvironmentSlurm:
         os.environ["RANK"] = os.environ["SLURM_PROCID"]
 
 
-class DistributedEnvironmentOpenmpi:
+class DistributedEnvironmentDefault:
     def __init__(self):
-        self.world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
-        self.local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
-        self.rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
+        self.world_size = int(os.environ["WORLD_SIZE"])
+        self.local_rank = int(os.environ["LOCAL_RANK"])
+        self.rank = int(os.environ["RANK"])

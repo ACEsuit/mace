@@ -87,7 +87,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--distributed_env",
         help="HPC cluster's job scheduler",
         type=str,
-        choices=["slurm", "openmpi"],
+        choices=["slurm", "default"],
         default="slurm",
     )
 
