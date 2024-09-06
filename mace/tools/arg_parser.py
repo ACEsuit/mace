@@ -85,7 +85,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--distributed_env",
-        help="HPC cluster's job scheduler",
+        help="The parallel environment to use for distributed training",
         type=str,
         choices=["slurm", "openmpi"],
         default="slurm",
