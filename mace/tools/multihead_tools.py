@@ -51,8 +51,10 @@ def dict_head_to_dataclass(
         info_keys=head.get("info_keys", {}), arrays_keys=head.get("arrays_keys", {})
     )
     # parser+head args that have no defaults but are required
-    if (args.train_file is None) and (head.get("train_file", None) is None) :
-        raise ValueError("train file is not set in the head config yaml or via command line args")
+    if (args.train_file is None) and (head.get("train_file", None) is None):
+        raise ValueError(
+            "train file is not set in the head config yaml or via command line args"
+        )
     return HeadConfig(
         head_name=head_name,
         train_file=head.get("train_file", args.train_file),

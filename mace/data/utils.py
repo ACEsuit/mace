@@ -108,7 +108,7 @@ def config_from_atoms_list(
     atoms_list: List[ase.Atoms],
     key_specification: KeySpecification,
     config_type_weights: Optional[Dict[str, float]] = None,
-    head_name: str = "Default"
+    head_name: str = "Default",
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
     if config_type_weights is None:
@@ -121,7 +121,7 @@ def config_from_atoms_list(
                 atoms,
                 key_specification=key_specification,
                 config_type_weights=config_type_weights,
-                head_name=head_name
+                head_name=head_name,
             )
         )
     return all_configs
@@ -131,7 +131,7 @@ def config_from_atoms(
     atoms: ase.Atoms,
     key_specification: KeySpecification = KeySpecification(),
     config_type_weights: Optional[Dict[str, float]] = None,
-    head_name: str = "Default"
+    head_name: str = "Default",
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
     if config_type_weights is None:
