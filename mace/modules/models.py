@@ -316,7 +316,12 @@ class MACE(torch.nn.Module, PyTorchModelHubMixin):
 
 
 @compile_mode("script")
-class ScaleShiftMACE(MACE):
+class ScaleShiftMACE(
+    MACE,
+    PyTorchModelHubMixin,
+    repo_url="https://github.com/ACEsuit/mace",
+    docs_url="https://mace-docs.readthedocs.io/en/latest/",
+):
     def __init__(
         self,
         atomic_inter_scale: float,

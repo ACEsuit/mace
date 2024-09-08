@@ -170,6 +170,12 @@ def run(args: argparse.Namespace):
         charges_key=args.charges_key,
     )
 
+    if args.E0s is not None:
+        logging.info("Using E0s from command line argument")
+        E0s = ast.literal_eval(args.E0s)
+        assert isinstance(E0s, dict)
+        atomic_energies_dict = E0s
+
     # Atomic number table
     # yapf: disable
     if args.atomic_numbers is None:
