@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
+from huggingface_hub import PyTorchModelHubMixin
 
 from mace.data import AtomicData
 from mace.modules.radial import ZBLBasis
@@ -39,7 +40,7 @@ from .utils import (
 
 
 @compile_mode("script")
-class MACE(torch.nn.Module):
+class MACE(torch.nn.Module, PyTorchModelHubMixin):
     def __init__(
         self,
         r_max: float,
