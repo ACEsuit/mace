@@ -3,13 +3,12 @@ import dataclasses
 import logging
 import os
 import urllib.request
-from copy import deepcopy
 from typing import Any, Dict, List, Optional, Union
 
 import torch
 
 from mace.cli.fine_tuning_select import select_samples
-from mace.data import KeySpecification, update_keyspec_from_kwargs
+from mace.data import KeySpecification
 from mace.tools.scripts_utils import (
     SubsetCollection,
     dict_to_namespace,
@@ -44,12 +43,6 @@ class HeadConfig:
 def dict_head_to_dataclass(
     head: Dict[str, Any], head_name: str, args: argparse.Namespace
 ) -> HeadConfig:
-    # priority is global args < head property_key values < head info_keys+arrays_keys
-    head_keyspec = deepcopy(args.key_specification)
-    update_keyspec_from_kwargs(head_keyspec, head)
-    head_keyspec.update(
-        info_keys=head.get("info_keys", {}), arrays_keys=head.get("arrays_keys", {})
-    )
     # parser+head args that have no defaults but are required
     if (args.train_file is None) and (head.get("train_file", None) is None):
         raise ValueError(
@@ -72,7 +65,7 @@ def dict_head_to_dataclass(
         mean=head.get("mean", args.mean),
         std=head.get("std", args.std),
         avg_num_neighbors=head.get("avg_num_neighbors", args.avg_num_neighbors),
-        key_specification=head_keyspec,
+        key_specification=head["key_specification"],
         keep_isolated_atoms=head.get("keep_isolated_atoms", args.keep_isolated_atoms),
     )
 

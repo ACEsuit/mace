@@ -157,12 +157,26 @@ def run(args: argparse.Namespace) -> None:
 
     if args.heads is not None:
         args.heads = ast.literal_eval(args.heads)
+        for _, head_dict in args.heads.items():
+            # priority is global args < head property_key values < head info_keys+arrays_keys
+            head_keyspec = deepcopy(args.key_specification)
+            update_keyspec_from_kwargs(head_keyspec, head_dict)
+            head_keyspec.update(
+                info_keys=head_dict.get("info_keys", {}),
+                arrays_keys=head_dict.get("arrays_keys", {}),
+            )
+            head_dict["key_specification"] = head_keyspec
     else:
         args.heads = prepare_default_head(args)
 
     logging.info("===========LOADING INPUT DATA===========")
     heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
+    logging.info("Using the key specifications to parse data:")
+    for name, head_dict in args.heads.items():
+        head_keyspec = head_dict["key_specification"]
+        logging.info(f"{name}: {head_keyspec}")
+
     head_configs: List[HeadConfig] = []
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
@@ -647,7 +661,7 @@ def run(args: argparse.Namespace) -> None:
                         folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
         for test_name, test_set in test_sets.items():
-            print(test_name)
+            logging.info("test_name", test_name)
             test_sampler = None
             if args.distributed:
                 test_sampler = torch.utils.data.distributed.DistributedSampler(
