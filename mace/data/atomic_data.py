@@ -57,6 +57,8 @@ class AtomicData(torch_geometric.data.Data):
         forces_weight: Optional[torch.Tensor],  # [,]
         stress_weight: Optional[torch.Tensor],  # [,]
         virials_weight: Optional[torch.Tensor],  # [,]
+        dipole_weight: Optional[torch.Tensor],  # [,]
+        charges_weight: Optional[torch.Tensor],  # [,]
         forces: Optional[torch.Tensor],  # [n_nodes, 3]
         energy: Optional[torch.Tensor],  # [, ]
         stress: Optional[torch.Tensor],  # [1,3,3]
@@ -78,6 +80,8 @@ class AtomicData(torch_geometric.data.Data):
         assert forces_weight is None or len(forces_weight.shape) == 0
         assert stress_weight is None or len(stress_weight.shape) == 0
         assert virials_weight is None or len(virials_weight.shape) == 0
+        assert dipole_weight is None or dipole_weight.shape == (1,3), dipole_weight
+        assert charges_weight is None or len(charges_weight.shape) == 0
         assert cell is None or cell.shape == (3, 3)
         assert forces is None or forces.shape == (num_nodes, 3)
         assert energy is None or len(energy.shape) == 0
@@ -100,6 +104,8 @@ class AtomicData(torch_geometric.data.Data):
             "forces_weight": forces_weight,
             "stress_weight": stress_weight,
             "virials_weight": virials_weight,
+            "dipole_weight": dipole_weight,
+            "charges_weight": charges_weight,
             "forces": forces,
             "energy": energy,
             "stress": stress,
@@ -181,6 +187,26 @@ class AtomicData(torch_geometric.data.Data):
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
 
+        dipole_weight = (
+            torch.tensor(
+                config.property_weights.get("dipole"), dtype=torch.get_default_dtype()
+            )
+            if config.property_weights.get("dipole") is not None
+            else torch.tensor([[1.0, 1.0, 1.0]], dtype=torch.get_default_dtype())
+        )
+        if len(dipole_weight.shape) == 0:
+            dipole_weight = dipole_weight * torch.tensor([[1.0, 1.0, 1.0]], dtype=torch.get_default_dtype())
+        elif len(dipole_weight.shape) == 1:
+            dipole_weight = dipole_weight.unsqueeze(0)
+
+        charges_weight = (
+            torch.tensor(
+                config.property_weights.get("charges"), dtype=torch.get_default_dtype()
+            )
+            if config.property_weights.get("charges") is not None
+            else torch.tensor(1.0, dtype=torch.get_default_dtype())
+        )
+
         forces = (
             torch.tensor(
                 config.properties.get("forces"), dtype=torch.get_default_dtype()
@@ -241,6 +267,8 @@ class AtomicData(torch_geometric.data.Data):
             forces_weight=forces_weight,
             stress_weight=stress_weight,
             virials_weight=virials_weight,
+            dipole_weight=dipole_weight,
+            charges_weight=charges_weight,
             forces=forces,
             energy=energy,
             stress=stress,
