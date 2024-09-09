@@ -288,7 +288,7 @@ def compute_average_E0s(
     A = np.zeros((len_train, len_zs))
     B = np.zeros(len_train)
     for i in range(len_train):
-        B[i] = collections_train[i].energy
+        B[i] = collections_train[i].properties["energy"]
         for j, z in enumerate(z_table.zs):
             A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
     try:
