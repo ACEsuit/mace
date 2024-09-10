@@ -696,8 +696,11 @@ def run(args: argparse.Namespace) -> None:
             device=device,
         )
         model.to(device)
-        if args.distributed and args.device == "cuda":
-            distributed_model = DDP(model, device_ids=[local_rank])
+        if args.distributed:
+            if args.device == "cuda":
+                distributed_model = DDP(model, device_ids=[local_rank])
+            elif args.device == "cpu":
+                distributed_model = DDP(model, device_ids=[rank])
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")

@@ -39,3 +39,4 @@ class DistributedEnvironmentOpenmpi:
         self.world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
         self.local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
         self.rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
+        return
