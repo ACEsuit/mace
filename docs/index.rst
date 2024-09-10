@@ -34,9 +34,9 @@ For detailed information on how to use `MACE`, please refer to the following doc
     :caption: Examples
     :maxdepth: 2
 
-    examples/ase_examples.rst
     examples/training_examples.rst
     examples/foundation_examples.rst
+    examples/tutorials.rst
 
 .. toctree::
     :caption: API
