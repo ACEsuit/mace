@@ -575,8 +575,11 @@ def run(args: argparse.Namespace) -> None:
     if args.wandb:
         setup_wandb(args)
 
-    if args.distributed and args.device == "cuda":
-        distributed_model = DDP(model, device_ids=[local_rank])
+    if args.distributed:
+        if args.device == "cuda":
+            distributed_model = DDP(model, device_ids=[local_rank])
+        elif args.device == "cpu":
+            distributed_model = DDP(model, device_ids=[rank])
     else:
         distributed_model = None
 
