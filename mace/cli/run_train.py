@@ -92,8 +92,7 @@ def run(args: argparse.Namespace) -> None:
         local_rank = distr_env.local_rank
         rank = distr_env.rank
         if rank == 0:
-            print(distr_env)
-
+            print("Using distributed Environment: ", distr_env)
         torch.distributed.init_process_group(backend=args.distributed_backend)
     else:
         rank = int(0)
@@ -579,7 +578,7 @@ def run(args: argparse.Namespace) -> None:
         if args.device == "cuda":
             distributed_model = DDP(model, device_ids=[local_rank])
         elif args.device == "cpu":
-            distributed_model = DDP(model, device_ids=[rank])
+            distributed_model = DDP(model)
     else:
         distributed_model = None
 
@@ -700,7 +699,7 @@ def run(args: argparse.Namespace) -> None:
             if args.device == "cuda":
                 distributed_model = DDP(model, device_ids=[local_rank])
             elif args.device == "cpu":
-                distributed_model = DDP(model, device_ids=[rank])
+                distributed_model = DDP(model)
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
