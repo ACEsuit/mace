@@ -92,7 +92,7 @@ def run(args: argparse.Namespace) -> None:
         local_rank = distr_env.local_rank
         rank = distr_env.rank
         if rank == 0:
-            print("Using distributed Environment: ", distr_env)
+            print("Using Distributed Environment: ", distr_env)
         torch.distributed.init_process_group(backend=args.distributed_backend)
     else:
         rank = int(0)
