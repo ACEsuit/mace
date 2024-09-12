@@ -106,7 +106,7 @@ class TestBlocks:
         )
         batch = next(iter(data_loader))
 
-        energies = energies_block(batch.node_attrs)
+        energies = energies_block(batch.node_attrs).squeeze(-1)
         out = scatter.scatter_sum(src=energies, index=batch.batch, dim=-1, reduce="sum")
         out = to_numpy(out)
         assert np.allclose(out, np.array([5.0, 5.0]))

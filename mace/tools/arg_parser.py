@@ -60,7 +60,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--device",
         help="select device",
         type=str,
-        choices=["cpu", "cuda", "mps"],
+        choices=["cpu", "cuda", "mps", "xpu"],
         default="cpu",
     )
     parser.add_argument(
@@ -228,19 +228,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compute_avg_num_neighbors",
         help="normalization factor for the message",
-        type=bool,
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
         "--compute_stress",
         help="Select True to compute stress",
-        type=bool,
+        type=str2bool,
         default=False,
     )
     parser.add_argument(
         "--compute_forces",
         help="Select True to compute forces",
-        type=bool,
+        type=str2bool,
         default=True,
     )
 
@@ -249,7 +249,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--train_file",
         help="Training set file, format is .xyz or .h5",
         type=str,
-        required=True,
+        required=False,
     )
     parser.add_argument(
         "--valid_file",
@@ -280,7 +280,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--multi_processed_test",
         help="Boolean value for whether the test data was multiprocessed",
-        type=bool,
+        type=str2bool,
         default=False,
         required=False,
     )
@@ -294,7 +294,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--pin_memory",
         help="Pin memory for data loading",
         default=True,
-        type=bool,
+        type=str2bool,
     )
     parser.add_argument(
         "--atomic_numbers",
@@ -331,12 +331,66 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=None,
         required=False,
     )
+
+    # Fine-tuning
+    parser.add_argument(
+        "--foundation_filter_elements",
+        help="Filter element during fine-tuning",
+        type=str2bool,
+        default=True,
+        required=False,
+    )
+    parser.add_argument(
+        "--heads",
+        help="Dict of heads: containing individual files and E0s",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--multiheads_finetuning",
+        help="Boolean value for whether the model is multiheaded",
+        type=str2bool,
+        default=True,
+    )
+    parser.add_argument(
+        "--weight_pt_head",
+        help="Weight of the pretrained head in the loss function",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--num_samples_pt",
+        help="Number of samples in the pretrained head",
+        type=int,
+        default=1000,
+    )
+    parser.add_argument(
+        "--subselect_pt",
+        help="Method to subselect the configurations of the pretraining set",
+        choices=["fps", "random"],
+        default="random",
+    )
+    parser.add_argument(
+        "--pt_train_file",
+        help="Training set file for the pretrained head",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--pt_valid_file",
+        help="Validation set file for the pretrained head",
+        type=str,
+        default=None,
+    )
     parser.add_argument(
         "--keep_isolated_atoms",
         help="Keep isolated atoms in the dataset, useful for transfer learning",
-        type=bool,
+        type=str2bool,
         default=False,
     )
+
+    # Keys
     parser.add_argument(
         "--energy_key",
         help="Key of reference energies in training xyz",
@@ -769,7 +823,7 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--shuffle",
         help="Shuffle the training dataset",
-        type=bool,
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
@@ -790,3 +844,13 @@ def check_float_or_none(value: str) -> Optional[float]:
                 f"{value} is an invalid value (float or None)"
             ) from None
         return None
+
+
+def str2bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    if value.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    raise argparse.ArgumentTypeError("Boolean value expected.")
