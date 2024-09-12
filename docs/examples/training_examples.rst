@@ -1,3 +1,5 @@
+.. _training_examples:
+
 ==============================================
 Example scripts for training MACE models
 ==============================================

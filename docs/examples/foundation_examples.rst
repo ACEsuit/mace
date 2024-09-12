@@ -1,3 +1,5 @@
+.. _foundation_examples:
+
 ======================================
 Foundation model to run NVT simulation
 ======================================

@@ -1,3 +1,5 @@
+.. _tutorials:
+
 ============================================
 Tutorials on MACE training and architecture
 ============================================
