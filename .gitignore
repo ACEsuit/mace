@@ -23,3 +23,5 @@ logs/MACE_run-5.log
 /checkpoints
 /wandb
 *.model
+/dist
+*.xyz
