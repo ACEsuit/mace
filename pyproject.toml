@@ -22,6 +22,7 @@ disable = [
     "not-callable",
     "logging-fstring-interpolation",
     "logging-not-lazy",
+    "logging-too-many-args",
     "invalid-name",
     "too-few-public-methods",
     "too-many-instance-attributes",
