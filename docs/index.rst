@@ -5,18 +5,22 @@ MACE - Machine Learning Force Fields
 Overview
 --------
 
-`MACE` is a machine learning software for predicting many-body atomic interactions and generating force fields. It utilizes higher order equivariant message passing for fast and accurate predictions.
+`MACE` is a a machine learning software for predicting many-body atomic interactions and generating force fields. It utilizes high r order equivariant message passing for fast and accurate predictions.
 
 Features
 --------
 
 - Predicts many-body atomic interactions with high accuracy
-- Generates force fields for use in molecular dynamics simulations
+- Generates highly accurate force fields for use in molecular dynamics simulations
 - Utilizes higher order equivariant message passing
 - Fast and efficient predictions
+- Out of the box foundation models for various applications
+- Interface to LAMMPS and openMM for molecular dynamics simulations
 
 Getting Started
 ---------------
+
+To get quickly started with `MACE`, please go to the `Quick Start` section of the documentation.
 
 Documentation
 -------------
@@ -46,4 +50,4 @@ For detailed information on how to use `MACE`, please refer to the following doc
 Support
 -------
 
-If you need help using `MACE`, please use GitHub Discussions or send an email to ilyes.batatia@ens-paris-saclay.fr
+If you need help using `MACE`, please use GitHub Discussions or send an email to ib467@cam.ac.uk.
