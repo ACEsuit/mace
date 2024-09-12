@@ -11,8 +11,6 @@ This enables the model to learn the different level of theories simultaneously, 
 
 To train a multihead model, you can use the mace_run_train script with the following yaml file in the --config argument:
 
-.. codeblock:: yaml
-
     heads: 
         3bpa_wb97x_d3bj:
             train_file: train_3bpa_wb97x_d3bj.xyz
