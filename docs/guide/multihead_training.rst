@@ -1,4 +1,4 @@
-.. _multihead:
+.. _multihead_training:
 
 ****************************
 Multihead Training for MACE

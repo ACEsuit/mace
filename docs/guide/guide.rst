@@ -19,6 +19,6 @@ User Guide
     lammps
     foundation_models
     finetuning
-    multihead
+    multihead_training
     multipreprocessing
     multigpu
