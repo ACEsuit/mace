@@ -17,8 +17,6 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from mace import data
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
-from mace.tools.compile import prepare
-from mace.tools.scripts_utils import extract_load
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
@@ -56,14 +54,16 @@ class MACECalculator(Calculator):
         default_dtype="",
         charges_key="Qs",
         model_type="MACE",
-        compile_mode=None,
-        fullgraph=True,
+        decouple_indices=None,
+        lmbda=None,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
         self.results = {}
 
         self.model_type = model_type
+        self.decouple_indices = decouple_indices
+        self.lmbda = lmbda
 
         if model_type == "MACE":
             self.implemented_properties = [
@@ -112,23 +112,10 @@ class MACECalculator(Calculator):
                 )
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
-        if compile_mode is not None:
-            print(f"Torch compile is enabled with mode: {compile_mode}")
-            self.models = [
-                torch.compile(
-                    prepare(extract_load)(f=model_path, map_location=device),
-                    mode=compile_mode,
-                    fullgraph=fullgraph,
-                )
-                for model_path in model_paths
-            ]
-            self.use_compile = True
-        else:
-            self.models = [
-                torch.load(f=model_path, map_location=device)
-                for model_path in model_paths
-            ]
-            self.use_compile = False
+
+        self.models = [
+            torch.load(f=model_path, map_location=device) for model_path in model_paths
+        ]
         for model in self.models:
             model.to(device)  # shouldn't be necessary but seems to help with GPU
         r_maxs = [model.r_max.cpu() for model in self.models]
@@ -193,28 +180,6 @@ class MACECalculator(Calculator):
             dict_of_tensors.update({"dipole": dipole})
         return dict_of_tensors
 
-    def _atoms_to_batch(self, atoms):
-        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                data.AtomicData.from_config(
-                    config, z_table=self.z_table, cutoff=self.r_max
-                )
-            ],
-            batch_size=1,
-            shuffle=False,
-            drop_last=False,
-        )
-        batch = next(iter(data_loader)).to(self.device)
-        return batch
-
-    def _clone_batch(self, batch):
-        batch_clone = batch.clone()
-        if self.use_compile:
-            batch_clone["node_attrs"].requires_grad_(True)
-            batch_clone["positions"].requires_grad_(True)
-        return batch_clone
-
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         """
@@ -227,24 +192,37 @@ class MACECalculator(Calculator):
         # call to base-class to set atoms attribute
         Calculator.calculate(self, atoms)
 
-        batch_base = self._atoms_to_batch(atoms)
+        # prepare data
+        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
+        data_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[
+                data.AtomicData.from_config(
+                    config, z_table=self.z_table, cutoff=self.r_max
+                )
+            ],
+            batch_size=1,
+            shuffle=False,
+            drop_last=False,
+        )
 
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
-            batch = self._clone_batch(batch_base)
+            batch = next(iter(data_loader)).to(self.device)
             node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])
-            compute_stress = not self.use_compile
+            compute_stress = True
         else:
             compute_stress = False
 
+        batch_base = next(iter(data_loader)).to(self.device)
         ret_tensors = self._create_result_tensors(
             self.model_type, self.num_models, len(atoms)
         )
         for i, model in enumerate(self.models):
-            batch = self._clone_batch(batch_base)
+            batch = batch_base.clone()
             out = model(
                 batch.to_dict(),
                 compute_stress=compute_stress,
-                training=self.use_compile,
+                decouple_indices=self.decouple_indices,
+                lmbda=self.lmbda,
             )
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
@@ -263,7 +241,7 @@ class MACECalculator(Calculator):
             )
             self.results["free_energy"] = self.results["energy"]
             self.results["node_energy"] = (
-                torch.mean(ret_tensors["node_energy"], dim=0).cpu().numpy()
+                torch.mean(ret_tensors["node_energy"] - node_e0, dim=0).cpu().numpy()
             )
             self.results["forces"] = (
                 torch.mean(ret_tensors["forces"], dim=0).cpu().numpy()
@@ -310,28 +288,6 @@ class MACECalculator(Calculator):
                     .numpy()
                 )
 
-    def get_hessian(self, atoms=None):
-        if atoms is None and self.atoms is None:
-            raise ValueError("atoms not set")
-        if atoms is None:
-            atoms = self.atoms
-        if self.model_type != "MACE":
-            raise NotImplementedError("Only implemented for MACE models")
-        batch = self._atoms_to_batch(atoms)
-        hessians = [
-            model(
-                self._clone_batch(batch).to_dict(),
-                compute_hessian=True,
-                compute_stress=False,
-                training=self.use_compile,
-            )["hessian"]
-            for model in self.models
-        ]
-        hessians = [hessian.detach().cpu().numpy() for hessian in hessians]
-        if self.num_models == 1:
-            return hessians[0]
-        return hessians
-
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
         """Extracts the descriptors from MACE model.
         :param atoms: ase.Atoms object
@@ -347,7 +303,18 @@ class MACECalculator(Calculator):
             raise NotImplementedError("Only implemented for MACE models")
         if num_layers == -1:
             num_layers = int(self.models[0].num_interactions)
-        batch = self._atoms_to_batch(atoms)
+        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
+        data_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[
+                data.AtomicData.from_config(
+                    config, z_table=self.z_table, cutoff=self.r_max
+                )
+            ],
+            batch_size=1,
+            shuffle=False,
+            drop_last=False,
+        )
+        batch = next(iter(data_loader)).to(self.device)
         descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
         if invariants_only:
             irreps_out = self.models[0].products[0].linear.__dict__["irreps_out"]
