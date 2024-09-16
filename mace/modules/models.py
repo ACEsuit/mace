@@ -779,7 +779,7 @@ class AtomicDielectricMACE(torch.nn.Module):
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
-        num_atoms = data.ptr[1:] - data.ptr[:-1]
+        num_atoms = data["ptr"][1:] - data["ptr"][:-1]
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
