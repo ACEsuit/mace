@@ -274,11 +274,8 @@ def train(
                             wandb_log_dict[valid_loader_name] = {
                                 "epoch": epoch,
                                 "valid_loss": valid_loss_head,
-                                "valid_rmse_e_per_atom": eval_metrics[
-                                    "rmse_e_per_atom"
-                                ],
-                                "valid_rmse_f": eval_metrics["rmse_f"],
                             }
+                            wandb_log_dict.update(eval_metrics)
                 valid_loss = (
                     valid_loss_head  # consider only the last head for the checkpoint
                 )
