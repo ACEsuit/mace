@@ -40,7 +40,7 @@ from .utils import (
 
 
 @compile_mode("script")
-class MACE(torch.nn.Module, PyTorchModelHubMixin):
+class MACE(torch.nn.Module):
     def __init__(
         self,
         r_max: float,
