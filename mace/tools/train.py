@@ -181,11 +181,12 @@ def train(
     if distributed:
         torch.distributed.barrier()
 
+    model_to_evaluate = model if distributed_model is None else distributed_model
     # log validation loss before _any_ training
     valid_loss = 0.0
     for valid_loader_name, valid_loader in valid_loaders.items():
         valid_loss_head, eval_metrics = evaluate(
-            model=model,
+            model=model_to_evaluate,
             loss_fn=loss_fn,
             data_loader=valid_loader,
             output_args=output_args,
