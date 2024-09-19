@@ -153,6 +153,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticResidualInteractionBlock",
             "RealAgnosticAttResidualInteractionBlock",
             "RealAgnosticInteractionBlock",
+            "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticDensityResidualInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -163,6 +165,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=[
             "RealAgnosticResidualInteractionBlock",
             "RealAgnosticInteractionBlock",
+            "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticDensityResidualInteractionBlock",
         ],
     )
     parser.add_argument(
