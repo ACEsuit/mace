@@ -18,6 +18,8 @@ from .blocks import (
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
     ResidualElementDependentInteractionBlock,
+    RealAgnosticDensityResidualInteractionBlock,
+    RealAgnosticDensityInteractionBlock,
     ScaleShiftBlock,
 )
 from .loss import (
@@ -56,6 +58,8 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticResidualInteractionBlock": RealAgnosticResidualInteractionBlock,
     "RealAgnosticAttResidualInteractionBlock": RealAgnosticAttResidualInteractionBlock,
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
+    "RealAgnosticDensityInteractionBlock": RealAgnosticDensityInteractionBlock,
+    "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
 }
 
 scaling_classes: Dict[str, Callable] = {
