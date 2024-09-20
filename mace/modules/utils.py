@@ -163,6 +163,40 @@ def compute_hessians_loop(
     return hessian
 
 
+def get_huber_mask(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    huber_delta: float = 1.0,
+) -> torch.Tensor:
+    se = torch.square(input - target)
+    huber_mask = (se < huber_delta).int().double()
+    return huber_mask
+
+
+def get_conditional_huber_force_mask(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    huber_delta: float,
+) -> torch.Tensor:
+    # Define the multiplication factors for each condition
+    factors = huber_delta * torch.tensor([1.0, 0.7, 0.4, 0.1])
+
+    # Apply multiplication factors based on conditions
+    c1 = torch.norm(target, dim=-1) < 100
+    c2 = (torch.norm(target, dim=-1) >= 100) & (torch.norm(target, dim=-1) < 200)
+    c3 = (torch.norm(target, dim=-1) >= 200) & (torch.norm(target, dim=-1) < 300)
+    c4 = ~(c1 | c2 | c3)
+
+    huber_mask = torch.zeros_like(input)
+
+    huber_mask[c1] = get_huber_mask(target[c1], input[c1], factors[0])
+    huber_mask[c2] = get_huber_mask(target[c2], input[c2], factors[1])
+    huber_mask[c3] = get_huber_mask(target[c3], input[c3], factors[2])
+    huber_mask[c4] = get_huber_mask(target[c4], input[c4], factors[3])
+
+    return huber_mask
+
+
 def get_outputs(
     energy: torch.Tensor,
     positions: torch.Tensor,
