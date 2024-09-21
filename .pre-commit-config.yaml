@@ -41,7 +41,7 @@ repos:
           '--disable=missing-class-docstring',
           '--disable=missing-function-docstring',
           '--disable=too-many-arguments',
-          '--diable=too-many-positional-arguments',
+          '--disable=too-many-positional-arguments',
           '--disable=too-many-locals',
           '--disable=not-callable',
           '--disable=logging-fstring-interpolation',
