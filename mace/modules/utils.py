@@ -5,7 +5,7 @@
 ###########################################################################################
 
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 import numpy as np
 import torch
