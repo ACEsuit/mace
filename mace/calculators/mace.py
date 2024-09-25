@@ -5,6 +5,7 @@
 ###########################################################################################
 
 
+import logging
 from glob import glob
 from pathlib import Path
 from typing import Union
@@ -64,12 +65,15 @@ class MACECalculator(Calculator):
         Calculator.__init__(self, **kwargs)
 
         if "model_path" in kwargs:
+            deprecation_message = (
+                "'model_path' argument is deprecated, please use 'model_paths'"
+            )
             if model_paths is None:
-                print("model_path argument deprecated, use model_paths")
+                logging.warning(f"{deprecation_message} in the future.")
                 model_paths = kwargs["model_path"]
             else:
                 raise ValueError(
-                    "both 'model_path' and 'model_paths' argument give, please only pass model_paths"
+                    f"both 'model_path' and 'model_paths' given, {deprecation_message} only."
                 )
 
         if (model_paths is None) == (models is None):
