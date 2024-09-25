@@ -18,7 +18,7 @@ from mace import data
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import prepare
-from mace.tools.scripts_utils import extract_load
+from mace.tools.scripts_utils import extract_model
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
@@ -49,8 +49,9 @@ class MACECalculator(Calculator):
 
     def __init__(
         self,
-        model_paths: Union[list, str],
-        device: str,
+        model_paths: Union[list, str] | None = None,
+        device: str | None = None,
+        models: Union[list[torch.nn.Module], torch.nn.Module] | None = None,
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
         default_dtype="",
@@ -61,6 +62,21 @@ class MACECalculator(Calculator):
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
+
+        if "model_path" in kwargs:
+            if model_paths is None:
+                print("model_path argument deprecated, use model_paths")
+                model_paths = kwargs["model_path"]
+            else:
+                raise ValueError(
+                    "both 'model_path' and 'model_paths' argument give, please only pass model_paths"
+                )
+
+        if (model_paths is None) == (models is None):
+            raise ValueError(
+                "Exactly one of 'model_paths' or 'models' must be provided"
+            )
+
         self.results = {}
 
         self.model_type = model_type
@@ -89,53 +105,70 @@ class MACECalculator(Calculator):
                 f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
-        if "model_path" in kwargs:
-            print("model_path argument deprecated, use model_paths")
-            model_paths = kwargs["model_path"]
+        if model_paths is not None:
+            if isinstance(model_paths, str):
+                # Find all models that satisfy the wildcard (e.g. mace_model_*.pt)
+                model_paths_glob = glob(model_paths)
 
-        if isinstance(model_paths, str):
-            # Find all models that satisfy the wildcard (e.g. mace_model_*.pt)
-            model_paths_glob = glob(model_paths)
-            if len(model_paths_glob) == 0:
-                raise ValueError(f"Couldn't find MACE model files: {model_paths}")
-            model_paths = model_paths_glob
-        elif isinstance(model_paths, Path):
-            model_paths = [model_paths]
-        if len(model_paths) == 0:
-            raise ValueError("No mace file names supplied")
-        self.num_models = len(model_paths)
-        if len(model_paths) > 1:
-            print(f"Running committee mace with {len(model_paths)} models")
+                if len(model_paths_glob) == 0:
+                    raise ValueError(f"Couldn't find MACE model files: {model_paths}")
+
+                model_paths = model_paths_glob
+            elif isinstance(model_paths, Path):
+                model_paths = [model_paths]
+
+            if len(model_paths) == 0:
+                raise ValueError("No mace file names supplied")
+            self.num_models = len(model_paths)
+
+            # Load models from files
+            self.models = [
+                torch.load(f=model_path, map_location=device)
+                for model_path in model_paths
+            ]
+
+        elif models is not None:
+            if not isinstance(models, list):
+                models = [models]
+
+            if len(models) == 0:
+                raise ValueError("No models supplied")
+
+            self.models = models
+            self.num_models = len(models)
+
+        if self.num_models > 1:
+            print(f"Running committee mace with {self.num_models} models")
+
             if model_type in ["MACE", "EnergyDipoleMACE"]:
                 self.implemented_properties.extend(
                     ["energies", "energy_var", "forces_comm", "stress_var"]
                 )
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
+
         if compile_mode is not None:
             print(f"Torch compile is enabled with mode: {compile_mode}")
             self.models = [
                 torch.compile(
-                    prepare(extract_load)(f=model_path, map_location=device),
+                    prepare(extract_model)(model=model, map_location=device),
                     mode=compile_mode,
                     fullgraph=fullgraph,
                 )
-                for model_path in model_paths
+                for model in models
             ]
             self.use_compile = True
         else:
-            self.models = [
-                torch.load(f=model_path, map_location=device)
-                for model_path in model_paths
-            ]
             self.use_compile = False
+
+        # Ensure all models are on the same device
         for model in self.models:
-            model.to(device)  # shouldn't be necessary but seems to help with GPU
+            model.to(device)
+
         r_maxs = [model.r_max.cpu() for model in self.models]
         r_maxs = np.array(r_maxs)
-        assert np.all(
-            r_maxs == r_maxs[0]
-        ), "committee r_max are not all the same {' '.join(r_maxs)}"
+        if not np.all(r_maxs == r_maxs[0]):
+            raise ValueError(f"committee r_max are not all the same {' '.join(r_maxs)}")
         self.r_max = float(r_maxs[0])
 
         self.device = torch_tools.init_device(device)
