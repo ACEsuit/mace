@@ -236,4 +236,6 @@ def mace_anicc(
         print(
             "Using ANI couple cluster model for MACECalculator, see https://doi.org/10.1063/5.0155322"
         )
-    return MACECalculator(model_path, device=device, default_dtype="float64")
+    return MACECalculator(
+        model_paths=model_path, device=device, default_dtype="float64"
+    )
