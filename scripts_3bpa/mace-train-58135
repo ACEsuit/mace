@@ -1,0 +1,21 @@
+Loading pytorch-gpu/py3/2.3.1
+  Loading requirement: cuda/12.4.1 nccl/2.21.5-1-cuda cudnn/9.2.0.82-cuda
+    gcc/11.3.1 openmpi/4.1.5-cuda intel-oneapi-mkl/2024.1 magma/2.8.0-cuda
+    sox/14.4.2 hdf5/1.12.0-mpi-cuda libjpeg-turbo/2.1.3 ffmpeg/6.1.1
+/lustre/fsn1/projects/rech/gax/unh55hx/.conda/envs/mace-tn/lib/python3.11/site-packages/e3nn/o3/_wigner.py:10: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  _Jd, _W3j_flat, _W3j_indices = torch.load(os.path.join(os.path.dirname(__file__), 'constants.pt'))
+Traceback (most recent call last):
+  File "/lustre/fsn1/projects/rech/gax/unh55hx/tensornetwork/mace-main/mace/cli/run_train.py", line 26, in <module>
+    from mace.calculators.foundations_models import mace_mp, mace_off
+  File "/lustre/fsn1/projects/rech/gax/unh55hx/mace_multi_head_interface/mace/calculators/__init__.py", line 1, in <module>
+    from .foundations_models import mace_anicc, mace_mp, mace_off
+  File "/lustre/fsn1/projects/rech/gax/unh55hx/mace_multi_head_interface/mace/calculators/foundations_models.py", line 10, in <module>
+    from .mace import MACECalculator
+  File "/lustre/fsn1/projects/rech/gax/unh55hx/mace_multi_head_interface/mace/calculators/mace.py", line 19, in <module>
+    from mace.modules.utils import extract_invariant
+  File "/lustre/fsn1/projects/rech/gax/unh55hx/mace_multi_head_interface/mace/modules/__init__.py", line 5, in <module>
+    from .blocks import (
+  File "/lustre/fsn1/projects/rech/gax/unh55hx/mace_multi_head_interface/mace/modules/blocks.py", line 35, in <module>
+    import hydra
+ModuleNotFoundError: No module named 'hydra'
+srun: error: jzxh033: task 0: Exited with exit code 1
