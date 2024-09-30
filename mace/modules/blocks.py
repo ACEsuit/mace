@@ -565,6 +565,15 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         )
         self.reshape = reshape_irreps(self.irreps_out)
 
+        # Normalization
+        self.normalize = nn.BatchNorm(
+            self.irreps_out,
+            affine=False,
+            reduce="mean",
+            instance=True,
+            normalization="norm",
+        )
+
     def forward(
         self,
         node_attrs: torch.Tensor,
@@ -586,6 +595,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         )  # [n_nodes, irreps]
         message = self.linear(message) / self.avg_num_neighbors
         message = self.skip_tp(message, node_attrs)
+        message = self.normalize(message)
         return (
             self.reshape(message),
             None,
@@ -637,6 +647,15 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         )
         self.reshape = reshape_irreps(self.irreps_out)
 
+        # Normalization
+        self.normalize = nn.BatchNorm(
+            self.irreps_out,
+            affine=False,
+            reduce="mean",
+            instance=True,
+            normalization="norm",
+        )
+
     def forward(
         self,
         node_attrs: torch.Tensor,
@@ -658,6 +677,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
         message = self.linear(message) / self.avg_num_neighbors
+        message = self.normalize(message)
         return (
             self.reshape(message),
             sc,
