@@ -10,6 +10,7 @@ import dataclasses
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -901,6 +902,17 @@ def check_folder_subfolder(folder_path):
         if os.path.isdir(full_path):
             return True
     return False
+
+
+def check_path_ase_read(filename: str) -> str:
+    filepath = Path(filename)
+    if filepath.is_dir():
+        if len(list(filepath.glob("*.h5")) + list(filepath.glob("*.hdf5"))) == 0:
+            raise RuntimeError(f"Got directory {filename} with no .h5/.hdf5 files")
+        return False
+    if filepath.suffix in (".h5", ".hdf5"):
+        return False
+    return True
 
 
 def dict_to_namespace(dictionary):
