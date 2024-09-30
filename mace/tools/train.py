@@ -64,7 +64,7 @@ def valid_err_log(
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
-        and eval_metrics["rmse_stress"] is not None
+        and eval_metrics.get("rmse_stress", None) is not None
     ):
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
@@ -74,7 +74,7 @@ def valid_err_log(
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
-        and eval_metrics["rmse_virials_per_atom"] is not None
+        and eval_metrics.get("rmse_virials_per_atom", None) is not None
     ):
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
@@ -83,18 +83,18 @@ def valid_err_log(
             f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A, RMSE_virials_per_atom={error_virials:8.1f} meV",
         )
     elif (
-        log_errors == "PerAtomMAEstressvirials"
-        and eval_metrics["mae_stress_per_atom"] is not None
+        log_errors == "PerAtomMAEstress"
+        and eval_metrics.get("mae_stress", None) is not None
     ):
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         error_stress = eval_metrics["mae_stress"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.4f}, MAE_E_per_atom={error_e:8.1f} meV, MAE_F={error_f:8.1f} meV / A, MAE_stress={error_stress:8.1f} meV / A^3"
+            f"{inintial_phrase}: loss={valid_loss:10.6e}, MAE_E_per_atom={error_e:10.6e} meV, MAE_F={error_f:10.6e} meV / A, MAE_stress={error_stress:10.6e} meV / A^3"
         )
     elif (
         log_errors == "PerAtomMAEstressvirials"
-        and eval_metrics["mae_virials_per_atom"] is not None
+        and eval_metrics.get("mae_virials_per_atom", None) is not None
     ):
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
@@ -111,6 +111,7 @@ def valid_err_log(
     elif log_errors == "PerAtomMAE":
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
+        error_stress = eval_metrics["mae_stress"] * 1e3
         logging.info(
             f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, MAE_E_per_atom={error_e:8.1f} meV, MAE_F={error_f:8.1f} meV / A",
         )
@@ -177,20 +178,28 @@ def train(
     logging.info("Loss metrics on validation set")
     epoch = start_epoch
 
+    if distributed:
+        torch.distributed.barrier()
+
+    model_to_evaluate = model if distributed_model is None else distributed_model
     # log validation loss before _any_ training
     valid_loss = 0.0
     for valid_loader_name, valid_loader in valid_loaders.items():
         valid_loss_head, eval_metrics = evaluate(
-            model=model,
+            model=model_to_evaluate,
             loss_fn=loss_fn,
             data_loader=valid_loader,
             output_args=output_args,
             device=device,
         )
-        valid_err_log(
+        if rank == 0:
+            valid_err_log(
             valid_loss_head, eval_metrics, logger, log_errors, None, valid_loader_name
         )
     valid_loss = valid_loss_head  # consider only the last head for the checkpoint
+
+    if distributed:
+        torch.distributed.barrier()
 
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
@@ -266,11 +275,8 @@ def train(
                             wandb_log_dict[valid_loader_name] = {
                                 "epoch": epoch,
                                 "valid_loss": valid_loss_head,
-                                "valid_rmse_e_per_atom": eval_metrics[
-                                    "rmse_e_per_atom"
-                                ],
-                                "valid_rmse_f": eval_metrics["rmse_f"],
                             }
+                            wandb_log_dict.update(eval_metrics)
                 valid_loss = (
                     valid_loss_head  # consider only the last head for the checkpoint
                 )

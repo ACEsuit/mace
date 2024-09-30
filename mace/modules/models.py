@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
+from huggingface_hub import PyTorchModelHubMixin
 
 from mace.data import AtomicData
 from mace.modules.radial import ZBLBasis
@@ -93,7 +94,7 @@ class MACE(torch.nn.Module):
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
-            self.pair_repulsion_fn = ZBLBasis(r_max=r_max, p=num_polynomial_cutoff)
+            self.pair_repulsion_fn = ZBLBasis(p=num_polynomial_cutoff)
             self.pair_repulsion = True
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
@@ -315,7 +316,12 @@ class MACE(torch.nn.Module):
 
 
 @compile_mode("script")
-class ScaleShiftMACE(MACE):
+class ScaleShiftMACE(
+    MACE,
+    PyTorchModelHubMixin,
+    repo_url="https://github.com/ACEsuit/mace",
+    docs_url="https://mace-docs.readthedocs.io/en/latest/",
+):
     def __init__(
         self,
         atomic_inter_scale: float,
