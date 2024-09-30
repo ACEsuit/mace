@@ -34,6 +34,7 @@ from mace.tools.multihead_tools import (
 )
 from mace.tools.scripts_utils import (
     LRScheduler,
+    check_path_ase_read,
     convert_to_json_format,
     create_error_table,
     dict_to_array,
@@ -49,7 +50,6 @@ from mace.tools.scripts_utils import (
     get_swa,
     print_git_commit,
     setup_wandb,
-    check_path_ase_read,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.utils import AtomicNumberTable
