@@ -449,10 +449,11 @@ def get_swa(
     if args.start_swa is None:
         args.start_swa = max(1, args.max_num_epochs // 4 * 3)
     else:
-        if args.start_swa > args.max_num_epochs:
+        if args.start_swa >= args.max_num_epochs:
             logging.warning(
                 f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
             )
+            swas[-1] = False
     if args.loss == "forces_only":
         raise ValueError("Can not select Stage Two with forces only loss.")
     if args.loss == "virials":
