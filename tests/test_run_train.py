@@ -100,7 +100,7 @@ def test_run_train(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
     Es = []
     for at in fitting_configs:
@@ -171,7 +171,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
     Es = []
     for at in fitting_configs:
@@ -242,7 +242,7 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
     Es = []
     for at in fitting_configs:
@@ -349,7 +349,7 @@ def test_run_train_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
     )
 
     Es = []
@@ -427,7 +427,7 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
     )
 
     Es = []
@@ -536,7 +536,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
     )
 
     Es = []
