@@ -571,7 +571,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             affine=False,
             reduce="mean",
             instance=True,
-            normalization="norm",
+            normalization="component",
         )
 
     def forward(
@@ -653,7 +653,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             affine=False,
             reduce="mean",
             instance=True,
-            normalization="norm",
+            normalization="component",
         )
 
     def forward(
