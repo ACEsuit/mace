@@ -10,6 +10,7 @@ import dataclasses
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -218,10 +219,9 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
 
 
 def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
-    model = torch.load(f=f, map_location=map_location)
-    model_copy = model.__class__(**extract_config_mace_model(model))
-    model_copy.load_state_dict(model.state_dict())
-    return model_copy.to(map_location)
+    return extract_model(
+        torch.load(f=f, map_location=map_location), map_location=map_location
+    )
 
 
 def extract_model(model: torch.nn.Module, map_location: str = "cpu") -> torch.nn.Module:
@@ -902,6 +902,17 @@ def check_folder_subfolder(folder_path):
         if os.path.isdir(full_path):
             return True
     return False
+
+
+def check_path_ase_read(filename: str) -> str:
+    filepath = Path(filename)
+    if filepath.is_dir():
+        if len(list(filepath.glob("*.h5")) + list(filepath.glob("*.hdf5"))) == 0:
+            raise RuntimeError(f"Got directory {filename} with no .h5/.hdf5 files")
+        return False
+    if filepath.suffix in (".h5", ".hdf5"):
+        return False
+    return True
 
 
 def dict_to_namespace(dictionary):
