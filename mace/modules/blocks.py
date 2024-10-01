@@ -568,7 +568,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         # Normalization
         self.normalize = nn.BatchNorm(
             self.irreps_out,
-            affine=False,
+            affine=True,
             reduce="mean",
             instance=True,
             normalization="component",
@@ -650,7 +650,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         # Normalization
         self.normalize = nn.BatchNorm(
             self.irreps_out,
-            affine=False,
+            affine=True,
             reduce="mean",
             instance=True,
             normalization="component",
