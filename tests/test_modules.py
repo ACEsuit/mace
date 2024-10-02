@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 import torch.nn.functional
 from e3nn import o3
@@ -11,8 +12,11 @@ from mace.modules import (
     SymmetricContraction,
     WeightedEnergyForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
+    compute_mean_rms_energy_forces,
+    compute_statistics,
 )
 from mace.tools import AtomicNumberTable, scatter, to_numpy, torch_geometric
+from mace.tools.scripts_utils import dict_to_array
 
 config = Configuration(
     atomic_numbers=np.array([8, 1, 1]),
@@ -110,3 +114,143 @@ class TestBlocks:
         out = scatter.scatter_sum(src=energies, index=batch.batch, dim=-1, reduce="sum")
         out = to_numpy(out)
         assert np.allclose(out, np.array([5.0, 5.0]))
+
+    def test_atomic_energies_multireference(self):
+        energies_block = AtomicEnergiesBlock(
+            atomic_energies=np.array([[1.0, 3.0], [2.0, 4.0]])
+        )
+        config.head = "MP2"
+        data = AtomicData.from_config(
+            config, z_table=table, cutoff=3.0, heads=["DFT", "MP2"]
+        )
+        data_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[data, data],
+            batch_size=2,
+            shuffle=True,
+            drop_last=False,
+        )
+        batch = next(iter(data_loader))
+        num_atoms_arange = torch.arange(batch["positions"].shape[0])
+        node_heads = (
+            batch["head"][batch["batch"]]
+            if "head" in batch
+            else torch.zeros_like(batch["batch"])
+        )
+        energies = energies_block(batch.node_attrs).squeeze(-1)
+        energies = energies[num_atoms_arange, node_heads]
+        out = scatter.scatter_sum(src=energies, index=batch.batch, dim=-1, reduce="sum")
+        out = to_numpy(out)
+        assert np.allclose(out, np.array([8.0, 8.0]))
+
+
+@pytest.fixture
+def config1():
+    return Configuration(
+        atomic_numbers=np.array([8, 1, 1]),
+        positions=np.array(
+            [
+                [0.0, -2.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ]
+        ),
+        forces=np.array(
+            [
+                [0.0, -1.3, 0.0],
+                [1.0, 0.2, 0.0],
+                [0.0, 1.1, 0.3],
+            ]
+        ),
+        energy=-1.5,
+        head="DFT",
+    )
+
+
+@pytest.fixture
+def config2():
+    return Configuration(
+        atomic_numbers=np.array([8, 1, 1]),
+        positions=np.array(
+            [
+                [0.1, -1.9, 0.1],
+                [1.1, 0.1, 0.1],
+                [0.1, 1.1, 0.1],
+            ]
+        ),
+        forces=np.array(
+            [
+                [0.1, -1.2, 0.1],
+                [1.1, 0.3, 0.1],
+                [0.1, 1.2, 0.4],
+            ]
+        ),
+        energy=-1.4,
+        head="MP2",
+    )
+
+
+@pytest.fixture
+def table():
+    return AtomicNumberTable([1, 8])
+
+
+@pytest.fixture
+def atomic_data(config1, config2, table):
+    atomic_data1 = AtomicData.from_config(
+        config1, z_table=table, cutoff=3.0, heads=["DFT", "MP2"]
+    )
+    atomic_data2 = AtomicData.from_config(
+        config2, z_table=table, cutoff=3.0, heads=["DFT", "MP2"]
+    )
+    return [atomic_data1, atomic_data2]
+
+
+@pytest.fixture
+def data_loader(atomic_data):
+    return torch_geometric.dataloader.DataLoader(
+        dataset=atomic_data,
+        batch_size=2,
+        shuffle=False,
+        drop_last=False,
+    )
+
+
+@pytest.fixture
+def atomic_energies():
+    atomic_energies_dict = {
+        "DFT": np.array([0.0, 0.0]),
+        "MP2": np.array([0.1, 0.1]),
+    }
+    return dict_to_array(atomic_energies_dict, ["DFT", "MP2"])
+
+
+class TestStatistics:
+    def test_compute_mean_rms_energy_forces_multi_head(
+        self, data_loader, atomic_energies
+    ):
+        mean, rms = compute_mean_rms_energy_forces(data_loader, atomic_energies)
+        assert isinstance(mean, np.ndarray)
+        assert isinstance(rms, np.ndarray)
+        assert mean.shape == (2,)
+        assert rms.shape == (2,)
+        assert np.all(rms >= 0)
+        assert rms[0] != rms[1]
+
+    def test_compute_statistics(self, data_loader, atomic_energies):
+        avg_num_neighbors, mean, std = compute_statistics(data_loader, atomic_energies)
+
+        # Check types
+        assert isinstance(avg_num_neighbors, float)
+        assert isinstance(mean, np.ndarray)
+        assert isinstance(std, np.ndarray)
+
+        # Check shapes
+        assert mean.shape == (2,)
+        assert std.shape == (2,)
+
+        # Check values
+        assert avg_num_neighbors > 0
+        assert np.all(mean != 0)
+        assert np.all(std > 0)
+        assert mean[0] != mean[1]
+        assert std[0] != std[1]

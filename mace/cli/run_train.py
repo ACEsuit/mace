@@ -245,7 +245,6 @@ def run(args: argparse.Namespace) -> None:
         args.loss = "universal"
         if (
             args.foundation_model in ["small", "medium", "large"]
-            or "mp" in args.foundation_model
             or args.pt_train_file is None
         ):
             logging.info(
@@ -344,6 +343,7 @@ def run(args: argparse.Namespace) -> None:
     atomic_energies_dict = {}
     for head_config in head_configs:
         if head_config.atomic_energies_dict is None or len(head_config.atomic_energies_dict) == 0:
+            assert head_config.E0s is not None, "Atomic energies must be provided"
             if check_path_ase_read(head_config.train_file) and head_config.E0s.lower() != "foundation":
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(
                     head_config.E0s, head_config.collections.train, head_config.z_table
@@ -403,7 +403,10 @@ def run(args: argparse.Namespace) -> None:
         # )
         atomic_energies = dict_to_array(atomic_energies_dict, heads)
         for head_config in head_configs:
-            logging.info(f"Atomic Energies used (z: eV) for head {head_config.head_name}: " + "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}")
+            try:
+                logging.info(f"Atomic Energies used (z: eV) for head {head_config.head_name}: " + "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}")
+            except KeyError as e:
+                raise KeyError(f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number") from e
 
 
     valid_sets = {head: [] for head in heads}
@@ -627,9 +630,7 @@ def run(args: argparse.Namespace) -> None:
         stop_first_test = True
     for head_config in head_configs:
         if check_path_ase_read(head_config.train_file):
-            print(head_config.test_file)
             for name, subset in head_config.collections.tests:
-                print(name)
                 test_sets[name] = [
                     data.AtomicData.from_config(
                         config, z_table=z_table, cutoff=args.r_max, heads=heads
