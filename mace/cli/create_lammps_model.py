@@ -20,6 +20,13 @@ def parse_args():
         help="Head of the model to be converted to LAMMPS",
         default=None,
     )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        nargs="?",
+        help="Data type of the model to be converted to LAMMPS",
+        default="float64",
+    )
     return parser.parse_args()
 
 
@@ -58,7 +65,11 @@ def main():
         model_path,
         map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     )
-    model = model.double().to("cpu")
+    if args.dtype == "float64":
+        model = model.double().to("cpu")
+    elif args.dtype == "float32":
+        print("Converting model to float32, this may cause loss of precision.")
+        model = model.float().to("cpu")
 
     if args.head is None:
         head = select_head(model)
