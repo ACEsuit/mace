@@ -66,7 +66,22 @@ def pool_compute_stats(inputs: List):
         pool.join()
 
     results = [r.get() for r in tqdm.tqdm(re)]
-    return np.average(results, axis=0)
+
+    if not results:
+        raise ValueError(
+            "No results were computed. Check if the input files exist and are readable."
+        )
+
+    # Separate avg_num_neighbors, mean, and std
+    avg_num_neighbors = np.mean([r[0] for r in results])
+    means = np.array([r[1] for r in results])
+    stds = np.array([r[2] for r in results])
+
+    # Compute averages
+    mean = np.mean(means, axis=0).item()
+    std = np.mean(stds, axis=0).item()
+
+    return avg_num_neighbors, mean, std
 
 
 def split_array(a: np.ndarray, max_size: int):

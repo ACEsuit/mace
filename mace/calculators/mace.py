@@ -50,9 +50,9 @@ class MACECalculator(Calculator):
 
     def __init__(
         self,
-        model_paths: Union[list, str] | None = None,
-        device: str | None = None,
-        models: Union[list[torch.nn.Module], torch.nn.Module] | None = None,
+        model_paths: Union[list, str, None] = None,
+        models: Union[list[torch.nn.Module], torch.nn.Module, None] = None,
+        device: str = "cpu",
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
         default_dtype="",
