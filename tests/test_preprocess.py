@@ -93,7 +93,7 @@ def test_preprocess_data(tmp_path, sample_configs):
     # Example of checking statistics file content:
     import json
 
-    with open(tmp_path / "preprocessed_statistics.json", "r") as f:
+    with open(tmp_path / "preprocessed_statistics.json", "r", encoding="utf-8") as f:
         statistics = json.load(f)
     assert "atomic_energies" in statistics
     assert "avg_num_neighbors" in statistics
@@ -129,8 +129,7 @@ def test_preprocess_data(tmp_path, sample_configs):
 
     for train_file in train_files:
         with h5py.File(train_file, "r") as f:
-            for batch_key in f.keys():
-                batch = f[batch_key]
+            for _, batch in f.items():
                 for config_key in batch.keys():
                     config = batch[config_key]
                     assert "atomic_numbers" in config
@@ -143,8 +142,7 @@ def test_preprocess_data(tmp_path, sample_configs):
 
     for val_file in val_files:
         with h5py.File(val_file, "r") as f:
-            for batch_key in f.keys():
-                batch = f[batch_key]
+            for _, batch in f.items():
                 for config_key in batch.keys():
                     config = batch[config_key]
                     h5_energies.append(config["energy"][()])
