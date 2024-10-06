@@ -35,6 +35,9 @@ from .utils import (
     get_symmetric_displacement,
 )
 
+from .irreps_tools import (
+    make_tp_irreps
+)
 # pylint: disable=C0302
 
 
@@ -62,6 +65,7 @@ class MACE(torch.nn.Module):
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
+        tensor_format = "symmetric_cp",
     ):
         super().__init__()
         self.register_buffer(
@@ -115,7 +119,10 @@ class MACE(torch.nn.Module):
             target_irreps=interaction_irreps,
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
+            correlation=correlation[0],
             radial_MLP=radial_MLP,
+            #
+            tensor_format=tensor_format,
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -131,21 +138,33 @@ class MACE(torch.nn.Module):
             correlation=correlation[0],
             num_elements=num_elements,
             use_sc=use_sc_first,
+            #
+            tensor_format=tensor_format,
         )
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        self.readouts.append(
-            LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
-        )
+        if tensor_format == "symmetric_cp":
+            self.readouts.append(
+                LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
+            )
+        elif tensor_format == "symmetric_tucker":
+            self.readouts.append(
+                #LinearReadoutBlock(make_tp_irreps(hidden_irreps, correlation[0]), o3.Irreps(f"{len(heads)}x0e"))
+                LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
+            )
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
                 hidden_irreps_out = str(
                     hidden_irreps[0]
                 )  # Select only scalars for last layer
+                # if tensor_format == "symmetric_tucker":
+                #     hidden_irreps_out = str(make_tp_irreps(o3.Irreps(hidden_irreps_out), correlation[i+1]))
             else:
                 hidden_irreps_out = hidden_irreps
+                # if tensor_format == "symmetric_tucker":
+                #     hidden_irreps_out = str(make_tp_irreps(o3.Irreps(hidden_irreps_out), correlation[i+1]))
             inter = interaction_cls(
                 node_attrs_irreps=node_attr_irreps,
                 node_feats_irreps=hidden_irreps,
@@ -155,6 +174,7 @@ class MACE(torch.nn.Module):
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
                 radial_MLP=radial_MLP,
+                correlation=correlation[i + 1]
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(

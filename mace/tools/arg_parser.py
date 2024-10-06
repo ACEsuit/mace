@@ -243,7 +243,17 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=True,
     )
-
+    parser.add_argument(
+        "--tensor_format",
+        help="Tensor format being used",
+        type=str,
+        default="symmetric_cp",
+        choices=["symmetric_cp",
+                 "non_symmetric_cp",
+                 "symmetric_tucker",
+                ]
+    )
+    
     # Dataset
     parser.add_argument(
         "--train_file",

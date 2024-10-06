@@ -110,6 +110,7 @@ def configure_model(
             atomic_energies=atomic_energies,
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
+            tensor_format=args.tensor_format,
         )
         model_config_foundation = None
 

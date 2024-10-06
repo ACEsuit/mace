@@ -13,7 +13,6 @@ from e3nn import o3
 _TP = collections.namedtuple("_TP", "op, args")
 _INPUT = collections.namedtuple("_INPUT", "tensor, start, stop")
 
-
 def _wigner_nj(
     irrepss: List[o3.Irreps],
     normalization: str = "component",
@@ -93,6 +92,7 @@ def U_matrix_real(
     normalization: str = "component",
     filter_ir_mid=None,
     dtype=None,
+    tensor_format="symmetric_cp"
 ):
     irreps_out = o3.Irreps(irreps_out)
     irrepss = [o3.Irreps(irreps_in)] * correlation
@@ -128,4 +128,7 @@ def U_matrix_real(
         else:
             current_ir = ir
     out += [last_ir, stack]
-    return out
+    if tensor_format == "symmetric_cp":
+        return out
+    elif tensor_format == "symmetric_tucker":
+        return out

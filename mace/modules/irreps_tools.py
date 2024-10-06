@@ -10,6 +10,15 @@ import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
+def make_tp_irreps(target_irreps, correlation):
+    """
+    multiply irreps from eg. 4x0e + 4x1o -> 4**correlation + 4 ** correlation
+    """
+    tp_irreps = o3.Irreps()
+    for ir in target_irreps:
+        tmp_irreps = o3.Irreps(str(ir))
+        tp_irreps += (tmp_irreps * ((tmp_irreps.num_irreps) ** (correlation - 1))).simplify()
+    return tp_irreps
 
 # Based on mir-group/nequip
 def tp_out_irreps_with_instructions(
