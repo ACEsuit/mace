@@ -710,19 +710,15 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         self.reshape = reshape_irreps(self.irreps_out)
 
         # Density normalization
-        num_scalar_node_features = self.node_feats_irreps[0].mul
-        self.node_scalar_linear = torch.nn.Linear(
-            num_scalar_node_features, self.conv_tp.weight_numel
-        )
-
-        self.reshape = reshape_irreps(self.irreps_out)
         self.density_fn = nn.FullyConnectedNet(
-            [self.conv_tp.weight_numel]
+            [input_dim]
             + [
                 1,
             ],
             torch.nn.functional.silu,
         )
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
 
     def forward(
         self,
@@ -737,12 +733,7 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         num_nodes = node_feats.shape[0]
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
-        node_feats_scalar = self.node_scalar_linear(
-            node_feats[:, self.node_feats_irreps.slices()[0]]
-        )
-        edge_density = torch.tanh(
-            self.density_fn(tp_weights * node_feats_scalar[sender]) ** 2
-        )
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
@@ -806,19 +797,16 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         self.reshape = reshape_irreps(self.irreps_out)
 
         # Density normalization
-        num_scalar_node_features = self.node_feats_irreps[0].mul
-        self.node_scalar_linear = torch.nn.Linear(
-            num_scalar_node_features, self.conv_tp.weight_numel
-        )
-
-        self.reshape = reshape_irreps(self.irreps_out)
         self.density_fn = nn.FullyConnectedNet(
-            [self.conv_tp.weight_numel]
+            [input_dim]
             + [
                 1,
             ],
             torch.nn.functional.silu,
         )
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
 
     def forward(
         self,
@@ -834,12 +822,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
-        node_feats_scalar = self.node_scalar_linear(
-            node_feats[:, self.node_feats_irreps.slices()[0]]
-        )
-        edge_density = torch.tanh(
-            self.density_fn(tp_weights * node_feats_scalar[sender]) ** 2
-        )
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
