@@ -159,7 +159,7 @@ class MACECalculator(Calculator):
                     mode=compile_mode,
                     fullgraph=fullgraph,
                 )
-                for model in models
+                for model in self.models
             ]
             self.use_compile = True
         else:
