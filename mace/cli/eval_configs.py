@@ -80,10 +80,15 @@ def run(args: argparse.Namespace) -> None:
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
+    try:
+        heads = model.heads
+    except AttributeError:
+        heads = None
+        
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
             data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=float(model.r_max)
+                config, z_table=z_table, cutoff=float(model.r_max), heads=heads
             )
             for config in configs
         ],
