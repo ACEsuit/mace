@@ -97,7 +97,7 @@ def main():
 
     # Load data and prepare input
     if args.configs.endswith(".xyz"):
-        atoms_list = ase.io.read(args.configs, index=":")
+        atoms_list = ase.io.read(args.configs, index=":", format='extxyz')
         if args.output_SFG:
             velocities = np.array(
                 [atoms.arrays[args.velocity_key] for atoms in atoms_list]
@@ -166,12 +166,12 @@ def main():
                     dmu_dr = np.split(
                         torch_tools.to_numpy(output["dmu_dr"]),
                         indices_or_sections=batch.ptr[1:],
-                        axis=0,
+                        axis=1,
                     )[:-1]
                     dalpha_dr = np.split(
                         torch_tools.to_numpy(output["dalpha_dr"]),
                         indices_or_sections=batch.ptr[1:],
-                        axis=0,
+                        axis=1,
                     )[:-1]
                     dmu_dr_collection.append(dmu_dr)
                     dalpha_dr_collection.append(dalpha_dr)
@@ -261,13 +261,17 @@ def main():
 
     if args.compute_dielectric_derivatives:
         dmu_dr_list = [
-            dmu_dr for dmu_dr_list in dmu_dr_collection for dmu_dr in dmu_dr_list
+            dmu_dr 
+            for dmu_dr_list in dmu_dr_collection 
+            for dmu_dr in dmu_dr_list
         ]
         dalpha_dr_list = [
             dalpha_dr
             for dalpha_dr_list in dalpha_dr_collection
             for dalpha_dr in dalpha_dr_list
         ]
+
+        assert len(atoms_list) == len(dmu_dr_list) == len(dalpha_dr_list)
 
         # Store data in atoms objects
         if args.configs.endswith(".xyz"):
@@ -277,12 +281,8 @@ def main():
                 atoms.calc = None  # crucial
                 if args.velocity_key in atoms.arrays.keys():
                     atoms.arrays.pop(args.velocity_key)
-                atoms.arrays[args.info_prefix + "dmu_dr"] = dmu_dr.reshape(
-                    dmu_dr.shape[0], 9
-                )
-                atoms.arrays[args.info_prefix + "dalpha_dr"] = dalpha_dr_list[
-                    i
-                ].reshape(dalpha_dr_list[i].shape[0], 27)
+                atoms.arrays[args.info_prefix + "dmu_dr"] = dmu_dr.reshape(-1, 9)
+                atoms.arrays[args.info_prefix + "dalpha_dr"] = dalpha_dr.reshape(-1, 27)
             # Write atoms to output path
             ase.io.write(args.output, images=atoms_list, format="extxyz")
         else:
