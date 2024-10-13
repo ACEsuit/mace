@@ -29,6 +29,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         correlation: Union[int, Dict[str, int]],
         irrep_normalization: str = "component",
         path_normalization: str = "element",
+        sparse_max: int = 0,
         internal_weights: Optional[bool] = None,
         shared_weights: Optional[bool] = None,
         num_elements: Optional[int] = None,
@@ -75,6 +76,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
                     internal_weights=self.internal_weights,
                     num_elements=num_elements,
                     weights=self.shared_weights,
+                    sparse_max=sparse_max,
                 )
             )
 
@@ -91,6 +93,7 @@ class Contraction(torch.nn.Module):
         irrep_out: o3.Irreps,
         correlation: int,
         internal_weights: bool = True,
+        sparse_max: int = 0,
         num_elements: Optional[int] = None,
         weights: Optional[torch.Tensor] = None,
     ) -> None:
@@ -105,6 +108,7 @@ class Contraction(torch.nn.Module):
                 irreps_in=self.coupling_irreps,
                 irreps_out=irrep_out,
                 correlation=nu,
+                sparse_max=sparse_max,
                 dtype=dtype,
             )[-1]
             self.register_buffer(f"U_matrix_{nu}", U_matrix)

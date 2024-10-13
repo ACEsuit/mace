@@ -92,8 +92,10 @@ def U_matrix_real(
     correlation: int,
     normalization: str = "component",
     filter_ir_mid=None,
+    sparse_max=0,
     dtype=None,
 ):
+    assert sparse_max >= 0, f"sparse_max must be >= 0, current value is {sparse_max}"
     irreps_out = o3.Irreps(irreps_out)
     irrepss = [o3.Irreps(irreps_in)] * correlation
     if correlation == 4:
@@ -115,10 +117,10 @@ def U_matrix_real(
     current_ir = wigners[0][0]
     out = []
     stack = torch.tensor([])
-
     for ir, _, base_o3 in wigners:
         if ir in irreps_out and ir == current_ir:
-            stack = torch.cat((stack, base_o3.squeeze().unsqueeze(-1)), dim=-1)
+            if sparse_max == 0 or stack.shape[-1] <= sparse_max:
+                stack = torch.cat((stack, base_o3.squeeze().unsqueeze(-1)), dim=-1)
             last_ir = current_ir
         elif ir in irreps_out and ir != current_ir:
             if len(stack) != 0:
