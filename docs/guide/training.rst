@@ -35,7 +35,7 @@ mace, you can also use the executable `mace_run_train` entry point which should 
 Training files
 ---------------
 
-To train a MACE model, you will use the `run_train.py`command which takes the following arguments:
+To train a MACE model, you will use the `run_train.py` command which takes the following arguments:
 
 First specify the name of your model and final log file using the `--name` flag.
 
