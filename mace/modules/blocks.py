@@ -11,13 +11,13 @@ import numpy as np
 import torch.nn.functional
 from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
+from icecream import ic
 
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
 
 from .irreps_tools import (
     linear_out_irreps,
-    mask_head,
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
@@ -47,16 +47,26 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
 
 @compile_mode("script")
 class LinearReadoutBlock(torch.nn.Module):
-    def __init__(self, irreps_in: o3.Irreps, irrep_out: o3.Irreps = o3.Irreps("0e")):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        irrep_out: o3.Irreps = o3.Irreps("0e"), # irrep out of a single head
+        num_heads: int = 1,
+        ):
         super().__init__()
-        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=num_heads * irrep_out)
 
     def forward(
         self,
         x: torch.Tensor,
-        heads: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
-        return self.linear(x)  # [n_nodes, 1]
+        ic('Linear Readout Block')
+        ic(x)
+        ic(x.shape)
+        l = self.linear(x)
+        ic(l)
+        ic(l.shape)
+        return l  # [n_nodes, 1]
 
 
 @simplify_if_compile
@@ -65,27 +75,40 @@ class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
         self,
         irreps_in: o3.Irreps,
-        MLP_irreps: o3.Irreps,
+        MLP_irreps: o3.Irreps,  # MLP irrep to be used for each head
         gate: Optional[Callable],
-        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        irrep_out: o3.Irreps = o3.Irreps("0e"), # irrep out of a single head
         num_heads: int = 1,
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
         self.num_heads = num_heads
-        self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
-        self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
-        self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=irrep_out)
+        self.linear_1 = o3.Linear(
+            irreps_in=irreps_in,
+            irreps_out=num_heads * self.hidden_irreps,
+            instructions=[(0, i) for i in range(num_heads)],
+        )
+        self.non_linearity = nn.Activation(
+            irreps_in=num_heads * self.hidden_irreps, acts=num_heads * [gate]
+        )
+        self.linear_2 = o3.Linear(
+            irreps_in=num_heads * self.hidden_irreps,
+            irreps_out=num_heads * irrep_out,
+            instructions=[(i, i) for i in range(num_heads)]
+        )
 
     def forward(
-        self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
+        self, x: torch.Tensor,
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
-        if hasattr(self, "num_heads"):
-            if self.num_heads > 1 and heads is not None:
-                x = mask_head(x, heads, self.num_heads)
-        return self.linear_2(x)  # [n_nodes, len(heads)]
-
+        ic("Nonlinear readout block test")
+        ic(x)
+        ic(x.shape)
+        l2 = self.linear_2(x)
+        ic(l2)
+        ic(l2.shape)
+        return l2  # [n_nodes, len(heads)]
+    
 
 @compile_mode("script")
 class LinearDipoleReadoutBlock(torch.nn.Module):
@@ -770,10 +793,27 @@ class ScaleShiftBlock(torch.nn.Module):
             torch.tensor(shift, dtype=torch.get_default_dtype()),
         )
 
-    def forward(self, x: torch.Tensor, head: torch.Tensor) -> torch.Tensor:
-        return (
-            torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]
-        )
+    def forward(self, x: torch.Tensor, head: Optional[torch.Tensor] = None) -> torch.Tensor:
+        ic(x)
+        ic(x.shape)
+        ic(head)
+        ic(self.scale)
+        ic(torch.atleast_1d(self.scale)[head])
+        ic(self.shift)
+        if head is None:
+            ic("headless")
+            ic(torch.atleast_1d(self.scale) * x + torch.atleast_1d(self.shift))
+            ic((torch.atleast_1d(self.scale) * x + torch.atleast_1d(self.shift)).shape)
+            return (
+                torch.atleast_1d(self.scale) * x + torch.atleast_1d(self.shift)
+            )
+        else:
+            ic('with head')
+            ic(torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head])
+            ic((torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]).shape)
+            return (
+                torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]
+            )
 
     def __repr__(self):
         formatted_scale = (
