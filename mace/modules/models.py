@@ -132,6 +132,7 @@ class MACE(torch.nn.Module):
             use_sc_first = True
 
         node_feats_irreps_out = inter.target_irreps
+        print(node_feats_irreps_out)
         prod = EquivariantProductBasisBlock(
             node_feats_irreps=node_feats_irreps_out,
             target_irreps=hidden_irreps,
@@ -144,7 +145,7 @@ class MACE(torch.nn.Module):
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        if tensor_format == "symmetric_cp":
+        if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
             self.readouts.append(
                 LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
             )

@@ -273,7 +273,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             tensor_format=tensor_format
         )
         # Update linear
-        if tensor_format == "symmetric_cp":
+        if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
             self.linear = o3.Linear(
                 target_irreps,
                 target_irreps,
@@ -296,7 +296,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         node_attrs: torch.Tensor,
     ) -> torch.Tensor:
         node_feats = self.symmetric_contractions(node_feats, node_attrs)
-        print("shape after symmstric contractions: ", node_feats.shape)
+        #print("shape after symmstric contractions: ", node_feats.shape)
         if self.use_sc and sc is not None:
             return self.linear(node_feats) + sc
         return self.linear(node_feats)
@@ -685,23 +685,41 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         # Linear
         irreps_mid = irreps_mid.simplify()
         self.irreps_out = self.target_irreps
-        self.linear = o3.Linear(
-            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
-        )
-        # "4x0e + 4x1o"
-        # "4**corrlatiox0e + 4**correlationx1o"
-
-        # Selector TensorProduct
+        
         if self.tensor_format == "symmetric_cp":
+            self.linear = o3.Linear(
+                irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+            )
+            # Selector TensorProduct
             self.skip_tp = o3.FullyConnectedTensorProduct(
                 self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
             )
-        elif self.tensor_format == "symmetric_tucker":
+            self.reshape = reshape_irreps(self.irreps_out)
+
+        elif self.tensor_format == "non_symmetric_cp":
+            self.linear = []
+            # Selector TensorProduct
             self.skip_tp = o3.FullyConnectedTensorProduct(
-                self.node_feats_irreps, self.node_attrs_irreps, \
-                self.hidden_irreps
+                self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
             )
-        self.reshape = reshape_irreps(self.irreps_out)
+            self.reshape = []
+            for _ in range(self.correlation):
+                self.linear.append(o3.Linear(
+                    irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+                ))
+                self.reshape.append(reshape_irreps(self.irreps_out))
+
+        elif self.tensor_format == "symmetric_tucker":
+            self.linear = o3.Linear(
+                irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+            )
+            # Selector TensorProduct
+            self.skip_tp = o3.FullyConnectedTensorProduct(
+                self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+            )
+            self.reshape = reshape_irreps(self.irreps_out)
+        
+        # self.reshape = reshape_irreps(self.irreps_out)
         self.tensor_format_layer = TensorFormatBlock(self.tensor_format, self.correlation)
 
     def forward(
@@ -721,16 +739,29 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
-        message = scatter_sum(
+        original_message = scatter_sum(
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
         
-        message = self.linear(message) / self.avg_num_neighbors
-        return (
-            self.tensor_format_layer(self.reshape(message)),
-            sc,
-        )  # symmetric_cp: [n_nodes, channels, (lmax + 1)**2]
-           # symmetric_tucker: [n_nodes,] + [channels] * correlation + [(lmax+1)**2 ,]
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker"]:
+            message = self.linear(original_message) / self.avg_num_neighbors
+            return (
+                self.tensor_format_layer(self.reshape(message)),
+                sc,
+            )  # symmetric_cp: [n_nodes, channels, (lmax + 1)**2]
+        elif self.tensor_format == "non_symmetric_cp":
+            message = self.reshape[0](self.linear[0](original_message))
+            message = message.unsqueeze(-1)
+            for idx in range(1, self.correlation):
+                _message = self.reshape[idx](self.linear[idx](original_message)).unsqueeze(-1)
+                message = torch.cat((message, _message), dim = -1)
+            print("shape of message: ", message.shape)
+            return (
+                message, 
+                sc
+            )
+                
+            
 
 
 @compile_mode("script")

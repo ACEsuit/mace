@@ -134,7 +134,7 @@ class Contraction(torch.nn.Module):
             
             if i == correlation:
                 
-                if tensor_format == "symmetric_cp":
+                if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
                     channel_idx = "c"
                     sample_x = torch.randn((BATCH_EXAMPLE, self.num_features, num_ell))
                     w = torch.nn.Parameter(
@@ -184,7 +184,7 @@ class Contraction(torch.nn.Module):
                 self.weights_max = w
             else:
                 
-                if tensor_format == "symmetric_cp":
+                if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
                     channel_idx = "c"
                     sample_x = torch.randn((BATCH_EXAMPLE, self.num_features, num_ell))
                     sample_x2 = torch.randn(
@@ -217,7 +217,7 @@ class Contraction(torch.nn.Module):
                     + [f"k,ekc,be->bc"]
                     + [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1))]
                 )
-                if tensor_format == "symmetric_cp":
+                if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
                     parse_subscript_features = (
                         [f"bc"]
                         + [ALPHABET[j] for j in range(i - 1 + min(irrep_out.lmax, 1))]
@@ -231,8 +231,8 @@ class Contraction(torch.nn.Module):
                         + [f"i,b{out_channel_idx[-1]}i->b{out_channel_idx}"]
                         + [ALPHABET[j] for j in range(i - 1 + min(irrep_out.lmax, 1))]
                     )
-                print("weighting: ", "".join(parse_subscript_weighting))
-                print("features: ", "".join(parse_subscript_features))
+                #print("weighting: ", "".join(parse_subscript_weighting))
+                #print("features: ", "".join(parse_subscript_features))
 
                 # Symbolic tracing of contractions
                 graph_module_weighting = torch.fx.symbolic_trace(
@@ -286,13 +286,20 @@ class Contraction(torch.nn.Module):
         print("self.weights_max.shape", self.weights_max.shape)
         print("x.shape: ", x.shape)
         print("y.shape :", y.shape)
-            
-        out = self.graph_opt_main(
-            self.U_tensors(self.correlation),
-            self.weights_max, # shape = (num_elements, num_paras, channel)
-            x,
-            y,
-        )
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker"]:
+            out = self.graph_opt_main(
+                self.U_tensors(self.correlation),
+                self.weights_max, # shape = (num_elements, num_paras, channel)
+                x,
+                y,
+            )
+        elif self.tensor_format == "non_symmetric_cp":
+            out = self.graph_opt_main(
+                self.U_tensors(self.correlation),
+                self.weights_max, # shape = (num_elements, num_paras, channel)
+                x[:, :, :, self.correlation - 1],
+                y,
+            )
         # if self.tensor_format == "symmetric_tucker":
         #     for i in range(self.correlation - 1):
         #         out = out.unsqueeze(2)
@@ -318,12 +325,65 @@ class Contraction(torch.nn.Module):
             print("c_tensor.shape: ", c_tensor.shape)
             print("out.shape before contract: ", out.shape)
             c_tensor = c_tensor + out
-            out = contract_features(c_tensor, x)
+            if self.tensor_format in ["symmetric_cp", "symmetric_tucker"]:
+                out = contract_features(c_tensor, x)
+            elif self.tensor_format == "non_symmetric_cp":
+                out = contract_features(c_tensor, x[:, :, :, self.correlation - i - 1])
             print("out.shape: ", out.shape)
             print("===")
-        #print("out before reshape: ", out.shape)
-        #print("out after reshape: ", out.reshape(out.shape[0], -1))
+        print("out before reshape: ", out.shape)
+        print("out after reshape: ", out.reshape(out.shape[0], -1))
         return out.reshape(out.shape[0], -1)
 
     def U_tensors(self, nu: int):
         return dict(self.named_buffers())[f"U_matrix_{nu}"]
+
+
+
+# 1. x.shape :[nnodes, num_channel, num_ell]
+# 2. make order 1 message
+# out = contract(U_tensor(3), weights, x) # [nnodes, num_channel, num_ell, num_ell]
+
+# === order 1 + order 2 message ===
+# 3. make coefficient for order 2 message
+# c_tensor = contract(U_tensor(2), weights) # [nnodes, num_channel, num_ell, num_ell]
+# 4. do 
+# c_tensor = c_tensor + out # [nnodes, num_channel, num_ell, num_ell]
+
+# 5. contract again to form order order1 + order2 message
+# out = contract(c_tensor, x) 
+# symmetric cp:
+# c_tensor: [nnodes, num_chanel, num_ell, num_ell]
+# x: [nnodes, num_chanel, num_ell, num_ell]
+# => [nnodes, num_channel, num_ell]
+
+# symmetric_tucker
+# c_tensor: [nnodes, num_chanel, num_ell, num_ell]
+# x: [nnodes, num_chanel, num_ell, num_ell]
+# => [nnodes, num_channel, num_channel, num_ell]
+
+# === order 1 + order 2 + order 3 message ===
+# 3. make coefficient for order 3 message
+# c_tensor = contract(U_tensor(1), weights) # [nnodes, num_channel, num_ell]
+
+# tucker:
+# 4. adding dimension for boardcast
+# c_tensor = c_tensor.unsqueeze(1) # [nnodes, num_channel, 1, num_ell]
+#
+# c_tensor = c_tensor + out # [nnodes, num_channel, num_ell]
+
+# 5. contract again to form order order1 + order2 message
+# out = contract(c_tensor, x) 
+# symmetric cp:
+# c_tensor: [nnodes, num_chanel, num_ell, num_ell]
+# x: [nnodes, num_chanel, num_ell, num_ell]
+# => [nnodes, num_channel, num_ell]
+
+# symmetric_tucker
+# c_tensor: [nnodes, num_chanel, num_ell, num_ell]
+# x: [nnodes, num_chanel, num_ell, num_ell]
+# => [nnodes, num_channel, num_channel, num_ell]
+
+# And then out
+# Constract with order 2 U_tensor and weights to create
+# 

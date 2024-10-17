@@ -128,7 +128,7 @@ def U_matrix_real(
         else:
             current_ir = ir
     out += [last_ir, stack]
-    if tensor_format == "symmetric_cp":
+    if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
         return out
     elif tensor_format == "symmetric_tucker":
         return out
