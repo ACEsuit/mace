@@ -252,6 +252,7 @@ def train(
                         data_loader=valid_loader,
                         output_args=output_args,
                         device=device,
+                        predict_committee=False
                     )
                     if rank == 0:
                         valid_err_log(
@@ -398,6 +399,7 @@ def evaluate(
     data_loader: DataLoader,
     output_args: Dict[str, bool],
     device: torch.device,
+    predict_committee: bool = False,
 ) -> Tuple[float, Dict[str, Any]]:
     for param in model.parameters():
         param.requires_grad = False
@@ -414,6 +416,7 @@ def evaluate(
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
+            predict_committee=predict_committee,
         )
         avg_loss, aux = metrics(batch, output)
 

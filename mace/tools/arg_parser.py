@@ -341,6 +341,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--n_committee",
+        help="Number of committee members.",
+        type=int,
+        default=None,
+        required=False
+    )
+    parser.add_argument(
         "--heads",
         help="Dict of heads: containing individual files and E0s",
         type=str,

@@ -684,6 +684,7 @@ def create_error_table(
     log_wandb: bool,
     device: str,
     distributed: bool = False,
+    predict_committee: bool = False,
 ) -> PrettyTable:
     if log_wandb:
         import wandb
@@ -763,6 +764,7 @@ def create_error_table(
             data_loader=data_loader,
             output_args=output_args,
             device=device,
+            predict_committee=predict_committee
         )
         if distributed:
             torch.distributed.barrier()

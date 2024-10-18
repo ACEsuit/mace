@@ -60,6 +60,12 @@ def parse_args() -> argparse.Namespace:
         required=False,
         default=None
     )
+    parser.add_argument(
+        "--predict_committee",
+        help="Combine all multiheads to a committee for prediction",
+        action="store_true",
+        default=False,
+    )
     return parser.parse_args()
 
 
@@ -112,11 +118,19 @@ def run(args: argparse.Namespace) -> None:
     contributions_list = []
     stresses_list = []
     forces_collection = []
+    energy_stds = []
+    forces_stds = []
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch.to_dict(), compute_stress=args.compute_stress)
+        output = model(
+            batch.to_dict(),
+            compute_stress=args.compute_stress,
+            predict_committee=args.predict_committee
+        )
         energies_list.append(torch_tools.to_numpy(output["energy"]))
+        if args.predict_committee:
+            energy_stds.append(torch_tools.to_numpy(output["stds"]["energy"]))
         if args.compute_stress:
             stresses_list.append(torch_tools.to_numpy(output["stress"]))
 
@@ -129,6 +143,15 @@ def run(args: argparse.Namespace) -> None:
             axis=0,
         )
         forces_collection.append(forces[:-1])  # drop last as its empty
+
+        if args.predict_committee:
+            energy_stds.append(torch_tools.to_numpy(output["stds"]["energy"]))
+            forces_std = np.split(
+                torch_tools.to_numpy(output["stds"]["forces"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            forces_stds.append(forces_std[:-1])
 
     energies = np.concatenate(energies_list, axis=0)
     forces_list = [
@@ -143,6 +166,12 @@ def run(args: argparse.Namespace) -> None:
         contributions = np.concatenate(contributions_list, axis=0)
         assert len(atoms_list) == contributions.shape[0]
 
+    if args.predict_committee:
+        energy_stds = np.concatenate(energy_stds, axis=0)
+        forces_stds = [
+            stds for std_batch in forces_stds for stds in std_batch
+        ]
+
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
         atoms.calc = None  # crucial
@@ -154,6 +183,10 @@ def run(args: argparse.Namespace) -> None:
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
+
+        if args.predict_committee:
+            atoms.info[args.info_prefix + "energy_std"] = energy_stds[i]
+            atoms.arrays[args.info_prefix + "forces_std"] = forces_stds[i]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")

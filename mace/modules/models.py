@@ -64,7 +64,6 @@ class MACE(torch.nn.Module):
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
-        n_committee: Optional[int] = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -79,7 +78,6 @@ class MACE(torch.nn.Module):
         if heads is None:
             heads = ["default"]
         self.heads = heads
-        self.n_committee = n_committee
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
         # Embedding
@@ -193,6 +191,7 @@ class MACE(torch.nn.Module):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
+        predict_committee: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)
@@ -296,7 +295,7 @@ class MACE(torch.nn.Module):
 
         # Outputs
         output = {}
-        if self.n_committee is None or training:
+        if predict_committee is None or training:
             total_energy = total_energy_heads[num_graphs_arange, data['head']]
             node_energy = node_energy_heads[num_atoms_arange, node_heads]
             contributions = contributions_heads[num_graphs_arange, :, data['head']]
@@ -379,6 +378,7 @@ class ScaleShiftMACE(MACE):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
+        predict_committee: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         #TODO: Training should work as usual, with evaluating only one head at a time, so that only the
         # results from this head are used to calculate the loss and therefore optimizing the model.
@@ -394,6 +394,9 @@ class ScaleShiftMACE(MACE):
         #TODO: The new forward function works for both standard operation as well as committee operation, though 
         # the memory requirement are slighly (needs quantification) increased. It is worth considering, splitting
         # up the two methods much earlier and into a standard way and the committee way.
+        #TODO: Find a good solution for what to do with the `predict_committee` in other functions. Currently, all
+        # functions using the forward pass for many model expect the keyword, but it is only implemented for MACE-based
+        # models.
 
         # Setup
         data["positions"].requires_grad_(True)
@@ -406,8 +409,8 @@ class ScaleShiftMACE(MACE):
             if "head" in data
             else torch.zeros_like(data["batch"])
         )
-        ic(node_heads)
-        ic(node_heads.shape)
+        # ic(node_heads)
+        # ic(node_heads.shape)
         displacement = torch.zeros(
             (num_graphs, 3, 3),
             dtype=data["positions"].dtype,
@@ -429,13 +432,13 @@ class ScaleShiftMACE(MACE):
 
         # Atomic energies
         node_e0_heads = self.atomic_energies_fn(data["node_attrs"])
-        ic(node_e0_heads)
-        ic(node_e0_heads.shape)
+        # ic(node_e0_heads)
+        # ic(node_e0_heads.shape)
         e0_heads = scatter_sum(
             src=node_e0_heads, index=data["batch"], dim=0, dim_size=num_graphs
         )  # [n_graphs, num_heads]
-        ic(e0_heads)
-        ic(e0_heads.shape)
+        # ic(e0_heads)
+        # ic(e0_heads.shape)
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -457,7 +460,7 @@ class ScaleShiftMACE(MACE):
             )
         else:
             pair_node_energy_heads = torch.zeros_like(node_e0_heads)
-        ic(pair_node_energy_heads)
+        # ic(pair_node_energy_heads)
         # Interactions
         node_es_list = [pair_node_energy_heads]
         node_feats_list = []
@@ -476,12 +479,12 @@ class ScaleShiftMACE(MACE):
             )
             node_feats_list.append(node_feats)
             ro_heads = readout(node_feats)
-            ic(ro_heads)
-            ic(ro_heads.shape)
+            # ic(ro_heads)
+            # ic(ro_heads.shape)
             # ro = ro_heads[num_atoms_arange, node_heads]
             node_es_list.append(ro_heads) # {[n_nodes, n_heads], }
-        ic(node_es_list)
-        ic(len(node_es_list))
+        # ic(node_es_list)
+        # ic(len(node_es_list))
 
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -489,12 +492,12 @@ class ScaleShiftMACE(MACE):
         node_inter_es_heads = torch.sum(
             torch.stack(node_es_list, dim=0), dim=0
         )  # [n_nodes, n_heads]
-        ic(node_inter_es_heads)
-        ic(node_inter_es_heads.shape)
-        ic('Scale shift')
+        # ic(node_inter_es_heads)
+        # ic(node_inter_es_heads.shape)
+        # ic('Scale shift')
         node_inter_es_heads = self.scale_shift(node_inter_es_heads)
-        ic(node_inter_es_heads)
-        ic(node_inter_es_heads.shape)
+        # ic(node_inter_es_heads)
+        # ic(node_inter_es_heads.shape)
 
         # Sum over nodes in graph
         #TODO: Check carefully, why there used to be dim=-1, because I don't see why it is there.
@@ -502,16 +505,16 @@ class ScaleShiftMACE(MACE):
         inter_e_heads = scatter_sum(
             src=node_inter_es_heads, index=data["batch"], dim=0, dim_size=num_graphs
         )  # [n_graphs, n_heads]
-        ic(inter_e_heads)
-        ic(inter_e_heads.shape)
+        # ic(inter_e_heads)
+        # ic(inter_e_heads.shape)
 
         # Add E_0 and (scaled) interaction energy
         total_energy_heads = e0_heads + inter_e_heads
         node_energy_heads = node_e0_heads + node_inter_es_heads
-        ic(self.n_committee)
-        ic(training)
+        # ic(self.n_committee)
+        # ic(training)
         output = {}
-        if self.n_committee is None or training:
+        if not predict_committee or training:
             inter_e = inter_e_heads[num_graphs_arange, data['head']]
             total_energy = total_energy_heads[num_graphs_arange, data['head']]
             node_energy = node_energy_heads[num_atoms_arange, node_heads]

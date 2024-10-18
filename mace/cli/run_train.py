@@ -152,14 +152,29 @@ def run(args: argparse.Namespace) -> None:
         args.multiheads_finetuning = False
 
     if args.heads is not None:
+        assert (
+            args.n_committee is None
+        ), "Using multiheads and n_committee for the same model is currently not supported."
         args.heads = ast.literal_eval(args.heads)
     else:
-        args.heads = prepare_default_head(args)
+        if args.n_committee is None:
+            args.heads = prepare_default_head(args)
+        else:
+            args.heads = {}
+            for i in range(args.n_committee):
+                args.heads[f'committee-{i:d}'] = prepare_default_head(args)["default"]
 
     logging.info("===========LOADING INPUT DATA===========")
+    # TODO: Create a list of heads in case of committee
+    # Work with the training data set might be tricky, as in standard MACE, it is supposed to
+    # be loaded for every head seperately, instead of all at once and then split up.
+    # Perhaps, for the prototype it is best to just let MACE load the training data set from
+    # the same file every time and let the subsampling do its magic and only then think about 
+    # evolving it further.
     heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
     head_configs: List[HeadConfig] = []
+    dataset_seed = args.seed
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
@@ -204,7 +219,7 @@ def run(args: argparse.Namespace) -> None:
                 valid_fraction=head_config.valid_fraction,
                 config_type_weights=config_type_weights,
                 test_path=head_config.test_file,
-                seed=args.seed,
+                seed=dataset_seed,
                 energy_key=head_config.energy_key,
                 forces_key=head_config.forces_key,
                 stress_key=head_config.stress_key,
@@ -221,6 +236,8 @@ def run(args: argparse.Namespace) -> None:
                 f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
             )
         head_configs.append(head_config)
+        if args.n_committee is not None:
+            dataset_seed += 1  # Ensure diverse trainingset subsampling
 
     if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
         size_collections_train = sum(
@@ -697,30 +714,47 @@ def run(args: argparse.Namespace) -> None:
 
         for param in model.parameters():
             param.requires_grad = False
+        error_table_kwargs = {
+            "table_type": args.error_table,
+            "model": model_to_evaluate,
+            "loss_fn": loss_fn,
+            "output_args": output_args,
+            "log_wandb": args.wandb,
+            "device": device,
+            "distributed": args.distributed,
+        }
         table_train_valid = create_error_table(
-            table_type=args.error_table,
+            **error_table_kwargs,
             all_data_loaders=train_valid_data_loader,
-            model=model_to_evaluate,
-            loss_fn=loss_fn,
-            output_args=output_args,
-            log_wandb=args.wandb,
-            device=device,
-            distributed=args.distributed,
+            predict_committee=False,
         )
         logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
 
         if test_data_loader:
             table_test = create_error_table(
-                table_type=args.error_table,
+                **error_table_kwargs,
                 all_data_loaders=test_data_loader,
-                model=model_to_evaluate,
-                loss_fn=loss_fn,
-                output_args=output_args,
-                log_wandb=args.wandb,
-                device=device,
-                distributed=args.distributed,
+                predict_committee=False
             )
             logging.info("Error-table on TEST:\n" + str(table_test))
+
+        if args.n_committee is not None:
+            table_train_valid = create_error_table(
+                **error_table_kwargs,
+                all_data_loaders=train_valid_data_loader,
+                predict_committee=True,
+            )
+            logging.info(
+                "Error-table on TRAIN and VALID using committee:\n" + str(table_train_valid)
+            )
+
+            if test_data_loader:
+                table_test = create_error_table(
+                    **error_table_kwargs,
+                    all_data_loaders=test_data_loader,
+                    predict_committee=True
+                )
+                logging.info("Error-table on TEST using committee:\n" + str(table_test))
 
         if rank == 0:
             # Save entire model
