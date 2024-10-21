@@ -1,6 +1,8 @@
 import os
 from typing import Optional
 
+import pandas as pd
+import json
 import pytest
 import torch
 from ase import build
@@ -73,4 +75,48 @@ def log_bench_info(benchmark, dtype, compile_mode, batch):
     benchmark.extra_info["num_edges"] = int(batch["edge_index"].shape[1])
     benchmark.extra_info["dtype"] = dtype
     benchmark.extra_info["is_compiled"] = compile_mode is not None
-    benchmark.extra_info["name"] = torch.cuda.get_device_name()
+    benchmark.extra_info["device_name"] = torch.cuda.get_device_name()
+
+
+def read_bench_results(files: list[str]) -> pd.DataFrame:
+    def read(file):
+        with open(file, "r") as f:
+            data = json.load(f)
+
+        records = []
+        for bench in data["benchmarks"]:
+            record = {**bench["extra_info"], **bench["stats"]}
+            records.append(record)
+
+        df = pd.DataFrame(records)
+        df["ns/day (1 fs/step)"] = 0.086400 / df["median"]
+        df["Steps per day"] = df["ops"] * 86400
+        columns = [
+            "num_atoms",
+            "num_edges",
+            "dtype",
+            "is_compiled",
+            "device_name",
+            "median",
+            "Steps per day",
+            "ns/day (1 fs/step)",
+        ]
+        return df[columns]
+
+    return pd.concat([read(f) for f in files])
+
+
+if __name__ == "__main__":
+    # Print to stdout a csv of the benchmark metrics
+    import subprocess
+
+    result = subprocess.run(
+        ["pytest-benchmark", "list"], capture_output=True, text=True
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"Command failed with return code {result.returncode}")
+
+    files = result.stdout.strip().split("\n")
+    df = read_bench_results(files)
+    print(df.to_csv(index=False))
