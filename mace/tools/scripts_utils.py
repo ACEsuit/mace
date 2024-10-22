@@ -33,21 +33,16 @@ class SubsetCollection:
 
 
 def log_dataset_contents(dataset, dataset_name, keyspec):
-    all_property_names = list(keyspec.info_keys.keys()) + list(keyspec.arrays_keys.keys())
-    log_string = f'{dataset_name} ['
+    all_property_names = list(keyspec.info_keys.keys()) + list(
+        keyspec.arrays_keys.keys()
+    )
+    log_string = f"{dataset_name} ["
     for prop_name in all_property_names:
-        if prop_name == 'dipole':
+        if prop_name == "dipole":
             log_string += f"{prop_name} components: {int(np.sum([np.sum(config.property_weights[prop_name]) for config in dataset]))}, "
         else:
             log_string += f"{prop_name}: {int(np.sum([config.property_weights[prop_name] for config in dataset]))}, "
-        """ except ValueError:
-            config = dataset[0]
-            print(config.property_weights)
-            print(prop_name)
-            print(config.property_weights[prop_name])
-            print(config)
-            exit(0) """
-    log_string = log_string[:-2] + ']'
+    log_string = log_string[:-2] + "]"
     logging.info(log_string)
 
 
@@ -72,8 +67,8 @@ def get_dataset_from_xyz(
         keep_isolated_atoms=keep_isolated_atoms,
         head_name=head_name,
     )
-    log_dataset_contents(all_train_configs, 'Training set', key_specification)
-    
+    log_dataset_contents(all_train_configs, "Training set", key_specification)
+
     if valid_path is not None:
         _, valid_configs = data.load_from_xyz(
             file_path=valid_path,
@@ -82,14 +77,18 @@ def get_dataset_from_xyz(
             extract_atomic_energies=False,
             head_name=head_name,
         )
-        log_dataset_contents(valid_configs, 'Validation set', key_specification)
+        log_dataset_contents(valid_configs, "Validation set", key_specification)
         train_configs = all_train_configs
     else:
         train_configs, valid_configs = data.random_train_valid_split(
             all_train_configs, valid_fraction, seed, work_dir
         )
-        log_dataset_contents(train_configs, 'Random Split Training set', key_specification)
-        log_dataset_contents(valid_configs, 'Random Split Validation set', key_specification)
+        log_dataset_contents(
+            train_configs, "Random Split Training set", key_specification
+        )
+        log_dataset_contents(
+            valid_configs, "Random Split Validation set", key_specification
+        )
     test_configs = []
     if test_path is not None:
         _, all_test_configs = data.load_from_xyz(
@@ -105,7 +104,7 @@ def get_dataset_from_xyz(
             f"Test set ({len(all_test_configs)} configs) loaded from '{test_path}':"
         )
         for name, tmp_configs in test_configs:
-            log_dataset_contents(tmp_configs, f'Test set {name}', key_specification)
+            log_dataset_contents(tmp_configs, f"Test set {name}", key_specification)
 
     return (
         SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),

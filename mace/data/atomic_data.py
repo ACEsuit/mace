@@ -4,6 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+from copy import deepcopy
 from typing import Optional, Sequence
 
 import torch.utils.data
@@ -18,7 +19,7 @@ from mace.tools import (
 
 from .neighborhood import get_neighborhood
 from .utils import Configuration
-from copy import deepcopy
+
 
 class AtomicData(torch_geometric.data.Data):
     num_graphs: torch.Tensor
@@ -127,7 +128,10 @@ class AtomicData(torch_geometric.data.Data):
         if heads is None:
             heads = ["Default"]
         edge_index, shifts, unit_shifts, cell = get_neighborhood(
-            positions=config.positions, cutoff=cutoff, pbc=deepcopy(config.pbc), cell=deepcopy(config.cell)
+            positions=config.positions,
+            cutoff=cutoff,
+            pbc=deepcopy(config.pbc),
+            cell=deepcopy(config.cell),
         )
         indices = atomic_numbers_to_indices(config.atomic_numbers, z_table=z_table)
         one_hot = to_one_hot(
