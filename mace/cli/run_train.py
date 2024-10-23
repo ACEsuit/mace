@@ -51,7 +51,10 @@ from mace.tools.scripts_utils import (
     print_git_commit,
     setup_wandb,
 )
-from mace.tools.slurm_distributed import DistributedEnvironment
+from mace.tools.slurm_distributed import (
+    DistributedEnvironmentOpenmpi,
+    DistributedEnvironmentSlurm,
+)
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -79,7 +82,10 @@ def run(args: argparse.Namespace) -> None:
             ) from e
     if args.distributed:
         try:
-            distr_env = DistributedEnvironment()
+            if args.distributed_env == "slurm":
+                distr_env = DistributedEnvironmentSlurm()
+            elif args.distributed_env == "openmpi":
+                distr_env = DistributedEnvironmentOpenmpi()
         except Exception as e:  # pylint: disable=W0703
             logging.error(f"Failed to initialize distributed environment: {e}")
             return
@@ -87,8 +93,8 @@ def run(args: argparse.Namespace) -> None:
         local_rank = distr_env.local_rank
         rank = distr_env.rank
         if rank == 0:
-            print(distr_env)
-        torch.distributed.init_process_group(backend="nccl")
+            print("Using Distributed Environment: ", distr_env)
+        torch.distributed.init_process_group(backend=args.distributed_backend)
     else:
         rank = int(0)
 
@@ -100,7 +106,8 @@ def run(args: argparse.Namespace) -> None:
         logging.log(level=loglevel, msg=message)
 
     if args.distributed:
-        torch.cuda.set_device(local_rank)
+        if args.device == "cuda":
+            torch.cuda.set_device(local_rank)
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
         logging.info(f"Processes: {world_size}")
 
@@ -572,7 +579,10 @@ def run(args: argparse.Namespace) -> None:
         setup_wandb(args)
 
     if args.distributed:
-        distributed_model = DDP(model, device_ids=[local_rank])
+        if args.device == "cuda":
+            distributed_model = DDP(model, device_ids=[local_rank])
+        elif args.device == "cpu":
+            distributed_model = DDP(model)
     else:
         distributed_model = None
 
@@ -666,7 +676,7 @@ def run(args: argparse.Namespace) -> None:
                 )
             try:
                 drop_last = test_set.drop_last
-            except AttributeError as e:  # pylint: disable=W0612
+            except AttributeError as e:  # pylint: disable=W0612  # noqa: F841
                 drop_last = False
             test_loader = torch_geometric.dataloader.DataLoader(
                 test_set,
@@ -688,7 +698,10 @@ def run(args: argparse.Namespace) -> None:
         )
         model.to(device)
         if args.distributed:
-            distributed_model = DDP(model, device_ids=[local_rank])
+            if args.device == "cuda":
+                distributed_model = DDP(model, device_ids=[local_rank])
+            elif args.device == "cpu":
+                distributed_model = DDP(model)
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
@@ -753,7 +766,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception as e:  # pylint: disable=W0703  # noqa: F841
                     pass
             else:
                 torch.save(model, Path(args.model_dir) / (args.name + ".model"))
@@ -768,7 +781,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception as e:  # pylint: disable=W0703  # noqa: F841
                     pass
 
         if args.distributed:
