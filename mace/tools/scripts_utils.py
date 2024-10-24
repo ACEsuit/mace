@@ -12,6 +12,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import dill
 
 import numpy as np
 import torch
@@ -196,7 +197,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             model.readouts[-1]  # pylint: disable=protected-access
             .non_linearity._modules["acts"][0]
             .f
-            if model.num_interactions.item() > 1
+            if model.num_interactions.item() > 1 and hasattr(model, "KAN_readout") == False
             else None
         ),
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
@@ -211,6 +212,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         ),
         "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
+        "KAN_readout": hasattr(model, "KAN_readout"),
         "distance_transform": radial_to_transform(model.radial_embedding),
         "atomic_inter_scale": scale.cpu().numpy(),
         "atomic_inter_shift": shift.cpu().numpy(),
@@ -220,7 +222,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
 
 def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return extract_model(
-        torch.load(f=f, map_location=map_location), map_location=map_location
+        torch.load(f=f, map_location=map_location), map_location=map_location, pickle_module=dill
     )
 
 
@@ -284,6 +286,7 @@ def convert_from_json_format(dict_input):
     dict_output["radial_type"] = dict_input["radial_type"]
     dict_output["radial_MLP"] = ast.literal_eval(dict_input["radial_MLP"])
     dict_output["pair_repulsion"] = ast.literal_eval(dict_input["pair_repulsion"])
+    dict_output["KAN_readout"] = ast.literal_eval(dict_input["KAN_readout"])
     dict_output["distance_transform"] = dict_input["distance_transform"]
     dict_output["atomic_inter_scale"] = float(dict_input["atomic_inter_scale"])
     dict_output["atomic_inter_shift"] = float(dict_input["atomic_inter_shift"])

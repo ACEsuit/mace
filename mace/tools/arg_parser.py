@@ -139,6 +139,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--KAN_readout",
+        help="use KAN instead of MLP in readout Layer ",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--distance_transform",
         help="use distance transform for radial basis functions",
         default="None",

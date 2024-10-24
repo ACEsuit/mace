@@ -11,6 +11,7 @@ import numpy as np
 import torch.nn.functional
 from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
+from mace.tools.MultKAN_jit import MultKAN
 
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
@@ -57,6 +58,73 @@ class LinearReadoutBlock(torch.nn.Module):
         heads: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         return self.linear(x)  # [n_nodes, 1]
+
+
+@compile_mode("trace")
+class KANReadoutBlock(torch.nn.Module):
+    def __init__(
+        self, irreps_in: o3.Irreps, MLP_irreps: o3.Irreps, irrep_out: o3.Irreps = o3.Irreps("0e"),
+    ):
+        super().__init__()
+        self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=MLP_irreps)
+        self.linear_2 = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
+        self.irreps_in = o3.Irreps(irreps_in)
+        self.hidden_irreps = MLP_irreps
+        assert MLP_irreps.dim >= 8, "MLP_irreps at least 8!"
+        dim = [MLP_irreps.dim, MLP_irreps.dim//2, MLP_irreps.dim//4, irrep_out.dim]
+        self.kan = MultKAN(width=dim, grid=3, k=3, mult_arity=2, symbolic_enabled= False, auto_save=False, save_act=False)
+        # self.kan.speed(compile=True)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        heads: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        x1 = self.linear(x)
+        return self.kan(x1) + self.linear_2(x)  # [n_nodes, irrep_out.dim]
+    
+    def _make_tracing_inputs(self, n: int):
+        return [{"forward": (torch.randn(5, self.irreps_in.dim),)} for _ in range(n)]
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(dim=[{self.kan.width}])"
+
+
+@compile_mode("trace")
+class KANNonLinearReadoutBlock(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Optional[Callable],
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        num_heads: int = 1,
+    ):
+        super().__init__()
+        self.irreps_in = o3.Irreps(irreps_in)
+        self.hidden_irreps = MLP_irreps
+        self.num_heads = num_heads
+        self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
+        self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
+        self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=irrep_out)
+        assert MLP_irreps.dim >= 8, "MLP_irreps at least 8!"
+        dim = [MLP_irreps.dim, MLP_irreps.dim//2, MLP_irreps.dim//4, irrep_out.dim]
+        self.kan = MultKAN(width=dim, grid=3, k=3, mult_arity=2, symbolic_enabled= False, auto_save=False, save_act=False)
+
+    def forward(
+        self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        x = self.non_linearity(self.linear_1(x))
+        if hasattr(self, "num_heads"):
+            if self.num_heads > 1 and heads is not None:
+                x = mask_head(x, heads, self.num_heads)
+        return self.kan(x) + self.linear_2(x)  # [n_nodes, irrep_out.dim]
+    
+    def _make_tracing_inputs(self, n: int):
+        return [{"forward": (torch.randn(5, self.irreps_in.dim),)} for _ in range(n)]
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(dim=[{self.kan.width}])"
 
 
 @simplify_if_compile
