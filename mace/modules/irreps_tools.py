@@ -20,6 +20,16 @@ def make_tp_irreps(target_irreps, correlation):
         tp_irreps += (tmp_irreps * ((tmp_irreps.num_irreps) ** (correlation - 1))).simplify()
     return tp_irreps
 
+def make_tucker_irreps(target_irreps, correlation):
+    tp_irreps = o3.Irreps()
+    for ir in target_irreps:
+        tmp_irreps = o3.Irreps(str(ir))
+        num_feats = 0      
+        for nu in range(1, correlation + 1):
+            num_feats += tmp_irreps.num_irreps ** nu
+        tp_irreps += o3.Irreps(f"{num_feats}x{tmp_irreps[0].ir}")
+    return tp_irreps
+
 # Based on mir-group/nequip
 def tp_out_irreps_with_instructions(
     irreps1: o3.Irreps, irreps2: o3.Irreps, target_irreps: o3.Irreps

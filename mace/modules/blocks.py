@@ -20,7 +20,8 @@ from .irreps_tools import (
     mask_head,
     reshape_irreps,
     tp_out_irreps_with_instructions,
-    make_tp_irreps
+    make_tp_irreps,
+    make_tucker_irreps
 )
 from .radial import (
     AgnesiTransform,
@@ -281,7 +282,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
                 shared_weights=True,
             )
         elif tensor_format == "symmetric_tucker":
-            tucker_irreps = make_tp_irreps(target_irreps, correlation)
+            tucker_irreps = make_tucker_irreps(target_irreps, correlation)
             self.linear = o3.Linear(
                     tucker_irreps,
                     target_irreps,
@@ -296,7 +297,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         node_attrs: torch.Tensor,
     ) -> torch.Tensor:
         node_feats = self.symmetric_contractions(node_feats, node_attrs)
-        #print("shape after symmstric contractions: ", node_feats.shape)
+        print("shape after symmstric contractions: ", node_feats.shape)
         if self.use_sc and sc is not None:
             return self.linear(node_feats) + sc
         return self.linear(node_feats)
