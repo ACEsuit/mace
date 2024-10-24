@@ -17,6 +17,7 @@ import numpy as np
 import torch
 import torch.distributed
 from e3nn import o3
+from icecream import ic
 from prettytable import PrettyTable
 from torch.optim.swa_utils import SWALR, AveragedModel
 
@@ -49,6 +50,7 @@ def get_dataset_from_xyz(
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
     head_key: str = "head",
+    n_committee: Optional[int] = None,
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
     atomic_energies_dict, all_train_configs = data.load_from_xyz(
@@ -93,6 +95,15 @@ def get_dataset_from_xyz(
         logging.info(
             f"Validaton set contains {len(valid_configs)} configurations [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
         )
+
+    #TODO: Currently, if there is no random train_valid_split, train_configs is not shuffled,
+    # which is not great for this kind of splitting. So we should shuffle, either in general,
+    # or only if if hasn't been shuffled yet.
+    if n_committee is not None:
+        id_c = int(head_name.split("-")[-1])
+        train_set_split = np.linspace(0, len(train_configs), n_committee + 1, dtype=int)
+        # ic(train_set_split)
+        train_configs = train_configs[train_set_split[id_c]:train_set_split[id_c + 1]]
 
     test_configs = []
     if test_path is not None:

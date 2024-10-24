@@ -166,15 +166,13 @@ def run(args: argparse.Namespace) -> None:
 
     logging.info("===========LOADING INPUT DATA===========")
     # TODO: Create a list of heads in case of committee
-    # Work with the training data set might be tricky, as in standard MACE, it is supposed to
-    # be loaded for every head seperately, instead of all at once and then split up.
-    # Perhaps, for the prototype it is best to just let MACE load the training data set from
-    # the same file every time and let the subsampling do its magic and only then think about 
-    # evolving it further.
+    # Currently, I am using the existing infrastructure as much as possible. This makes for
+    # quite elegant coding, but not as effecient implementation. Once we have found a committee
+    # strategy that works for us, we can think about implementing a specific committee multihead
+    # processor.
     heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
     head_configs: List[HeadConfig] = []
-    dataset_seed = args.seed
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
@@ -219,7 +217,7 @@ def run(args: argparse.Namespace) -> None:
                 valid_fraction=head_config.valid_fraction,
                 config_type_weights=config_type_weights,
                 test_path=head_config.test_file,
-                seed=dataset_seed,
+                seed=args.seed,
                 energy_key=head_config.energy_key,
                 forces_key=head_config.forces_key,
                 stress_key=head_config.stress_key,
@@ -228,6 +226,7 @@ def run(args: argparse.Namespace) -> None:
                 charges_key=head_config.charges_key,
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
+                n_committee=args.n_committee,
             )
             head_config.collections = collections
             head_config.atomic_energies_dict = atomic_energies_dict
@@ -236,8 +235,6 @@ def run(args: argparse.Namespace) -> None:
                 f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
             )
         head_configs.append(head_config)
-        if args.n_committee is not None:
-            dataset_seed += 1  # Ensure diverse trainingset subsampling
 
     if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
         size_collections_train = sum(
