@@ -515,6 +515,7 @@ def compute_statistics(
     forces_list = []
     num_neighbors = []
     head_list = []
+    head_batch = []
 
     for batch in data_loader:
         head = batch.head
@@ -528,7 +529,7 @@ def compute_statistics(
         )  # {[n_graphs], }
         forces_list.append(batch.forces)  # {[n_graphs*n_atoms,3], }
         head_list.append(head)  # {[n_graphs], }
-
+        head_batch.append(head[batch.batch])
         _, receivers = batch.edge_index
         _, counts = torch.unique(receivers, return_counts=True)
         num_neighbors.append(counts)
@@ -536,13 +537,14 @@ def compute_statistics(
     atom_energies = torch.cat(atom_energy_list, dim=0)  # [total_n_graphs]
     forces = torch.cat(forces_list, dim=0)  # {[total_n_graphs*n_atoms,3], }
     head = torch.cat(head_list, dim=0)  # [total_n_graphs]
+    head_batch = torch.cat(head_batch, dim=0)  # [total_n_graphs]
 
     # mean = to_numpy(torch.mean(atom_energies)).item()
     mean = to_numpy(scatter_mean(src=atom_energies, index=head, dim=0).squeeze(-1))
-    # do the mean for each head
-    # rms = to_numpy(torch.sqrt(torch.mean(torch.square(forces)))).item()
     rms = to_numpy(
-        torch.sqrt(scatter_mean(src=torch.square(forces), index=head, dim=0))
+        torch.sqrt(
+            scatter_mean(src=torch.square(forces), index=head_batch, dim=0).mean(-1)
+        )
     )
 
     avg_num_neighbors = torch.mean(

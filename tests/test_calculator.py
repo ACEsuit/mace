@@ -111,7 +111,7 @@ def trained_model_fixture(tmp_path_factory, fitting_configs):
 
     assert p.returncode == 0
 
-    return MACECalculator(tmp_path / "MACE.model", device="cpu")
+    return MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
 
 @pytest.fixture(scope="module", name="trained_equivariant_model")
@@ -174,7 +174,7 @@ def trained_model_equivariant_fixture(tmp_path_factory, fitting_configs):
 
     assert p.returncode == 0
 
-    return MACECalculator(tmp_path / "MACE.model", device="cpu")
+    return MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
 
 @pytest.fixture(scope="module", name="trained_dipole_model")
@@ -239,7 +239,7 @@ def trained_dipole_fixture(tmp_path_factory, fitting_configs):
     assert p.returncode == 0
 
     return MACECalculator(
-        tmp_path / "MACE.model", device="cpu", model_type="DipoleMACE"
+        model_paths=tmp_path / "MACE.model", device="cpu", model_type="DipoleMACE"
     )
 
 
@@ -305,7 +305,7 @@ def trained_energy_dipole_fixture(tmp_path_factory, fitting_configs):
     assert p.returncode == 0
 
     return MACECalculator(
-        tmp_path / "MACE.model", device="cpu", model_type="EnergyDipoleMACE"
+        model_paths=tmp_path / "MACE.model", device="cpu", model_type="EnergyDipoleMACE"
     )
 
 
@@ -374,7 +374,7 @@ def trained_committee_fixture(tmp_path_factory, fitting_configs):
 
         _model_paths.append(tmp_path / f"MACE{seed}.model")
 
-    return MACECalculator(_model_paths, device="cpu")
+    return MACECalculator(model_paths=_model_paths, device="cpu")
 
 
 def test_calculator_node_energy(fitting_configs, trained_model):
@@ -430,6 +430,20 @@ def test_calculator_committee(fitting_configs, trained_committee):
     assert np.allclose(E, np.mean(energies))
     assert np.allclose(energies_var, np.var(energies))
     assert forces_var.shape == at.calc.results["forces"].shape
+
+
+def test_calculator_from_model(fitting_configs, trained_committee):
+    # test single model
+    test_calculator_forces(
+        fitting_configs,
+        trained_model=MACECalculator(models=trained_committee.models[0], device="cpu"),
+    )
+
+    # test committee model
+    test_calculator_committee(
+        fitting_configs,
+        trained_committee=MACECalculator(models=trained_committee.models, device="cpu"),
+    )
 
 
 def test_calculator_dipole(fitting_configs, trained_dipole_model):
