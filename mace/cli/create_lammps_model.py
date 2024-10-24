@@ -65,7 +65,7 @@ def main():
     model = torch.load(
         model_path,
         map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        pickle_module=dill
+        pickle_module=dill,
     )
     if args.dtype == "float64":
         model = model.double().to("cpu")

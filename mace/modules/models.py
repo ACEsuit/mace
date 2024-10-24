@@ -139,9 +139,13 @@ class MACE(torch.nn.Module):
 
         self.readouts = torch.nn.ModuleList()
         self.KAN_readout = KAN_readout
-        
+
         if KAN_readout:
-            self.readouts.append(KANReadoutBlock(hidden_irreps, MLP_irreps, o3.Irreps(f"{len(heads)}x0e")))
+            self.readouts.append(
+                KANReadoutBlock(
+                    hidden_irreps, MLP_irreps, o3.Irreps(f"{len(heads)}x0e")
+                )
+            )
         else:
             self.readouts.append(
                 LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
@@ -196,7 +200,11 @@ class MACE(torch.nn.Module):
                     )
             else:
                 if KAN_readout:
-                    self.readouts.append(KANReadoutBlock(hidden_irreps, MLP_irreps, o3.Irreps(f"{len(heads)}x0e")))
+                    self.readouts.append(
+                        KANReadoutBlock(
+                            hidden_irreps, MLP_irreps, o3.Irreps(f"{len(heads)}x0e")
+                        )
+                    )
                 else:
                     self.readouts.append(
                         LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))

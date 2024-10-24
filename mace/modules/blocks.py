@@ -63,7 +63,10 @@ class LinearReadoutBlock(torch.nn.Module):
 @compile_mode("trace")
 class KANReadoutBlock(torch.nn.Module):
     def __init__(
-        self, irreps_in: o3.Irreps, MLP_irreps: o3.Irreps, irrep_out: o3.Irreps = o3.Irreps("0e"),
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
     ):
         super().__init__()
         self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=MLP_irreps)
@@ -71,8 +74,16 @@ class KANReadoutBlock(torch.nn.Module):
         self.irreps_in = o3.Irreps(irreps_in)
         self.hidden_irreps = MLP_irreps
         assert MLP_irreps.dim >= 8, "MLP_irreps at least 8!"
-        dim = [MLP_irreps.dim, MLP_irreps.dim//2, MLP_irreps.dim//4, irrep_out.dim]
-        self.kan = MultKAN(width=dim, grid=3, k=3, mult_arity=2, symbolic_enabled= False, auto_save=False, save_act=False)
+        dim = [MLP_irreps.dim, MLP_irreps.dim // 2, MLP_irreps.dim // 4, irrep_out.dim]
+        self.kan = MultKAN(
+            width=dim,
+            grid=3,
+            k=3,
+            mult_arity=2,
+            symbolic_enabled=False,
+            auto_save=False,
+            save_act=False,
+        )
         # self.kan.speed(compile=True)
 
     def forward(
@@ -82,7 +93,7 @@ class KANReadoutBlock(torch.nn.Module):
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x1 = self.linear(x)
         return self.kan(x1) + self.linear_2(x)  # [n_nodes, irrep_out.dim]
-    
+
     def _make_tracing_inputs(self, n: int):
         return [{"forward": (torch.randn(5, self.irreps_in.dim),)} for _ in range(n)]
 
@@ -108,8 +119,16 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
         self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
         self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=irrep_out)
         assert MLP_irreps.dim >= 8, "MLP_irreps at least 8!"
-        dim = [MLP_irreps.dim, MLP_irreps.dim//2, MLP_irreps.dim//4, irrep_out.dim]
-        self.kan = MultKAN(width=dim, grid=3, k=3, mult_arity=2, symbolic_enabled= False, auto_save=False, save_act=False)
+        dim = [MLP_irreps.dim, MLP_irreps.dim // 2, MLP_irreps.dim // 4, irrep_out.dim]
+        self.kan = MultKAN(
+            width=dim,
+            grid=3,
+            k=3,
+            mult_arity=2,
+            symbolic_enabled=False,
+            auto_save=False,
+            save_act=False,
+        )
 
     def forward(
         self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
@@ -119,7 +138,7 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
             if self.num_heads > 1 and heads is not None:
                 x = mask_head(x, heads, self.num_heads)
         return self.kan(x) + self.linear_2(x)  # [n_nodes, irrep_out.dim]
-    
+
     def _make_tracing_inputs(self, n: int):
         return [{"forward": (torch.randn(5, self.irreps_in.dim),)} for _ in range(n)]
 
