@@ -101,8 +101,15 @@ def mace_mp(
         MACECalculator: trained on the MPtrj dataset (unless model otherwise specified).
     """
     try:
-        model_path = download_mace_mp_checkpoint(model)
-        print(f"Using Materials Project MACE for MACECalculator with {model_path}")
+        if model in (None, "small", "medium", "large") or str(model).startswith(
+            "https:"
+        ):
+            model_path = download_mace_mp_checkpoint(model)
+            print(f"Using Materials Project MACE for MACECalculator with {model_path}")
+        else:
+            if not Path(model).exists():
+                raise FileNotFoundError(f"{model} not found locally")
+            model_path = model
     except Exception as exc:
         raise RuntimeError("Model download failed and no local model found") from exc
 
