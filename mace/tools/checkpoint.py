@@ -9,6 +9,7 @@ import logging
 import os
 import re
 from typing import Dict, List, Optional, Tuple
+import dill
 
 import torch
 
@@ -162,7 +163,7 @@ class CheckpointIO:
         path = os.path.join(self.directory, filename)
         logging.debug(f"Saving checkpoint: {path}")
         os.makedirs(self.directory, exist_ok=True)
-        torch.save(obj=checkpoint, f=path)
+        torch.save(obj=checkpoint, f=path, pickle_module=dill)
         self.old_path = path
 
     def load_latest(
@@ -184,7 +185,7 @@ class CheckpointIO:
 
         logging.info(f"Loading checkpoint: {checkpoint_info.path}")
         return (
-            torch.load(f=checkpoint_info.path, map_location=device),
+            torch.load(f=checkpoint_info.path, map_location=device, pickle_module=dill),
             checkpoint_info.epochs,
         )
 

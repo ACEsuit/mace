@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import argparse
+import dill
 
 import ase.data
 import ase.io
@@ -58,7 +59,7 @@ def parse_args() -> argparse.Namespace:
         help="Model head used for evaluation",
         type=str,
         required=False,
-        default=None
+        default=None,
     )
     return parser.parse_args()
 
@@ -73,7 +74,7 @@ def run(args: argparse.Namespace) -> None:
     device = torch_tools.init_device(args.device)
 
     # Load model
-    model = torch.load(f=args.model, map_location=args.device)
+    model = torch.load(f=args.model, map_location=args.device, pickle_module=dill)
     model = model.to(
         args.device
     )  # shouldn't be necessary but seems to help with CUDA problems
@@ -94,7 +95,7 @@ def run(args: argparse.Namespace) -> None:
         heads = model.heads
     except AttributeError:
         heads = None
-        
+
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
             data.AtomicData.from_config(

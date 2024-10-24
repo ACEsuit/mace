@@ -150,6 +150,7 @@ def _build_model(
         return modules.ScaleShiftMACE(
             **model_config,
             pair_repulsion=args.pair_repulsion,
+            KAN_readout=args.KAN_readout,
             distance_transform=args.distance_transform,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
@@ -167,6 +168,7 @@ def _build_model(
         return modules.ScaleShiftMACE(
             **model_config,
             pair_repulsion=args.pair_repulsion,
+            KAN_readout=args.KAN_readout,
             distance_transform=args.distance_transform,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],

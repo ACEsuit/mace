@@ -13,6 +13,7 @@ import os
 from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional
+import dill
 
 import torch.distributed
 import torch.nn.functional
@@ -142,7 +143,7 @@ def run(args: argparse.Namespace) -> None:
             model_foundation = calc.models[0]
         else:
             model_foundation = torch.load(
-                args.foundation_model, map_location=args.device
+                args.foundation_model, map_location=args.device, pickle_module=dill
             )
             logging.info(
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
@@ -731,7 +732,7 @@ def run(args: argparse.Namespace) -> None:
             logging.info(f"Saving model to {model_path}")
             if args.save_cpu:
                 model = model.to("cpu")
-            torch.save(model, model_path)
+            torch.save(model, model_path, pickle_module=dill)
             extra_files = {
                 "commit.txt": commit.encode("utf-8") if commit is not None else b"",
                 "config.yaml": json.dumps(
@@ -740,7 +741,7 @@ def run(args: argparse.Namespace) -> None:
             }
             if swa_eval:
                 torch.save(
-                    model, Path(args.model_dir) / (args.name + "_stagetwo.model")
+                    model, Path(args.model_dir) / (args.name + "_stagetwo.model"), pickle_module=dill
                 )
                 try:
                     path_complied = Path(args.model_dir) / (
@@ -756,7 +757,7 @@ def run(args: argparse.Namespace) -> None:
                 except Exception as e:  # pylint: disable=W0703
                     pass
             else:
-                torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+                torch.save(model, Path(args.model_dir) / (args.name + ".model"), pickle_module=dill)
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_compiled.model"
