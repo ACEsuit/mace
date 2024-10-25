@@ -96,7 +96,7 @@ class KANReadoutBlock(torch.nn.Module):
 
     def _make_tracing_inputs(self, n: int):
         return [
-            {"forward": (torch.randn(6, self.irreps_in.dim), torch.zeros(2))}
+            {"forward": (torch.randn(6, self.irreps_in.dim), None)}
             for _ in range(n)
         ]
 
@@ -142,7 +142,7 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
 
     def _make_tracing_inputs(self, n: int):
         return [
-            {"forward": (torch.randn(6, self.irreps_in.dim), torch.zeros(2))}
+            {"forward": (torch.randn(6, self.irreps_in.dim), None)}
             for _ in range(n)
         ]
 

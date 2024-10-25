@@ -198,7 +198,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             .non_linearity._modules["acts"][0]
             .f
             if model.num_interactions.item() > 1
-            and hasattr(model, "KAN_readout") == False
+            and hasattr(model, "KAN_readout") is False
             else None
         ),
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
@@ -223,9 +223,8 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
 
 def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return extract_model(
-        torch.load(f=f, map_location=map_location),
+        torch.load(f=f, map_location=map_location, pickle_module=dill),
         map_location=map_location,
-        pickle_module=dill,
     )
 
 
