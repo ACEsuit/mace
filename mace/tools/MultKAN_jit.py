@@ -18,6 +18,7 @@ from sympy import *
 from sympy.printing import latex
 from tqdm import tqdm
 
+
 class MultKAN(nn.Module):
     """
     KAN class
