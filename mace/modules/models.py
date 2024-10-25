@@ -183,7 +183,6 @@ class MACE(torch.nn.Module):
                         KANNonLinearReadoutBlock(
                             hidden_irreps_out,
                             (len(heads) * MLP_irreps).simplify(),
-                            gate,
                             o3.Irreps(f"{len(heads)}x0e"),
                             len(heads),
                         )

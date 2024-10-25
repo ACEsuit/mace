@@ -107,7 +107,6 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
         self,
         irreps_in: o3.Irreps,
         MLP_irreps: o3.Irreps,
-        gate: Optional[Callable],
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         num_heads: int = 1,
     ):
@@ -116,7 +115,6 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
         self.hidden_irreps = MLP_irreps
         self.num_heads = num_heads
         self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
-        # self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
         self.linear_2 = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
         assert MLP_irreps.dim >= 8, "MLP_irreps at least 8!"
         dim = [MLP_irreps.dim, MLP_irreps.dim // 2, MLP_irreps.dim // 4, irrep_out.dim]
@@ -140,7 +138,7 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
         return self.kan(x1) + self.linear_2(x)  # [n_nodes, irrep_out.dim]
 
     def _make_tracing_inputs(self, n: int):
-        return [{"forward": (torch.randn(5, self.irreps_in.dim),)} for _ in range(n)]
+        return [{"forward": (torch.randn(6, self.irreps_in.dim),torch.zeros(2))} for _ in range(n)]
 
     def __repr__(self):
         return f"{self.__class__.__name__}(dim=[{self.kan.width}])"
