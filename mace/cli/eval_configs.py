@@ -5,10 +5,10 @@
 ###########################################################################################
 
 import argparse
-import dill
 
 import ase.data
 import ase.io
+import dill
 import numpy as np
 import torch
 

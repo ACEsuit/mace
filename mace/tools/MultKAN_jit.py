@@ -1,28 +1,22 @@
+import os
+import random
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import sympy
 import torch
 import torch.nn as nn
-import numpy as np
-from kan.KANLayer import KANLayer
-
-# from .Symbolic_MultKANLayer import *
-from kan.Symbolic_KANLayer import Symbolic_KANLayer
-from kan.LBFGS import *
-import os
-import glob
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-import random
-import copy
-
-# from .MultKANLayer import MultKANLayer
-import pandas as pd
-from sympy.printing import latex
-from sympy import *
-import sympy
 import yaml
-from kan.spline import curve2coef
-from kan.utils import SYMBOLIC_LIB
 from kan.hypothesis import plot_tree
-
+from kan.KANLayer import KANLayer
+from kan.LBFGS import *
+from kan.spline import curve2coef
+from kan.Symbolic_KANLayer import Symbolic_KANLayer
+from kan.utils import SYMBOLIC_LIB
+from sympy import *
+from sympy.printing import latex
+from tqdm import tqdm
 
 class MultKAN(nn.Module):
     """

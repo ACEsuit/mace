@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 import torch.nn.functional
 from e3nn import o3
@@ -50,9 +51,11 @@ table = tools.AtomicNumberTable([1, 8])
 atomic_energies = np.array([1.0, 3.0], dtype=float)
 
 
-def test_mace():
+@pytest.mark.parametrize("KAN_readout", [True, False])
+def test_mace(KAN_readout):
     # Create MACE model
     model_config = dict(
+        KAN_readout=KAN_readout,
         r_max=5,
         num_bessel=8,
         num_polynomial_cutoff=6,

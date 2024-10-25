@@ -9,8 +9,8 @@ import logging
 from glob import glob
 from pathlib import Path
 from typing import Union
-import dill
 
+import dill
 import numpy as np
 import torch
 from ase.calculators.calculator import Calculator, all_changes
