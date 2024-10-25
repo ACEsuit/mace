@@ -95,7 +95,10 @@ class KANReadoutBlock(torch.nn.Module):
         return self.kan(x1) + self.linear_2(x)  # [n_nodes, irrep_out.dim]
 
     def _make_tracing_inputs(self, n: int):
-        return [{"forward": (torch.randn(5, self.irreps_in.dim),)} for _ in range(n)]
+        return [
+            {"forward": (torch.randn(6, self.irreps_in.dim), torch.zeros(2))}
+            for _ in range(n)
+        ]
 
     def __repr__(self):
         return f"{self.__class__.__name__}(dim=[{self.kan.width}])"
@@ -138,7 +141,10 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
         return self.kan(x1) + self.linear_2(x)  # [n_nodes, irrep_out.dim]
 
     def _make_tracing_inputs(self, n: int):
-        return [{"forward": (torch.randn(6, self.irreps_in.dim),torch.zeros(2))} for _ in range(n)]
+        return [
+            {"forward": (torch.randn(6, self.irreps_in.dim), torch.zeros(2))}
+            for _ in range(n)
+        ]
 
     def __repr__(self):
         return f"{self.__class__.__name__}(dim=[{self.kan.width}])"
