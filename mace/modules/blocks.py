@@ -117,7 +117,7 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
         self.num_heads = num_heads
         self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
         # self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
-        self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=irrep_out)
+        self.linear_2 = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
         assert MLP_irreps.dim >= 8, "MLP_irreps at least 8!"
         dim = [MLP_irreps.dim, MLP_irreps.dim // 2, MLP_irreps.dim // 4, irrep_out.dim]
         self.kan = MultKAN(
