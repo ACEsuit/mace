@@ -118,7 +118,7 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
         self.hidden_irreps = MLP_irreps
         self.num_heads = num_heads
         self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps)
-        self.linear_2 = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
+        # self.linear_2 = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
         assert MLP_irreps.dim >= 8, "MLP_irreps at least 8!"
         dim = [MLP_irreps.dim, MLP_irreps.dim // 2, MLP_irreps.dim // 4, irrep_out.dim]
         self.kan = MultKAN(
@@ -138,7 +138,7 @@ class KANNonLinearReadoutBlock(torch.nn.Module):
             if self.num_heads > 1 and heads is not None:
                 x = mask_head(x, heads, self.num_heads)
         x1 = self.linear_1(x)
-        return self.kan(x1) + self.linear_2(x)  # [n_nodes, irrep_out.dim]
+        return self.kan(x1) # + self.linear_2(x)  # [n_nodes, irrep_out.dim]
 
     def _make_tracing_inputs(self, n: int):
         return [
