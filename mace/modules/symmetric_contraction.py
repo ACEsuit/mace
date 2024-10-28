@@ -101,7 +101,6 @@ class Contraction(torch.nn.Module):
         tensor_format: str = "symmetric_cp",
     ) -> None:
         super().__init__()
-
         self.num_features = irreps_in.count((0, 1))
         self.coupling_irreps = o3.Irreps([irrep.ir for irrep in irreps_in])
         self.correlation = correlation
@@ -125,17 +124,13 @@ class Contraction(torch.nn.Module):
 
         # Create weight for product basis
         self.weights = torch.nn.ParameterList([])
-        # for tucker decomposition
         for i in range(correlation, 0, -1):
-
-            print(f"initing i = {i}")
             # Shapes definying
             num_params = self.U_tensors(i).size()[-1]
             num_equivariance = 2 * irrep_out.lmax + 1
             num_ell = self.U_tensors(i).size()[-2]
             
             if i == correlation:
-                
                 if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
                     channel_idx = "c"
                     sample_x = torch.randn((BATCH_EXAMPLE, self.num_features, num_ell))
@@ -144,45 +139,42 @@ class Contraction(torch.nn.Module):
                     / num_params
                     )
                 elif tensor_format == "symmetric_tucker":
-                    #channel_idx = "".join([CHANNEL_ALPHANET[j] for j in range(self.correlation)])
-                    channel_idx = "c"
-                    sample_x = torch.randn([BATCH_EXAMPLE, ] + [self.num_features, ] + [num_ell, ])
                     w = torch.nn.Parameter(
                     torch.randn([num_elements, num_params,] + [self.num_features,])
                     / num_params
                     )
-                    
-                parse_subscript_main = (
-                        [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1) - 1)]
-                        + [f"ik,ek{channel_idx},b{channel_idx}i,be -> b{channel_idx}"]
-                        + [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1) - 1)]
+                elif tensor_format == "non_symmetric_tucker":
+                    w = torch.nn.Parameter(
+                    torch.randn([num_elements, num_params,] + [self.num_features,] * self.correlation)
+                    / num_params
                     )
-                print("".join(parse_subscript_main))
-                graph_module_main = torch.fx.symbolic_trace(
-                    lambda x, y, w, z: torch.einsum(
-                        "".join(parse_subscript_main), x, y, w, z
-                    )
-                )
 
-                # Optimizing the contractions
-                self.graph_opt_main = opt_einsum_fx.optimize_einsums_full(
-                    model=graph_module_main,
-                    example_inputs=(
-                        torch.randn(
-                            [num_equivariance] + [num_ell] * i + [num_params]
-                        ).squeeze(0),
-                        #torch.randn((num_elements, num_params, self.num_features)),
-                        #torch.randn((BATCH_EXAMPLE, self.num_features, num_ell)),
-                        torch.randn(w.shape),
-                        sample_x,
-                        torch.randn((BATCH_EXAMPLE, num_elements)),
-                    ),
-                )
+                # optimize contraction only implemented for cp
+                if "cp" in self.tensor_format:
+                    parse_subscript_main = (
+                            [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1) - 1)]
+                            + [f"ik,ek{channel_idx},b{channel_idx}i,be -> b{channel_idx}"]
+                            + [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1) - 1)]
+                        )
+                    graph_module_main = torch.fx.symbolic_trace(
+                        lambda x, y, w, z: torch.einsum(
+                            "".join(parse_subscript_main), x, y, w, z
+                        )
+                    )
+
+                    # Optimizing the contractions
+                    self.graph_opt_main = opt_einsum_fx.optimize_einsums_full(
+                        model=graph_module_main,
+                        example_inputs=(
+                            torch.randn(
+                                [num_equivariance] + [num_ell] * i + [num_params]
+                            ).squeeze(0),
+                            torch.randn(w.shape),
+                            sample_x,
+                            torch.randn((BATCH_EXAMPLE, num_elements)),
+                        ),
+                    )
                 # Parameters for the product basis
-                # w = torch.nn.Parameter(
-                #     torch.randn((num_elements, num_params, self.num_features))
-                #     / num_params
-                # )
                 self.weights_max = w
             else:
                 
@@ -198,85 +190,67 @@ class Contraction(torch.nn.Module):
                             / num_params
                             )
                 elif tensor_format == "symmetric_tucker":
-                    out_channel_idx = "".join([CHANNEL_ALPHANET[j] for j in range(self.correlation - i + 1)])
-                    #in_channel_idx = out_channel_idx[:-1]
-                    #channel_idx = "c"
-                    sample_x = torch.randn([BATCH_EXAMPLE, self.num_features, num_ell])
-                    # order of features is of length out_channel_idx - 1
-                    sample_x2 = torch.randn(
-                            [BATCH_EXAMPLE,] + [self.num_features,] * (self.correlation - i) + [num_equivariance, ]
-                            + [num_ell] * i
-                            ).squeeze(self.correlation - i + 1)
-                    print("sample_x.shape: ", sample_x.shape)
-                    print("sample_x2.shap: ", sample_x2.shape)
+                    # to be outer produced in model.forward to form symemtrized parameter tensor
+                    # this can be improved
                     w = torch.nn.Parameter(
                             torch.randn((num_elements, num_params, self.num_features))
                             / num_params
                             )
-                # Generate optimized contractions equations
-                parse_subscript_weighting = (
-                    [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1))]
-                    + [f"k,ekc,be->bc"]
-                    + [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1))]
-                )
-                if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
+                elif tensor_format == "non_symmetric_tucker":
+                    # size of channel of the weight tensor is the current correlation order : (i)
+                    w = torch.nn.Parameter(
+                            torch.randn((num_elements, num_params, *([self.num_features] * i)))
+                            / num_params
+                            )
+
+                # optimized contraction implemented for cp only
+                if "cp" in tensor_format:
+                    # Generate optimized contractions equations
+                    parse_subscript_weighting = (
+                        [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1))]
+                        + [f"k,ekc,be->bc"]
+                        + [ALPHABET[j] for j in range(i + min(irrep_out.lmax, 1))]
+                    )
                     parse_subscript_features = (
                         [f"bc"]
                         + [ALPHABET[j] for j in range(i - 1 + min(irrep_out.lmax, 1))]
                         + [f"i,bci->bc"]
                         + [ALPHABET[j] for j in range(i - 1 + min(irrep_out.lmax, 1))]
                     )
-                elif tensor_format == "symmetric_tucker":
-                    parse_subscript_features = (
-                        [f"b{out_channel_idx[:-1]}"]
-                        + [ALPHABET[j] for j in range(i - 1 + min(irrep_out.lmax, 1))]
-                        + [f"i,b{out_channel_idx[-1]}i->b{out_channel_idx}"]
-                        + [ALPHABET[j] for j in range(i - 1 + min(irrep_out.lmax, 1))]
-                    )
-                print("weighting: ", "".join(parse_subscript_weighting))
-                print("features: ", "".join(parse_subscript_features))
 
-                # Symbolic tracing of contractions
-                graph_module_weighting = torch.fx.symbolic_trace(
-                    lambda x, y, z: torch.einsum(
-                        "".join(parse_subscript_weighting), x, y, z
+                    # Symbolic tracing of contractions
+                    graph_module_weighting = torch.fx.symbolic_trace(
+                        lambda x, y, z: torch.einsum(
+                            "".join(parse_subscript_weighting), x, y, z
+                        )
                     )
-                )
-                graph_module_features = torch.fx.symbolic_trace(
-                    lambda x, y: torch.einsum("".join(parse_subscript_features), x, y)
-                )
+                    graph_module_features = torch.fx.symbolic_trace(
+                        lambda x, y: torch.einsum("".join(parse_subscript_features), x, y)
+                    )
 
-                # Optimizing the contractions
-                graph_opt_weighting = opt_einsum_fx.optimize_einsums_full(
-                    model=graph_module_weighting,
-                    example_inputs=(
-                        torch.randn(
-                            [num_equivariance] + [num_ell] * i + [num_params]
-                        ).squeeze(0),
-                        #torch.randn((num_elements, num_params, self.num_features)),
-                        torch.randn(w.shape),
-                        torch.randn((BATCH_EXAMPLE, num_elements)),
-                    ),
-                )
-                graph_opt_features = opt_einsum_fx.optimize_einsums_full(
-                    model=graph_module_features,
-                    example_inputs=(
-                        # torch.randn(
-                        #     [BATCH_EXAMPLE, self.num_features, num_equivariance]
-                        #     + [num_ell] * i
-                        # ).squeeze(2),
-                        #torch.randn((BATCH_EXAMPLE, self.num_features, num_ell)),
-                        sample_x2,
-                        sample_x,
-                    ),
-                )
-                self.contractions_weighting.append(graph_opt_weighting)
-                self.contractions_features.append(graph_opt_features)
-                # Parameters for the product basis
-                # w = torch.nn.Parameter(
-                #     torch.randn((num_elements, num_params, self.num_features))
-                #     / num_params
-                # )
+                    # Optimizing the contractions
+                    graph_opt_weighting = opt_einsum_fx.optimize_einsums_full(
+                        model=graph_module_weighting,
+                        example_inputs=(
+                            torch.randn(
+                                [num_equivariance] + [num_ell] * i + [num_params]
+                            ).squeeze(0),
+                            #torch.randn((num_elements, num_params, self.num_features)),
+                            torch.randn(w.shape),
+                            torch.randn((BATCH_EXAMPLE, num_elements)),
+                        ),
+                    )
+                    graph_opt_features = opt_einsum_fx.optimize_einsums_full(
+                        model=graph_module_features,
+                        example_inputs=(
+                            sample_x2,
+                            sample_x,
+                        ),
+                    )
+                    self.contractions_weighting.append(graph_opt_weighting)
+                    self.contractions_features.append(graph_opt_features)
+
+                # coefficients for product basis
                 self.weights.append(w)
         if not internal_weights:
             self.weights = weights[:-1]
@@ -284,31 +258,30 @@ class Contraction(torch.nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         irrep_out = self.irrep_out
         num_equivariance = 2 * irrep_out.lmax + 1
-        # print("=== into forward ===")
-        if self.tensor_format == "symmetric_tucker":
+        if "tucker" in self.tensor_format:
             # 
             outs = dict()
             out_channel_idx = "".join([CHANNEL_ALPHANET[j] for j in range(self.correlation)])
             for nu in range(self.correlation, 0, -1):
                 num_params = self.U_tensors(nu).size()[-1]
                 num_ell = self.U_tensors(nu).size()[-2]
-                
+                # "stick" x_nu to basis of all orders
+                x_nu = x[:, :, :, nu - 1] if self.tensor_format == "non_symmetric_tucker" else x 
                 # channel index of the final message
                 # in symmetric tucker we cannot sum over the basis of different order
                 # and will just produce "m_\tilde{k}LM" with \tilde{k} as tuple 
                 if nu == self.correlation:
-                    einsum_str = "".join((
-                        [ALPHABET[j] for j in range(nu + min(irrep_out.lmax, 1) - 1)]
-                        + [f"ik,b{out_channel_idx[-1]}i-> b{out_channel_idx[-1]}"]
-                        +  [ALPHABET[j] for j in range(nu + min(irrep_out.lmax, 1) - 1)]
-                        + ["k"]
-
-                    ))
-                    outs[nu] = torch.einsum(einsum_str, self.U_tensors(nu), x)
+                    outs[nu] = torch.einsum("".join((
+                                            [ALPHABET[j] for j in range(nu + min(irrep_out.lmax, 1) - 1)]
+                                            + [f"ik,b{out_channel_idx[-1]}i-> b{out_channel_idx[-1]}"]
+                                            +  [ALPHABET[j] for j in range(nu + min(irrep_out.lmax, 1) - 1)]
+                                            + ["k"]
+                                            )),
+                                            self.U_tensors(nu), 
+                                            x_nu)
                 else:
                     # contractions to be done for U_tensors(nu)
                     for nu2 in range(self.correlation, nu - 1, -1):
-                        # print("Utensor nu2 .shape", self.U_tensors(nu).shape)
                         # contraction for current nu
                         # [ALPHABET[j] for j in range(nu + min(irrep_out.lmax, 1) - 1)]
                         # denotes indices that are preserved for further contractions
@@ -321,17 +294,10 @@ class Contraction(torch.nn.Module):
                                                         ))
                                                     ,
                                                     self.U_tensors(nu),
-                                                    x
+                                                    x_nu
                                                     )          
                         # also contract previous nu and expand the tensor product basis
-                        else:
-                            # print(f"---doing nu = {nu}, nu2 = {nu2}---")
-                            # for nu_ii in range(self.correlation, 0, -1):
-                            #     try:
-                            #         print(f"outs{nu_ii}.shape", outs[nu_ii].shape)
-                            #     except:
-                            #         print(f"dict no {nu_ii}")
-                                                      
+                        else:                        
                             outs[nu2] = torch.einsum(
                                 "".join([f"b{out_channel_idx[-(nu2 - nu):]}"]
                                 + [ALPHABET[j] for j in range(nu + min(irrep_out.lmax, 1) - 1)]
@@ -341,30 +307,36 @@ class Contraction(torch.nn.Module):
                                 + ["k"]
                                 ),
                                 outs[nu2],
-                                x                                                        
+                                x_nu
                             )
-                # for nu_ii in range(self.correlation, 0, -1):
-                #     try:
-                #         print(f"outs{nu_ii}.shape", outs[nu_ii].shape)
-                #     except:
-                #         print(f"dict no {nu_ii}")
             
             # product basis coeffcients layer
-            #print("=== done contract===")
-            # for nu_ii in range(self.correlation, 0, -1):
-            #     print(f"outs{nu_ii}.shape", outs[nu_ii].shape)
-            
             for nu in range(self.correlation, 0, -1):
                 if nu == self.correlation:
-                    c_tensor = torch.einsum("ekc,be->bkc", self.weights_max, y)
-                else:
-                    c_tensor = torch.einsum("ekc,be->bkc", self.weights[self.correlation - nu - 1], y)
+                    if self.tensor_format == "non_symmetric_tucker":
+                        c_tensor = torch.einsum(f"ek{out_channel_idx[:nu]},be->bk{out_channel_idx[:nu]}", self.weights_max, y)
+                    elif self.tensor_format == "symmetric_tucker":
+                        c_tensor = torch.einsum("ekc,be->bkc", self.weights_max, y)
+                        # outer product to symmetrize tensor
+                        c_tensor = torch.einsum("".join([f"bk{out_channel_idx[i]}," for i in range(nu-1)]
+                                +[f"bk{out_channel_idx[nu-1]}"]
+                                +[f"->bk{out_channel_idx[:nu]}"]
+                                ),
+                        *[c_tensor for _ in range(nu)])
 
-                c_tensor = torch.einsum("".join([f"bk{out_channel_idx[i]}," for i in range(nu-1)]
-                                                +[f"bk{out_channel_idx[nu-1]}"]
-                                                +[f"->bk{out_channel_idx[:nu]}"]
-                                                ),
-                                        *[c_tensor for _ in range(nu)])
+                else:
+                    if self.tensor_format == "non_symmetric_tucker":
+                        c_tensor = torch.einsum(f"ek{out_channel_idx[:nu]},be->bk{out_channel_idx[:nu]}", self.weights[self.correlation - nu - 1], y)
+                    elif self.tensor_format == "symmetric_tucker":
+                        c_tensor = torch.einsum("ekc,be->bkc", self.weights[self.correlation - nu - 1], y)
+                        # outer product to symmetrize tensor
+                        c_tensor = torch.einsum("".join([f"bk{out_channel_idx[i]}," for i in range(nu-1)]
+                                +[f"bk{out_channel_idx[nu-1]}"]
+                                +[f"->bk{out_channel_idx[:nu]}"]
+                                ),
+                        *[c_tensor for _ in range(nu)])
+
+                    
                 outs[nu] = torch.einsum(
                     "".join(
                         [f"b{out_channel_idx[:nu]}"]
@@ -376,10 +348,6 @@ class Contraction(torch.nn.Module):
                     outs[nu],
                     c_tensor,
                 )
-            # print("=== done linear")            
-            # for nu_ii in range(self.correlation, 0, -1):
-            #     print(f"outs{nu_ii}.shape", outs[nu_ii].shape)
-            
             for nu in range(self.correlation, 0, -1):
                 shape_outnu = [outs[nu].shape[0]] + [self.num_features] * nu
                 if irrep_out.lmax > 0:
