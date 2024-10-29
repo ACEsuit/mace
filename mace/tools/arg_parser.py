@@ -844,6 +844,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=123,
     )
+    parser.add_argument(
+        "--head_key",
+        help="Key of head in training xyz",
+        type=str,
+        default="head",
+    )
     return parser
 
 
