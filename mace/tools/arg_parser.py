@@ -196,6 +196,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "--head_emb_dim",
+        help="embedding dimension of the heads",
+        type=int,
+        default=None,  # recommended to be set to 8
+    )
     # add option to specify irreps by channel number and max L
     parser.add_argument(
         "--num_channels",

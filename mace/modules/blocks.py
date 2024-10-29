@@ -54,8 +54,14 @@ class LinearReadoutBlock(torch.nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        heads: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
+        node_heads_feats: Optional[
+            torch.Tensor
+        ] = None,  # pylint: disable=unused-argument
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        if node_heads_feats is not None:
+            return torch.einsum(
+                "...h, ...h->...", self.linear(x), node_heads_feats
+            ).unsqueeze(-1)
         return self.linear(x)  # [n_nodes, 1]
 
 
@@ -78,12 +84,13 @@ class NonLinearReadoutBlock(torch.nn.Module):
         self.linear_2 = o3.Linear(irreps_in=self.hidden_irreps, irreps_out=irrep_out)
 
     def forward(
-        self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, node_heads_feats: Optional[torch.Tensor] = None
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
-        if hasattr(self, "num_heads"):
-            if self.num_heads > 1 and heads is not None:
-                x = mask_head(x, heads, self.num_heads)
+        if node_heads_feats is not None:
+            return torch.einsum(
+                "...h, ...h->...", self.linear_2(x), node_heads_feats
+            ).unsqueeze(-1)
         return self.linear_2(x)  # [n_nodes, len(heads)]
 
 
