@@ -183,6 +183,7 @@ def test_multi_reference():
     forces_loaded = model_loaded(batch)["forces"]
     calc_foundation = mace_mp(device="cpu", default_dtype="float64")
     atoms = molecule("H2COH")
+    atoms.info["head"] = "MP2"
     atoms.calc = calc_foundation
     forces = atoms.get_forces()
     assert np.allclose(

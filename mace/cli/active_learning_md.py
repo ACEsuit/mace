@@ -149,8 +149,8 @@ def run(args: argparse.Namespace) -> None:
     atoms_index = args.config_index
 
     mace_calc = MACECalculator(
-        mace_fname,
-        args.device,
+        model_paths=mace_fname,
+        device=args.device,
         default_dtype=args.default_dtype,
     )
 

@@ -35,6 +35,7 @@ from mace.tools.multihead_tools import (
 )
 from mace.tools.scripts_utils import (
     LRScheduler,
+    check_path_ase_read,
     convert_to_json_format,
     create_error_table,
     dict_to_array,
@@ -206,10 +207,10 @@ def run(args: argparse.Namespace) -> None:
                     statistics["atomic_energies"]
                 )
         # Data preparation
-        if head_config.train_file.endswith(".xyz"):
+        if check_path_ase_read(head_config.train_file):
             if head_config.valid_file is not None:
-                assert head_config.valid_file.endswith(
-                    ".xyz"
+                assert check_path_ase_read(
+                    head_config.valid_file
                 ), "valid_file if given must be same format as train_file"
             config_type_weights = get_config_type_weights(
                 head_config.config_type_weights
@@ -234,7 +235,7 @@ def run(args: argparse.Namespace) -> None:
             )
         head_configs.append(head_config)
 
-    if all(head_config.train_file.endswith(".xyz") for head_config in head_configs):
+    if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
         size_collections_train = sum(
             len(head_config.collections.train) for head_config in head_configs
         )
@@ -257,7 +258,6 @@ def run(args: argparse.Namespace) -> None:
         args.loss = "universal"
         if (
             args.foundation_model in ["small", "medium", "large"]
-            or "mp" in args.foundation_model
             or args.pt_train_file is None
         ):
             logging.info(
@@ -323,7 +323,7 @@ def run(args: argparse.Namespace) -> None:
     # yapf: disable
     for head_config in head_configs:
         if head_config.atomic_numbers is None:
-            assert head_config.train_file.endswith(".xyz"), "Must specify atomic_numbers when using .h5 train_file input"
+            assert check_path_ase_read(head_config.train_file), "Must specify atomic_numbers when using .h5 train_file input"
             z_table_head = tools.get_atomic_number_table_from_zs(
                 z
                 for configs in (head_config.collections.train, head_config.collections.valid)
@@ -353,7 +353,8 @@ def run(args: argparse.Namespace) -> None:
     atomic_energies_dict = {}
     for head_config in head_configs:
         if head_config.atomic_energies_dict is None or len(head_config.atomic_energies_dict) == 0:
-            if head_config.train_file.endswith(".xyz") and head_config.E0s.lower() != "foundation":
+            assert head_config.E0s is not None, "Atomic energies must be provided"
+            if check_path_ase_read(head_config.train_file) and head_config.E0s.lower() != "foundation":
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(
                     head_config.E0s, head_config.collections.train, head_config.z_table
                 )
@@ -412,13 +413,16 @@ def run(args: argparse.Namespace) -> None:
         # )
         atomic_energies = dict_to_array(atomic_energies_dict, heads)
         for head_config in head_configs:
-            logging.info(f"Atomic Energies used (z: eV) for head {head_config.head_name}: " + "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}")
+            try:
+                logging.info(f"Atomic Energies used (z: eV) for head {head_config.head_name}: " + "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}")
+            except KeyError as e:
+                raise KeyError(f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number") from e
 
 
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
     for head_config in head_configs:
-        if head_config.train_file.endswith(".xyz"):
+        if check_path_ase_read(head_config.train_file):
             train_sets[head_config.head_name] = [
                 data.AtomicData.from_config(
                     config, z_table=z_table, cutoff=args.r_max, heads=heads
@@ -520,7 +524,7 @@ def run(args: argparse.Namespace) -> None:
     if args.ema:
         logging.info(f"Using Exponential Moving Average with decay: {args.ema_decay}")
     logging.info(
-        f"Number of gradient updates: {int(args.max_num_epochs*len(collections.train)/args.batch_size)}"
+        f"Number of gradient updates: {int(args.max_num_epochs*len(train_set)/args.batch_size)}"
     )
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
@@ -635,10 +639,8 @@ def run(args: argparse.Namespace) -> None:
     ) and head_configs[0].test_dir is not None:
         stop_first_test = True
     for head_config in head_configs:
-        if head_config.train_file.endswith(".xyz"):
-            print(head_config.test_file)
+        if check_path_ase_read(head_config.train_file):
             for name, subset in head_config.collections.tests:
-                print(name)
                 test_sets[name] = [
                     data.AtomicData.from_config(
                         config, z_table=z_table, cutoff=args.r_max, heads=heads
