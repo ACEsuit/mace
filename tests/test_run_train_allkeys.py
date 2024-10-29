@@ -32,11 +32,20 @@ _mace_params = {
     "amsgrad": None,
     "device": "cpu",
     "seed": 5,
-    "loss": "stress",
+    "loss": "weighted",
     "energy_key": "REF_energy",
     "forces_key": "REF_forces",
     "stress_key": "REF_stress",
+    "interaction_first": "RealAgnosticResidualInteractionBlock",
+    "batch_size": 1,
+    "valid_batch_size": 1,
+    "num_samples_pt": 50,
+    "subselect_pt": "random",
     "eval_interval": 2,
+    "num_radial_basis": 10,
+    "hidden_irreps": "128x0e",
+    "r_max": 6.0,
+    "default_dtype": "float64",
 }
 
 
@@ -324,9 +333,7 @@ def trial_yamls_and_and_expected():
 
     list_of_all = []
     for key, value in all_arg_sets.items():
-        print(key)
         for key2, value2 in value.items():
-            print("  ", key2)
             list_of_all.append(
                 (value2, (key, key2), np.asarray(all_expected_outputs[key][key2]))
             )
@@ -364,16 +371,6 @@ def test_key_specification_methods(
     mace_params["valid_fraction"] = 0.1
     mace_params["checkpoints_dir"] = str(tmp_path)
     mace_params["model_dir"] = str(tmp_path)
-    mace_params["loss"] = "weighted"
-    mace_params["hidden_irreps"] = "128x0e"
-    mace_params["r_max"] = 6.0
-    mace_params["default_dtype"] = "float64"
-    mace_params["num_radial_basis"] = 10
-    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
-    mace_params["batch_size"] = 1
-    mace_params["valid_batch_size"] = 1
-    mace_params["num_samples_pt"] = 50
-    mace_params["subselect_pt"] = "random"
     mace_params["train_file"] = "fit_multihead_dft.xyz"
     mace_params["E0s"] = "{1:0.0,8:1.0}"
     mace_params["valid_file"] = "duplicated_fit_multihead_dft.xyz"
@@ -408,12 +405,6 @@ def test_key_specification_methods(
             ]
         )
     )
-
-    if debug_test:
-        new_cmd = cmd.replace("--", "\n--")
-        print(f"calling run train with {name}")
-        print("command line args:\n", new_cmd)
-        print("config.yaml:\n", dict_to_yaml_str(yaml_contents), flush=True)
 
     p = subprocess.run(cmd.split(), env=run_env, cwd=tmp_path, check=True)
     assert p.returncode == 0

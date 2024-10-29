@@ -32,7 +32,7 @@ class SubsetCollection:
     tests: List[Tuple[str, data.Configurations]]
 
 
-def log_dataset_contents(dataset, dataset_name, keyspec):
+def log_dataset_contents(dataset: data.Configurations, dataset_name: str, keyspec: KeySpecification) -> None:
     all_property_names = list(keyspec.info_keys.keys()) + list(
         keyspec.arrays_keys.keys()
     )
