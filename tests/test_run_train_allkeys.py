@@ -22,8 +22,6 @@ _mace_params = {
     "stress_weight": 1.0,
     "model": "MACE",
     "hidden_irreps": "128x0e",
-    "r_max": 3.5,
-    "batch_size": 5,
     "max_num_epochs": 10,
     "swa": None,
     "start_swa": 5,
@@ -43,7 +41,6 @@ _mace_params = {
     "subselect_pt": "random",
     "eval_interval": 2,
     "num_radial_basis": 10,
-    "hidden_irreps": "128x0e",
     "r_max": 6.0,
     "default_dtype": "float64",
 }
@@ -359,7 +356,7 @@ _trial_yamls_and_and_expected = trial_yamls_and_and_expected()
     "yaml_contents, name, expected_value", _trial_yamls_and_and_expected
 )
 def test_key_specification_methods(
-    tmp_path, yaml_contents, name, expected_value, debug_test=False
+    tmp_path, yaml_contents, name, expected_value
 ):
     fitting_configs = configs_numbered_keys()
 
@@ -423,11 +420,10 @@ def test_key_specification_methods(
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    if debug_test:
-        return Es
+    print(name)
+    print("Es", Es)
 
     assert np.allclose(np.asarray(Es), expected_value)
-    return 0
 
 
 # for creating values
