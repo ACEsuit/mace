@@ -376,7 +376,10 @@ def test_run_train_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64", head="CCD"
+        model_paths=tmp_path / "MACE.model",
+        device="cpu",
+        default_dtype="float64",
+        head="CCD",
     )
 
     Es = []
@@ -718,7 +721,10 @@ def test_run_train_multihead_replay_custum_finetuning(
 
     # Load and test the finetuned model
     calc = MACECalculator(
-        model_paths=tmp_path / "finetuned.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "finetuned.model",
+        device="cpu",
+        default_dtype="float64",
+        head="pt_head",
     )
 
     Es = []
