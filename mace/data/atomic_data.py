@@ -43,6 +43,8 @@ class AtomicData(torch_geometric.data.Data):
     forces_weight: torch.Tensor
     stress_weight: torch.Tensor
     virials_weight: torch.Tensor
+    dipole_weight: torch.Tensor
+    charges_weight: torch.Tensor
 
     def __init__(
         self,

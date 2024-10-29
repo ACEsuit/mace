@@ -40,7 +40,7 @@ class KeySpecification:
         return self
 
 
-def update_keyspec_from_kwargs(keyspec, keydict) -> KeySpecification:
+def update_keyspec_from_kwargs(keyspec: KeySpecification, keydict:Dict[str, str]) -> KeySpecification:
     # convert command line style property_key arguments into a keyspec
     infos = ["energy_key", "stress_key", "virials_key", "dipole_key", "head_key"]
     arrays = ["forces_key", "charges_key"]
@@ -150,7 +150,7 @@ def config_from_atoms(
     properties = {}
     property_weights = {}
     for name in list(key_specification.arrays_keys) + list(key_specification.info_keys):
-        property_weights[name] = atoms.info.get("config_" + name + "_weight", 1.0)
+        property_weights[name] = atoms.info.get(f"config_{name}_weight", 1.0)
 
     for name, atoms_key in key_specification.info_keys.items():
         properties[name] = atoms.info.get(atoms_key, None)
