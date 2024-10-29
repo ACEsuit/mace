@@ -43,6 +43,33 @@ def fixture_fitting_configs():
     return fit_configs
 
 
+@pytest.fixture(name="pretraining_configs")
+def fixture_pretraining_configs():
+    configs = []
+    for _ in range(10):
+        atoms = Atoms(
+            numbers=[8, 1, 1],
+            positions=np.random.rand(3, 3) * 3,
+            cell=[5, 5, 5],
+            pbc=[True] * 3,
+        )
+        atoms.info["REF_energy"] = np.random.normal(0, 1)
+        atoms.arrays["REF_forces"] = np.random.normal(0, 1, size=(3, 3))
+        atoms.info["REF_stress"] = np.random.normal(0, 1, size=6)
+        configs.append(atoms)
+    configs.append(
+        Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3),
+    )
+    configs.append(
+        Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3)
+    )
+    configs[-2].info["REF_energy"] = -2.0
+    configs[-2].info["config_type"] = "IsolatedAtom"
+    configs[-1].info["REF_energy"] = -4.0
+    configs[-1].info["config_type"] = "IsolatedAtom"
+    return configs
+
+
 _mace_params = {
     "name": "MACE",
     "valid_fraction": 0.05,
@@ -100,7 +127,7 @@ def test_run_train(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
     Es = []
     for at in fitting_configs:
@@ -171,7 +198,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
     Es = []
     for at in fitting_configs:
@@ -242,7 +269,7 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
 
     Es = []
     for at in fitting_configs:
@@ -349,7 +376,7 @@ def test_run_train_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        tmp_path / "MACE.model", device="cpu", default_dtype="float64", head="CCD"
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64", head="CCD"
     )
 
     Es = []
@@ -427,7 +454,7 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
     )
 
     Es = []
@@ -539,7 +566,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     for at in fitting_configs:
         config_head = at.info.get("head", "MP2")
         calc = MACECalculator(
-            tmp_path / "MACE.model",
+            model_paths=tmp_path / "MACE.model",
             device="cpu",
             default_dtype="float64",
             head=config_head,
@@ -574,3 +601,134 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
         0.5574042201042175,
     ]
     assert np.allclose(Es, ref_Es, atol=1e-1)
+
+
+def test_run_train_multihead_replay_custum_finetuning(
+    tmp_path, fitting_configs, pretraining_configs
+):
+    ase.io.write(tmp_path / "pretrain.xyz", pretraining_configs)
+
+    foundation_params = {
+        "name": "foundation",
+        "train_file": os.path.join(tmp_path, "pretrain.xyz"),
+        "valid_fraction": 0.2,
+        "energy_weight": 1.0,
+        "forces_weight": 10.0,
+        "stress_weight": 1.0,
+        "model": "MACE",
+        "hidden_irreps": "32x0e",
+        "r_max": 5.0,
+        "batch_size": 2,
+        "max_num_epochs": 5,
+        "swa": None,
+        "start_swa": 3,
+        "device": "cpu",
+        "seed": 42,
+        "loss": "weighted",
+        "energy_key": "REF_energy",
+        "forces_key": "REF_forces",
+        "stress_key": "REF_stress",
+        "default_dtype": "float64",
+        "checkpoints_dir": str(tmp_path),
+        "model_dir": str(tmp_path),
+    }
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    cmd = [sys.executable, str(run_train)]
+    for k, v in foundation_params.items():
+        if v is None:
+            cmd.append(f"--{k}")
+        else:
+            cmd.append(f"--{k}={v}")
+
+    p = subprocess.run(cmd, env=run_env, check=True)
+    assert p.returncode == 0
+
+    # Step 3: Create finetuning set
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
+    for i, c in enumerate(fitting_configs):
+        if i in (0, 1):
+            c_dft = c.copy()
+            c_dft.info["head"] = "DFT"
+            fitting_configs_dft.append(c_dft)
+            fitting_configs_dft.append(c)
+            c_mp2 = c.copy()
+            c_mp2.info["head"] = "MP2"
+            fitting_configs_mp2.append(c_mp2)
+        elif i % 2 == 0:
+            c.info["head"] = "DFT"
+            fitting_configs_dft.append(c)
+        else:
+            c.info["head"] = "MP2"
+            fitting_configs_mp2.append(c)
+    ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
+
+    # Step 4: Finetune the pretrained model with multihead replay
+    heads = {
+        "DFT": {"train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz"},
+        "MP2": {"train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz"},
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    filename = tmp_path / "config.yaml"
+    with open(filename, "w", encoding="utf-8") as file:
+        file.write(yaml_str)
+
+    finetuning_params = {
+        "name": "finetuned",
+        "valid_fraction": 0.1,
+        "energy_weight": 1.0,
+        "forces_weight": 10.0,
+        "stress_weight": 1.0,
+        "model": "MACE",
+        "hidden_irreps": "32x0e",
+        "r_max": 5.0,
+        "batch_size": 2,
+        "max_num_epochs": 5,
+        "device": "cpu",
+        "seed": 42,
+        "loss": "weighted",
+        "default_dtype": "float64",
+        "checkpoints_dir": str(tmp_path),
+        "model_dir": str(tmp_path),
+        "foundation_model": os.path.join(tmp_path, "foundation.model"),
+        "config": os.path.join(tmp_path, "config.yaml"),
+        "pt_train_file": os.path.join(tmp_path, "pretrain.xyz"),
+        "num_samples_pt": 3,
+        "subselect_pt": "random",
+    }
+
+    cmd = [sys.executable, str(run_train)]
+    for k, v in finetuning_params.items():
+        if v is None:
+            cmd.append(f"--{k}")
+        else:
+            cmd.append(f"--{k}={v}")
+
+    p = subprocess.run(cmd, env=run_env, check=True)
+    assert p.returncode == 0
+
+    # Load and test the finetuned model
+    calc = MACECalculator(
+        model_paths=tmp_path / "finetuned.model", device="cpu", default_dtype="float64"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Energies:", Es)
+
+    # Add some basic checks
+    assert len(Es) == len(fitting_configs)
+    assert all(isinstance(E, float) for E in Es)
+    assert len(set(Es)) > 1  # Ens

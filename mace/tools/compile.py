@@ -36,7 +36,7 @@ def prepare(func: ModuleFactory, allow_autograd: bool = True) -> ModuleFactory:
     """
     if allow_autograd:
         dynamo.allow_in_graph(autograd.grad)
-    elif dynamo.allowed_functions.is_allowed(autograd.grad):
+    else:
         dynamo.disallow_in_graph(autograd.grad)
 
     @wraps(func)
