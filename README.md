@@ -315,7 +315,7 @@ We are happy to accept pull requests under an [MIT license](https://choosealicen
 
 If you use this code, please cite our papers:
 
-```text
+```bibtex
 @inproceedings{Batatia2022mace,
   title={{MACE}: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields},
   author={Ilyes Batatia and David Peter Kovacs and Gregor N. C. Simm and Christoph Ortner and Gabor Csanyi},
