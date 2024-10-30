@@ -746,6 +746,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--work_dir",
+        help="set directory for all files and folders",
+        type=str,
+        default=".",
+    )
+    parser.add_argument(
         "--h5_prefix",
         help="Prefix for h5 files when saving",
         type=str,
