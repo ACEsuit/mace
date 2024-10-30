@@ -10,7 +10,7 @@ import os
 import hostlist
 
 
-class DistributedEnvironment:
+class DistributedEnvironmentSlurm:
     def __init__(self):
         self._setup_distr_env()
         self.master_addr = os.environ["MASTER_ADDR"]
@@ -32,3 +32,10 @@ class DistributedEnvironment:
         )
         os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
         os.environ["RANK"] = os.environ["SLURM_PROCID"]
+
+
+class DistributedEnvironmentOpenmpi:
+    def __init__(self):
+        self.world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
+        self.local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
+        self.rank = int(os.environ["OMPI_COMM_WORLD_RANK"])

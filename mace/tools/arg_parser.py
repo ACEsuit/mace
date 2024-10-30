@@ -76,6 +76,21 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--distributed_backend",
+        help="PyTorch distributed backend",
+        type=str,
+        choices=["nccl", "gloo", "mpi"],
+        default="nccl",
+    )
+    parser.add_argument(
+        "--distributed_env",
+        help="The parallel environment to use for distributed training",
+        type=str,
+        choices=["slurm", "openmpi"],
+        default="slurm",
+    )
+
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
     parser.add_argument(
