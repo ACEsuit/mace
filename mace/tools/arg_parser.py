@@ -21,7 +21,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "--config",
             type=str,
             is_config_file=True,
-            help="config file to agregate options",
+            help="config file to aggregate options",
         )
     except ImportError:
         parser = argparse.ArgumentParser(
@@ -725,7 +725,7 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
             "--config",
             type=str,
             is_config_file=True,
-            help="config file to agregate options",
+            help="config file to aggregate options",
         )
     except ImportError:
         parser = argparse.ArgumentParser(
