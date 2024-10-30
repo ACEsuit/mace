@@ -251,6 +251,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=["symmetric_cp",
                  "non_symmetric_cp",
                  "symmetric_tucker",
+                 "non_symmetric_tucker",
                 ]
     )
     

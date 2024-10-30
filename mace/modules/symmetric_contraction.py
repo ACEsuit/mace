@@ -322,7 +322,7 @@ class Contraction(torch.nn.Module):
                                 +[f"bk{out_channel_idx[nu-1]}"]
                                 +[f"->bk{out_channel_idx[:nu]}"]
                                 ),
-                        *[c_tensor for _ in range(nu)])
+                        *[c_tensor for _ in range(nu)]) / torch.jit._builtins.math.factorial(nu)
 
                 else:
                     if self.tensor_format == "non_symmetric_tucker":
@@ -334,7 +334,7 @@ class Contraction(torch.nn.Module):
                                 +[f"bk{out_channel_idx[nu-1]}"]
                                 +[f"->bk{out_channel_idx[:nu]}"]
                                 ),
-                        *[c_tensor for _ in range(nu)])
+                        *[c_tensor for _ in range(nu)]) / torch.jit._builtins.math.factorial(nu)
 
                     
                 outs[nu] = torch.einsum(
@@ -357,6 +357,7 @@ class Contraction(torch.nn.Module):
                 # reshape kLM
                 outs[nu] = outs[nu].reshape(outs[nu].shape[0], -1)
 
+            # / factorial(nu) because of extra work done for convenience
             return torch.cat([outs[nu] for nu in range(self.correlation, 0, -1)], dim = 1)
 
         elif "cp" in self.tensor_format:

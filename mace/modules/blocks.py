@@ -694,12 +694,12 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             self.reshape = reshape_irreps(self.irreps_out)
 
         elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker"]:
-            self.linear = []
+            self.linear = torch.nn.ModuleList([])
             # Selector TensorProduct
             self.skip_tp = o3.FullyConnectedTensorProduct(
                 self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
             )
-            self.reshape = []
+            self.reshape = torch.nn.ModuleList([])
             for _ in range(self.correlation):
                 self.linear.append(o3.Linear(
                     irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
@@ -744,7 +744,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
                 message = torch.cat((message, _message), dim = -1)
             print("shape of message: ", message.shape)
             return (
-                message, 
+                message / self.avg_num_neighbors, 
                 sc
             )
                 
