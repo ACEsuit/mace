@@ -15,11 +15,11 @@ from .blocks import (
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     RealAgnosticAttResidualInteractionBlock,
+    RealAgnosticDensityInteractionBlock,
+    RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
     ResidualElementDependentInteractionBlock,
-    RealAgnosticDensityResidualInteractionBlock,
-    RealAgnosticDensityInteractionBlock,
     ScaleShiftBlock,
 )
 from .loss import (
