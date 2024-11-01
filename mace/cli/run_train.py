@@ -653,7 +653,6 @@ def run(args: argparse.Namespace) -> None:
                         folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
         for test_name, test_set in test_sets.items():
-            print(test_name)
             test_sampler = None
             if args.distributed:
                 test_sampler = torch.utils.data.distributed.DistributedSampler(
