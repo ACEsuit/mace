@@ -83,6 +83,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Type of error table produced at the end of the training",
         type=str,
         choices=[
+            "AtomicTargetsPerAtomRMSE",
             "PerAtomRMSE",
             "TotalRMSE",
             "PerAtomRMSEstressvirials",
@@ -108,6 +109,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
             "EnergyDipolesMACE",
+            "AtomicTargetsMACE",
         ],
     )
     parser.add_argument(
@@ -427,6 +429,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="REF_charges",
     )
+    parser.add_argument(
+        "--atomic_targets_key",
+        help="Key of atomic targets in training xyz",
+        type=str,
+        default="REF_atomic_targets",
+    )
 
     # Loss and optimization
     parser.add_argument(
@@ -443,6 +451,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "huber",
             "universal",
             "energy_forces_dipole",
+            "atomic_targets",
         ],
     )
     parser.add_argument(
@@ -791,6 +800,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="Key of atomic charges in training xyz",
         type=str,
         default="REF_charges",
+    )
+    parser.add_argument(
+        "--atomic_targets_key",
+        help="Key of atomic targets in training xyz",
+        type=str,
+        default="REF_atomic_targets",
     )
     parser.add_argument(
         "--atomic_numbers",

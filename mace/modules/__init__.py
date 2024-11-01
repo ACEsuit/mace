@@ -29,10 +29,12 @@ from .loss import (
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
+    AtomicTargetsLoss
 )
 from .models import (
     MACE,
     AtomicDipolesMACE,
+    AtomicTargetsMACE,
     BOTNet,
     EnergyDipolesMACE,
     ScaleShiftBOTNet,
@@ -45,6 +47,7 @@ from .utils import (
     compute_fixed_charge_dipole,
     compute_mean_rms_energy_forces,
     compute_mean_std_atomic_inter_energy,
+    compute_mean_std_atomic_targets,
     compute_rms_dipoles,
     compute_statistics,
 )
@@ -62,6 +65,7 @@ scaling_classes: Dict[str, Callable] = {
     "std_scaling": compute_mean_std_atomic_inter_energy,
     "rms_forces_scaling": compute_mean_rms_energy_forces,
     "rms_dipoles_scaling": compute_rms_dipoles,
+    "atomic_targets_std_scaling": compute_mean_std_atomic_targets,
 }
 
 gate_dict: Dict[str, Optional[Callable]] = {
@@ -91,6 +95,7 @@ __all__ = [
     "BOTNet",
     "ScaleShiftBOTNet",
     "AtomicDipolesMACE",
+    "AtomicTargetsMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
@@ -100,9 +105,11 @@ __all__ = [
     "WeightedEnergyForcesDipoleLoss",
     "WeightedHuberEnergyForcesStressLoss",
     "UniversalLoss",
+    "AtomicTargetsLoss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
+    "compute_mean_std_atomic_targets",
     "compute_avg_num_neighbors",
     "compute_statistics",
     "compute_fixed_charge_dipole",

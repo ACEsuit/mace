@@ -62,6 +62,11 @@ def valid_err_log(
         logging.info(
             f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_E_per_atom={error_e:8.1f} meV, RMSE_F={error_f:8.1f} meV / A"
         )
+    elif log_errors == "AtomicTargetsPerAtomRMSE":
+        error_atom_targets = eval_metrics["rmse_atomic_target_per_atom"] * 1e3
+        logging.info(
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.4f}, RMSE_atomic_target_per_atom={error_atom_targets:8.1f}"
+        )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
         and eval_metrics["rmse_stress"] is not None
@@ -187,6 +192,7 @@ def train(
             output_args=output_args,
             device=device,
         )
+        print(eval_metrics)
         valid_err_log(
             valid_loss_head, eval_metrics, logger, log_errors, None, valid_loader_name
         )
@@ -452,6 +458,10 @@ class MACELoss(Metric):
         self.add_state("mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("AtomicTargets_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("atomic_targets", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_atomic_targets", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_atomic_targets_per_atom", default=[], dist_reduce_fx="cat")
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
@@ -486,6 +496,17 @@ class MACELoss(Metric):
                 (batch.dipole - output["dipole"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
+        if output.get("atomic_targets") is not None and batch.atomic_targets is not None:
+            self.AtomicTargets_computed += 1.0
+            self.atomic_targets.append(batch.atomic_targets)
+            self.delta_atomic_targets.append(batch.atomic_targets - output["atomic_targets"])
+
+            for i in range(len(batch.ptr)-1):
+                config_delta = batch.atomic_targets[batch.ptr[i]:batch.ptr[i+1]] - output["atomic_targets"][batch.ptr[i]:batch.ptr[i+1]]
+                num_atoms = batch.ptr[i+1] - batch.ptr[i]
+                self.delta_atomic_targets_per_atom.append(
+                    config_delta / num_atoms
+                )
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):
@@ -534,5 +555,15 @@ class MACELoss(Metric):
             aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
             aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
             aux["q95_mu"] = compute_q95(delta_mus)
+        if self.AtomicTargets_computed:
+            atomic_targets = self.convert(self.atomic_targets)
+            delta_atomic_targets = self.convert(self.delta_atomic_targets)
+            delta_atomic_targets_per_atom = self.convert(self.delta_atomic_targets_per_atom)
+            aux["mae_atomic_target"] = compute_mae(delta_atomic_targets)
+            aux["mae_atomic_target_per_atom"] = compute_mae(delta_atomic_targets_per_atom)
+            aux["rmse_atomic_target"] = compute_rmse(delta_atomic_targets)
+            aux["rmse_atomic_target_per_atom"] = compute_rmse(delta_atomic_targets_per_atom)
+            aux["rel_rmse_atomic_target"] = compute_rel_rmse(delta_atomic_targets, atomic_targets)
+            aux["q95_atomic_target"] = compute_q95(delta_atomic_targets)
 
         return aux["loss"], aux

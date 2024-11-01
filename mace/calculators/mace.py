@@ -104,6 +104,8 @@ class MACECalculator(Calculator):
                 "stress",
                 "dipole",
             ]
+        elif model_type == "AtomicTargetMACE":
+            self.implemented_properties = ["atomic_targets"]
         else:
             raise ValueError(
                 f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
@@ -150,6 +152,8 @@ class MACECalculator(Calculator):
                 )
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
+            elif mode_type == "AtomicTargetMACE":
+                self.implemented_properties.extend(["atomic_targets_var"])
 
         if compile_mode is not None:
             print(f"Torch compile is enabled with mode: {compile_mode}")
@@ -232,6 +236,9 @@ class MACECalculator(Calculator):
         if model_type in ["EnergyDipoleMACE", "DipoleMACE"]:
             dipole = torch.zeros(num_models, 3, device=self.device)
             dict_of_tensors.update({"dipole": dipole})
+        if model_type == "AtomicTargetMACE":
+            atomic_targets = torch.zeros(num_models, num_atoms, device=self.device)
+            dict_of_tensors.update({"atomic_targets": atomic_targets})
         return dict_of_tensors
 
     def _atoms_to_batch(self, atoms):
@@ -299,6 +306,8 @@ class MACECalculator(Calculator):
                     ret_tensors["stress"][i] = out["stress"].detach()
             if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
                 ret_tensors["dipole"][i] = out["dipole"].detach()
+            if self.model_type == "AtomicTargetMACE":
+                ret_tensors["atomic_targets"][i] = out["atomic_targets"].detach()
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
@@ -351,6 +360,16 @@ class MACECalculator(Calculator):
             if self.num_models > 1:
                 self.results["dipole_var"] = (
                     torch.var(ret_tensors["dipole"], dim=0, unbiased=False)
+                    .cpu()
+                    .numpy()
+                )
+        if self.model_type == "AtomicTargetMACE":
+            self.results["atomic_targets"] = (
+                torch.mean(ret_tensors["atomic_targets"], dim=0).cpu().numpy()
+            )
+            if self.num_models > 1:
+                self.results["atomic_targets_var"] = (
+                    torch.var(ret_tensors["atomic_targets"], dim=0, unbiased=False)
                     .cpu()
                     .numpy()
                 )

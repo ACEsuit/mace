@@ -21,6 +21,7 @@ Forces = np.ndarray  # [..., 3]
 Stress = np.ndarray  # [6, ], [3,3], [9, ]
 Virials = np.ndarray  # [6, ], [3,3], [9, ]
 Charges = np.ndarray  # [..., 1]
+AtomicTargets = np.ndarray  # [..., 1]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
 
@@ -38,6 +39,7 @@ class Configuration:
     virials: Optional[Virials] = None  # eV
     dipole: Optional[Vector] = None  # Debye
     charges: Optional[Charges] = None  # atomic unit
+    atomic_targets: Optional[AtomicTargets] = None
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
@@ -92,6 +94,7 @@ def config_from_atoms_list(
     virials_key="REF_virials",
     dipole_key="REF_dipole",
     charges_key="REF_charges",
+    atomic_targets_key="REF_atomic_targets",
     head_key="head",
     config_type_weights: Optional[Dict[str, float]] = None,
 ) -> Configurations:
@@ -110,6 +113,7 @@ def config_from_atoms_list(
                 virials_key=virials_key,
                 dipole_key=dipole_key,
                 charges_key=charges_key,
+                atomic_targets_key=atomic_targets_key,
                 head_key=head_key,
                 config_type_weights=config_type_weights,
             )
@@ -125,6 +129,7 @@ def config_from_atoms(
     virials_key="REF_virials",
     dipole_key="REF_dipole",
     charges_key="REF_charges",
+    atomic_targets_key="REF_atomic_targets",
     head_key="head",
     config_type_weights: Optional[Dict[str, float]] = None,
 ) -> Configuration:
@@ -139,6 +144,8 @@ def config_from_atoms(
     dipole = atoms.info.get(dipole_key, None)  # Debye
     # Charges default to 0 instead of None if not found
     charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
+    # Atomic targets default to 0 instead of None if not found
+    atomic_targets = atoms.arrays.get(atomic_targets_key, np.zeros(len(atoms)))
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -181,6 +188,7 @@ def config_from_atoms(
         virials=virials,
         dipole=dipole,
         charges=charges,
+        atomic_targets=atomic_targets,
         weight=weight,
         head=head,
         energy_weight=energy_weight,
@@ -219,6 +227,7 @@ def load_from_xyz(
     virials_key: str = "REF_virials",
     dipole_key: str = "REF_dipole",
     charges_key: str = "REF_charges",
+    atomic_targets_key: str = "REF_atomic_targets",
     head_key: str = "head",
     head_name: str = "Default",
     extract_atomic_energies: bool = False,
@@ -297,6 +306,7 @@ def load_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        atomic_targets_key=atomic_targets_key,
         head_key=head_key,
     )
     return atomic_energies_dict, configs
@@ -331,6 +341,32 @@ def compute_average_E0s(
             atomic_energies_dict[z] = 0.0
     return atomic_energies_dict
 
+def compute_average_atomic_targets(
+    collections_train: Configurations, z_table: AtomicNumberTable,
+) -> Tuple[Dict[int, float], float]:
+    """
+    Function to compute the average node target and node std of each chemical element
+    returns a dictionary with averages and a float scale
+    """
+    len_train = len(collections_train)
+    len_zs = len(z_table)
+    elementwise_targets = {}
+    for i in range(len_train):
+        for j in range(len(collections_train[i].atomic_numbers)):
+            z = collections_train[i].atomic_numbers[j]
+            if z not in elementwise_targets.keys():
+                elementwise_targets[z] = []
+            elementwise_targets[z].append(collections_train[i].atomic_targets[j])
+
+
+    atomic_energies_dict = {}
+    atomic_scales = []
+    for i, z in enumerate(z_table.zs):
+        atomic_energies_dict[z] = np.mean(elementwise_targets[z])
+        atomic_scales.append((len(elementwise_targets[z]), np.std(elementwise_targets[z])))
+    # compute weighted average of scales with tuple element 0 ebing the weight and element 1 the value to average
+    scale = np.average([x[1] for x in atomic_scales], weights=[x[0] for x in atomic_scales])
+    return atomic_energies_dict #, scale
 
 def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
     with h5py.File(out_name, "w") as f:

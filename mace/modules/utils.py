@@ -250,6 +250,29 @@ def extract_invariant(x: torch.Tensor, num_layers: int, num_features: int, l_max
     out.append(x[:, -num_features:])
     return torch.cat(out, dim=-1)
 
+def compute_mean_std_atomic_targets(
+    data_loader: torch.utils.data.DataLoader,
+    z_table
+) -> Tuple[float, float]:
+
+    elementwise_targets = {}
+    for batch in data_loader:
+        for i, z in enumerate(z_table.zs):
+            z_targets = batch.atomic_targets[batch.node_attrs.bool()[:,i]]
+            if z not in elementwise_targets.keys():
+                elementwise_targets[z] = []
+            elementwise_targets[z].append(z_targets)
+
+    atomic_energies_dict = {}
+    atomic_scales = []
+    for z in elementwise_targets.keys():
+        elementwise_targets[z] = torch.cat(elementwise_targets[z], dim=0)
+        atomic_energies_dict[z] = torch.mean(elementwise_targets[z])
+        atomic_scales.append((len(elementwise_targets[z]), torch.std(elementwise_targets[z])))
+    # compute weighted average of scales with tuple element 0 ebing the weight and element 1 the value to average
+    scale = np.average([x[1] for x in atomic_scales], weights=[x[0] for x in atomic_scales])
+
+    return atomic_energies_dict, scale
 
 def compute_mean_std_atomic_inter_energy(
     data_loader: torch.utils.data.DataLoader,
