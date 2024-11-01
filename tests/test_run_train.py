@@ -601,7 +601,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
 
-def test_run_train_foundation_multihead(tmp_path, fitting_configs):
+def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
     for i, c in enumerate(fitting_configs):
