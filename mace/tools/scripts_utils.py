@@ -628,7 +628,7 @@ def custom_key(key):
 
 def dict_to_array(input_data, heads):
     if not all(isinstance(value, dict) for value in input_data.values()):
-        return np.array(list(input_data.values()))
+        return np.array([[input_data[head]] for head in heads])
     unique_keys = set()
     for inner_dict in input_data.values():
         unique_keys.update(inner_dict.keys())
@@ -640,7 +640,7 @@ def dict_to_array(input_data, heads):
             key_index = sorted_keys.index(int(key))
             head_index = heads.index(head_name)
             result_array[head_index][key_index] = value
-    return np.squeeze(result_array)
+    return result_array
 
 
 class LRScheduler:
