@@ -557,6 +557,26 @@ def get_params_options(
         amsgrad=args.amsgrad,
         betas=(args.beta, 0.999),
     )
+
+    if hasattr(model, "head_embedding"):
+        param_options["params"].append(
+            {
+                "name": "head_embedding",
+                "params": model.head_embedding.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+
+    model_params = set(model.parameters())
+    optimizer_params = set()
+    for group in param_options["params"]:
+        optimizer_params.update(group["params"])
+
+    missing_params = model_params - optimizer_params
+    if missing_params:
+        raise ValueError(
+            f"Found {len(missing_params)} parameters not included in optimizer groups!"
+        )
     return param_options
 
 
