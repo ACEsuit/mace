@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
@@ -12,6 +14,14 @@ from mace.tools import torch_geometric
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.utils import AtomicNumberTable
+
+MODEL_PATH = (
+    Path(__file__).parent.parent
+    / "mace"
+    / "calculators"
+    / "foundations_models"
+    / "2023-12-03-mace-mp.model"
+)
 
 torch.set_default_dtype(torch.float64)
 config = data.Configuration(
@@ -172,9 +182,11 @@ def test_multi_reference():
         mace_mp(model="small", device="cpu", default_dtype="float64").models[0],
         mace_mp(model="medium", device="cpu", default_dtype="float64").models[0],
         mace_mp(model="large", device="cpu", default_dtype="float64").models[0],
+        mace_mp(model=MODEL_PATH, device="cpu", default_dtype="float64").models[0],
         mace_off(model="small", device="cpu", default_dtype="float64").models[0],
         mace_off(model="medium", device="cpu", default_dtype="float64").models[0],
         mace_off(model="large", device="cpu", default_dtype="float64").models[0],
+        mace_off(model=MODEL_PATH, device="cpu", default_dtype="float64").models[0],
     ],
 )
 def test_extract_config(model):
