@@ -629,7 +629,7 @@ def custom_key(key):
 def dict_to_array(input_data, heads):
     if all(isinstance(value, np.ndarray) for value in input_data.values()):
         return np.array([input_data[head] for head in heads])
-    elif not all(isinstance(value, dict) for value in input_data.values()):
+    if not all(isinstance(value, dict) for value in input_data.values()):
         return np.array([[input_data[head]] for head in heads])
     unique_keys = set()
     for inner_dict in input_data.values():

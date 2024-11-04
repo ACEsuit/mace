@@ -353,12 +353,18 @@ def run(args: argparse.Namespace) -> None:
                 z_table_foundation = AtomicNumberTable(
                     [int(z) for z in model_foundation.atomic_numbers]
                 )
+                foundation_atomic_energies = model_foundation.atomic_energies_fn.atomic_energies
+                if foundation_atomic_energies.ndim > 1:
+                    foundation_atomic_energies = foundation_atomic_energies.squeeze()
+                    if foundation_atomic_energies.ndim == 2:
+                        foundation_atomic_energies = foundation_atomic_energies[0]
+                        logging.info("Foundation model has multiple heads, using the first head as foundation E0s.")
                 atomic_energies_dict[head_config.head_name] = {
-                    z: model_foundation.atomic_energies_fn.atomic_energies[
+                    z: foundation_atomic_energies[
                         z_table_foundation.z_to_index(z)
                     ].item()
                     for z in z_table.zs
-                }
+                }         
             else:
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(head_config.E0s, None, head_config.z_table)
         else:
@@ -372,8 +378,14 @@ def run(args: argparse.Namespace) -> None:
         z_table_foundation = AtomicNumberTable(
             [int(z) for z in model_foundation.atomic_numbers]
         )
+        foundation_atomic_energies = model_foundation.atomic_energies_fn.atomic_energies
+        if foundation_atomic_energies.ndim > 1:
+            foundation_atomic_energies = foundation_atomic_energies.squeeze()
+            if foundation_atomic_energies.ndim == 2:
+                foundation_atomic_energies = foundation_atomic_energies[0]
+                logging.info("Foundation model has multiple heads, using the first head as foundation E0s.")
         atomic_energies_dict["pt_head"] = {
-            z: model_foundation.atomic_energies_fn.atomic_energies[
+            z: foundation_atomic_energies[
                 z_table_foundation.z_to_index(z)
             ].item()
             for z in z_table.zs
