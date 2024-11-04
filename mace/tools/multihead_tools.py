@@ -32,6 +32,7 @@ class HeadConfig:
     virials_key: Optional[str] = None
     dipole_key: Optional[str] = None
     charges_key: Optional[str] = None
+    atomic_targets_key: Optional[str] = None
     keep_isolated_atoms: Optional[bool] = None
     atomic_numbers: Optional[Union[List[int], List[str]]] = None
     mean: Optional[float] = None
@@ -42,6 +43,7 @@ class HeadConfig:
     train_loader: torch.utils.data.DataLoader = None
     z_table: Optional[Any] = None
     atomic_energies_dict: Optional[Dict[str, float]] = None
+    atomic_targets_dict: Optional[Dict[str, float]] = None
 
 
 def dict_head_to_dataclass(
@@ -71,6 +73,7 @@ def dict_head_to_dataclass(
         virials_key=head.get("virials_key", args.virials_key),
         dipole_key=head.get("dipole_key", args.dipole_key),
         charges_key=head.get("charges_key", args.charges_key),
+        atomic_targets_key=head.get("atomic_targets_key", args.atomic_targets_key),
         keep_isolated_atoms=head.get("keep_isolated_atoms", args.keep_isolated_atoms),
     )
 
@@ -92,6 +95,7 @@ def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
             "virials_key": args.virials_key,
             "dipole_key": args.dipole_key,
             "charges_key": args.charges_key,
+            "atomic_targets_key": args.atomic_targets_key,
             "keep_isolated_atoms": args.keep_isolated_atoms,
         }
     }
@@ -176,6 +180,7 @@ def assemble_mp_data(
             virials_key=args.virials_key,
             dipole_key=args.dipole_key,
             charges_key=args.charges_key,
+            atomic_targets_key=args.atomic_targets_key,
             keep_isolated_atoms=args.keep_isolated_atoms,
         )
         return collections_mp

@@ -48,6 +48,7 @@ def get_dataset_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
+    atomic_targets_key: str = "atomic_targets",
     head_key: str = "head",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
@@ -60,6 +61,7 @@ def get_dataset_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        atomic_targets_key=atomic_targets_key,
         head_key=head_key,
         extract_atomic_energies=True,
         keep_isolated_atoms=keep_isolated_atoms,
@@ -78,6 +80,7 @@ def get_dataset_from_xyz(
             virials_key=virials_key,
             dipole_key=dipole_key,
             charges_key=charges_key,
+            atomic_targets_key=atomic_targets_key,
             head_key=head_key,
             extract_atomic_energies=False,
             head_name=head_name,
@@ -105,6 +108,7 @@ def get_dataset_from_xyz(
             stress_key=stress_key,
             virials_key=virials_key,
             charges_key=charges_key,
+            atomic_targets_key=atomic_targets_key,
             head_key=head_key,
             extract_atomic_energies=False,
             head_name=head_name,
@@ -351,6 +355,18 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
         )
     return atomic_energies_dict
 
+def get_atomic_targets(train_collection, z_table) -> Tuple[Dict, float]:
+    # catch if colections.train not defined above
+    try:
+        assert train_collection is not None
+        atomic_targets_dict = data.compute_average_atomic_targets(
+            train_collection, z_table
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Could not compute average atomic targets if no training xyz given, error {e} occured"
+        ) from e
+    return atomic_targets_dict
 
 def get_avg_num_neighbors(head_configs, args, train_loader, device):
     if all(head_config.compute_avg_num_neighbors for head_config in head_configs):
@@ -387,6 +403,7 @@ def get_avg_num_neighbors(head_configs, args, train_loader, device):
 def get_loss_fn(
     args: argparse.Namespace,
     dipole_only: bool,
+    targets_only: bool,
     compute_dipole: bool,
 ) -> torch.nn.Module:
     if args.loss == "weighted":
@@ -434,6 +451,11 @@ def get_loss_fn(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             dipole_weight=args.dipole_weight,
+        )
+    elif args.loss == "atomic_targets":
+        assert dipole_only is False and targets_only is True
+        loss_fn = modules.AtomicTargetsLoss(
+            huber_delta=args.huber_delta,
         )
     else:
         loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
@@ -707,6 +729,12 @@ def create_error_table(
             "RMSE F / meV / A",
             "relative F RMSE %",
         ]
+    elif table_type == "AtomicTargetsPerAtomRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE Target / atom",
+            "relative Target RMSE %",
+        ]
     elif table_type == "PerAtomRMSEstressvirials":
         table.field_names = [
             "config_type",
@@ -799,6 +827,14 @@ def create_error_table(
                     f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
                     f"{metrics['rmse_f'] * 1000:8.1f}",
                     f"{metrics['rel_rmse_f']:8.2f}",
+                ]
+            )
+        elif table_type == "AtomicTargetsPerAtomRMSE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_atomic_target_per_atom'] * 1000:8.1f}",
+                    f"{metrics['rel_rmse_atomic_target']:8.2f}",
                 ]
             )
         elif (
