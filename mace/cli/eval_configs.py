@@ -16,7 +16,9 @@ from mace.tools import torch_geometric, torch_tools, utils
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--configs", help="path to XYZ configurations", required=True)
     parser.add_argument("--model", help="path to model", required=True)
     parser.add_argument("--output", help="output path", required=True)
