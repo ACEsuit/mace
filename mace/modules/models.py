@@ -132,7 +132,6 @@ class MACE(torch.nn.Module):
             use_sc_first = True
 
         node_feats_irreps_out = inter.target_irreps
-        print(node_feats_irreps_out)
         prod = EquivariantProductBasisBlock(
             node_feats_irreps=node_feats_irreps_out,
             target_irreps=hidden_irreps,
@@ -149,7 +148,7 @@ class MACE(torch.nn.Module):
             self.readouts.append(
                 LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
             )
-        elif tensor_format in ["symmetric_tucker", "non_symmetric_tucker"]:
+        elif tensor_format in ["symmetric_tucker", "non_symmetric_tucker", "flexible_symmetric_tucker"]:
             self.readouts.append(
                 #LinearReadoutBlock(make_tp_irreps(hidden_irreps, correlation[0]), o3.Irreps(f"{len(heads)}x0e"))
                 LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))

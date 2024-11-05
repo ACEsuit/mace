@@ -8,6 +8,7 @@ from abc import abstractmethod
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
+import math
 import torch.nn.functional
 from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
@@ -21,7 +22,8 @@ from .irreps_tools import (
     reshape_irreps,
     tp_out_irreps_with_instructions,
     make_tp_irreps,
-    make_tucker_irreps
+    make_tucker_irreps,
+    make_tucker_irreps_flexible
 )
 from .radial import (
     AgnesiTransform,
@@ -242,7 +244,7 @@ class TensorFormatBlock(torch.nn.Module):
 
     def forward(self, message) -> torch.Tensor:
         batch_size, dim, features = message.shape
-        if self.tensor_format in ["symmetric_cp", "symmetric_tucker"]:
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker", "flexible_symmetric_tucker"]:
             return message
         elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker"]:
             return message
@@ -277,8 +279,13 @@ class EquivariantProductBasisBlock(torch.nn.Module):
                 internal_weights=True,
                 shared_weights=True,
             )
-        elif tensor_format in ["symmetric_tucker", "non_symmetric_tucker"]:
-            tucker_irreps = make_tucker_irreps(target_irreps, correlation)
+        elif tensor_format in ["flexible_symmetric_tucker", "symmetric_tucker", "non_symmetric_tucker"]:
+            if tensor_format == "flexible_symmetric_tucker":
+                tucker_irreps = make_tucker_irreps_flexible(target_irreps, correlation)
+            else:
+                tucker_irreps = make_tucker_irreps(target_irreps, correlation)
+            print("tucker irreps:", tucker_irreps)
+            print("target irreps:", target_irreps)
             self.linear = o3.Linear(
                     tucker_irreps,
                     target_irreps,
@@ -293,7 +300,6 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         node_attrs: torch.Tensor,
     ) -> torch.Tensor:
         node_feats = self.symmetric_contractions(node_feats, node_attrs)
-        print("shape after symmstric contractions: ", node_feats.shape)
         if self.use_sc and sc is not None:
             return self.linear(node_feats) + sc
         return self.linear(node_feats)
@@ -683,7 +689,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         irreps_mid = irreps_mid.simplify()
         self.irreps_out = self.target_irreps
         
-        if self.tensor_format in ["symmetric_cp", "symmetric_tucker"]:
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker", "flexible_symmetric_tucker"]:
             self.linear = o3.Linear(
                 irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
             )
@@ -730,19 +736,21 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
         
-        if self.tensor_format in ["symmetric_cp", "symmetric_tucker"]:
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker", "flexible_symmetric_tucker"]:
             message = self.linear(original_message) / self.avg_num_neighbors
-            return (
+            if self.tensor_format in ["flexible_symmetric_tucker", ]:
+                return (message, sc)
+            else:
+                return (
                 self.tensor_format_layer(self.reshape(message)),
                 sc,
-            )  # symmetric_cp: [n_nodes, channels, (lmax + 1)**2]
+                )  # symmetric_cp: [n_nodes, channels, (lmax + 1)**2]
         elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker"]:
             message = self.reshape[0](self.linear[0](original_message))
             message = message.unsqueeze(-1)
             for idx in range(1, self.correlation):
                 _message = self.reshape[idx](self.linear[idx](original_message)).unsqueeze(-1)
                 message = torch.cat((message, _message), dim = -1)
-            print("shape of message: ", message.shape)
             return (
                 message / self.avg_num_neighbors, 
                 sc

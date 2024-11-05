@@ -252,6 +252,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
                  "non_symmetric_cp",
                  "symmetric_tucker",
                  "non_symmetric_tucker",
+                 "flexible_symmetric_tucker"
                 ]
     )
     

@@ -91,10 +91,11 @@ def configure_model(
         logging.info(
             f"Distance transform for radial basis functions: {args.distance_transform}"
         )
-
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        
+        if args.tensor_format in ["symmetric_cp", "symmetric_tucker", "non_symmetric_cp", "non_symmetric_tucker"]:
+            assert (
+                len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+            ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
 
         logging.info(f"Hidden irreps: {args.hidden_irreps}")
 

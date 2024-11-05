@@ -7,6 +7,7 @@
 from typing import List, Tuple
 
 import torch
+import math
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
@@ -27,6 +28,16 @@ def make_tucker_irreps(target_irreps, correlation):
         num_feats = 0      
         for nu in range(1, correlation + 1):
             num_feats += tmp_irreps.num_irreps ** nu
+        tp_irreps += o3.Irreps(f"{num_feats}x{tmp_irreps[0].ir}")
+    return tp_irreps
+
+def make_tucker_irreps_flexible(target_irreps, correlation):
+    tp_irreps = o3.Irreps()
+    for ir in target_irreps:
+        tmp_irreps = o3.Irreps(str(ir))
+        num_feats = 0      
+        for nu in range(1, correlation + 1):
+            num_feats += (math.ceil(ir.mul ** (1 / nu))) ** nu
         tp_irreps += o3.Irreps(f"{num_feats}x{tmp_irreps[0].ir}")
     return tp_irreps
 
@@ -104,6 +115,27 @@ class reshape_irreps(torch.nn.Module):
             out.append(field)
         return torch.cat(out, dim=-1)
 
+@compile_mode("script")
+class inverse_reshape_irreps(torch.nn.Module):
+    def __init__(self, irreps: o3.Irreps) -> None:
+        super().__init__()
+        self.irreps = o3.Irreps(irreps)
+        self.dims = []
+        self.muls = []
+        for mul, ir in self.irreps:
+            d = ir.dim
+            self.dims.append(d)
+            self.muls.append(mul)
+
+    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
+        out = []
+        ix = 0
+        for mul, d in zip(self.muls, self.dims):
+            field = tensor[:, ix : ix + mul, :d]  # [batch, mul, repr]
+            field = field.reshape(tensor.shape[0], -1)  # Flatten [batch, mul * repr]
+            out.append(field)
+            ix += mul
+        return torch.cat(out, dim=-1)
 
 def mask_head(x: torch.Tensor, head: torch.Tensor, num_heads: int) -> torch.Tensor:
     mask = torch.zeros(x.shape[0], x.shape[1] // num_heads, num_heads, device=x.device)

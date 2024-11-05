@@ -61,13 +61,15 @@ def check_args(args):
             .sort()
             .irreps.simplify()
         )
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        if args.tensor_format in ["symmetric_cp", "symmetric_tucker", "non_symmetric_cp", "non_symmetric_tucker"]:
+            assert (
+                len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+            ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
     elif args.hidden_irreps is not None:
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        if args.tensor_format in ["symmetric_cp", "symmetric_tucker", "non_symmetric_cp", "non_symmetric_tucker"]:
+            assert (
+                len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
+            ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
 
         args.num_channels = list(
             {irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}
