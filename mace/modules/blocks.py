@@ -11,7 +11,6 @@ import numpy as np
 import torch.nn.functional
 from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
-from icecream import ic
 
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
@@ -60,12 +59,7 @@ class LinearReadoutBlock(torch.nn.Module):
         self,
         x: torch.Tensor,
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
-        ic('Linear Readout Block')
-        ic(x)
-        ic(x.shape)
         l = self.linear(x)
-        ic(l)
-        ic(l.shape)
         return l  # [n_nodes, 1]
 
 
@@ -89,7 +83,6 @@ class NonLinearReadoutBlock(torch.nn.Module):
             instructions=[(0, i) for i in range(num_heads)],
         )
         acts = gate if isinstance(gate, list) else num_heads * [gate]
-        ic(acts)
         self.non_linearity = nn.Activation(
             irreps_in=num_heads * self.hidden_irreps, acts=acts,
         )
@@ -103,12 +96,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         self, x: torch.Tensor,
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
-        ic("Nonlinear readout block test")
-        ic(x)
-        ic(x.shape)
         l2 = self.linear_2(x)
-        ic(l2)
-        ic(l2.shape)
         return l2  # [n_nodes, len(heads)]
     
 
@@ -796,23 +784,12 @@ class ScaleShiftBlock(torch.nn.Module):
         )
 
     def forward(self, x: torch.Tensor, head: Optional[torch.Tensor] = None) -> torch.Tensor:
-        ic(x)
-        ic(x.shape)
-        ic(head)
-        ic(self.scale)
-        ic(torch.atleast_1d(self.scale)[head])
-        ic(self.shift)
+        # TODO: Is this if even still necessary or does the first case work every time anyways
         if head is None:
-            ic("headless")
-            ic(torch.atleast_1d(self.scale) * x + torch.atleast_1d(self.shift))
-            ic((torch.atleast_1d(self.scale) * x + torch.atleast_1d(self.shift)).shape)
             return (
                 torch.atleast_1d(self.scale) * x + torch.atleast_1d(self.shift)
             )
         else:
-            ic('with head')
-            ic(torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head])
-            ic((torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]).shape)
             return (
                 torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]
             )

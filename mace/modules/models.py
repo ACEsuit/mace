@@ -10,7 +10,6 @@ import numpy as np
 import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
-from icecream import ic
 
 from mace.data import AtomicData
 from mace.modules.radial import ZBLBasis
@@ -380,17 +379,6 @@ class ScaleShiftMACE(MACE):
         compute_hessian: bool = False,
         predict_committee: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
-        #TODO: Training should work as usual, with evaluating only one head at a time, so that only the
-        # results from this head are used to calculate the loss and therefore optimizing the model.
-        # The question remaining is only how to report the loss and errors on the evaluation set, if for
-        # evaluation, we only use the whole committee for prediction.
-        # => Follow up: I think evaluation on the test and validation set during training should be done on
-        # the individual heads, not the committee. Only evaluation outside the training, e.g. eval_configs or
-        # the ASE calculator should use the committee prediction only.
-        #TODO (old): Think about how to handle the `head` property of the structures. The property is needed during
-        # training to ensure that the correct head is trained, but becomes irrelevant for committee prediction.
-        # Maybe this needs to be taken care in `tools.train()` or`run_train()` using an extra arg and automizing
-        # the split into training subsets. Then, there is no `head` property to worry about for evaluation.
         #TODO: The new forward function works for both standard operation as well as committee operation, though 
         # the memory requirement are slighly (needs quantification) increased. It is worth considering, splitting
         # up the two methods much earlier and into a standard way and the committee way.
@@ -409,8 +397,6 @@ class ScaleShiftMACE(MACE):
             if "head" in data
             else torch.zeros_like(data["batch"])
         )
-        # ic(node_heads)
-        # ic(node_heads.shape)
         displacement = torch.zeros(
             (num_graphs, 3, 3),
             dtype=data["positions"].dtype,
@@ -432,13 +418,9 @@ class ScaleShiftMACE(MACE):
 
         # Atomic energies
         node_e0_heads = self.atomic_energies_fn(data["node_attrs"])
-        # ic(node_e0_heads)
-        # ic(node_e0_heads.shape)
         e0_heads = scatter_sum(
             src=node_e0_heads, index=data["batch"], dim=0, dim_size=num_graphs
         )  # [n_graphs, num_heads]
-        # ic(e0_heads)
-        # ic(e0_heads.shape)
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -460,7 +442,6 @@ class ScaleShiftMACE(MACE):
             )
         else:
             pair_node_energy_heads = torch.zeros_like(node_e0_heads)
-        # ic(pair_node_energy_heads)
         # Interactions
         node_es_list = [pair_node_energy_heads]
         node_feats_list = []
@@ -479,12 +460,7 @@ class ScaleShiftMACE(MACE):
             )
             node_feats_list.append(node_feats)
             ro_heads = readout(node_feats)
-            # ic(ro_heads)
-            # ic(ro_heads.shape)
-            # ro = ro_heads[num_atoms_arange, node_heads]
             node_es_list.append(ro_heads) # {[n_nodes, n_heads], }
-        # ic(node_es_list)
-        # ic(len(node_es_list))
 
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -492,13 +468,8 @@ class ScaleShiftMACE(MACE):
         node_es = torch.stack(node_es_list, dim=0)
         node_es_heads = node_es.permute(1, 0, 2)
         node_inter_es_heads = torch.sum(node_es, dim=0)  # [n_nodes, n_heads]
-        # ic(node_inter_es_heads)
-        # ic(node_inter_es_heads.shape)
-        # ic('Scale shift')
         node_es_heads = self.scale_shift(node_es_heads)
         node_inter_es_heads = self.scale_shift(node_inter_es_heads)
-        # ic(node_inter_es_heads)
-        # ic(node_inter_es_heads.shape)
 
         # Sum over nodes in graph
         #TODO: Check carefully, why there used to be dim=-1, because I don't see why it is there.
@@ -506,14 +477,10 @@ class ScaleShiftMACE(MACE):
         inter_e_heads = scatter_sum(
             src=node_inter_es_heads, index=data["batch"], dim=0, dim_size=num_graphs
         )  # [n_graphs, n_heads]
-        # ic(inter_e_heads)
-        # ic(inter_e_heads.shape)
 
         # Add E_0 and (scaled) interaction energy
         total_energy_heads = e0_heads + inter_e_heads
         node_energy_heads = node_e0_heads + node_inter_es_heads
-        # ic(self.n_committee)
-        # ic(training)
         output = {}
         if not predict_committee or training:
             inter_e = inter_e_heads[num_graphs_arange, data['head']]

@@ -17,7 +17,6 @@ import numpy as np
 import torch
 import torch.distributed
 from e3nn import o3
-from icecream import ic
 from prettytable import PrettyTable
 from torch.optim.swa_utils import SWALR, AveragedModel
 
