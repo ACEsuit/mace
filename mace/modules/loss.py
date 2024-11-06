@@ -181,7 +181,7 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
             f"forces_weight={self.forces_weight:.3f})"
         )
-        
+
 class WeightedEnergyForcesLossForceCluster(torch.nn.Module):
     def __init__(
         self, energy_weight=1.0, forces_weight=1.0, cluster_weight=1.0
@@ -219,7 +219,7 @@ class WeightedEnergyForcesLossForceCluster(torch.nn.Module):
             f"forces_weight={self.forces_weight:.3f})"
             f"cluster_weight={self.cluster_weight:.3f})"
         )
-        
+
 class WeightedEnergyForcesStressLossForceCluster(torch.nn.Module):
     def __init__(
         self,

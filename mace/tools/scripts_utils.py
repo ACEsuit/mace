@@ -31,12 +31,13 @@ class SubsetCollection:
     train: data.Configurations
     valid: data.Configurations
     tests: List[Tuple[str, data.Configurations]]
-    
+
 class CustomEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, KeySpecification):  # Replace KeySpecification with your class name
-            return obj.__dict__  # or obj.to_dict() if you have defined it
-        return super().default(obj)
+    def default(self, o):
+        if isinstance(o, KeySpecification):
+            return o.__dict__
+        return super().default(o)
+
 
 
 def log_dataset_contents(
@@ -602,7 +603,7 @@ def setup_wandb(args: argparse.Namespace):
     for key, value in args_dict.items():
         if isinstance(value, np.ndarray):
             args_dict[key] = value.tolist()
-    
+
     args_dict_json = json.dumps(args_dict, cls=CustomEncoder)
     for key in args.wandb_log_hypers:
         wandb_config[key] = args_dict[key]
@@ -972,7 +973,6 @@ def create_error_table(
             )
     return table
 
-
 def check_folder_subfolder(folder_path):
     entries = os.listdir(folder_path)
     for entry in entries:
@@ -980,7 +980,6 @@ def check_folder_subfolder(folder_path):
         if os.path.isdir(full_path):
             return True
     return False
-
 
 def check_path_ase_read(filename: str) -> str:
     filepath = Path(filename)
@@ -991,7 +990,6 @@ def check_path_ase_read(filename: str) -> str:
     if filepath.suffix in (".h5", ".hdf5"):
         return False
     return True
-
 
 def dict_to_namespace(dictionary):
     # Convert the dictionary into an argparse.Namespace
