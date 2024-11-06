@@ -329,7 +329,7 @@ class MACE(torch.nn.Module):
             stds["node_energy"] = torch.std(node_energy_heads, dim=-1)
             heads["node_energy"] = node_energy_heads
             output["contributions"] = torch.mean(contributions_heads, dim=-1)
-            stds["contributions"] = torch.mean(contributions_heads, dim=-1)
+            stds["contributions"] = torch.std(contributions_heads, dim=-1)
             heads["contributions"] = contributions_heads
 
             means_properties, stds_properties, heads_properties = get_outputs_committee(
@@ -548,7 +548,7 @@ class ScaleShiftMACE(MACE):
             stds["node_energy"] = torch.std(node_energy_heads, dim=-1)
             heads["node_energy"] = node_energy_heads
             output["interaction_energy"] = torch.mean(inter_e_heads, dim=-1)
-            stds["interaction_energy"] = torch.mean(inter_e_heads, dim=-1)
+            stds["interaction_energy"] = torch.std(inter_e_heads, dim=-1)
             heads["interaction_energy"] = inter_e_heads
 
             means_properties, stds_properties, heads_properties = get_outputs_committee(
