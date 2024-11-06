@@ -489,12 +489,13 @@ class ScaleShiftMACE(MACE):
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
         # Sum over interactions
-        node_inter_es_heads = torch.sum(
-            torch.stack(node_es_list, dim=0), dim=0
-        )  # [n_nodes, n_heads]
+        node_es = torch.stack(node_es_list, dim=0)
+        node_es_heads = node_es.permute(1, 0, 2)
+        node_inter_es_heads = torch.sum(node_es, dim=0)  # [n_nodes, n_heads]
         # ic(node_inter_es_heads)
         # ic(node_inter_es_heads.shape)
         # ic('Scale shift')
+        node_es_heads = self.scale_shift(node_es_heads)
         node_inter_es_heads = self.scale_shift(node_inter_es_heads)
         # ic(node_inter_es_heads)
         # ic(node_inter_es_heads.shape)
@@ -518,6 +519,7 @@ class ScaleShiftMACE(MACE):
             inter_e = inter_e_heads[num_graphs_arange, data['head']]
             total_energy = total_energy_heads[num_graphs_arange, data['head']]
             node_energy = node_energy_heads[num_atoms_arange, node_heads]
+            energy_contributions = node_es_heads[num_atoms_arange, :, node_heads]
             forces, virials, stress, hessian = get_outputs(
                 energy=inter_e,
                 positions=data["positions"],
@@ -532,6 +534,7 @@ class ScaleShiftMACE(MACE):
             output["energy"] = total_energy
             output["node_energy"] = node_energy
             output["interaction_energy"] = inter_e
+            output["contributions"] = energy_contributions
             output["forces"] = forces
             output["virials"] = virials
             output["stress"] = stress
@@ -550,6 +553,10 @@ class ScaleShiftMACE(MACE):
             output["interaction_energy"] = torch.mean(inter_e_heads, dim=-1)
             stds["interaction_energy"] = torch.std(inter_e_heads, dim=-1)
             heads["interaction_energy"] = inter_e_heads
+            output["contributions"] = torch.mean(node_es_heads, dim=-1)
+            output["contributions"] = torch.std(node_es_heads, dim=-1)
+            heads["contributions"] = node_es_heads
+            
 
             means_properties, stds_properties, heads_properties = get_outputs_committee(
                 energy_heads=inter_e_heads,
