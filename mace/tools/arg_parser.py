@@ -429,6 +429,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="REF_dipole",
     )
     parser.add_argument(
+        "--head_key",
+        help="Key of head in training xyz",
+        type=str,
+        default="head",
+    )
+    parser.add_argument(
         "--charges_key",
         help="Key of atomic charges in training xyz",
         type=str,
@@ -846,6 +852,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="Random seed for splitting training and validation sets",
         type=int,
         default=123,
+    )
+    parser.add_argument(
+        "--head_key",
+        help="Key of head in training xyz",
+        type=str,
+        default="head",
     )
     return parser
 
