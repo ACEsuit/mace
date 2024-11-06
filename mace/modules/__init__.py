@@ -15,6 +15,8 @@ from .blocks import (
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     RealAgnosticAttResidualInteractionBlock,
+    RealAgnosticDensityInteractionBlock,
+    RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
     ResidualElementDependentInteractionBlock,
@@ -58,6 +60,8 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticResidualInteractionBlock": RealAgnosticResidualInteractionBlock,
     "RealAgnosticAttResidualInteractionBlock": RealAgnosticAttResidualInteractionBlock,
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
+    "RealAgnosticDensityInteractionBlock": RealAgnosticDensityInteractionBlock,
+    "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
 }
 
 scaling_classes: Dict[str, Callable] = {
