@@ -76,7 +76,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         self,
         irreps_in: o3.Irreps,
         MLP_irreps: o3.Irreps,  # MLP irrep to be used for each head
-        gate: Optional[Callable],
+        gate: Optional[Union[List[Callable], Callable]],
         irrep_out: o3.Irreps = o3.Irreps("0e"), # irrep out of a single head
         num_heads: int = 1,
     ):
@@ -88,8 +88,10 @@ class NonLinearReadoutBlock(torch.nn.Module):
             irreps_out=num_heads * self.hidden_irreps,
             instructions=[(0, i) for i in range(num_heads)],
         )
+        acts = gate if isinstance(gate, list) else num_heads * [gate]
+        ic(acts)
         self.non_linearity = nn.Activation(
-            irreps_in=num_heads * self.hidden_irreps, acts=num_heads * [gate]
+            irreps_in=num_heads * self.hidden_irreps, acts=acts,
         )
         self.linear_2 = o3.Linear(
             irreps_in=num_heads * self.hidden_irreps,

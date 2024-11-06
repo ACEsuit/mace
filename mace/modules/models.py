@@ -58,7 +58,7 @@ class MACE(torch.nn.Module):
         avg_num_neighbors: float,
         atomic_numbers: List[int],
         correlation: Union[int, List[int]],
-        gate: Optional[Callable],
+        gate: Optional[Union[List[Callable], Callable]],
         pair_repulsion: bool = False,
         distance_transform: str = "None",
         radial_MLP: Optional[List[int]] = None,
