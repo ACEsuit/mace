@@ -22,6 +22,7 @@ from torchmetrics import Metric
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
+from .scatter import scatter_sum
 from .torch_tools import to_numpy
 from .utils import (
     MetricsLogger,
@@ -31,8 +32,6 @@ from .utils import (
     compute_rel_rmse,
     compute_rmse,
 )
-from .scatter import scatter_sum
-
 
 
 @dataclasses.dataclass
@@ -469,7 +468,9 @@ class MACELoss(Metric):
         self.add_state("mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
-        self.add_state("clusterFs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "clusterFs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
         self.add_state("cluster_forces", default=[], dist_reduce_fx="cat")
         self.add_state("delta_cluster_forces", default=[], dist_reduce_fx="cat")
 
@@ -574,7 +575,11 @@ class MACELoss(Metric):
             aux["mae_cluster_force"] = compute_mae(delta_cluster_forces)
             aux["rmse_cluster_force"] = compute_rmse(delta_cluster_forces)
             aux["q95_cluster_force"] = compute_q95(delta_cluster_forces)
-            aux["rel_mae_cluster_force"] = compute_rel_mae(delta_cluster_forces, cluster_forces)
-            aux["rel_rmse_cluster_force"] = compute_rel_rmse(delta_cluster_forces, cluster_forces)
+            aux["rel_mae_cluster_force"] = compute_rel_mae(
+                delta_cluster_forces, cluster_forces
+            )
+            aux["rel_rmse_cluster_force"] = compute_rel_rmse(
+                delta_cluster_forces, cluster_forces
+            )
 
         return aux["loss"], aux

@@ -254,8 +254,10 @@ class AtomicData(torch_geometric.data.Data):
             else torch.zeros(1, 3, 3, dtype=torch.get_default_dtype())
         )
         cluster = (
-            torch.tensor(config.properties.get('cluster'), dtype=torch.get_default_dtype())
-            if config.properties.get('cluster') is not None
+            torch.tensor(
+                config.properties.get("cluster"), dtype=torch.get_default_dtype()
+            )
+            if config.properties.get("cluster") is not None
             else torch.zeros(num_atoms, dtype=torch.get_default_dtype())
         )
         virials = (

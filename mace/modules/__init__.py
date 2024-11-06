@@ -27,10 +27,10 @@ from .loss import (
     UniversalLoss,
     WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesLoss,
-    WeightedEnergyForcesStressLoss,
-    WeightedEnergyForcesVirialsLoss,
     WeightedEnergyForcesLossForceCluster,
+    WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesStressLossForceCluster,
+    WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
 )

@@ -7,8 +7,8 @@
 import torch
 
 from mace.tools import TensorDict
-from mace.tools.torch_geometric import Batch
 from mace.tools.scatter import scatter_sum
+from mace.tools.torch_geometric import Batch
 
 
 def mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
@@ -38,6 +38,7 @@ def weighted_mean_square_error_force_cluster(
         pred["forces"], torch.unique(ref.cluster, return_inverse=True)[1], dim=0
     )
     return torch.mean(torch.square(cluster_forces_ref - cluster_forces_pred))
+
 
 def weighted_mean_squared_stress(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
@@ -182,6 +183,7 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
             f"forces_weight={self.forces_weight:.3f})"
         )
 
+
 class WeightedEnergyForcesLossForceCluster(torch.nn.Module):
     def __init__(
         self, energy_weight=1.0, forces_weight=1.0, cluster_weight=1.0
@@ -219,6 +221,7 @@ class WeightedEnergyForcesLossForceCluster(torch.nn.Module):
             f"forces_weight={self.forces_weight:.3f})"
             f"cluster_weight={self.cluster_weight:.3f})"
         )
+
 
 class WeightedEnergyForcesStressLossForceCluster(torch.nn.Module):
     def __init__(
