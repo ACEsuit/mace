@@ -173,6 +173,7 @@ def run(args: argparse.Namespace) -> None:
     heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
     head_configs: List[HeadConfig] = []
+    dataset_seed = args.seed
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
@@ -227,6 +228,7 @@ def run(args: argparse.Namespace) -> None:
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
                 n_committee=args.n_committee,
+                disjoint_committee=args.disjoint_committee,
             )
             head_config.collections = collections
             head_config.atomic_energies_dict = atomic_energies_dict
@@ -235,6 +237,8 @@ def run(args: argparse.Namespace) -> None:
                 f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
             )
         head_configs.append(head_config)
+        if args.disjoint_committee:
+            dataset_seed += 1
 
     if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
         size_collections_train = sum(

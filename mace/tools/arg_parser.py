@@ -348,6 +348,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False
     )
     parser.add_argument(
+        "--disjoint_committee",
+        help="Use disjoint training sets for each head.",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--heads",
         help="Dict of heads: containing individual files and E0s",
         type=str,

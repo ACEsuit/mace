@@ -98,14 +98,13 @@ def get_dataset_from_xyz(
 
     if n_committee is not None:
         indices = list(range(len(train_configs)))
-        if valid_path is None:
+        if valid_path is not None:
             rng = np.random.default_rng(seed)
             rng.shuffle(indices)
 
         id_c = int(head_name.split("-")[-1])
         train_set_split = np.linspace(0, len(train_configs), n_committee + 1, dtype=int)
         train_set_head_indices = indices[train_set_split[id_c]:train_set_split[id_c + 1]]
-        ic(train_set_head_indices)
         train_configs = [train_configs[i] for i in train_set_head_indices]
 
     test_configs = []
