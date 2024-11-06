@@ -27,21 +27,38 @@ torch.set_default_dtype(torch.float64)
 config = data.Configuration(
     atomic_numbers=molecule("H2COH").numbers,
     positions=molecule("H2COH").positions,
-    forces=molecule("H2COH").positions,
-    energy=-1.5,
-    charges=molecule("H2COH").numbers,
-    dipole=np.array([-1.5, 1.5, 2.0]),
+    properties={
+        "forces": molecule("H2COH").positions,
+        "energy": -1.5,
+        "charges": molecule("H2COH").numbers,
+        "dipole": np.array([-1.5, 1.5, 2.0]),
+    },
+    property_weights={
+        "forces": 1.0,
+        "energy": 1.0,
+        "charges": 1.0,
+        "dipole": 1.0,
+    },
 )
+
 # Created the rotated environment
 rot = R.from_euler("z", 60, degrees=True).as_matrix()
 positions_rotated = np.array(rot @ config.positions.T).T
 config_rotated = data.Configuration(
     atomic_numbers=molecule("H2COH").numbers,
     positions=positions_rotated,
-    forces=molecule("H2COH").positions,
-    energy=-1.5,
-    charges=molecule("H2COH").numbers,
-    dipole=np.array([-1.5, 1.5, 2.0]),
+    properties={
+        "forces": molecule("H2COH").positions,
+        "energy": -1.5,
+        "charges": molecule("H2COH").numbers,
+        "dipole": np.array([-1.5, 1.5, 2.0]),
+    },
+    property_weights={
+        "forces": 1.0,
+        "energy": 1.0,
+        "charges": 1.0,
+        "dipole": 1.0,
+    },
 )
 table = tools.AtomicNumberTable([1, 6, 8])
 atomic_energies = np.array([0.0, 0.0, 0.0], dtype=float)
@@ -110,10 +127,18 @@ def test_multi_reference():
     config_multi = data.Configuration(
         atomic_numbers=molecule("H2COH").numbers,
         positions=molecule("H2COH").positions,
-        forces=molecule("H2COH").positions,
-        energy=-1.5,
-        charges=molecule("H2COH").numbers,
-        dipole=np.array([-1.5, 1.5, 2.0]),
+        properties={
+            "forces": molecule("H2COH").positions,
+            "energy": -1.5,
+            "charges": molecule("H2COH").numbers,
+            "dipole": np.array([-1.5, 1.5, 2.0]),
+        },
+        property_weights={
+            "forces": 1.0,
+            "energy": 1.0,
+            "charges": 1.0,
+            "dipole": 1.0,
+        },
         head="MP2",
     )
     table_multi = tools.AtomicNumberTable([1, 6, 8])

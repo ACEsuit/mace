@@ -18,16 +18,24 @@ config = data.Configuration(
             [0.0, 1.0, 0.0],
         ]
     ),
-    forces=np.array(
-        [
-            [0.0, -1.3, 0.0],
-            [1.0, 0.2, 0.0],
-            [0.0, 1.1, 0.3],
-        ]
-    ),
-    energy=-1.5,
-    charges=np.array([-2.0, 1.0, 1.0]),
-    dipole=np.array([-1.5, 1.5, 2.0]),
+    properties={
+        "forces": np.array(
+            [
+                [0.0, -1.3, 0.0],
+                [1.0, 0.2, 0.0],
+                [0.0, 1.1, 0.3],
+            ]
+        ),
+        "energy": -1.5,
+        "charges": np.array([-2.0, 1.0, 1.0]),
+        "dipole": np.array([-1.5, 1.5, 2.0]),
+    },
+    property_weights={
+        "forces": 1.0,
+        "energy": 1.0,
+        "charges": 1.0,
+        "dipole": 1.0,
+    },
 )
 # Created the rotated environment
 rot = R.from_euler("z", 60, degrees=True).as_matrix()
@@ -35,16 +43,24 @@ positions_rotated = np.array(rot @ config.positions.T).T
 config_rotated = data.Configuration(
     atomic_numbers=np.array([8, 1, 1]),
     positions=positions_rotated,
-    forces=np.array(
-        [
-            [0.0, -1.3, 0.0],
-            [1.0, 0.2, 0.0],
-            [0.0, 1.1, 0.3],
-        ]
-    ),
-    energy=-1.5,
-    charges=np.array([-2.0, 1.0, 1.0]),
-    dipole=np.array([-1.5, 1.5, 2.0]),
+    properties={
+        "forces": np.array(
+            [
+                [0.0, -1.3, 0.0],
+                [1.0, 0.2, 0.0],
+                [0.0, 1.1, 0.3],
+            ]
+        ),
+        "energy": -1.5,
+        "charges": np.array([-2.0, 1.0, 1.0]),
+        "dipole": np.array([-1.5, 1.5, 2.0]),
+    },
+    property_weights={
+        "forces": 1.0,
+        "energy": 1.0,
+        "charges": 1.0,
+        "dipole": 1.0,
+    },
 )
 table = tools.AtomicNumberTable([1, 8])
 atomic_energies = np.array([1.0, 3.0], dtype=float)
