@@ -27,6 +27,8 @@ from .loss import (
     WeightedEnergyForcesLoss,
     WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesVirialsLoss,
+    WeightedEnergyForcesLossForceCluster,
+    WeightedEnergyForcesStressLossForceCluster,
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
 )
@@ -93,6 +95,8 @@ __all__ = [
     "AtomicDipolesMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
+    "WeightedEnergyForcesLossForceCluster",
+    "WeightedEnergyForcesStressLossForceCluster",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
     "WeightedEnergyForcesStressLoss",

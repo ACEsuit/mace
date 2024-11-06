@@ -31,6 +31,8 @@ from .utils import (
     compute_rel_rmse,
     compute_rmse,
 )
+from .scatter import scatter_sum
+
 
 
 @dataclasses.dataclass
@@ -61,6 +63,21 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
             f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A"
+        )
+    elif log_errors == "PerAtomRMSECluster":
+        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+        error_f = eval_metrics["rmse_f"] * 1e3
+        error_cluster = eval_metrics["rmse_cluster_force"] * 1e3
+        logging.info(
+            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_cluster_force={error_cluster:.4f} meV / A"
+        )
+    elif log_errors == "PerAtomRMSEstressCluster":
+        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+        error_f = eval_metrics["rmse_f"] * 1e3
+        error_stress = eval_metrics["rmse_stress_per_atom"] * 1e3
+        error_cluster = eval_metrics["rmse_cluster_force"] * 1e3
+        logging.info(
+            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_stress_per_atom={error_stress:.4f} meV / A^3, RMSE_cluster_force={error_cluster:.1f} meV / A"
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -452,6 +469,9 @@ class MACELoss(Metric):
         self.add_state("mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("clusterFs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("cluster_forces", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_cluster_forces", default=[], dist_reduce_fx="cat")
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
@@ -468,6 +488,20 @@ class MACELoss(Metric):
             self.Fs_computed += 1.0
             self.fs.append(batch.forces)
             self.delta_fs.append(batch.forces - output["forces"])
+        if output.get("forces") is not None and batch.cluster is not None:
+            self.clusterFs_computed += 1.0
+            cluster_forces_ref = scatter_sum(
+                batch["forces"],
+                torch.unique(batch.cluster, return_inverse=True)[1],
+                dim=0,
+            )
+            cluster_forces_pred = scatter_sum(
+                output["forces"],
+                torch.unique(batch.cluster, return_inverse=True)[1],
+                dim=0,
+            )
+            self.delta_cluster_forces.append(cluster_forces_ref - cluster_forces_pred)
+            self.cluster_forces.append(cluster_forces_pred)
         if output.get("stress") is not None and batch.stress is not None:
             self.stress_computed += 1.0
             self.delta_stress.append(batch.stress - output["stress"])
@@ -534,5 +568,13 @@ class MACELoss(Metric):
             aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
             aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
             aux["q95_mu"] = compute_q95(delta_mus)
+        if self.clusterFs_computed:
+            cluster_forces = self.convert(self.cluster_forces)
+            delta_cluster_forces = self.convert(self.delta_cluster_forces)
+            aux["mae_cluster_force"] = compute_mae(delta_cluster_forces)
+            aux["rmse_cluster_force"] = compute_rmse(delta_cluster_forces)
+            aux["q95_cluster_force"] = compute_q95(delta_cluster_forces)
+            aux["rel_mae_cluster_force"] = compute_rel_mae(delta_cluster_forces, cluster_forces)
+            aux["rel_rmse_cluster_force"] = compute_rel_rmse(delta_cluster_forces, cluster_forces)
 
         return aux["loss"], aux

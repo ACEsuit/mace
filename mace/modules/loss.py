@@ -8,6 +8,7 @@ import torch
 
 from mace.tools import TensorDict
 from mace.tools.torch_geometric import Batch
+from mace.tools.scatter import scatter_sum
 
 
 def mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
@@ -26,6 +27,17 @@ def weighted_mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Te
         * torch.square((ref["energy"] - pred["energy"]) / num_atoms)
     )  # []
 
+
+def weighted_mean_square_error_force_cluster(
+    ref: Batch, pred: TensorDict
+) -> torch.Tensor:
+    cluster_forces_ref = scatter_sum(
+        ref["forces"], torch.unique(ref.cluster, return_inverse=True)[1], dim=0
+    )
+    cluster_forces_pred = scatter_sum(
+        pred["forces"], torch.unique(ref.cluster, return_inverse=True)[1], dim=0
+    )
+    return torch.mean(torch.square(cluster_forces_ref - cluster_forces_pred))
 
 def weighted_mean_squared_stress(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
@@ -168,6 +180,86 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
             f"forces_weight={self.forces_weight:.3f})"
+        )
+        
+class WeightedEnergyForcesLossForceCluster(torch.nn.Module):
+    def __init__(
+        self, energy_weight=1.0, forces_weight=1.0, cluster_weight=1.0
+    ) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "cluster_weight",
+            torch.tensor(cluster_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        tloss = (
+            self.energy_weight * weighted_mean_squared_error_energy(ref, pred)
+            + self.forces_weight * mean_squared_error_forces(ref, pred)
+            + self.cluster_weight * weighted_mean_square_error_force_cluster(ref, pred)
+        )
+        # logging.info(
+        #     f"Cluster weight: {self.cluster_weight}, "
+        #     f"Cluster error: {weighted_mean_square_error_force_cluster(ref, pred)},"
+        #     f" Total loss: {tloss}"
+        # )
+        return tloss
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f})"
+            f"cluster_weight={self.cluster_weight:.3f})"
+        )
+        
+class WeightedEnergyForcesStressLossForceCluster(torch.nn.Module):
+    def __init__(
+        self,
+        energy_weight=1.0,
+        forces_weight=1.0,
+        stress_weight=1.0,
+        cluster_weight=1.0,
+    ) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "stress_weight",
+            torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "cluster_weight",
+            torch.tensor(cluster_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        return (
+            self.energy_weight * weighted_mean_squared_error_energy(ref, pred)
+            + self.forces_weight * mean_squared_error_forces(ref, pred)
+            + self.stress_weight * weighted_mean_squared_stress(ref, pred)
+            + self.cluster_weight * weighted_mean_square_error_force_cluster(ref, pred)
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}, "
+            f"stress_weight={self.stress_weight:.3f}, "
+            f"cluster_weight={self.cluster_weight:.3f})"
         )
 
 

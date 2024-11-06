@@ -31,6 +31,12 @@ class SubsetCollection:
     train: data.Configurations
     valid: data.Configurations
     tests: List[Tuple[str, data.Configurations]]
+    
+class CustomEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, KeySpecification):  # Replace KeySpecification with your class name
+            return obj.__dict__  # or obj.to_dict() if you have defined it
+        return super().default(obj)
 
 
 def log_dataset_contents(
@@ -383,6 +389,19 @@ def get_loss_fn(
         loss_fn = modules.WeightedEnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
         )
+    elif args.loss == "weighted_cluster":
+        loss_fn = modules.WeightedEnergyForcesLossForceCluster(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            cluster_weight=args.cluster_weight,
+        )
+    elif args.loss == "weighted_cluster_stress":
+        loss_fn = modules.WeightedEnergyForcesStressLossForceCluster(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            cluster_weight=args.cluster_weight,
+        )
     elif args.loss == "forces_only":
         loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
     elif args.loss == "virials":
@@ -583,8 +602,8 @@ def setup_wandb(args: argparse.Namespace):
     for key, value in args_dict.items():
         if isinstance(value, np.ndarray):
             args_dict[key] = value.tolist()
-
-    args_dict_json = json.dumps(args_dict)
+    
+    args_dict_json = json.dumps(args_dict, cls=CustomEncoder)
     for key in args.wandb_log_hypers:
         wandb_config[key] = args_dict[key]
     tools.init_wandb(
@@ -695,6 +714,25 @@ def create_error_table(
             "RMSE F / meV / A",
             "relative F RMSE %",
         ]
+    elif table_type == "PerAtomRMSECluster":
+        table.field_names = [
+            "config_type",
+            "RMSE E / meV / atom",
+            "RMSE F / meV / A",
+            "relative F RMSE %",
+            "RMSE Cluster / meV/A",
+            "relative Cluster RMSE %",
+        ]
+    elif table_type == "PerAtomRMSEstressCluster":
+        table.field_names = [
+            "config_type",
+            "RMSE E / meV / atom",
+            "RMSE F / meV / A",
+            "relative F RMSE %",
+            "RMSE Stress / meV / A",
+            "RMSE Cluster / meV/A",
+            "relative Cluster RMSE %",
+        ]
     elif table_type == "PerAtomRMSEstressvirials":
         table.field_names = [
             "config_type",
@@ -788,6 +826,50 @@ def create_error_table(
                     f"{metrics['rmse_f'] * 1000:8.1f}",
                     f"{metrics['rel_rmse_f']:8.2f}",
                 ]
+            )
+        elif table_type == "PerAtomRMSECluster":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['rmse_f'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_f']:.2f}",
+                    f"{metrics['rmse_cluster_force'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_cluster_force']:.2f}",
+                ]
+            )
+            # save all aditional results to wandb
+            wandb_log_dict.update(
+                {
+                    name + "_final_rmse_cluster_force": metrics["rmse_cluster_force"],
+                    name
+                    + "_final_rel_rmse_cluster_force": metrics[
+                        "rel_rmse_cluster_force"
+                    ],
+                }
+            )
+        elif table_type == "PerAtomRMSEstressCluster":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_e_per_atom'] * 1000:.1f}",
+                    f"{metrics['rmse_f'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_f']:.2f}",
+                    f"{metrics['rmse_stress'] * 1000:.1f}",
+                    f"{metrics['rmse_cluster_force'] * 1000:.1f}",
+                    f"{metrics['rel_rmse_cluster_force']:.2f}",
+                ]
+            )
+            # save all aditional results to wandb
+            wandb_log_dict.update(
+                {
+                    name + "_final_rmse_stress": metrics["rmse_stress"],
+                    name + "_final_rmse_cluster_force": metrics["rmse_cluster_force"],
+                    name
+                    + "_final_rel_rmse_cluster_force": metrics[
+                        "rel_rmse_cluster_force"
+                    ],
+                }
             )
         elif (
             table_type == "PerAtomRMSEstressvirials"
