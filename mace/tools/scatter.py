@@ -7,10 +7,9 @@ that don't require installing PyTorch C++ extensions.
 See https://github.com/pytorch/pytorch/issues/63780.
 """
 
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import torch
-from typing import List, Tuple
 
 
 def _broadcast(src: torch.Tensor, other: torch.Tensor, dim: int):
@@ -113,7 +112,9 @@ def scatter_mean(
     return out
 
 
-def compute_effective_index(indices: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+def compute_effective_index(
+    indices: List[torch.Tensor],
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Computes an effective index from multiple index tensors. Useful for multi index scatter operations.
 
@@ -128,13 +129,13 @@ def compute_effective_index(indices: List[torch.Tensor]) -> Tuple[torch.Tensor, 
     """
     # Stack indices to shape (num_indices, N)
     indices_stack = torch.stack(indices, dim=0)  # Shape: (num_indices, N)
-    
+
     # Transpose to get combinations per element
     index_combinations = indices_stack.t()  # Shape: (N, num_indices)
-    
+
     # Find unique combinations and get inverse indices
     unique_combinations, inverse_indices = torch.unique(
         index_combinations, dim=0, return_inverse=True
     )
-    
+
     return inverse_indices, unique_combinations

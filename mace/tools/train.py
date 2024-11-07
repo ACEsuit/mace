@@ -22,7 +22,7 @@ from torchmetrics import Metric
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
-from .scatter import scatter_sum, compute_effective_index
+from .scatter import compute_effective_index, scatter_sum
 from .torch_tools import to_numpy
 from .utils import (
     MetricsLogger,
