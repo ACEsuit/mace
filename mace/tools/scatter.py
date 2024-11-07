@@ -10,6 +10,7 @@ See https://github.com/pytorch/pytorch/issues/63780.
 from typing import Optional
 
 import torch
+from typing import List, Tuple
 
 
 def _broadcast(src: torch.Tensor, other: torch.Tensor, dim: int):
@@ -110,3 +111,30 @@ def scatter_mean(
     else:
         out.div_(count, rounding_mode="floor")
     return out
+
+
+def compute_effective_index(indices: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Computes an effective index from multiple index tensors. Useful for multi index scatter operations.
+
+    Args:
+        indices (List[torch.Tensor]): List of index tensors, each of shape (N,).
+
+    Returns:
+        effective_index (torch.Tensor): Tensor of shape (N,), where each element
+            is a unique integer representing the combination of indices.
+        unique_combinations (torch.Tensor): Tensor containing unique combinations
+            of indices, shape (num_unique_combinations, num_indices).
+    """
+    # Stack indices to shape (num_indices, N)
+    indices_stack = torch.stack(indices, dim=0)  # Shape: (num_indices, N)
+    
+    # Transpose to get combinations per element
+    index_combinations = indices_stack.t()  # Shape: (N, num_indices)
+    
+    # Find unique combinations and get inverse indices
+    unique_combinations, inverse_indices = torch.unique(
+        index_combinations, dim=0, return_inverse=True
+    )
+    
+    return inverse_indices, unique_combinations

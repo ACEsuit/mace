@@ -7,7 +7,7 @@
 import torch
 
 from mace.tools import TensorDict
-from mace.tools.scatter import scatter_sum
+from mace.tools.scatter import scatter_sum, compute_effective_index
 from mace.tools.torch_geometric import Batch
 
 
@@ -31,12 +31,18 @@ def weighted_mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Te
 def weighted_mean_square_error_force_cluster(
     ref: Batch, pred: TensorDict
 ) -> torch.Tensor:
+    effective_inicies, _ = compute_effective_index([ref.batch, ref.cluster])
     cluster_forces_ref = scatter_sum(
-        ref["forces"], torch.unique(ref.cluster, return_inverse=True)[1], dim=0
+        ref["forces"],
+        effective_inicies,
+        dim=0,
     )
     cluster_forces_pred = scatter_sum(
-        pred["forces"], torch.unique(ref.cluster, return_inverse=True)[1], dim=0
+        pred["forces"],
+        effective_inicies,
+        dim=0,
     )
+    
     return torch.mean(torch.square(cluster_forces_ref - cluster_forces_pred))
 
 

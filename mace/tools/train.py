@@ -22,7 +22,7 @@ from torchmetrics import Metric
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
-from .scatter import scatter_sum
+from .scatter import scatter_sum, compute_effective_index
 from .torch_tools import to_numpy
 from .utils import (
     MetricsLogger,
@@ -491,14 +491,15 @@ class MACELoss(Metric):
             self.delta_fs.append(batch.forces - output["forces"])
         if output.get("forces") is not None and batch.cluster is not None:
             self.clusterFs_computed += 1.0
+            effective_inicies, _ = compute_effective_index([batch.batch, batch.cluster])
             cluster_forces_ref = scatter_sum(
                 batch["forces"],
-                torch.unique(batch.cluster, return_inverse=True)[1],
+                effective_inicies,
                 dim=0,
             )
             cluster_forces_pred = scatter_sum(
                 output["forces"],
-                torch.unique(batch.cluster, return_inverse=True)[1],
+                effective_inicies,
                 dim=0,
             )
             self.delta_cluster_forces.append(cluster_forces_ref - cluster_forces_pred)
