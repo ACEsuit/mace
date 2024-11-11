@@ -182,10 +182,18 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+
         try:
-            self.heads = self.models[0].heads
+            self.available_heads = self.models[0].heads
         except AttributeError:
-            self.heads = ["Default"]
+            self.available_heads = ["Default"]
+        self.head = kwargs.get("head", "Default")
+        assert (
+            self.head in self.available_heads
+        ), f"specified head {self.head}, but model available model heads are {self.available_heads}"
+
+        print("using head", self.head, "out of", self.available_heads)
+
         model_dtype = get_model_dtype(self.models[0])
         if default_dtype == "":
             print(
@@ -235,11 +243,19 @@ class MACECalculator(Calculator):
         return dict_of_tensors
 
     def _atoms_to_batch(self, atoms):
-        config = data.config_from_atoms(atoms, charges_key=self.charges_key)
+        keyspec = data.KeySpecification(
+            info_keys={}, arrays_keys={"charges": self.charges_key}
+        )
+        config = data.config_from_atoms(
+            atoms, key_specification=keyspec, head_name=self.head
+        )
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
                 data.AtomicData.from_config(
-                    config, z_table=self.z_table, cutoff=self.r_max, heads=self.heads
+                    config,
+                    z_table=self.z_table,
+                    cutoff=self.r_max,
+                    heads=self.available_heads,
                 )
             ],
             batch_size=1,
