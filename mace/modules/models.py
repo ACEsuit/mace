@@ -181,7 +181,8 @@ class MACE(torch.nn.Module):
                         hidden_irreps_out,
                         MLP_irreps,
                         gate,
-                        o3.Irreps(f"{self.readout_dim}x0e"),
+                        o3.Irreps(f"0e"),
+                        head_emb_dim,
                         len(heads),
                     )
                 )
