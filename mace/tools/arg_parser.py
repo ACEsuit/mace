@@ -361,7 +361,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
-        "--foundation_model_head",
+        "--foundation_head",
         help="Name of the head to use for fine-tuning",
         type=str,
         default=None,
