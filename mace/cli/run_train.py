@@ -36,7 +36,6 @@ from mace.tools.scripts_utils import (
     LRScheduler,
     check_path_ase_read,
     convert_to_json_format,
-    create_error_table,
     dict_to_array,
     extract_config_mace_model,
     get_atomic_energies,
@@ -49,9 +48,11 @@ from mace.tools.scripts_utils import (
     get_params_options,
     get_swa,
     print_git_commit,
+    remove_pt_head,
     setup_wandb,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
+from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -115,10 +116,6 @@ def run(args: argparse.Namespace) -> None:
     commit = print_git_commit()
     model_foundation: Optional[torch.nn.Module] = None
     if args.foundation_model is not None:
-        if args.multiheads_finetuning:
-            assert (
-                args.E0s != "average"
-            ), "average atomic energies cannot be used for multiheads finetuning"
         if args.foundation_model in ["small", "medium", "large"]:
             logging.info(
                 f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
@@ -148,6 +145,27 @@ def run(args: argparse.Namespace) -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
+        if (
+            args.foundation_model not in ["small", "medium", "large"]
+            and args.pt_train_file is None
+        ):
+            logging.warning(
+                "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provied a path to a pretraining file with --pt_train_file."
+            )
+            args.multiheads_finetuning = False
+        if args.multiheads_finetuning:
+            assert (
+                args.E0s != "average"
+            ), "average atomic energies cannot be used for multiheads finetuning"
+            # check that the foundation model has a single head, if not, use the first head
+            if hasattr(model_foundation, "heads"):
+                if len(model_foundation.heads) > 1:
+                    logging.warning(
+                        "Mutlihead finetuning with models with more than one head is not supported, using the first head as foundation head."
+                    )
+                    model_foundation = remove_pt_head(
+                        model_foundation, args.foundation_head
+                    )
     else:
         args.multiheads_finetuning = False
 
@@ -587,7 +605,6 @@ def run(args: argparse.Namespace) -> None:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
         distributed_model = None
-
     tools.train(
         model=model,
         loss_fn=loss_fn,

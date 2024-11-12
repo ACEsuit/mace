@@ -361,6 +361,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--foundation_model_head",
+        help="Name of the head to use for fine-tuning",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
         "--weight_pt_head",
         help="Weight of the pretrained head in the loss function",
         type=float,

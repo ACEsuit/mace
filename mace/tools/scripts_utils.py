@@ -17,11 +17,9 @@ import numpy as np
 import torch
 import torch.distributed
 from e3nn import o3
-from prettytable import PrettyTable
 from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules, tools
-from mace.tools import evaluate
 from mace.tools.train import SWAContainer
 
 
@@ -222,6 +220,98 @@ def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return extract_model(
         torch.load(f=f, map_location=map_location), map_location=map_location
     )
+
+
+def remove_pt_head(
+    model: torch.nn.Module, head_to_keep: Optional[str] = None
+) -> torch.nn.Module:
+    """Converts a multihead MACE model to a single head model by removing the pretraining head.
+
+    Args:
+        model (ScaleShiftMACE): The multihead MACE model to convert
+        head_to_keep (Optional[str]): The name of the head to keep. If None, keeps the first non-PT head.
+
+    Returns:
+        ScaleShiftMACE: A new MACE model with only the specified head
+
+    Raises:
+        ValueError: If the model is not a multihead model or if the specified head is not found
+    """
+    if not hasattr(model, "heads") or len(model.heads) <= 1:
+        raise ValueError("Model must be a multihead model with more than one head")
+
+    # Get index of head to keep
+    if head_to_keep is None:
+        # Find first non-PT head
+        try:
+            head_idx = next(i for i, h in enumerate(model.heads) if h != "pt_head")
+        except StopIteration as e:
+            raise ValueError("No non-PT head found in model") from e
+    else:
+        try:
+            head_idx = model.heads.index(head_to_keep)
+        except ValueError as e:
+            raise ValueError(f"Head {head_to_keep} not found in model") from e
+
+    # Extract config and modify for single head
+    model_config = extract_config_mace_model(model)
+    model_config["heads"] = [model.heads[head_idx]]
+    model_config["atomic_energies"] = (
+        model.atomic_energies_fn.atomic_energies[head_idx]
+        .unsqueeze(0)
+        .detach()
+        .cpu()
+        .numpy()
+    )
+    model_config["atomic_inter_scale"] = model.scale_shift.scale[head_idx].item()
+    model_config["atomic_inter_shift"] = model.scale_shift.shift[head_idx].item()
+    mlp_count_irreps = model_config["MLP_irreps"].count((0, 1)) // len(model.heads)
+    model_config["MLP_irreps"] = o3.Irreps(f"{mlp_count_irreps}x0e")
+
+    new_model = model.__class__(**model_config)
+    state_dict = model.state_dict()
+    new_state_dict = {}
+
+    for name, param in state_dict.items():
+        if "atomic_energies" in name:
+            new_state_dict[name] = param[head_idx : head_idx + 1]
+        elif "scale" in name or "shift" in name:
+            new_state_dict[name] = param[head_idx : head_idx + 1]
+        elif "readouts" in name:
+            channels_per_head = param.shape[0] // len(model.heads)
+            start_idx = head_idx * channels_per_head
+            end_idx = start_idx + channels_per_head
+            if "linear_2.weight" in name:
+                end_idx = start_idx + channels_per_head // 2
+            # if (
+            #     "readouts.0.linear.weight" in name
+            #     or "readouts.1.linear_2.weight" in name
+            # ):
+            #     new_state_dict[name] = param[start_idx:end_idx] / (
+            #         len(model.heads) ** 0.5
+            #     )
+            if "readouts.0.linear.weight" in name:
+                new_state_dict[name] = param.reshape(-1, len(model.heads))[
+                    :, head_idx
+                ].flatten()
+            elif "readouts.1.linear_1.weight" in name:
+                new_state_dict[name] = param.reshape(
+                    -1, len(model.heads), mlp_count_irreps
+                )[:, head_idx, :].flatten()
+            elif "readouts.1.linear_2.weight" in name:
+                new_state_dict[name] = param.reshape(
+                    len(model.heads), -1, len(model.heads)
+                )[head_idx, :, head_idx].flatten() / (len(model.heads) ** 0.5)
+            else:
+                new_state_dict[name] = param[start_idx:end_idx]
+
+        else:
+            new_state_dict[name] = param
+
+    # Load state dict into new model
+    new_model.load_state_dict(new_state_dict)
+
+    return new_model
 
 
 def extract_model(model: torch.nn.Module, map_location: str = "cpu") -> torch.nn.Module:
@@ -613,19 +703,6 @@ def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
     ]
 
 
-def custom_key(key):
-    """
-    Helper function to sort the keys of the data loader dictionary
-    to ensure that the training set, and validation set
-    are evaluated first
-    """
-    if key == "train":
-        return (0, key)
-    if key == "valid":
-        return (1, key)
-    return (2, key)
-
-
 def dict_to_array(input_data, heads):
     if all(isinstance(value, np.ndarray) for value in input_data.values()):
         return np.array([input_data[head] for head in heads])
@@ -678,227 +755,6 @@ class LRScheduler:
         if name == "step":
             return self.step
         return getattr(self.lr_scheduler, name)
-
-
-def create_error_table(
-    table_type: str,
-    all_data_loaders: dict,
-    model: torch.nn.Module,
-    loss_fn: torch.nn.Module,
-    output_args: Dict[str, bool],
-    log_wandb: bool,
-    device: str,
-    distributed: bool = False,
-) -> PrettyTable:
-    if log_wandb:
-        import wandb
-    table = PrettyTable()
-    if table_type == "TotalRMSE":
-        table.field_names = [
-            "config_type",
-            "RMSE E / meV",
-            "RMSE F / meV / A",
-            "relative F RMSE %",
-        ]
-    elif table_type == "PerAtomRMSE":
-        table.field_names = [
-            "config_type",
-            "RMSE E / meV / atom",
-            "RMSE F / meV / A",
-            "relative F RMSE %",
-        ]
-    elif table_type == "PerAtomRMSEstressvirials":
-        table.field_names = [
-            "config_type",
-            "RMSE E / meV / atom",
-            "RMSE F / meV / A",
-            "relative F RMSE %",
-            "RMSE Stress (Virials) / meV / A (A^3)",
-        ]
-    elif table_type == "PerAtomMAEstressvirials":
-        table.field_names = [
-            "config_type",
-            "MAE E / meV / atom",
-            "MAE F / meV / A",
-            "relative F MAE %",
-            "MAE Stress (Virials) / meV / A (A^3)",
-        ]
-    elif table_type == "TotalMAE":
-        table.field_names = [
-            "config_type",
-            "MAE E / meV",
-            "MAE F / meV / A",
-            "relative F MAE %",
-        ]
-    elif table_type == "PerAtomMAE":
-        table.field_names = [
-            "config_type",
-            "MAE E / meV / atom",
-            "MAE F / meV / A",
-            "relative F MAE %",
-        ]
-    elif table_type == "DipoleRMSE":
-        table.field_names = [
-            "config_type",
-            "RMSE MU / mDebye / atom",
-            "relative MU RMSE %",
-        ]
-    elif table_type == "DipoleMAE":
-        table.field_names = [
-            "config_type",
-            "MAE MU / mDebye / atom",
-            "relative MU MAE %",
-        ]
-    elif table_type == "EnergyDipoleRMSE":
-        table.field_names = [
-            "config_type",
-            "RMSE E / meV / atom",
-            "RMSE F / meV / A",
-            "rel F RMSE %",
-            "RMSE MU / mDebye / atom",
-            "rel MU RMSE %",
-        ]
-
-    for name in sorted(all_data_loaders, key=custom_key):
-        data_loader = all_data_loaders[name]
-        logging.info(f"Evaluating {name} ...")
-        _, metrics = evaluate(
-            model,
-            loss_fn=loss_fn,
-            data_loader=data_loader,
-            output_args=output_args,
-            device=device,
-        )
-        if distributed:
-            torch.distributed.barrier()
-
-        del data_loader
-        torch.cuda.empty_cache()
-        if log_wandb:
-            wandb_log_dict = {
-                name
-                + "_final_rmse_e_per_atom": metrics["rmse_e_per_atom"]
-                * 1e3,  # meV / atom
-                name + "_final_rmse_f": metrics["rmse_f"] * 1e3,  # meV / A
-                name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
-            }
-            wandb.log(wandb_log_dict)
-        if table_type == "TotalRMSE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.2f}",
-                ]
-            )
-        elif table_type == "PerAtomRMSE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.2f}",
-                ]
-            )
-        elif (
-            table_type == "PerAtomRMSEstressvirials"
-            and metrics["rmse_stress"] is not None
-        ):
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.2f}",
-                    f"{metrics['rmse_stress'] * 1000:8.1f}",
-                ]
-            )
-        elif (
-            table_type == "PerAtomRMSEstressvirials"
-            and metrics["rmse_virials"] is not None
-        ):
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.2f}",
-                    f"{metrics['rmse_virials'] * 1000:8.1f}",
-                ]
-            )
-        elif (
-            table_type == "PerAtomMAEstressvirials"
-            and metrics["mae_stress"] is not None
-        ):
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['mae_f'] * 1000:8.1f}",
-                    f"{metrics['rel_mae_f']:8.2f}",
-                    f"{metrics['mae_stress'] * 1000:8.1f}",
-                ]
-            )
-        elif (
-            table_type == "PerAtomMAEstressvirials"
-            and metrics["mae_virials"] is not None
-        ):
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['mae_f'] * 1000:8.1f}",
-                    f"{metrics['rel_mae_f']:8.2f}",
-                    f"{metrics['mae_virials'] * 1000:8.1f}",
-                ]
-            )
-        elif table_type == "TotalMAE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_e'] * 1000:8.1f}",
-                    f"{metrics['mae_f'] * 1000:8.1f}",
-                    f"{metrics['rel_mae_f']:8.2f}",
-                ]
-            )
-        elif table_type == "PerAtomMAE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['mae_f'] * 1000:8.1f}",
-                    f"{metrics['rel_mae_f']:8.2f}",
-                ]
-            )
-        elif table_type == "DipoleRMSE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_mu_per_atom'] * 1000:8.2f}",
-                    f"{metrics['rel_rmse_mu']:8.1f}",
-                ]
-            )
-        elif table_type == "DipoleMAE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_mu_per_atom'] * 1000:8.2f}",
-                    f"{metrics['rel_mae_mu']:8.1f}",
-                ]
-            )
-        elif table_type == "EnergyDipoleRMSE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.1f}",
-                    f"{metrics['rmse_mu_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_mu']:8.1f}",
-                ]
-            )
-    return table
 
 
 def check_folder_subfolder(folder_path):
