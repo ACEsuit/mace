@@ -1,0 +1,41 @@
+[build-system]
+requires = [
+    "setuptools>=42",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+# Make isort compatible with black
+[tool.isort]
+profile = "black"
+
+# Pylint
+[tool.pylint.'MESSAGES CONTROL']
+disable = [
+    "line-too-long",
+    "no-member",
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-many-arguments",
+    "too-many-locals",
+    "not-callable",
+    "logging-fstring-interpolation",
+    "logging-not-lazy",
+    "logging-too-many-args",
+    "invalid-name",
+    "too-few-public-methods",
+    "too-many-instance-attributes",
+    "too-many-statements",
+    "too-many-branches",
+    "import-outside-toplevel",
+    "cell-var-from-loop",
+    "duplicate-code",
+    "use-dict-literal",
+]
+
+[tool.pylint.MASTER]
+ignore-paths = [
+    "^mace/tools/torch_geometric/.*$",
+    "^mace/tools/scatter.py$",
+]
