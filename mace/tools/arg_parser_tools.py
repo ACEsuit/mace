@@ -96,7 +96,7 @@ def check_args(args):
         args.swa = True
         log_messages.append(
             (
-                f"Stage Two is activated as start_stage_two was defined",
+                "Stage Two is activated as start_stage_two was defined",
                 logging.INFO,
             )
         )
