@@ -4,11 +4,19 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
+
+from mace.modules.wrapper_ops import CuEquivarianceConfig
+
+try:
+    import cuequivariance as cue
+    LAYOUTS = cue
+except ImportError:
+    LAYOUTS = DefaultLayouts
 
 
 # Based on mir-group/nequip
@@ -61,12 +69,16 @@ def linear_out_irreps(irreps: o3.Irreps, target_irreps: o3.Irreps) -> o3.Irreps:
 
     return o3.Irreps(irreps_mid)
 
+class DefaultLayouts:
+    mul_ir = "mul_ir"
+    ir_mul = "ir_mul"
 
 @compile_mode("script")
 class reshape_irreps(torch.nn.Module):
-    def __init__(self, irreps: o3.Irreps) -> None:
+    def __init__(self, irreps: o3.Irreps, cueq_config: Optional[CuEquivarianceConfig] = None) -> None:
         super().__init__()
         self.irreps = o3.Irreps(irreps)
+        self.cueq_config = cueq_config
         self.dims = []
         self.muls = []
         for mul, ir in self.irreps:
@@ -81,10 +93,16 @@ class reshape_irreps(torch.nn.Module):
         for mul, d in zip(self.muls, self.dims):
             field = tensor[:, ix : ix + mul * d]  # [batch, sample, mul * repr]
             ix += mul * d
-            field = field.reshape(batch, mul, d)
+            if hasattr(self, "cueq_config") and (not self.cueq_config or self.cueq_config.layout_str == "mul_ir"):
+                field = field.reshape(batch, mul, d)
+            else:
+                field = field.reshape(batch, d, mul)
             out.append(field)
-        return torch.cat(out, dim=-1)
-
+            
+        if hasattr(self, "cueq_config") and (not self.cueq_config or self.cueq_config.layout_str == "mul_ir"):
+            return torch.cat(out, dim=-1)
+        else:
+            return torch.cat(out, dim=-2)
 
 def mask_head(x: torch.Tensor, head: torch.Tensor, num_heads: int) -> torch.Tensor:
     mask = torch.zeros(x.shape[0], x.shape[1] // num_heads, num_heads, device=x.device)
