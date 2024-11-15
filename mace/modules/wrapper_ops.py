@@ -71,7 +71,7 @@ class Linear(torch.nn.Module):
             return getattr(self.linear, name)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.use_cuet:
+        if self.use_cuet and hasattr(self, "cueq_config"):
             return self.linear(x, use_fallback=not self.cueq_config.optimize_linear)
         return self.linear(x)
 
@@ -120,7 +120,7 @@ class TensorProduct(torch.nn.Module):
             return getattr(self.tp, name)
         
     def forward(self, x1: torch.Tensor, x2: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
-        if self.use_cuet:
+        if self.use_cuet and hasattr(self, "cueq_config"):
             return self.tp(x1, x2, weights, use_fallback=not self.cueq_config.optimize_channelwise)
         return self.tp(x1, x2, weights)
 
@@ -167,7 +167,7 @@ class FullyConnectedTensorProduct(torch.nn.Module):
             return getattr(self.tp, name)
     
     def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
-        if self.use_cuet:
+        if self.use_cuet and hasattr(self, "cueq_config"):
             return self.tp(x1, x2, use_fallback=not self.cueq_config.optimize_fctp)
         return self.tp(x1, x2)
 
@@ -184,7 +184,7 @@ class SymmetricContractionWrapper(torch.nn.Module):
         super().__init__()
         if (CUET_AVAILABLE and cueq_config is not None and cueq_config.enabled 
             and (cueq_config.optimize_all or cueq_config.optimize_symmetric)):
-            self.sc = cuet.SymmetricContraction(
+            self.sconctaction = cuet.SymmetricContraction(
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out), 
                 layout_in=cue.ir_mul,
@@ -197,7 +197,7 @@ class SymmetricContractionWrapper(torch.nn.Module):
             self.cueq_config = cueq_config
             self.layout = cueq_config.layout
         else:
-            self.sc = SymmetricContraction(
+            self.sconctaction = SymmetricContraction(
                 irreps_in=irreps_in,
                 irreps_out=irreps_out,
                 correlation=correlation,
@@ -213,8 +213,8 @@ class SymmetricContractionWrapper(torch.nn.Module):
             return getattr(self.sc, name)
         
     def forward(self, x: torch.Tensor, attrs: torch.Tensor) -> torch.Tensor:
-        if self.use_cuet:
+        if self.use_cuet and hasattr(self, "cueq_config"):
             if self.layout == cue.mul_ir:
                 x = torch.transpose(x, 1, 2)
-            return self.sc(x.flatten(1), attrs, use_fallback=not self.cueq_config.optimize_symmetric)
-        return self.sc(x, attrs)
+            return self.sconctaction(x.flatten(1), attrs, use_fallback=not self.cueq_config.optimize_symmetric)
+        return self.sconctaction(x, attrs)

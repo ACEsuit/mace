@@ -42,8 +42,7 @@ except ImportError:
 
 @compile_mode("script")
 class LinearNodeEmbeddingBlock(torch.nn.Module):
-    def __init__(self, irreps_in: o3.Irreps, irreps_out: o3.Irreps, cueq_config: Optional[CuEquivarianceConfig] = None,
-):
+    def __init__(self, irreps_in: o3.Irreps, irreps_out: o3.Irreps, cueq_config: Optional[CuEquivarianceConfig] = None):
         super().__init__()
         self.linear = Linear(irreps_in=irreps_in, irreps_out=irreps_out, cueq_config=cueq_config)
 
