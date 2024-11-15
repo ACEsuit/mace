@@ -23,7 +23,7 @@ except ImportError:
 if CUET_AVAILABLE:
 
     class O3_e3nn(cue.O3):
-        def __mul__(rep1: "O3_e3nn", rep2: "O3_e3nn") -> Iterator["O3_e3nn"]:
+        def __mul__(rep1: "O3_e3nn", rep2: "O3_e3nn") -> Iterator["O3_e3nn"]: # pylint: disable=no-self-argument
             return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
 
         @classmethod
@@ -38,7 +38,7 @@ if CUET_AVAILABLE:
                 )
             return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
 
-        def __lt__(rep1: "O3_e3nn", rep2: "O3_e3nn") -> bool:
+        def __lt__(rep1: "O3_e3nn", rep2: "O3_e3nn") -> bool: # pylint: disable=no-self-argument
             rep2 = rep1._from(rep2)
             return (rep1.l, rep1.p) < (rep2.l, rep2.p)
 
@@ -96,7 +96,7 @@ class Linear(torch.nn.Module):
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
-                optimize_fallback=not cueq_config.optimize_linear,
+                optimize_fallback=not cueq_config.optimize_linear, # pylint: disable=unexpected-keyword-arg
             )
             self.use_cuet = True
             self.cueq_config = cueq_config
@@ -149,7 +149,7 @@ class TensorProduct(torch.nn.Module):
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
-                optimize_fallback=not cueq_config.optimize_channelwise,
+                optimize_fallback=not cueq_config.optimize_channelwise, # pylint: disable=unexpected-keyword-arg
             )
             self.use_cuet = True
             self.cueq_config = cueq_config
@@ -207,7 +207,7 @@ class FullyConnectedTensorProduct(torch.nn.Module):
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
-                optimize_fallback=not cueq_config.optimize_fctp,
+                optimize_fallback=not cueq_config.optimize_fctp, # pylint: disable=unexpected-keyword-arg
             )
             self.use_cuet = True
             self.cueq_config = cueq_config
@@ -259,7 +259,7 @@ class SymmetricContractionWrapper(torch.nn.Module):
                 layout_out=cueq_config.layout,
                 contraction_degree=correlation,
                 num_elements=num_elements,
-                optimize_fallback=not cueq_config.optimize_symmetric,
+                optimize_fallback=not cueq_config.optimize_symmetric, # pylint: disable=unexpected-keyword-arg
             )
             self.use_cuet = True
             self.cueq_config = cueq_config
