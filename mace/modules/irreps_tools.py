@@ -12,13 +12,6 @@ from e3nn.util.jit import compile_mode
 
 from mace.modules.wrapper_ops import CuEquivarianceConfig
 
-try:
-    import cuequivariance as cue
-    LAYOUTS = cue
-except ImportError:
-    LAYOUTS = DefaultLayouts
-
-
 # Based on mir-group/nequip
 def tp_out_irreps_with_instructions(
     irreps1: o3.Irreps, irreps2: o3.Irreps, target_irreps: o3.Irreps
@@ -69,13 +62,12 @@ def linear_out_irreps(irreps: o3.Irreps, target_irreps: o3.Irreps) -> o3.Irreps:
 
     return o3.Irreps(irreps_mid)
 
-class DefaultLayouts:
-    mul_ir = "mul_ir"
-    ir_mul = "ir_mul"
 
 @compile_mode("script")
 class reshape_irreps(torch.nn.Module):
-    def __init__(self, irreps: o3.Irreps, cueq_config: Optional[CuEquivarianceConfig] = None) -> None:
+    def __init__(
+        self, irreps: o3.Irreps, cueq_config: Optional[CuEquivarianceConfig] = None
+    ) -> None:
         super().__init__()
         self.irreps = o3.Irreps(irreps)
         self.cueq_config = cueq_config
@@ -101,14 +93,13 @@ class reshape_irreps(torch.nn.Module):
             else:
                 field = field.reshape(batch, mul, d)
             out.append(field)
-            
+
         if hasattr(self, "cueq_config") and self.cueq_config is not None:
             if self.cueq_config.layout_str == "mul_ir":
                 return torch.cat(out, dim=-1)
-            else:
-                return torch.cat(out, dim=-2)
-        else:
-            return torch.cat(out, dim=-1)
+            return torch.cat(out, dim=-2)
+        return torch.cat(out, dim=-1)
+
 
 def mask_head(x: torch.Tensor, head: torch.Tensor, num_heads: int) -> torch.Tensor:
     mask = torch.zeros(x.shape[0], x.shape[1] // num_heads, num_heads, device=x.device)

@@ -83,7 +83,9 @@ class MACE(torch.nn.Module):
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
         self.node_embedding = LinearNodeEmbeddingBlock(
-            irreps_in=node_attr_irreps, irreps_out=node_feats_irreps, cueq_config=cueq_config
+            irreps_in=node_attr_irreps,
+            irreps_out=node_feats_irreps,
+            cueq_config=cueq_config,
         )
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
@@ -139,7 +141,9 @@ class MACE(torch.nn.Module):
 
         self.readouts = torch.nn.ModuleList()
         self.readouts.append(
-            LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config)
+            LinearReadoutBlock(
+                hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+            )
         )
 
         for i in range(num_interactions - 1):
@@ -183,7 +187,9 @@ class MACE(torch.nn.Module):
                 )
             else:
                 self.readouts.append(
-                    LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config)
+                    LinearReadoutBlock(
+                        hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+                    )
                 )
 
     def forward(
@@ -477,7 +483,7 @@ class BOTNet(torch.nn.Module):
         gate: Optional[Callable],
         avg_num_neighbors: float,
         atomic_numbers: List[int],
-        cueq_config: Optional[Dict[str, Any]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.r_max = r_max
@@ -682,7 +688,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         ],  # Just here to make it compatible with energy models, MUST be None
         radial_type: Optional[str] = "bessel",
         radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
@@ -884,7 +890,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         gate: Optional[Callable],
         atomic_energies: Optional[np.ndarray],
         radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
