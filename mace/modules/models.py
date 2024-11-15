@@ -19,6 +19,8 @@ from .blocks import (
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
     InteractionBlock,
+    KANNonLinearReadoutBlock,
+    KANReadoutBlock,
     LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
     LinearReadoutBlock,
@@ -62,6 +64,7 @@ class MACE(torch.nn.Module):
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
+        KAN_readout: bool = False,
     ):
         super().__init__()
         self.register_buffer(
@@ -135,9 +138,18 @@ class MACE(torch.nn.Module):
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        self.readouts.append(
-            LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
-        )
+        self.KAN_readout = KAN_readout
+
+        if KAN_readout:
+            self.readouts.append(
+                KANReadoutBlock(
+                    hidden_irreps, MLP_irreps, o3.Irreps(f"{len(heads)}x0e")
+                )
+            )
+        else:
+            self.readouts.append(
+                LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
+            )
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
@@ -166,19 +178,36 @@ class MACE(torch.nn.Module):
             )
             self.products.append(prod)
             if i == num_interactions - 2:
-                self.readouts.append(
-                    NonLinearReadoutBlock(
-                        hidden_irreps_out,
-                        (len(heads) * MLP_irreps).simplify(),
-                        gate,
-                        o3.Irreps(f"{len(heads)}x0e"),
-                        len(heads),
+                if KAN_readout:
+                    self.readouts.append(
+                        KANNonLinearReadoutBlock(
+                            hidden_irreps_out,
+                            (len(heads) * MLP_irreps).simplify(),
+                            o3.Irreps(f"{len(heads)}x0e"),
+                            len(heads),
+                        )
                     )
-                )
+                else:
+                    self.readouts.append(
+                        NonLinearReadoutBlock(
+                            hidden_irreps_out,
+                            (len(heads) * MLP_irreps).simplify(),
+                            gate,
+                            o3.Irreps(f"{len(heads)}x0e"),
+                            len(heads),
+                        )
+                    )
             else:
-                self.readouts.append(
-                    LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
-                )
+                if KAN_readout:
+                    self.readouts.append(
+                        KANReadoutBlock(
+                            hidden_irreps, MLP_irreps, o3.Irreps(f"{len(heads)}x0e")
+                        )
+                    )
+                else:
+                    self.readouts.append(
+                        LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
+                    )
 
     def forward(
         self,

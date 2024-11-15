@@ -10,6 +10,7 @@ from glob import glob
 from pathlib import Path
 from typing import Union
 
+import dill
 import numpy as np
 import torch
 from ase.calculators.calculator import Calculator, all_changes
@@ -127,7 +128,7 @@ class MACECalculator(Calculator):
 
             # Load models from files
             self.models = [
-                torch.load(f=model_path, map_location=device)
+                torch.load(f=model_path, map_location=device, pickle_module=dill)
                 for model_path in model_paths
             ]
 
