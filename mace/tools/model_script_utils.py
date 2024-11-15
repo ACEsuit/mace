@@ -5,6 +5,7 @@ import numpy as np
 from e3nn import o3
 
 from mace import modules
+from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
 
@@ -27,6 +28,16 @@ def configure_model(
     }
     logging.info(
         f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
+    )
+    cueq_config = CuEquivarianceConfig(
+        enabled=args.cue_enabled,
+        layout=args.cue_layout,
+        group=args.cue_group,
+        optimize_all=args.cue_optimize_all,
+        optimize_linear=args.cue_optimize_linear,
+        optimize_channelwise=args.cue_optimize_channelwise,
+        optimize_symmetric=args.cue_optimize_symmetric,
+        optimize_fctp=args.cue_optimize_fctp,
     )
     logging.info("===========MODEL DETAILS===========")
 
@@ -109,6 +120,7 @@ def configure_model(
             atomic_energies=atomic_energies,
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
+            cueq_config=cueq_config,
         )
         model_config_foundation = None
 

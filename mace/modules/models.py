@@ -477,6 +477,7 @@ class BOTNet(torch.nn.Module):
         gate: Optional[Callable],
         avg_num_neighbors: float,
         atomic_numbers: List[int],
+        cueq_config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
         self.r_max = r_max
@@ -681,6 +682,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         ],  # Just here to make it compatible with energy models, MUST be None
         radial_type: Optional[str] = "bessel",
         radial_MLP: Optional[List[int]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -882,6 +884,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         gate: Optional[Callable],
         atomic_energies: Optional[np.ndarray],
         radial_MLP: Optional[List[int]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
         self.register_buffer(
