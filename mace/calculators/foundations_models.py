@@ -35,9 +35,9 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
         "large": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/MACE_MPtrj_2022.9.model",
         "small-0b": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model",
         "medium-0b": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_medium.model",
-        "small-0b2": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0c/mace-small-density-agnesi-stress.model",
-        "medium-0b2": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0c/mace-medium-density-agnesi-stress.model",
-        "large-0b2": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0c/mace-large-density-agnesi-stress.model",
+        "small-0b2": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b2/mace-small-density-agnesi-stress.model",
+        "medium-0b2": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b2/mace-medium-density-agnesi-stress.model",
+        "large-0b2": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b2/mace-large-density-agnesi-stress.model",
     }
 
     checkpoint_url = (
