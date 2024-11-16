@@ -74,59 +74,36 @@ class CuEquivarianceConfig:
             self.group = O3_e3nn if self.group == "O3_e3nn" else getattr(cue, self.group)
 
 
-class Linear(torch.nn.Module):
-    """Wrapper around o3.Linear that optionally uses cuet.Linear when enabled"""
-
-    def __init__(
-        self,
+class Linear:
+    """Returns either a cuet.Linear or o3.Linear based on config"""
+    def __new__(
+        cls,
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
         shared_weights: bool = True,
         internal_weights: bool = True,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
-        super().__init__()
-        if (
-            CUET_AVAILABLE
-            and cueq_config is not None
-            and cueq_config.enabled
-            and (cueq_config.optimize_all or cueq_config.optimize_linear)
-        ):
-            self.linear = cuet.Linear(
+        if (CUET_AVAILABLE and cueq_config is not None and cueq_config.enabled 
+            and (cueq_config.optimize_all or cueq_config.optimize_linear)):
+            return cuet.Linear(
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
             )
-            self.use_cuet = True
-            self.cueq_config = cueq_config
-        else:
-            self.linear = o3.Linear(
-                irreps_in,
-                irreps_out,
-                shared_weights=shared_weights,
-                internal_weights=internal_weights,
-            )
-            self.use_cuet = False
+        return o3.Linear(
+            irreps_in,
+            irreps_out,
+            shared_weights=shared_weights,
+            internal_weights=internal_weights,
+        )
 
-    def __getattr__(self, name):
-        """Forward any unknown attribute access to the underlying linear object"""
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.linear, name)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.use_cuet and hasattr(self, "cueq_config"):
-            return self.linear(x, use_fallback=not self.cueq_config.optimize_linear)
-        return self.linear(x)
-
-
-class TensorProduct(torch.nn.Module):
+class TensorProduct:
     """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct"""
 
-    def __init__(
-        self,
+    def __new__(
+        cls,
         irreps_in1: o3.Irreps,
         irreps_in2: o3.Irreps,
         irreps_out: o3.Irreps,
@@ -135,14 +112,13 @@ class TensorProduct(torch.nn.Module):
         internal_weights: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
-        super().__init__()
         if (
             CUET_AVAILABLE
             and cueq_config is not None
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
-            self.tp = cuet.ChannelWiseTensorProduct(
+            return cuet.ChannelWiseTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -150,10 +126,7 @@ class TensorProduct(torch.nn.Module):
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
             )
-            self.use_cuet = True
-            self.cueq_config = cueq_config
-        else:
-            self.tp = o3.TensorProduct(
+        return o3.TensorProduct(
                 irreps_in1,
                 irreps_in2,
                 irreps_out,
@@ -161,30 +134,12 @@ class TensorProduct(torch.nn.Module):
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
             )
-            self.use_cuet = False
 
-    def __getattr__(self, name):
-        """Forward any unknown attribute access to the underlying linear object"""
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.tp, name)
-
-    def forward(
-        self, x1: torch.Tensor, x2: torch.Tensor, weights: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        if self.use_cuet and hasattr(self, "cueq_config"):
-            return self.tp(
-                x1, x2, weights, use_fallback=not self.cueq_config.optimize_channelwise
-            )
-        return self.tp(x1, x2, weights)
-
-
-class FullyConnectedTensorProduct(torch.nn.Module):
+class FullyConnectedTensorProduct:
     """Wrapper around o3.FullyConnectedTensorProduct/cuet.FullyConnectedTensorProduct"""
 
-    def __init__(
-        self,
+    def __new__(
+        cls,
         irreps_in1: o3.Irreps,
         irreps_in2: o3.Irreps,
         irreps_out: o3.Irreps,
@@ -192,14 +147,13 @@ class FullyConnectedTensorProduct(torch.nn.Module):
         internal_weights: bool = True,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
-        super().__init__()
         if (
             CUET_AVAILABLE
             and cueq_config is not None
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_fctp)
         ):
-            self.tp = cuet.FullyConnectedTensorProduct(
+            return cuet.FullyConnectedTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -207,50 +161,45 @@ class FullyConnectedTensorProduct(torch.nn.Module):
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
             )
-            self.use_cuet = True
-            self.cueq_config = cueq_config
-        else:
-            self.tp = o3.FullyConnectedTensorProduct(
+        return o3.FullyConnectedTensorProduct(
                 irreps_in1,
                 irreps_in2,
                 irreps_out,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
             )
-            self.use_cuet = False
-
-    def __getattr__(self, name):
-        """Forward any unknown attribute access to the underlying linear object"""
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.tp, name)
-
-    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
-        if self.use_cuet and hasattr(self, "cueq_config"):
-            return self.tp(x1, x2, use_fallback=not self.cueq_config.optimize_fctp)
-        return self.tp(x1, x2)
-
 
 class SymmetricContractionWrapper(torch.nn.Module):
     """Wrapper around SymmetricContraction/cuet.SymmetricContraction"""
+    class CuetForward:
+        def __init__(self, instance, layout):
+            self.instance = instance
+            self.layout = layout
+            
+        def __call__(self, x: torch.Tensor, attrs: torch.Tensor) -> torch.Tensor:
+            if self.layout == cue.mul_ir:
+                x = torch.transpose(x, 1, 2)
+            index_attrs = torch.nonzero(attrs)[:,1].int()
+            return self.instance(
+                x.flatten(1),
+                index_attrs,
+            )
 
-    def __init__(
-        self,
+    def __new__(
+        cls,
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
         correlation: int,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
-        super().__init__()
         if (
             CUET_AVAILABLE
             and cueq_config is not None
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_symmetric)
         ):
-            self.sconctaction = cuet.SymmetricContraction(
+            instance = cuet.SymmetricContraction(
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout_in=cue.ir_mul,
@@ -258,33 +207,12 @@ class SymmetricContractionWrapper(torch.nn.Module):
                 contraction_degree=correlation,
                 num_elements=num_elements,
             )
-            self.use_cuet = True
-            self.cueq_config = cueq_config
-            self.layout = cueq_config.layout
-        else:
-            self.sconctaction = SymmetricContraction(
+            instance.forward = cls.CuetForward(instance, cueq_config.layout)
+            return instance
+            
+        return SymmetricContraction(
                 irreps_in=irreps_in,
                 irreps_out=irreps_out,
                 correlation=correlation,
                 num_elements=num_elements,
             )
-            self.use_cuet = False
-
-    def __getattr__(self, name):
-        """Forward any unknown attribute access to the underlying linear object"""
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.sc, name)
-
-    def forward(self, x: torch.Tensor, attrs: torch.Tensor) -> torch.Tensor:
-        if self.use_cuet and hasattr(self, "cueq_config"):
-            if self.layout == cue.mul_ir:
-                x = torch.transpose(x, 1, 2)
-            index_attrs = torch.nonzero(attrs)[:,1].int()
-            return self.sconctaction(
-                x.flatten(1),
-                index_attrs,
-                use_fallback=not self.cueq_config.optimize_symmetric,
-            )
-        return self.sconctaction(x, attrs)
