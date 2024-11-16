@@ -96,7 +96,6 @@ class Linear(torch.nn.Module):
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
-                optimize_fallback=not cueq_config.optimize_linear, # pylint: disable=unexpected-keyword-arg
             )
             self.use_cuet = True
             self.cueq_config = cueq_config
@@ -142,14 +141,13 @@ class TensorProduct(torch.nn.Module):
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
-            self.tp = cuet.ChannelwiseTensorProduct(
+            self.tp = cuet.ChannelWiseTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
-                optimize_fallback=not cueq_config.optimize_channelwise, # pylint: disable=unexpected-keyword-arg
             )
             self.use_cuet = True
             self.cueq_config = cueq_config
@@ -207,7 +205,6 @@ class FullyConnectedTensorProduct(torch.nn.Module):
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
-                optimize_fallback=not cueq_config.optimize_fctp, # pylint: disable=unexpected-keyword-arg
             )
             self.use_cuet = True
             self.cueq_config = cueq_config
@@ -259,7 +256,6 @@ class SymmetricContractionWrapper(torch.nn.Module):
                 layout_out=cueq_config.layout,
                 contraction_degree=correlation,
                 num_elements=num_elements,
-                optimize_fallback=not cueq_config.optimize_symmetric, # pylint: disable=unexpected-keyword-arg
             )
             self.use_cuet = True
             self.cueq_config = cueq_config
@@ -284,9 +280,10 @@ class SymmetricContractionWrapper(torch.nn.Module):
         if self.use_cuet and hasattr(self, "cueq_config"):
             if self.layout == cue.mul_ir:
                 x = torch.transpose(x, 1, 2)
+            index_attrs = torch.nonzero(attrs)[:,1].int()
             return self.sconctaction(
                 x.flatten(1),
-                attrs,
+                index_attrs,
                 use_fallback=not self.cueq_config.optimize_symmetric,
             )
         return self.sconctaction(x, attrs)
