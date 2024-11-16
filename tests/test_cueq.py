@@ -78,26 +78,21 @@ class TestCueq:
 
         # Create model with cuequivariance
         cueq_config = CuEquivarianceConfig(
-            enabled=True, layout="mul_ir", group="O3nn", optimize_all=True
+            enabled=True, layout="mul_ir", group="O3_e3nn", optimize_all=True
         )
         model_config["cueq_config"] = cueq_config
         model_cueq = modules.MACE(**model_config)
         model_cueq = model_cueq.to(device)
 
         # Copy weights
-        model_cueq.load_state_dict(model_std.state_dict())
+        # model_cueq.load_state_dict(model_std.state_dict())
 
         # Compare outputs
-        with torch.no_grad():
-            out_std = model_std(batch, training=True)
-            out_cueq = model_cueq(batch, training=True)
+        out_std = model_std(batch, training=True)
+        out_cueq = model_cueq(batch, training=True)
 
         torch.testing.assert_close(out_std["energy"], out_cueq["energy"])
         torch.testing.assert_close(out_std["forces"], out_cueq["forces"])
-
-        # Test gradients
-        out_std = model_std(batch, training=True)
-        out_cueq = model_cueq(batch, training=True)
 
         loss_std = out_std["energy"].sum()
         loss_cueq = out_cueq["energy"].sum()

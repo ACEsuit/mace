@@ -678,8 +678,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--cue_group",
         help="Symmetry group for cuequivariance",
         type=str,
-        choices=["O3nn, O3"],
-        default="O3nn",
+        choices=["O3_e3nn, O3"],
+        default="O3_e3nn",
     )
     parser.add_argument(
         "--cue_optimize_all",
