@@ -252,10 +252,23 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
                  "non_symmetric_cp",
                  "symmetric_tucker",
                  "non_symmetric_tucker",
-                 "flexible_symmetric_tucker"
+                 "flexible_symmetric_tucker",
+                 "flexible_non_symmetric_tucker"
                 ]
     )
-    
+    parser.add_argument(
+        "--flexible_feats_L",
+        help="Allowing different number of channels for different L",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--gaussian_prior",
+        help="Allowing gaussian prior to be used in EquivariantProductBasis block",
+        type=str2bool,
+        default=False,
+    )
+
     # Dataset
     parser.add_argument(
         "--train_file",

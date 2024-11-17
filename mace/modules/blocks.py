@@ -257,9 +257,12 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         node_feats_irreps: o3.Irreps,
         target_irreps: o3.Irreps,
         correlation: int,
+        learned_radials_dim: int,
         use_sc: bool = True,
         num_elements: Optional[int] = None,
         tensor_format = "symmetric_cp",
+        flexible_feats_L = False,
+        gaussian_prior = False,
     ) -> None:
         super().__init__()
 
@@ -269,25 +272,21 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             irreps_out=target_irreps,
             correlation=correlation,
             num_elements=num_elements,
-            tensor_format=tensor_format
+            tensor_format=tensor_format,
+            flexible_feats_L=flexible_feats_L,
+            gaussian_prior=gaussian_prior,
         )
         # Update linear
         if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
-            self.linear = o3.Linear(
-                target_irreps,
-                target_irreps,
-                internal_weights=True,
-                shared_weights=True,
-            )
-        elif tensor_format in ["flexible_symmetric_tucker", "symmetric_tucker", "non_symmetric_tucker"]:
-            if tensor_format == "flexible_symmetric_tucker":
-                tucker_irreps = make_tucker_irreps_flexible(target_irreps, correlation)
-            else:
-                tucker_irreps = make_tucker_irreps(target_irreps, correlation)
-            print("tucker irreps:", tucker_irreps)
-            print("target irreps:", target_irreps)
-            self.linear = o3.Linear(
-                    tucker_irreps,
+            mid_irreps = target_irreps
+        elif tensor_format in ["flexible_non_symmetric_tucker", "flexible_symmetric_tucker",]:
+            mid_irreps = make_tucker_irreps_flexible(target_irreps, correlation)
+        elif tensor_format in ["symmetric_tucker", "non_symmetric_tucker"]:
+            mid_irreps = make_tucker_irreps(target_irreps, correlation)
+        else:
+            print("Tensor formatting not supported. Check your input")
+        self.linear = o3.Linear(
+                    mid_irreps,
                     target_irreps,
                     internal_weights=True,
                     shared_weights=True,
@@ -298,8 +297,9 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         node_feats: torch.Tensor,
         sc: Optional[torch.Tensor],
         node_attrs: torch.Tensor,
+        learned_radials: torch.Tensor,
     ) -> torch.Tensor:
-        node_feats = self.symmetric_contractions(node_feats, node_attrs)
+        node_feats = self.symmetric_contractions(node_feats, node_attrs, learned_radials)
         if self.use_sc and sc is not None:
             return self.linear(node_feats) + sc
         return self.linear(node_feats)
@@ -686,6 +686,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         )
 
         # Linear
+        # TODO: clena up unused reshape layer for flexible tucker formats later 
         irreps_mid = irreps_mid.simplify()
         self.irreps_out = self.target_irreps
         
@@ -699,7 +700,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             )
             self.reshape = reshape_irreps(self.irreps_out)
 
-        elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker"]:
+        elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker", "flexible_non_symmetric_tucker"]:
             self.linear = torch.nn.ModuleList([])
             # Selector TensorProduct
             self.skip_tp = o3.FullyConnectedTensorProduct(
@@ -736,15 +737,18 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
         
-        if self.tensor_format in ["symmetric_cp", "symmetric_tucker", "flexible_symmetric_tucker"]:
+
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker",]:
             message = self.linear(original_message) / self.avg_num_neighbors
-            if self.tensor_format in ["flexible_symmetric_tucker", ]:
-                return (message, sc)
-            else:
-                return (
-                self.tensor_format_layer(self.reshape(message)),
-                sc,
-                )  # symmetric_cp: [n_nodes, channels, (lmax + 1)**2]
+            return (
+                    self.tensor_format_layer(self.reshape(message)),
+                    sc,
+                    )  # symmetric_cp: [n_nodes, channels, (lmax + 1)**2]
+        elif self.tensor_format in ["flexible_symmetric_tucker"]:
+            message = self.linear(original_message) / self.avg_num_neighbors
+            # requires format contraction in SymmetricContraction - no reshape 
+            # to [n_nodes, channels, (lmax + 1) ** 2 ] yet
+            return (message, sc)
         elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker"]:
             message = self.reshape[0](self.linear[0](original_message))
             message = message.unsqueeze(-1)
@@ -753,7 +757,17 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
                 message = torch.cat((message, _message), dim = -1)
             return (
                 message / self.avg_num_neighbors, 
-                sc
+                sc,
+            )
+        elif self.tensor_format in ["flexible_non_symmetric_tucker"]:
+            message = self.linear[0](original_message) # [n_nodes, klm]
+            message = message.unsqueeze(-1) # [n_nnodes, klm, 1]
+            for idx in range(1, self.correlation):
+                _message = self.linear[idx](original_message).unsqueeze(-1)
+                message = torch.cat((message, _message), dim = -1)
+            return (
+                message / self.avg_num_neighbors,
+                sc,
             )
                 
             

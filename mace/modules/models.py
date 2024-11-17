@@ -66,6 +66,8 @@ class MACE(torch.nn.Module):
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
         tensor_format = "symmetric_cp",
+        flexible_feats_L = False,
+        gaussian_prior = False,
     ):
         super().__init__()
         self.register_buffer(
@@ -138,21 +140,18 @@ class MACE(torch.nn.Module):
             correlation=correlation[0],
             num_elements=num_elements,
             use_sc=use_sc_first,
+            learned_radials_dim=inter.conv_tp.weight_numel,
             #
             tensor_format=tensor_format,
+            flexible_feats_L=flexible_feats_L,
+            gaussian_prior=gaussian_prior,
         )
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        if tensor_format in ["symmetric_cp", "non_symmetric_cp"]:
-            self.readouts.append(
-                LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
-            )
-        elif tensor_format in ["symmetric_tucker", "non_symmetric_tucker", "flexible_symmetric_tucker"]:
-            self.readouts.append(
-                #LinearReadoutBlock(make_tp_irreps(hidden_irreps, correlation[0]), o3.Irreps(f"{len(heads)}x0e"))
-                LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
-            )
+        self.readouts.append(
+            LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
+        )
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
@@ -174,7 +173,9 @@ class MACE(torch.nn.Module):
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
                 radial_MLP=radial_MLP,
-                correlation=correlation[i + 1]
+                correlation=correlation[i + 1],
+                # 
+                #tensor_format=tensor_format,
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(
@@ -183,6 +184,12 @@ class MACE(torch.nn.Module):
                 correlation=correlation[i + 1],
                 num_elements=num_elements,
                 use_sc=True,
+                learned_radials_dim=inter.conv_tp.weight_numel,
+                ##
+                # tensor_format=tensor_format,
+                # flexible_feats_L=flexible_feats_L,
+                # gaussian_prior=gaussian_prior,
+                # learned_radials_dim=inter.conv_tp.weight_numel
             )
             self.products.append(prod)
             if i == num_interactions - 2:

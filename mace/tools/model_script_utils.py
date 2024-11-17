@@ -92,7 +92,7 @@ def configure_model(
             f"Distance transform for radial basis functions: {args.distance_transform}"
         )
         
-        if args.tensor_format in ["symmetric_cp", "symmetric_tucker", "non_symmetric_cp", "non_symmetric_tucker"]:
+        if args.tensor_format in ["symmetric_cp", "symmetric_tucker", "non_symmetric_cp", "non_symmetric_tucker"] or args.flexible_feats_L:
             assert (
                 len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
             ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
@@ -112,6 +112,8 @@ def configure_model(
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
             tensor_format=args.tensor_format,
+            flexible_feats_L=args.flexible_feats_L,
+            gaussian_prior=args.gaussian_prior,
         )
         model_config_foundation = None
 

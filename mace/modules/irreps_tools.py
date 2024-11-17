@@ -37,7 +37,7 @@ def make_tucker_irreps_flexible(target_irreps, correlation):
         tmp_irreps = o3.Irreps(str(ir))
         num_feats = 0      
         for nu in range(1, correlation + 1):
-            num_feats += (math.ceil(ir.mul ** (1 / nu))) ** nu
+            num_feats += (int(ir.mul ** (1 / nu))) ** nu
         tp_irreps += o3.Irreps(f"{num_feats}x{tmp_irreps[0].ir}")
     return tp_irreps
 
