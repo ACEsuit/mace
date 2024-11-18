@@ -3,11 +3,9 @@ import argparse
 import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
-import cuequivariance as cue
 
 from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.scripts_utils import extract_config_mace_model
-from mace import modules
 
 
 def get_transfer_keys() -> List[str]:
