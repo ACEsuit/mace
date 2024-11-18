@@ -191,12 +191,13 @@ class SymmetricContractionWrapper:
         def __init__(self, instance, layout):
             self.instance = instance
             self.layout = layout
+            self.original_forward = instance.forward
 
         def __call__(self, x: torch.Tensor, attrs: torch.Tensor) -> torch.Tensor:
             if self.layout == cue.mul_ir:
                 x = torch.transpose(x, 1, 2)
             index_attrs = torch.nonzero(attrs)[:, 1].int()
-            return self.instance(
+            return self.original_forward(
                 x.flatten(1),
                 index_attrs,
             )
@@ -222,6 +223,9 @@ class SymmetricContractionWrapper:
                 layout_out=cueq_config.layout,
                 contraction_degree=correlation,
                 num_elements=num_elements,
+                original_mace=True,
+                dtype=torch.get_default_dtype(),
+                math_dtype=torch.get_default_dtype(),
             )
             instance.forward = cls.CuetForward(instance, cueq_config.layout)
             return instance
