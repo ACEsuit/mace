@@ -10,7 +10,8 @@ from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools import torch_geometric
 
 try:
-    import cuequivariance as cue # pylint: disable=unused-import
+    import cuequivariance as cue  # pylint: disable=unused-import
+
     CUET_AVAILABLE = True
 except ImportError:
     CUET_AVAILABLE = False

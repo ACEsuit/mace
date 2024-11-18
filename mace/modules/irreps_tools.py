@@ -12,6 +12,7 @@ from e3nn.util.jit import compile_mode
 
 from mace.modules.wrapper_ops import CuEquivarianceConfig
 
+
 # Based on mir-group/nequip
 def tp_out_irreps_with_instructions(
     irreps1: o3.Irreps, irreps2: o3.Irreps, target_irreps: o3.Irreps

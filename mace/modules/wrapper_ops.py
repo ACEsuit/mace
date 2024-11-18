@@ -23,7 +23,9 @@ except ImportError:
 if CUET_AVAILABLE:
 
     class O3_e3nn(cue.O3):
-        def __mul__(rep1: "O3_e3nn", rep2: "O3_e3nn") -> Iterator["O3_e3nn"]: # pylint: disable=no-self-argument
+        def __mul__( # pylint: disable=no-self-argument
+            rep1: "O3_e3nn", rep2: "O3_e3nn"
+        ) -> Iterator["O3_e3nn"]:
             return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
 
         @classmethod
@@ -38,7 +40,9 @@ if CUET_AVAILABLE:
                 )
             return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
 
-        def __lt__(rep1: "O3_e3nn", rep2: "O3_e3nn") -> bool: # pylint: disable=no-self-argument
+        def __lt__( # pylint: disable=no-self-argument
+            rep1: "O3_e3nn", rep2: "O3_e3nn"
+        ) -> bool:
             rep2 = rep1._from(rep2)
             return (rep1.l, rep1.p) < (rep2.l, rep2.p)
 
@@ -47,6 +51,7 @@ if CUET_AVAILABLE:
             for l in itertools.count(0):
                 yield O3_e3nn(l=l, p=1 * (-1) ** l)
                 yield O3_e3nn(l=l, p=-1 * (-1) ** l)
+
 else:
     print(
         "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
@@ -71,11 +76,14 @@ class CuEquivarianceConfig:
         if self.enabled and CUET_AVAILABLE:
             self.layout_str = self.layout
             self.layout = getattr(cue, self.layout)
-            self.group = O3_e3nn if self.group == "O3_e3nn" else getattr(cue, self.group)
+            self.group = (
+                O3_e3nn if self.group == "O3_e3nn" else getattr(cue, self.group)
+            )
 
 
 class Linear:
     """Returns either a cuet.Linear or o3.Linear based on config"""
+
     def __new__(
         cls,
         irreps_in: o3.Irreps,
@@ -84,8 +92,12 @@ class Linear:
         internal_weights: bool = True,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
-        if (CUET_AVAILABLE and cueq_config is not None and cueq_config.enabled 
-            and (cueq_config.optimize_all or cueq_config.optimize_linear)):
+        if (
+            CUET_AVAILABLE
+            and cueq_config is not None
+            and cueq_config.enabled
+            and (cueq_config.optimize_all or cueq_config.optimize_linear)
+        ):
             return cuet.Linear(
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -98,6 +110,7 @@ class Linear:
             shared_weights=shared_weights,
             internal_weights=internal_weights,
         )
+
 
 class TensorProduct:
     """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct"""
@@ -127,13 +140,14 @@ class TensorProduct:
                 internal_weights=internal_weights,
             )
         return o3.TensorProduct(
-                irreps_in1,
-                irreps_in2,
-                irreps_out,
-                instructions=instructions,
-                shared_weights=shared_weights,
-                internal_weights=internal_weights,
-            )
+            irreps_in1,
+            irreps_in2,
+            irreps_out,
+            instructions=instructions,
+            shared_weights=shared_weights,
+            internal_weights=internal_weights,
+        )
+
 
 class FullyConnectedTensorProduct:
     """Wrapper around o3.FullyConnectedTensorProduct/cuet.FullyConnectedTensorProduct"""
@@ -162,24 +176,26 @@ class FullyConnectedTensorProduct:
                 internal_weights=internal_weights,
             )
         return o3.FullyConnectedTensorProduct(
-                irreps_in1,
-                irreps_in2,
-                irreps_out,
-                shared_weights=shared_weights,
-                internal_weights=internal_weights,
-            )
+            irreps_in1,
+            irreps_in2,
+            irreps_out,
+            shared_weights=shared_weights,
+            internal_weights=internal_weights,
+        )
 
-class SymmetricContractionWrapper(torch.nn.Module):
+
+class SymmetricContractionWrapper:
     """Wrapper around SymmetricContraction/cuet.SymmetricContraction"""
+
     class CuetForward:
         def __init__(self, instance, layout):
             self.instance = instance
             self.layout = layout
-            
+
         def __call__(self, x: torch.Tensor, attrs: torch.Tensor) -> torch.Tensor:
             if self.layout == cue.mul_ir:
                 x = torch.transpose(x, 1, 2)
-            index_attrs = torch.nonzero(attrs)[:,1].int()
+            index_attrs = torch.nonzero(attrs)[:, 1].int()
             return self.instance(
                 x.flatten(1),
                 index_attrs,
@@ -209,10 +225,10 @@ class SymmetricContractionWrapper(torch.nn.Module):
             )
             instance.forward = cls.CuetForward(instance, cueq_config.layout)
             return instance
-            
+
         return SymmetricContraction(
-                irreps_in=irreps_in,
-                irreps_out=irreps_out,
-                correlation=correlation,
-                num_elements=num_elements,
-            )
+            irreps_in=irreps_in,
+            irreps_out=irreps_out,
+            correlation=correlation,
+            num_elements=num_elements,
+        )
