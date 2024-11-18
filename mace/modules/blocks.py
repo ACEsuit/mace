@@ -180,18 +180,32 @@ class RadialEmbeddingBlock(torch.nn.Module):
         distance_transform: str = "None",
     ):
         super().__init__()
-        if radial_type == "bessel":
-            self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
-        elif radial_type == "gaussian":
-            self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
-        elif radial_type == "chebyshev":
-            self.bessel_fn = ChebychevBasis(r_max=r_max, num_basis=num_bessel)
+
+        # if radial_type == "bessel":
+        #     self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
+        # elif radial_type == "gaussian":
+        #     self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
+        # elif radial_type == "chebyshev":
+        #     self.bessel_fn = ChebychevBasis(r_max=r_max, num_basis=num_bessel)
+
+        # Initialize Pade polynomial coefficients
+        self.p_degree = p_degree
+        self.q_degree = q_degree
+
+        # P(x) coefficients: p0, p1, ..., p_p_degree
+        self.p_coefficients = nn.Parameter(torch.randn(p_degree + 1))
+
+        # Q(x) coefficients: q1, q2, ..., q_q_degree
+        # Q(x) = 1 + q1*x + q2*x^2 + ... + q_q_degree*x^q_degree
+        self.q_coefficients = nn.Parameter(torch.randn(q_degree))
+
         if distance_transform == "Agnesi":
             self.distance_transform = AgnesiTransform()
         elif distance_transform == "Soft":
             self.distance_transform = SoftTransform()
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
-        self.out_dim = num_bessel
+        # self.out_dim = num_bessel
+        self.out_dim = 1  # Since the Pade polynomial embedding outputs a single value per edge
 
     def forward(
         self,
@@ -205,7 +219,19 @@ class RadialEmbeddingBlock(torch.nn.Module):
             edge_lengths = self.distance_transform(
                 edge_lengths, node_attrs, edge_index, atomic_numbers
             )
-        radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
+        # radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
+
+        # Compute P(x) = p0 + p1*x + p2*x^2 + ... + p_p_degree*x^p_degree
+        powers_p = torch.cat([edge_lengths ** i for i in range(self.p_degree + 1)], dim=-1)  # [n_edges, p_degree + 1]
+        P = torch.matmul(powers_p, self.p_coefficients)  # [n_edges, 1]
+
+        # Compute Q(x) = 1 + q1*x + q2*x^2 + ... + q_q_degree*x^q_degree
+        powers_q = torch.cat([edge_lengths ** (i + 1) for i in range(self.q_degree)], dim=-1)  # [n_edges, q_degree]
+        Q = 1.0 + torch.matmul(powers_q, self.q_coefficients)  # [n_edges, 1]
+
+        # Compute P(x) / Q(x)
+        radial = P / Q  # [n_edges, 1]
+
         return radial * cutoff  # [n_edges, n_basis]
 
 
