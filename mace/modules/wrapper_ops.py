@@ -4,6 +4,7 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 
 import dataclasses
 import itertools
+import types
 from typing import Iterator, List, Optional
 
 import numpy as np
@@ -98,12 +99,18 @@ class Linear:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_linear)
         ):
-            return cuet.Linear(
+            instance = cuet.Linear(
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
             )
+            instance._original_forward = instance.forward
+            def cuet_forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self._original_forward(x, use_fallback=None)
+            instance.forward = types.MethodType(cuet_forward, instance)
+            return instance
+        
         return o3.Linear(
             irreps_in,
             irreps_out,
@@ -114,7 +121,7 @@ class Linear:
 
 class TensorProduct:
     """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct"""
-
+        
     def __new__(
         cls,
         irreps_in1: o3.Irreps,
@@ -131,7 +138,7 @@ class TensorProduct:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
-            return cuet.ChannelWiseTensorProduct(
+            instance = cuet.ChannelWiseTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -139,6 +146,12 @@ class TensorProduct:
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
             )
+            instance._original_forward = instance.forward
+            def cuet_forward(self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+                return self._original_forward(x, y, z, use_fallback=None)
+            instance.forward = types.MethodType(cuet_forward, instance)
+            return instance
+        
         return o3.TensorProduct(
             irreps_in1,
             irreps_in2,
@@ -152,6 +165,7 @@ class TensorProduct:
 class FullyConnectedTensorProduct:
     """Wrapper around o3.FullyConnectedTensorProduct/cuet.FullyConnectedTensorProduct"""
 
+        
     def __new__(
         cls,
         irreps_in1: o3.Irreps,
@@ -167,7 +181,7 @@ class FullyConnectedTensorProduct:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_fctp)
         ):
-            return cuet.FullyConnectedTensorProduct(
+            instance = cuet.FullyConnectedTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -175,6 +189,12 @@ class FullyConnectedTensorProduct:
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
             )
+            instance._original_forward = instance.forward
+            def cuet_forward(self, x: torch.Tensor, attrs: torch.Tensor) -> torch.Tensor:
+                return self._original_forward(x, attrs, use_fallback=None)
+            instance.forward = types.MethodType(cuet_forward, instance)
+            return instance
+        
         return o3.FullyConnectedTensorProduct(
             irreps_in1,
             irreps_in2,
@@ -186,21 +206,6 @@ class FullyConnectedTensorProduct:
 
 class SymmetricContractionWrapper:
     """Wrapper around SymmetricContraction/cuet.SymmetricContraction"""
-
-    class CuetForward:
-        def __init__(self, instance, layout):
-            self.instance = instance
-            self.layout = layout
-            self.original_forward = instance.forward
-
-        def __call__(self, x: torch.Tensor, attrs: torch.Tensor) -> torch.Tensor:
-            if self.layout == cue.mul_ir:
-                x = torch.transpose(x, 1, 2)
-            index_attrs = torch.nonzero(attrs)[:, 1].int()
-            return self.original_forward(
-                x.flatten(1),
-                index_attrs,
-            )
 
     def __new__(
         cls,
@@ -227,7 +232,17 @@ class SymmetricContractionWrapper:
                 dtype=torch.get_default_dtype(),
                 math_dtype=torch.get_default_dtype(),
             )
-            instance.forward = cls.CuetForward(instance, cueq_config.layout)
+            instance._original_forward = instance.forward
+            instance.layout = cueq_config.layout
+            def cuet_forward(self, x: torch.Tensor, attrs: torch.Tensor) -> torch.Tensor:
+                if self.layout == cue.mul_ir: 
+                    x = torch.transpose(x, 1, 2)
+                index_attrs = torch.nonzero(attrs)[:, 1].int()
+                return self._original_forward(
+                    x.flatten(1),
+                    index_attrs,
+                )
+            instance.forward = types.MethodType(cuet_forward, instance)
             return instance
 
         return SymmetricContraction(
