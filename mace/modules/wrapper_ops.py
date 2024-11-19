@@ -23,7 +23,7 @@ except ImportError:
 if CUET_AVAILABLE:
 
     class O3_e3nn(cue.O3):
-        def __mul__( # pylint: disable=no-self-argument
+        def __mul__(  # pylint: disable=no-self-argument
             rep1: "O3_e3nn", rep2: "O3_e3nn"
         ) -> Iterator["O3_e3nn"]:
             return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
@@ -40,7 +40,7 @@ if CUET_AVAILABLE:
                 )
             return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
 
-        def __lt__( # pylint: disable=no-self-argument
+        def __lt__(  # pylint: disable=no-self-argument
             rep1: "O3_e3nn", rep2: "O3_e3nn"
         ) -> bool:
             rep2 = rep1._from(rep2)

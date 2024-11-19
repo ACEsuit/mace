@@ -176,9 +176,9 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
     scale = model.scale_shift.scale
     shift = model.scale_shift.shift
     try:
-        correlation = len(
-            model.products[0].symmetric_contractions.contractions[0].weights
-        ) + 1
+        correlation = (
+            len(model.products[0].symmetric_contractions.contractions[0].weights) + 1
+        )
     except AttributeError:
         correlation = model.products[0].symmetric_contractions.contraction_degree
     config = {
