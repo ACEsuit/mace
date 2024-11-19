@@ -54,6 +54,8 @@ from mace.tools.scripts_utils import (
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
+from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 
 
 def main() -> None:
@@ -600,7 +602,10 @@ def run(args: argparse.Namespace) -> None:
 
     if args.wandb:
         setup_wandb(args)
-
+    if args.enable_cueq:
+        logging.info("Converting model to CUEQ for accelerated training")
+        assert args.model in ["MACE", "ScaleShiftMACE"], "Model must be MACE or ScaleShiftMACE"
+        model = run_e3nn_to_cueq(model)
     if args.distributed:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
@@ -752,6 +757,8 @@ def run(args: argparse.Namespace) -> None:
 
         if rank == 0:
             # Save entire model
+            if args.enable_cueq:
+                model = run_cueq_to_e3nn(model)
             if swa_eval:
                 model_path = Path(args.checkpoints_dir) / (tag + "_stagetwo.model")
             else:

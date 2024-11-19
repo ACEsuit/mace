@@ -662,52 +662,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     # option for cuequivariance acceleration
     parser.add_argument(
-        "--cue_enabled",
+        "--enable_cueq",
         help="Enable cuequivariance acceleration",
-        type=str2bool,
-        default=False,
-    )
-    parser.add_argument(
-        "--cue_layout",
-        help="Memory layout for cuequivariance tensors",
-        type=str,
-        choices=["mul_ir", "ir_mul"],
-        default="mul_ir",
-    )
-    parser.add_argument(
-        "--cue_group",
-        help="Symmetry group for cuequivariance",
-        type=str,
-        choices=["O3_e3nn, O3"],
-        default="O3_e3nn",
-    )
-    parser.add_argument(
-        "--cue_optimize_all",
-        help="Enable all cuequivariance optimizations",
-        type=str2bool,
-        default=False,
-    )
-    parser.add_argument(
-        "--cue_optimize_linear",
-        help="Enable cuequivariance linear layer optimization",
-        type=str2bool,
-        default=False,
-    )
-    parser.add_argument(
-        "--cue_optimize_channelwise",
-        help="Enable cuequivariance channelwise optimization",
-        type=str2bool,
-        default=False,
-    )
-    parser.add_argument(
-        "--cue_optimize_symmetric",
-        help="Enable cuequivariance symmetric contraction optimization",
-        type=str2bool,
-        default=False,
-    )
-    parser.add_argument(
-        "--cue_optimize_fctp",
-        help="Enable cuequivariance fully connected tensor product optimization",
         type=str2bool,
         default=False,
     )
