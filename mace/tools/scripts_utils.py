@@ -175,6 +175,12 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
 
     scale = model.scale_shift.scale
     shift = model.scale_shift.shift
+    try:
+        correlation = (
+            len(model.products[0].symmetric_contractions.contractions[0].weights) + 1
+        )
+    except AttributeError:
+        correlation = model.products[0].symmetric_contractions.contraction_degree
     config = {
         "r_max": model.r_max.item(),
         "num_bessel": len(model.radial_embedding.bessel_fn.bessel_weights),
@@ -200,10 +206,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
         "atomic_numbers": model.atomic_numbers,
-        "correlation": len(
-            model.products[0].symmetric_contractions.contractions[0].weights
-        )
-        + 1,
+        "correlation": correlation,
         "radial_type": radial_to_name(
             model.radial_embedding.bessel_fn.__class__.__name__
         ),
