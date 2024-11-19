@@ -241,6 +241,7 @@ class SymmetricContractionWrapper:
                 return self._original_forward(
                     x.flatten(1),
                     index_attrs,
+                    use_fallback=None,
                 )
             instance.forward = types.MethodType(cuet_forward, instance)
             return instance
