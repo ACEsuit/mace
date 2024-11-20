@@ -1,0 +1,21 @@
+device: cuda
+multi_processed_test: True
+heads: 
+    aqmgas_PBE0_MBD:
+        train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/aqmgas
+        valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/aqmgas
+        E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        mean: -5.422557832367062
+        std: [0.39621699]
+        avg_num_neighbors: 22.866141438033967
+    aqmsol_PBE0_MPB:
+        train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/aqmsol
+        valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/aqmsol
+        E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        mean: -5.4329855450607125
+        std: [0.43439385]
+        avg_num_neighbors: 22.333911060070317

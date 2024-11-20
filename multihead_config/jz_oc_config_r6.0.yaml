@@ -1,0 +1,16 @@
+avg_num_neighbor_head: oc20_usemppbe
+device: cuda
+multi_processed_test: True
+heads: 
+    oc20_usemppbe:
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/oc20/processed_s2ef_train_2M/train
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/oc20/processed_s2ef_train_2M/val
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        avg_num_neighbors: 61.9649349317854 #35.277116259862005 use mp avg for compare
+        mean: -3.4005498565994134
+        std: 0.4394121144760009
+
+#test_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/test/spice
+#statistics_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/statistics.json 

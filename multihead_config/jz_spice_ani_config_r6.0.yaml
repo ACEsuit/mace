@@ -1,0 +1,29 @@
+avg_num_neighbor_head: spice_wB97M
+device: cuda
+multi_processed_test: True
+heads: 
+    spice_wB97M:
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/train/spice
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/valid/spice
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        avg_num_neighbors: 22.86736849018836
+        mean: -4.406405198254238
+        std: 1.0737544472166278
+
+    ani2x_usespice:
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/ani-2x/processed_wB97X-631Gd/train 
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/ani-2x/processed_wB97X-631Gd/val
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        avg_num_neighbors: 15.09147162872368
+        mean: -3.330071099110768
+        std: 1.8929374358811464
+        train_ratio: 0.16
+
+# test_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/test/spice
+# statistics_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/statistics.json 
+# mean, std does not depend on r
+# no online, compute statistics script with the same yaml.

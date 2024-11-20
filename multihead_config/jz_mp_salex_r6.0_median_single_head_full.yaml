@@ -1,0 +1,14 @@
+avg_num_neighbor_head: mp_pbe
+device: cuda
+multi_processed_test: True
+heads: 
+    mp_pbe:
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/mptraj_sift_alex_new/train
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/mptraj_sift_alex_new/val
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        avg_num_neighbors: 61.9649349317854
+        mean: 0.1634233391135065
+        std: 0.7735790334431056
+

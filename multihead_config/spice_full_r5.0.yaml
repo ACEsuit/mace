@@ -1,0 +1,12 @@
+avg_num_neighbor_head: spice_wB97M
+device: cuda
+multi_processed_test: True
+heads: 
+    spice_wB97M:
+        train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/spice
+        test_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/test/spice
+        valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/spice
+        E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        statistics_file: /mnt/petrelfs/linchen/FoundationalModel/data/spice/processed_data_distill/statistics.json

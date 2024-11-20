@@ -1,0 +1,56 @@
+device: cuda
+multi_processed_test: True
+heads: 
+    spice_wB97M:
+        train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/spice
+        test_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/test/spice
+        valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/spice
+        E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        statistics_file: /mnt/petrelfs/linchen/FoundationalModel/data/spice/processed_data_distill/statistics.json
+    # ani2x_usespice:
+    #     train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/ani-2x_wB97X-631Gd
+    #     valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/ani-2x_wB97X-631Gd
+    #     E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+    #     config_type_weights:
+    #         Default: 1.0
+    #     statistics_file: /mnt/petrelfs/linchen/FoundationalModel/data/ani-2x/processed_wB97X-631Gd/statistics.json
+    # aqmgas_PBE0_MBD:
+    #     train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/aqmgas
+    #     valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/aqmgas
+    #     E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+    #     config_type_weights:
+    #         Default: 1.0
+    #     mean: -5.422557832367062
+    #     std: 0.39621699
+    #     avg_num_neighbors: 22.866141438033967
+    # aqmsol_PBE0_MPB:
+    #     train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/aqmsol
+    #     valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/aqmsol
+    #     E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+    #     config_type_weights:
+    #         Default: 1.0
+    #     mean: -5.4329855450607125
+    #     std: 0.43439385
+    #     avg_num_neighbors: 22.333911060070317
+    # oc20_usempr2scan:
+    #     train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/oc20 
+    #     valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/oc20
+    #     E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+    #     config_type_weights:
+    #         Default: 1.0
+    #     statistics_file: /mnt/petrelfs/linchen/FoundationalModel/data/oc20/processed_s2ef_train_2M/statistics.json
+    mp_r2scan:
+        train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/MatProj
+        valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/MatProj
+        E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        mean: -4.481576335561825
+        std: 0.76337158
+        avg_num_neighbors: 35.98518481424823
+
+    # TODO: use MP number neighbors for all heads
+    # TODO: Non shift model (only scale) shift will introduct a bias on dissociative energy
+    # TODO: avg number of neighbors with different elementss

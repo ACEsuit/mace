@@ -1,0 +1,15 @@
+avg_num_neighbor_head: mp_r2scan 
+device: cuda
+multi_processed_test: True
+heads:
+    mp_r2scan:
+        train_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/train/MatProj
+        valid_file: /mnt/petrelfs/linchen/FoundationalModel/data/multihead_datasets/valid/MatProj
+        E0s: /mnt/petrelfs/linchen/FoundationalModel/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        train_ratio: 0.4
+        # avg_num_neighbors: 35.81958479738538 # r_max 5.0
+        avg_num_neighbors: 61.652801277801686 # r_max 6.0
+        mean: -4.468639640025097
+        std: 1.07620229

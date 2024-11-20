@@ -1,0 +1,28 @@
+avg_num_neighbor_head: mp_pbe
+device: cuda
+multi_processed_test: True
+heads: 
+    spice_wB97M:
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/train/spice
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/valid/spice
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        avg_num_neighbors: 18.39010700340165
+        mean: -4.405349000674705
+        std: 1.0742364
+
+    mp_pbe:
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/train/MatProj
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/valid/MatProj
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        avg_num_neighbors: 35.985167534166
+        mean: -4.48071865
+        std: 0.77357903
+
+# test_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/test/spice
+# statistics_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/statistics.json 
+# mean, std does not depend on r
+# no online, compute statistics script with the same yaml.
