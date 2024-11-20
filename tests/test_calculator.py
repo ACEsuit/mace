@@ -16,6 +16,13 @@ from mace.calculators import mace_mp, mace_off
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
 
+try:
+    import cuequivariance as cue  # pylint: disable=unused-import
+
+    CUET_AVAILABLE = True
+except ImportError:
+    CUET_AVAILABLE = False
+
 pytest_mace_dir = Path(__file__).parent.parent
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
@@ -495,6 +502,22 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
 
 def test_mace_off():
     mace_off_model = mace_off(model="small", device="cpu")
+    assert isinstance(mace_off_model, MACECalculator)
+    assert mace_off_model.model_type == "MACE"
+    assert len(mace_off_model.models) == 1
+    assert isinstance(mace_off_model.models[0], ScaleShiftMACE)
+
+    atoms = build.molecule("H2O")
+    atoms.calc = mace_off_model
+
+    E = atoms.get_potential_energy()
+
+    assert np.allclose(E, -2081.116128586803, atol=1e-9)
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+def test_mace_off_cueq(model="medium", device="cpu"):
+    mace_off_model = mace_off(model=model, device=device, enable_cueq=True)
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"
     assert len(mace_off_model.models) == 1
