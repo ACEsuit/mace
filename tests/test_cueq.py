@@ -6,7 +6,6 @@ import torch.nn.functional as F
 from e3nn import o3
 
 from mace import data, modules, tools
-from e3nn.util import jit
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import torch_geometric
@@ -26,8 +25,6 @@ class TestCueq:
     @pytest.fixture
     def model_config(self, interaction_cls_first, hidden_irreps) -> Dict[str, Any]:
         table = tools.AtomicNumberTable([6])
-        print("interaction_cls_first", interaction_cls_first)
-        print("hidden_irreps", hidden_irreps)
         return {
             "r_max": 5.0,
             "num_bessel": 8,
@@ -89,8 +86,8 @@ class TestCueq:
     @pytest.mark.parametrize(
         "hidden_irreps",
         [
-            # o3.Irreps("32x0e + 32x1o"),
-            # o3.Irreps("32x0e + 32x1o + 32x2e"),
+            o3.Irreps("32x0e + 32x1o"),
+            o3.Irreps("32x0e + 32x1o + 32x2e"),
             o3.Irreps("32x0e"),
         ],
     )
@@ -165,7 +162,7 @@ class TestCueq:
             print_gradient_diff(
                 name_e3nn, p_e3nn, name_e3nn_back, p_e3nn_back, "Full circle"
             )
-    
+
     # def test_jit_compile(
     #     self,
     #     model_config: Dict[str, Any],

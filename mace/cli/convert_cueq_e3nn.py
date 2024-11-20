@@ -48,7 +48,7 @@ def transfer_symmetric_contractions(
 ):
     """Transfer symmetric contraction weights from CuEq to E3nn format"""
     kmax_pairs = get_kmax_pairs(max_L, correlation)
-    logging.info(
+    logging.warning(
         f"Using kmax pairs {kmax_pairs} for max_L={max_L}, correlation={correlation}"
     )
 
@@ -95,7 +95,7 @@ def transfer_weights(
 
     # Transfer main weights
     transfer_keys = get_transfer_keys()
-    logging.info("Transferring main weights...")
+    logging.warning("Transferring main weights...")
     for key in transfer_keys:
         if key in source_dict:  # Check if key exists
             target_dict[key] = source_dict[key]
@@ -103,7 +103,7 @@ def transfer_weights(
             logging.warning(f"Key {key} not found in source model")
 
     # Transfer symmetric contractions
-    logging.info("Transferring symmetric contractions...")
+    logging.warning("Transferring symmetric contractions...")
     transfer_symmetric_contractions(source_dict, target_dict, max_L, correlation)
 
     # Transfer remaining matching keys
@@ -114,7 +114,7 @@ def transfer_weights(
     remaining_keys = {k for k in remaining_keys if "symmetric_contraction" not in k}
 
     if remaining_keys:
-        logging.info(
+        logging.warning(
             f"Found {len(remaining_keys)} additional matching keys to transfer"
         )
         for key in remaining_keys:
@@ -138,24 +138,23 @@ def transfer_weights(
 
 
 def run(input_model, output_model="_e3nn.model", device="cuda", return_model=True):
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
 
     # Load CuEq model
-    logging.info(f"Loading CuEq model from {input_model}")
+    logging.warning("Loading CuEq model")
     if isinstance(input_model, str):
         source_model = torch.load(input_model, map_location=device)
     else:
         source_model = input_model
-
+    default_dtype = next(source_model.parameters()).dtype
+    torch.set_default_dtype(default_dtype)
     # Extract configuration
-    logging.info("Extracting model configuration")
+    logging.warning("Extracting model configuration")
     config = extract_config_mace_model(source_model)
 
     # Get max_L and correlation from config
     max_L = config["hidden_irreps"].lmax
     correlation = config["correlation"]
-    logging.info(f"Extracted max_L={max_L}, correlation={correlation}")
+    logging.warning(f"Extracted max_L={max_L}, correlation={correlation}")
 
     # Remove CuEq config
     config.pop("cueq_config", None)
@@ -165,7 +164,7 @@ def run(input_model, output_model="_e3nn.model", device="cuda", return_model=Tru
     target_model = source_model.__class__(**config)
 
     # Transfer weights with proper remapping
-    logging.info("Transferring weights with remapping...")
+    logging.warning("Transferring weights with remapping...")
     transfer_weights(source_model, target_model, max_L, correlation)
 
     if return_model:
@@ -175,7 +174,7 @@ def run(input_model, output_model="_e3nn.model", device="cuda", return_model=Tru
     if isinstance(input_model, str):
         base = os.path.splitext(input_model)[0]
         output_model = f"{base}.{output_model}"
-    logging.info(f"Saving E3nn model to {output_model}")
+    logging.warning(f"Saving E3nn model to {output_model}")
     torch.save(target_model, output_model)
     return None
 

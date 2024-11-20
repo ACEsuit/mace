@@ -16,6 +16,7 @@ from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
 
 from mace import data
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import prepare
@@ -60,10 +61,13 @@ class MACECalculator(Calculator):
         model_type="MACE",
         compile_mode=None,
         fullgraph=True,
+        enable_cueq=False,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
-
+        if enable_cueq:
+            assert model_type == "MACE", "CuEq only supports MACE models"
+            compile_mode = None
         if "model_path" in kwargs:
             deprecation_message = (
                 "'model_path' argument is deprecated, please use 'model_paths'"
@@ -130,6 +134,12 @@ class MACECalculator(Calculator):
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
             ]
+            if enable_cueq:
+                print("Converting models to CuEq for acceleration")
+                self.models = [
+                    run_e3nn_to_cueq(model, device=device).to(device)
+                    for model in self.models
+                ]
 
         elif models is not None:
             if not isinstance(models, list):

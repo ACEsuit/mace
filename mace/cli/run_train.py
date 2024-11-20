@@ -24,6 +24,8 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
+from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -54,8 +56,6 @@ from mace.tools.scripts_utils import (
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
-from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
-from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 
 
 def main() -> None:
@@ -551,6 +551,11 @@ def run(args: argparse.Namespace) -> None:
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
 
+    # Cueq
+    if args.enable_cueq:
+        logging.info("Converting model to CUEQ for accelerated training")
+        assert args.model in ["MACE", "ScaleShiftMACE"], "Model must be MACE or ScaleShiftMACE"
+        model = run_e3nn_to_cueq(deepcopy(model), device=device)
     # Optimizer
     param_options = get_params_options(args, model)
     optimizer: torch.optim.Optimizer
@@ -602,10 +607,6 @@ def run(args: argparse.Namespace) -> None:
 
     if args.wandb:
         setup_wandb(args)
-    if args.enable_cueq:
-        logging.info("Converting model to CUEQ for accelerated training")
-        assert args.model in ["MACE", "ScaleShiftMACE"], "Model must be MACE or ScaleShiftMACE"
-        model = run_e3nn_to_cueq(model)
     if args.distributed:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
@@ -757,16 +758,19 @@ def run(args: argparse.Namespace) -> None:
 
         if rank == 0:
             # Save entire model
-            if args.enable_cueq:
-                model = run_cueq_to_e3nn(model)
             if swa_eval:
                 model_path = Path(args.checkpoints_dir) / (tag + "_stagetwo.model")
             else:
                 model_path = Path(args.checkpoints_dir) / (tag + ".model")
             logging.info(f"Saving model to {model_path}")
+            model_to_save = deepcopy(model)
+            if args.enable_cueq:
+                print("RUNING CUEQ TO E3NN")
+                print("swa_eval", swa_eval)
+                model_to_save = run_cueq_to_e3nn(deepcopy(model), device=device)
             if args.save_cpu:
-                model = model.to("cpu")
-            torch.save(model, model_path)
+                model_to_save = model_to_save.to("cpu")
+            torch.save(model_to_save, model_path)
             extra_files = {
                 "commit.txt": commit.encode("utf-8") if commit is not None else b"",
                 "config.yaml": json.dumps(
@@ -775,14 +779,14 @@ def run(args: argparse.Namespace) -> None:
             }
             if swa_eval:
                 torch.save(
-                    model, Path(args.model_dir) / (args.name + "_stagetwo.model")
+                    model_to_save, Path(args.model_dir) / (args.name + "_stagetwo.model")
                 )
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_stagetwo_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata {path_complied}")
-                    model_compiled = jit.compile(deepcopy(model))
+                    model_compiled = jit.compile(deepcopy(model_to_save))
                     torch.jit.save(
                         model_compiled,
                         path_complied,
@@ -791,13 +795,13 @@ def run(args: argparse.Namespace) -> None:
                 except Exception as e:  # pylint: disable=W0703
                     pass
             else:
-                torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+                torch.save(model_to_save, Path(args.model_dir) / (args.name + ".model"))
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata to {path_complied}")
-                    model_compiled = jit.compile(deepcopy(model))
+                    model_compiled = jit.compile(deepcopy(model_to_save))
                     torch.jit.save(
                         model_compiled,
                         path_complied,
