@@ -215,6 +215,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "distance_transform": radial_to_transform(model.radial_embedding),
         "atomic_inter_scale": scale.cpu().numpy(),
         "atomic_inter_shift": shift.cpu().numpy(),
+        "heads": model.heads if hasattr(model, "heads") else ["default"],
     }
     return config
 
