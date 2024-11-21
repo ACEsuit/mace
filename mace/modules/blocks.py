@@ -634,7 +634,6 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         )
 
         # Linear
-        irreps_mid = irreps_mid.simplify()
         self.irreps_out = self.target_irreps
         self.linear = Linear(
             irreps_mid,
@@ -717,7 +716,6 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         )
 
         # Linear
-        irreps_mid = irreps_mid.simplify()
         self.irreps_out = self.target_irreps
         self.linear = Linear(
             irreps_mid,
@@ -800,7 +798,6 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         )
 
         # Linear
-        irreps_mid = irreps_mid.simplify()
         self.irreps_out = self.target_irreps
         self.linear = Linear(
             irreps_mid,
@@ -898,7 +895,6 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         )
 
         # Linear
-        irreps_mid = irreps_mid.simplify()
         self.irreps_out = self.target_irreps
         self.linear = Linear(
             irreps_mid,
@@ -1007,7 +1003,6 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         )
 
         # Linear
-        irreps_mid = irreps_mid.simplify()
         self.irreps_out = self.target_irreps
         self.linear = Linear(
             irreps_mid,
