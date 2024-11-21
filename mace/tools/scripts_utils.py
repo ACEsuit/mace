@@ -175,6 +175,13 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
 
     scale = model.scale_shift.scale
     shift = model.scale_shift.shift
+    heads = model.heads if hasattr(model, "heads") else ["default"]
+    model_mlp_irreps = (
+        o3.Irreps(str(model.readouts[-1].hidden_irreps))
+        if model.num_interactions.item() > 1
+        else 1
+    )
+    mlp_irreps = o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e")
     try:
         correlation = (
             len(model.products[0].symmetric_contractions.contractions[0].weights) + 1
@@ -191,11 +198,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "num_interactions": model.num_interactions.item(),
         "num_elements": len(model.atomic_numbers),
         "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
-        "MLP_irreps": (
-            o3.Irreps(str(model.readouts[-1].hidden_irreps))
-            if model.num_interactions.item() > 1
-            else 1
-        ),
+        "MLP_irreps": (mlp_irreps if model.num_interactions.item() > 1 else 1),
         "gate": (
             model.readouts[-1]  # pylint: disable=protected-access
             .non_linearity._modules["acts"][0]
@@ -215,7 +218,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "distance_transform": radial_to_transform(model.radial_embedding),
         "atomic_inter_scale": scale.cpu().numpy(),
         "atomic_inter_shift": shift.cpu().numpy(),
-        "heads": model.heads if hasattr(model, "heads") else ["default"],
+        "heads": heads,
     }
     return config
 
@@ -269,8 +272,8 @@ def remove_pt_head(
     )
     model_config["atomic_inter_scale"] = model.scale_shift.scale[head_idx].item()
     model_config["atomic_inter_shift"] = model.scale_shift.shift[head_idx].item()
-    mlp_count_irreps = model_config["MLP_irreps"].count((0, 1)) // len(model.heads)
-    model_config["MLP_irreps"] = o3.Irreps(f"{mlp_count_irreps}x0e")
+    mlp_count_irreps = model_config["MLP_irreps"].count((0, 1))
+    # model_config["MLP_irreps"] = o3.Irreps(f"{mlp_count_irreps}x0e")
 
     new_model = model.__class__(**model_config)
     state_dict = model.state_dict()
