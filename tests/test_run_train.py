@@ -7,9 +7,17 @@ from pathlib import Path
 import ase.io
 import numpy as np
 import pytest
+import torch
 from ase.atoms import Atoms
 
 from mace.calculators.mace import MACECalculator
+
+try:
+    import cuequivariance as cue  # pylint: disable=unused-import
+
+    CUET_AVAILABLE = True
+except ImportError:
+    CUET_AVAILABLE = False
 
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
@@ -847,3 +855,199 @@ def test_run_train_multihead_replay_custum_finetuning(
     assert len(Es) == len(fitting_configs)
     assert all(isinstance(E, float) for E in Es)
     assert len(set(Es)) > 1  # Ens
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+def test_run_train_cueq(tmp_path, fitting_configs):
+    torch.set_default_dtype(torch.float64)
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["enable_cueq"] = True
+    mace_params["device"] = "cpu"
+    mace_params["default_dtype"] = "float64"
+
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+    Es = []
+    for at in fitting_configs[2:]:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device="cpu", enable_cueq=True
+    )
+    Es_cueq = []
+    for at in fitting_configs[2:]:
+        at.calc = calc
+        Es_cueq.append(at.get_potential_energy())
+
+    # from a run on 04/06/2024 on stress_bugfix 967f0bfb6490086599da247874b24595d149caa7
+    ref_Es = [
+        -0.039181344585828524,
+        -0.0915223395136733,
+        -0.14953484236456582,
+        -0.06662480820063998,
+        -0.09983737353050133,
+        0.12477442296789745,
+        -0.06486086271762856,
+        -0.1460607988519944,
+        0.12886334908465508,
+        -0.14000990081920373,
+        -0.05319886578958313,
+        0.07780520158391,
+        -0.08895480281886901,
+        -0.15474719614734422,
+        0.007756765146527644,
+        -0.044879267197498685,
+        -0.036065736712447574,
+        -0.24413743841886623,
+        -0.0838104612106429,
+        -0.14751978636626545,
+    ]
+
+    assert np.allclose(Es, ref_Es)
+    assert np.allclose(ref_Es, Es_cueq)
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
+    for i, c in enumerate(fitting_configs):
+
+        if i in (0, 1):
+            continue  # skip isolated atoms, as energies specified by json files below
+        if i % 2 == 0:
+            c.info["head"] = "DFT"
+            fitting_configs_dft.append(c)
+        else:
+            c.info["head"] = "MP2"
+            fitting_configs_mp2.append(c)
+    ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
+
+    # write E0s to json files
+    E0s = {1: 0.0, 8: 0.0}
+    with open(tmp_path / "fit_multihead_dft.json", "w", encoding="utf-8") as f:
+        json.dump(E0s, f)
+    with open(tmp_path / "fit_multihead_mp2.json", "w", encoding="utf-8") as f:
+        json.dump(E0s, f)
+
+    heads = {
+        "DFT": {
+            "train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz",
+            "E0s": f"{str(tmp_path)}/fit_multihead_dft.json",
+        },
+        "MP2": {
+            "train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz",
+            "E0s": f"{str(tmp_path)}/fit_multihead_mp2.json",
+        },
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    filename = tmp_path / "config.yaml"
+    with open(filename, "w", encoding="utf-8") as file:
+        file.write(yaml_str)
+    mace_params = _mace_params.copy()
+    mace_params["valid_fraction"] = 0.1
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["config"] = tmp_path / "config.yaml"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "small"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float64"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["batch_size"] = 2
+    mace_params["valid_batch_size"] = 1
+    mace_params["num_samples_pt"] = 50
+    mace_params["subselect_pt"] = "random"
+    mace_params["enable_cueq"] = True
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+    # from a run on 20/08/2024 on commit
+    ref_Es = [
+        1.654685616493225,
+        0.44693732261657715,
+        0.8741313815116882,
+        0.569085955619812,
+        0.7161882519721985,
+        0.8654778599739075,
+        0.8722733855247498,
+        0.49582308530807495,
+        0.814422607421875,
+        0.7027317881584167,
+        0.7196993827819824,
+        0.517953097820282,
+        0.8631765246391296,
+        0.4679797887802124,
+        0.8163984417915344,
+        0.4252359867095947,
+        1.0861445665359497,
+        0.6829671263694763,
+        0.7136879563331604,
+        0.5160345435142517,
+        0.7002358436584473,
+        0.5574042201042175,
+    ]
+    assert np.allclose(Es, ref_Es, atol=1e-1)
