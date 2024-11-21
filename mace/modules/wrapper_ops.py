@@ -104,11 +104,12 @@ class Linear:
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
+                optimize_fallback=True,
             )
             instance.original_forward = instance.forward
 
             def cuet_forward(self, x: torch.Tensor) -> torch.Tensor:
-                return self.original_forward(x, use_fallback=None)
+                return self.original_forward(x, use_fallback=True)
 
             instance.forward = types.MethodType(cuet_forward, instance)
             return instance
@@ -193,13 +194,14 @@ class FullyConnectedTensorProduct:
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
+                optimize_fallback=True,
             )
             instance.original_forward = instance.forward
 
             def cuet_forward(
                 self, x: torch.Tensor, attrs: torch.Tensor
             ) -> torch.Tensor:
-                return self.original_forward(x, attrs, use_fallback=None)
+                return self.original_forward(x, attrs, use_fallback=True)
 
             instance.forward = types.MethodType(cuet_forward, instance)
             return instance

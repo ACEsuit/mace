@@ -138,7 +138,7 @@ def run(
     # Add cuequivariance config
     config["cueq_config"] = CuEquivarianceConfig(
         enabled=True,
-        layout="mul_ir",
+        layout="ir_mul",
         group="O3_e3nn",
         optimize_all=True,
     )
