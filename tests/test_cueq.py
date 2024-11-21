@@ -74,7 +74,7 @@ class TestCueq:
         batch = next(iter(data_loader))
         return batch.to(device).to_dict()
 
-    @pytest.mark.parametrize("device", ["cuda"])
+    @pytest.mark.parametrize("device", ["cpu"])
     @pytest.mark.parametrize(
         "interaction_cls_first",
         [
