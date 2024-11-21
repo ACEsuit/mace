@@ -129,7 +129,7 @@ def transfer_weights(
     target_model.load_state_dict(target_dict)
 
 
-def run(input_model, output_model="_e3nn.model", device="cuda", return_model=True):
+def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True):
 
     # Load CuEq model
     if isinstance(input_model, str):

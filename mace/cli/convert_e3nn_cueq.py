@@ -114,7 +114,7 @@ def transfer_weights(
 def run(
     input_model,
     output_model="_cueq.model",
-    device="cuda",
+    device="cpu",
     return_model=True,
 ):
     # Setup logging
