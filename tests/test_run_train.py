@@ -867,7 +867,7 @@ def test_run_train_cueq(tmp_path, fitting_configs):
     mace_params["model_dir"] = str(tmp_path)
     mace_params["train_file"] = tmp_path / "fit.xyz"
     mace_params["enable_cueq"] = True
-    mace_params["device"] = "cuda"
+    mace_params["device"] = "cpu"
     mace_params["default_dtype"] = "float64"
 
     # make sure run_train.py is using the mace that is currently being tested
@@ -892,14 +892,14 @@ def test_run_train_cueq(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cuda")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
     Es = []
     for at in fitting_configs[2:]:
         at.calc = calc
         Es.append(at.get_potential_energy())
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cuda", enable_cueq=True
+        model_paths=tmp_path / "MACE.model", device="cpu", enable_cueq=True
     )
     Es_cueq = []
     for at in fitting_configs[2:]:
