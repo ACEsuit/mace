@@ -101,15 +101,15 @@ class TestCueq:
 
         # Create original E3nn model
         model_e3nn = modules.ScaleShiftMACE(**model_config)
-        model_e3nn = model_e3nn.to(device)
+        # model_e3nn = model_e3nn.to(device)
 
         # Convert E3nn to CuEq
         model_cueq = run_e3nn_to_cueq(model_e3nn)
-        model_cueq = model_cueq.to(device)
+        # model_cueq = model_cueq.to(device)
 
         # Convert CuEq back to E3nn
         model_e3nn_back = run_cueq_to_e3nn(model_cueq)
-        model_e3nn_back = model_e3nn_back.to(device)
+        # model_e3nn_back = model_e3nn_back.to(device)
 
         # Test forward pass equivalence
         out_e3nn = model_e3nn(batch, training=True)

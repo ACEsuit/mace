@@ -554,7 +554,7 @@ def run(args: argparse.Namespace) -> None:
     # Cueq
     if args.enable_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert args.model in ["MACE", "ScaleShiftMACE"], "Model must be MACE or ScaleShiftMACE"
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     # Optimizer
     param_options = get_params_options(args, model)
