@@ -5,7 +5,7 @@ CUDA acceleration with cuequivariance library
 ==============================================
 
 .. warning::
-    The cuequivariance support is only accessible by installing the mace code from source.
+    The cuequivariance support is only accessible by installing the mace code from source. Only available at time for 'MACE' and 'ScaleShiftMACE' models.
 
 The `cuequivariance <https://github.com/NVIDIA/cuEquivariance>` library is a CUDA-accelerated library for equivariant neural networks developed by NVIDIA.
 It implemens CUDA kernels to accelerate some of MACE operations. MACE supports the use of cuequivariance library to accelerate training and inference. LAMMPS export is not supported yet.
