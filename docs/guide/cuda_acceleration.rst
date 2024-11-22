@@ -9,7 +9,9 @@ CUDA Acceleration with cuEquivariance Library
 
 The `cuEquivariance <https://github.com/NVIDIA/cuEquivariance>`_ library is a CUDA-accelerated library for equivariant neural networks developed by NVIDIA. It implements CUDA kernels to accelerate some of MACE's operations. MACE supports the use of the cuEquivariance library to accelerate training and inference. LAMMPS export is not yet supported. We have observed up to a 5x speed-up in inference and training for large models (e.g., MACE-MP large) on a single GPU.
 
-## Installation
+############
+Installation
+############
 
 To install the cuEquivariance library, follow the instructions on the `cuEquivariance <https://github.com/NVIDIA/cuEquivariance>`_ repository.  
 **NOTE:** The acceleration is only available for GPU devices with CUDA support. Make sure to use PyTorch 2.4.0 or higher.
@@ -21,7 +23,9 @@ Install the MACE code from source using the following command:
     git clone https://github.com/ACEsuit/mace
     pip install mace/.
 
-## Usage
+#####
+Usage
+#####
 
 To accelerate training, add the `--enable_cueq=True` flag to the `mace_run_train` command.
 
