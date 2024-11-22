@@ -273,6 +273,7 @@ class MACE(torch.nn.Module):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                edge_lengths=lengths,
             )
             node_feats = product(
                 node_feats=node_feats,
@@ -415,6 +416,7 @@ class ScaleShiftMACE(MACE):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                edge_lengths=lengths,
             )
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]

@@ -329,6 +329,7 @@ class InteractionBlock(torch.nn.Module):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        edge_lengths: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
 
@@ -659,6 +660,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        edge_lengths: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -741,6 +743,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        edge_lengths: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -766,6 +769,9 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+
+        # Inner radial basis
+        self.inner_cutoff = PolynomialCutoff(r_max=2.0, p=5)
         # First linear
         self.linear_up = Linear(
             self.node_feats_irreps,
@@ -833,13 +839,15 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        edge_lengths: torch.Tensor,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
-        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        inner_cutoff = self.inner_cutoff(edge_lengths)
+        edge_density = torch.tanh(self.density_fn(edge_feats * inner_cutoff) ** 2)
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
@@ -862,7 +870,8 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
-
+        # Cutoff
+        self.inner_cutoff = PolynomialCutoff(r_max=2.0, p=5)
         # First linear
         self.linear_up = Linear(
             self.node_feats_irreps,
@@ -931,6 +940,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        edge_lengths: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -938,7 +948,8 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
-        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        inner_cutoff = self.inner_cutoff(edge_lengths)
+        edge_density = torch.tanh(self.density_fn(edge_feats * inner_cutoff) ** 2)
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
