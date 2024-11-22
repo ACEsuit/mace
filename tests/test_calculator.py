@@ -481,24 +481,42 @@ def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
 
     desc_invariant = calc.get_descriptors(at, invariants_only=True)
     desc_invariant_rotated = calc.get_descriptors(at_rotated, invariants_only=True)
-    desc_single_layer = calc.get_descriptors(at, invariants_only=True, num_layers=1)
-    desc_single_layer_rotated = calc.get_descriptors(
+    desc_invariant_single_layer = calc.get_descriptors(
+        at, invariants_only=True, num_layers=1
+    )
+    desc_invariant_single_layer_rotated = calc.get_descriptors(
         at_rotated, invariants_only=True, num_layers=1
     )
     desc = calc.get_descriptors(at, invariants_only=False)
+    desc_single_layer = calc.get_descriptors(at, invariants_only=False, num_layers=1)
     desc_rotated = calc.get_descriptors(at_rotated, invariants_only=False)
+    desc_rotated_single_layer = calc.get_descriptors(
+        at_rotated, invariants_only=False, num_layers=1
+    )
 
     assert desc_invariant.shape[0] == 3
     assert desc_invariant.shape[1] == 32
-    assert desc_single_layer.shape[0] == 3
-    assert desc_single_layer.shape[1] == 16
+    assert desc_invariant_single_layer.shape[0] == 3
+    assert desc_invariant_single_layer.shape[1] == 16
     assert desc.shape[0] == 3
     assert desc.shape[1] == 80
+    assert desc_single_layer.shape[0] == 3
+    assert desc_single_layer.shape[1] == 16 * 4
+    assert desc_rotated_single_layer.shape[0] == 3
+    assert desc_rotated_single_layer.shape[1] == 16 * 4
 
     np.testing.assert_allclose(desc_invariant, desc_invariant_rotated, atol=1e-6)
-    np.testing.assert_allclose(desc_single_layer, desc_invariant[:, :16], atol=1e-6)
     np.testing.assert_allclose(
-        desc_single_layer_rotated, desc_invariant[:, :16], atol=1e-6
+        desc_invariant_single_layer, desc_invariant[:, :16], atol=1e-6
+    )
+    np.testing.assert_allclose(
+        desc_invariant_single_layer_rotated, desc_invariant[:, :16], atol=1e-6
+    )
+    np.testing.assert_allclose(
+        desc_single_layer[:, :16], desc_rotated_single_layer[:, :16], atol=1e-6
+    )
+    assert not np.allclose(
+        desc_single_layer[:, 16:], desc_rotated_single_layer[:, 16:], atol=1e-6
     )
     assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
