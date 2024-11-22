@@ -120,6 +120,8 @@ class TestCueq:
         torch.testing.assert_close(out_cueq["energy"], out_e3nn_back["energy"])
         torch.testing.assert_close(out_e3nn["forces"], out_cueq["forces"])
         torch.testing.assert_close(out_cueq["forces"], out_e3nn_back["forces"])
+        torch.testing.assert_close(out_e3nn["stress"], out_cueq["stress"])
+        torch.testing.assert_close(out_cueq["stress"], out_e3nn_back["stress"])
 
         # Test backward pass equivalence
         loss_e3nn = out_e3nn["energy"].sum()
