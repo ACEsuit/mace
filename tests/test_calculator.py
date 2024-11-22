@@ -16,6 +16,13 @@ from mace.calculators import mace_mp, mace_off
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
 
+try:
+    import cuequivariance as cue  # pylint: disable=unused-import
+
+    CUET_AVAILABLE = True
+except ImportError:
+    CUET_AVAILABLE = False
+
 pytest_mace_dir = Path(__file__).parent.parent
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
@@ -468,11 +475,18 @@ def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model):
 
 def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
     at = fitting_configs[2].copy()
-    at.calc = trained_equivariant_model
+    at_rotated = fitting_configs[2].copy()
+    at_rotated.rotate(90, "x")
+    calc = trained_equivariant_model
 
-    desc_invariant = at.calc.get_descriptors(at, invariants_only=True)
-    desc_single_layer = at.calc.get_descriptors(at, invariants_only=True, num_layers=1)
-    desc = at.calc.get_descriptors(at, invariants_only=False)
+    desc_invariant = calc.get_descriptors(at, invariants_only=True)
+    desc_invariant_rotated = calc.get_descriptors(at_rotated, invariants_only=True)
+    desc_single_layer = calc.get_descriptors(at, invariants_only=True, num_layers=1)
+    desc_single_layer_rotated = calc.get_descriptors(
+        at_rotated, invariants_only=True, num_layers=1
+    )
+    desc = calc.get_descriptors(at, invariants_only=False)
+    desc_rotated = calc.get_descriptors(at_rotated, invariants_only=False)
 
     assert desc_invariant.shape[0] == 3
     assert desc_invariant.shape[1] == 32
@@ -480,6 +494,13 @@ def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
     assert desc_single_layer.shape[1] == 16
     assert desc.shape[0] == 3
     assert desc.shape[1] == 80
+
+    np.testing.assert_allclose(desc_invariant, desc_invariant_rotated, atol=1e-6)
+    np.testing.assert_allclose(desc_single_layer, desc_invariant[:, :16], atol=1e-6)
+    np.testing.assert_allclose(
+        desc_single_layer_rotated, desc_invariant[:, :16], atol=1e-6
+    )
+    assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
 def test_mace_mp(capsys: pytest.CaptureFixture):
@@ -495,6 +516,22 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
 
 def test_mace_off():
     mace_off_model = mace_off(model="small", device="cpu")
+    assert isinstance(mace_off_model, MACECalculator)
+    assert mace_off_model.model_type == "MACE"
+    assert len(mace_off_model.models) == 1
+    assert isinstance(mace_off_model.models[0], ScaleShiftMACE)
+
+    atoms = build.molecule("H2O")
+    atoms.calc = mace_off_model
+
+    E = atoms.get_potential_energy()
+
+    assert np.allclose(E, -2081.116128586803, atol=1e-9)
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+def test_mace_off_cueq(model="medium", device="cpu"):
+    mace_off_model = mace_off(model=model, device=device, enable_cueq=True)
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"
     assert len(mace_off_model.models) == 1
