@@ -400,24 +400,34 @@ class MACECalculator(Calculator):
             atoms = self.atoms
         if self.model_type != "MACE":
             raise NotImplementedError("Only implemented for MACE models")
+        num_interactions = int(self.models[0].num_interactions)
         if num_layers == -1:
-            num_layers = int(self.models[0].num_interactions)
+            num_layers = num_interactions
         batch = self._atoms_to_batch(atoms)
         descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+
+        irreps_out = self.models[0].products[0].linear.__dict__["irreps_out"]
+        l_max = irreps_out.lmax
+        num_invariant_features = irreps_out.dim // (l_max + 1) ** 2
+        per_layer_features = [irreps_out.dim for _ in range(num_interactions)]
+        per_layer_features[-1] = (
+            num_invariant_features  # Equivariant features not created for the last layer
+        )
+
         if invariants_only:
-            irreps_out = self.models[0].products[0].linear.__dict__["irreps_out"]
-            l_max = irreps_out.lmax
-            num_features = irreps_out.dim // (l_max + 1) ** 2
             descriptors = [
                 extract_invariant(
                     descriptor,
                     num_layers=num_layers,
-                    num_features=num_features,
+                    num_features=num_invariant_features,
                     l_max=l_max,
                 )
                 for descriptor in descriptors
             ]
-        descriptors = [descriptor.detach().cpu().numpy() for descriptor in descriptors]
+        to_keep = np.sum(per_layer_features[:num_layers])
+        descriptors = [
+            descriptor[:, :to_keep].detach().cpu().numpy() for descriptor in descriptors
+        ]
 
         if self.num_models == 1:
             return descriptors[0]
