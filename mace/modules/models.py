@@ -124,7 +124,7 @@ class MACE(torch.nn.Module):
             correlation=correlation[0],
             radial_MLP=radial_MLP,
             #
-            tensor_format=tensor_format,
+            tensor_format=tensor_format[0],
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -142,7 +142,7 @@ class MACE(torch.nn.Module):
             use_sc=use_sc_first,
             learned_radials_dim=inter.conv_tp.weight_numel,
             #
-            tensor_format=tensor_format,
+            tensor_format=tensor_format[0],
             flexible_feats_L=flexible_feats_L,
             gaussian_prior=gaussian_prior,
         )
@@ -175,7 +175,7 @@ class MACE(torch.nn.Module):
                 radial_MLP=radial_MLP,
                 correlation=correlation[i + 1],
                 # 
-                #tensor_format=tensor_format,
+                tensor_format=tensor_format[i + 1],
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(
@@ -186,9 +186,9 @@ class MACE(torch.nn.Module):
                 use_sc=True,
                 learned_radials_dim=inter.conv_tp.weight_numel,
                 ##
-                # tensor_format=tensor_format,
-                # flexible_feats_L=flexible_feats_L,
-                # gaussian_prior=gaussian_prior,
+                tensor_format=tensor_format[i + 1],
+                flexible_feats_L=flexible_feats_L,
+                gaussian_prior=gaussian_prior,
                 # learned_radials_dim=inter.conv_tp.weight_numel
             )
             self.products.append(prod)

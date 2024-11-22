@@ -11,7 +11,7 @@ from e3nn.util.jit import compile_mode
 
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
-
+import math
 
 @compile_mode("script")
 class BesselBasis(torch.nn.Module):
@@ -55,6 +55,25 @@ class BesselBasis(torch.nn.Module):
             f"trainable={self.bessel_weights.requires_grad})"
         )
 
+def continuous_sinous_embedding(densities, dim, max_density=100):
+    """
+    Create sinusoidal timestep embeddings.
+
+    :param timesteps: a 1-D Tensor of N indices, one per batch element.
+                      These may be fractional.
+    :param dim: the dimension of the output.
+    :param max_period: controls the minimum frequency of the embeddings.
+    :return: an [N x dim] Tensor of positional embeddings.
+    """
+    half = dim // 2
+    freqs = torch.exp(
+        -math.log(max_density) * torch.arange(start=0, end=half) / half
+    ).to(device=densities.device)
+    args = densities[:, None].float() * freqs[None]
+    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+    if dim % 2:
+        embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+    return embedding
 
 @compile_mode("script")
 class ChebychevBasis(torch.nn.Module):

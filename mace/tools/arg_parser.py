@@ -155,6 +155,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
             "RealAgnosticDensityInteractionBlock"
+            "RealAgnosticDensityInjuctedNoScaleNoBiasResidualInteractionGateBlock",
         ],
     )
     parser.add_argument(
@@ -166,7 +167,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticResidualInteractionBlock",
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
-            "RealAgnosticDensityInteractionBlock"
+            "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticDensityInjuctedNoScaleNoBiasResidualInteractionGateBlock"
         ],
     )
     parser.add_argument(
@@ -249,17 +251,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--tensor_format",
-        help="Tensor format being used",
-        type=str,
-        default="symmetric_cp",
-        choices=["symmetric_cp",
-                 "non_symmetric_cp",
-                 "symmetric_tucker",
-                 "non_symmetric_tucker",
-                 "flexible_symmetric_tucker",
-                 "flexible_non_symmetric_tucker"
-                ]
+        help="Tensor format(s) being used for each layer",
+        nargs="+",
+        default=["symmetric_cp", "symmetric_cp"], 
+        # choices=[
+        #     "symmetric_cp",
+        #     "non_symmetric_cp",
+        #     "symmetric_tucker",
+        #     "non_symmetric_tucker",
+        #     "flexible_symmetric_tucker",
+        #     "flexible_non_symmetric_tucker"
+        # ],
     )
+    
     parser.add_argument(
         "--flexible_feats_L",
         help="Allowing different number of channels for different L",

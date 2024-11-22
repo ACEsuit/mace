@@ -61,12 +61,12 @@ def check_args(args):
             .sort()
             .irreps.simplify()
         )
-        if args.tensor_format in ["symmetric_cp", "symmetric_tucker", "non_symmetric_cp", "non_symmetric_tucker"] or args.flexible_feats_L:
+        if any([tf in ["symmetric_cp", "symmetric_tucker", "non_symmetric_cp", "non_symmetric_tucker"] for tf in args.tensor_format]) or args.flexible_feats_L:
             assert (
                 len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
             ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
     elif args.hidden_irreps is not None:
-        if args.tensor_format in ["symmetric_cp", "symmetric_tucker", "non_symmetric_cp", "non_symmetric_tucker"] or args.flexible_feats_L:
+        if any([tf in ["symmetric_cp", "symmetric_tucker", "non_symmetric_cp", "non_symmetric_tucker"] for tf in args.tensor_format]) or args.flexible_feats_L:
             assert (
                 len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
             ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
@@ -91,6 +91,9 @@ def check_args(args):
             .sort()
             .irreps.simplify()
         )
+
+    # tensor format checks
+    assert args.num_interactions == len(args.tensor_format), "Number of tensor format defined must be equal to number of interactions"
 
     # Loss and optimization
     # Check Stage Two loss start

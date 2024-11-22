@@ -34,12 +34,12 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         internal_weights: Optional[bool] = None,
         shared_weights: Optional[bool] = None,
         num_elements: Optional[int] = None,
+        agnostic: Optional[bool] = False,
         tensor_format: str = "symmetric_cp",
         flexible_feats_L: bool = False,
         gaussian_prior: bool = False,
     ) -> None:
         super().__init__()
-
 
         self.gaussian_prior = gaussian_prior
         
@@ -349,24 +349,29 @@ class Contraction(torch.nn.Module):
             self.weights = weights[:-1]
             self.weights_max = weights[-1]
             
-        # add gaussian prior    
-        if gaussian_prior: 
-            # given by exp(-wK * ( Rk_fn(Rk) )^2 - wL * sum_t l^2_t)
-            # For CP, this can be done by two steps:
-            # - multiply A_klm alog lm channel by exp(-wL * l^2_t) during the t th contraction
-            # - multiply the final feature along k channel by exp(-wK * ( Rk_fn(Rk) )^2 )
-            # normalization weighting over the lms
-            self.wL = torch.nn.Parameter(torch.tensor(1.5, requires_grad = True))
-            # normalization weighting over radials
-            #self.wK = torch.nn.Parameter(torch.tensor(1.5, requires_grad = True))
-            # # learnable smoothness of learned radial
-            # self.Rk_fn = nn.FullyConnectedNet(
-            #                                 [self.num_features]
-            #                                 + [
-            #                                     self.num_features,
-            #                                 ],
-            #                                 torch.nn.functional.silu,
-            #                             )
+        # # add gaussian prior    
+        # if gaussian_prior: 
+        #     # given by exp(-wK * ( Rk_fn(Rk) )^2 - wL * sum_t l^2_t)
+        #     # For CP, this can be done by two steps:
+        #     # - multiply A_klm alog lm channel by exp(-wL * l^2_t) during the t th contraction
+        #     # - multiply the final feature along k channel by exp(-wK * ( Rk_fn(Rk) )^2 )
+        #     # normalization weighting over the lms
+        #     self.wL = torch.nn.Parameter(torch.tensor(1.5, requires_grad = True))
+        #     # smoothness prior for normalization
+        #     self.register_buffer("l2vec", torch.tensor([irrep.l for _, irrep in self.coupling_irreps for _ in range((2 * irrep.l + 1))]))
+        #     # normalization weighting over radials
+        #     #self.wK = torch.nn.Parameter(torch.tensor(1.5, requires_grad = True))
+        #     # # learnable smoothness of learned radial
+        #     # self.Rk_fn = nn.FullyConnectedNet(
+        #     #                                 [self.num_features]
+        #     #                                 + [
+        #     #                                     self.num_features,
+        #     #                                 ],
+        #     #                                 torch.nn.functional.silu,
+        #     #                             )
+        # else:
+        #     self.wL = 0
+        #     self.register_buffer("l2vec", torch.zeros_like(torch.tensor([irrep.l for _, irrep in self.coupling_irreps for _ in range((2 * irrep.l + 1))])))
         
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         irrep_out = self.irrep_out
@@ -505,13 +510,15 @@ class Contraction(torch.nn.Module):
                 out = self.graph_opt_main(
                     self.U_tensors(self.correlation),
                     self.weights_max, # shape = (num_elements, num_paras, channel)
-                    x, # [nnodes, channel, num_paras]
+                    #x * torch.exp(-self.wL * (self.l2vec ** 2) ) if self.gaussian_prior else x, # [nnodes, channel, num_paras]
+                    x,
                     y,
                 )
             elif self.tensor_format == "non_symmetric_cp":
                 out = self.graph_opt_main(
                     self.U_tensors(self.correlation),
                     self.weights_max, # shape = (num_elements, num_paras, channel)
+                    #x[:, :, :, self.correlation - 1] * torch.exp(-self.wL * (self.l2vec ** 2) ) if self.gaussian_prior else x[:, :, :, self.correlation - 1],
                     x[:, :, :, self.correlation - 1],
                     y,
                 )
@@ -525,8 +532,10 @@ class Contraction(torch.nn.Module):
                 )
                 c_tensor = c_tensor + out
                 if self.tensor_format == "symmetric_cp":
+                    #out = contract_features(c_tensor, x * torch.exp(-self.wL * (self.l2vec ** 2) if self.gaussian_prior else x))
                     out = contract_features(c_tensor, x)
                 elif self.tensor_format == "non_symmetric_cp":
+                    #out = contract_features(c_tensor, x[:, :, :, self.correlation - i - 1] * torch.exp(-self.wL * (self.l2vec ** 2) if self.gaussian_prior else x[:, :, :, self.correlation - i - 1] ))
                     out = contract_features(c_tensor, x[:, :, :, self.correlation - i - 1])
             return out.reshape(out.shape[0], -1)
 
