@@ -9,6 +9,7 @@ User Guide
 
     intro
     installation
+    cuda_acceleration
     load
     training
     evaluation

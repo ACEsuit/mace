@@ -10,6 +10,7 @@ What is MACE ?
 --------------
 
 MACE provides fast and accurate machine learning interatomic potentials with higher order equivariant message passing.
+For faster training and inference using the cuEquivariance library, please read the `CUDA acceleration with cuequivariance library <cuda_acceleration>`_ section.
 
 Also available: 
 
