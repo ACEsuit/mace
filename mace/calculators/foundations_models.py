@@ -42,7 +42,7 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
 
     checkpoint_url = (
         urls.get(model, urls["medium"])
-        if model in (None, "small", "medium", "large", "small", "small-0b", "medium-0b", "small-0b2", "medium-0b2", "large-0b2")
+        if model in (None, "small", "medium", "large", "small-0b", "medium-0b", "small-0b2", "medium-0b2", "large-0b2")
         else model
     )
 
