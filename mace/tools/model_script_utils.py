@@ -38,9 +38,8 @@ def configure_model(
             train_loader, atomic_energies
         )
 
-    gate = modules.gate_dict[args.gate]
     if args.diverse_gates:
-        gate_queue = ['tanh', 'silu'] * args.n_committee
+        gate_queue = ['tanh', 'silu', 'logsigmoid'] * args.n_committee
         gate = [modules.gate_dict[gate_queue[i]] for i in range(args.n_committee)]
     else:
         gate = modules.gate_dict[args.gate]
