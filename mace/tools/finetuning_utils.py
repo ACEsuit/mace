@@ -162,7 +162,7 @@ def load_foundations_elements(
         model_readouts_one_linear_2_weight = model_foundations.readouts[
             1
         ].linear_2.weight.view(shape_input_1, -1).repeat(
-            len(model_heads), len(model_heads)
+            1, len(model_heads)
         ).flatten().clone() / (
             ((shape_input_1) / (shape_output_1)) ** 0.5
         )
