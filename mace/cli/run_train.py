@@ -218,7 +218,7 @@ def run(args: argparse.Namespace) -> None:
                 valid_fraction=head_config.valid_fraction,
                 config_type_weights=config_type_weights,
                 test_path=head_config.test_file,
-                seed=args.seed,
+                seed=dataset_seed,
                 energy_key=head_config.energy_key,
                 forces_key=head_config.forces_key,
                 stress_key=head_config.stress_key,
@@ -237,7 +237,7 @@ def run(args: argparse.Namespace) -> None:
                 f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
             )
         head_configs.append(head_config)
-        if args.disjoint_committee:
+        if not args.disjoint_committee:
             dataset_seed += 1
 
     if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
