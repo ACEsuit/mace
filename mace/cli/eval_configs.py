@@ -136,8 +136,6 @@ def run(args: argparse.Namespace) -> None:
             predict_committee=args.predict_committee
         )
         energies_list.append(torch_tools.to_numpy(output["energy"]))
-        if args.predict_committee:
-            energy_stds.append(torch_tools.to_numpy(output["stds"]["energy"]))
         if args.compute_stress:
             stresses_list.append(torch_tools.to_numpy(output["stress"]))
 
