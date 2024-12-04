@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch_ema import ExponentialMovingAverage
 from torchmetrics import Metric
+from torch.optim import LBFGS
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
@@ -151,6 +152,7 @@ def train(
     device: torch.device,
     log_errors: str,
     swa: Optional[SWAContainer] = None,
+    lbfgs: bool=False,
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
     log_wandb: bool = False,
@@ -318,6 +320,60 @@ def train(
         if distributed:
             torch.distributed.barrier()
         epoch += 1
+    if lbfgs:
+        epoch=1000 #TODO: fix code instead f workaround
+        if distributed:
+            train_sampler.set_epoch()
+        lbfgs_optimizer=LBFGS(model.parameters(), history_size= 60)
+        train_one_epoch(
+            model=model,
+            loss_fn=loss_fn,
+            data_loader=train_loader,
+            optimizer=lbfgs_optimizer,
+            epoch=epoch,
+            output_args=output_args,
+            max_grad_norm=max_grad_norm,
+            ema=None,
+            logger=logger,
+            device=device, 
+            distributed_model=distributed_model,
+            rank=rank, 
+            lbfgs=lbfgs
+        )
+        if distributed:
+            torch.distributed.barrier()
+        
+        model_to_evaluate = (
+                model if distributed_model is None else distributed_model
+        )
+        param_context = (
+            ema.average_parameters() if ema is not None else nullcontext()
+        )
+        with param_context:
+            valid_loss = 0.0
+            checkpoint_handler.save(
+            state=CheckpointState(model, optimizer, lr_scheduler),
+            epochs=epoch,
+            keep_last=keep_last,
+            )
+            for valid_loader_name, valid_loader in valid_loaders.items():
+                valid_loss_head, eval_metrics = evaluate(
+                    model=model_to_evaluate,
+                    loss_fn=loss_fn,
+                    data_loader=valid_loader,
+                    output_args=output_args,
+                    device=device,
+                )
+                if rank == 0:
+                    valid_err_log(
+                        valid_loss_head,
+                        eval_metrics,
+                        logger,
+                        log_errors,
+                        epoch,
+                        valid_loader_name,
+                    )
+            
 
     logging.info("Training complete")
 
@@ -335,13 +391,15 @@ def train_one_epoch(
     device: torch.device,
     distributed_model: Optional[DistributedDataParallel] = None,
     rank: Optional[int] = 0,
+    lbfgs: bool = False,
 ) -> None:
     model_to_train = model if distributed_model is None else distributed_model
+    take_step_fn = take_lbfgs_step if lbfgs else take_step
     for batch in data_loader:
-        _, opt_metrics = take_step(
+        _, opt_metrics = take_step_fn(
             model=model_to_train,
             loss_fn=loss_fn,
-            batch=batch,
+            batch=batch,  
             optimizer=optimizer,
             ema=ema,
             output_args=output_args,
@@ -390,6 +448,47 @@ def take_step(
     }
 
     return loss, loss_dict
+
+def take_lbfgs_step(
+    model: torch.nn.Module,
+    loss_fn: torch.nn.Module,
+    batch: torch_geometric.batch.Batch,
+    optimizer: torch.optim.Optimizer,
+    ema: Optional[ExponentialMovingAverage],
+    output_args: Dict[str, bool],
+    max_grad_norm: Optional[float],
+    device: torch.device,
+) -> Tuple[float, Dict[str, Any]]:
+    start_time = time.time()
+    batch = batch.to(device)
+    batch_dict = batch.to_dict()
+    
+    def closure():
+        optimizer.zero_grad(set_to_none=True)
+        output = model(
+            batch_dict,
+            training=True,
+            compute_force=output_args["forces"],
+            compute_virials=output_args["virials"],
+            compute_stress=output_args["stress"],
+        )
+        loss = loss_fn(pred=output, ref=batch)
+        loss.backward()
+
+        return loss
+
+    optimizer.step(closure)
+    loss = closure()
+
+    if ema is not None:
+        ema.update()
+
+    loss_dict = {
+        "loss": to_numpy(loss),
+        "time": time.time() - start_time,
+    }
+
+    return loss, loss_dict   
 
 
 def evaluate(

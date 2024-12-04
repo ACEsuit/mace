@@ -595,6 +595,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="start_swa",
     )
     parser.add_argument(
+        "--lbfgs",
+        help="do a single epoch of LBFGS optimisation at the end of training",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--ema",
         help="use Exponential Moving Average",
         action="store_true",
