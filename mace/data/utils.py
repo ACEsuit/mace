@@ -265,7 +265,6 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
-            atoms.info[head_key] = head_name
             isolated_atom_config = (
                 len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
             )
@@ -287,6 +286,9 @@ def load_from_xyz(
             logging.info("Using isolated atom energies from training file")
         if not keep_isolated_atoms:
             atoms_list = atoms_without_iso_atoms
+
+    for atoms in atoms_list:
+        atoms.info[head_key] = head_name
 
     configs = config_from_atoms_list(
         atoms_list,
