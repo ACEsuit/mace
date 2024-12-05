@@ -380,6 +380,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=1000,
     )
     parser.add_argument(
+        "--force_mh_ft_lr",
+        help="Force the multiheaded fine-tuning to use arg_parser lr",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--subselect_pt",
         help="Method to subselect the configurations of the pretraining set",
         choices=["fps", "random"],
