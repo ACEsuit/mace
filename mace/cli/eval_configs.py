@@ -47,12 +47,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
     )
-    parser.add_argument(
-        "--return_features",
-        help="Return features of layers in `features.npy",
-        action="store_true",
-        default=False,
-    )
+    # parser.add_argument(
+    #     "--return_features",
+    #     help="Return features of layers in `features.npy",
+    #     action="store_true",
+    #     default=False,
+    # )
     parser.add_argument(
         "--info_prefix",
         help="prefix for energy, forces and stress keys",
@@ -122,9 +122,9 @@ def run(args: argparse.Namespace) -> None:
     # Collect data
     energies_list = []
     contributions_list = []
-    features_list = []
+    # features_list = []
     stresses_list = []
-    forces_collection = []
+    forces_list = []
     energy_stds = []
     forces_stds = []
 
@@ -145,22 +145,22 @@ def run(args: argparse.Namespace) -> None:
                 indices_or_sections=batch.ptr[1:],
                 axis=0,
             )
-            contributions_list.append(contributions[:-1])
+            contributions_list += contributions[:-1]
 
-        if args.return_features:
-            features = np.split(
-                torch_tools.to_numpy(output["node_feats"]),
-                indices_or_sections=batch.ptr[1:],
-                axis=0,
-            )
-            features_list.append(features[:-1])
+        # if args.return_features:
+        #     features = np.split(
+        #         torch_tools.to_numpy(output["node_feats"]),
+        #         indices_or_sections=batch.ptr[1:],
+        #         axis=0,
+        #     )
+        #     features_list += features[:-1]
 
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
             indices_or_sections=batch.ptr[1:],
             axis=0,
         )
-        forces_collection.append(forces[:-1])  # drop last as its empty
+        forces_list += forces[:-1]  # drop last as its empty
 
         if args.predict_committee:
             energy_stds.append(torch_tools.to_numpy(output["stds"]["energy"]))
@@ -172,21 +172,16 @@ def run(args: argparse.Namespace) -> None:
             forces_stds.append(forces_std[:-1])
 
     energies = np.concatenate(energies_list, axis=0)
-    forces_list = [
-        forces for forces_list in forces_collection for forces in forces_list
-    ]
     assert len(atoms_list) == len(energies) == len(forces_list)
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)
         assert len(atoms_list) == stresses.shape[0]
 
     if args.return_contributions:
-        contributions = np.concatenate(contributions_list, axis=0)
-        assert len(atoms_list) == contributions.shape[0]
+        assert len(atoms_list) == len(contributions_list)
 
-    if args.return_features:
-        features = np.concatenate(features_list, axis=0)
-        assert len(atoms_list) == features.shape[0]
+    # if args.return_features:
+    #     assert len(atoms_list) == len(features_list)
 
     if args.predict_committee:
         energy_stds = np.concatenate(energy_stds, axis=0)
@@ -204,7 +199,7 @@ def run(args: argparse.Namespace) -> None:
             atoms.info[args.info_prefix + "stress"] = stresses[i]
 
         if args.return_contributions:
-            atoms.arrays[args.info_prefix + "BO_contributions"] = contributions[i]
+            atoms.arrays[args.info_prefix + "BO_contributions"] = contributions_list[i]
 
         if args.predict_committee:
             atoms.info[args.info_prefix + "energy_std"] = energy_stds[i]
@@ -214,8 +209,8 @@ def run(args: argparse.Namespace) -> None:
     ase.io.write(args.output, images=atoms_list, format="extxyz")
 
     # Write features file, if requested
-    if args.return_features:
-        np.save("features.npy", features)
+    # if args.return_features:
+    #     np.save("features.npy", features)
 
 
 if __name__ == "__main__":
