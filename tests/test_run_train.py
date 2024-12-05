@@ -437,14 +437,10 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
     mace_params["multiheads_finetuning"] = False
-    print("mace_params", mace_params)
-    # mace_params["num_samples_pt"] = 50
-    # mace_params["subselect_pt"] = "random"
-    # make sure run_train.py is using the mace that is currently being tested
+
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -549,6 +545,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     mace_params["valid_batch_size"] = 1
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"
+    mace_params["force_mh_ft_lr"] = True
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -666,6 +663,7 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
     mace_params["valid_batch_size"] = 1
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"
+    mace_params["force_mh_ft_lr"] = True
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -827,6 +825,7 @@ def test_run_train_multihead_replay_custum_finetuning(
         "pt_train_file": os.path.join(tmp_path, "pretrain.xyz"),
         "num_samples_pt": 3,
         "subselect_pt": "random",
+        "force_mh_ft_lr": True,
     }
 
     cmd = [sys.executable, str(run_train)]
@@ -993,6 +992,7 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"
     mace_params["enable_cueq"] = True
+    mace_params["force_mh_ft_lr"] = True
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))

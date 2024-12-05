@@ -14,6 +14,7 @@ import numpy as np
 import torch
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
+from e3nn import o3
 
 from mace import data
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
@@ -406,7 +407,7 @@ class MACECalculator(Calculator):
         batch = self._atoms_to_batch(atoms)
         descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
 
-        irreps_out = self.models[0].products[0].linear.__dict__["irreps_out"]
+        irreps_out = o3.Irreps(str(self.models[0].products[0].linear.irreps_out))
         l_max = irreps_out.lmax
         num_invariant_features = irreps_out.dim // (l_max + 1) ** 2
         per_layer_features = [irreps_out.dim for _ in range(num_interactions)]
