@@ -521,6 +521,54 @@ def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
     assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
+def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model):
+    at = fitting_configs[2].copy()
+    at_rotated = fitting_configs[2].copy()
+    at_rotated.rotate(90, "x")
+    calc = trained_equivariant_model
+
+    desc_invariant = calc.get_descriptors(at, invariants_only=True, enable_cueq=True)
+    desc_invariant_rotated = calc.get_descriptors(
+        at_rotated, invariants_only=True, enable_cueq=True
+    )
+    desc_invariant_single_layer = calc.get_descriptors(
+        at, invariants_only=True, num_layers=1, enable_cueq=True
+    )
+    desc_invariant_single_layer_rotated = calc.get_descriptors(
+        at_rotated, invariants_only=True, num_layers=1, enable_cueq=True
+    )
+    desc = calc.get_descriptors(at, invariants_only=False, enable_cueq=True)
+    desc_single_layer = calc.get_descriptors(
+        at, invariants_only=False, num_layers=1, enable_cueq=True
+    )
+    desc_rotated = calc.get_descriptors(
+        at_rotated, invariants_only=False, enable_cueq=True
+    )
+    desc_rotated_single_layer = calc.get_descriptors(
+        at_rotated, invariants_only=False, num_layers=1, enable_cueq=True
+    )
+
+    assert desc_invariant.shape[0] == 3
+    assert desc_invariant.shape[1] == 32
+    assert desc_invariant_single_layer.shape[0] == 3
+    assert desc_invariant_single_layer.shape[1] == 16
+    assert desc.shape[0] == 3
+    assert desc.shape[1] == 80
+    assert desc_single_layer.shape[0] == 3
+    assert desc_single_layer.shape[1] == 16 * 4
+    assert desc_rotated_single_layer.shape[0] == 3
+    assert desc_rotated_single_layer.shape[1] == 16 * 4
+
+    np.testing.assert_allclose(desc_invariant, desc_invariant_rotated, atol=1e-6)
+    np.testing.assert_allclose(
+        desc_invariant_single_layer, desc_invariant[:, :16], atol=1e-6
+    )
+    np.testing.assert_allclose(
+        desc_invariant_single_layer_rotated, desc_invariant[:, :16], atol=1e-6
+    )
+    np.testing.assert_allclose(desc, desc_rotated, atol=1e-6)
+
+
 def test_mace_mp(capsys: pytest.CaptureFixture):
     mp_mace = mace_mp()
     assert isinstance(mp_mace, MACECalculator)
