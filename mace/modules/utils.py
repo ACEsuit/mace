@@ -189,6 +189,7 @@ def get_outputs(
             cell=cell,
             compute_stress=compute_stress,
             training=(training or compute_hessian),
+            committee=committee,
         )
     elif compute_force:
         forces, virials, stress = (
@@ -216,7 +217,7 @@ def get_outputs_committee(
     positions: torch.Tensor,
     displacement: Optional[torch.Tensor],
     cell: torch.Tensor,
-    heads: list,
+    committee_heads: torch.Tensor,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
@@ -230,7 +231,7 @@ def get_outputs_committee(
     
     properties = ['forces', 'virials', 'stress', 'hessian']
     head_collector = {key: [] for key in properties}
-    for head in range(len(heads)):
+    for head in committee_heads:
         output_head = get_outputs(
             energy=energy_heads[:, head],
             positions=positions,

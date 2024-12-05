@@ -406,6 +406,12 @@ def evaluate(
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
+    if predict_committee:
+        committee_heads = [i for i, head in enumerate(model.heads) if "committee-" in head]
+        committee_heads = torch.tensor(committee_heads, dtype=int).to(device)
+    else:
+        committee_heads = None
+
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
@@ -416,7 +422,7 @@ def evaluate(
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
-            predict_committee=predict_committee,
+            committee_heads=committee_heads,
         )
         avg_loss, aux = metrics(batch, output)
 

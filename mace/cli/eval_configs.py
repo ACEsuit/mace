@@ -119,6 +119,12 @@ def run(args: argparse.Namespace) -> None:
         drop_last=False,
     )
 
+    if args.predict_committee:
+        committee_heads = [i for i, head in enumerate(model.heads) if "committee-" in head]
+        committee_heads = torch.tensor(committee_heads, dtype=int).to(device)
+    else:
+        committee_heads = None
+
     # Collect data
     energies_list = []
     contributions_list = []
@@ -133,7 +139,7 @@ def run(args: argparse.Namespace) -> None:
         output = model(
             batch.to_dict(),
             compute_stress=args.compute_stress,
-            predict_committee=args.predict_committee
+            committee_heads=committee_heads,
         )
         energies_list.append(torch_tools.to_numpy(output["energy"]))
         if args.compute_stress:

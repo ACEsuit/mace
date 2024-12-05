@@ -129,31 +129,22 @@ def load_foundations_elements(
             model_foundations.products[i].linear.weight.clone()
         )
 
+    # TODO: If we want to have multihead committees in finetuning, it might be good to
+    # partially load the readout block, where it gets loaded for the pt-head, but not for
+    # the committee heads, to avoid further biasing the heads.
     if load_readout:
         # Transferring readouts
         model_readouts_zero_linear_weight = model.readouts[0].linear.weight.clone()
         model_readouts_zero_linear_weight = (
-            model_foundations.readouts[0]
-            .linear.weight.view(num_channels_foundation, -1)
-            .repeat(1, len(model_heads))
-            .flatten()
-            .clone()
+            model_foundations.readouts[0].linear.weight.repeat(len(model_heads)).clone()
         )
         model.readouts[0].linear.weight = torch.nn.Parameter(
             model_readouts_zero_linear_weight
         )
 
-        shape_input_1 = (
-            model_foundations.readouts[1].linear_1.__dict__["irreps_out"].num_irreps
-        )
-        shape_output_1 = model.readouts[1].linear_1.__dict__["irreps_out"].num_irreps
         model_readouts_one_linear_1_weight = model.readouts[1].linear_1.weight.clone()
         model_readouts_one_linear_1_weight = (
-            model_foundations.readouts[1]
-            .linear_1.weight.view(num_channels_foundation, -1)
-            .repeat(1, len(model_heads))
-            .flatten()
-            .clone()
+            model_foundations.readouts[1].linear_1.weight.repeat(len(model_heads)).clone()
         )
         model.readouts[1].linear_1.weight = torch.nn.Parameter(
             model_readouts_one_linear_1_weight
@@ -161,11 +152,7 @@ def load_foundations_elements(
         model_readouts_one_linear_2_weight = model.readouts[1].linear_2.weight.clone()
         model_readouts_one_linear_2_weight = model_foundations.readouts[
             1
-        ].linear_2.weight.view(shape_input_1, -1).repeat(
-            1, len(model_heads)
-        ).flatten().clone() / (
-            ((shape_input_1) / (shape_output_1)) ** 0.5
-        )
+        ].linear_2.weight.repeat(len(model_heads)).clone() 
         model.readouts[1].linear_2.weight = torch.nn.Parameter(
             model_readouts_one_linear_2_weight
         )

@@ -377,7 +377,7 @@ class ScaleShiftMACE(MACE):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
-        predict_committee: bool = False,
+        committee_heads: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
         #TODO: The new forward function works for both standard operation as well as committee operation, though 
         # the memory requirement are slighly (needs quantification) increased. It is worth considering, splitting
@@ -389,9 +389,9 @@ class ScaleShiftMACE(MACE):
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
-        num_atoms_arange = torch.arange(data["positions"].shape[0])
+        num_atoms_arange = torch.arange(data["positions"].shape[0], device=data['batch'].device)
         num_graphs = data["ptr"].numel() - 1
-        num_graphs_arange = torch.arange(num_graphs)
+        num_graphs_arange = torch.arange(num_graphs, device=data['batch'].device)
         node_heads = (
             data["head"][data["batch"]]
             if "head" in data
@@ -482,7 +482,10 @@ class ScaleShiftMACE(MACE):
         total_energy_heads = e0_heads + inter_e_heads
         node_energy_heads = node_e0_heads + node_inter_es_heads
         output = {}
-        if not predict_committee or training:
+        # TODO: It is possible to get rid of this if-else clause, but this would lead to slower computation.
+        # However, I only tested this so far in regular calculation, not in a compiled script. Further testing
+        # might be necessary.
+        if committee_heads is None or training:
             inter_e = inter_e_heads[num_graphs_arange, data['head']]
             total_energy = total_energy_heads[num_graphs_arange, data['head']]
             node_energy = node_energy_heads[num_atoms_arange, node_heads]
@@ -511,26 +514,25 @@ class ScaleShiftMACE(MACE):
         else:
             stds = {}
             heads = {}
-            output["energy"] = torch.mean(total_energy_heads, dim=-1)
-            stds["energy"] = torch.std(total_energy_heads, dim=-1)
-            heads["energy"] = total_energy_heads
-            output["node_energy"] = torch.mean(node_energy_heads, dim=-1)
-            stds["node_energy"] = torch.std(node_energy_heads, dim=-1)
-            heads["node_energy"] = node_energy_heads
-            output["interaction_energy"] = torch.mean(inter_e_heads, dim=-1)
-            stds["interaction_energy"] = torch.std(inter_e_heads, dim=-1)
-            heads["interaction_energy"] = inter_e_heads
-            output["contributions"] = torch.mean(node_es_heads, dim=-1)
-            output["contributions"] = torch.std(node_es_heads, dim=-1)
-            heads["contributions"] = node_es_heads
-            
+            heads["energy"] = total_energy_heads[:, committee_heads]
+            output["energy"] = torch.mean(heads["energy"], dim=-1)
+            stds["energy"] = torch.std(heads["energy"], dim=-1)
+            heads["node_energy"] = node_energy_heads[:, committee_heads]
+            output["node_energy"] = torch.mean(heads["node_energy"], dim=-1)
+            stds["node_energy"] = torch.std(heads["node_energy"], dim=-1)
+            heads["interaction_energy"] = inter_e_heads[:, committee_heads]
+            output["interaction_energy"] = torch.mean(heads["interaction_energy"], dim=-1)
+            stds["interaction_energy"] = torch.std(heads["interaction_energy"], dim=-1)
+            heads["contributions"] = node_es_heads[:, :, committee_heads]
+            output["contributions"] = torch.mean(heads["contributions"], dim=-1)
+            stds["contributions"] = torch.std(heads["contributions"], dim=-1)
 
             means_properties, stds_properties, heads_properties = get_outputs_committee(
                 energy_heads=inter_e_heads,
                 positions=data["positions"],
                 displacement=displacement,
                 cell=data["cell"],
-                heads=self.heads,
+                committee_heads=committee_heads,
                 compute_force=compute_force,
                 compute_virials=compute_virials,
                 compute_stress=compute_stress,

@@ -127,7 +127,7 @@ def configure_model(
             model,
             model_foundation,
             z_table,
-            load_readout=args.foundation_filter_elements,
+            load_readout=args.foundation_filter_elements and (args.n_committee is None),
             max_L=args.max_L,
         )
 
