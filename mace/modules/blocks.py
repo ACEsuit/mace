@@ -627,15 +627,35 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         # Linear
         irreps_mid = irreps_mid.simplify()
         self.irreps_out = self.target_irreps
-        self.linear = o3.Linear(
-            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
-        )
+        
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker", "flexible_symmetric_tucker"]:
+            self.linear = o3.Linear(
+                irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+            )
+            # Selector TensorProduct
+            self.skip_tp = o3.FullyConnectedTensorProduct(
+                self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+            )
+            self.reshape = reshape_irreps(self.irreps_out)
+
+        elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker", "flexible_non_symmetric_tucker"]:
+            self.linear = torch.nn.ModuleList([])
+            # Selector TensorProduct
+            self.skip_tp = o3.FullyConnectedTensorProduct(
+                self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+            )
+            self.reshape = torch.nn.ModuleList([])
+            for _ in range(self.correlation):
+                self.linear.append(o3.Linear(
+                    irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+                ))
+                self.reshape.append(reshape_irreps(self.irreps_out))
 
         # Selector TensorProduct
         self.skip_tp = o3.FullyConnectedTensorProduct(
             self.irreps_out, self.node_attrs_irreps, self.irreps_out
         )
-        self.reshape = reshape_irreps(self.irreps_out)
+        #self.reshape = reshape_irreps(self.irreps_out)
 
     def forward(
         self,
@@ -653,16 +673,46 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
-        message = scatter_sum(
+        original_message = scatter_sum(
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
-        message = self.linear(message) / self.avg_num_neighbors
-        message = self.skip_tp(message, node_attrs)
-        return (
-            self.reshape(message),
-            None,
-        )  # [n_nodes, channels, (lmax + 1)**2]
-
+        
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker",]:
+            message = self.linear(original_message) / self.avg_num_neighbors
+            message = self.skip_tp(message, node_attrs)
+            return (
+                    self.reshape(message),
+                    None,
+                    )  # symmetric_cp: [n_nodes, channels, (lmax + 1)**2]
+        elif self.tensor_format in ["flexible_symmetric_tucker", ]:
+            raise NotImplementedError
+            # message = self.linear(original_message) / self.avg_num_neighbors
+            # requires further contraction in SymmetricContraction - no reshape 
+            # to [n_nodes, channels, (lmax + 1) ** 2 ] yet
+            # return (message, sc)
+        elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker"]:
+            message = self.reshape[0](self.linear[0](original_message))
+            message = message.unsqueeze(-1)
+            for idx in range(1, self.correlation):
+                _message = self.linear[idx](original_message)
+                _message = self.skip_tp(_message, node_attrs)
+                _message = self.reshape[idx](_message).unsqueeze(-1)
+                message = torch.cat((message, _message), dim = -1)
+            return (
+                message / self.avg_num_neighbors, 
+                None,
+            )
+        elif self.tensor_format in ["flexible_non_symmetric_tucker"]:
+            raise NotImplementedError
+            # message = self.linear[0](original_message) # [n_nodes, klm]
+            # message = message.unsqueeze(-1) # [n_nnodes, klm, 1]
+            # for idx in range(1, self.correlation):
+            #     _message = self.linear[idx](original_message).unsqueeze(-1)
+            #     message = torch.cat((message, _message), dim = -1)
+            # return (
+            #     message / self.avg_num_neighbors,
+            #     sc,
+            # )
 
 @compile_mode("script")
 class RealAgnosticResidualInteractionBlock(InteractionBlock):
@@ -1002,6 +1052,174 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
                 sc,
             )
 
+
+@compile_mode("script")
+class RealAgnosticDensityInjuctedNoScaleNoBiasInteractionGateBlock(InteractionBlock):
+
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        print(f"RealAgnosticInteractionGateBlock --> {self.gate}")
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            self.gate,
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        # self.linear = o3.Linear(
+        #     irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        # )
+
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker", "flexible_symmetric_tucker"]:
+            self.linear = o3.Linear(
+                irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+            )
+            # Selector TensorProduct
+            self.skip_tp = o3.FullyConnectedTensorProduct(
+                self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+            )
+            self.reshape = reshape_irreps(self.irreps_out)
+
+        elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker", "flexible_non_symmetric_tucker"]:
+            self.linear = torch.nn.ModuleList([])
+            # Selector TensorProduct
+            self.skip_tp = o3.FullyConnectedTensorProduct(
+                self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+            )
+            self.reshape = torch.nn.ModuleList([])
+            for _ in range(self.correlation):
+                self.linear.append(o3.Linear(
+                    irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+                ))
+                self.reshape.append(reshape_irreps(self.irreps_out))
+
+        if not getattr(self, "agnostic", False):
+            # Selector TensorProduct
+            self.skip_tp = o3.FullyConnectedTensorProduct(
+                self.irreps_out, self.node_attrs_irreps, self.irreps_out
+            )
+        else:
+            ## Selector TensorProduct
+            #self.skip_tp = o3.FullyConnectedTensorProduct(
+            #    self.irreps_out, self.node_feats_irreps, self.irreps_out
+            #)
+            pass
+
+        #self.reshape = reshape_irreps(self.irreps_out)
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim] + [1,], 
+            self.gate
+        )
+        
+        self.sinous_embedding = partial(continuous_sinous_embedding, dim=32, max_density=100)
+        self.density_linear = torch.nn.Linear(32, self.irreps_out[0].mul, bias=False) # TODO: density embedding model
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]        
+        # learnable density funciton with 
+        density = torch.tanh(self.density_fn(edge_feats)**2)
+        
+        # NO RESCALE
+        #mji = mji * density
+
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        
+        node_local_density = scatter_sum(
+            src=density, index=receiver, dim=0, dim_size=num_nodes
+        )
+
+        message = message / (node_local_density + 1)
+ 
+        # density_embedding
+        sin_embedding = self.sinous_embedding(node_local_density.flatten())
+        density_embedding = self.density_linear(sin_embedding)
+        # density inject
+        message[:, self.irreps_out.slices()[0]] += density_embedding
+
+        original_message = message
+        
+        if self.tensor_format in ["symmetric_cp", "symmetric_tucker",]:
+            message = self.linear(original_message)
+            if not getattr(self, "agnostic", False):
+                message = self.skip_tp(message, node_attrs)
+            else:
+                pass
+            return (
+                self.reshape(message),
+                None,
+            )  # [n_nodes, channels, (lmax + 1)**2]
+        elif self.tensor_format in ["flexible_symmetric_tucker", ]:
+            raise NotImplementedError
+            # message = self.linear(original_message) / self.avg_num_neighbors
+            # requires further contraction in SymmetricContraction - no reshape 
+            # to [n_nodes, channels, (lmax + 1) ** 2 ] yet
+            # return (message, sc)
+        elif self.tensor_format in ["non_symmetric_cp", "non_symmetric_tucker"]:
+            message = self.reshape[0](self.linear[0](original_message))
+            message = message.unsqueeze(-1)
+            for idx in range(1, self.correlation):
+                _message = self.linear[idx](original_message)
+                if not getattr(self, "agnostic", False):
+                    _message = self.skip_tp(_message, node_attrs)
+                else:
+                    pass
+                _message = self.reshape[idx](_message).unsqueeze(-1)
+                message = torch.cat((message, _message), dim = -1)
+            return (
+                message, 
+                None,
+            )
+        elif self.tensor_format in ["flexible_non_symmetric_tucker"]:
+            raise NotImplementedError
+            # message = self.linear[0](original_message) # [n_nodes, klm]
+            # message = message.unsqueeze(-1) # [n_nnodes, klm, 1]
+            # for idx in range(1, self.correlation):
+            #     _message = self.linear[idx](original_message).unsqueeze(-1)
+            #     message = torch.cat((message, _message), dim = -1)
+            # return (
+            #     message / self.avg_num_neighbors,
+            #     sc,
+            # )
 
 @compile_mode("script")
 class RealAgnosticDensityInjuctedNoScaleNoBiasResidualInteractionGateBlock(InteractionBlock):
