@@ -538,6 +538,7 @@ def run(args: argparse.Namespace) -> None:
     logging.info(loss_fn)
 
     # Optimizer
+    args.optimize_readouts_only = True
     param_options = get_params_options(args, model)
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)

@@ -539,8 +539,15 @@ def get_params_options(
         else:
             no_decay_interactions[name] = param
 
-    param_options = dict(
-        params=[
+    params=[
+        {
+            "name": "readouts",
+            "params": model.readouts.parameters(),
+            "weight_decay": 0.0,
+        }
+    ]
+    if not args.optimize_readouts_only:
+        params += [
             {
                 "name": "embedding",
                 "params": model.node_embedding.parameters(),
@@ -561,12 +568,9 @@ def get_params_options(
                 "params": model.products.parameters(),
                 "weight_decay": args.weight_decay,
             },
-            {
-                "name": "readouts",
-                "params": model.readouts.parameters(),
-                "weight_decay": 0.0,
-            },
-        ],
+        ]
+    param_options = dict(
+        params=params,
         lr=args.lr,
         amsgrad=args.amsgrad,
         betas=(args.beta, 0.999),
