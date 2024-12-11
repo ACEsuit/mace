@@ -567,16 +567,6 @@ def get_params_options(
             }
         )
 
-    model_params = set(model.parameters())
-    optimizer_params = set()
-    for group in param_options["params"]:
-        optimizer_params.update(group["params"])
-
-    missing_params = model_params - optimizer_params
-    if missing_params:
-        raise ValueError(
-            f"Found {len(missing_params)} parameters not included in optimizer groups!"
-        )
     return param_options
 
 
