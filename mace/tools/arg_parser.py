@@ -465,6 +465,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
+        "--optimize_readouts_only",
+        help="optimize only the readout blocks during training",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--forces_weight", help="weight of forces loss", type=float, default=100.0
     )
     parser.add_argument(
