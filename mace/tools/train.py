@@ -152,7 +152,8 @@ def train(
     device: torch.device,
     log_errors: str,
     swa: Optional[SWAContainer] = None,
-    lbfgs: bool=False,
+    lbfgs: bool = False,
+    lbfgs_config: Dict = None,
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
     log_wandb: bool = False,
@@ -320,28 +321,35 @@ def train(
         if distributed:
             torch.distributed.barrier()
         epoch += 1
-    if lbfgs:
-        epoch=10000 #TODO: fix code instead f workaround
-        tolerancegrad=1e-6
 
-        lbfgsepochs=1
-        iterations=20000
-        historysize=1000
-        batching=False
+    if lbfgs:    
+        epoch=10000 #TODO: fix code instead of workaround
 
-        lbfgs_optimizer=LBFGSNew(model.parameters(), tolerance_grad=tolerancegrad, history_size=historysize, max_iter=iterations, line_search_fn=False, batch_mode=batching)
+        lbfgsepochs=lbfgs_config.get("epochs", 50)
+        max_iter=lbfgs_config.get("max_iter", 200)
+        history_size=lbfgs_config.get("history", 240)
+        batch_mode=lbfgs_config.get("batch_mode", False)
+
+        lbfgs_optimizer=LBFGSNew(model.parameters(), 
+                                 tolerance_grad=1e-6, 
+                                 history_size=history_size, 
+                                 max_iter=max_iter, 
+                                 line_search_fn=False, 
+                                 batch_mode=batch_mode)
         while epoch < 10000+lbfgsepochs:
+
             if epoch % 10 == 0:
-                logging.info(f"LBFGS epoch: {epoch}, history: {historysize}, max_iter: {iterations}, tolerance {tolerancegrad}, epochs {lbfgsepochs}, batch_mode {batching}")
+                logging.info(f"LBFGS epoch: {epoch}, history: {history_size}, max_iter: {max_iter}, epochs {lbfgsepochs}, batch_mode {batch_mode}")
                 logging.info("GPU Memory Report:")
                 logging.info(f"Allocated: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
                 logging.info(f"Cached:    {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
                 logging.info(f"Total:     {torch.cuda.get_device_properties(0).total_memory / 1024**2:.2f} MB")
                 logging.info(f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
                 logging.info(f"Free memory: {torch.cuda.mem_get_info()[0] / (1024**2):.2f} MB")
-                logging.info(f"Free memory info: {torch.cuda.mem_get_info()}")
+
             if distributed:
                 train_sampler.set_epoch()
+
             train_one_epoch(
                 model=model,
                 loss_fn=loss_fn,
@@ -350,13 +358,14 @@ def train(
                 epoch=epoch,
                 output_args=output_args,
                 max_grad_norm=max_grad_norm,
-                ema=None,
+                ema=ema,
                 logger=logger,
                 device=device, 
                 distributed_model=distributed_model,
                 rank=rank, 
                 lbfgs=lbfgs
             )
+
             if distributed:
                 torch.distributed.barrier()
             
@@ -391,7 +400,6 @@ def train(
                             valid_loader_name,
                         )
             epoch+=1
-            
 
     logging.info("Training complete")
 
@@ -413,6 +421,7 @@ def train_one_epoch(
 ) -> None:
     model_to_train = model if distributed_model is None else distributed_model
     take_step_fn = take_lbfgs_step if lbfgs else take_step
+    
     for batch in data_loader:
         _, opt_metrics = take_step_fn(
             model=model_to_train,
@@ -466,6 +475,7 @@ def take_step(
     }
 
     return loss, loss_dict
+
 
 def take_lbfgs_step(
     model: torch.nn.Module,

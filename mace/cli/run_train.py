@@ -630,6 +630,7 @@ def run(args: argparse.Namespace) -> None:
         swa=swa,
         ema=ema,
         lbfgs=args.lbfgs,
+        lbfgs_config=args.lbfgs_config,
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
         log_wandb=args.wandb,
