@@ -7,6 +7,7 @@
 import argparse
 import os
 from typing import Optional
+import ast
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -601,6 +602,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--lbfgs_config",
+        help="A dictionary containing the LBFGS parameters",
+        type=parse_dict,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
         "--ema",
         help="use Exponential Moving Average",
         action="store_true",
@@ -889,3 +897,17 @@ def str2bool(value):
     if value.lower() in ("no", "false", "f", "n", "0"):
         return False
     raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
+def parse_dict(value: str):
+    if value is None:
+        return None
+    try:
+        parsed_dict = ast.literal_eval(value)
+        
+        if not isinstance(parsed_dict, dict):
+            raise ValueError("Input must be a dictionary")
+        
+        return parsed_dict
+    except (ValueError, SyntaxError) as e:
+        raise argparse.ArgumentTypeError(f"Invalid dictionary format: {e}")
