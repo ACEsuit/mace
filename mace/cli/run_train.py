@@ -569,6 +569,8 @@ def run(args: argparse.Namespace) -> None:
 
     lr_scheduler = LRScheduler(optimizer, args)
 
+    use_lbfgs = True if args.optimizer == "lbfgs" else False
+
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
     if args.swa:
@@ -629,7 +631,7 @@ def run(args: argparse.Namespace) -> None:
         device=device,
         swa=swa,
         ema=ema,
-        lbfgs=args.lbfgs,
+        lbfgs=use_lbfgs,
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
         log_wandb=args.wandb,
