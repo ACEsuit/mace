@@ -21,6 +21,7 @@ from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules, tools
 from mace.tools.train import SWAContainer
+from mace.tools.lbfgsnew import LBFGSNew
 
 
 @dataclasses.dataclass
@@ -675,6 +676,18 @@ def get_optimizer(
             ) from exc
         _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
         optimizer = adamw_schedulefree.AdamWScheduleFree(**_param_options)
+    elif args.optimizer == "lbfgs":
+        lbfgs_config = args.lbfgs_config
+        max_iter = lbfgs_config.get("max_iter", 200)
+        history_size = lbfgs_config.get("history", 240)
+        batch_mode = lbfgs_config.get("batch_mode", False)
+
+        optimizer = LBFGSNew(**param_options,
+                             tolerance_grad=1e-6,
+                             history_size=history_size,
+                             max_iter=max_iter,
+                             line_search_fn=False,
+                             batch_mode=batch_mode)
     else:
         optimizer = torch.optim.Adam(**param_options)
     return optimizer
