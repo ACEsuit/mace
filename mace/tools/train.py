@@ -179,7 +179,6 @@ def train(
     epoch = start_epoch
 
     # log validation loss before _any_ training
-    valid_loss = 0.0
     for valid_loader_name, valid_loader in valid_loaders.items():
         valid_loss_head, eval_metrics = evaluate(
             model=model,
@@ -245,7 +244,6 @@ def train(
             if "ScheduleFree" in type(optimizer).__name__:
                 optimizer.eval()
             with param_context:
-                valid_loss = 0.0
                 wandb_log_dict = {}
                 for valid_loader_name, valid_loader in valid_loaders.items():
                     valid_loss_head, eval_metrics = evaluate(
@@ -273,9 +271,7 @@ def train(
                                 ],
                                 "valid_rmse_f": eval_metrics["rmse_f"],
                             }
-                valid_loss = (
-                    valid_loss_head  # consider only the last head for the checkpoint
-                )
+                valid_loss = valid_loss_head  # consider only the last head for the checkpoint
             if log_wandb:
                 wandb.log(wandb_log_dict)
             if rank == 0:
