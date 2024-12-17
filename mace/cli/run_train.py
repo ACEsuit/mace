@@ -24,6 +24,8 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
+from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -158,6 +160,16 @@ def run(args: argparse.Namespace) -> None:
                 args.E0s != "average"
             ), "average atomic energies cannot be used for multiheads finetuning"
             # check that the foundation model has a single head, if not, use the first head
+            if not args.force_mh_ft_lr:
+                logging.info(
+                    "Multihead finetuning mode, setting learning rate to 0.001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
+                )
+                args.lr = 0.001
+                args.ema = True
+                args.ema_decay = 0.999
+            logging.info(
+                "Using multiheads finetuning mode, setting learning rate to 0.001 and EMA to True"
+            )
             if hasattr(model_foundation, "heads"):
                 if len(model_foundation.heads) > 1:
                     logging.warning(
@@ -263,7 +275,7 @@ def run(args: argparse.Namespace) -> None:
         args.loss = "universal"
         if (
             args.foundation_model in ["small", "medium", "large"]
-            or args.pt_train_file is None
+            or args.pt_train_file == "mp"
         ):
             logging.info(
                 "Using foundation model for multiheads finetuning with Materials Project data"
@@ -323,8 +335,21 @@ def run(args: argparse.Namespace) -> None:
             )
             head_config_pt.collections = collections
             head_configs.append(head_config_pt)
+
+        ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
+        if ratio_pt_ft < 0.1:
+            logging.warning(
+                f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
+                f"increasing the number of configurations in the pt_train_file by a factor of {int(0.1 / ratio_pt_ft)}"
+            )
+            for head_config in head_configs:
+                if head_config.head_name == "pt_head":
+                    continue
+                head_config.collections.train += head_config.collections.train * int(
+                    0.1 / ratio_pt_ft
+                )
         logging.info(
-            f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}"
+            f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
         )
 
     # Atomic number table
@@ -549,6 +574,11 @@ def run(args: argparse.Namespace) -> None:
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
 
+    # Cueq
+    if args.enable_cueq:
+        logging.info("Converting model to CUEQ for accelerated training")
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        model = run_e3nn_to_cueq(deepcopy(model), device=device)
     # Optimizer
     param_options = get_params_options(args, model)
     optimizer: torch.optim.Optimizer
@@ -600,7 +630,6 @@ def run(args: argparse.Namespace) -> None:
 
     if args.wandb:
         setup_wandb(args)
-
     if args.distributed:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
@@ -757,9 +786,14 @@ def run(args: argparse.Namespace) -> None:
             else:
                 model_path = Path(args.checkpoints_dir) / (tag + ".model")
             logging.info(f"Saving model to {model_path}")
+            model_to_save = deepcopy(model)
+            if args.enable_cueq:
+                print("RUNING CUEQ TO E3NN")
+                print("swa_eval", swa_eval)
+                model_to_save = run_cueq_to_e3nn(deepcopy(model), device=device)
             if args.save_cpu:
-                model = model.to("cpu")
-            torch.save(model, model_path)
+                model_to_save = model_to_save.to("cpu")
+            torch.save(model_to_save, model_path)
             extra_files = {
                 "commit.txt": commit.encode("utf-8") if commit is not None else b"",
                 "config.yaml": json.dumps(
@@ -768,14 +802,14 @@ def run(args: argparse.Namespace) -> None:
             }
             if swa_eval:
                 torch.save(
-                    model, Path(args.model_dir) / (args.name + "_stagetwo.model")
+                    model_to_save, Path(args.model_dir) / (args.name + "_stagetwo.model")
                 )
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_stagetwo_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata {path_complied}")
-                    model_compiled = jit.compile(deepcopy(model))
+                    model_compiled = jit.compile(deepcopy(model_to_save))
                     torch.jit.save(
                         model_compiled,
                         path_complied,
@@ -784,13 +818,13 @@ def run(args: argparse.Namespace) -> None:
                 except Exception as e:  # pylint: disable=W0703
                     pass
             else:
-                torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+                torch.save(model_to_save, Path(args.model_dir) / (args.name + ".model"))
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata to {path_complied}")
-                    model_compiled = jit.compile(deepcopy(model))
+                    model_compiled = jit.compile(deepcopy(model_to_save))
                     torch.jit.save(
                         model_compiled,
                         path_complied,

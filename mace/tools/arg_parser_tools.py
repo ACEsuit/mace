@@ -92,6 +92,15 @@ def check_args(args):
 
     # Loss and optimization
     # Check Stage Two loss start
+    if args.start_swa is not None:
+        args.swa = True
+        log_messages.append(
+            (
+                "Stage Two is activated as start_stage_two was defined",
+                logging.INFO,
+            )
+        )
+
     if args.swa:
         if args.start_swa is None:
             args.start_swa = max(1, args.max_num_epochs // 4 * 3)
