@@ -596,12 +596,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="start_swa",
     )
     parser.add_argument(
-        "--lbfgs",
-        help="do a single epoch of LBFGS optimisation at the end of training",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
         "--lbfgs_config",
         help="A dictionary containing the LBFGS parameters",
         type=parse_dict,
