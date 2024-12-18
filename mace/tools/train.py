@@ -365,6 +365,13 @@ def take_step(
     start_time = time.time()
     batch = batch.to(device)
     batch_dict = batch.to_dict()
+
+    logging.info("GPU Memory Report:")
+    logging.info(f"Allocated: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
+    logging.info(f"Cached:    {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
+    logging.info(f"Total:     {torch.cuda.get_device_properties(0).total_memory / 1024**2:.2f} MB")
+    logging.info(f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
+    logging.info(f"Free memory: {torch.cuda.mem_get_info()[0] / (1024**2):.2f} MB")
     
     def closure():
         optimizer.zero_grad(set_to_none=True)
