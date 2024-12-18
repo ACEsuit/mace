@@ -56,6 +56,7 @@ from mace.tools.scripts_utils import (
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
+from mace.tools.lbfgsnew import LBFGSNew
 
 
 def main() -> None:
@@ -569,8 +570,6 @@ def run(args: argparse.Namespace) -> None:
 
     lr_scheduler = LRScheduler(optimizer, args)
 
-    use_lbfgs = True if args.optimizer == "lbfgs" else False
-
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
     if args.swa:
@@ -606,6 +605,19 @@ def run(args: argparse.Namespace) -> None:
     else:
         for group in optimizer.param_groups:
             group["lr"] = args.lr
+
+    if args.lbfgs_config:
+        use_lbfgs = True
+        max_iter = args.lbfgs_config.get("max_iter", 200)
+        history_size = args.lbfgs_config.get("history", 240)
+        batch_mode = args.lbfgs_config.get("batch_mode", False)
+
+        optimizer = LBFGSNew(model.parameters(),
+                             tolerance_grad=1e-6,
+                             history_size=history_size,
+                             max_iter=max_iter,
+                             line_search_fn=False,
+                             batch_mode=batch_mode)
 
     if args.wandb:
         setup_wandb(args)
