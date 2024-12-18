@@ -607,11 +607,11 @@ def run(args: argparse.Namespace) -> None:
             group["lr"] = args.lr
 
     if args.lbfgs_config:
-        use_lbfgs = True
         max_iter = args.lbfgs_config.get("max_iter", 200)
         history_size = args.lbfgs_config.get("history", 240)
         batch_mode = args.lbfgs_config.get("batch_mode", False)
 
+        logging.info("Switching optimizer to LBFGS")
         optimizer = LBFGSNew(model.parameters(),
                              tolerance_grad=1e-6,
                              history_size=history_size,
@@ -643,7 +643,6 @@ def run(args: argparse.Namespace) -> None:
         device=device,
         swa=swa,
         ema=ema,
-        lbfgs=use_lbfgs,
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
         log_wandb=args.wandb,
