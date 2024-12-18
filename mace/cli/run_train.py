@@ -24,6 +24,8 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
+from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -36,7 +38,6 @@ from mace.tools.scripts_utils import (
     LRScheduler,
     check_path_ase_read,
     convert_to_json_format,
-    create_error_table,
     dict_to_array,
     extract_config_mace_model,
     get_atomic_energies,
@@ -49,9 +50,11 @@ from mace.tools.scripts_utils import (
     get_params_options,
     get_swa,
     print_git_commit,
+    remove_pt_head,
     setup_wandb,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
+from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -115,10 +118,6 @@ def run(args: argparse.Namespace) -> None:
     commit = print_git_commit()
     model_foundation: Optional[torch.nn.Module] = None
     if args.foundation_model is not None:
-        if args.multiheads_finetuning:
-            assert (
-                args.E0s != "average"
-            ), "average atomic energies cannot be used for multiheads finetuning"
         if args.foundation_model in ["small", "medium", "large"]:
             logging.info(
                 f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
@@ -148,6 +147,37 @@ def run(args: argparse.Namespace) -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
+        if (
+            args.foundation_model not in ["small", "medium", "large"]
+            and args.pt_train_file is None
+        ):
+            logging.warning(
+                "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provied a path to a pretraining file with --pt_train_file."
+            )
+            args.multiheads_finetuning = False
+        if args.multiheads_finetuning:
+            assert (
+                args.E0s != "average"
+            ), "average atomic energies cannot be used for multiheads finetuning"
+            # check that the foundation model has a single head, if not, use the first head
+            if not args.force_mh_ft_lr:
+                logging.info(
+                    "Multihead finetuning mode, setting learning rate to 0.001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
+                )
+                args.lr = 0.001
+                args.ema = True
+                args.ema_decay = 0.999
+            logging.info(
+                "Using multiheads finetuning mode, setting learning rate to 0.001 and EMA to True"
+            )
+            if hasattr(model_foundation, "heads"):
+                if len(model_foundation.heads) > 1:
+                    logging.warning(
+                        "Mutlihead finetuning with models with more than one head is not supported, using the first head as foundation head."
+                    )
+                    model_foundation = remove_pt_head(
+                        model_foundation, args.foundation_head
+                    )
     else:
         args.multiheads_finetuning = False
 
@@ -245,7 +275,7 @@ def run(args: argparse.Namespace) -> None:
         args.loss = "universal"
         if (
             args.foundation_model in ["small", "medium", "large"]
-            or args.pt_train_file is None
+            or args.pt_train_file == "mp"
         ):
             logging.info(
                 "Using foundation model for multiheads finetuning with Materials Project data"
@@ -305,8 +335,21 @@ def run(args: argparse.Namespace) -> None:
             )
             head_config_pt.collections = collections
             head_configs.append(head_config_pt)
+
+        ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
+        if ratio_pt_ft < 0.1:
+            logging.warning(
+                f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
+                f"increasing the number of configurations in the pt_train_file by a factor of {int(0.1 / ratio_pt_ft)}"
+            )
+            for head_config in head_configs:
+                if head_config.head_name == "pt_head":
+                    continue
+                head_config.collections.train += head_config.collections.train * int(
+                    0.1 / ratio_pt_ft
+                )
         logging.info(
-            f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}"
+            f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
         )
 
     # Atomic number table
@@ -353,8 +396,14 @@ def run(args: argparse.Namespace) -> None:
                 z_table_foundation = AtomicNumberTable(
                     [int(z) for z in model_foundation.atomic_numbers]
                 )
+                foundation_atomic_energies = model_foundation.atomic_energies_fn.atomic_energies
+                if foundation_atomic_energies.ndim > 1:
+                    foundation_atomic_energies = foundation_atomic_energies.squeeze()
+                    if foundation_atomic_energies.ndim == 2:
+                        foundation_atomic_energies = foundation_atomic_energies[0]
+                        logging.info("Foundation model has multiple heads, using the first head as foundation E0s.")
                 atomic_energies_dict[head_config.head_name] = {
-                    z: model_foundation.atomic_energies_fn.atomic_energies[
+                    z: foundation_atomic_energies[
                         z_table_foundation.z_to_index(z)
                     ].item()
                     for z in z_table.zs
@@ -372,8 +421,14 @@ def run(args: argparse.Namespace) -> None:
         z_table_foundation = AtomicNumberTable(
             [int(z) for z in model_foundation.atomic_numbers]
         )
+        foundation_atomic_energies = model_foundation.atomic_energies_fn.atomic_energies
+        if foundation_atomic_energies.ndim > 1:
+            foundation_atomic_energies = foundation_atomic_energies.squeeze()
+            if foundation_atomic_energies.ndim == 2:
+                foundation_atomic_energies = foundation_atomic_energies[0]
+                logging.info("Foundation model has multiple heads, using the first head as foundation E0s.")
         atomic_energies_dict["pt_head"] = {
-            z: model_foundation.atomic_energies_fn.atomic_energies[
+            z: foundation_atomic_energies[
                 z_table_foundation.z_to_index(z)
             ].item()
             for z in z_table.zs
@@ -519,6 +574,11 @@ def run(args: argparse.Namespace) -> None:
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
 
+    # Cueq
+    if args.enable_cueq:
+        logging.info("Converting model to CUEQ for accelerated training")
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        model = run_e3nn_to_cueq(deepcopy(model), device=device)
     # Optimizer
     param_options = get_params_options(args, model)
     optimizer: torch.optim.Optimizer
@@ -570,12 +630,10 @@ def run(args: argparse.Namespace) -> None:
 
     if args.wandb:
         setup_wandb(args)
-
     if args.distributed:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
         distributed_model = None
-
     tools.train(
         model=model,
         loss_fn=loss_fn,
@@ -653,7 +711,6 @@ def run(args: argparse.Namespace) -> None:
                         folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
         for test_name, test_set in test_sets.items():
-            print(test_name)
             test_sampler = None
             if args.distributed:
                 test_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -729,9 +786,14 @@ def run(args: argparse.Namespace) -> None:
             else:
                 model_path = Path(args.checkpoints_dir) / (tag + ".model")
             logging.info(f"Saving model to {model_path}")
+            model_to_save = deepcopy(model)
+            if args.enable_cueq:
+                print("RUNING CUEQ TO E3NN")
+                print("swa_eval", swa_eval)
+                model_to_save = run_cueq_to_e3nn(deepcopy(model), device=device)
             if args.save_cpu:
-                model = model.to("cpu")
-            torch.save(model, model_path)
+                model_to_save = model_to_save.to("cpu")
+            torch.save(model_to_save, model_path)
             extra_files = {
                 "commit.txt": commit.encode("utf-8") if commit is not None else b"",
                 "config.yaml": json.dumps(
@@ -740,14 +802,14 @@ def run(args: argparse.Namespace) -> None:
             }
             if swa_eval:
                 torch.save(
-                    model, Path(args.model_dir) / (args.name + "_stagetwo.model")
+                    model_to_save, Path(args.model_dir) / (args.name + "_stagetwo.model")
                 )
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_stagetwo_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata {path_complied}")
-                    model_compiled = jit.compile(deepcopy(model))
+                    model_compiled = jit.compile(deepcopy(model_to_save))
                     torch.jit.save(
                         model_compiled,
                         path_complied,
@@ -756,13 +818,13 @@ def run(args: argparse.Namespace) -> None:
                 except Exception as e:  # pylint: disable=W0703
                     pass
             else:
-                torch.save(model, Path(args.model_dir) / (args.name + ".model"))
+                torch.save(model_to_save, Path(args.model_dir) / (args.name + ".model"))
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata to {path_complied}")
-                    model_compiled = jit.compile(deepcopy(model))
+                    model_compiled = jit.compile(deepcopy(model_to_save))
                     torch.jit.save(
                         model_compiled,
                         path_complied,

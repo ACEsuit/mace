@@ -16,6 +16,13 @@ from mace.calculators import mace_mp, mace_off
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
 
+try:
+    import cuequivariance as cue  # pylint: disable=unused-import
+
+    CUET_AVAILABLE = True
+except ImportError:
+    CUET_AVAILABLE = False
+
 pytest_mace_dir = Path(__file__).parent.parent
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
@@ -175,6 +182,71 @@ def trained_model_equivariant_fixture(tmp_path_factory, fitting_configs):
     assert p.returncode == 0
 
     return MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+
+
+@pytest.fixture(scope="module", name="trained_equivariant_model_cueq")
+def trained_model_equivariant_fixture_cueq(tmp_path_factory, fitting_configs):
+    _mace_params = {
+        "name": "MACE",
+        "valid_fraction": 0.05,
+        "energy_weight": 1.0,
+        "forces_weight": 10.0,
+        "stress_weight": 1.0,
+        "model": "MACE",
+        "hidden_irreps": "16x0e+16x1o",
+        "r_max": 3.5,
+        "batch_size": 5,
+        "max_num_epochs": 10,
+        "swa": None,
+        "start_swa": 5,
+        "ema": None,
+        "ema_decay": 0.99,
+        "amsgrad": None,
+        "restart_latest": None,
+        "device": "cpu",
+        "seed": 5,
+        "loss": "stress",
+        "energy_key": "REF_energy",
+        "forces_key": "REF_forces",
+        "stress_key": "REF_stress",
+        "eval_interval": 2,
+    }
+
+    tmp_path = tmp_path_factory.mktemp("run_")
+
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+
+    assert p.returncode == 0
+
+    return MACECalculator(
+        model_paths=tmp_path / "MACE.model", device="cpu", enable_cueq=True
+    )
 
 
 @pytest.fixture(scope="module", name="trained_dipole_model")
@@ -468,18 +540,98 @@ def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model):
 
 def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
     at = fitting_configs[2].copy()
-    at.calc = trained_equivariant_model
+    at_rotated = fitting_configs[2].copy()
+    at_rotated.rotate(90, "x")
+    calc = trained_equivariant_model
 
-    desc_invariant = at.calc.get_descriptors(at, invariants_only=True)
-    desc_single_layer = at.calc.get_descriptors(at, invariants_only=True, num_layers=1)
-    desc = at.calc.get_descriptors(at, invariants_only=False)
+    desc_invariant = calc.get_descriptors(at, invariants_only=True)
+    desc_invariant_rotated = calc.get_descriptors(at_rotated, invariants_only=True)
+    desc_invariant_single_layer = calc.get_descriptors(
+        at, invariants_only=True, num_layers=1
+    )
+    desc_invariant_single_layer_rotated = calc.get_descriptors(
+        at_rotated, invariants_only=True, num_layers=1
+    )
+    desc = calc.get_descriptors(at, invariants_only=False)
+    desc_single_layer = calc.get_descriptors(at, invariants_only=False, num_layers=1)
+    desc_rotated = calc.get_descriptors(at_rotated, invariants_only=False)
+    desc_rotated_single_layer = calc.get_descriptors(
+        at_rotated, invariants_only=False, num_layers=1
+    )
 
     assert desc_invariant.shape[0] == 3
     assert desc_invariant.shape[1] == 32
-    assert desc_single_layer.shape[0] == 3
-    assert desc_single_layer.shape[1] == 16
+    assert desc_invariant_single_layer.shape[0] == 3
+    assert desc_invariant_single_layer.shape[1] == 16
     assert desc.shape[0] == 3
     assert desc.shape[1] == 80
+    assert desc_single_layer.shape[0] == 3
+    assert desc_single_layer.shape[1] == 16 * 4
+    assert desc_rotated_single_layer.shape[0] == 3
+    assert desc_rotated_single_layer.shape[1] == 16 * 4
+
+    np.testing.assert_allclose(desc_invariant, desc_invariant_rotated, atol=1e-6)
+    np.testing.assert_allclose(
+        desc_invariant_single_layer, desc_invariant[:, :16], atol=1e-6
+    )
+    np.testing.assert_allclose(
+        desc_invariant_single_layer_rotated, desc_invariant[:, :16], atol=1e-6
+    )
+    np.testing.assert_allclose(
+        desc_single_layer[:, :16], desc_rotated_single_layer[:, :16], atol=1e-6
+    )
+    assert not np.allclose(
+        desc_single_layer[:, 16:], desc_rotated_single_layer[:, 16:], atol=1e-6
+    )
+    assert not np.allclose(desc, desc_rotated, atol=1e-6)
+
+
+def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_cueq):
+    at = fitting_configs[2].copy()
+    at_rotated = fitting_configs[2].copy()
+    at_rotated.rotate(90, "x")
+    calc = trained_equivariant_model_cueq
+
+    desc_invariant = calc.get_descriptors(at, invariants_only=True)
+    desc_invariant_rotated = calc.get_descriptors(at_rotated, invariants_only=True)
+    desc_invariant_single_layer = calc.get_descriptors(
+        at, invariants_only=True, num_layers=1
+    )
+    desc_invariant_single_layer_rotated = calc.get_descriptors(
+        at_rotated, invariants_only=True, num_layers=1
+    )
+    desc = calc.get_descriptors(at, invariants_only=False)
+    desc_single_layer = calc.get_descriptors(at, invariants_only=False, num_layers=1)
+    desc_rotated = calc.get_descriptors(at_rotated, invariants_only=False)
+    desc_rotated_single_layer = calc.get_descriptors(
+        at_rotated, invariants_only=False, num_layers=1
+    )
+
+    assert desc_invariant.shape[0] == 3
+    assert desc_invariant.shape[1] == 32
+    assert desc_invariant_single_layer.shape[0] == 3
+    assert desc_invariant_single_layer.shape[1] == 16
+    assert desc.shape[0] == 3
+    assert desc.shape[1] == 80
+    assert desc_single_layer.shape[0] == 3
+    assert desc_single_layer.shape[1] == 16 * 4
+    assert desc_rotated_single_layer.shape[0] == 3
+    assert desc_rotated_single_layer.shape[1] == 16 * 4
+
+    np.testing.assert_allclose(desc_invariant, desc_invariant_rotated, atol=1e-6)
+    np.testing.assert_allclose(
+        desc_invariant_single_layer, desc_invariant[:, :16], atol=1e-6
+    )
+    np.testing.assert_allclose(
+        desc_invariant_single_layer_rotated, desc_invariant[:, :16], atol=1e-6
+    )
+    np.testing.assert_allclose(
+        desc_single_layer[:, :16], desc_rotated_single_layer[:, :16], atol=1e-6
+    )
+    assert not np.allclose(
+        desc_single_layer[:, 16:], desc_rotated_single_layer[:, 16:], atol=1e-6
+    )
+    assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
 def test_mace_mp(capsys: pytest.CaptureFixture):
@@ -495,6 +647,22 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
 
 def test_mace_off():
     mace_off_model = mace_off(model="small", device="cpu")
+    assert isinstance(mace_off_model, MACECalculator)
+    assert mace_off_model.model_type == "MACE"
+    assert len(mace_off_model.models) == 1
+    assert isinstance(mace_off_model.models[0], ScaleShiftMACE)
+
+    atoms = build.molecule("H2O")
+    atoms.calc = mace_off_model
+
+    E = atoms.get_potential_energy()
+
+    assert np.allclose(E, -2081.116128586803, atol=1e-9)
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+def test_mace_off_cueq(model="medium", device="cpu"):
+    mace_off_model = mace_off(model=model, device=device, enable_cueq=True)
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"
     assert len(mace_off_model.models) == 1

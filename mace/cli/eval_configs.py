@@ -16,7 +16,9 @@ from mace.tools import torch_geometric, torch_tools, utils
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--configs", help="path to XYZ configurations", required=True)
     parser.add_argument("--model", help="path to model", required=True)
     parser.add_argument("--output", help="output path", required=True)
@@ -53,6 +55,13 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="MACE_",
     )
+    parser.add_argument(
+        "--head",
+        help="Model head used for evaluation",
+        type=str,
+        required=False,
+        default=None,
+    )
     return parser.parse_args()
 
 
@@ -76,14 +85,22 @@ def run(args: argparse.Namespace) -> None:
 
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, index=":")
+    if args.head is not None:
+        for atoms in atoms_list:
+            atoms.info["head"] = args.head
     configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
+    try:
+        heads = model.heads
+    except AttributeError:
+        heads = None
+
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
             data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=float(model.r_max)
+                config, z_table=z_table, cutoff=float(model.r_max), heads=heads
             )
             for config in configs
         ],
