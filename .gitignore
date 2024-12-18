@@ -32,6 +32,6 @@ dist/
 /wandb
 *.xyz
 /checkpoints
-*.model
+.model
 
 .benchmarks
