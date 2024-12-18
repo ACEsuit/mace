@@ -383,15 +383,14 @@ def take_step(
             compute_stress=output_args["stress"],
         )
         loss = loss_fn(pred=output, ref=batch)
-        loss.backward()
+        loss.backward(keep_graph=True)
         if max_grad_norm is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
         return loss
 
     if isinstance(optimizer, LBFGSNew):
-        optimizer.step(closure)
-        loss = closure()
+        loss = optimizer.step(closure)
     else:
         loss = closure()
         optimizer.step()
