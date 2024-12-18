@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/License-MIT%202.0-blue.svg)](https://opensource.org/licenses/mit)
 [![GitHub issues](https://img.shields.io/github/issues/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/issues/)
 [![Documentation Status](https://readthedocs.org/projects/mace/badge/)](https://mace-docs.readthedocs.io/en/latest/)
+[![DOI](https://zenodo.org/badge/505964914.svg)](https://doi.org/10.5281/zenodo.14103332)
 
 ## Table of contents
 
@@ -19,6 +20,7 @@
     - [Training](#training)
     - [Evaluation](#evaluation)
   - [Tutorials](#tutorials)
+  - [CUDA acceleration with cuEquivariance](#cuda-acceleration-with-cuequivariance)
   - [Weights and Biases for experiment tracking](#weights-and-biases-for-experiment-tracking)
   - [Pretrained Foundation Models](#pretrained-foundation-models)
     - [MACE-MP: Materials Project Force Fields](#mace-mp-materials-project-force-fields)
@@ -170,6 +172,9 @@ We also have a more detailed Colab tutorials on:
  - [Introduction to MACE active learning and fine-tuning](https://colab.research.google.com/drive/1oCSVfMhWrqHTeHbKgUSQN9hTKxLzoNyb)
  - [MACE theory and code (advanced)](https://colab.research.google.com/drive/1AlfjQETV_jZ0JQnV5M3FGwAM2SGCl2aU)
 
+## CUDA acceleration with cuEquivariance
+
+MACE supports CUDA acceleration with the cuEquivariance library. To install the library and use the acceleration, see our documentation at https://mace-docs.readthedocs.io/en/latest/guide/cuda_acceleration.html.
 
 ## On-line data loading for large datasets
 
