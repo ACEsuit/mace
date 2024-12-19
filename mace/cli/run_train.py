@@ -612,7 +612,7 @@ def run(args: argparse.Namespace) -> None:
         batch_mode = args.lbfgs_config.get("batch_mode", False)
 
         logging.info("Switching optimizer to LBFGS")
-        optimizer = LBFGSNew(model.parameters(),
+        optimizer = LBFGSNew(model.readouts.parameters(),
                              tolerance_grad=1e-6,
                              history_size=history_size,
                              max_iter=max_iter,
