@@ -6,11 +6,11 @@
 
 import argparse
 import ast
-import glob
 import json
 import logging
 import os
 from copy import deepcopy
+from glob import glob
 from pathlib import Path
 from typing import List, Optional
 
@@ -36,7 +36,7 @@ from mace.tools.scripts_utils import (
     LRScheduler,
     check_path_ase_read,
     convert_to_json_format,
-    create_error_table,
+    create_error_tables,
     dict_to_array,
     extract_config_mace_model,
     get_atomic_energies,
@@ -679,7 +679,7 @@ def run(args: argparse.Namespace) -> None:
             else:
                 test_folders = glob(head_config.test_dir + "/*")
                 for folder in test_folders:
-                    name = os.path.splitext(os.path.basename(test_file))[0]
+                    name = os.path.splitext(os.path.basename(folder))[0]
                     test_sets[name] = data.dataset_from_sharded_hdf5(
                         folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
@@ -737,38 +737,12 @@ def run(args: argparse.Namespace) -> None:
             "device": device,
             "distributed": args.distributed,
         }
-        table_train_valid = create_error_table(
+        create_error_tables(
             **error_table_kwargs,
-            all_data_loaders=train_valid_data_loader,
-            predict_committee=False,
+            train_valid_data_loader=train_valid_data_loader,
+            test_data_loader=test_data_loader,
+            also_predict_committee=(args.n_committee is not None),
         )
-        logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
-
-        if test_data_loader:
-            table_test = create_error_table(
-                **error_table_kwargs,
-                all_data_loaders=test_data_loader,
-                predict_committee=False
-            )
-            logging.info("Error-table on TEST:\n" + str(table_test))
-
-        if args.n_committee is not None:
-            table_train_valid = create_error_table(
-                **error_table_kwargs,
-                all_data_loaders=train_valid_data_loader,
-                predict_committee=True,
-            )
-            logging.info(
-                "Error-table on TRAIN and VALID using committee:\n" + str(table_train_valid)
-            )
-
-            if test_data_loader:
-                table_test = create_error_table(
-                    **error_table_kwargs,
-                    all_data_loaders=test_data_loader,
-                    predict_committee=True
-                )
-                logging.info("Error-table on TEST using committee:\n" + str(table_test))
 
         if rank == 0:
             # Save entire model
