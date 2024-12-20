@@ -123,7 +123,7 @@ def multi_valid_hdf5(process, args, split_valid, drop_last):
 
 def multi_test_hdf5(process, name, args, split_test, drop_last):
     with h5py.File(
-        args.h5_prefix + "test/" + name + "_" + str(process) + ".h5", "w"
+        args.h5_prefix + "test/" + name + "/" + "test_" + str(process) + ".h5", "w"
     ) as f:
         f.attrs["drop_last"] = drop_last
         save_configurations_as_HDF5(split_test[process], process, f)
@@ -268,6 +268,8 @@ def run(args: argparse.Namespace):
     if args.test_file is not None:
         logging.info("Preparing test sets")
         for name, subset in collections.tests:
+            if not os.path.exists(args.h5_prefix + "test/" + name):
+                os.makedirs(args.h5_prefix + "test/" + name)
             drop_last = False
             if len(subset) % 2 == 1:
                 drop_last = True
