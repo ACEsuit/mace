@@ -20,7 +20,7 @@ MODEL_PATH = (
     / "mace"
     / "calculators"
     / "foundations_models"
-    / "mace-mpa-0-medium.model"
+    / "2023-12-03-mace-mp.model"
 )
 
 torch.set_default_dtype(torch.float64)

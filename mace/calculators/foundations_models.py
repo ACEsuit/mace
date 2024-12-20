@@ -26,12 +26,12 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
     Returns:
         str: Path to the downloaded (or cached, if previously loaded) checkpoint file.
     """
-    if model in (None, "medium") and os.path.isfile(local_model_path):
+    if model in (None, "medium-mpa-0") and os.path.isfile(local_model_path):
         return local_model_path
 
     urls = {
         "small": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model",
-        "medium-0a": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model",
+        "medium": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model",
         "large": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/MACE_MPtrj_2022.9.model",
         "small-0b": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model",
         "medium-0b": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_medium.model",
@@ -39,11 +39,11 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
         "medium-0b2": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b2/mace-medium-density-agnesi-stress.model",
         "large-0b2": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b2/mace-large-density-agnesi-stress.model",
         "medium-0b3": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b3/mace-mp-0b3-medium.model",
-        "medium": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model",
+        "medium-mpa-0": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model",
     }
 
     checkpoint_url = (
-        urls.get(model, urls["medium"])
+        urls.get(model, urls["medium-mpa-0"])
         if model
         in (
             None,
@@ -56,14 +56,14 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
             "medium-0b2",
             "large-0b2",
             "medium-0b3",
-            "medium",
+            "medium-mpa-0",
         )
         else model
     )
 
-    if checkpoint_url == urls["medium"]:
+    if checkpoint_url == urls["medium-mpa-0"]:
         print(
-            "Using medium MPA-0 model as default MACE-MP model, to use previous (before 3.10) default model please specify 'medium-0a' as model argument"
+            "Using medium MPA-0 model as default MACE-MP model, to use previous (before 3.10) default model please specify 'medium' as model argument"
         )
 
     cache_dir = os.path.expanduser("~/.cache/mace")
@@ -131,7 +131,7 @@ def mace_mp(
             "small",
             "medium",
             "large",
-            "medium-0a",
+            "medium-mpa-0",
             "small-0b",
             "medium-0b",
             "small-0b2",
