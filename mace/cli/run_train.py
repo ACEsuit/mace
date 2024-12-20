@@ -452,9 +452,18 @@ def run(args: argparse.Namespace) -> None:
                 head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
         else:  # This case would be for when the file path is to a directory of multiple .h5 files
-            train_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
-                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
+            if args.n_committee is None:
+                train_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
+                    head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                )
+            else:
+                if not args.disjoint_committee:
+                    raise ValueError("Preprocessed trainsets are only supported for disjoint committees")
+                fn = f"train_{head_config.head_name}.h5"
+                train_file = f"{head_config.train_file}/{fn}"
+                train_sets[head_config.head_name] = data.HDF5Dataset(
+                    train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                )
             valid_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
                 head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
@@ -468,6 +477,9 @@ def run(args: argparse.Namespace) -> None:
             generator=torch.Generator().manual_seed(args.seed),
         )
         head_config.train_loader = train_loader_head
+    # ic(valid_sets)
+    # for k, v in valid_sets.items():
+    #     ic(v.__dict__['datasets'][0].__dict__)
     # concatenate all the trainsets
     train_set = ConcatDataset([train_sets[head] for head in heads])
     train_sampler, valid_sampler = None, None

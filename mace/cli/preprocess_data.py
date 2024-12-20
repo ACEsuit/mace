@@ -110,7 +110,8 @@ def get_prime_factors(n: int):
 
 # Define Task for Multiprocessiing
 def multi_train_hdf5(process, args, split_train, drop_last):
-    with h5py.File(args.h5_prefix + "train/train_" + str(process) + ".h5", "w") as f:
+    committee = "" if args.n_committee is None else "committee"
+    with h5py.File(args.h5_prefix + f"train/train_{committee:s}-{process:d}.h5", "w") as f:
         f.attrs["drop_last"] = drop_last
         save_configurations_as_HDF5(split_train[process], process, f)
 
@@ -205,20 +206,28 @@ def run(args: argparse.Namespace):
         random.shuffle(collections.train)
 
     # split collections.train into batches and save them to hdf5
-    split_train = np.array_split(collections.train,args.num_process)
+    n_splits = args.num_process if args.n_committee is None else args.n_committee
+    split_train = np.array_split(collections.train, n_splits)
     drop_last = False
     if len(collections.train) % 2 == 1:
         drop_last = True
 
     multi_train_hdf5_ = partial(multi_train_hdf5, args=args, split_train=split_train, drop_last=drop_last)
     processes = []
-    for i in range(args.num_process):
-        p = mp.Process(target=multi_train_hdf5_, args=[i])
-        p.start()
-        processes.append(p)
+    if args.n_committee is None:
+        process_queue = [range(args.num_process)]
+    else:
+        if args.n_committee < args.num_process:
+            logging.info(f"n_committee is smaller than number of processes, so only {args.n_committee:d} processes are used.")
+        process_queue = [list(range(args.n_committee))[i:i + args.num_process] for i in range(0, args.n_committee, args.num_process)]
+    for process_batch in process_queue:
+        for i in process_batch:
+            p = mp.Process(target=multi_train_hdf5_, args=[i])
+            p.start()
+            processes.append(p)
 
-    for i in processes:
-        i.join()
+        for i in processes:
+            i.join()
 
     if args.compute_statistics:
         logging.info("Computing statistics")
