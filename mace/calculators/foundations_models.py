@@ -42,11 +42,24 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
 
     checkpoint_url = (
         urls.get(model, urls["medium"])
-        if model in (None, "small", "medium", "large", "small-0b", "medium-0b", "small-0b2", "medium-0b2", "large-0b2")
+        if model
+        in (
+            None,
+            "small",
+            "medium",
+            "large",
+            "small-0b",
+            "medium-0b",
+            "small-0b2",
+            "medium-0b2",
+            "large-0b2",
+        )
         else model
     )
 
-    cache_dir = os.path.expanduser("~/.cache/mace")
+    cache_dir = (
+        Path(os.environ.get("XDG_CACHE_HOME", "~/")).expanduser() / ".cache/mace"
+    )
     checkpoint_url_name = "".join(
         c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
     )
@@ -106,9 +119,17 @@ def mace_mp(
         MACECalculator: trained on the MPtrj dataset (unless model otherwise specified).
     """
     try:
-        if model in (None, "small", "medium", "large", "small-0b", "medium-0b", "small-0b2", "medium-0b2", "large-0b2") or str(model).startswith(
-            "https:"
-        ):
+        if model in (
+            None,
+            "small",
+            "medium",
+            "large",
+            "small-0b",
+            "medium-0b",
+            "small-0b2",
+            "medium-0b2",
+            "large-0b2",
+        ) or str(model).startswith("https:"):
             model_path = download_mace_mp_checkpoint(model)
             print(f"Using Materials Project MACE for MACECalculator with {model_path}")
         else:
@@ -198,7 +219,10 @@ def mace_off(
                 if model in (None, "small", "medium", "large")
                 else model
             )
-            cache_dir = os.path.expanduser("~/.cache/mace")
+            cache_dir = (
+                Path(os.environ.get("XDG_CACHE_HOME", "~/")).expanduser()
+                / ".cache/mace"
+            )
             checkpoint_url_name = os.path.basename(checkpoint_url).split("?")[0]
             cached_model_path = f"{cache_dir}/{checkpoint_url_name}"
             if not os.path.isfile(cached_model_path):
