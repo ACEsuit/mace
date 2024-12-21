@@ -609,15 +609,14 @@ def run(args: argparse.Namespace) -> None:
     if args.lbfgs_config:
         max_iter = args.lbfgs_config.get("max_iter", 200)
         history_size = args.lbfgs_config.get("history", 240)
-        batch_mode = args.lbfgs_config.get("batch_mode", False)
 
         logging.info("Switching optimizer to LBFGS")
-        optimizer = LBFGSNew(model.readouts.parameters(),
+        optimizer = LBFGSNew(model.parameters(),
                              tolerance_grad=1e-6,
                              history_size=history_size,
                              max_iter=max_iter,
                              line_search_fn=False,
-                             batch_mode=batch_mode)
+                             batch_mode=False)
 
     if args.wandb:
         setup_wandb(args)
