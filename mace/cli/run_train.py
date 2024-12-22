@@ -56,7 +56,7 @@ from mace.tools.scripts_utils import (
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
-from mace.tools.lbfgsnew import LBFGSNew
+from torch.optim import LBFGS
 
 
 def main() -> None:
@@ -611,12 +611,12 @@ def run(args: argparse.Namespace) -> None:
         history_size = args.lbfgs_config.get("history", 240)
 
         logging.info("Switching optimizer to LBFGS")
-        optimizer = LBFGSNew(model.parameters(),
-                             tolerance_grad=1e-6,
-                             history_size=history_size,
-                             max_iter=max_iter,
-                             line_search_fn=False,
-                             batch_mode=False)
+        optimizer = LBFGS(model.parameters(),
+                          tolerance_grad=1e-6,
+                          history_size=history_size,
+                          max_iter=max_iter,
+                          line_search_fn=False,
+                          batch_mode=False)
 
     if args.wandb:
         setup_wandb(args)

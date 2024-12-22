@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch_ema import ExponentialMovingAverage
 from torchmetrics import Metric
-from .lbfgsnew import LBFGSNew
+from torch.optim import LBFGS
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
@@ -341,7 +341,7 @@ def train_one_epoch(
 ) -> None:
     model_to_train = model if distributed_model is None else distributed_model
 
-    if isinstance(optimizer, LBFGSNew):
+    if isinstance(optimizer, LBFGS):
         _, opt_metrics = take_step_lbfgs(
             model=model_to_train,
             loss_fn=loss_fn,
