@@ -401,7 +401,7 @@ def take_step(
         loss.backward()
         if max_grad_norm is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
-
+        
         return loss
 
     loss = closure()
@@ -446,7 +446,7 @@ def take_step_lbfgs(
                 compute_stress=output_args["stress"],
             )
             batch_loss = loss_fn(pred=output, ref=batch)
-            batch_loss = batch_loss / len(data_loader)
+            batch_loss = batch_loss / (len(data_loader) * torch.distributed.get_world_size())
     
             # Accumulate gradients without updating weights (remove for torchmin)
             batch_loss.backward()
@@ -455,9 +455,13 @@ def take_step_lbfgs(
         if max_grad_norm is not None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
+        torch.distributed.barrier()
         return total_loss
 
-    loss = optimizer.step(closure)
+    if torch.distributed.get_rank() == 0:
+        loss = optimizer.step(closure)
+        for param in model.parameters():
+            torch.distributed.broadcast(param.data, src=0)
 
     if ema is not None:
         ema.update()
