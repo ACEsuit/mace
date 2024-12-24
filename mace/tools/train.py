@@ -458,10 +458,9 @@ def take_step_lbfgs(
         torch.distributed.barrier()
         return total_loss
 
-    if torch.distributed.get_rank() == 0:
-        loss = optimizer.step(closure)
-        for param in model.parameters():
-            torch.distributed.broadcast(param.data, src=0)
+    loss = optimizer.step(closure)
+    for param in model.parameters():
+        torch.distributed.broadcast(param.data, src=0)
 
     if ema is not None:
         ema.update()
