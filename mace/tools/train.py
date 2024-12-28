@@ -448,7 +448,6 @@ def take_step_lbfgs(
             batch_loss = loss_fn(pred=output, ref=batch)
             batch_loss = batch_loss / (len(data_loader) * torch.distributed.get_world_size())
     
-            # Accumulate gradients without updating weights (remove for torchmin)
             batch_loss.backward()
             total_loss += batch_loss
         
