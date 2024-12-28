@@ -612,11 +612,8 @@ def run(args: argparse.Namespace) -> None:
 
         logging.info("Switching optimizer to LBFGS")
         optimizer = LBFGS(model.parameters(),
-                          tolerance_grad=1e-6,
                           history_size=history_size,
-                          max_iter=max_iter,
-                          line_search_fn=False,
-                          batch_mode=False)
+                          max_iter=max_iter)
 
     if args.wandb:
         setup_wandb(args)
