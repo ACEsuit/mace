@@ -351,6 +351,7 @@ def train_one_epoch(
             output_args=output_args,
             max_grad_norm=max_grad_norm,
             device=device,
+            rank=rank,
         )
         opt_metrics["mode"] = "opt"
         opt_metrics["epoch"] = epoch
@@ -428,11 +429,21 @@ def take_step_lbfgs(
     output_args: Dict[str, bool],
     max_grad_norm: Optional[float],
     device: torch.device,
+    rank: int = 0,
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
+
+    # Signal tensor: 
+    # 1 = execute closure
+    # 0 = optimization step is complete
+    signal = torch.zeros(1, device=device)
     
     def closure():
         logging.info(f"Optimizing with L-BFGS closure entry Current GPU rank: {torch.distributed.get_rank()}")
+        # Signal other ranks we're starting closure
+        if rank == 0:
+            signal.fill_(1)
+            torch.distributed.broadcast(signal, src=0)
         
         torch.distributed.barrier()
         for param in model.parameters():
@@ -455,8 +466,7 @@ def take_step_lbfgs(
                 compute_stress=output_args["stress"],
             )
             batch_loss = loss_fn(pred=output, ref=batch)
-            # batch_loss = batch_loss / (len(data_loader) * torch.distributed.get_world_size())
-            batch_loss = batch_loss / 5 # TODO: remove hardcoded value
+            batch_loss = batch_loss / (len(data_loader) * torch.distributed.get_world_size())
 
             batch_loss.backward()
             total_loss += batch_loss
@@ -468,8 +478,24 @@ def take_step_lbfgs(
         return total_loss
 
     logging.info(f"Optimizing with L-BFGS Current GPU rank: {torch.distributed.get_rank()}")
-    loss = optimizer.step(closure)
+    if rank == 0:
+        # Only rank 0 executes optimizer.step
+        loss = optimizer.step(closure)
+        # Signal other ranks we're done with the step
+        signal.fill_(0)
+        torch.distributed.broadcast(signal, src=0)
+    else:
+        while True:
+            # Other ranks just wait for signals
+            torch.distributed.broadcast(signal, src=0)
+            if signal.item() == 0:  # Optimization step is complete
+                break
+            # Execute closure when signaled (signal == 1)
+            if signal.item() == 1:
+                _ = closure()
     logging.info(f"Optimization finished Current GPU rank: {torch.distributed.get_rank()}")
+
+    torch.distributed.barrier()
     for param in model.parameters():
         torch.distributed.broadcast(param.data, src=0)
 
