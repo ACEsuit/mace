@@ -613,11 +613,8 @@ def run(args: argparse.Namespace) -> None:
 
         logging.info("Switching optimizer to LBFGS")
         optimizer = LBFGS(model.parameters(),
-                          tolerance_grad=1e-6,
                           history_size=history_size,
-                          max_iter=max_iter,
-                          line_search_fn=False,
-                          batch_mode=False)
+                          max_iter=max_iter)
         
     if args.shampoo:
         optimizer = DistributedShampoo(
@@ -625,7 +622,7 @@ def run(args: argparse.Namespace) -> None:
         lr=args.lr,
         betas=(args.beta, 0.999),
         weight_decay=args.weight_decay,
-        max_preconditioner_dim=9998192,
+        max_preconditioner_dim=1008192,
         precondition_frequency=50,
         use_decoupled_weight_decay=True,
         grafting_config=AdamGraftingConfig(
