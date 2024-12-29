@@ -387,6 +387,7 @@ def take_step(
     start_time = time.time()
     batch = batch.to(device)
     batch_dict = batch.to_dict()
+    logging.info(f"Batch size: {batch.num_graphs}")
     
     def closure():
         optimizer.zero_grad(set_to_none=True)
@@ -444,6 +445,7 @@ def take_step_lbfgs(
         for batch in data_loader:
             logging.info(f"Current GPU rank: {torch.distributed.get_rank()} Optimizing with L-BFGS batch, dataloader len: {len(data_loader)}")
             batch = batch.to(device)
+            logging.info(f"Batch size: {batch.num_graphs}")
             batch_dict = batch.to_dict()
             output = model(
                 batch_dict,
