@@ -57,7 +57,7 @@ from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
 from torch.optim import LBFGS
-from torch_optimizer import Shampoo
+from distributed_shampoo import AdamGraftingConfig, DistributedShampoo
 
 
 def main() -> None:
@@ -620,11 +620,18 @@ def run(args: argparse.Namespace) -> None:
                           batch_mode=False)
         
     if args.shampoo:
-        optimizer = Shampoo(
+        optimizer = DistributedShampoo(
         model.parameters(),
-        lr=args.lr,
+        lr=args.lr/10,
+        betas=(args.beta, 0.999),
         weight_decay=args.weight_decay,
-        update_freq=10,
+        max_preconditioner_dim=8192,
+        precondition_frequency=10,
+        use_decoupled_weight_decay=False,
+        grafting_config=AdamGraftingConfig(
+            beta2=args.ema_decay,
+            epsilon=1e-08,
+            ),
         )
 
     if args.wandb:
