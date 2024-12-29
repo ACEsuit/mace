@@ -431,11 +431,18 @@ def take_step_lbfgs(
     start_time = time.time()
     
     def closure():
+        logging.info(f"Optimizing with L-BFGS closure entry Current GPU rank: {torch.distributed.get_rank()}")
+        
+        torch.distributed.barrier()
+        for param in model.parameters():
+            torch.distributed.broadcast(param.data, src=0)
+
         optimizer.zero_grad(set_to_none=True)
         total_loss = torch.tensor(0.0, device=device)
         
         # Process each batch and then collect the results we pass to the optimizer
         for batch in data_loader:
+            logging.info(f"Current GPU rank: {torch.distributed.get_rank()} Optimizing with L-BFGS batch, dataloader len: {len(data_loader)}")
             batch = batch.to(device)
             batch_dict = batch.to_dict()
             output = model(
@@ -446,8 +453,9 @@ def take_step_lbfgs(
                 compute_stress=output_args["stress"],
             )
             batch_loss = loss_fn(pred=output, ref=batch)
-            batch_loss = batch_loss / (len(data_loader) * torch.distributed.get_world_size())
-    
+            # batch_loss = batch_loss / (len(data_loader) * torch.distributed.get_world_size())
+            batch_loss = batch_loss / 5 # TODO: remove hardcoded value
+
             batch_loss.backward()
             total_loss += batch_loss
         
@@ -457,7 +465,9 @@ def take_step_lbfgs(
         torch.distributed.barrier()
         return total_loss
 
+    logging.info(f"Optimizing with L-BFGS Current GPU rank: {torch.distributed.get_rank()}")
     loss = optimizer.step(closure)
+    logging.info(f"Optimization finished Current GPU rank: {torch.distributed.get_rank()}")
     for param in model.parameters():
         torch.distributed.broadcast(param.data, src=0)
 
