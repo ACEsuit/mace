@@ -3,6 +3,7 @@ import dataclasses
 import logging
 import os
 import urllib.request
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -103,7 +104,9 @@ def assemble_mp_data(
     try:
         checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mp_traj_combined.xyz"
         descriptors_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/descriptors.npy"
-        cache_dir = os.path.expanduser("~/.cache/mace")
+        cache_dir = (
+            Path(os.environ.get("XDG_CACHE_HOME", "~/")).expanduser() / ".cache/mace"
+        )
         checkpoint_url_name = "".join(
             c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
         )
