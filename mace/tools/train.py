@@ -351,6 +351,7 @@ def train_one_epoch(
             output_args=output_args,
             max_grad_norm=max_grad_norm,
             device=device,
+            rank=rank,
         )
         opt_metrics["mode"] = "opt"
         opt_metrics["epoch"] = epoch
@@ -427,12 +428,19 @@ def take_step_lbfgs(
     output_args: Dict[str, bool],
     max_grad_norm: Optional[float],
     device: torch.device,
+    rank: Optional[int] = 0
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
     
     def closure():
+        torch.distributed.barrier()
+
         optimizer.zero_grad(set_to_none=True)
         total_loss = torch.tensor(0.0, device=device)
+
+        for param in model.parameters():
+            torch.distributed.broadcast(param.data, src=0)
+        torch.distributed.barrier()
         
         # Process each batch and then collect the results we pass to the optimizer
         for batch in data_loader:
@@ -455,11 +463,33 @@ def take_step_lbfgs(
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
         torch.distributed.barrier()
+        torch.distributed.all_reduce(total_loss)
+        for param in model.parameters():
+            if param.grad is not None:
+                torch.distributed.all_reduce(param.grad)
+                
         return total_loss
 
-    loss = optimizer.step(closure)
+    signal = torch.tensor(0, device=device)
+    if rank == 0:
+        loss = optimizer.step(closure)
+        # Broadcast termination signal to other ranks
+        signal = torch.tensor(-1, device=device)
+        torch.distributed.broadcast(signal, src=0)
+    else:
+        # Other ranks execute the closure whenever it is called by rank 0
+        while True:
+            # Wait for a signal from rank 0 to execute the closure
+            torch.distributed.broadcast(signal, src=0)
+
+            if signal.item() == -1:  # Termination signal
+                break
+
+            closure()
+
     for param in model.parameters():
         torch.distributed.broadcast(param.data, src=0)
+    torch.distributed.barrier()
 
     if ema is not None:
         ema.update()
