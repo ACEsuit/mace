@@ -431,12 +431,8 @@ def take_step_lbfgs(
     start_time = time.time()
     
     def closure():
-        torch.distributed.barrier()
         optimizer.zero_grad(set_to_none=True)
         total_loss = torch.tensor(0.0, device=device)
-
-        for param in model.parameters():
-            torch.distributed.broadcast(param.data, src=0)
         
         # Process each batch and then collect the results we pass to the optimizer
         for batch in data_loader:
@@ -461,9 +457,7 @@ def take_step_lbfgs(
         torch.distributed.barrier()
         return total_loss
 
-    torch.distributed.barrier()
     loss = optimizer.step(closure)
-    torch.distributed.barrier()
     for param in model.parameters():
         torch.distributed.broadcast(param.data, src=0)
 
