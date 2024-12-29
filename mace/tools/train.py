@@ -20,6 +20,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch_ema import ExponentialMovingAverage
 from torchmetrics import Metric
 from torch.optim import LBFGS
+from distributed_shampoo import DistributedShampoo
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
@@ -279,7 +280,7 @@ def train(
                 valid_loss = valid_loss_head  # consider only the last head for the checkpoint
             if log_wandb:
                 wandb.log(wandb_log_dict)
-            if rank == 0:
+            if rank == 0 and not isinstance(optimizer, DistributedShampoo):
                 if valid_loss >= lowest_loss:
                     patience_counter += 1
                     if patience_counter >= patience:
