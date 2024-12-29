@@ -622,12 +622,12 @@ def run(args: argparse.Namespace) -> None:
     if args.shampoo:
         optimizer = DistributedShampoo(
         model.parameters(),
-        lr=args.lr/10,
+        lr=args.lr,
         betas=(args.beta, 0.999),
         weight_decay=args.weight_decay,
-        max_preconditioner_dim=8192,
-        precondition_frequency=10,
-        use_decoupled_weight_decay=False,
+        max_preconditioner_dim=9998192,
+        precondition_frequency=50,
+        use_decoupled_weight_decay=True,
         grafting_config=AdamGraftingConfig(
             beta2=args.ema_decay,
             epsilon=1e-08,
