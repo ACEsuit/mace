@@ -648,7 +648,6 @@ def run(args: argparse.Namespace) -> None:
             weight_decay=args.weight_decay,
             max_preconditioner_dim=1008192,
             precondition_frequency=20,
-            momentum=0.9,
             start_preconditioning_step=100,
             use_decoupled_weight_decay=True,
             grafting_config=AdamGraftingConfig(
