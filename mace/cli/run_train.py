@@ -644,7 +644,7 @@ def run(args: argparse.Namespace) -> None:
         optimizer = DistributedShampoo(
             model.parameters(),
             lr=5*args.lr,
-            betas=(args.beta, 0.999),
+            betas=(args.beta, args.ema_decay),
             weight_decay=args.weight_decay,
             max_preconditioner_dim=1008192,
             precondition_frequency=20,
