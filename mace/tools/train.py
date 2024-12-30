@@ -479,7 +479,6 @@ def take_step_lbfgs(
 
         if distibuted:
             torch.distributed.all_reduce(total_loss, op=torch.distributed.ReduceOp.SUM)
-            torch.distributed.barrier()
         return total_loss
 
     if distibuted:
