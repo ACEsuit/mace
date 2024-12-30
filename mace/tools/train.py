@@ -354,7 +354,7 @@ def train_one_epoch(
             output_args=output_args,
             max_grad_norm=max_grad_norm,
             device=device,
-            distibuted=distributed,
+            distributed=distributed,
             rank=rank,
         )
         opt_metrics["mode"] = "opt"
@@ -433,7 +433,7 @@ def take_step_lbfgs(
     output_args: Dict[str, bool],
     max_grad_norm: Optional[float],
     device: torch.device,
-    distibuted: bool,
+    distributed: bool,
     rank: int,
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
@@ -442,11 +442,11 @@ def take_step_lbfgs(
     for batch in data_loader:
         total_sample_count += batch.num_graphs
 
-    world_size = torch.distributed.get_world_size() if distibuted else 1
-    signal = torch.zeros(1, device=device) if distibuted else None
+    world_size = torch.distributed.get_world_size() if distributed else 1
+    signal = torch.zeros(1, device=device) if distributed else None
 
     def closure():
-        if distibuted:
+        if distributed:
             if rank == 0:
                 signal.fill_(1)
                 torch.distributed.broadcast(signal, src=0)
@@ -477,11 +477,11 @@ def take_step_lbfgs(
         if max_grad_norm is not None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
-        if distibuted:
+        if distributed:
             torch.distributed.all_reduce(total_loss, op=torch.distributed.ReduceOp.SUM)
         return total_loss
 
-    if distibuted:
+    if distributed:
         if rank == 0:
             loss = optimizer.step(closure)
             signal.fill_(0)
