@@ -63,7 +63,7 @@ def setup_logger(
     )
 
     # Add filter for rank
-    # logger.addFilter(lambda _: rank == 0)
+    logger.addFilter(lambda _: rank == 0)
 
     # Create console handler
     ch = logging.StreamHandler(stream=sys.stdout)
