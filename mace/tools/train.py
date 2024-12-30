@@ -434,6 +434,10 @@ def take_step_lbfgs(
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
 
+    total_sample_count = 0
+    for batch in data_loader:
+        total_sample_count += batch.num_graphs
+
     signal = torch.zeros(1, device=device)
     def closure():
         if rank == 0:
@@ -458,7 +462,7 @@ def take_step_lbfgs(
                 compute_stress=output_args["stress"],
             )
             batch_loss = loss_fn(pred=output, ref=batch)
-            batch_loss = batch_loss / (len(data_loader) * torch.distributed.get_world_size())
+            batch_loss = batch_loss / (torch.distributed.get_world_size() * total_sample_count / batch.num_graphs)
 
             batch_loss.backward()
             total_loss += batch_loss
