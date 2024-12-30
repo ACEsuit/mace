@@ -227,6 +227,7 @@ def train(
             ema=ema,
             logger=logger,
             device=device,
+            distributed=distributed,
             distributed_model=distributed_model,
             rank=rank,
         )
@@ -337,6 +338,7 @@ def train_one_epoch(
     ema: Optional[ExponentialMovingAverage],
     logger: MetricsLogger,
     device: torch.device,
+    distributed: bool,
     distributed_model: Optional[DistributedDataParallel] = None,
     rank: Optional[int] = 0,
 ) -> None:
@@ -352,6 +354,7 @@ def train_one_epoch(
             output_args=output_args,
             max_grad_norm=max_grad_norm,
             device=device,
+            distibuted=distributed,
             rank=rank,
         )
         opt_metrics["mode"] = "opt"
@@ -430,7 +433,8 @@ def take_step_lbfgs(
     output_args: Dict[str, bool],
     max_grad_norm: Optional[float],
     device: torch.device,
-    rank: int = 0,
+    distibuted: bool,
+    rank: int,
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
 
@@ -438,14 +442,17 @@ def take_step_lbfgs(
     for batch in data_loader:
         total_sample_count += batch.num_graphs
 
-    signal = torch.zeros(1, device=device)
+    world_size = torch.distributed.get_world_size() if distibuted else 1
+    signal = torch.zeros(1, device=device) if distibuted else None
+
     def closure():
-        if rank == 0:
-            signal.fill_(1)
-            torch.distributed.broadcast(signal, src=0)
-        
-        for param in model.parameters():
-            torch.distributed.broadcast(param.data, src=0)
+        if distibuted:
+            if rank == 0:
+                signal.fill_(1)
+                torch.distributed.broadcast(signal, src=0)
+            
+            for param in model.parameters():
+                torch.distributed.broadcast(param.data, src=0)
 
         optimizer.zero_grad(set_to_none=True)
         total_loss = torch.tensor(0.0, device=device)
@@ -462,7 +469,7 @@ def take_step_lbfgs(
                 compute_stress=output_args["stress"],
             )
             batch_loss = loss_fn(pred=output, ref=batch)
-            batch_loss = batch_loss / (torch.distributed.get_world_size() * total_sample_count / batch.num_graphs)
+            batch_loss = batch_loss / (world_size * total_sample_count / batch.num_graphs)
 
             batch_loss.backward()
             total_loss += batch_loss
@@ -470,24 +477,29 @@ def take_step_lbfgs(
         if max_grad_norm is not None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
-        torch.distributed.barrier()
+        if distibuted:
+            torch.distributed.all_reduce(total_loss, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.barrier()
         return total_loss
 
-    if rank == 0:
-        loss = optimizer.step(closure)
-        signal.fill_(0)
-        torch.distributed.broadcast(signal, src=0)
-    else:
-        while True:
-            # Other ranks wait for signals from rank 0
+    if distibuted:
+        if rank == 0:
+            loss = optimizer.step(closure)
+            signal.fill_(0)
             torch.distributed.broadcast(signal, src=0)
-            if signal.item() == 0:
-                break
-            if signal.item() == 1:
-                loss = closure()
+        else:
+            while True:
+                # Other ranks wait for signals from rank 0
+                torch.distributed.broadcast(signal, src=0)
+                if signal.item() == 0:
+                    break
+                if signal.item() == 1:
+                    loss = closure()
 
-    for param in model.parameters():
-        torch.distributed.broadcast(param.data, src=0)
+        for param in model.parameters():
+            torch.distributed.broadcast(param.data, src=0)
+    else:
+        loss = optimizer.step(closure)
 
     if ema is not None:
         ema.update()
