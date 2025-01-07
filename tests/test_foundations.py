@@ -146,7 +146,7 @@ def test_multi_reference():
         heads=["MP2", "DFT"],
     )
     model = modules.ScaleShiftMACE(**model_config)
-    calc_foundation = mace_mp(device="cpu", default_dtype="float64")
+    calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
     model_loaded = load_foundations_elements(
         model,
         calc_foundation.models[0],
@@ -166,7 +166,7 @@ def test_multi_reference():
     )
     batch = next(iter(data_loader))
     forces_loaded = model_loaded(batch)["forces"]
-    calc_foundation = mace_mp(device="cpu", default_dtype="float64")
+    calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
     atoms = molecule("H2COH")
     atoms.info["head"] = "MP2"
     atoms.calc = calc_foundation
