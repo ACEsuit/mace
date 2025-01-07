@@ -28,6 +28,7 @@
     - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
       - [Example usage in ASE](#example-usage-in-ase-1)
     - [Finetuning foundation models](#finetuning-foundation-models)
+  - [Caching](#caching)
   - [Development](#development)
   - [References](#references)
   - [Contact](#contact)
@@ -59,7 +60,7 @@ A partial documentation is available at: https://mace-docs.readthedocs.io
 **Make sure to install PyTorch.** Please refer to the [official PyTorch installation](https://pytorch.org/get-started/locally/) for the installation instructions. Select the appropriate options for your system.
 
 ### Installation from PyPI
-This is the recommended way to install MACE. 
+This is the recommended way to install MACE.
 
 ```sh
 pip install --upgrade pip
@@ -109,7 +110,7 @@ mace_run_train \
 
 To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`.
 
-To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys. 
+To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys.
 
 It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression.
 
@@ -295,10 +296,15 @@ mace_run_train \
   --amsgrad \
   --default_dtype="float32" \
   --device=cuda \
-  --seed=3 
+  --seed=3
 ```
-Other options are "medium" and "large", or the path to a foundation model. 
+Other options are "medium" and "large", or the path to a foundation model.
 If you want to finetune another model, the model will be loaded from the path provided `--foundation_model=$path_model`, but you will need to provide the full set of hyperparameters (hidden irreps, r_max, etc.) matching the model.
+
+## Caching
+
+By default automatically downloaded models, like mace_mp, mace_off and data for fine tuning, end up in `~/.cache/mace`. The path can be changed by using
+the environment variable XDG_CACHE_HOME. When set, the new cache path expands to $XDG_CACHE_HOME/.cache/mace
 
 ## Development
 
