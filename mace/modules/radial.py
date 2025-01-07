@@ -4,6 +4,8 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import logging
+
 import ase
 import numpy as np
 import torch
@@ -110,8 +112,8 @@ class GaussianBasis(torch.nn.Module):
 
 @compile_mode("script")
 class PolynomialCutoff(torch.nn.Module):
-    """
-    Equation (8)
+    """Polynomial cutoff function that goes from 1 to 0 as x goes from 0 to r_max.
+    Equation (8) -- TODO: from where?
     """
 
     p: torch.Tensor
@@ -119,23 +121,26 @@ class PolynomialCutoff(torch.nn.Module):
 
     def __init__(self, r_max: float, p=6):
         super().__init__()
-        self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
+        self.register_buffer("p", torch.tensor(p, dtype=torch.int))
         self.register_buffer(
             "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # yapf: disable
-        envelope = (
-                1.0
-                - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / self.r_max, self.p)
-                + self.p * (self.p + 2.0) * torch.pow(x / self.r_max, self.p + 1)
-                - (self.p * (self.p + 1.0) / 2) * torch.pow(x / self.r_max, self.p + 2)
-        )
-        # yapf: enable
+        return self.calculate_envelope(x, self.r_max, self.p.to(torch.int))
 
-        # noinspection PyUnresolvedReferences
-        return envelope * (x < self.r_max)
+    @staticmethod
+    def calculate_envelope(
+        x: torch.Tensor, r_max: torch.Tensor, p: int
+    ) -> torch.Tensor:
+        r_over_r_max = x / r_max
+        envelope = (
+            1.0
+            - ((p + 1.0) * (p + 2.0) / 2.0) * torch.pow(r_over_r_max, p)
+            + p * (p + 2.0) * torch.pow(r_over_r_max, p + 1)
+            - (p * (p + 1.0) / 2) * torch.pow(r_over_r_max, p + 2)
+        )
+        return envelope * (x < r_max)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
@@ -143,18 +148,19 @@ class PolynomialCutoff(torch.nn.Module):
 
 @compile_mode("script")
 class ZBLBasis(torch.nn.Module):
-    """
-    Implementation of the Ziegler-Biersack-Littmark (ZBL) potential
+    """Implementation of the Ziegler-Biersack-Littmark (ZBL) potential
+    with a polynomial cutoff envelope.
     """
 
     p: torch.Tensor
-    r_max: torch.Tensor
 
-    def __init__(self, r_max: float, p=6, trainable=False):
+    def __init__(self, p=6, trainable=False, **kwargs):
         super().__init__()
-        self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
-        )
+        if "r_max" in kwargs:
+            logging.warning(
+                "r_max is deprecated. r_max is determined from the covalent radii."
+            )
+
         # Pre-calculate the p coefficients for the ZBL potential
         self.register_buffer(
             "c",
@@ -162,7 +168,7 @@ class ZBLBasis(torch.nn.Module):
                 [0.1818, 0.5099, 0.2802, 0.02817], dtype=torch.get_default_dtype()
             ),
         )
-        self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
+        self.register_buffer("p", torch.tensor(p, dtype=torch.int))
         self.register_buffer(
             "covalent_radii",
             torch.tensor(
@@ -170,7 +176,6 @@ class ZBLBasis(torch.nn.Module):
                 dtype=torch.get_default_dtype(),
             ),
         )
-        self.cutoff = PolynomialCutoff(r_max, p)
         if trainable:
             self.a_exp = torch.nn.Parameter(torch.tensor(0.300, requires_grad=True))
             self.a_prefactor = torch.nn.Parameter(
@@ -208,12 +213,7 @@ class ZBLBasis(torch.nn.Module):
         )
         v_edges = (14.3996 * Z_u * Z_v) / x * phi
         r_max = self.covalent_radii[Z_u] + self.covalent_radii[Z_v]
-        envelope = (
-            1.0
-            - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / r_max, self.p)
-            + self.p * (self.p + 2.0) * torch.pow(x / r_max, self.p + 1)
-            - (self.p * (self.p + 1.0) / 2) * torch.pow(x / r_max, self.p + 2)
-        ) * (x < r_max)
+        envelope = PolynomialCutoff.calculate_envelope(x, r_max, self.p)
         v_edges = 0.5 * v_edges * envelope
         V_ZBL = scatter_sum(v_edges, receiver, dim=0, dim_size=node_attrs.size(0))
         return V_ZBL.squeeze(-1)
@@ -224,8 +224,8 @@ class ZBLBasis(torch.nn.Module):
 
 @compile_mode("script")
 class AgnesiTransform(torch.nn.Module):
-    """
-    Agnesi transform see ACEpotentials.jl, JCP 2023, p. 160
+    """Agnesi transform - see section on Radial transformations in
+    ACEpotentials.jl, JCP 2023 (https://doi.org/10.1063/5.0158783).
     """
 
     def __init__(
@@ -265,21 +265,27 @@ class AgnesiTransform(torch.nn.Module):
         )
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
-        r_0 = 0.5 * (self.covalent_radii[Z_u] + self.covalent_radii[Z_v])
+        r_0: torch.Tensor = 0.5 * (self.covalent_radii[Z_u] + self.covalent_radii[Z_v])
+        r_over_r_0 = x / r_0
         return (
-            1 + (self.a * ((x / r_0) ** self.q) / (1 + (x / r_0) ** (self.q - self.p)))
-        ) ** (-1)
+            1
+            + (
+                self.a
+                * torch.pow(r_over_r_0, self.q)
+                / (1 + torch.pow(r_over_r_0, self.q - self.p))
+            )
+        ).reciprocal_()
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(a={self.a}, q={self.q}, p={self.p})"
+        return (
+            f"{self.__class__.__name__}(a={self.a:.4f}, q={self.q:.4f}, p={self.p:.4f})"
+        )
 
 
 @simplify_if_compile
 @compile_mode("script")
 class SoftTransform(torch.nn.Module):
-    """
-    Soft Transform
-    """
+    """Soft Transform."""
 
     def __init__(self, a: float = 0.2, b: float = 3.0, trainable=False):
         super().__init__()
@@ -312,9 +318,10 @@ class SoftTransform(torch.nn.Module):
         Z_u = node_atomic_numbers[sender]
         Z_v = node_atomic_numbers[receiver]
         r_0 = (self.covalent_radii[Z_u] + self.covalent_radii[Z_v]) / 4
+        r_over_r_0 = x / r_0
         y = (
             x
-            + (1 / 2) * torch.tanh(-(x / r_0) - self.a * ((x / r_0) ** self.b))
+            + (1 / 2) * torch.tanh(-r_over_r_0 - self.a * torch.pow(r_over_r_0, self.b))
             + 1 / 2
         )
         return y
