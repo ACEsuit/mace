@@ -11,11 +11,15 @@ Currently available pretrained MACE models:
 3. MACE-ANI-CC: MACE model trained on the coupled cluster accurate ANI training set of organic molecules, parameterised for H, C, N, O elements. 
 
 ###########################
-Pretrained MACE-MP-0 models
+Pretrained MACE-MP models
 ###########################
 
 We have collaborated with the Materials Project (MP) to train a universal MACE checkpoints covering 89 elements on 1.6 M bulk crystals in the `MPTrj dataset <https://figshare.com/articles/dataset/23713842>`_.
 The model are releaed on GitHub at https://github.com/ACEsuit/mace-mp.
+
+.. warning::
+
+   Starting from version 0.3.10, the default model has changed from **medium** to **medium-mpa-0**. To reproduce previous behavior, select `macemp = mace_mp(model=medium)`. Ensure you update your configurations accordingly.
 
 To access the pretrained checkpoints as an ASE calculator, you can use the following code snippets:
 
@@ -36,7 +40,7 @@ To access the pretrained checkpoints as an ASE calculator, you can use the follo
     from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
     from ase import units
 
-    macemp = mace_mp() # return the default medium ASE calculator equivalent to mace_mp(model="medium")
+    macemp = mace_mp() # return the default medium ASE calculator equivalent to mace_mp(model="medium") in MACE < 0.3.10 and mace_mp(model="medium-mpa-0") in MACE >= 0.3.10
     #macemp = mace_mp(model="large") # return a larger model
     #macemp = mace_mp(model="https://tinyurl.com/y7uhwpje") # downlaod the model at the given url
     #macemp = mace_mp(dispersion=True) # return a model with D3 dispersion correction
