@@ -609,12 +609,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
-        "--shampoo",
-        help="use shampoo optimizer",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
         "--ema",
         help="use Exponential Moving Average",
         action="store_true",
