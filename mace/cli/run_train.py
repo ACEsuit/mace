@@ -629,14 +629,11 @@ def run(args: argparse.Namespace) -> None:
         for group in optimizer.param_groups:
             group["lr"] = args.lr
 
-    if args.lbfgs_config:
-        max_iter = args.lbfgs_config.get("max_iter", 200)
-        history_size = args.lbfgs_config.get("history", 240)
-
+    if args.lbfgs:
         logging.info("Switching optimizer to LBFGS")
         optimizer = LBFGS(model.parameters(),
-                          history_size=history_size,
-                          max_iter=max_iter,
+                          history_size=200,
+                          max_iter=200,
                           line_search_fn="strong_wolfe")
         
     if args.wandb:
