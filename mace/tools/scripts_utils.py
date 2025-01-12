@@ -734,7 +734,7 @@ class LRScheduler:
         self.scheduler = args.scheduler
         self._optimizer_type = (
             args.optimizer
-        )  # Schedulefree and LBFGS do not need an optimizer but checkpoint handler does.
+        )  # Schedulefree does not need an optimizer but checkpoint handler does.
         if args.scheduler == "ExponentialLR":
             self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
                 optimizer=optimizer, gamma=args.lr_scheduler_gamma
