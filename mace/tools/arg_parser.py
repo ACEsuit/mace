@@ -7,7 +7,6 @@
 import argparse
 import os
 from typing import Optional
-import ast
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
