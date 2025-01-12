@@ -606,6 +606,7 @@ def run(args: argparse.Namespace) -> None:
     )
 
     start_epoch = 0
+    restart_lbfgs = False
     if args.restart_latest:
         try:
             opt_start_epoch = checkpoint_handler.load_latest(
@@ -614,11 +615,14 @@ def run(args: argparse.Namespace) -> None:
                 device=device,
             )
         except Exception:  # pylint: disable=W0703
-            opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
-                swa=False,
-                device=device,
-            )
+            try: 
+                opt_start_epoch = checkpoint_handler.load_latest(
+                    state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                    swa=False,
+                    device=device,
+                )
+            except Exception: # pylint: disable=W0703
+                restart_lbfgs = True
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
@@ -635,6 +639,14 @@ def run(args: argparse.Namespace) -> None:
                           history_size=200,
                           max_iter=200,
                           line_search_fn="strong_wolfe")
+        if restart_lbfgs:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=False,
+                device=device,
+            )
+            if opt_start_epoch is not None:
+                start_epoch = opt_start_epoch
         
     if args.wandb:
         setup_wandb(args)
