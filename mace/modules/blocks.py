@@ -199,7 +199,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
 
         # Q(x) coefficients: q1, q2, ..., q_q_degree
         # Q(x) = 1 + q1*x + q2*x^2 + ... + q_q_degree*x^q_degree
-        self.q_coefficients = nn.Parameter(torch.randn(q_degree))
+        self.q_coefficients = torch.nn.Parameter(torch.randn(q_degree))
 
         if distance_transform == "Agnesi":
             self.distance_transform = AgnesiTransform()
