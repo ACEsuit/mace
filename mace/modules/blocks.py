@@ -177,7 +177,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         radial_type: str = "bessel",
-        distance_transform: str = "None",'
+        distance_transform: str = "None",
         p_degree: int = 10,  # default 10
         q_degree: int = 10,  # default 10
     ):
