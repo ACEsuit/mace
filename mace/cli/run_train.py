@@ -435,19 +435,17 @@ def run(args: argparse.Namespace) -> None:
             ].item()
             for z in z_table.zs
         }
+
+    # Padding atomic energies if keeping all elements of the foundation model
     if args.foundation_model_elements and model_foundation:
         atomic_energies_dict_padded = {}
-        for energy_head in atomic_energies_dict:
+        for head_name, head_energies in atomic_energies_dict.items():
             energy_head_padded = {}
             for z in z_table.zs:
-                if z in atomic_energies_dict[energy_head]:
-                    energy_head_padded[z] = atomic_energies_dict[energy_head][z]
-                else:
-                    energy_head_padded[z] = 0.0
-            atomic_energies_dict_padded[energy_head] = energy_head_padded
+                energy_head_padded[z] = head_energies.get(z, 0.0)
+            atomic_energies_dict_padded[head_name] = energy_head_padded
         atomic_energies_dict = atomic_energies_dict_padded
-            
-                
+
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
         dipole_only = True
