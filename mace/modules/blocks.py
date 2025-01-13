@@ -178,8 +178,8 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_polynomial_cutoff: int,
         radial_type: str = "bessel",
         distance_transform: str = "None",
-        p_degree: int = 10,  # default 10
-        q_degree: int = 10,  # default 10
+        p_degree: int = 3,  # default
+        q_degree: int = 3,  # default
     ):
         super().__init__()
 
@@ -229,7 +229,9 @@ class RadialEmbeddingBlock(torch.nn.Module):
 
         # Compute Q(x): [n_edges, q_degree] x [q_degree, num_bessel] -> [n_edges, num_bessel]
         powers_q = torch.cat([edge_lengths ** (i + 1) for i in range(self.q_degree)], dim=-1)
+        epsilon = 1e-6
         Q = 1.0 + torch.matmul(powers_q, self.q_coefficients.T)  # [n_edges, num_bessel]
+        Q = Q + epsilon
 
         # Compute radial embedding: [n_edges, num_bessel]
         radial = P / Q  # [n_edges, num_bessel]
