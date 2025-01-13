@@ -41,7 +41,12 @@ def main():
     else:
 
         if args.output_file is None:
-            args.output_file = args.model_file + "." + args.head_name + ("." + args.target_device if (args.target_device is not None) else "")
+            args.output_file = (
+                args.model_file
+                + "."
+                + args.head_name
+                + ("." + args.target_device if (args.target_device is not None) else "")
+            )
 
         model_single = remove_pt_head(model, args.head_name)
         if args.target_device is not None:

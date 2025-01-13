@@ -99,7 +99,7 @@ class reshape_irreps(torch.nn.Module):
             out.append(field)
 
         if hasattr(self, "cueq_config"):
-            if self.cueq_config is not None:
+            if self.cueq_config is not None:  # pylint: disable=no-else-return
                 if self.cueq_config.layout_str == "mul_ir":
                     return torch.cat(out, dim=-1)
                 return torch.cat(out, dim=-2)
