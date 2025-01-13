@@ -92,6 +92,8 @@ class reshape_irreps(torch.nn.Module):
                         field = field.reshape(batch, mul, d)
                     else:
                         field = field.reshape(batch, d, mul)
+                else:
+                    field = field.reshape(batch, mul, d)
             else:
                 field = field.reshape(batch, mul, d)
             out.append(field)
@@ -101,6 +103,8 @@ class reshape_irreps(torch.nn.Module):
                 if self.cueq_config.layout_str == "mul_ir":
                     return torch.cat(out, dim=-1)
                 return torch.cat(out, dim=-2)
+            else:
+                return torch.cat(out, dim=-1)
         return torch.cat(out, dim=-1)
 
 
