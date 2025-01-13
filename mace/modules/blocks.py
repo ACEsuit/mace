@@ -195,7 +195,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         self.q_degree = q_degree
 
         # P(x) coefficients: p0, p1, ..., p_p_degree
-        self.p_coefficients = nn.Parameter(torch.randn(p_degree + 1))
+        self.p_coefficients = torch.nn.Parameter(torch.randn(p_degree + 1))
 
         # Q(x) coefficients: q1, q2, ..., q_q_degree
         # Q(x) = 1 + q1*x + q2*x^2 + ... + q_q_degree*x^q_degree
