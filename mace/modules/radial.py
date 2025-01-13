@@ -146,7 +146,7 @@ class PadeBasis(torch.nn.Module):
 
         return numerator / denominator
 
-      def __repr__(self):
+    def __repr__(self):
         return (
             f"{self.__class__.__name__}(num_basis={self.num_basis}, degree_num={self.degree_num}, "
             f"degree_den={self.degree_den}, r_max={self.r_max}, "
