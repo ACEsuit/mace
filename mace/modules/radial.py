@@ -109,6 +109,52 @@ class GaussianBasis(torch.nn.Module):
 
 
 @compile_mode("script")
+class PadeBasis(torch.nn.Module):
+    """
+    Implementation of Pade Polynomial Basis
+    """
+
+    def __init__(self, r_max: float, p_degree=3, q_degree=3, trainable=True, num_basis):
+        super().__init__()
+        self.r_max = r_max
+        self.num_basis = num_basis
+        self.p_degree = p_degree
+        self.q_degree = q_degree
+
+        init_std = 0.01
+
+        coeffs_num = torch.randn(num_basis, self.p_degree + 1, dtype=torch.get_default_dtype()) * init_std
+        coeffs_den = torch.randn(num_basis, self.q_degree + 1, dtype=torch.get_default_dtype()) * init_std
+        coeffs_den[:, -1] = 1.0
+
+        if trainable:
+            self.coeffs_num = torch.nn.Parameter(coeffs_num)
+            self.coeffs_den = torch.nn.Parameter(coeffs_den)
+        else:
+            self.register_buffer("coeffs_num", coeffs_num)
+            self.register_buffer("coeffs_den", coeffs_den)
+
+        self.register_buffer("r_max_tensor", torch.tensor(r_max, dtype=torch.get_default_dtype()))
+
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x / self.r_max_tensor
+        x = x.unsqueeze(-1).expand(*x.shape, self.num_basis)  # [..., num_basis]
+
+        numerator = torch.polyval(self.coeffs_num, x)
+        denominator = torch.polyval(self.coeffs_den, x) + 1e-6
+
+        return numerator / denominator
+
+      def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(num_basis={self.num_basis}, degree_num={self.degree_num}, "
+            f"degree_den={self.degree_den}, r_max={self.r_max}, "
+            f"trainable={self.coeffs_num.requires_grad})"
+        )
+
+
+@compile_mode("script")
 class PolynomialCutoff(torch.nn.Module):
     """
     Equation (8)
