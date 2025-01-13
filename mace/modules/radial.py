@@ -114,7 +114,7 @@ class PadeBasis(torch.nn.Module):
     Implementation of Pade Polynomial Basis
     """
 
-    def __init__(self, r_max: float,num_basis=8, p_degree=10, q_degree=10, trainable=True):
+    def __init__(self, r_max: float,num_basis=8, p_degree=7, q_degree=7, trainable=True):
         super().__init__()
         self.r_max = r_max
         self.num_basis = num_basis
