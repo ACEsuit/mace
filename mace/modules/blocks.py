@@ -195,11 +195,11 @@ class RadialEmbeddingBlock(torch.nn.Module):
         self.q_degree = q_degree
 
         # P(x) coefficients: p0, p1, ..., p_p_degree
-        self.p_coefficients = torch.nn.Parameter(torch.randn(p_degree + 1))
+        self.p_coefficients = torch.nn.Parameter(torch.randn(num_bessel, p_degree + 1))
 
         # Q(x) coefficients: q1, q2, ..., q_q_degree
         # Q(x) = 1 + q1*x + q2*x^2 + ... + q_q_degree*x^q_degree
-        self.q_coefficients = torch.nn.Parameter(torch.randn(q_degree))
+        self.q_coefficients = torch.nn.Parameter(torch.randn(num_bessel, q_degree))
 
         if distance_transform == "Agnesi":
             self.distance_transform = AgnesiTransform()
@@ -215,6 +215,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         edge_index: torch.Tensor,
         atomic_numbers: torch.Tensor,
     ):
+        edge_lengths = edge_lengths.view(-1, 1)
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
         if hasattr(self, "distance_transform"):
             edge_lengths = self.distance_transform(
@@ -222,18 +223,19 @@ class RadialEmbeddingBlock(torch.nn.Module):
             )
         # radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
 
-        # Compute P(x) = p0 + p1*x + p2*x^2 + ... + p_p_degree*x^p_degree
-        powers_p = torch.cat([edge_lengths ** i for i in range(self.p_degree + 1)], dim=-1)  # [n_edges, p_degree + 1]
-        P = torch.matmul(powers_p, self.p_coefficients)  # [n_edges, 1]
+        # Compute P(x): [n_edges, p_degree + 1] x [p_degree + 1, num_bessel] -> [n_edges, num_bessel]
+        powers_p = torch.cat([edge_lengths ** i for i in range(self.p_degree + 1)], dim=-1)
+        P = torch.matmul(powers_p, self.p_coefficients.T)  # [n_edges, num_bessel]
 
-        # Compute Q(x) = 1 + q1*x + q2*x^2 + ... + q_q_degree*x^q_degree
-        powers_q = torch.cat([edge_lengths ** (i + 1) for i in range(self.q_degree)], dim=-1)  # [n_edges, q_degree]
-        Q = 1.0 + torch.matmul(powers_q, self.q_coefficients)  # [n_edges, 1]
+        # Compute Q(x): [n_edges, q_degree] x [q_degree, num_bessel] -> [n_edges, num_bessel]
+        powers_q = torch.cat([edge_lengths ** (i + 1) for i in range(self.q_degree)], dim=-1)
+        Q = 1.0 + torch.matmul(powers_q, self.q_coefficients.T)  # [n_edges, num_bessel]
 
-        # Compute P(x) / Q(x)
-        radial = (P / Q).repeat(1, num_bessel)  # [n_edges, num_bessel]
+        # Compute radial embedding: [n_edges, num_bessel]
+        radial = P / Q  # [n_edges, num_bessel]
 
-        return radial * cutoff  # [n_edges, n_basis]
+        # Apply cutoff: [n_edges, num_bessel]
+        return radial * cutoff
 
 
 @compile_mode("script")
