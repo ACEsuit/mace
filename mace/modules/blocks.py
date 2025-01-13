@@ -206,8 +206,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         elif distance_transform == "Soft":
             self.distance_transform = SoftTransform()
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
-        # self.out_dim = num_bessel
-        self.out_dim = 1  # Since the Pade polynomial embedding outputs a single value per edge
+        self.out_dim = num_bessel
 
     def forward(
         self,
@@ -232,7 +231,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         Q = 1.0 + torch.matmul(powers_q, self.q_coefficients)  # [n_edges, 1]
 
         # Compute P(x) / Q(x)
-        radial = P / Q  # [n_edges, 1]
+        radial = (P / Q).repeat(1, num_bessel)  # [n_edges, num_bessel]
 
         return radial * cutoff  # [n_edges, n_basis]
 
