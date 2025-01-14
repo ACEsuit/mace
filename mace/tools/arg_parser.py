@@ -404,6 +404,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument(
+        "--foundation_model_elements",
+        help="Keep all elements of the foundation model during fine-tuning",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--keep_isolated_atoms",
         help="Keep isolated atoms in the dataset, useful for transfer learning",
         type=str2bool,

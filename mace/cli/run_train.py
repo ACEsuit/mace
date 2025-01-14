@@ -380,6 +380,8 @@ def run(args: argparse.Namespace) -> None:
     for head_config in head_configs:
         all_atomic_numbers.update(head_config.atomic_numbers)
     z_table = AtomicNumberTable(sorted(list(all_atomic_numbers)))
+    if args.foundation_model_elements and model_foundation:
+        z_table = AtomicNumberTable(sorted(model_foundation.atomic_numbers.tolist()))
     logging.info(f"Atomic Numbers used: {z_table.zs}")
 
     # Atomic energies
@@ -433,6 +435,16 @@ def run(args: argparse.Namespace) -> None:
             ].item()
             for z in z_table.zs
         }
+
+    # Padding atomic energies if keeping all elements of the foundation model
+    if args.foundation_model_elements and model_foundation:
+        atomic_energies_dict_padded = {}
+        for head_name, head_energies in atomic_energies_dict.items():
+            energy_head_padded = {}
+            for z in z_table.zs:
+                energy_head_padded[z] = head_energies.get(z, 0.0)
+            atomic_energies_dict_padded[head_name] = energy_head_padded
+        atomic_energies_dict = atomic_energies_dict_padded
 
     if args.model == "AtomicDipolesMACE":
         atomic_energies = None
@@ -634,6 +646,7 @@ def run(args: argparse.Namespace) -> None:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
         distributed_model = None
+    print("MODEL", model)
     tools.train(
         model=model,
         loss_fn=loss_fn,
