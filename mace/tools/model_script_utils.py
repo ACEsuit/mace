@@ -7,6 +7,7 @@ from e3nn import o3
 from mace import modules
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.utils import AtomicNumberTable
 
 
 def configure_model(
@@ -43,8 +44,22 @@ def configure_model(
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
-        model_config_foundation["atomic_numbers"] = z_table.zs
-        model_config_foundation["num_elements"] = len(z_table)
+
+        if args.foundation_model_elements:
+            foundation_z_table = AtomicNumberTable(
+                [int(z) for z in model_foundation.atomic_numbers]
+            )
+            model_config_foundation["atomic_numbers"] = foundation_z_table.zs
+            model_config_foundation["num_elements"] = len(foundation_z_table)
+            z_table = foundation_z_table
+            logging.info(
+                f"Using all elements from foundation model: {foundation_z_table.zs}"
+            )
+        else:
+            model_config_foundation["atomic_numbers"] = z_table.zs
+            model_config_foundation["num_elements"] = len(z_table)
+            logging.info(f"Using filtered elements: {z_table.zs}")
+
         args.max_L = model_config_foundation["hidden_irreps"].lmax
 
         if args.model == "MACE" and model_foundation.__class__.__name__ == "MACE":

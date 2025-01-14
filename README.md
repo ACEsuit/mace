@@ -28,6 +28,7 @@
     - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
       - [Example usage in ASE](#example-usage-in-ase-1)
     - [Finetuning foundation models](#finetuning-foundation-models)
+    - [Latest recommended foundation models](#latest-recommended-foundation-models)
   - [Caching](#caching)
   - [Development](#development)
   - [References](#references)
@@ -272,6 +273,14 @@ calc = mace_off(model="medium", device='cuda')
 atoms.calc = calc
 print(atoms.get_potential_energy())
 ```
+
+### Latest Recommended Foundation Models
+
+| Model Name        | Elements Covered | Training Dataset | Level of Theory       | Target System         | Model Size          | GitHub Release | Notes                                                | License |
+|-------------------|------------------|------------------|-----------------------|----------------------|---------------------|----------------|-------------------------------------------------------|---------|
+| MACE-MP-0         | 89               | MPTrj            | DFT (PBE+U)           | Materials            | [small](https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model), [medium](https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model), [large](https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2024-01-07-mace-128-L2_epoch-199.model)| >=v0.3.6       | Initial release of foundation model.                          | MIT |
+| MACE-MPA-0        | 89               | MPTrj + sAlex    | DFT (PBE+U)           | Materials            | [medium](https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model)              | >=v0.3.10      | Improved accuracy for materials, improved high pressure stability. | MIT |
+| MACE-OFF23        | 10               | SPICE v1         | DFT (wB97M+D3)        | Organic Chemistry    | [small](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model), [medium](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model), [large](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model)| >=v0.3.6       | Initial release covering neutral organic chemistry.              | ASL |
 
 ### Finetuning foundation models
 

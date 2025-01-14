@@ -34,6 +34,7 @@ def main():
     args = parser.parse_args()
 
     model = torch.load(args.model_file)
+    torch.set_default_dtype(next(model.parameters()).dtype)
 
     if args.list_heads:
         print("Available heads:")
