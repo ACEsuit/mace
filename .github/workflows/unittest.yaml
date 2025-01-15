@@ -5,9 +5,8 @@ on:
     branches: [main]
 
 jobs:
-  pytest-container:
+  pytest-general:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -15,15 +14,37 @@ jobs:
           python-version: "3.10"
           cache: "pip"
 
-      - name: Install requirements
+      - name: Install requirements (general tests)
         run: |
           pip install -U pip
           pip install .[dev]
 
-      - name: Log installed environment
+      - name: Log installed environment (general tests)
         run: |
           python3 -m pip freeze
 
-      - name: Run unit tests
+      - name: Run general unit tests
         run: |
-          pytest tests
+          pytest tests --ignore=tests/test_cueq.py
+
+  pytest-cueq:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install requirements (with cueq)
+        run: |
+          pip install -U pip
+          pip install ".[dev, cueq]"
+
+      - name: Log installed environment (with cueq)
+        run: |
+          python3 -m pip freeze
+
+      - name: Run cueq-specific tests
+        run: |
+          pytest tests/test_cueq.py tests/test_calculator.py
