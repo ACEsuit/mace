@@ -637,7 +637,7 @@ def run(args: argparse.Namespace) -> None:
         logging.info("Switching optimizer to LBFGS")
         optimizer = LBFGS(model.parameters(),
                           history_size=200,
-                          max_iter=200,
+                          max_iter=20,
                           line_search_fn="strong_wolfe")
         if restart_lbfgs:
             opt_start_epoch = checkpoint_handler.load_latest(

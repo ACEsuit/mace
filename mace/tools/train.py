@@ -318,6 +318,17 @@ def train(
             torch.distributed.barrier()
         epoch += 1
 
+    # TODO: REMOVE THIS (it is only for testing)
+    logging.info("Always saving the last checkpoint")
+    param_context = (
+        ema.average_parameters() if ema is not None else nullcontext()
+    )
+    with param_context:
+        checkpoint_handler.save(
+            state=CheckpointState(model, optimizer, lr_scheduler),
+            epochs=epoch,
+            keep_last=True,
+        )
     logging.info("Training complete")
 
 
