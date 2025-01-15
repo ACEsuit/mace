@@ -129,6 +129,7 @@ class PolynomialCutoff(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.calculate_envelope(x, self.r_max, self.p.to(torch.int))
 
+    @staticmethod
     def calculate_envelope(
         x: torch.Tensor, r_max: torch.Tensor, p: torch.Tensor
     ) -> torch.Tensor:
