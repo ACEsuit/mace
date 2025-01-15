@@ -39,7 +39,7 @@ jobs:
       - name: Install requirements (with cueq)
         run: |
           pip install -U pip
-          pip install .[dev, cueq]
+          pip install ".[dev, cueq]"
 
       - name: Log installed environment (with cueq)
         run: |
