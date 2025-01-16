@@ -290,6 +290,9 @@ def load_from_xyz(
         if not keep_isolated_atoms:
             atoms_list = atoms_without_iso_atoms
 
+    for atoms in atoms_list:
+        atoms.info[head_key] = head_name
+
     configs = config_from_atoms_list(
         atoms_list,
         config_type_weights=config_type_weights,

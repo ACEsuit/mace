@@ -14,8 +14,10 @@ import numpy as np
 import torch
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
+from e3nn import o3
 
 from mace import data
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import prepare
@@ -60,10 +62,13 @@ class MACECalculator(Calculator):
         model_type="MACE",
         compile_mode=None,
         fullgraph=True,
+        enable_cueq=False,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
-
+        if enable_cueq:
+            assert model_type == "MACE", "CuEq only supports MACE models"
+            compile_mode = None
         if "model_path" in kwargs:
             deprecation_message = (
                 "'model_path' argument is deprecated, please use 'model_paths'"
@@ -130,6 +135,12 @@ class MACECalculator(Calculator):
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
             ]
+            if enable_cueq:
+                print("Converting models to CuEq for acceleration")
+                self.models = [
+                    run_e3nn_to_cueq(model, device=device).to(device)
+                    for model in self.models
+                ]
 
         elif models is not None:
             if not isinstance(models, list):
@@ -159,7 +170,7 @@ class MACECalculator(Calculator):
                     mode=compile_mode,
                     fullgraph=fullgraph,
                 )
-                for model in models
+                for model in self.models
             ]
             self.use_compile = True
         else:
@@ -390,24 +401,34 @@ class MACECalculator(Calculator):
             atoms = self.atoms
         if self.model_type != "MACE":
             raise NotImplementedError("Only implemented for MACE models")
+        num_interactions = int(self.models[0].num_interactions)
         if num_layers == -1:
-            num_layers = int(self.models[0].num_interactions)
+            num_layers = num_interactions
         batch = self._atoms_to_batch(atoms)
         descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+
+        irreps_out = o3.Irreps(str(self.models[0].products[0].linear.irreps_out))
+        l_max = irreps_out.lmax
+        num_invariant_features = irreps_out.dim // (l_max + 1) ** 2
+        per_layer_features = [irreps_out.dim for _ in range(num_interactions)]
+        per_layer_features[-1] = (
+            num_invariant_features  # Equivariant features not created for the last layer
+        )
+
         if invariants_only:
-            irreps_out = self.models[0].products[0].linear.__dict__["irreps_out"]
-            l_max = irreps_out.lmax
-            num_features = irreps_out.dim // (l_max + 1) ** 2
             descriptors = [
                 extract_invariant(
                     descriptor,
                     num_layers=num_layers,
-                    num_features=num_features,
+                    num_features=num_invariant_features,
                     l_max=l_max,
                 )
                 for descriptor in descriptors
             ]
-        descriptors = [descriptor.detach().cpu().numpy() for descriptor in descriptors]
+        to_keep = np.sum(per_layer_features[:num_layers])
+        descriptors = [
+            descriptor[:, :to_keep].detach().cpu().numpy() for descriptor in descriptors
+        ]
 
         if self.num_models == 1:
             return descriptors[0]

@@ -290,7 +290,8 @@ def _check_non_zero(std):
 
 def extract_invariant(x: torch.Tensor, num_layers: int, num_features: int, l_max: int):
     out = []
-    for i in range(num_layers - 1):
+    out.append(x[:, :num_features])
+    for i in range(1, num_layers):
         out.append(
             x[
                 :,
@@ -300,7 +301,6 @@ def extract_invariant(x: torch.Tensor, num_layers: int, num_features: int, l_max
                 * num_features,
             ]
         )
-    out.append(x[:, -num_features:])
     return torch.cat(out, dim=-1)
 
 
