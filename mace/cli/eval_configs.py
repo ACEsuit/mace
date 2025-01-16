@@ -124,7 +124,6 @@ def run(args: argparse.Namespace) -> None:
     # Collect data
     energies_list = []
     contributions_list = []
-    # features_list = []
     stresses_list = []
     forces_list = []
     energy_stds = []
@@ -148,14 +147,6 @@ def run(args: argparse.Namespace) -> None:
                 axis=0,
             )
             contributions_list += contributions[:-1]
-
-        # if args.return_features:
-        #     features = np.split(
-        #         torch_tools.to_numpy(output["node_feats"]),
-        #         indices_or_sections=batch.ptr[1:],
-        #         axis=0,
-        #     )
-        #     features_list += features[:-1]
 
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
@@ -182,9 +173,6 @@ def run(args: argparse.Namespace) -> None:
     if args.return_contributions:
         assert len(atoms_list) == len(contributions_list)
 
-    # if args.return_features:
-    #     assert len(atoms_list) == len(features_list)
-
     if args.predict_committee:
         energy_stds = np.concatenate(energy_stds, axis=0)
         forces_stds = [
@@ -209,11 +197,6 @@ def run(args: argparse.Namespace) -> None:
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
-
-    # Write features file, if requested
-    # if args.return_features:
-    #     np.save("features.npy", features)
-
 
 if __name__ == "__main__":
     main()
