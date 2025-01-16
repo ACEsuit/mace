@@ -38,7 +38,6 @@ from mace.tools.scripts_utils import (
     LRScheduler,
     check_path_ase_read,
     convert_to_json_format,
-    create_error_tables,
     dict_to_array,
     extract_config_mace_model,
     get_atomic_energies,
@@ -55,7 +54,7 @@ from mace.tools.scripts_utils import (
     setup_wandb,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
-from mace.tools.tables_utils import create_error_table
+from mace.tools.tables_utils import create_error_tables
 from mace.tools.utils import AtomicNumberTable
 
 
