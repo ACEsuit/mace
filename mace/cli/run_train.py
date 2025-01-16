@@ -31,6 +31,7 @@ from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
     assemble_mp_data,
+    assemble_mace_data,
     dict_head_to_dataclass,
     prepare_default_head,
 )
