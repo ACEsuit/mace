@@ -165,11 +165,6 @@ def run(args: argparse.Namespace) -> None:
                 args.heads[f'committee-{i:d}'] = prepare_default_head(args)["default"]
 
     logging.info("===========LOADING INPUT DATA===========")
-    # TODO: Create a list of heads in case of committee
-    # Currently, I am using the existing infrastructure as much as possible. This makes for
-    # quite elegant coding, but not as effecient implementation. Once we have found a committee
-    # strategy that works for us, we can think about implementing a specific committee multihead
-    # processor.
     heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
     head_configs: List[HeadConfig] = []
@@ -477,9 +472,6 @@ def run(args: argparse.Namespace) -> None:
             generator=torch.Generator().manual_seed(args.seed),
         )
         head_config.train_loader = train_loader_head
-    # ic(valid_sets)
-    # for k, v in valid_sets.items():
-    #     ic(v.__dict__['datasets'][0].__dict__)
     # concatenate all the trainsets
     train_set = ConcatDataset([train_sets[head] for head in heads])
     train_sampler, valid_sampler = None, None
@@ -550,7 +542,6 @@ def run(args: argparse.Namespace) -> None:
     logging.info(loss_fn)
 
     # Optimizer
-    args.optimize_readouts_only = False
     param_options = get_params_options(args, model)
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)

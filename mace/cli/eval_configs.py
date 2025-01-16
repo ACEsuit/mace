@@ -47,12 +47,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
     )
-    # parser.add_argument(
-    #     "--return_features",
-    #     help="Return features of layers in `features.npy",
-    #     action="store_true",
-    #     default=False,
-    # )
     parser.add_argument(
         "--info_prefix",
         help="prefix for energy, forces and stress keys",

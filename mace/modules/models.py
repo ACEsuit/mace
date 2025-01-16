@@ -57,7 +57,7 @@ class MACE(torch.nn.Module):
         avg_num_neighbors: float,
         atomic_numbers: List[int],
         correlation: Union[int, List[int]],
-        gate: Optional[Union[List[Callable], Callable]],
+        gate: Optional[Callable],
         pair_repulsion: bool = False,
         distance_transform: str = "None",
         radial_MLP: Optional[List[int]] = None,
@@ -238,7 +238,6 @@ class MACE(torch.nn.Module):
         edge_feats = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
-        #TODO: Take care of pair repulsion for multiheading
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
@@ -363,7 +362,6 @@ class ScaleShiftMACE(MACE):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        # The scaling parameters are set in tools:model_script_utils:configure_model()
         self.scale_shift = ScaleShiftBlock(
             scale=atomic_inter_scale, shift=atomic_inter_shift
         )
@@ -379,13 +377,6 @@ class ScaleShiftMACE(MACE):
         compute_hessian: bool = False,
         committee_heads: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
-        #TODO: The new forward function works for both standard operation as well as committee operation, though 
-        # the memory requirement are slighly (needs quantification) increased. It is worth considering, splitting
-        # up the two methods much earlier and into a standard way and the committee way.
-        #TODO: Find a good solution for what to do with the `predict_committee` in other functions. Currently, all
-        # functions using the forward pass for many model expect the keyword, but it is only implemented for MACE-based
-        # models.
-
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
@@ -482,9 +473,6 @@ class ScaleShiftMACE(MACE):
         total_energy_heads = e0_heads + inter_e_heads
         node_energy_heads = node_e0_heads + node_inter_es_heads
         output = {}
-        # TODO: It is possible to get rid of this if-else clause, but this would lead to slower computation.
-        # However, I only tested this so far in regular calculation, not in a compiled script. Further testing
-        # might be necessary.
         if committee_heads is None or training:
             inter_e = inter_e_heads[num_graphs_arange, data['head']]
             total_energy = total_energy_heads[num_graphs_arange, data['head']]

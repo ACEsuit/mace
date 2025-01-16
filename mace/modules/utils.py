@@ -308,7 +308,6 @@ def compute_mean_std_atomic_inter_energy(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
 ) -> Tuple[float, float]:
-    #TODO: Check what kind of rewriting is necessary to adapt it to committee multiheads.
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
 
     avg_atom_inter_es_list = []
@@ -354,7 +353,6 @@ def compute_mean_rms_energy_forces(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
 ) -> Tuple[float, float]:
-    #TODO: Check what kind of rewriting is necessary to adapt it to committee multiheads.
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
 
     atom_energy_list = []
@@ -427,7 +425,6 @@ def compute_statistics(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
 ) -> Tuple[float, float, float, float]:
-    #TODO: Check what kind of rewriting is necessary to adapt it to committee multiheads.
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
 
     atom_energy_list = []

@@ -38,12 +38,6 @@ def configure_model(
             train_loader, atomic_energies
         )
 
-    if args.diverse_gates:
-        gate_queue = ['tanh', 'silu', 'logsigmoid'] * args.n_committee
-        gate = [modules.gate_dict[gate_queue[i]] for i in range(args.n_committee)]
-    else:
-        gate = modules.gate_dict[args.gate]
-        
     # Build model
     if model_foundation is not None and args.model in ["MACE", "ScaleShiftMACE"]:
         logging.info("Loading FOUNDATION model")
@@ -113,7 +107,7 @@ def configure_model(
             num_interactions=args.num_interactions,
             num_elements=len(z_table),
             hidden_irreps=o3.Irreps(args.hidden_irreps),
-            gate=gate,
+            gate=modules.gate_dict[args.gate],
             atomic_energies=atomic_energies,
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,

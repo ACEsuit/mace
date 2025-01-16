@@ -361,12 +361,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
-        "--diverse_gates",
-        help="Use diverse gates in nonlinear output block",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
         "--multiheads_finetuning",
         help="Boolean value for whether the model is multiheaded",
         type=str2bool,
