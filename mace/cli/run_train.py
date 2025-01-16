@@ -646,7 +646,7 @@ def run(args: argparse.Namespace) -> None:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
         distributed_model = None
-        
+
     tools.train(
         model=model,
         loss_fn=loss_fn,
