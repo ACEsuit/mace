@@ -292,6 +292,25 @@ def run(args: argparse.Namespace) -> None:
             head_config_pt.collections = collections
             head_config_pt.train_file = f"mp_finetuning-{tag}.xyz"
             head_configs.append(head_config_pt)
+        if(
+            args.foundation_model in ["small", "medium", "large"]
+            or args.pt_train_file == "maceoff23"
+        ):
+            logging.info(
+                "Using foundation model for multiheads finetuning with MACE-OFF23 data"
+            )
+            heads = list(dict.fromkeys(["pt_head"] + heads))
+            head_config_pt = HeadConfig(
+                head_name="pt_head",
+                E0s="foundation",
+                statistics_file=args.statistics_file,
+                compute_avg_num_neighbors=False,
+                avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
+            )
+            collections = assemble_mp_data(args, tag, head_configs)
+            head_config_pt.collections = collections
+            head_config_pt.train_file = f"mace_finetuning-{tag}.xyz"
+            head_configs.append(head_config_pt)
         else:
             logging.info(
                 f"Using foundation model for multiheads finetuning with {args.pt_train_file}"

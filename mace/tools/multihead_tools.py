@@ -3,6 +3,7 @@ import dataclasses
 import logging
 import os
 import urllib.request
+import tarfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -143,6 +144,7 @@ def assemble_mp_data(
         descriptors_mp = cached_descriptors_path
         msg = f"Using Materials Project dataset with {dataset_mp}"
         logging.info(msg)
+        # Load descriptors to ensure they are accessible
         msg = f"Using Materials Project descriptors with {descriptors_mp}"
         logging.info(msg)
         config_pt_paths = [head.train_file for head in head_configs]
@@ -185,4 +187,112 @@ def assemble_mp_data(
     except Exception as exc:
         raise RuntimeError(
             "Model or descriptors download failed and no local model found"
+        ) from exc
+
+def assemble_mace_data(
+    args: argparse.Namespace, tag: str, head_configs: List[HeadConfig]
+) -> Dict[str, Any]:
+    try:
+        checkpoint_url = "https://www.repository.cam.ac.uk/bitstreams/b185b5ab-91cf-489a-9302-63bfac42824a/download"
+        descriptors_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/descriptors.npy"
+        cache_dir = (
+            Path(os.environ.get("XDG_CACHE_HOME", "~/")).expanduser() / ".cache/mace"
+        )
+        checkpoint_url_name = "".join(
+            c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_."
+        )
+        cached_tarball_path = f"{cache_dir}/{checkpoint_url_name}_tar"
+        cached_dataset_path = f"{cache_dir}/{checkpoint_url_name}"
+        descriptors_url_name = "".join(
+            c for c in os.path.basename(descriptors_url) if c.isalnum() or c in "_."
+        )
+        cached_descriptors_path = f"{cache_dir}/{descriptors_url_name}"
+        os.makedirs(cache_dir, exist_ok=True)
+        if not os.path.isfile(cached_tarball_path):
+            # download and save to disk
+            logging.info("Downloading dataset tarball for finetuning...")
+            urllib.request.urlretrieve(checkpoint_url, cached_tarball_path)
+            logging.info(f"Downloaded dataset to {cached_tarball_path}")
+
+        # Extract the tarball contents
+        extracted_dir = cached_dataset_path
+        if not any(extracted_dir.glob("*.xyz")):
+            logging.info("Extracting dataset tarball...")
+            with tarfile.open(cached_tarball_path, "r:gz") as tar:
+                tar.extractall(path=extracted_dir)
+            logging.info(f"Extracted dataset to {extracted_dir}")
+            # Delete the tar.gz file and folder after extraction
+            os.remove(cached_tarball_path)
+
+        # Move dataset file to cache directory
+        dataset_files = list(extracted_dir.glob("*.xyz"))
+        if not dataset_files:
+            raise RuntimeError(f"No .xyz files found in extracted dataset at {extracted_dir}")
+        dataset_mace = f'{cache_dir}/{dataset_files[0].name}'
+        if not dataset_mace.exists():
+            os.rename(dataset_files[0], dataset_mace)
+        logging.info(f"Using MACEOFF-23 dataset file: {dataset_mace}")
+
+        if not os.path.isfile(cached_descriptors_path):
+            os.makedirs(cache_dir, exist_ok=True)
+            # download and save to disk
+            logging.info("Downloading MP descriptors for finetuning")
+            _, http_msg = urllib.request.urlretrieve(
+                descriptors_url, cached_descriptors_path
+            )
+            if "Content-Type: text/html" in http_msg:
+                raise RuntimeError(
+                    f"Descriptors download failed, please check the URL {descriptors_url}"
+                )
+            logging.info(f"Materials Project descriptors to {cached_descriptors_path}")
+        dataset_mp = cached_dataset_path
+        descriptors_mp = cached_descriptors_path
+        msg = f"Using Materials Project dataset with {dataset_mp}"
+        logging.info(msg)
+        # Load descriptors to ensure they are accessible
+        msg = f"Using Materials Project descriptors with {descriptors_mp}"
+        logging.info(msg)
+        config_pt_paths = [head.train_file for head in head_configs]
+        args_samples = {
+            "configs_pt": str(dataset_mace),
+            "configs_ft": config_pt_paths,
+            "num_samples": args.num_samples_pt,
+            "seed": args.seed,
+            "model": args.foundation_model,
+            "head_pt": "pbe_mp",
+            "head_ft": "Default",
+            "weight_pt": args.weight_pt_head,
+            "weight_ft": 1.0,
+            "filtering_type": "combination",
+            "output": f"mace_finetuning-{tag}.xyz",
+            "descriptors": cached_descriptors_path,
+            "subselect": args.subselect_pt,
+            "device": args.device,
+            "default_dtype": args.default_dtype,
+        }
+
+        # Select samples and prepare the dataset
+        select_samples(dict_to_namespace(args_samples))
+        collections_mp, _ = get_dataset_from_xyz(
+            work_dir=args.work_dir,
+            train_path=f"mace_finetuning-{tag}.xyz",
+            valid_path=None,
+            valid_fraction=args.valid_fraction,
+            config_type_weights=None,
+            test_path=None,
+            seed=args.seed,
+            energy_key="energy",
+            forces_key="forces",
+            stress_key="stress",
+            head_name="pt_head",
+            virials_key=args.virials_key,
+            dipole_key=args.dipole_key,
+            charges_key=args.charges_key,
+            keep_isolated_atoms=args.keep_isolated_atoms,
+        )
+        return collections_mp
+
+    except Exception as exc:
+        raise RuntimeError(
+            "Dataset tarball download, extraction, or descriptor loading failed, and no local resources found."
         ) from exc
