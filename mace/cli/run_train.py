@@ -142,7 +142,13 @@ def run(args: argparse.Namespace) -> None:
         logging.log(level=loglevel, msg=message)
 
     if args.distributed:
-        torch.cuda.set_device(local_rank)
+        if torch.cuda.is_available():
+            device = torch.device(f"cuda:{local_rank}")
+            torch.cuda.set_device(device)
+        else:
+            device = torch.device("cpu")
+
+        logging.info(f"Using device: {device}")
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
         logging.info(f"Processes: {world_size}")
 
