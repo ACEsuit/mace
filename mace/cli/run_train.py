@@ -116,7 +116,11 @@ def run(args: argparse.Namespace) -> None:
             print(distr_env)
         if args.use_mpi:
             init_method = "env://"
-            backend = "nccl"
+            # Choose backend based on device availability
+            if torch.cuda.is_available():
+                backend = "nccl"
+            else:
+                backend = "gloo"
             torch.distributed.init_process_group(
                 backend=backend,
                 init_method=init_method,
