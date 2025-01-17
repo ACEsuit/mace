@@ -41,6 +41,7 @@ repos:
           '--disable=missing-class-docstring',
           '--disable=missing-function-docstring',
           '--disable=too-many-arguments',
+          '--disable=too-many-positional-arguments',
           '--disable=too-many-locals',
           '--disable=not-callable',
           '--disable=logging-fstring-interpolation',
@@ -54,5 +55,6 @@ repos:
           '--disable=cell-var-from-loop',
           '--disable=duplicate-code',
           '--disable=use-dict-literal',
+          '--max-module-lines=1500',
         ]
         exclude: *exclude_files

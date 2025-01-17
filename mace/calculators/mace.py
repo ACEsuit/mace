@@ -5,6 +5,7 @@
 ###########################################################################################
 
 
+import logging
 from glob import glob
 from pathlib import Path
 from typing import Union
@@ -13,12 +14,14 @@ import numpy as np
 import torch
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
+from e3nn import o3
 
 from mace import data
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import prepare
-from mace.tools.scripts_utils import extract_load
+from mace.tools.scripts_utils import extract_model
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
@@ -49,8 +52,9 @@ class MACECalculator(Calculator):
 
     def __init__(
         self,
-        model_paths: Union[list, str],
-        device: str,
+        model_paths: Union[list, str, None] = None,
+        models: Union[list[torch.nn.Module], torch.nn.Module, None] = None,
+        device: str = "cpu",
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
         default_dtype="",
@@ -58,9 +62,30 @@ class MACECalculator(Calculator):
         model_type="MACE",
         compile_mode=None,
         fullgraph=True,
+        enable_cueq=False,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
+        if enable_cueq:
+            assert model_type == "MACE", "CuEq only supports MACE models"
+            compile_mode = None
+        if "model_path" in kwargs:
+            deprecation_message = (
+                "'model_path' argument is deprecated, please use 'model_paths'"
+            )
+            if model_paths is None:
+                logging.warning(f"{deprecation_message} in the future.")
+                model_paths = kwargs["model_path"]
+            else:
+                raise ValueError(
+                    f"both 'model_path' and 'model_paths' given, {deprecation_message} only."
+                )
+
+        if (model_paths is None) == (models is None):
+            raise ValueError(
+                "Exactly one of 'model_paths' or 'models' must be provided"
+            )
+
         self.results = {}
 
         self.model_type = model_type
@@ -89,53 +114,76 @@ class MACECalculator(Calculator):
                 f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
-        if "model_path" in kwargs:
-            print("model_path argument deprecated, use model_paths")
-            model_paths = kwargs["model_path"]
+        if model_paths is not None:
+            if isinstance(model_paths, str):
+                # Find all models that satisfy the wildcard (e.g. mace_model_*.pt)
+                model_paths_glob = glob(model_paths)
 
-        if isinstance(model_paths, str):
-            # Find all models that satisfy the wildcard (e.g. mace_model_*.pt)
-            model_paths_glob = glob(model_paths)
-            if len(model_paths_glob) == 0:
-                raise ValueError(f"Couldn't find MACE model files: {model_paths}")
-            model_paths = model_paths_glob
-        elif isinstance(model_paths, Path):
-            model_paths = [model_paths]
-        if len(model_paths) == 0:
-            raise ValueError("No mace file names supplied")
-        self.num_models = len(model_paths)
-        if len(model_paths) > 1:
-            print(f"Running committee mace with {len(model_paths)} models")
+                if len(model_paths_glob) == 0:
+                    raise ValueError(f"Couldn't find MACE model files: {model_paths}")
+
+                model_paths = model_paths_glob
+            elif isinstance(model_paths, Path):
+                model_paths = [model_paths]
+
+            if len(model_paths) == 0:
+                raise ValueError("No mace file names supplied")
+            self.num_models = len(model_paths)
+
+            # Load models from files
+            self.models = [
+                torch.load(f=model_path, map_location=device)
+                for model_path in model_paths
+            ]
+            if enable_cueq:
+                print("Converting models to CuEq for acceleration")
+                self.models = [
+                    run_e3nn_to_cueq(model, device=device).to(device)
+                    for model in self.models
+                ]
+
+        elif models is not None:
+            if not isinstance(models, list):
+                models = [models]
+
+            if len(models) == 0:
+                raise ValueError("No models supplied")
+
+            self.models = models
+            self.num_models = len(models)
+
+        if self.num_models > 1:
+            print(f"Running committee mace with {self.num_models} models")
+
             if model_type in ["MACE", "EnergyDipoleMACE"]:
                 self.implemented_properties.extend(
                     ["energies", "energy_var", "forces_comm", "stress_var"]
                 )
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
+
         if compile_mode is not None:
             print(f"Torch compile is enabled with mode: {compile_mode}")
             self.models = [
                 torch.compile(
-                    prepare(extract_load)(f=model_path, map_location=device),
+                    prepare(extract_model)(model=model, map_location=device),
                     mode=compile_mode,
                     fullgraph=fullgraph,
                 )
-                for model_path in model_paths
+                for model in self.models
             ]
             self.use_compile = True
         else:
-            self.models = [
-                torch.load(f=model_path, map_location=device)
-                for model_path in model_paths
-            ]
             self.use_compile = False
+
+        # Ensure all models are on the same device
         for model in self.models:
-            model.to(device)  # shouldn't be necessary but seems to help with GPU
+            model.to(device)
+
         r_maxs = [model.r_max.cpu() for model in self.models]
         r_maxs = np.array(r_maxs)
-        assert np.all(
-            r_maxs == r_maxs[0]
-        ), "committee r_max are not all the same {' '.join(r_maxs)}"
+        if not np.all(r_maxs == r_maxs[0]):
+            raise ValueError(f"committee r_max are not all the same {' '.join(r_maxs)}")
         self.r_max = float(r_maxs[0])
 
         self.device = torch_tools.init_device(device)
@@ -145,6 +193,10 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+        try:
+            self.heads = self.models[0].heads
+        except AttributeError:
+            self.heads = ["Default"]
         model_dtype = get_model_dtype(self.models[0])
         if default_dtype == "":
             print(
@@ -198,7 +250,7 @@ class MACECalculator(Calculator):
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
                 data.AtomicData.from_config(
-                    config, z_table=self.z_table, cutoff=self.r_max
+                    config, z_table=self.z_table, cutoff=self.r_max, heads=self.heads
                 )
             ],
             batch_size=1,
@@ -231,7 +283,11 @@ class MACECalculator(Calculator):
 
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
             batch = self._clone_batch(batch_base)
-            node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])
+            node_heads = batch["head"][batch["batch"]]
+            num_atoms_arange = torch.arange(batch["positions"].shape[0])
+            node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])[
+                num_atoms_arange, node_heads
+            ]
             compute_stress = not self.use_compile
         else:
             compute_stress = False
@@ -345,24 +401,34 @@ class MACECalculator(Calculator):
             atoms = self.atoms
         if self.model_type != "MACE":
             raise NotImplementedError("Only implemented for MACE models")
+        num_interactions = int(self.models[0].num_interactions)
         if num_layers == -1:
-            num_layers = int(self.models[0].num_interactions)
+            num_layers = num_interactions
         batch = self._atoms_to_batch(atoms)
         descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+
+        irreps_out = o3.Irreps(str(self.models[0].products[0].linear.irreps_out))
+        l_max = irreps_out.lmax
+        num_invariant_features = irreps_out.dim // (l_max + 1) ** 2
+        per_layer_features = [irreps_out.dim for _ in range(num_interactions)]
+        per_layer_features[-1] = (
+            num_invariant_features  # Equivariant features not created for the last layer
+        )
+
         if invariants_only:
-            irreps_out = self.models[0].products[0].linear.__dict__["irreps_out"]
-            l_max = irreps_out.lmax
-            num_features = irreps_out.dim // (l_max + 1) ** 2
             descriptors = [
                 extract_invariant(
                     descriptor,
                     num_layers=num_layers,
-                    num_features=num_features,
+                    num_features=num_invariant_features,
                     l_max=l_max,
                 )
                 for descriptor in descriptors
             ]
-        descriptors = [descriptor.detach().cpu().numpy() for descriptor in descriptors]
+        to_keep = np.sum(per_layer_features[:num_layers])
+        descriptors = [
+            descriptor[:, :to_keep].detach().cpu().numpy() for descriptor in descriptors
+        ]
 
         if self.num_models == 1:
             return descriptors[0]

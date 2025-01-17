@@ -1,7 +1,8 @@
 from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
+from .arg_parser_tools import check_args
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
-from .finetuning_utils import load_foundations
+from .finetuning_utils import load_foundations, load_foundations_elements
 from .torch_tools import (
     TensorDict,
     cartesian_to_spherical,
@@ -27,7 +28,6 @@ from .utils import (
     compute_rel_rmse,
     compute_rmse,
     get_atomic_number_table_from_zs,
-    get_optimizer,
     get_tag,
     setup_logger,
 )
@@ -39,12 +39,12 @@ __all__ = [
     "to_numpy",
     "to_one_hot",
     "build_default_arg_parser",
+    "check_args",
     "set_seeds",
     "init_device",
     "setup_logger",
     "get_tag",
     "count_parameters",
-    "get_optimizer",
     "MetricsLogger",
     "get_atomic_number_table_from_zs",
     "train",
@@ -66,5 +66,6 @@ __all__ = [
     "voigt_to_matrix",
     "init_wandb",
     "load_foundations",
+    "load_foundations_elements",
     "build_preprocess_arg_parser",
 ]

@@ -1,0 +1,46 @@
+name: Linting and code formatting
+
+on: []
+  # Trigger the workflow on push or pull request,
+  # but only for the main branch
+  # push:
+  #   branches: []
+  # pull_request:
+  #   branches: []
+
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Setup
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8.10
+      - name: Get cache
+        uses: actions/cache@v2
+        with:
+          path: /opt/hostedtoolcache/Python/3.8.10/x64/lib/python3.8/site-packages
+          # Look to see if there is a cache hit for the corresponding requirements file
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      # Install packages
+      - name: Install packages required for installation
+        run: python -m pip install --upgrade pip setuptools wheel
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Check code
+      - name: Check formatting with yapf
+        run: python -m yapf --style=.style.yapf --diff --recursive .
+#      - name: Lint with flake8
+#        run: flake8 --config=.flake8 .
+#      - name: Check type annotations with mypy
+#        run: mypy --config-file=.mypy.ini .
+
+      - name: Test with pytest
+        run: python -m pytest tests

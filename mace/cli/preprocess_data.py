@@ -66,7 +66,22 @@ def pool_compute_stats(inputs: List):
         pool.join()
 
     results = [r.get() for r in tqdm.tqdm(re)]
-    return np.average(results, axis=0)
+
+    if not results:
+        raise ValueError(
+            "No results were computed. Check if the input files exist and are readable."
+        )
+
+    # Separate avg_num_neighbors, mean, and std
+    avg_num_neighbors = np.mean([r[0] for r in results])
+    means = np.array([r[1] for r in results])
+    stds = np.array([r[2] for r in results])
+
+    # Compute averages
+    mean = np.mean(means, axis=0).item()
+    std = np.mean(stds, axis=0).item()
+
+    return avg_num_neighbors, mean, std
 
 
 def split_array(a: np.ndarray, max_size: int):
@@ -155,6 +170,7 @@ def run(args: argparse.Namespace):
 
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
+        work_dir=args.work_dir,
         train_path=args.train_file,
         valid_path=args.valid_file,
         valid_fraction=args.valid_fraction,
@@ -211,7 +227,7 @@ def run(args: argparse.Namespace):
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
-        logging.info(f"Atomic energies: {atomic_energies.tolist()}")
+        logging.info(f"Atomic Energies: {atomic_energies.tolist()}")
         _inputs = [args.h5_prefix+'train', z_table, args.r_max, atomic_energies, args.batch_size, args.num_process]
         avg_num_neighbors, mean, std=pool_compute_stats(_inputs)
         logging.info(f"Average number of neighbors: {avg_num_neighbors}")
