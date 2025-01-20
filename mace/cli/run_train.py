@@ -500,7 +500,7 @@ def run(args: argparse.Namespace) -> None:
             dataset=train_sets[head_config.head_name],
             batch_size=args.batch_size,
             shuffle=True,
-            drop_last=True,
+            drop_last=(not args.lbfgs),
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
@@ -515,7 +515,7 @@ def run(args: argparse.Namespace) -> None:
             num_replicas=world_size,
             rank=rank,
             shuffle=True,
-            drop_last=True,
+            drop_last=False if args.lbfgs else True,
             seed=args.seed,
         )
         valid_samplers = {}
@@ -534,7 +534,7 @@ def run(args: argparse.Namespace) -> None:
         batch_size=args.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
-        drop_last=(train_sampler is None),
+        drop_last=(train_sampler is None and not args.lbfgs),
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),

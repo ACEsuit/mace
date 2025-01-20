@@ -235,7 +235,6 @@ def train(
 
         # Validate
         if epoch % eval_interval == 0:
-            logging.debug(f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
             model_to_evaluate = (
                 model if distributed_model is None else distributed_model
             )
@@ -318,17 +317,6 @@ def train(
             torch.distributed.barrier()
         epoch += 1
 
-    # TODO: REMOVE THIS (it is only for testing)
-    logging.info("Always saving the last checkpoint")
-    param_context = (
-        ema.average_parameters() if ema is not None else nullcontext()
-    )
-    with param_context:
-        checkpoint_handler.save(
-            state=CheckpointState(model, optimizer, lr_scheduler),
-            epochs=epoch,
-            keep_last=True,
-        )
     logging.info("Training complete")
 
 
@@ -441,12 +429,17 @@ def take_step_lbfgs(
     rank: int,
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
+    logging.debug(f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
 
     total_sample_count = 0
     for batch in data_loader:
         total_sample_count += batch.num_graphs
 
-    world_size = torch.distributed.get_world_size() if distributed else 1
+    if distributed:
+        global_sample_count = torch.tensor(total_sample_count, device=device)
+        torch.distributed.all_reduce(global_sample_count, op=torch.distributed.ReduceOp.SUM)
+        total_sample_count = global_sample_count.item()
+
     signal = torch.zeros(1, device=device) if distributed else None
 
     def closure():
@@ -473,7 +466,7 @@ def take_step_lbfgs(
                 compute_stress=output_args["stress"],
             )
             batch_loss = loss_fn(pred=output, ref=batch)
-            batch_loss = batch_loss / (world_size * total_sample_count / batch.num_graphs)
+            batch_loss = batch_loss * (batch.num_graphs / total_sample_count)
 
             batch_loss.backward()
             total_loss += batch_loss
