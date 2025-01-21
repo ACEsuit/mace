@@ -14,12 +14,12 @@ import numpy as np
 import torch
 import torch.distributed
 from torch.nn.parallel import DistributedDataParallel
+from torch.optim import LBFGS
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch_ema import ExponentialMovingAverage
 from torchmetrics import Metric
-from torch.optim import LBFGS
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
@@ -271,7 +271,9 @@ def train(
                                 ],
                                 "valid_rmse_f": eval_metrics["rmse_f"],
                             }
-                valid_loss = valid_loss_head  # consider only the last head for the checkpoint
+                valid_loss = (
+                    valid_loss_head  # consider only the last head for the checkpoint
+                )
             if log_wandb:
                 wandb.log(wandb_log_dict)
             if rank == 0:
@@ -359,7 +361,7 @@ def train_one_epoch(
             _, opt_metrics = take_step(
                 model=model_to_train,
                 loss_fn=loss_fn,
-                batch=batch,  
+                batch=batch,
                 optimizer=optimizer,
                 ema=ema,
                 output_args=output_args,
@@ -385,7 +387,7 @@ def take_step(
     start_time = time.time()
     batch = batch.to(device)
     batch_dict = batch.to_dict()
-    
+
     def closure():
         optimizer.zero_grad(set_to_none=True)
         output = model(
@@ -399,7 +401,7 @@ def take_step(
         loss.backward()
         if max_grad_norm is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
-        
+
         return loss
 
     loss = closure()
@@ -429,7 +431,9 @@ def take_step_lbfgs(
     rank: int,
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
-    logging.debug(f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
+    logging.debug(
+        f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB"
+    )
 
     total_sample_count = 0
     for batch in data_loader:
@@ -437,7 +441,9 @@ def take_step_lbfgs(
 
     if distributed:
         global_sample_count = torch.tensor(total_sample_count, device=device)
-        torch.distributed.all_reduce(global_sample_count, op=torch.distributed.ReduceOp.SUM)
+        torch.distributed.all_reduce(
+            global_sample_count, op=torch.distributed.ReduceOp.SUM
+        )
         total_sample_count = global_sample_count.item()
 
     signal = torch.zeros(1, device=device) if distributed else None
@@ -447,13 +453,13 @@ def take_step_lbfgs(
             if rank == 0:
                 signal.fill_(1)
                 torch.distributed.broadcast(signal, src=0)
-            
+
             for param in model.parameters():
                 torch.distributed.broadcast(param.data, src=0)
 
         optimizer.zero_grad(set_to_none=True)
         total_loss = torch.tensor(0.0, device=device)
-        
+
         # Process each batch and then collect the results we pass to the optimizer
         for batch in data_loader:
             batch = batch.to(device)
@@ -470,9 +476,9 @@ def take_step_lbfgs(
 
             batch_loss.backward()
             total_loss += batch_loss
-        
+
         if max_grad_norm is not None:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
         if distributed:
             torch.distributed.all_reduce(total_loss, op=torch.distributed.ReduceOp.SUM)
@@ -505,7 +511,7 @@ def take_step_lbfgs(
         "time": time.time() - start_time,
     }
 
-    return loss, loss_dict    
+    return loss, loss_dict
 
 
 def evaluate(

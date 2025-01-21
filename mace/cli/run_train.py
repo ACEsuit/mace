@@ -18,6 +18,7 @@ import torch.distributed
 import torch.nn.functional
 from e3nn.util import jit
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim import LBFGS
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
 
@@ -56,7 +57,6 @@ from mace.tools.scripts_utils import (
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
-from torch.optim import LBFGS
 
 
 def main() -> None:
@@ -616,7 +616,7 @@ def run(args: argparse.Namespace) -> None:
                 device=device,
             )
         except Exception:  # pylint: disable=W0703
-            try: 
+            try:
                 opt_start_epoch = checkpoint_handler.load_latest(
                     state=tools.CheckpointState(model, optimizer, lr_scheduler),
                     swa=False,
@@ -648,7 +648,7 @@ def run(args: argparse.Namespace) -> None:
             )
             if opt_start_epoch is not None:
                 start_epoch = opt_start_epoch
-        
+
     if args.wandb:
         setup_wandb(args)
     if args.distributed:
