@@ -607,6 +607,7 @@ def run(args: argparse.Namespace) -> None:
 
     start_epoch = 0
     restart_lbfgs = False
+    opt_start_epoch = None
     if args.restart_latest:
         try:
             opt_start_epoch = checkpoint_handler.load_latest(
