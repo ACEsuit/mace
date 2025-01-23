@@ -94,19 +94,21 @@ class NonLinearReadoutBlock(torch.nn.Module):
         super().__init__()
         self.hidden_irreps = MLP_irreps
         self.num_heads = num_heads
+        instructions_1 = [(0, i) for i in range(num_heads)] if num_heads > 1 else None
         self.linear_1 = Linear(
             irreps_in=irreps_in,
             irreps_out=num_heads * self.hidden_irreps,
-            instructions=[(0, i) for i in range(num_heads)],
+            instructions=instructions_1,
             cueq_config=cueq_config
         )
         self.non_linearity = nn.Activation(
             irreps_in=num_heads * self.hidden_irreps, acts=num_heads * [gate],
         )
+        instructions_2 = [(i, i) for i in range(num_heads)] if num_heads > 1 else None
         self.linear_2 = Linear(
             irreps_in=num_heads * self.hidden_irreps,
             irreps_out=num_heads * irrep_out,
-            instructions=[(i, i) for i in range(num_heads)]
+            instructions=instructions_2,
             cueq_config=cueq_config
         )
 

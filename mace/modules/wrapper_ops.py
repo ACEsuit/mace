@@ -91,6 +91,7 @@ class Linear:
         irreps_out: o3.Irreps,
         shared_weights: bool = True,
         internal_weights: bool = True,
+        instructions: Optional[List] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         if (
@@ -99,6 +100,8 @@ class Linear:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_linear)
         ):
+            #TODO: Implement instructions for cuEquvariance
+            assert instructions is None, "cuEquivariance is currently not supported for multiheads"
             instance = cuet.Linear(
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -119,6 +122,7 @@ class Linear:
             irreps_out,
             shared_weights=shared_weights,
             internal_weights=internal_weights,
+            instructions=instructions,
         )
 
 
