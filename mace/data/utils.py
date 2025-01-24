@@ -195,12 +195,8 @@ def config_from_atoms(
         # dipoles_weight = 0.0
     if bec is None:
         bec = np.zeros(np.shape(atoms.positions),3,3)
-    else:
-        bec = bec.reshape(-1,3,3)
     if polarisability is None:
         polarisability = np.zeros(3,3)
-    else:
-        polarisability = polarisability.reshape(3,3)
     if electric_field is None:
         electric_field = np.zeros(np.shape(atoms.positions),3)
 

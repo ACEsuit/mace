@@ -97,7 +97,7 @@ class AtomicData(torch_geometric.data.Data):
         assert charges is None or charges.shape == (num_nodes,)
         assert electric_field is None or electric_field.shape[-1] == 3
         assert bec is None or bec.shape == (num_nodes, 3, 3)
-        assert polarisability is None or polarisability.shape == (num_nodes, 3, 3)
+        assert polarisability is None or polarisability.shape == (1, 3, 3)
         assert bec_weight is None or len(bec_weight.shape) == 0
         assert polarisability_weight is None or len(polarisability_weight.shape) == 0
         # Aggregate data
@@ -230,12 +230,14 @@ class AtomicData(torch_geometric.data.Data):
             else None
         )
         bec = (
-            torch.tensor(config.bec, dtype=torch.get_default_dtype())
+            voigt_to_matrix(
+                torch.tensor(config.bec, dtype=torch.get_default_dtype())
+            ).unsqueeze(0)
             if config.bec is not None
             else None
         )
         polarisability = (
-            torch.tensor(config.polarisability, dtype=torch.get_default_dtype())
+            torch.tensor(config.polarisability.reshape(-1,3,3), dtype=torch.get_default_dtype())
             if config.polarisability is not None
             else None
         )
