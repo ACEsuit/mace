@@ -156,7 +156,7 @@ def config_from_atoms(
     dipole = atoms.info.get(dipole_key, None)  # Debye
     bec = atoms.arrays.get(bec_key, None)  # |e|
     polarisability = atoms.info.get(polarisability_key, None)  # tbc
-    electric_field = atoms.arrays.get(electric_field_key, None)  # eV/Angstrom
+    electric_field = atoms.info.get(electric_field_key, None)  # eV/Angstrom
     # Charges default to 0 instead of None if not found
     charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
     atomic_numbers = np.array(
@@ -198,7 +198,7 @@ def config_from_atoms(
     if polarisability is None:
         polarisability = np.zeros(3,3)
     if electric_field is None:
-        electric_field = np.zeros(np.shape(atoms.positions),3)
+        electric_field = np.zeros(3)
 
     return Configuration(
         atomic_numbers=atomic_numbers,
@@ -253,7 +253,7 @@ def load_from_xyz(
     dipole_key: str = "REF_dipole",
     charges_key: str = "REF_charges",
     bec_key: str = "REF_bec",
-    polarizability_key: str = "REF_polarizability",
+    polarisability_key: str = "REF_polarisability",
     electric_field_key: str = "REF_electric_field",
     head_key: str = "head",
     head_name: str = "Default",
