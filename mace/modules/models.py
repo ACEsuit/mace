@@ -398,8 +398,13 @@ class ScaleShiftMACE(MACE):
             edge_index=data["edge_index"],
             shifts=data["shifts"],
         )
-        edge_attrs = self.spherical_harmonics(vectors)
-        edge_attrs_el = self.spherical_harmonics(data["electric_field"])
+        electric_field = data["electric_field"]
+        edge_attrs = self.spherical_harmonics(vectors) # [nedges, nsh]
+        edge_attrs_el = self.spherical_harmonics(electric_field) # [ngraphs, nsh]
+
+        edge_src = data["edge_index"][0]
+        _, num_edges = torch.unique(data["batch"][edge_src], return_counts=True)
+        edge_attrs_el = edge_attrs_el.repeat_interleave(num_edges, axis=0)
         edge_attrs = torch.concat([edge_attrs, edge_attrs_el], axis=1)
 
         edge_feats = self.radial_embedding(
@@ -459,7 +464,7 @@ class ScaleShiftMACE(MACE):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
             compute_hessian=compute_hessian,
-            compute_electric_field=compute_field,
+            compute_field=compute_field,
         )
         output = {
             "energy": total_energy,
