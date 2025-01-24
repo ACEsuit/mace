@@ -78,6 +78,7 @@ def compute_forces_virials_field(
     training: bool = True,
     compute_stress: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
 
     forces, virials, polarisation = torch.autograd.grad(
@@ -100,45 +101,24 @@ def compute_forces_virials_field(
     if virials is None:
         virials = torch.zeros((1, 3, 3))
 
-    becs = []
-    polarisabilities = []
-    for i in range(3):
-        bec, polarisability = torch.autograd.grad(
-            outputs=[polarisation[:, i]],  # [n_graphs, 3]
-            inputs=[positions, electric_field],  # [n_nodes, 3] [n_graphs, 3]
-            grad_outputs=[torch.ones_like(polarisation[:, i])],
-            retain_graph=True,
-            create_graph=training,
-            allow_unused=False,
-        )
-        becs.append(bec)
-        polarisabilities.append(polarisability)
-    bec = torch.stack(becs, axis=1)
-    polarisability = torch.stack(polarisabilities, axis=1)
+    bec = []
+    polarisability = []
+    for d in range(3):
+        bec_d, polarisability_d = torch.autograd.grad(
+            outputs=[polarisation[:,d]],  # [n_graphs, ]
+            inputs=[positions, electric_field],  # [n_nodes, 3]
+            grad_outputs=[torch.ones_like(polarisation[:,d])],
+            retain_graph=True,  # Make sure the graph is not destroyed during training
+            create_graph=True,  # Create graph for second derivative
+            allow_unused=True,
+            )
+        bec.append(bec_d)
+        polarisability.append(polarisability_d)
+
+    bec = torch.stack(bec, dim=1)
+    polarisability = torch.stack(polarisability, dim=1)
     # print(polarisability)
     return -1 * forces, -1 * virials, stress, polarisation, -1 * bec, -1 * polarisability
-
-def get_pol_hessians(
-    energy: torch.Tensor,
-    electric_field: torch.Tensor,
-):
-    def jacobian(y, x, create_graph=False):                                                               
-        jac = []                                                                                          
-        flat_y = y.reshape(-1)                                                                            
-        grad_y = torch.zeros_like(flat_y)                                                                 
-        for i in range(len(flat_y)):                                                                      
-            grad_y[i] = 1.                                                                                
-            grad_x, = torch.autograd.grad(flat_y, x, grad_y, retain_graph=True, create_graph=create_graph)
-            jac.append(grad_x.reshape(x.shape))                                                           
-            grad_y[i] = 0.                                                                                
-        return torch.stack(jac).reshape(y.shape + x.shape)                                                
-                                                                                                        
-    def hessian(y, x):                                                                                    
-        return jacobian(jacobian(y, x, create_graph=True), x)                                             
-                                                                                                        
-                                                                                                      
-    return hessian(energy, x)
-
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
