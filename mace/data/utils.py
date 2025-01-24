@@ -23,6 +23,9 @@ Virials = np.ndarray  # [6, ], [3,3], [9, ]
 Charges = np.ndarray  # [..., 1]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
+Electric_field = np.ndarray  # [,3]
+Bec = np.ndarray
+Polarisability = np.ndarray
 
 DEFAULT_CONFIG_TYPE = "Default"
 DEFAULT_CONFIG_TYPE_WEIGHTS = {DEFAULT_CONFIG_TYPE: 1.0}
@@ -40,6 +43,9 @@ class Configuration:
     charges: Optional[Charges] = None  # atomic unit
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
+    electric_field: Optional[Electric_field] = None # eV/Angstrom
+    bec: Optional[Bec] = None # |e|
+    polarisability: Optional[Polarisability] = None # tbc
 
     weight: float = 1.0  # weight of config in loss
     energy_weight: float = 1.0  # weight of config energy in loss
@@ -48,6 +54,8 @@ class Configuration:
     virials_weight: float = 1.0  # weight of config virial in loss
     config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
     head: Optional[str] = "Default"  # head used to compute the config
+    bec_weight: float = 1.0  # weight of config bec in loss
+    polarisability_weight: float = 1.0  # weight of config polarisability in loss
 
 
 Configurations = List[Configuration]
@@ -93,6 +101,9 @@ def config_from_atoms_list(
     dipole_key="REF_dipole",
     charges_key="REF_charges",
     head_key="head",
+    bec_key="REF_bec",
+    polarisability_key="REF_polarisability",
+    electric_field_key="REF_electric_field",
     config_type_weights: Optional[Dict[str, float]] = None,
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -111,6 +122,9 @@ def config_from_atoms_list(
                 dipole_key=dipole_key,
                 charges_key=charges_key,
                 head_key=head_key,
+                bec_key=bec_key,
+                polarisability_key=polarisability_key,
+                electric_field_key=electric_field_key,
                 config_type_weights=config_type_weights,
             )
         )
@@ -125,6 +139,9 @@ def config_from_atoms(
     virials_key="REF_virials",
     dipole_key="REF_dipole",
     charges_key="REF_charges",
+    bec_key="REF_bec",
+    polarisability_key="REF_polarisability",
+    electric_field_key="REF_electric_field",
     head_key="head",
     config_type_weights: Optional[Dict[str, float]] = None,
 ) -> Configuration:
@@ -137,6 +154,9 @@ def config_from_atoms(
     stress = atoms.info.get(stress_key, None)  # eV / Ang ^ 3
     virials = atoms.info.get(virials_key, None)
     dipole = atoms.info.get(dipole_key, None)  # Debye
+    bec = atoms.arrays.get(bec_key, None)  # |e|
+    polarisability = atoms.info.get(polarisability_key, None)  # tbc
+    electric_field = atoms.arrays.get(electric_field_key, None)  # eV/Angstrom
     # Charges default to 0 instead of None if not found
     charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
     atomic_numbers = np.array(
@@ -152,6 +172,8 @@ def config_from_atoms(
     forces_weight = atoms.info.get("config_forces_weight", 1.0)
     stress_weight = atoms.info.get("config_stress_weight", 1.0)
     virials_weight = atoms.info.get("config_virials_weight", 1.0)
+    bec_weight = atoms.info.get("config_bec_weight", 1.0)
+    polarisability_weight = atoms.info.get("config_polarisability_weight", 1.0)
 
     head = atoms.info.get(head_key, "Default")
 
@@ -171,6 +193,16 @@ def config_from_atoms(
     if dipole is None:
         dipole = np.zeros(3)
         # dipoles_weight = 0.0
+    if bec is None:
+        bec = np.zeros(np.shape(atoms.positions),3,3)
+    else:
+        bec = bec.reshape(-1,3,3)
+    if polarisability is None:
+        polarisability = np.zeros(3,3)
+    else:
+        polarisability = polarisability.reshape(3,3)
+    if electric_field is None:
+        electric_field = np.zeros(np.shape(atoms.positions),3)
 
     return Configuration(
         atomic_numbers=atomic_numbers,
@@ -183,10 +215,15 @@ def config_from_atoms(
         charges=charges,
         weight=weight,
         head=head,
+        bec=bec,
+        polarisability=polarisability,
+        electric_field=electric_field,
         energy_weight=energy_weight,
         forces_weight=forces_weight,
         stress_weight=stress_weight,
         virials_weight=virials_weight,
+        bec_weight=bec_weight,
+        polarisability_weight=polarisability_weight,
         config_type=config_type,
         pbc=pbc,
         cell=cell,
@@ -357,6 +394,11 @@ def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
             grp["dipole"] = data.dipole
             grp["charges"] = data.charges
             grp["head"] = data.head
+            grp["bec"] = data.bec
+            grp["polarisability"] = data.polarisability
+            grp["electric_field"] = data.electric_field
+            grp["bec_weight"] = data.bec_weight
+            grp["polarisability_weight"] = data.polarisability_weight
 
 
 def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
@@ -380,6 +422,11 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["dipole"] = data.dipole
     grp["charges"] = data.charges
     grp["head"] = data.head
+    grp["bec"] = data.bec
+    grp["polarisability"] = data.polarisability
+    grp["electric_field"] = data.electric_field
+    grp["bec_weight"] = data.bec_weight
+    grp["polarisability_weight"] = data.polarisability_weight
 
 
 def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> None:
@@ -404,6 +451,11 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         subgroup["stress_weight"] = write_value(config.stress_weight)
         subgroup["virials_weight"] = write_value(config.virials_weight)
         subgroup["config_type"] = write_value(config.config_type)
+        subgroup["bec"] = write_value(config.bec)
+        subgroup["polarisability"] = write_value(config.polarisability)
+        subgroup["electric_field"] = write_value(config.electric_field)
+        subgroup["bec_weight"] = write_value(config.bec_weight)
+        subgroup["polarisability_weight"] = write_value(config.polarisability_weight)
 
 
 def write_value(value):
