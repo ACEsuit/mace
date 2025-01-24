@@ -306,7 +306,7 @@ class UniversalLoss(torch.nn.Module):
 class UniversalFieldLoss(torch.nn.Module):
     def __init__(
         self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01,
-    bec_weight=10.0, polarisability_weight=1000.0) -> None:
+    bec_weight=1.0, polarisability_weight=1.0) -> None:
         super().__init__()
         self.huber_delta = huber_delta
         self.huber_loss = torch.nn.HuberLoss(reduction="mean", delta=huber_delta)
