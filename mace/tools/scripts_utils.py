@@ -46,6 +46,8 @@ def get_dataset_from_xyz(
     virials_key: str = "virials",
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
+    bec_key: str = "bec",
+    polarisability_key: str = "polarisability",
     head_key: str = "head",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
@@ -58,6 +60,8 @@ def get_dataset_from_xyz(
         virials_key=virials_key,
         dipole_key=dipole_key,
         charges_key=charges_key,
+        bec_key=bec_key,
+        polarisability_key=polarisability_key,
         head_key=head_key,
         extract_atomic_energies=True,
         keep_isolated_atoms=keep_isolated_atoms,
@@ -76,6 +80,8 @@ def get_dataset_from_xyz(
             virials_key=virials_key,
             dipole_key=dipole_key,
             charges_key=charges_key,
+            bec_key=bec_key,
+            polarisability_key=polarisability_key,
             head_key=head_key,
             extract_atomic_energies=False,
             head_name=head_name,
@@ -103,6 +109,8 @@ def get_dataset_from_xyz(
             stress_key=stress_key,
             virials_key=virials_key,
             charges_key=charges_key,
+            bec_key=bec_key,
+            polarisability_key=polarisability_key,
             head_key=head_key,
             extract_atomic_energies=False,
             head_name=head_name,
@@ -518,6 +526,15 @@ def get_loss_fn(
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
         )
+    elif args.loss == "universal_field":
+        loss_fn = modules.UniversalFieldLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            huber_delta=args.huber_delta,
+            bec_weight=args.bec_weight,
+            polarisability_weight=args.polarisability_weight,
+        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
@@ -592,6 +609,18 @@ def get_swa(
         )
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
+        )
+    elif args.loss == "universal_field":
+        loss_fn_energy = modules.UniversalFieldLoss(
+            energy_weight=args.swa_energy_weight,
+            forces_weight=args.swa_forces_weight,
+            stress_weight=args.swa_stress_weight,
+            huber_delta=args.huber_delta,
+            bec_weight=args.swa_bec_weight,
+            polarisability_weight=args.swa_polarisability_weight,
+        )
+        logging.info(
+            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight}, BEC weight : {args.swa_bec_weight}, polarisability weight : {args.swa_polarisability_weight} and learning rate : {args.swa_lr}"
         )
     else:
         loss_fn_energy = modules.WeightedEnergyForcesLoss(
