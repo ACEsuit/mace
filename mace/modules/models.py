@@ -105,6 +105,10 @@ class MACE(torch.nn.Module):
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
+        sh_irreps_el = sh_irreps + sh_irreps
+        # might need to simplify
+        # sh_irreps_el = sh_irreps_el.sort().irreps.simplify()
+
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
         # Interactions and readout
@@ -113,7 +117,7 @@ class MACE(torch.nn.Module):
         inter = interaction_cls_first(
             node_attrs_irreps=node_attr_irreps,
             node_feats_irreps=node_feats_irreps,
-            edge_attrs_irreps=sh_irreps,
+            edge_attrs_irreps=sh_irreps_el,
             edge_feats_irreps=edge_feats_irreps,
             target_irreps=interaction_irreps,
             hidden_irreps=hidden_irreps,
@@ -156,7 +160,7 @@ class MACE(torch.nn.Module):
             inter = interaction_cls(
                 node_attrs_irreps=node_attr_irreps,
                 node_feats_irreps=hidden_irreps,
-                edge_attrs_irreps=sh_irreps,
+                edge_attrs_irreps=sh_irreps_el,
                 edge_feats_irreps=edge_feats_irreps,
                 target_irreps=interaction_irreps,
                 hidden_irreps=hidden_irreps_out,
@@ -348,6 +352,7 @@ class ScaleShiftMACE(MACE):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
+        compute_field: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
@@ -394,6 +399,9 @@ class ScaleShiftMACE(MACE):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
+        edge_attrs_el = self.spherical_harmonics(data["electric_field"])
+        edge_attrs = torch.concat([edge_attrs, edge_attrs_el], axis=1)
+
         edge_feats = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
@@ -440,9 +448,10 @@ class ScaleShiftMACE(MACE):
         # Add E_0 and (scaled) interaction energy
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
-        forces, virials, stress, hessian = get_outputs(
+        forces, virials, stress, hessian, polarisation, bec, polarisability = get_outputs(
             energy=inter_e,
             positions=data["positions"],
+            electric_field=data["electric_field"],
             displacement=displacement,
             cell=data["cell"],
             training=training,
@@ -450,6 +459,7 @@ class ScaleShiftMACE(MACE):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
             compute_hessian=compute_hessian,
+            compute_electric_field=compute_field,
         )
         output = {
             "energy": total_energy,
@@ -459,6 +469,9 @@ class ScaleShiftMACE(MACE):
             "virials": virials,
             "stress": stress,
             "hessian": hessian,
+            "polarisation": polarisation,
+            "bec": bec,
+            "polarisability": polarisability,
             "displacement": displacement,
             "node_feats": node_feats_out,
         }
