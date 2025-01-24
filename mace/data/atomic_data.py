@@ -42,6 +42,11 @@ class AtomicData(torch_geometric.data.Data):
     forces_weight: torch.Tensor
     stress_weight: torch.Tensor
     virials_weight: torch.Tensor
+    electric_field: torch.Tensor
+    bec: torch.Tensor
+    polarisability: torch.Tensor
+    bec_weight: torch.Tensor
+    polarisability_weight: torch.Tensor
 
     def __init__(
         self,
@@ -63,6 +68,11 @@ class AtomicData(torch_geometric.data.Data):
         virials: Optional[torch.Tensor],  # [1,3,3]
         dipole: Optional[torch.Tensor],  # [, 3]
         charges: Optional[torch.Tensor],  # [n_nodes, ]
+        electric_field: Optional[torch.Tensor],  #[,3]
+        bec: Optional[torch.Tensor], #[n_nodes,3,3]
+        polarisability: Optional[torch.Tensor], #[,3,3]
+        bec_weight: Optional[torch.Tensor], #[,]
+        polarisability_weight: Optional[torch.Tensor] #[,]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -85,6 +95,11 @@ class AtomicData(torch_geometric.data.Data):
         assert virials is None or virials.shape == (1, 3, 3)
         assert dipole is None or dipole.shape[-1] == 3
         assert charges is None or charges.shape == (num_nodes,)
+        assert electric_field is None or electric_field.shape[-1] == 3
+        assert bec is None or bec.shape == (num_nodes, 3, 3)
+        assert polarisability is None or polarisability.shape == (num_nodes, 3, 3)
+        assert bec_weight is None or len(bec_weight.shape) == 0
+        assert polarisability_weight is None or len(polarisability_weight.shape) == 0
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -106,6 +121,11 @@ class AtomicData(torch_geometric.data.Data):
             "virials": virials,
             "dipole": dipole,
             "charges": charges,
+            "electric_field": electric_field,
+            "bec": bec,
+            "polarisability": polarisability,
+            "bec_weight": bec_weight,
+            "polarisability_weight": polarisability_weight
         }
         super().__init__(**data)
 
@@ -204,6 +224,31 @@ class AtomicData(torch_geometric.data.Data):
             if config.charges is not None
             else None
         )
+        electric_field = (
+            torch.tensor(config.electric_field, dtype=torch.get_default_dtype())
+            if config.electric_field is not None
+            else None
+        )
+        bec = (
+            torch.tensor(config.bec, dtype=torch.get_default_dtype())
+            if config.bec is not None
+            else None
+        )
+        polarisability = (
+            torch.tensor(config.polarisability, dtype=torch.get_default_dtype())
+            if config.polarisability is not None
+            else None
+        )
+        bec_weight = (
+            torch.tensor(config.bec_weight, dtype=torch.get_default_dtype())
+            if config.bec_weight is not None
+            else 1
+        )
+        polarisability_weight = (
+            torch.tensor(config.polarisability_weight, dtype=torch.get_default_dtype())
+            if config.polarisability_weight is not None
+            else 1
+        )
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
@@ -224,6 +269,11 @@ class AtomicData(torch_geometric.data.Data):
             virials=virials,
             dipole=dipole,
             charges=charges,
+            electric_field=electric_field,
+            bec=bec,
+            polarisability=polarisability,
+            bec_weight=bec_weight,
+            polarisability_weight=polarisability_weight
         )
 
 
