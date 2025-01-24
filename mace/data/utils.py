@@ -336,6 +336,9 @@ def load_from_xyz(
         dipole_key=dipole_key,
         charges_key=charges_key,
         head_key=head_key,
+        bec_key=bec_key,
+        polarisability_key=polarisability_key,
+        electric_field_key=electric_field_key
     )
     return atomic_energies_dict, configs
 
