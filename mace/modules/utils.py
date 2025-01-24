@@ -69,7 +69,6 @@ def compute_forces_virials(
 
     return -1 * forces, -1 * virials, stress
 
-@torch.jit.unused
 def compute_forces_virials_field(
     energy: torch.Tensor,
     positions: torch.Tensor,
@@ -79,7 +78,9 @@ def compute_forces_virials_field(
     training: bool = True,
     compute_stress: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+
     forces, virials, polarisation = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions, displacement, electric_field],  # [n_nodes, 3]
@@ -100,20 +101,22 @@ def compute_forces_virials_field(
     if virials is None:
         virials = torch.zeros((1, 3, 3))
 
-    # grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(polarisation)]
-    # print("pol", polarisation.shape)
-    # print("el", electric_field.shape)
-    # print("pos", positions.shape)
-    bec, polarisability = torch.autograd.grad(
-        outputs=[polarisation],  # [n_graphs, 3]
-        inputs=[positions, electric_field],  # [n_nodes, 3] [n_graphs, 3]
-        grad_outputs=grad_outputs,
-        retain_graph=training,  # Make sure the graph is not destroyed during training
-        create_graph=training,  # Create graph for second derivative
-        allow_unused=True,
-    )
-    print("bec", bec.shape)
-    print("polarisability", polarisability.shape)
+    bec = []
+    polarisability = []
+    for d in range(3):
+        bec_d, polarisability_d = torch.autograd.grad(
+            outputs=[polarisation[:,d]],  # [n_graphs, ]
+            inputs=[positions, electric_field],  # [n_nodes, 3]
+            grad_outputs=[torch.ones_like(polarisation[:,d])],
+            retain_graph=True,  # Make sure the graph is not destroyed during training
+            create_graph=True,  # Create graph for second derivative
+            allow_unused=True,
+            )
+        bec.append(bec_d)
+        polarisability.append(polarisability_d)
+
+    bec = torch.stack(bec, dim=1)
+    polarisability = torch.stack(polarisability, dim=1)
 
     return -1 * forces, -1 * virials, stress, polarisation, bec, polarisability
 
