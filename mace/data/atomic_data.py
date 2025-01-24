@@ -225,14 +225,13 @@ class AtomicData(torch_geometric.data.Data):
             else None
         )
         electric_field = (
-            torch.tensor(config.electric_field, dtype=torch.get_default_dtype())
+            torch.tensor(config.electric_field, dtype=torch.get_default_dtype()).unsqueeze(0)
             if config.electric_field is not None
             else None
         )
         bec = (
-            voigt_to_matrix(
-                torch.tensor(config.bec, dtype=torch.get_default_dtype())
-            ).unsqueeze(0)
+            torch.concat([voigt_to_matrix(torch.tensor(b, dtype=torch.get_default_dtype())).unsqueeze(0)
+             for b in config.bec])
             if config.bec is not None
             else None
         )

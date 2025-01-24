@@ -69,39 +69,53 @@ def compute_forces_virials(
 
     return -1 * forces, -1 * virials, stress
 
-def compute_fields(
+@torch.jit.unused
+def compute_forces_virials_field(
     energy: torch.Tensor,
     positions: torch.Tensor,
+    displacement: torch.Tensor,
     electric_field: torch.Tensor,
+    cell: torch.Tensor,
     training: bool = True,
+    compute_stress: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
-    polarisation = torch.autograd.grad(
+    forces, virials, polarisation = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
-        inputs=[electric_field],  # [n_nodes, 3]
+        inputs=[positions, displacement, electric_field],  # [n_nodes, 3]
         grad_outputs=grad_outputs,
-        retain_graph=training,  # Make sure the graph is not destroyed during training
-        create_graph=training,  # Create graph for second derivative
+        retain_graph=True,  # Make sure the graph is not destroyed during training
+        create_graph=True,  # Create graph for second derivative
         allow_unused=True,
     )
-    bec = torch.autograd.grad(
-        outputs=[polarisation],  # [n_graphs, 3]
-        inputs=[positions],  # [n_nodes, 3, 3]
-        grad_outputs=grad_outputs,
-        retain_graph=training,  # Make sure the graph is not destroyed during training
-        create_graph=training,  # Create graph for second derivative
-        allow_unused=True,
-    )
-    polarisability = torch.autograd.grad(
-        outputs=[polarisation],  # [n_graphs, 3]
-        inputs=[electric_field],  # [n_nodes, 3, 3]
-        grad_outputs=grad_outputs,
-        retain_graph=training,  # Make sure the graph is not destroyed during training
-        create_graph=training,  # Create graph for second derivative
-        allow_unused=True,
-    )
-    return polarisation, bec, polarisability
 
+    stress = torch.zeros_like(displacement)
+    if compute_stress and virials is not None:
+        cell = cell.view(-1, 3, 3)
+        volume = torch.linalg.det(cell).abs().unsqueeze(-1)
+        stress = virials / volume.view(-1, 1, 1)
+        stress = torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
+    if forces is None:
+        forces = torch.zeros_like(positions)
+    if virials is None:
+        virials = torch.zeros((1, 3, 3))
+
+    # grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(polarisation)]
+    # print("pol", polarisation.shape)
+    # print("el", electric_field.shape)
+    # print("pos", positions.shape)
+    bec, polarisability = torch.autograd.grad(
+        outputs=[polarisation],  # [n_graphs, 3]
+        inputs=[positions, electric_field],  # [n_nodes, 3] [n_graphs, 3]
+        grad_outputs=grad_outputs,
+        retain_graph=training,  # Make sure the graph is not destroyed during training
+        create_graph=training,  # Create graph for second derivative
+        allow_unused=True,
+    )
+    print("bec", bec.shape)
+    print("polarisability", polarisability.shape)
+
+    return -1 * forces, -1 * virials, stress, polarisation, bec, polarisability
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
@@ -215,7 +229,17 @@ def get_outputs(
     Optional[torch.Tensor],
     Optional[torch.Tensor],
 ]:
-    if (compute_virials or compute_stress) and displacement is not None:
+    if compute_field and electric_field is not None:
+        forces, virials, stress, polarisation, bec, polarisability = compute_forces_virials_field(
+            energy=energy,
+            positions=positions,
+            displacement=displacement,
+            electric_field=electric_field,
+            cell=cell,
+            training=(training or compute_hessian),
+            compute_stress=compute_stress,
+        )
+    elif (compute_virials or compute_stress) and displacement is not None:
         forces, virials, stress = compute_forces_virials(
             energy=energy,
             positions=positions,
@@ -224,6 +248,7 @@ def get_outputs(
             compute_stress=compute_stress,
             training=(training or compute_hessian),
         )
+    
     elif compute_force:
         forces, virials, stress = (
             compute_forces(
@@ -241,16 +266,6 @@ def get_outputs(
         hessian = compute_hessians_vmap(forces, positions)
     else:
         hessian = None
-
-    if compute_field:
-        polarisation, bec, polarisability = compute_fields(
-            energy=energy,
-            positions=positions,
-            electric_field=electric_field,
-            training=(training or compute_hessian),
-        )
-    else:
-        polarisation, bec, polarisability = (None, None, None)
 
     return forces, virials, stress, hessian, polarisation, bec, polarisability
 

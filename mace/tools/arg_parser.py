@@ -466,10 +466,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="REF_bec",
     )
     parser.add_argument(
-        "--polarisation_key",
-        help="Key of polarisation in training xyz",
+        "--polarisability_key",
+        help="Key of polarisability in training xyz",
         type=str,
-        default="REF_polarisation",
+        default="REF_polarisability",
     )
     parser.add_argument(
         "--electric_field_key",
@@ -888,6 +888,24 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="Key of atomic charges in training xyz",
         type=str,
         default="REF_charges",
+    )
+    parser.add_argument(
+        "--bec_key",
+        help="Key of BEC in training xyz",
+        type=str,
+        default="REF_bec",
+    )
+    parser.add_argument(
+        "--polarisability_key",
+        help="Key of polarisability in training xyz",
+        type=str,
+        default="REF_polarisability",
+    )
+    parser.add_argument(
+        "--electric_field_key",
+        help="Key of electric field in training xyz",
+        type=str,
+        default="REF_electric_field",
     )
     parser.add_argument(
         "--atomic_numbers",

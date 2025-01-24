@@ -414,6 +414,7 @@ def evaluate(
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
+            compute_field=output_args["bec"],
         )
         avg_loss, aux = metrics(batch, output)
 

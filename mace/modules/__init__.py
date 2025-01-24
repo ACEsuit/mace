@@ -25,6 +25,7 @@ from .blocks import (
 from .loss import (
     DipoleSingleLoss,
     UniversalLoss,
+    UniversalFieldLoss,
     WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesLoss,
     WeightedEnergyForcesStressLoss,
@@ -104,6 +105,7 @@ __all__ = [
     "WeightedEnergyForcesDipoleLoss",
     "WeightedHuberEnergyForcesStressLoss",
     "UniversalLoss",
+    "UniversalFieldLoss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
