@@ -14,7 +14,7 @@ def configure_model(
     args, train_loader, atomic_energies, model_foundation=None, heads=None, z_table=None
 ):
     # Selecting outputs
-    compute_virials = args.loss in ("stress", "virials", "huber", "universal")
+    compute_virials = args.loss in ("stress", "virials", "huber", "universal", "universal_field")
     if compute_virials:
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
@@ -25,6 +25,8 @@ def configure_model(
         "virials": compute_virials,
         "stress": args.compute_stress,
         "dipoles": args.compute_dipole,
+        "bec": args.compute_field,
+        "polarisability": args.compute_field,
     }
     logging.info(
         f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"

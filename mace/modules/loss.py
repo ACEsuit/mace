@@ -302,6 +302,80 @@ class UniversalLoss(torch.nn.Module):
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
             f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f})"
         )
+    
+class UniversalFieldLoss(torch.nn.Module):
+    def __init__(
+        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01,
+    bec_weight=10.0, polarisability_weight=1000.0) -> None:
+        super().__init__()
+        self.huber_delta = huber_delta
+        self.huber_loss = torch.nn.HuberLoss(reduction="mean", delta=huber_delta)
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "stress_weight",
+            torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "bec_weight",
+            torch.tensor(bec_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "polarisability_weight",
+            torch.tensor(polarisability_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        num_atoms = ref.ptr[1:] - ref.ptr[:-1]
+        configs_stress_weight = ref.stress_weight.view(-1, 1, 1)  # [n_graphs, ]
+        configs_energy_weight = ref.energy_weight  # [n_graphs, ]
+        configs_forces_weight = torch.repeat_interleave(
+            ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
+        ).unsqueeze(-1)
+        configs_bec_weight = torch.repeat_interleave(
+            ref.bec_weight, ref.ptr[1:] - ref.ptr[:-1]
+        ).unsqueeze(-1).view(-1, 1, 1)         
+        configs_polarisability_weight = ref.polarisability_weight.view(-1, 1, 1) # [n_graphs, ]
+        return (
+            self.energy_weight
+            * self.huber_loss(
+                configs_energy_weight * ref["energy"] / num_atoms,
+                configs_energy_weight * pred["energy"] / num_atoms,
+            )
+            + self.forces_weight
+            * conditional_huber_forces(
+                configs_forces_weight * ref["forces"],
+                configs_forces_weight * pred["forces"],
+                huber_delta=self.huber_delta,
+            )
+            + self.stress_weight
+            * self.huber_loss(
+                configs_stress_weight * ref["stress"],
+                configs_stress_weight * pred["stress"],
+            )
+            + self.bec_weight 
+            * self.huber_loss(
+                configs_bec_weight * ref["bec"] / num_atoms,
+                configs_bec_weight * pred["bec"] / num_atoms,
+            )
+            + self.polarisability_weight
+            * self.huber_loss(
+                configs_polarisability_weight * ref["polarisability"] / num_atoms,
+                configs_polarisability_weight * pred["polarisability"] / num_atoms,
+            )
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f}) bec_weight={self.bec_weight:.3f}, polarisability_weight={self.polarisability_weight:.3f})"
+        )
 
 
 class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
@@ -351,7 +425,6 @@ class DipoleSingleLoss(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(" f"dipole_weight={self.dipole_weight:.3f})"
-
 
 class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
     def __init__(self, energy_weight=1.0, forces_weight=1.0, dipole_weight=1.0) -> None:

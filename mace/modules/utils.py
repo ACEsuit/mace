@@ -69,6 +69,39 @@ def compute_forces_virials(
 
     return -1 * forces, -1 * virials, stress
 
+def compute_fields(
+    energy: torch.Tensor,
+    positions: torch.Tensor,
+    electric_field: torch.Tensor,
+    training: bool = True,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+    polarisation = torch.autograd.grad(
+        outputs=[energy],  # [n_graphs, ]
+        inputs=[electric_field],  # [n_nodes, 3]
+        grad_outputs=grad_outputs,
+        retain_graph=training,  # Make sure the graph is not destroyed during training
+        create_graph=training,  # Create graph for second derivative
+        allow_unused=True,
+    )
+    bec = torch.autograd.grad(
+        outputs=[polarisation],  # [n_graphs, 3]
+        inputs=[positions],  # [n_nodes, 3, 3]
+        grad_outputs=grad_outputs,
+        retain_graph=training,  # Make sure the graph is not destroyed during training
+        create_graph=training,  # Create graph for second derivative
+        allow_unused=True,
+    )
+    polarisability = torch.autograd.grad(
+        outputs=[polarisation],  # [n_graphs, 3]
+        inputs=[electric_field],  # [n_nodes, 3, 3]
+        grad_outputs=grad_outputs,
+        retain_graph=training,  # Make sure the graph is not destroyed during training
+        create_graph=training,  # Create graph for second derivative
+        allow_unused=True,
+    )
+    return polarisation, bec, polarisability
+
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
@@ -168,12 +201,15 @@ def get_outputs(
     positions: torch.Tensor,
     displacement: Optional[torch.Tensor],
     cell: torch.Tensor,
+    electric_field: Optional[torch.Tensor] = None,
     training: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
     compute_hessian: bool = False,
+    compute_field: bool = False,
 ) -> Tuple[
+    Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
@@ -205,7 +241,18 @@ def get_outputs(
         hessian = compute_hessians_vmap(forces, positions)
     else:
         hessian = None
-    return forces, virials, stress, hessian
+
+    if compute_field:
+        polarisation, bec, polarisability = compute_fields(
+            energy=energy,
+            positions=positions,
+            electric_field=electric_field,
+            training=(training or compute_hessian),
+        )
+    else:
+        polarisation, bec, polarisability = (None, None, None)
+
+    return forces, virials, stress, hessian, polarisation, bec, polarisability
 
 
 def get_edge_vectors_and_lengths(
