@@ -457,7 +457,7 @@ class ScaleShiftMACE(MACE):
         forces, virials, stress, hessian, polarisation, bec, polarisability = get_outputs(
             energy=inter_e,
             positions=data["positions"],
-            electric_field=data["electric_field"],
+            electric_field=electric_field,
             displacement=displacement,
             cell=data["cell"],
             training=training,

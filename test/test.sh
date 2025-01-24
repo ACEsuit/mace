@@ -9,14 +9,15 @@ mace_run_train \
     --forces_weight=10.0 \
     --stress_weight=100.0 \
     --bec_weight=1.0 \
-    --polarisability_weight=10.0 \
+    --polarisability_weight=100.0 \
     --config_type_weights='{"Default":1.0}' \
     --E0s='average' \
     --model="ScaleShiftMACE" \
     --hidden_irreps='128x0e + 128x1o' \
     --loss="universal_field" \
     --r_max=5.0 \
-    --batch_size=10 \
+    --batch_size=2 \
+    --valid_batch_size=2 \
     --max_num_epochs=150 \
     --amsgrad \
     --restart_latest \

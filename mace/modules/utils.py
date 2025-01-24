@@ -69,7 +69,6 @@ def compute_forces_virials(
 
     return -1 * forces, -1 * virials, stress
 
-@torch.jit.unused
 def compute_forces_virials_field(
     energy: torch.Tensor,
     positions: torch.Tensor,
@@ -80,13 +79,14 @@ def compute_forces_virials_field(
     compute_stress: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+
     forces, virials, polarisation = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions, displacement, electric_field],  # [n_nodes, 3]
         grad_outputs=grad_outputs,
         retain_graph=True,  # Make sure the graph is not destroyed during training
         create_graph=True,  # Create graph for second derivative
-        allow_unused=True,
+        allow_unused=False,
     )
 
     stress = torch.zeros_like(displacement)
@@ -100,22 +100,45 @@ def compute_forces_virials_field(
     if virials is None:
         virials = torch.zeros((1, 3, 3))
 
-    # grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(polarisation)]
-    # print("pol", polarisation.shape)
-    # print("el", electric_field.shape)
-    # print("pos", positions.shape)
-    bec, polarisability = torch.autograd.grad(
-        outputs=[polarisation],  # [n_graphs, 3]
-        inputs=[positions, electric_field],  # [n_nodes, 3] [n_graphs, 3]
-        grad_outputs=grad_outputs,
-        retain_graph=training,  # Make sure the graph is not destroyed during training
-        create_graph=training,  # Create graph for second derivative
-        allow_unused=True,
-    )
-    print("bec", bec.shape)
-    print("polarisability", polarisability.shape)
+    becs = []
+    polarisabilities = []
+    for i in range(3):
+        bec, polarisability = torch.autograd.grad(
+            outputs=[polarisation[:, i]],  # [n_graphs, 3]
+            inputs=[positions, electric_field],  # [n_nodes, 3] [n_graphs, 3]
+            grad_outputs=[torch.ones_like(polarisation[:, i])],
+            retain_graph=True,
+            create_graph=training,
+            allow_unused=False,
+        )
+        becs.append(bec)
+        polarisabilities.append(polarisability)
+    bec = torch.stack(becs, axis=1)
+    polarisability = torch.stack(polarisabilities, axis=1)
+    # print(polarisability)
+    return -1 * forces, -1 * virials, stress, polarisation, -1 * bec, -1 * polarisability
 
-    return -1 * forces, -1 * virials, stress, polarisation, bec, polarisability
+def get_pol_hessians(
+    energy: torch.Tensor,
+    electric_field: torch.Tensor,
+):
+    def jacobian(y, x, create_graph=False):                                                               
+        jac = []                                                                                          
+        flat_y = y.reshape(-1)                                                                            
+        grad_y = torch.zeros_like(flat_y)                                                                 
+        for i in range(len(flat_y)):                                                                      
+            grad_y[i] = 1.                                                                                
+            grad_x, = torch.autograd.grad(flat_y, x, grad_y, retain_graph=True, create_graph=create_graph)
+            jac.append(grad_x.reshape(x.shape))                                                           
+            grad_y[i] = 0.                                                                                
+        return torch.stack(jac).reshape(y.shape + x.shape)                                                
+                                                                                                        
+    def hessian(y, x):                                                                                    
+        return jacobian(jacobian(y, x, create_graph=True), x)                                             
+                                                                                                        
+                                                                                                      
+    return hessian(energy, x)
+
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
