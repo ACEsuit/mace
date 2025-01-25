@@ -1,11 +1,15 @@
 from mace.data.atomic_data import AtomicData
 from mace.data.utils import Configuration, config_from_atoms
-from fairchem.core.datasets import AseDBDataset
 from torch.utils.data import Dataset
 from mace.tools.utils import AtomicNumberTable
 from ase.io.extxyz import save_calc_results
 import numpy as np
 import os
+
+try:
+    from fairchem.core.datasets import AseDBDataset
+except ImportError:
+    raise ImportError("Please install MACE with LMDB support: pip install mace[lmdb]")
 
 class LMDBDataset(Dataset):
     def __init__(self, file_path, r_max, z_table, **kwargs):

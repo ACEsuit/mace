@@ -1,6 +1,5 @@
 from .atomic_data import AtomicData
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
-from .lmdb_dataset import LMDBDataset
 from .neighborhood import get_neighborhood
 from .utils import (
     Configuration,
@@ -29,8 +28,13 @@ __all__ = [
     "compute_average_E0s",
     "save_dataset_as_HDF5",
     "HDF5Dataset",
-    "LMDBDataset",
     "dataset_from_sharded_hdf5",
     "save_AtomicData_to_HDF5",
     "save_configurations_as_HDF5",
 ]
+
+
+def _import_lmdb():
+    global LMDBDataset
+    from .lmdb_dataset import LMDBDataset 
+    __all__.append("LMDBDataset")
