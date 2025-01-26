@@ -326,7 +326,7 @@ pip install ./mace-freeze
 <!-- For bespoke MACE models, the initial model must have the same size as the transfer model, including the number of unique chemical elements present in the model. The elements do not have to be identical. 
 No such restriction applies to the MACE-MP models. -->
 
-Use the command line argument --freeze to freeze the layers from 1 to N inclusive. For example, this will freeze the first 5 layers:
+Use the command line argument `--freeze` to freeze the layers from 1 to N inclusive. For example, this will freeze the first 5 layers:
 
 ```sh
 --freeze=5
