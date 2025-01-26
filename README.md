@@ -346,7 +346,7 @@ For example, to freeze these parameters, use:
 ```
 `--freeze_par` takes integer values and works in the same manner as `--freeze`, freezing from 1 to N (if positive) or the last N (if negative).
 
-By default, mace-freeze assumes all layers are active, equating to `--freeze=0` or `--freeze_par=0`. 
+By default, MACE-freeze assumes all layers are active, equating to `--freeze=0` or `--freeze_par=0`. 
 `--freeze` and `--freeze_par` are not designed to be used in combination. If both arguments are stated, the model would take `--freeze`.
 If using MACE-freeze, please set `--multiheads_finetuning=False`. If using the multiheads finetuning method, please either set `--freeze=0`, or remove this argument from your training script. 
 
