@@ -575,6 +575,17 @@ def run(args: argparse.Namespace) -> None:
     logging.debug(model)
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
     logging.info("")
+
+    # change: log parameter tensor to check the layers are frozen
+    logging.info("===========CHECK FREEZE===========")
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            logging.info(f"Parameter: {name}, Active")
+        else:
+            logging.info(f"Parameter: {name}, Frozen")
+
+    logging.info("")
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
     logging.info(f"Batch size: {args.batch_size}")
