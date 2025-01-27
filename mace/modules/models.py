@@ -79,6 +79,7 @@ class MACE(torch.nn.Module):
         self.heads = heads
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
+
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -95,29 +96,34 @@ class MACE(torch.nn.Module):
             distance_transform=distance_transform,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
+        edge_feats_irreps_el = edge_feats_irreps + edge_feats_irreps
+        edge_feats_irreps = edge_feats_irreps_el.sort()[0].simplify()
+
         if pair_repulsion:
             self.pair_repulsion_fn = ZBLBasis(p=num_polynomial_cutoff)
             self.pair_repulsion = True
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
+
         sh_irreps_el = sh_irreps + sh_irreps
-        # might need to simplify
-        # sh_irreps_el = sh_irreps_el.sort().irreps.simplify()
+        sh_irreps = sh_irreps_el.sort()[0].simplify()
 
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
+
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
         inter = interaction_cls_first(
             node_attrs_irreps=node_attr_irreps,
             node_feats_irreps=node_feats_irreps,
-            edge_attrs_irreps=sh_irreps_el,
+            edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
             target_irreps=interaction_irreps,
             hidden_irreps=hidden_irreps,
@@ -160,7 +166,7 @@ class MACE(torch.nn.Module):
             inter = interaction_cls(
                 node_attrs_irreps=node_attr_irreps,
                 node_feats_irreps=hidden_irreps,
-                edge_attrs_irreps=sh_irreps_el,
+                edge_attrs_irreps=sh_irreps,
                 edge_feats_irreps=edge_feats_irreps,
                 target_irreps=interaction_irreps,
                 hidden_irreps=hidden_irreps_out,
@@ -206,9 +212,11 @@ class MACE(torch.nn.Module):
         compute_displacement: bool = False,
         compute_hessian: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
+        
         # Setup
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
+
         num_atoms_arange = torch.arange(data["positions"].shape[0])
         num_graphs = data["ptr"].numel() - 1
         node_heads = (
@@ -354,10 +362,12 @@ class ScaleShiftMACE(MACE):
         compute_hessian: bool = False,
         compute_field: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
+        
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
         data["electric_field"].requires_grad_(True)
+
         num_graphs = data["ptr"].numel() - 1
         num_atoms_arange = torch.arange(data["positions"].shape[0])
         node_heads = (
@@ -365,11 +375,13 @@ class ScaleShiftMACE(MACE):
             if "head" in data
             else torch.zeros_like(data["batch"])
         )
+
         displacement = torch.zeros(
             (num_graphs, 3, 3),
             dtype=data["positions"].dtype,
             device=data["positions"].device,
         )
+
         if compute_virials or compute_stress or compute_displacement:
             (
                 data["positions"],
@@ -388,6 +400,7 @@ class ScaleShiftMACE(MACE):
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
         ]
+
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
         )  # [n_graphs, num_heads]
@@ -400,6 +413,11 @@ class ScaleShiftMACE(MACE):
             shifts=data["shifts"],
         )
         electric_field = data["electric_field"]
+        electric_field_strength = torch.linalg.norm(electric_field, dim=-1, keepdim=True)
+
+        # Normalize electric field
+        electric_field = electric_field / (electric_field_strength + 1e-9)
+
         edge_attrs = self.spherical_harmonics(vectors) # [nedges, nsh]
         edge_attrs_el = self.spherical_harmonics(electric_field) # [ngraphs, nsh]
 
@@ -411,12 +429,24 @@ class ScaleShiftMACE(MACE):
         edge_feats = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+
+        electric_field_strength = electric_field_strength.repeat_interleave(
+            num_edges, axis=0
+        )
+
+        edge_feats_el = self.radial_embedding(
+            electric_field_strength, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
+
+        edge_feats = torch.concat([edge_feats, edge_feats_el], axis=1)
+
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
             )
         else:
             pair_node_energy = torch.zeros_like(node_e0)
+
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list = []

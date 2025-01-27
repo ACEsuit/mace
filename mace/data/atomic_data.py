@@ -230,7 +230,7 @@ class AtomicData(torch_geometric.data.Data):
             else None
         )
         # Add noise to electric field to avoid numerical issues
-        electric_field = electric_field + torch.randn_like(electric_field)
+        electric_field = electric_field + 1e-9 * torch.randn_like(electric_field)
         bec = (
             torch.concat([voigt_to_matrix(torch.tensor(b, dtype=torch.get_default_dtype())).unsqueeze(0)
              for b in config.bec])
