@@ -95,6 +95,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "DipoleRMSE",
             "DipoleMAE",
             "EnergyDipoleRMSE",
+            "PerAtomRMSEstressvirialsfield",
         ],
         default="PerAtomRMSE",
     )

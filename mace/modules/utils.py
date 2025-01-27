@@ -270,6 +270,13 @@ def get_outputs(
     else:
         hessian = None
 
+    # print("forces", forces[0])
+    # print("virials", virials[0])
+    # print("stress", stress[0])
+    # print("polarisation", polarisation[0])
+    # print("bec", bec[0])
+    # print("polarisability", polarisability[0])
+
     return forces, virials, stress, hessian, polarisation, bec, polarisability
 
 

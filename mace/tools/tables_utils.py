@@ -98,6 +98,16 @@ def create_error_table(
             "RMSE MU / mDebye / atom",
             "rel MU RMSE %",
         ]
+    elif table_type == "PerAtomRMSEstressvirialsfield":
+        table.field_names = [
+            "config_type",
+            "RMSE E / meV / atom",
+            "RMSE F / meV / A",
+            "relative F RMSE %",
+            "RMSE Stress (Virials) / meV / A (A^3)",
+            "RMSE BEC |e|",
+            "RMSE Polarisation tbc"
+        ]
 
     for name in sorted(all_data_loaders, key=custom_key):
         data_loader = all_data_loaders[name]
@@ -236,6 +246,18 @@ def create_error_table(
                     f"{metrics['rel_rmse_f']:8.1f}",
                     f"{metrics['rmse_mu_per_atom'] * 1000:8.1f}",
                     f"{metrics['rel_rmse_mu']:8.1f}",
+                ]
+            )
+        elif table_type == "PerAtomRMSEstressvirialsfield":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
+                    f"{metrics['rmse_f'] * 1000:8.1f}",
+                    f"{metrics['rel_rmse_f']:8.2f}",
+                    f"{metrics['rmse_stress'] * 1000:8.1f}",
+                    f"{metrics['rmse_bec'] * 1000:8.1f}",
+                    f"{metrics['rmse_polarisation'] * 1000:8.1f}",
                 ]
             )
     return table
