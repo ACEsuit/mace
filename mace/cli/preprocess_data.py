@@ -240,7 +240,7 @@ def run(args: argparse.Namespace):
             "avg_num_neighbors": avg_num_neighbors,
             "mean": mean,
             "std": std,
-            "atomic_numbers": str(z_table.zs),
+            "atomic_numbers": str([int(z) for z in z_table.zs]),
             "r_max": args.r_max,
         }
 
