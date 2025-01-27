@@ -215,6 +215,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_polynomial_cutoff: int,
         radial_type: str = "bessel",
         distance_transform: str = "None",
+        use_transformed_cutoff: bool = True,
     ):
         super().__init__()
         if radial_type == "bessel":
@@ -229,6 +230,8 @@ class RadialEmbeddingBlock(torch.nn.Module):
             self.distance_transform = SoftTransform()
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
         self.out_dim = num_bessel
+        if use_transformed_cutoff:
+            self.use_transformed_cutoff = True
 
     def forward(
         self,
@@ -237,11 +240,15 @@ class RadialEmbeddingBlock(torch.nn.Module):
         edge_index: torch.Tensor,
         atomic_numbers: torch.Tensor,
     ):
-        cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
+        cutoff_lengths = edge_lengths
         if hasattr(self, "distance_transform"):
             edge_lengths = self.distance_transform(
                 edge_lengths, node_attrs, edge_index, atomic_numbers
             )
+            if hasattr(self, "use_transformed_cutoff"):
+                cutoff_lengths = edge_lengths
+
+        cutoff = self.cutoff_fn(cutoff_lengths)  # [n_edges, 1]
         radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         return radial * cutoff  # [n_edges, n_basis]
 
