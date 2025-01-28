@@ -109,6 +109,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "BOTNet",
             "MACE",
             "ScaleShiftMACE",
+            "ScaleShiftFieldMACE",
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
             "EnergyDipolesMACE",
@@ -253,7 +254,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--compute_field",
-        help="Select True to BECs and polarisability",
+        help="Select True to compute polarisation, BECs and polarisability",
         type=str2bool,
         default=False,
     )
@@ -461,6 +462,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="REF_charges",
     )
     parser.add_argument(
+        "--polarisation_key",
+        help="Key of polarisation in training xyz",
+        type=str,
+        default="REF_polarisation",
+    )
+    parser.add_argument(
         "--bec_key",
         help="Key of born effective charges in training xyz",
         type=str,
@@ -551,6 +558,17 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         dest="swa_dipole_weight",
+    )
+    parser.add_argument(
+        "--polarisation_weight", help="weight of polarisation loss", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--swa_polarisation_weight",
+        "--stage_two_polarisation_weight",
+        help="weight of polarisation after starting Stage Two (previously called swa)",
+        type=float,
+        default=1.0,
+        dest="swa_polarisation_weight",
     )
     parser.add_argument(
         "--bec_weight", help="weight of bec loss", type=float, default=1.0
@@ -889,6 +907,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="Key of atomic charges in training xyz",
         type=str,
         default="REF_charges",
+    )
+    parser.add_argument(
+        "--polarisation_key",
+        help="Key of polarisation in training xyz",
+        type=str,
+        default="REF_polarisation",
     )
     parser.add_argument(
         "--bec_key",

@@ -47,6 +47,7 @@ def get_dataset_from_xyz(
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
     electric_field_key: str = "REF_electric_field",
+    polarisation_key: str = "REF_polarisation",
     bec_key: str = "REF_bec",
     polarisability_key: str = "REF_polarisability",
     head_key: str = "head",
@@ -62,6 +63,7 @@ def get_dataset_from_xyz(
         dipole_key=dipole_key,
         charges_key=charges_key,
         electric_field_key=electric_field_key,
+        polarisation_key=polarisation_key,
         bec_key=bec_key,
         polarisability_key=polarisability_key,
         head_key=head_key,
@@ -83,6 +85,7 @@ def get_dataset_from_xyz(
             dipole_key=dipole_key,
             charges_key=charges_key,
             electric_field_key=electric_field_key,
+            polarisation_key=polarisation_key,
             bec_key=bec_key,
             polarisability_key=polarisability_key,
             head_key=head_key,
@@ -113,6 +116,7 @@ def get_dataset_from_xyz(
             virials_key=virials_key,
             charges_key=charges_key,
             electric_field_key=electric_field_key,
+            polarisation_key=polarisation_key,
             bec_key=bec_key,
             polarisability_key=polarisability_key,
             head_key=head_key,
@@ -164,8 +168,8 @@ def print_git_commit():
 
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
-    if model.__class__.__name__ != "ScaleShiftMACE":
-        return {"error": "Model is not a ScaleShiftMACE model"}
+    if model.__class__.__name__ != "ScaleShiftMACE" or "ScaleShiftFieldMACE":
+        return {"error": "Model is not a ScaleShift(Field)MACE model"}
 
     def radial_to_name(radial_type):
         if radial_type == "BesselBasis":
@@ -405,7 +409,7 @@ def load_from_json(f: str, map_location: str = "cpu") -> torch.nn.Module:
     model_jit_load = torch.jit.load(
         f, _extra_files=extra_files_extract, map_location=map_location
     )
-    model_load_yaml = modules.ScaleShiftMACE(
+    model_load_yaml = modules.ScaleShiftFieldMACE(
         **convert_from_json_format(json.loads(extra_files_extract["config.json"]))
     )
     model_load_yaml.load_state_dict(model_jit_load.state_dict())
@@ -536,6 +540,7 @@ def get_loss_fn(
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
+            polarisation_weight=args.polarisation_weight,
             bec_weight=args.bec_weight,
             polarisability_weight=args.polarisability_weight,
         )
@@ -620,6 +625,7 @@ def get_swa(
             forces_weight=args.swa_forces_weight,
             stress_weight=args.swa_stress_weight,
             huber_delta=args.huber_delta,
+            polarisation_weight=args.swa_polarisation_weight,
             bec_weight=args.swa_bec_weight,
             polarisability_weight=args.swa_polarisability_weight,
         )

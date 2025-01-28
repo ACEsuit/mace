@@ -40,6 +40,7 @@ from .models import (
     EnergyDipolesMACE,
     ScaleShiftBOTNet,
     ScaleShiftMACE,
+    ScaleShiftFieldMACE
 )
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
@@ -93,6 +94,7 @@ __all__ = [
     "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
+    "ScaleShiftFieldMACE",
     "BOTNet",
     "ScaleShiftBOTNet",
     "AtomicDipolesMACE",

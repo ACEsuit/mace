@@ -184,6 +184,7 @@ def run(args: argparse.Namespace):
         dipole_key=args.dipole_key,
         charges_key=args.charges_key,
         electric_field_key=args.electric_field_key,
+        polarisation_key=args.polarisation_key,
         bec_key=args.bec_key,
         polarisability_key=args.polarisability_key,
     )

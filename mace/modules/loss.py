@@ -305,11 +305,11 @@ class UniversalLoss(torch.nn.Module):
     
 class UniversalFieldLoss(torch.nn.Module):
     def __init__(
-        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01,
-    bec_weight=1.0, polarisability_weight=1.0) -> None:
+        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01, polarisation_weight=1.0, bec_weight=1.0, polarisability_weight=1.0) -> None:
         super().__init__()
         self.huber_delta = huber_delta
         self.huber_loss = torch.nn.HuberLoss(reduction="mean", delta=huber_delta)
+
         self.register_buffer(
             "energy_weight",
             torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
@@ -321,6 +321,10 @@ class UniversalFieldLoss(torch.nn.Module):
         self.register_buffer(
             "stress_weight",
             torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "polarisation_weight",
+            torch.tensor(polarisation_weight, dtype=torch.get_default_dtype()),
         )
         self.register_buffer(
             "bec_weight",
@@ -335,15 +339,22 @@ class UniversalFieldLoss(torch.nn.Module):
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
         configs_stress_weight = ref.stress_weight.view(-1, 1, 1)  # [n_graphs, ]
         configs_energy_weight = ref.energy_weight  # [n_graphs, ]
+
         configs_forces_weight = torch.repeat_interleave(
             ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
         ).unsqueeze(-1)
+
+        configs_polarisation_weight = ref.polarisation_weight.view(-1, 1, 1)
+        
         configs_bec_weight = torch.repeat_interleave(
             ref.bec_weight, ref.ptr[1:] - ref.ptr[:-1]
-        ).view(-1, 1, 1)         
+        ).view(-1, 1, 1) 
+
         configs_polarisability_weight = ref.polarisability_weight.view(-1, 1, 1) # [n_graphs, ]
-        num_atoms_wide = num_atoms.repeat_interleave(num_atoms).reshape(-1, 1, 1)
-        num_atoms_medium = num_atoms.view(-1, 1, 1)
+
+        # num_atoms_wide = num_atoms.repeat_interleave(num_atoms).reshape(-1, 1, 1)
+        # num_atoms_medium = num_atoms.view(-1, 1, 1)
+
         return (
             self.energy_weight
             * self.huber_loss(
@@ -361,15 +372,20 @@ class UniversalFieldLoss(torch.nn.Module):
                 configs_stress_weight * ref["stress"],
                 configs_stress_weight * pred["stress"],
             )
+            + self.polarisation_weight
+            * self.huber_loss(
+                configs_polarisation_weight * ref["polarisation"],
+                configs_polarisation_weight * pred["polarisation"]
+            ) 
             + self.bec_weight 
             * self.huber_loss(
-                configs_bec_weight * ref["bec"] / num_atoms_wide,
-                configs_bec_weight * pred["bec"] / num_atoms_wide,
+                configs_bec_weight * ref["bec"],
+                configs_bec_weight * pred["bec"],
             )
             + self.polarisability_weight
             * self.huber_loss(
-                configs_polarisability_weight * ref["polarisability"] / num_atoms_medium,
-                configs_polarisability_weight * pred["polarisability"] / num_atoms_medium,
+                configs_polarisability_weight * ref["polarisability"],
+                configs_polarisability_weight * pred["polarisability"],
             )
         )
 

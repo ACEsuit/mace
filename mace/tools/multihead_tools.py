@@ -33,6 +33,7 @@ class HeadConfig:
     virials_key: Optional[str] = None
     dipole_key: Optional[str] = None
     charges_key: Optional[str] = None
+    polarisation_key: Optional[str] = None
     bec_key: Optional[str] = None
     polarisability_key: Optional[str] = None
     electric_field_key: Optional[str] = None
@@ -75,6 +76,7 @@ def dict_head_to_dataclass(
         virials_key=head.get("virials_key", args.virials_key),
         dipole_key=head.get("dipole_key", args.dipole_key),
         charges_key=head.get("charges_key", args.charges_key),
+        polarisation_key=head.get("polarisation_key", args.polarisation_key),
         bec_key=head.get("bec_key", args.bec_key),
         polarisability_key=head.get("polarisability_key", args.polarisability_key),
         electric_field_key=head.get("electric_field_key", args.electric_field_key),

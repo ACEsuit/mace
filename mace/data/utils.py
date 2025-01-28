@@ -44,6 +44,7 @@ class Configuration:
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
     electric_field: Optional[Electric_field] = None # eV/Angstrom
+    polarisation: Optional[Vector] = None # eV/Angstrom^2
     bec: Optional[Bec] = None # |e|
     polarisability: Optional[Polarisability] = None # tbc
 
@@ -54,12 +55,11 @@ class Configuration:
     virials_weight: float = 1.0  # weight of config virial in loss
     config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
     head: Optional[str] = "Default"  # head used to compute the config
+    polarisation_weight: float = 1.0  # weight of config polarisation in loss
     bec_weight: float = 1.0  # weight of config bec in loss
     polarisability_weight: float = 1.0  # weight of config polarisability in loss
 
-
 Configurations = List[Configuration]
-
 
 def random_train_valid_split(
     items: Sequence, valid_fraction: float, seed: int, work_dir: str
@@ -101,6 +101,7 @@ def config_from_atoms_list(
     dipole_key="REF_dipole",
     charges_key="REF_charges",
     head_key="head",
+    polarisation_key="REF_polarisation",
     bec_key="REF_bec",
     polarisability_key="REF_polarisability",
     electric_field_key="REF_electric_field",
@@ -122,6 +123,7 @@ def config_from_atoms_list(
                 dipole_key=dipole_key,
                 charges_key=charges_key,
                 head_key=head_key,
+                polarisation_key=polarisation_key,
                 bec_key=bec_key,
                 polarisability_key=polarisability_key,
                 electric_field_key=electric_field_key,
@@ -139,6 +141,7 @@ def config_from_atoms(
     virials_key="REF_virials",
     dipole_key="REF_dipole",
     charges_key="REF_charges",
+    polarisation_key="REF_polarisation",
     bec_key="REF_bec",
     polarisability_key="REF_polarisability",
     electric_field_key="REF_electric_field",
@@ -154,6 +157,7 @@ def config_from_atoms(
     stress = atoms.info.get(stress_key, None)  # eV / Ang ^ 3
     virials = atoms.info.get(virials_key, None)
     dipole = atoms.info.get(dipole_key, None)  # Debye
+    polarisation = atoms.info.get(polarisation_key, None)  # eV/Angstrom
     bec = atoms.arrays.get(bec_key, None)  # |e|
     polarisability = atoms.info.get(polarisability_key, None)  # tbc
     electric_field = atoms.info.get(electric_field_key, None)  # eV/Angstrom
@@ -172,6 +176,7 @@ def config_from_atoms(
     forces_weight = atoms.info.get("config_forces_weight", 1.0)
     stress_weight = atoms.info.get("config_stress_weight", 1.0)
     virials_weight = atoms.info.get("config_virials_weight", 1.0)
+    polarisation_weight = atoms.info.get("config_polarisation_weight", 1.0)
     bec_weight = atoms.info.get("config_bec_weight", 1.0)
     polarisability_weight = atoms.info.get("config_polarisability_weight", 1.0)
 
@@ -193,6 +198,8 @@ def config_from_atoms(
     if dipole is None:
         dipole = np.zeros(3)
         # dipoles_weight = 0.0
+    if polarisation is None:
+        polarisation = np.zeros(3)
     if bec is None:
         bec = np.zeros(np.shape(atoms.positions),3,3)
     if polarisability is None:
@@ -211,6 +218,7 @@ def config_from_atoms(
         charges=charges,
         weight=weight,
         head=head,
+        polarisation=polarisation,
         bec=bec,
         polarisability=polarisability,
         electric_field=electric_field,
@@ -218,6 +226,7 @@ def config_from_atoms(
         forces_weight=forces_weight,
         stress_weight=stress_weight,
         virials_weight=virials_weight,
+        polarisation_weight=polarisation_weight,
         bec_weight=bec_weight,
         polarisability_weight=polarisability_weight,
         config_type=config_type,
@@ -252,6 +261,7 @@ def load_from_xyz(
     virials_key: str = "REF_virials",
     dipole_key: str = "REF_dipole",
     charges_key: str = "REF_charges",
+    polarisation_key: str = "REF_polarisation",
     bec_key: str = "REF_bec",
     polarisability_key: str = "REF_polarisability",
     electric_field_key: str = "REF_electric_field",
@@ -336,6 +346,7 @@ def load_from_xyz(
         dipole_key=dipole_key,
         charges_key=charges_key,
         head_key=head_key,
+        polarisation_key=polarisation_key,
         bec_key=bec_key,
         polarisability_key=polarisability_key,
         electric_field_key=electric_field_key
@@ -396,6 +407,7 @@ def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
             grp["dipole"] = data.dipole
             grp["charges"] = data.charges
             grp["head"] = data.head
+            grp["polarisation"] = data.polarisation
             grp["bec"] = data.bec
             grp["polarisability"] = data.polarisability
             grp["electric_field"] = data.electric_field
@@ -424,6 +436,7 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["dipole"] = data.dipole
     grp["charges"] = data.charges
     grp["head"] = data.head
+    grp["polarisation"] = data.polarisation
     grp["bec"] = data.bec
     grp["polarisability"] = data.polarisability
     grp["electric_field"] = data.electric_field
@@ -453,9 +466,11 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         subgroup["stress_weight"] = write_value(config.stress_weight)
         subgroup["virials_weight"] = write_value(config.virials_weight)
         subgroup["config_type"] = write_value(config.config_type)
+        subgroup["polarisation"] = write_value(config.polarisation)
         subgroup["bec"] = write_value(config.bec)
         subgroup["polarisability"] = write_value(config.polarisability)
         subgroup["electric_field"] = write_value(config.electric_field)
+        subgroup["polarisation_weight"] = write_value(config.polarisation_weight)
         subgroup["bec_weight"] = write_value(config.bec_weight)
         subgroup["polarisability_weight"] = write_value(config.polarisability_weight)
 

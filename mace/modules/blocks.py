@@ -63,7 +63,7 @@ class LinearReadoutBlock(torch.nn.Module):
     def __init__(
         self,
         irreps_in: o3.Irreps,
-        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        irrep_out: o3.Irreps = o3.Irreps("1x0e"),
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         super().__init__()
@@ -87,7 +87,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         MLP_irreps: o3.Irreps,
         gate: Optional[Callable],
-        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        irrep_out: o3.Irreps = o3.Irreps("1x0e"),
         num_heads: int = 1,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):

@@ -242,6 +242,7 @@ def run(args: argparse.Namespace) -> None:
                 dipole_key=head_config.dipole_key,
                 charges_key=head_config.charges_key,
                 electric_field_key=head_config.electric_field_key,
+                polarisation_key=head_config.polarisation_key,
                 bec_key=head_config.bec_key,
                 polarisability_key=head_config.polarisability_key,
                 head_name=head_config.head_name,
@@ -315,6 +316,7 @@ def run(args: argparse.Namespace) -> None:
                 dipole_key=args.dipole_key,
                 charges_key=args.charges_key,
                 electric_field_key=args.electric_field_key,
+                polarisation_key=args.polarisation_key,
                 bec_key=args.bec_key,
                 polarisability_key=args.polarisability_key,
                 head_name="pt_head",
@@ -335,6 +337,7 @@ def run(args: argparse.Namespace) -> None:
                 dipole_key=args.dipole_key,
                 charges_key=args.charges_key,
                 electric_field_key=args.electric_field_key,
+                polarisation_key=args.polarisation_key,
                 bec_key=args.bec_key,
                 polarisability_key=args.polarisability_key,
                 keep_isolated_atoms=args.keep_isolated_atoms,
@@ -598,7 +601,7 @@ def run(args: argparse.Namespace) -> None:
     # Cueq
     if args.enable_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "ScaleShiftFieldMACE"]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     # Optimizer
     param_options = get_params_options(args, model)

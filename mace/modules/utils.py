@@ -79,12 +79,13 @@ def compute_forces_virials_field(
     compute_stress: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
 
-    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+    cell = cell.view(-1, 3, 3)
+    volume = torch.linalg.det(cell).abs().unsqueeze(-1)
 
     forces, virials, polarisation = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions, displacement, electric_field],  # [n_nodes, 3]
-        grad_outputs=grad_outputs,
+        grad_outputs=[torch.ones_like(energy)],
         retain_graph=True,  # Make sure the graph is not destroyed during training
         create_graph=True,  # Create graph for second derivative
         allow_unused=False,
@@ -92,8 +93,6 @@ def compute_forces_virials_field(
 
     stress = torch.zeros_like(displacement)
     if compute_stress and virials is not None:
-        cell = cell.view(-1, 3, 3)
-        volume = torch.linalg.det(cell).abs().unsqueeze(-1)
         stress = virials / volume.view(-1, 1, 1)
         stress = torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
     if forces is None:
@@ -105,20 +104,20 @@ def compute_forces_virials_field(
     polarisability = []
     for d in range(3):
         bec_d, polarisability_d = torch.autograd.grad(
-            outputs=[polarisation[:,d]],  # [n_graphs, ]
+            outputs=[polarisation[d]],  # [n_graphs, ]
             inputs=[positions, electric_field],  # [n_nodes, 3]
-            grad_outputs=[torch.ones_like(polarisation[:,d])],
+            grad_outputs=[torch.ones_like(polarisation[d])],
             retain_graph=True,  # Make sure the graph is not destroyed during training
             create_graph=True,  # Create graph for second derivative
-            allow_unused=True,
+            allow_unused=False,
             )
         bec.append(bec_d)
         polarisability.append(polarisability_d)
 
-    bec = torch.stack(bec, dim=1)
-    polarisability = torch.stack(polarisability, dim=1)
-    # print(polarisability)
-    return -1 * forces, -1 * virials, stress, polarisation, -1 * bec, -1 * polarisability
+    bec = torch.stack(bec, dim=1).view(-1, 3, 3) # [n_nodes, 3, 3]
+    polarisability = torch.stack(polarisability, dim=1).view(-1, 3, 3) # [n_graphs, 3, 3]
+
+    return -1 * forces, -1 * virials, stress, -1 * polarisation / volume[0], -1 * bec, -1 * polarisability / volume[0]
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
@@ -243,17 +242,21 @@ def get_outputs(
             compute_stress=compute_stress,
         )
     elif (compute_virials or compute_stress) and displacement is not None:
-        forces, virials, stress = compute_forces_virials(
+        forces, virials, stress, polarisation, bec, polarisability = (
+            compute_forces_virials(
             energy=energy,
             positions=positions,
             displacement=displacement,
             cell=cell,
             compute_stress=compute_stress,
             training=(training or compute_hessian),
+            ),
+            None,
+            None,
+            None,
         )
-    
     elif compute_force:
-        forces, virials, stress = (
+        forces, virials, stress, polarisation, bec, polarisability = (
             compute_forces(
                 energy=energy,
                 positions=positions,
@@ -261,21 +264,24 @@ def get_outputs(
             ),
             None,
             None,
+            None,
+            None,
+            None,
         )
     else:
-        forces, virials, stress = (None, None, None)
+        forces, virials, stress, polarisation, bec, polarisability = (None, None, None, None, None, None)
+    
     if compute_hessian:
         assert forces is not None, "Forces must be computed to get the hessian"
         hessian = compute_hessians_vmap(forces, positions)
     else:
         hessian = None
 
-    # print("forces", forces[0])
-    # print("virials", virials[0])
-    # print("stress", stress[0])
-    # print("polarisation", polarisation[0])
-    # print("bec", bec[0])
-    # print("polarisability", polarisability[0])
+    # print("forces", forces)
+    # print("stress", stress)
+    # print("polarisation", polarisation)
+    # print("bec", bec)
+    # print("polarisability", polarisability)
 
     return forces, virials, stress, hessian, polarisation, bec, polarisability
 
