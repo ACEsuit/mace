@@ -357,8 +357,8 @@ class UniversalFieldLoss(torch.nn.Module):
         polarisation_quantum = cell / torch.linalg.det(cell).abs().unsqueeze(-1)[0]
 
         # Expand polarisation to be modulo the polarisation quantum
-        ref_polarisation = ref["polarisation"].repeat(3,1).fmod(polarisation_quantum).nan_to_num(nan=0)
-        pred_polarisation = pred["polarisation"].repeat(3,1).fmod(polarisation_quantum).nan_to_num(nan=0)
+        ref_polarisation = ref["polarisation"].repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
+        pred_polarisation = pred["polarisation"].repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
 
         return (
             self.energy_weight
