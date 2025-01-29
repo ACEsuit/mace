@@ -352,8 +352,13 @@ class UniversalFieldLoss(torch.nn.Module):
 
         configs_polarisability_weight = ref.polarisability_weight.view(-1, 1, 1) # [n_graphs, ]
 
-        # num_atoms_wide = num_atoms.repeat_interleave(num_atoms).reshape(-1, 1, 1)
-        # num_atoms_medium = num_atoms.view(-1, 1, 1)
+        # Calculate the polarisation quantum
+        cell = ref["cell"].view(-1,3,3)
+        polarisation_quantum = cell / torch.linalg.det(cell).abs().unsqueeze(-1)[0]
+
+        # Expand polarisation to be modulo the polarisation quantum
+        ref_polarisation = ref["polarisation"].repeat(3,1).fmod(polarisation_quantum).nan_to_num(nan=0)
+        pred_polarisation = pred["polarisation"].repeat(3,1).fmod(polarisation_quantum).nan_to_num(nan=0)
 
         return (
             self.energy_weight
@@ -374,8 +379,8 @@ class UniversalFieldLoss(torch.nn.Module):
             )
             + self.polarisation_weight
             * self.huber_loss(
-                configs_polarisation_weight * ref["polarisation"],
-                configs_polarisation_weight * pred["polarisation"]
+                configs_polarisation_weight * ref_polarisation,
+                configs_polarisation_weight * pred_polarisation
             ) 
             + self.bec_weight 
             * self.huber_loss(

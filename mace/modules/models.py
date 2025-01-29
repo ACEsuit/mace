@@ -632,6 +632,7 @@ class ScaleShiftFieldMACE(MACE):
             compute_field=compute_field,
         )
 
+
         output = {
             "energy": total_energy,
             "node_energy": node_energy,
