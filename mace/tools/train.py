@@ -356,18 +356,15 @@ def train_one_epoch(
     # change
     # Checking gradients in the active layers
     test_freeze = True
-    if test_freeze == True:
-        logging.info("Check gradients")
+    if test_freeze:
+        logging.debug("Check gradients")
         for name, param in model.named_parameters():
             if param.requires_grad:
                 gradient_norm = torch.norm(param.grad).item()
-                logging.info(f"Parameter: {name}, Gradient norm: {gradient_norm}")
+                logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
             else:
-                logging.info(f"Parameter: {name}, Gradient norm: Frozen")
+                logging.debug(f"Parameter: {name}, Gradient norm: Frozen")
     
-
-
-
 def take_step(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
@@ -406,7 +403,6 @@ def take_step(
     return loss, loss_dict
 
 # change: context manager to keep parameters frozen/active after evaluation
-
 @contextmanager
 def preserve_grad_state(model):
     # save the original requires_grad state for all parameters
@@ -432,6 +428,7 @@ def evaluate(
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
     start_time = time.time()
+    # change
     with preserve_grad_state(model):  # temporarily disable parameter gradients
         for batch in data_loader:
             batch = batch.to(device)

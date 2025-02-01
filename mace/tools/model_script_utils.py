@@ -140,12 +140,12 @@ def configure_model(
         )
 
     # change: freeze layers or parameter groups 
-    if args.freeze_par is not None:
+    if args.freeze is not None and args.freeze_par is not None:
+        logging.info("Both --freeze and --freeze_par arguments detected, using --freeze")
+        freeze_layers(model, args.freeze)
+    elif args.freeze_par is not None:
         freeze_param(model, args.freeze_par)
     elif args.freeze is not None:
-        freeze_layers(model, args.freeze)
-    if (args.freeze is not None) and (args.freeze_par is not None):
-        logging.info(f"both --freeze and --freeze_par arguments detected, using --freeze")
         freeze_layers(model, args.freeze)
     
 

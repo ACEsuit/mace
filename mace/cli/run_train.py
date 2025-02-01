@@ -576,8 +576,8 @@ def run(args: argparse.Namespace) -> None:
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
     logging.info("")
 
-    # change: log parameter tensor to check the layers are frozen
-    logging.info("===========CHECK FREEZE===========")
+   # change: log parameter tensor to check the layers are frozen
+    logging.info("===========ACTIVE/FROZEN PARAMETERS===========")
 
     for name, param in model.named_parameters():
         if param.requires_grad:
