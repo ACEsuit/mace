@@ -31,7 +31,6 @@ from .utils import (
     compute_rel_rmse,
     compute_rmse,
 )
-# change
 from contextlib import contextmanager
 
 @dataclasses.dataclass
@@ -353,17 +352,15 @@ def train_one_epoch(
         opt_metrics["epoch"] = epoch
         if rank == 0:
             logger.log(opt_metrics)
-    # change
+
     # Checking gradients in the active layers
-    test_freeze = True
-    if test_freeze:
-        logging.debug("Check gradients")
-        for name, param in model.named_parameters():
-            if param.requires_grad:
-                gradient_norm = torch.norm(param.grad).item()
-                logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
-            else:
-                logging.debug(f"Parameter: {name}, Gradient norm: Frozen")
+    logging.debug("Check gradients")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            gradient_norm = torch.norm(param.grad).item()
+            logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
+        else:
+            logging.debug(f"Parameter: {name}, Gradient norm: Frozen")
     
 def take_step(
     model: torch.nn.Module,
@@ -402,7 +399,7 @@ def take_step(
 
     return loss, loss_dict
 
-# change: context manager to keep parameters frozen/active after evaluation
+# Keep parameters frozen/active after evaluation
 @contextmanager
 def preserve_grad_state(model):
     # save the original requires_grad state for all parameters
@@ -417,7 +414,6 @@ def preserve_grad_state(model):
         for param, requires_grad in requires_grad_backup.items():
             param.requires_grad = requires_grad
 
-
 def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
@@ -428,7 +424,6 @@ def evaluate(
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
     start_time = time.time()
-    # change
     with preserve_grad_state(model):  # temporarily disable parameter gradients
         for batch in data_loader:
             batch = batch.to(device)
