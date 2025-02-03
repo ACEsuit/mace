@@ -17,7 +17,6 @@ def configure_model(
     compute_virials = args.loss in ("stress", "virials", "huber", "universal", "universal_field")
     if compute_virials:
         args.compute_stress = True
-        args.error_table = "PerAtomRMSEstressvirials"
 
     output_args = {
         "energy": args.compute_energy,
