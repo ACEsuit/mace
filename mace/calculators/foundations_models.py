@@ -40,6 +40,7 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
         "large-0b2": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b2/mace-large-density-agnesi-stress.model",
         "medium-0b3": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b3/mace-mp-0b3-medium.model",
         "medium-mpa-0": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model",
+        "medium-omat-0": "https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model",
     }
 
     checkpoint_url = (
@@ -57,6 +58,7 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
             "large-0b2",
             "medium-0b3",
             "medium-mpa-0",
+            "medium-omat-0",
         )
         else model
     )
@@ -138,6 +140,7 @@ def mace_mp(
             "medium-0b2",
             "medium-0b3",
             "large-0b2",
+            "medium-omat-0",
         ) or str(model).startswith("https:"):
             model_path = download_mace_mp_checkpoint(model)
             print(f"Using Materials Project MACE for MACECalculator with {model_path}")
