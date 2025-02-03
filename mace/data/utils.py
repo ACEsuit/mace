@@ -154,13 +154,13 @@ def config_from_atoms(
 
     energy = atoms.info.get(energy_key, None)  # eV
     forces = atoms.arrays.get(forces_key, None)  # eV / Ang
-    stress = atoms.info.get(stress_key, None)  # eV / Ang ^ 3
-    virials = atoms.info.get(virials_key, None)
+    stress = atoms.info.get(stress_key, None)  # eV / Ang
+    virials = atoms.info.get(virials_key, None) # eV / Ang ^ 3
     dipole = atoms.info.get(dipole_key, None)  # Debye
-    polarisation = atoms.info.get(polarisation_key, None)  # eV/Angstrom
+    polarisation = atoms.info.get(polarisation_key, None)  # eV / Ang ^ 2
     bec = atoms.arrays.get(bec_key, None)  # |e|
-    polarisability = atoms.info.get(polarisability_key, None)  # tbc
-    electric_field = atoms.info.get(electric_field_key, None)  # eV/Angstrom
+    polarisability = atoms.info.get(polarisability_key, None)  # Ang
+    electric_field = atoms.info.get(electric_field_key, None)  # eV / Ang
     # Charges default to 0 instead of None if not found
     charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
     atomic_numbers = np.array(
@@ -200,12 +200,15 @@ def config_from_atoms(
         # dipoles_weight = 0.0
     if polarisation is None:
         polarisation = np.zeros(3)
+        polarisation_weight = 0.0
     if bec is None:
-        bec = np.zeros(np.shape(atoms.positions),3,3)
+        bec = np.zeros(np.shape(atoms.positions)+(3,))
+        bec_weight = 0.0
     if polarisability is None:
-        polarisability = np.zeros(3,3)
-    if electric_field is None:
-        electric_field = np.zeros(3)
+        polarisability = np.zeros((3, 3))
+        polarisability_weight = 0.0
+    if electric_field is None or (electric_field == np.array([0., 0., 0.])).all():
+        electric_field = np.array([0.01, 0.01, 0.01])
 
     return Configuration(
         atomic_numbers=atomic_numbers,

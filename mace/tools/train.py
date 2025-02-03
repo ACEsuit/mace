@@ -52,10 +52,12 @@ def valid_err_log(
     eval_metrics["mode"] = "eval"
     eval_metrics["epoch"] = epoch
     logger.log(eval_metrics)
+
     if epoch is None:
         initial_phrase = "Initial"
     else:
         initial_phrase = f"Epoch {epoch}"
+    
     if log_errors == "PerAtomRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
@@ -137,11 +139,12 @@ def valid_err_log(
     ):
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
+        error_stress = eval_metrics["mae_stress"] * 1e3
         error_polarisation = eval_metrics["mae_polarisation"] * 1e3
-        error_bec = eval_metrics["mae_bec"] * 1e3
-        error_polarisability= eval_metrics["mae_polarisability"] * 1e3
+        error_bec = eval_metrics["mae_bec"] 
+        error_polarisability= eval_metrics["mae_polarisability"] 
         logging.info(
-            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f} MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_polarisation={error_polarisation:8.2f}, MAE_BEC={error_bec:8.2f} |e|, MAE_polarisability={error_polarisability:8.2f} tbc",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f} MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_polarisation={error_polarisation:8.2f} meV / A^2, MAE_BEC={error_bec:8.2f} |e|, MAE_polarisability={error_polarisability:8.2f} A^3",
         )
     elif (
         log_errors == "PerAtomRMSEstressvirialsfield"
@@ -151,10 +154,10 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         error_stress = eval_metrics["rmse_stress"] * 1e3
         error_polarisation = eval_metrics["rmse_polarisation"] * 1e3
-        error_bec = eval_metrics["rmse_bec"] * 1e3
-        error_polarisability= eval_metrics["rmse_polarisability"] * 1e3
+        error_bec = eval_metrics["rmse_bec"] 
+        error_polarisability= eval_metrics["rmse_polarisability"] 
         logging.info(
-            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3, RMSE_polarisation={error_polarisation:8.2f}, RMSE_BEC={error_bec:8.2f} |e|, RMSE_polarisability={error_polarisability:8.2f} tbc",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3, RMSE_polarisation={error_polarisation:8.2f} meV / A^2, RMSE_BEC={error_bec:8.2f} |e|, RMSE_polarisability={error_polarisability:8.2f} A",
         )
 
 
@@ -189,6 +192,7 @@ def train(
     patience_counter = 0
     swa_start = True
     keep_last = False
+
     if log_wandb:
         import wandb
 

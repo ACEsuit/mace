@@ -244,9 +244,6 @@ class AtomicData(torch_geometric.data.Data):
             else None
         )
 
-        # Electric field is small value = 0.01 eV / Angstrom like in VASP.
-        electric_field = torch.tensor([0.01, 0.01, 0.01])
-
         polarisation = (
             torch.tensor(config.polarisation, dtype=torch.get_default_dtype())
             if config.polarisation is not None

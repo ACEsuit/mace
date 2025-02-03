@@ -571,25 +571,25 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_polarisation_weight",
     )
     parser.add_argument(
-        "--bec_weight", help="weight of bec loss", type=float, default=1.0
+        "--bec_weight", help="weight of bec loss", type=float, default=10.0
     )
     parser.add_argument(
         "--swa_bec_weight",
         "--stage_two_bec_weight",
         help="weight of bec after starting Stage Two (previously called swa)",
         type=float,
-        default=1.0,
+        default=10.0,
         dest="swa_bec_weight",
     )
     parser.add_argument(
-        "--polarisability_weight", help="weight of polarisability loss", type=float, default=1.0
+        "--polarisability_weight", help="weight of polarisability loss", type=float, default=100.0
     )
     parser.add_argument(
         "--swa_polarisability_weight",
         "--stage_two_polarisability_weight",
         help="weight of polarisability after starting Stage Two (previously called swa)",
         type=float,
-        default=1.0,
+        default=100.0,
         dest="swa_polarisability_weight",
     )
     parser.add_argument(
