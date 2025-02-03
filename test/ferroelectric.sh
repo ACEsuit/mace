@@ -1,0 +1,54 @@
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+now="$(date +'%H%M%S_%d-%m-%Y')"
+mkdir "ferroelectric_${now}"
+cd "ferroelectric_${now}"
+
+mace_run_train \
+    --name="ferroelectric_${now}" \
+    --train_file="../ferroelectric.xyz" \
+    --valid_fraction=0.05 \
+    --loss='universal_field' \
+    --E0s='average' \
+    --energy_weight=1.0 \
+    --forces_weight=10.0 \
+    --stress_weight=100.0 \
+    --bec_weight=0.0 \
+    --polarisability_weight=0.0 \
+    --polarisation_weight=10.0 \
+    --compute_field=True \
+    --compute_forces=True \
+    --compute_stress=True \
+    --eval_interval=1 \
+    --error_table='PerAtomRMSEstressvirialsfield' \
+    --model="ScaleShiftFieldMACE" \
+    --interaction_first="RealAgnosticResidualInteractionBlock" \
+    --interaction="RealAgnosticResidualInteractionBlock" \
+    --num_interactions=2 \
+    --correlation=3 \
+    --max_ell=3 \
+    --r_max=5.0 \
+    --max_L=2 \
+    --num_channels=128 \
+    --num_radial_basis=10 \
+    --MLP_irreps="16x0e" \
+    --scaling='rms_forces_scaling' \
+    --num_workers=16 \
+    --lr=0.05 \
+    --weight_decay=1e-8 \
+    --ema \
+    --ema_decay=0.995 \
+    --scheduler_patience=5 \
+    --batch_size=1 \
+    --valid_batch_size=1 \
+    --max_num_epochs=200 \
+    --patience=50 \
+    --amsgrad \
+    --device="cuda:0" \
+    --seed=1 \
+    --default_dtype="float32" \
+    --clip_grad=100 \
+    --keep_checkpoints \
+    --save_cpu \
+    --foundation_model="large" \
+    --multiheads_finetuning=False \
