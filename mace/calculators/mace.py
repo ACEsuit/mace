@@ -4,9 +4,10 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import logging
+
 # pylint: disable=wrong-import-position
 import os
-import logging
 from glob import glob
 from pathlib import Path
 from typing import List, Union
