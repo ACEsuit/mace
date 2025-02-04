@@ -168,7 +168,7 @@ def print_git_commit():
 
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
-    if model.__class__.__name__ != "ScaleShiftMACE" or "ScaleShiftFieldMACE":
+    if model.__class__.__name__ not in ["ScaleShiftMACE", "ScaleShiftFieldMACE"]:
         return {"error": "Model is not a ScaleShift(Field)MACE model"}
 
     def radial_to_name(radial_type):

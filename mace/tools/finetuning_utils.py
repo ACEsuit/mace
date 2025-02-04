@@ -40,39 +40,41 @@ def load_foundations_elements(
         model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
             model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
         )
-    for i in range(int(model.num_interactions)):
-        model.interactions[i].linear_up.weight = torch.nn.Parameter(
-            model_foundations.interactions[i].linear_up.weight.clone()
-        )
-        model.interactions[i].avg_num_neighbors = model_foundations.interactions[
-            i
-        ].avg_num_neighbors
-        for j in range(4):  # Assuming 4 layers in conv_tp_weights,
-            layer_name = f"layer{j}"
-            if j == 0:
-                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
-                    torch.nn.Parameter(
-                        getattr(
-                            model_foundations.interactions[i].conv_tp_weights,
-                            layer_name,
+    if model.__class__.__name__ != "ScaleShiftFieldMACE":    
+        for i in range(int(model.num_interactions)):
+            model.interactions[i].linear_up.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear_up.weight.clone()
+            )
+            model.interactions[i].avg_num_neighbors = model_foundations.interactions[
+                i
+            ].avg_num_neighbors
+            for j in range(4):  # Assuming 4 layers in conv_tp_weights,
+                layer_name = f"layer{j}"
+                if j == 0:
+                    getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
+                        torch.nn.Parameter(
+                            getattr(
+                                model_foundations.interactions[i].conv_tp_weights,
+                                layer_name,
+                            )
+                            .weight[:num_radial, :]
+                            .clone()
                         )
-                        .weight[:num_radial, :]
-                        .clone()
                     )
-                )
-            else:
-                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
-                    torch.nn.Parameter(
-                        getattr(
-                            model_foundations.interactions[i].conv_tp_weights,
-                            layer_name,
-                        ).weight.clone()
+                else:
+                    getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
+                        torch.nn.Parameter(
+                            getattr(
+                                model_foundations.interactions[i].conv_tp_weights,
+                                layer_name,
+                            ).weight.clone()
+                        )
                     )
-                )
 
-        model.interactions[i].linear.weight = torch.nn.Parameter(
-            model_foundations.interactions[i].linear.weight.clone()
-        )
+            model.interactions[i].linear.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear.weight.clone()
+            )
+        
         if model.interactions[i].__class__.__name__ in [
             "RealAgnosticResidualInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",

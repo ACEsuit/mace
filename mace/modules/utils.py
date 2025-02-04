@@ -250,10 +250,11 @@ def get_outputs(
             cell=cell,
             compute_stress=compute_stress,
             training=(training or compute_hessian),
-            ),
+            ) + (
             None,
             None,
-            None,
+            None
+            )
         )
     elif compute_force:
         forces, virials, stress, polarisation, bec, polarisability = (
@@ -261,12 +262,13 @@ def get_outputs(
                 energy=energy,
                 positions=positions,
                 training=(training or compute_hessian),
-            ),
+            ) + (
             None,
             None,
             None,
             None,
-            None,
+            None
+            )
         )
     else:
         forces, virials, stress, polarisation, bec, polarisability = (None, None, None, None, None, None)

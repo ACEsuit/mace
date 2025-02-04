@@ -46,7 +46,7 @@ def configure_model(
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
-
+ 
         if args.foundation_model_elements:
             foundation_z_table = AtomicNumberTable(
                 [int(z) for z in model_foundation.atomic_numbers]
@@ -72,7 +72,9 @@ def configure_model(
             )
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
-        args.model = "FoundationMACE"
+        
+        args.model = "FoundationMACE" if args.model == "ShiftScaleMACE" else "FoundationFieldMACE" if args.model == "ShiftScaleFieldMACE" else args.model
+
         model_config_foundation["heads"] = heads
         model_config = model_config_foundation
 
@@ -214,6 +216,8 @@ def _build_model(
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)
+    if args.model == "FoundationFieldMACE":
+        return modules.ScaleShiftFieldMACE(**model_config_foundation)
     if args.model == "ScaleShiftBOTNet":
         return modules.ScaleShiftBOTNet(
             **model_config,

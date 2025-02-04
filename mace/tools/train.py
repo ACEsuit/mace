@@ -392,6 +392,7 @@ def take_step(
     max_grad_norm: Optional[float],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
+
     start_time = time.time()
     batch = batch.to(device)
     optimizer.zero_grad(set_to_none=True)

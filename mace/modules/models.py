@@ -96,8 +96,6 @@ class MACE(torch.nn.Module):
             distance_transform=distance_transform,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
-        edge_feats_irreps_el = edge_feats_irreps + edge_feats_irreps
-        edge_feats_irreps = edge_feats_irreps_el.sort()[0].simplify()
 
         if pair_repulsion:
             self.pair_repulsion_fn = ZBLBasis(p=num_polynomial_cutoff)
@@ -110,9 +108,6 @@ class MACE(torch.nn.Module):
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
-
-        sh_irreps_el = sh_irreps + sh_irreps
-        sh_irreps = sh_irreps_el.sort()[0].simplify()
 
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
@@ -454,7 +449,7 @@ class ScaleShiftMACE(MACE):
         # Add E_0 and (scaled) interaction energy
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
-        forces, virials, stress, hessian = get_outputs(
+        forces, virials, stress, hessian, polarisation, becs, polarisabilities = get_outputs(
             energy=inter_e,
             positions=data["positions"],
             displacement=displacement,
@@ -492,6 +487,50 @@ class ScaleShiftFieldMACE(MACE):
             scale=atomic_inter_scale, shift=atomic_inter_shift
         )
 
+        # Extend the model to include electric field edge attrs (radial embedding) and edge feats (spherical harmonic embedding)
+        for i in range(int(self.num_interactions)):
+
+            edge_attrs_irreps = self.interactions[i].edge_attrs_irreps
+            edge_attrs_el_irreps = edge_attrs_irreps + edge_attrs_irreps
+            edge_attrs_irreps = edge_attrs_el_irreps.sort()[0].simplify()
+
+            edge_feats_irreps = self.interactions[i].edge_feats_irreps
+            edge_feats_el_irreps = edge_feats_irreps + edge_feats_irreps
+            edge_feats_irreps = edge_feats_el_irreps.sort()[0].simplify()
+
+            # Load Interaction Block
+            blocks_mod = __import__('mace.modules.blocks', fromlist=[self.interactions[i].__class__.__name__])
+            inter_block = getattr(blocks_mod, self.interactions[i].__class__.__name__)
+
+            inter = inter_block(
+                node_attrs_irreps=self.interactions[i].node_attrs_irreps,
+                node_feats_irreps=self.interactions[i].node_feats_irreps,
+                edge_attrs_irreps=edge_attrs_irreps,
+                edge_feats_irreps=edge_feats_irreps,
+                target_irreps=self.interactions[i].target_irreps,
+                hidden_irreps=self.interactions[i].hidden_irreps,
+                avg_num_neighbors=self.interactions[i].avg_num_neighbors,
+                radial_MLP=self.interactions[i].radial_MLP,
+                cueq_config=self.interactions[i].cueq_config,
+            )
+
+            # Inherit weights
+            inter.linear_up.weight = torch.nn.Parameter(self.interactions[i].linear_up.weight.clone())
+            for j in range(4):  # Assuming 4 layers in conv_tp_weights,
+                layer_name = f"layer{j}"
+                if j == 0:
+                    old_weights = getattr(self.interactions[i].conv_tp_weights, layer_name).weight[:self.radial_embedding.out_dim, :].clone()
+                    getattr(inter.conv_tp_weights, layer_name).weight = (torch.nn.Parameter(torch.concat([old_weights, torch.randn_like(old_weights)], axis=0)))
+                elif j == 3:
+                    old_weights = getattr(self.interactions[i].conv_tp_weights, layer_name).weight.clone()
+                    getattr(inter.conv_tp_weights, layer_name).weight = (torch.nn.Parameter(torch.concat([old_weights, torch.randn_like(old_weights)], axis=1)))
+                else:
+                    getattr(inter.conv_tp_weights, layer_name).weight = (
+                        torch.nn.Parameter(getattr(self.interactions[i].conv_tp_weights, layer_name).weight.clone())
+                    )
+
+            self.interactions[i] = inter
+        
     def forward(
         self,
         data: Dict[str, torch.Tensor],
