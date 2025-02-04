@@ -271,9 +271,7 @@ def load_from_xyz(
             if isolated_atom_config:
                 atomic_number = int(atoms.get_atomic_numbers()[0])
                 if energy_key in atoms.info.keys():
-                    atomic_energies_dict[atomic_number] = float(atoms.info[
-                        energy_key
-                    ])
+                    atomic_energies_dict[atomic_number] = float(atoms.info[energy_key])
                 else:
                     logging.warning(
                         f"Configuration '{idx}' is marked as 'IsolatedAtom' "

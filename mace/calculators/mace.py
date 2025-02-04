@@ -3,14 +3,15 @@
 # Authors: Ilyes Batatia, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+
+# pylint: disable=wrong-import-position
 import os
-
-os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-
 import logging
 from glob import glob
 from pathlib import Path
 from typing import List, Union
+
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import numpy as np
 import torch
