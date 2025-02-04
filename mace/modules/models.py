@@ -32,6 +32,7 @@ from .utils import (
     compute_forces,
     get_edge_vectors_and_lengths,
     get_outputs,
+    get_outputs_committee,
     get_symmetric_displacement,
 )
 
@@ -142,7 +143,7 @@ class MACE(torch.nn.Module):
         self.readouts = torch.nn.ModuleList()
         self.readouts.append(
             LinearReadoutBlock(
-                hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+                hidden_irreps, o3.Irreps("0e"), len(heads), cueq_config
             )
         )
 
@@ -178,9 +179,9 @@ class MACE(torch.nn.Module):
                 self.readouts.append(
                     NonLinearReadoutBlock(
                         hidden_irreps_out,
-                        (len(heads) * MLP_irreps).simplify(),
+                        MLP_irreps,
                         gate,
-                        o3.Irreps(f"{len(heads)}x0e"),
+                        o3.Irreps(f"0e"),
                         len(heads),
                         cueq_config,
                     )
@@ -188,7 +189,7 @@ class MACE(torch.nn.Module):
             else:
                 self.readouts.append(
                     LinearReadoutBlock(
-                        hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+                        hidden_irreps, o3.Irreps(f"0e"), len(heads), cueq_config
                     )
                 )
 
@@ -201,12 +202,14 @@ class MACE(torch.nn.Module):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
+        predict_committee: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
         num_atoms_arange = torch.arange(data["positions"].shape[0])
         num_graphs = data["ptr"].numel() - 1
+        num_graphs_arange = torch.arange(num_graphs)
         node_heads = (
             data["head"][data["batch"]]
             if "head" in data
@@ -232,11 +235,9 @@ class MACE(torch.nn.Module):
             )
 
         # Atomic energies
-        node_e0 = self.atomic_energies_fn(data["node_attrs"])[
-            num_atoms_arange, node_heads
-        ]
-        e0 = scatter_sum(
-            src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+        node_e0_heads = self.atomic_energies_fn(data["node_attrs"])
+        e0_heads = scatter_sum(
+            src=node_e0_heads, index=data["batch"], dim=0, dim_size=num_graphs
         )  # [n_graphs, n_heads]
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -253,16 +254,20 @@ class MACE(torch.nn.Module):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
             )
+            pair_node_energy_heads = torch.tile(
+                pair_node_energy.unsqueeze(-1), (1, len(self.heads))
+            )
             pair_energy = scatter_sum(
                 src=pair_node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
+            pair_energy_heads = torch.tile(pair_energy.unsqueeze(-1), (1, len(self.heads)))
         else:
-            pair_node_energy = torch.zeros_like(node_e0)
-            pair_energy = torch.zeros_like(e0)
+            pair_node_energy_heads = torch.zeros_like(node_e0_heads)
+            pair_energy_heads = torch.zeros_like(e0_heads)
 
         # Interactions
-        energies = [e0, pair_energy]
-        node_energies_list = [node_e0, pair_node_energy]
+        energies = [e0_heads, pair_energy_heads]
+        node_energies_list = [node_e0_heads, pair_node_energy_heads]
         node_feats_list = []
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
@@ -280,50 +285,84 @@ class MACE(torch.nn.Module):
                 node_attrs=data["node_attrs"],
             )
             node_feats_list.append(node_feats)
-            node_energies = readout(node_feats, node_heads)[
-                num_atoms_arange, node_heads
-            ]  # [n_nodes, len(heads)]
+            node_energies = readout(node_feats) # [n_nodes, len(heads)]
             energy = scatter_sum(
                 src=node_energies,
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
-            )  # [n_graphs,]
+            )  # [n_graphs, n_heads]
             energies.append(energy)
             node_energies_list.append(node_energies)
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
 
         # Sum over energy contributions
-        contributions = torch.stack(energies, dim=-1)
-        total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
-        node_energy_contributions = torch.stack(node_energies_list, dim=-1)
-        node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
+        contributions_heads = torch.stack(energies, dim=1)  #[n_graphs, n_contributions, n_heads]
+        total_energy_heads = torch.sum(contributions_heads, dim=1)  # [n_graphs, n_heads]
+        node_energy_contributions_heads = torch.stack(node_energies_list, dim=1)
+        node_energy_heads = torch.sum(node_energy_contributions_heads, dim=1)  # [n_nodes, n_heads]
 
         # Outputs
-        forces, virials, stress, hessian = get_outputs(
-            energy=total_energy,
-            positions=data["positions"],
-            displacement=displacement,
-            cell=data["cell"],
-            training=training,
-            compute_force=compute_force,
-            compute_virials=compute_virials,
-            compute_stress=compute_stress,
-            compute_hessian=compute_hessian,
-        )
+        output = {}
+        if predict_committee is None or training:
+            total_energy = total_energy_heads[num_graphs_arange, data['head']]
+            node_energy = node_energy_heads[num_atoms_arange, node_heads]
+            contributions = contributions_heads[num_graphs_arange, :, data['head']]
+            forces, virials, stress, hessian = get_outputs(
+                energy=total_energy,
+                positions=data["positions"],
+                displacement=displacement,
+                cell=data["cell"],
+                training=training,
+                compute_force=compute_force,
+                compute_virials=compute_virials,
+                compute_stress=compute_stress,
+                compute_hessian=compute_hessian,
+            )
+            output["energy"] = total_energy
+            output["node_energy"] = node_energy
+            output["contributions"] = contributions
+            output["forces"] = forces
+            output["virials"] = virials
+            output["stress"] = stress
+            output["hessian"] = hessian
+            output["stds"] = None
+            output["heads"] = None
+        else:
+            stds = {}
+            heads = {}
+            output["energy"] = torch.mean(total_energy_heads, dim=-1)
+            stds["energy"] = torch.std(total_energy_heads, dim=-1)
+            heads["energy"] = total_energy_heads
+            output["node_energy"] = torch.mean(node_energy_heads, dim=-1)
+            stds["node_energy"] = torch.std(node_energy_heads, dim=-1)
+            heads["node_energy"] = node_energy_heads
+            output["contributions"] = torch.mean(contributions_heads, dim=-1)
+            stds["contributions"] = torch.std(contributions_heads, dim=-1)
+            heads["contributions"] = contributions_heads
 
-        return {
-            "energy": total_energy,
-            "node_energy": node_energy,
-            "contributions": contributions,
-            "forces": forces,
-            "virials": virials,
-            "stress": stress,
-            "displacement": displacement,
-            "hessian": hessian,
-            "node_feats": node_feats_out,
-        }
+            means_properties, stds_properties, heads_properties = get_outputs_committee(
+                energy_heads=total_energy_heads,
+                positions=data["positions"],
+                displacement=displacement,
+                cell=data["cell"],
+                heads=self.heads,
+                compute_force=compute_force,
+                compute_virials=compute_virials,
+                compute_stress=compute_stress,
+                compute_hessian=compute_hessian,    
+            )
+            output.update(means_properties)
+            stds.update(stds_properties)
+            heads.update(heads_properties)
+            output["stds"] = stds
+            output["heads"] = heads
+            
+        output["displacement"] = displacement
+        output["node_feats"] = node_feats_out
+
+        return output
 
 
 @compile_mode("script")
@@ -348,12 +387,14 @@ class ScaleShiftMACE(MACE):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
+        committee_heads: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
+        num_atoms_arange = torch.arange(data["positions"].shape[0], device=data['batch'].device)
         num_graphs = data["ptr"].numel() - 1
-        num_atoms_arange = torch.arange(data["positions"].shape[0])
+        num_graphs_arange = torch.arange(num_graphs, device=data['batch'].device)
         node_heads = (
             data["head"][data["batch"]]
             if "head" in data
@@ -379,11 +420,9 @@ class ScaleShiftMACE(MACE):
             )
 
         # Atomic energies
-        node_e0 = self.atomic_energies_fn(data["node_attrs"])[
-            num_atoms_arange, node_heads
-        ]
-        e0 = scatter_sum(
-            src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+        node_e0_heads = self.atomic_energies_fn(data["node_attrs"])
+        e0_heads = scatter_sum(
+            src=node_e0_heads, index=data["batch"], dim=0, dim_size=num_graphs
         )  # [n_graphs, num_heads]
 
         # Embeddings
@@ -401,10 +440,13 @@ class ScaleShiftMACE(MACE):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
             )
+            pair_node_energy_heads = torch.tile(
+                pair_node_energy.unsqueeze(-1), (1, len(self.heads))
+            )
         else:
-            pair_node_energy = torch.zeros_like(node_e0)
+            pair_node_energy_heads = torch.zeros_like(node_e0_heads)
         # Interactions
-        node_es_list = [pair_node_energy]
+        node_es_list = [pair_node_energy_heads]
         node_feats_list = []
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
@@ -420,48 +462,90 @@ class ScaleShiftMACE(MACE):
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
             node_feats_list.append(node_feats)
-            node_es_list.append(
-                readout(node_feats, node_heads)[num_atoms_arange, node_heads]
-            )  # {[n_nodes, ], }
+            ro_heads = readout(node_feats)
+            node_es_list.append(ro_heads) # {[n_nodes, n_heads], }
 
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
         # Sum over interactions
-        node_inter_es = torch.sum(
-            torch.stack(node_es_list, dim=0), dim=0
-        )  # [n_nodes, ]
-        node_inter_es = self.scale_shift(node_inter_es, node_heads)
+        node_es = torch.stack(node_es_list, dim=0)
+        node_es_heads = node_es.permute(1, 0, 2)
+        node_inter_es_heads = torch.sum(node_es, dim=0)  # [n_nodes, n_heads]
+        node_es_heads = self.scale_shift(node_es_heads)
+        node_inter_es_heads = self.scale_shift(node_inter_es_heads)
 
         # Sum over nodes in graph
-        inter_e = scatter_sum(
-            src=node_inter_es, index=data["batch"], dim=-1, dim_size=num_graphs
-        )  # [n_graphs,]
+        #TODO: Check carefully, why there used to be dim=-1, because I don't see why it is there.
+        # instead of dim=0. The basic MACE model uses dim=0.
+        inter_e_heads = scatter_sum(
+            src=node_inter_es_heads, index=data["batch"], dim=0, dim_size=num_graphs
+        )  # [n_graphs, n_heads]
 
         # Add E_0 and (scaled) interaction energy
-        total_energy = e0 + inter_e
-        node_energy = node_e0 + node_inter_es
-        forces, virials, stress, hessian = get_outputs(
-            energy=inter_e,
-            positions=data["positions"],
-            displacement=displacement,
-            cell=data["cell"],
-            training=training,
-            compute_force=compute_force,
-            compute_virials=compute_virials,
-            compute_stress=compute_stress,
-            compute_hessian=compute_hessian,
-        )
-        output = {
-            "energy": total_energy,
-            "node_energy": node_energy,
-            "interaction_energy": inter_e,
-            "forces": forces,
-            "virials": virials,
-            "stress": stress,
-            "hessian": hessian,
-            "displacement": displacement,
-            "node_feats": node_feats_out,
-        }
+        total_energy_heads = e0_heads + inter_e_heads
+        node_energy_heads = node_e0_heads + node_inter_es_heads
+        output = {}
+        if committee_heads is None or training:
+            inter_e = inter_e_heads[num_graphs_arange, data['head']]
+            total_energy = total_energy_heads[num_graphs_arange, data['head']]
+            node_energy = node_energy_heads[num_atoms_arange, node_heads]
+            energy_contributions = node_es_heads[num_atoms_arange, :, node_heads]
+            forces, virials, stress, hessian = get_outputs(
+                energy=inter_e,
+                positions=data["positions"],
+                displacement=displacement,
+                cell=data["cell"],
+                training=training,
+                compute_force=compute_force,
+                compute_virials=compute_virials,
+                compute_stress=compute_stress,
+                compute_hessian=compute_hessian,
+            )
+            output["energy"] = total_energy
+            output["node_energy"] = node_energy
+            output["interaction_energy"] = inter_e
+            output["contributions"] = energy_contributions
+            output["forces"] = forces
+            output["virials"] = virials
+            output["stress"] = stress
+            output["hessian"] = hessian
+            output["stds"] = None
+            output["heads"] = None
+        else:
+            stds = {}
+            heads = {}
+            heads["energy"] = total_energy_heads[:, committee_heads]
+            output["energy"] = torch.mean(heads["energy"], dim=-1)
+            stds["energy"] = torch.std(heads["energy"], dim=-1)
+            heads["node_energy"] = node_energy_heads[:, committee_heads]
+            output["node_energy"] = torch.mean(heads["node_energy"], dim=-1)
+            stds["node_energy"] = torch.std(heads["node_energy"], dim=-1)
+            heads["interaction_energy"] = inter_e_heads[:, committee_heads]
+            output["interaction_energy"] = torch.mean(heads["interaction_energy"], dim=-1)
+            stds["interaction_energy"] = torch.std(heads["interaction_energy"], dim=-1)
+            heads["contributions"] = node_es_heads[:, :, committee_heads]
+            output["contributions"] = torch.mean(heads["contributions"], dim=-1)
+            stds["contributions"] = torch.std(heads["contributions"], dim=-1)
+
+            means_properties, stds_properties, heads_properties = get_outputs_committee(
+                energy_heads=inter_e_heads,
+                positions=data["positions"],
+                displacement=displacement,
+                cell=data["cell"],
+                committee_heads=committee_heads,
+                compute_force=compute_force,
+                compute_virials=compute_virials,
+                compute_stress=compute_stress,
+                compute_hessian=compute_hessian,    
+            )
+            output.update(means_properties)
+            stds.update(stds_properties)
+            heads.update(heads_properties)
+            output["stds"] = stds
+            output["heads"] = heads
+            
+        output["displacement"] = displacement
+        output["node_feats"] = node_feats_out
 
         return output
 

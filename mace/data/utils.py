@@ -260,6 +260,9 @@ def load_from_xyz(
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
 
+    for atoms in atoms_list:
+        atoms.info[head_key] = head_name
+        
     atomic_energies_dict = {}
     if extract_atomic_energies:
         atoms_without_iso_atoms = []

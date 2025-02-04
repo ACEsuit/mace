@@ -6,11 +6,11 @@
 
 import argparse
 import ast
-import glob
 import json
 import logging
 import os
 from copy import deepcopy
+from glob import glob
 from pathlib import Path
 from typing import List, Optional
 
@@ -54,7 +54,7 @@ from mace.tools.scripts_utils import (
     setup_wandb,
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
-from mace.tools.tables_utils import create_error_table
+from mace.tools.tables_utils import create_error_tables
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -182,14 +182,23 @@ def run(args: argparse.Namespace) -> None:
         args.multiheads_finetuning = False
 
     if args.heads is not None:
+        assert (
+            args.n_committee is None
+        ), "Using multiheads and n_committee for the same model is currently not supported."
         args.heads = ast.literal_eval(args.heads)
     else:
-        args.heads = prepare_default_head(args)
+        if args.n_committee is None:
+            args.heads = prepare_default_head(args)
+        else:
+            args.heads = {}
+            for i in range(args.n_committee):
+                args.heads[f'committee-{i:d}'] = prepare_default_head(args)["default"]
 
     logging.info("===========LOADING INPUT DATA===========")
     heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
     head_configs: List[HeadConfig] = []
+    dataset_seed = args.seed
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
@@ -234,7 +243,7 @@ def run(args: argparse.Namespace) -> None:
                 valid_fraction=head_config.valid_fraction,
                 config_type_weights=config_type_weights,
                 test_path=head_config.test_file,
-                seed=args.seed,
+                seed=dataset_seed,
                 energy_key=head_config.energy_key,
                 forces_key=head_config.forces_key,
                 stress_key=head_config.stress_key,
@@ -243,6 +252,8 @@ def run(args: argparse.Namespace) -> None:
                 charges_key=head_config.charges_key,
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
+                n_committee=args.n_committee,
+                disjoint_committee=args.disjoint_committee,
             )
             head_config.collections = collections
             head_config.atomic_energies_dict = atomic_energies_dict
@@ -251,6 +262,8 @@ def run(args: argparse.Namespace) -> None:
                 f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
             )
         head_configs.append(head_config)
+        if not args.disjoint_committee:
+            dataset_seed += 1
 
     if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
         size_collections_train = sum(
@@ -501,9 +514,18 @@ def run(args: argparse.Namespace) -> None:
                 head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
         else:  # This case would be for when the file path is to a directory of multiple .h5 files
-            train_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
-                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
+            if args.n_committee is None:
+                train_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
+                    head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                )
+            else:
+                if not args.disjoint_committee:
+                    raise ValueError("Preprocessed trainsets are only supported for disjoint committees")
+                fn = f"train_{head_config.head_name}.h5"
+                train_file = f"{head_config.train_file}/{fn}"
+                train_sets[head_config.head_name] = data.HDF5Dataset(
+                    train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                )
             valid_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
                 head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
@@ -719,7 +741,7 @@ def run(args: argparse.Namespace) -> None:
             else:
                 test_folders = glob(head_config.test_dir + "/*")
                 for folder in test_folders:
-                    name = os.path.splitext(os.path.basename(test_file))[0]
+                    name = os.path.splitext(os.path.basename(folder))[0]
                     test_sets[name] = data.dataset_from_sharded_hdf5(
                         folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
@@ -767,30 +789,21 @@ def run(args: argparse.Namespace) -> None:
 
         for param in model.parameters():
             param.requires_grad = False
-        table_train_valid = create_error_table(
-            table_type=args.error_table,
-            all_data_loaders=train_valid_data_loader,
-            model=model_to_evaluate,
-            loss_fn=loss_fn,
-            output_args=output_args,
-            log_wandb=args.wandb,
-            device=device,
-            distributed=args.distributed,
+        error_table_kwargs = {
+            "table_type": args.error_table,
+            "model": model_to_evaluate,
+            "loss_fn": loss_fn,
+            "output_args": output_args,
+            "log_wandb": args.wandb,
+            "device": device,
+            "distributed": args.distributed,
+        }
+        create_error_tables(
+            **error_table_kwargs,
+            train_valid_data_loader=train_valid_data_loader,
+            test_data_loader=test_data_loader,
+            also_predict_committee=(args.n_committee is not None),
         )
-        logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
-
-        if test_data_loader:
-            table_test = create_error_table(
-                table_type=args.error_table,
-                all_data_loaders=test_data_loader,
-                model=model_to_evaluate,
-                loss_fn=loss_fn,
-                output_args=output_args,
-                log_wandb=args.wandb,
-                device=device,
-                distributed=args.distributed,
-            )
-            logging.info("Error-table on TEST:\n" + str(table_test))
 
         if rank == 0:
             # Save entire model

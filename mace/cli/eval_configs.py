@@ -62,6 +62,12 @@ def parse_args() -> argparse.Namespace:
         required=False,
         default=None,
     )
+    parser.add_argument(
+        "--predict_committee",
+        help="Combine all multiheads to a committee for prediction",
+        action="store_true",
+        default=False,
+    )
     return parser.parse_args()
 
 
@@ -109,41 +115,69 @@ def run(args: argparse.Namespace) -> None:
         drop_last=False,
     )
 
+    if args.predict_committee:
+        committee_heads = [i for i, head in enumerate(model.heads) if "committee-" in head]
+        committee_heads = torch.tensor(committee_heads, dtype=int).to(device)
+    else:
+        committee_heads = None
+
     # Collect data
     energies_list = []
     contributions_list = []
     stresses_list = []
-    forces_collection = []
+    forces_list = []
+    energy_stds = []
+    forces_stds = []
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch.to_dict(), compute_stress=args.compute_stress)
+        output = model(
+            batch.to_dict(),
+            compute_stress=args.compute_stress,
+            committee_heads=committee_heads,
+        )
         energies_list.append(torch_tools.to_numpy(output["energy"]))
         if args.compute_stress:
             stresses_list.append(torch_tools.to_numpy(output["stress"]))
 
         if args.return_contributions:
-            contributions_list.append(torch_tools.to_numpy(output["contributions"]))
+            contributions = np.split(
+                torch_tools.to_numpy(output["contributions"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            contributions_list += contributions[:-1]
 
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
             indices_or_sections=batch.ptr[1:],
             axis=0,
         )
-        forces_collection.append(forces[:-1])  # drop last as its empty
+        forces_list += forces[:-1]  # drop last as its empty
+
+        if args.predict_committee:
+            energy_stds.append(torch_tools.to_numpy(output["stds"]["energy"]))
+            forces_std = np.split(
+                torch_tools.to_numpy(output["stds"]["forces"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            forces_stds.append(forces_std[:-1])
 
     energies = np.concatenate(energies_list, axis=0)
-    forces_list = [
-        forces for forces_list in forces_collection for forces in forces_list
-    ]
     assert len(atoms_list) == len(energies) == len(forces_list)
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)
         assert len(atoms_list) == stresses.shape[0]
 
     if args.return_contributions:
-        contributions = np.concatenate(contributions_list, axis=0)
-        assert len(atoms_list) == contributions.shape[0]
+        assert len(atoms_list) == len(contributions_list)
+
+    if args.predict_committee:
+        energy_stds = np.concatenate(energy_stds, axis=0)
+        forces_stds = [
+            stds for std_batch in forces_stds for stds in std_batch
+        ]
 
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
@@ -155,11 +189,14 @@ def run(args: argparse.Namespace) -> None:
             atoms.info[args.info_prefix + "stress"] = stresses[i]
 
         if args.return_contributions:
-            atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
+            atoms.arrays[args.info_prefix + "BO_contributions"] = contributions_list[i]
+
+        if args.predict_committee:
+            atoms.info[args.info_prefix + "energy_std"] = energy_stds[i]
+            atoms.arrays[args.info_prefix + "forces_std"] = forces_stds[i]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
-
 
 if __name__ == "__main__":
     main()

@@ -66,8 +66,7 @@ class HDF5Dataset(Dataset):
             pbc=unpack_value(subgrp["pbc"][()]),
             cell=unpack_value(subgrp["cell"][()]),
         )
-        if config.head is None:
-            config.head = self.kwargs.get("head")
+        config.head = self.kwargs.get("head", "Default")
         atomic_data = AtomicData.from_config(
             config,
             z_table=self.z_table,
