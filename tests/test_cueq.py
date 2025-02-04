@@ -1,5 +1,9 @@
+# pylint: disable=wrong-import-position
+import os
 from copy import deepcopy
 from typing import Any, Dict
+
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import pytest
 import torch
