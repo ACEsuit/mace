@@ -54,10 +54,10 @@ if CUET_AVAILABLE:
                 yield O3_e3nn(l=l, p=-1 * (-1) ** l)
 
 else:
-    print(
-        "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
-    )
-
+    # print(
+    #     "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
+    # )
+    pass
 
 @dataclasses.dataclass
 class CuEquivarianceConfig:

@@ -101,6 +101,10 @@ def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
             "virials_key": args.virials_key,
             "dipole_key": args.dipole_key,
             "charges_key": args.charges_key,
+            "electric_field_key": args.electric_field_key,
+            "polarisation_key": args.polarisation_key,
+            "bec_key": args.bec_key,
+            "polarisability_key": args.polarisability_key,
             "keep_isolated_atoms": args.keep_isolated_atoms,
         }
     }
@@ -187,6 +191,10 @@ def assemble_mp_data(
             virials_key=args.virials_key,
             dipole_key=args.dipole_key,
             charges_key=args.charges_key,
+            electric_field_key=args.electric_field_key,
+            polarisation_key=args.polarisation_key,
+            bec_key=args.bec_key,
+            polarisability_key=args.polarisability_key,
             keep_isolated_atoms=args.keep_isolated_atoms,
         )
         return collections_mp

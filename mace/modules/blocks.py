@@ -50,7 +50,6 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         self.linear = Linear(
             irreps_in=irreps_in, irreps_out=irreps_out, cueq_config=cueq_config
         )
-
     def forward(
         self,
         node_attrs: torch.Tensor,

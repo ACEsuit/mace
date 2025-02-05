@@ -20,6 +20,7 @@ from e3nn.util import jit
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
+import torch.multiprocessing as mp
 
 import mace
 from mace import data, tools
@@ -53,20 +54,25 @@ from mace.tools.scripts_utils import (
     remove_pt_head,
     setup_wandb,
 )
-from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
 
+import warnings
+warnings.filterwarnings("ignore")
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 def main() -> None:
     """
     This script runs the training/fine tuning for mace
     """
     args = tools.build_default_arg_parser().parse_args()
-    run(args)
+    if args.distributed:
+        world_size = torch.cuda.device_count()
+        mp.spawn(run, args=(args, world_size), nprocs=world_size)
+    else:
+        run(0, args, 1)
 
-
-def run(args: argparse.Namespace) -> None:
+def run(rank: int, args: argparse.Namespace, world_size: int) -> None:
     """
     This script runs the training/fine tuning for mace
     """
@@ -81,19 +87,17 @@ def run(args: argparse.Namespace) -> None:
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"
             ) from e
     if args.distributed:
-        try:
-            distr_env = DistributedEnvironment()
-        except Exception as e:  # pylint: disable=W0703
-            logging.error(f"Failed to initialize distributed environment: {e}")
-            return
-        world_size = distr_env.world_size
-        local_rank = distr_env.local_rank
-        rank = distr_env.rank
-        if rank == 0:
-            print(distr_env)
-        torch.distributed.init_process_group(backend="nccl")
+        local_rank = rank
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = "12355"
+        torch.cuda.set_device(rank)
+        torch.distributed.init_process_group(
+            backend='nccl',
+            rank=rank,
+            world_size=world_size,
+        )
     else:
-        rank = int(0)
+        rank = int(0)        
 
     # Setup
     tools.set_seeds(args.seed)
@@ -276,7 +280,7 @@ def run(args: argparse.Namespace) -> None:
         logging.info(
             "==================Using multiheads finetuning mode=================="
         )
-        args.loss = "universal"
+        args.loss = "universal_field" if args.compute_field else "universal"
         if (
             args.foundation_model in ["small", "medium", "large"]
             or args.pt_train_file == "mp"
@@ -486,7 +490,6 @@ def run(args: argparse.Namespace) -> None:
                 logging.info(f"Atomic Energies used (z: eV) for head {head_config.head_name}: " + "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}")
             except KeyError as e:
                 raise KeyError(f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number") from e
-
 
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}

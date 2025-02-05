@@ -530,7 +530,7 @@ class ScaleShiftFieldMACE(MACE):
                     )
 
             self.interactions[i] = inter
-        
+                
     def forward(
         self,
         data: Dict[str, torch.Tensor],
