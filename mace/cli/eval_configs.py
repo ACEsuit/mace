@@ -44,6 +44,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
     )
     parser.add_argument(
+        "--compute_field",
+        help="compute field",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--return_contributions",
         help="model outputs energy contributions for each body order, only supported for MACE, not ScaleShiftMACE",
         action="store_true",
@@ -114,16 +120,25 @@ def run(args: argparse.Namespace) -> None:
     contributions_list = []
     stresses_list = []
     forces_collection = []
+    polarisations_list = []
+    becs_list = []
+    polarisabilities_list = []
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch.to_dict(), compute_stress=args.compute_stress)
+        output = model(batch.to_dict(), compute_stress=args.compute_stress, compute_field=args.compute_field)
         energies_list.append(torch_tools.to_numpy(output["energy"]))
+
         if args.compute_stress:
             stresses_list.append(torch_tools.to_numpy(output["stress"]))
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
+
+        if args.compute_field:
+            polarisations_list.append(torch_tools.to_numpy(output["polarisation"]))
+            becs_list.append(torch_tools.to_numpy(output["bec"]))
+            polarisabilities_list.append(torch_tools.to_numpy(output["polarisability"]))
 
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
@@ -137,6 +152,7 @@ def run(args: argparse.Namespace) -> None:
         forces for forces_list in forces_collection for forces in forces_list
     ]
     assert len(atoms_list) == len(energies) == len(forces_list)
+
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)
         assert len(atoms_list) == stresses.shape[0]
@@ -144,6 +160,15 @@ def run(args: argparse.Namespace) -> None:
     if args.return_contributions:
         contributions = np.concatenate(contributions_list, axis=0)
         assert len(atoms_list) == contributions.shape[0]
+
+    if args.compute_field:
+        polarisations = np.concatenate(polarisations_list, axis=0)
+        becs = np.concatenate(becs_list, axis=0)
+        polarisabilities = np.concatenate(polarisabilities_list, axis=0)
+        assert len(atoms_list) == polarisations.shape[0]
+        assert len(atoms_list) == becs.shape[0]
+        assert len(atoms_list) == polarisabilities.shape[0]
+
 
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
@@ -156,6 +181,11 @@ def run(args: argparse.Namespace) -> None:
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
+
+        if args.compute_field:
+            atoms.info[args.info_prefix + "polarisation"] = polarisations[i]
+            atoms.arrays[args.info_prefix + "bec"] = becs
+            atoms.info[args.info_prefix + "polarisability"] = polarisabilities[i]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
