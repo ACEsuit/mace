@@ -142,6 +142,8 @@ def configure_model(
             max_L=args.max_L,
         )
 
+    model = model.float() # Ensure foundation model weights are updated to specified dtype
+
     return model, output_args
 
 
