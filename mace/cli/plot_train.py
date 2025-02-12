@@ -139,11 +139,11 @@ def plot(data: pd.DataFrame,
     ax = axes[0]
     
     if not linear:
-        xmin=min(valid_data["loss"]["mean"])
+        xmin=min(min(valid_data["loss"]["mean"]),min(train_data["loss"]["mean"]))
         ax.set_yscale('log')
     else:
         xmin=0
-    xmax=max(train_data["loss"]["mean"])
+    xmax=max(max(train_data["loss"]["mean"]), max(train_data["loss"]["mean"]))
 
     if swa_start != None:
         ax.vlines(swa_start,xmin,xmax, colors=colors[4], linestyles='dashed', label='SWA begin',alpha=0.5,linewidth=0.75)
@@ -198,7 +198,6 @@ def plot(data: pd.DataFrame,
         ax.set_yscale('log')
         xmin=min(min(valid_data[force_key]["mean"]),min(valid_data[energy_key]["mean"]))
     else:
-        ax.set_ylim(bottom=0.0)
         xmin=0
 
     xmax=max(max(valid_data[force_key]["mean"]),max(valid_data[energy_key]["mean"]))
