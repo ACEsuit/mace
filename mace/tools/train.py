@@ -51,6 +51,7 @@ def valid_err_log(
 ):
     eval_metrics["mode"] = "eval"
     eval_metrics["epoch"] = epoch
+    eval_metrics["head"] = valid_loader_name
     logger.log(eval_metrics)
     if epoch is None:
         inintial_phrase = "Initial"

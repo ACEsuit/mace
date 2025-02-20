@@ -55,6 +55,7 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
+from mace.cli.visualise_train import plot_training
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -791,7 +792,23 @@ def run(args: argparse.Namespace) -> None:
                 distributed=args.distributed,
             )
             logging.info("Error-table on TEST:\n" + str(table_test))
-
+        if args.plot:
+            try:
+                plot_training(
+                            model_epoch=epoch,
+                            swa_start=swa.start,
+                            results_dir=logger.path,
+                            heads=heads,
+                            table_type=args.error_table,
+                            model=model_to_evaluate,
+                            train_valid_data=train_valid_data_loader,
+                            test_data=test_data_loader,
+                            output_args=output_args,
+                            device=device,
+                            distributed=args.distributed,
+                        )
+            except Exception as e:
+                logging.warning(f"Plotting failed: {e}")
         if rank == 0:
             # Save entire model
             if swa_eval:
