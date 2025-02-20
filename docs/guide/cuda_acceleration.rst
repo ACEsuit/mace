@@ -13,8 +13,7 @@ The `cuEquivariance <https://github.com/NVIDIA/cuEquivariance>`_ library is a CU
 Installation
 ############
 
-To install the cuEquivariance library, follow the instructions on the `cuEquivariance <https://github.com/NVIDIA/cuEquivariance>`_ repository.
-Make sure to install the cuda package `pip install cuequivariance-ops-torch-cu12` (or cu11 depending on your cuda version).
+To install the cuEquivariance library, follow the instructions on the `pip install cuequivariance==0.1.0 cuequivariance-torch cuequivariance-ops-torch-cu12` (or cu11 depending on your cuda version) repository. 
 **NOTE:** The acceleration is only available for GPU devices with CUDA support. Make sure to use PyTorch 2.4.0 or higher.
 
 Install the MACE code from source using the following command:
