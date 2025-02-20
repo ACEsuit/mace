@@ -81,6 +81,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
+    parser.add_argument("--plot", help="plot the results", type=str2bool, default=True)
+
     parser.add_argument(
         "--error_table",
         help="Type of error table produced at the end of the training",
