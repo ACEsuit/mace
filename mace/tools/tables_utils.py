@@ -1,4 +1,5 @@
 import logging
+from math import isnan
 from typing import Dict
 
 import torch
@@ -161,7 +162,7 @@ def _create_error_table(
 
         del data_loader
         torch.cuda.empty_cache()
-        if log_wandb:
+        if log_wandb and not isnan(metrics["loss"]):
             wandb_log_dict = {
                 name
                 + "_final_rmse_e_per_atom": metrics["rmse_e_per_atom"]
@@ -170,7 +171,9 @@ def _create_error_table(
                 name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
             }
             wandb.log(wandb_log_dict)
-        if table_type == "TotalRMSE":
+        if isnan(metrics["loss"]):
+            table.add_row([name, "NaN", "NaN", "NaN"])
+        elif table_type == "TotalRMSE":
             table.add_row(
                 [
                     name,
