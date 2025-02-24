@@ -23,6 +23,7 @@ from torchmetrics import Metric
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
 from .torch_tools import to_numpy
+from mace.cli.visualise_train import TrainingPlotter
 from .utils import (
     MetricsLogger,
     compute_mae,
@@ -157,6 +158,7 @@ def train(
     log_wandb: bool = False,
     distributed: bool = False,
     save_all_checkpoints: bool = False,
+    plotter: TrainingPlotter = None,
     distributed_model: Optional[DistributedDataParallel] = None,
     train_sampler: Optional[DistributedSampler] = None,
     rank: Optional[int] = 0,
@@ -272,6 +274,11 @@ def train(
                                 ],
                                 "valid_rmse_f": eval_metrics["rmse_f"],
                             }
+                    if plotter:
+                        try:
+                            plotter.plot(epoch, model)
+                        except Exception as e:
+                            logging.warning(f"Plotting failed: {e}")
                 valid_loss = (
                     valid_loss_head  # consider only the last head for the checkpoint
                 )
