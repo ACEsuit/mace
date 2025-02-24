@@ -79,6 +79,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--scheduler",
+        help="select scheduler used to infer distributed training parameters",
+        type=str,
+        choices=["slurm", "none"],
+        default="slurm",
+    )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
     parser.add_argument(

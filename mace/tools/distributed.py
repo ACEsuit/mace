@@ -11,15 +11,24 @@ import hostlist
 
 
 class DistributedEnvironment:
+    """Hold distributed parameters read from environment."""
+
     def __init__(self):
-        self._setup_distr_env()
         self.master_addr = os.environ["MASTER_ADDR"]
         self.master_port = os.environ["MASTER_PORT"]
         self.world_size = int(os.environ["WORLD_SIZE"])
         self.local_rank = int(os.environ["LOCAL_RANK"])
         self.rank = int(os.environ["RANK"])
 
-    def _setup_distr_env(self):
+
+class SlurmDistributed(DistributedEnvironment):
+    """Infer distributed parameters from SLURM scheduler."""
+
+    def __init__(self):
+        self._setup_env_vars()
+        super().__init__()
+
+    def _setup_env_vars(self):
         hostname = hostlist.expand_hostlist(os.environ["SLURM_JOB_NODELIST"])[0]
         os.environ["MASTER_ADDR"] = hostname
         os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "33333")
@@ -32,3 +41,12 @@ class DistributedEnvironment:
         )
         os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
         os.environ["RANK"] = os.environ["SLURM_PROCID"]
+
+
+def get_distributed_environment(scheduler: str) -> DistributedEnvironment:
+    """Get distributed environemnt settings using requested scheduler."""
+    if scheduler == "none":
+        return DistributedEnvironment()
+    if scheduler == "slurm":
+        return SlurmDistributed()
+    raise ValueError(scheduler)
