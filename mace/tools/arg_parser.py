@@ -80,7 +80,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
-        "--scheduler",
+        "--batch_scheduler",
         help="select scheduler used to infer distributed training parameters",
         type=str,
         choices=["slurm", "none"],

@@ -82,7 +82,7 @@ def run(args: argparse.Namespace) -> None:
             ) from e
     if args.distributed:
         try:
-            distr_env = get_distributed_environment(args.scheduler)
+            distr_env = get_distributed_environment(args.batch_scheduler)
         except Exception as e:  # pylint: disable=W0703
             logging.error(f"Failed to initialize distributed environment: {e}")
             return
