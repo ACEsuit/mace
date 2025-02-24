@@ -55,7 +55,7 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
-from mace.cli.visualise_train import plot_training
+from mace.cli.visualise_train import TrainingPlotter
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -648,6 +648,30 @@ def run(args: argparse.Namespace) -> None:
     else:
         distributed_model = None
 
+    # train_valid_data_loader = {}
+    # for head_config in head_configs:
+    #     data_loader_name = "train_" + head_config.head_name
+    #     train_valid_data_loader[data_loader_name] = head_config.train_loader
+    # for head, valid_loader in valid_loaders.items():
+    #     data_load_name = "valid_" + head
+    #     train_valid_data_loader[data_load_name] = valid_loader
+
+    # logging.info("train loader:", train_valid_data_loader)
+        
+    # plotter = TrainingPlotter(
+    #     results_dir=logger.path,
+    #     heads=heads,
+    #     table_type=args.error_table,
+    #     train_valid_data=train_valid_data_loader,
+    #     test_data=test_data_loader,
+    #     output_args=output_args,
+    #     log_wandb=args.wandb,
+    #     device=device,
+    #     distributed=args.distributed,
+    #     swa_start=swa.start if swa else None
+    # )
+    plotter = None
+
     tools.train(
         model=model,
         loss_fn=loss_fn,
@@ -671,6 +695,7 @@ def run(args: argparse.Namespace) -> None:
         log_wandb=args.wandb,
         distributed=args.distributed,
         distributed_model=distributed_model,
+        plotter=plotter,
         train_sampler=train_sampler,
         rank=rank,
     )
@@ -686,6 +711,29 @@ def run(args: argparse.Namespace) -> None:
     for head, valid_loader in valid_loaders.items():
         data_load_name = "valid_" + head
         train_valid_data_loader[data_load_name] = valid_loader
+
+    logging.info("train loader:", train_valid_data_loader)
+        
+    plotter = TrainingPlotter(
+        results_dir=logger.path,
+        heads=heads,
+        table_type=args.error_table,
+        train_valid_data=train_valid_data_loader,
+        test_data=test_data_loader,
+        output_args=output_args,
+        log_wandb=args.wandb,
+        device=device,
+        distributed=args.distributed,
+        swa_start=swa.start if swa else None
+    )
+
+    # train_valid_data_loader = {}
+    # for head_config in head_configs:
+    #     data_loader_name = "train_" + head_config.head_name
+    #     train_valid_data_loader[data_loader_name] = head_config.train_loader
+    # for head, valid_loader in valid_loaders.items():
+    #     data_load_name = "valid_" + head
+    #     train_valid_data_loader[data_load_name] = valid_loader
 
     test_sets = {}
     stop_first_test = False
@@ -794,21 +842,23 @@ def run(args: argparse.Namespace) -> None:
             logging.info("Error-table on TEST:\n" + str(table_test))
         if args.plot:
             try:
+                swa_start = swa.start if swa else None
                 plot_training(
-                            model_epoch=epoch,
-                            swa_start=swa.start,
-                            results_dir=logger.path,
-                            heads=heads,
-                            table_type=args.error_table,
-                            model=model_to_evaluate,
-                            train_valid_data=train_valid_data_loader,
-                            test_data=test_data_loader,
-                            output_args=output_args,
-                            device=device,
-                            distributed=args.distributed,
-                        )
+                    model_epoch=epoch,
+                    swa_start=swa_start,
+                    results_dir=logger.path,
+                    heads=heads,
+                    table_type=args.error_table,
+                    model=model_to_evaluate,
+                    train_valid_data=train_valid_data_loader,
+                    test_data=test_data_loader,
+                    output_args=output_args,
+                    log_wandb=args.wandb,
+                    device=device,
+                    distributed=args.distributed,
+                )
             except Exception as e:
-                logging.warning(f"Plotting failed: {e}")
+                logging.debug(f"Plotting failed: {e}")
         if rank == 0:
             # Save entire model
             if swa_eval:

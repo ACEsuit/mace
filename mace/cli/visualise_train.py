@@ -4,7 +4,6 @@ import glob
 import json
 import os
 import re
-from typing import List
 import logging
 from typing import Dict
 import torch
@@ -12,6 +11,7 @@ from torchmetrics import Metric
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from typing import List, Optional
 
 
 
@@ -23,117 +23,138 @@ plt.style.use("seaborn-v0_8-paper")
 colors = [
     "#1f77b4",  # muted blue
     "#d62728",  # brick red
-    "#ff7f0e",  # safety orange
+    "#7f7f7f",  # middle gray
     "#2ca02c",  # cooked asparagus green
+    "#ff7f0e",  # safety orange
     "#9467bd",  # muted purple
     "#8c564b",  # chestnut brown
     "#e377c2",  # raspberry yogurt pink
-    "#7f7f7f",  # middle gray
     "#bcbd22",  # curry yellow-green
     "#17becf",  # blue-teal
 ]
 
+error_type = {
+        "TotalRMSE": ([
+            ("rmse_e", "RMSE E [meV]"),
+            ("rmse_f", "RMSE F [meV / A]")
+        ], [("energy", "Energy per atom [eV]"), ("force", "Force [eV / A]")]),
+
+        "PerAtomRMSE": ([
+            ("rmse_e_per_atom", "RMSE E/atom [meV]"),
+            ("rmse_f", "RMSE F [meV / A]")
+        ], [("energy", "Energy per atom [eV]"), ("force", "Force [eV / A]")]),
+
+        "PerAtomRMSEstressvirials": ([
+            ("rmse_e_per_atom", "RMSE E/atom [meV]"),
+            ("rmse_f", "RMSE F [meV / A]"),
+            ("rmse_stress", "RMSE Stress [meV / A^3]")
+        ], [("energy", "Energy per atom [eV]"), ("force", "Force [eV / A]"), ("stress", "Stress [eV / A^3]")]),
+
+        "PerAtomMAEstressvirials": ([
+            ("mae_e_per_atom", "MAE E/atom [meV]"),
+            ("mae_f", "MAE F [meV / A]"),
+            ("mae_stress", "MAE Stress [meV / A^3]")
+        ], [("energy", "Energy per atom [eV]"), ("force", "Force [eV / A]"), ("stress", "Stress [eV / A^3]")]),
+
+        "TotalMAE": ([
+            ("mae_e", "MAE E [meV]"),
+            ("mae_f", "MAE F [meV / A]")
+        ], [("energy", "Energy per atom [eV]"), ("force", "Force [eV / A]")]),
+
+        "PerAtomMAE": ([
+            ("mae_e_per_atom", "MAE E/atom [meV]"),
+            ("mae_f", "MAE F [meV / A]")
+        ], [("energy", "Energy per atom [eV]"), ("force", "Force [eV / A]")]),
+
+        "DipoleRMSE": ([
+            ("rmse_mu_per_atom", "RMSE MU/atom [mDebye]"),
+            ("rel_rmse_f", "Relative MU RMSE [%]")
+        ], [("dipole", "Dipole per atom [Debye]")]),
+
+        "DipoleMAE": ([
+            ("mae_mu", "MAE MU [mDebye]"),
+            ("rel_mae_f", "Relative MU MAE [%]")
+        ], [("dipole", "Dipole per atom [Debye]")]),
+
+        "EnergyDipoleRMSE": ([
+            ("rmse_e_per_atom", "RMSE E/atom [meV]"),
+            ("rmse_f", "RMSE F [meV / A]"),
+            ("rmse_mu_per_atom", "RMSE MU/atom [mDebye]")
+        ], [("energy", "Energy per atom [eV]"), ("force", "Force [eV / A]"), ("dipole", "Dipole per atom [Debye]")]),
+        }
+
 #TODO: figure out device/distributed
-def plot_training(
-        model_epoch: str,
-        swa_start: int,
+class TrainingPlotter:
+    def __init__(
+        self,
         results_dir: str,
-        heads: str,
+        heads: List[str],
         table_type: str,
-        model: torch.nn.Module,
-        train_valid_data: dict,
-        test_data: dict,
+        train_valid_data: Dict,
+        test_data: Dict,
         output_args: str,
+        log_wandb: bool,
         device: str,
-        distributed: bool=False) -> None:
+        distributed: bool = False,
+        swa_start: Optional[int] = None
+    ):
+        self.results_dir = results_dir
+        self.heads = heads
+        self.table_type = table_type
+        self.train_valid_data = train_valid_data
+        self.test_data = test_data
+        self.output_args = output_args
+        self.log_wandb = log_wandb
+        self.device = device
+        self.distributed = distributed
+        self.swa_start = swa_start
 
-    error_type = {
-    "TotalRMSE": ([
-        ("rmse_e", "RMSE E [meV]"),
-        ("rmse_f", "RMSE F [meV / A]")
-    ], [("energy", "Energy per atom [meV]"), ("force", "Force [meV / A]")]),
-
-    "PerAtomRMSE": ([
-        ("rmse_e_per_atom", "RMSE E/atom [meV]"),
-        ("rmse_f", "RMSE F [meV / A]")
-    ], [("energy", "Energy per atom [meV]"), ("force", "Force [meV / A]")]),
-
-    "PerAtomRMSEstressvirials": ([
-        ("rmse_e_per_atom", "RMSE E/atom [meV]"),
-        ("rmse_f", "RMSE F [meV / A]"),
-        ("rmse_stress", "RMSE Stress [meV / A^3]")
-    ], [("energy", "Energy per atom [meV]"), ("force", "Force [meV / A]"), ("stress", "Stress [meV / A^3]")]),
-
-    "PerAtomMAEstressvirials": ([
-        ("mae_e_per_atom", "MAE E/atom [meV]"),
-        ("mae_f", "MAE F [meV / A]"),
-        ("mae_stress", "MAE Stress [meV / A^3]")
-    ], [("energy", "Energy per atom [meV]"), ("force", "Force [meV / A]"), ("stress", "Stress [meV / A^3]")]),
-
-    "TotalMAE": ([
-        ("mae_e", "MAE E [meV]"),
-        ("mae_f", "MAE F [meV / A]")
-    ], [("energy", "Energy per atom [meV]"), ("force", "Force [meV / A]")]),
-
-    "PerAtomMAE": ([
-        ("mae_e_per_atom", "MAE E/atom [meV]"),
-        ("mae_f", "MAE F [meV / A]")
-    ], [("energy", "Energy per atom [meV]"), ("force", "Force [meV / A]")]),
-
-    "DipoleRMSE": ([
-        ("rmse_mu_per_atom", "RMSE MU/atom [mDebye]"),
-        ("rel_rmse_f", "Relative MU RMSE [%]")
-    ], [("dipole", "Dipole per atom [mDebye]")]),
-
-    "DipoleMAE": ([
-        ("mae_mu", "MAE MU [mDebye]"),
-        ("rel_mae_f", "Relative MU MAE [%]")
-    ], [("dipole", "Dipole per atom [mDebye]")]),
-
-    "EnergyDipoleRMSE": ([
-        ("rmse_e_per_atom", "RMSE E/atom [meV]"),
-        ("rmse_f", "RMSE F [meV / A]"),
-        ("rmse_mu_per_atom", "RMSE MU/atom [mDebye]")
-    ], [("energy", "Energy per atom [meV]"), ("force", "Force [meV / A]"), ("dipole", "Dipole per atom [mDebye]")]),
-    }
-
-           #EPOCH dependence
-    data = pd.DataFrame(
-            results
-            for results in parse_training_results(results_dir)
-    )
-    labels,quantities = error_type[table_type]
-
-    print(swa_start)
-
-
-    for head in heads:
+    def plot(
+        self,
+        model_epoch: None,
+        model: torch.nn.Module
+        ) -> None:
         
-        fig = plt.figure(layout='constrained', figsize=(10, 6))
-        subfigs = fig.subfigures(2, 1, height_ratios=[1, 1], hspace=0.05)
-        axsTop = subfigs[0].subplots(1, 2, sharey=False)
-        axsBottom = subfigs[1].subplots(1,len(quantities),  sharey=False)
+        if self.log_wandb:
+            import wandb
+
+
+
+            #EPOCH dependence
+        data = pd.DataFrame(
+                results
+                for results in parse_training_results(self.results_dir)
+        )
+        labels, quantities = error_type[table_type]
+
+        for head in self.heads:
+            fig = plt.figure(layout='constrained', figsize=(10, 6))
+            fig.suptitle(f"Model loaded from epoch {model_epoch} ({head} head)", fontsize=16)  # Add main title
+
+            subfigs = fig.subfigures(2, 1, height_ratios=[1, 1], hspace=0.05)
+            axsTop = subfigs[0].subplots(1, 2, sharey=False)
+            axsBottom = subfigs[1].subplots(1,len(quantities),  sharey=False)
+
+            plot_epoch_dependence(axsTop, data, head, model_epoch, labels)
             
+            plot_inference(axsBottom, self.train_valid_data, self.test_data, head, quantities, model, self.output_args, self.device, self.distributed)
 
-        plot_epoch_dependence(axsTop, data,  head, model_epoch, labels)
-        
-        # #TODO: on what to check model inference
-
-        plot_inference(axsBottom, train_valid_data, test_data, head, quantities, model, output_args, device, distributed)
-
-        if swa_start < model_epoch:
-            axsTop[0].axvline(swa_start, color="black", linestyle="dashed", linewidth=1, alpha=0.6, label="Stage Two Starts")
+            if self.swa_start is not None:
+                # Add vertical lines to both axes
+                for ax in axsTop:
+                    ax.axvline(self.swa_start, color="black", linestyle="dashed", linewidth=1, alpha=0.6, label="Stage Two Starts")
+                stage = "stage_two" if self.swa_start < model_epoch else "stage_one"
+            else:
+                stage = "stage_one"
             axsTop[0].legend(loc="best")
-            axsTop[1].axvline(swa_start, color="black", linestyle="dashed", linewidth=1, alpha=0.6, label="Stage Two Starts")
-            fig.savefig(f"{results_dir[:-4]}_{head}_stage_two.png", dpi=300, bbox_inches="tight")
+            # Save the figure using the appropriate stage in the filename
+            filename = f"{self.results_dir[:-4]}_{self.heads}_{stage}.png"
 
-        else:
-            fig.savefig(f"{results_dir[:-4]}_{head}_stage_one.png", dpi=300, bbox_inches="tight")
-        plt.close(fig)
+            fig.savefig(filename, dpi=300, bbox_inches="tight")
+            plt.close(fig)
 
 
 #LOADING training results
-
 #TODO: check if this is the correct way to load for comittee models
 def parse_training_results(path: str) -> List[dict]:
     results = []
@@ -162,13 +183,17 @@ def plot_epoch_dependence(
 
     # ---- Plot loss ----
     ax = axes[0]
-    ax.plot(train_data["epoch"], train_data["loss"]["mean"], color=colors[1], label="Training", linewidth=1)
-    ax.plot(valid_data["epoch"], valid_data["loss"]["mean"], color=colors[0], label="Validation", linewidth=1)
+    ax.plot(train_data["epoch"], train_data["loss"]["mean"], color=colors[1], linewidth=1)
+    ax.set_ylabel("Training Loss", color=colors[1])
+    ax.set_yscale("log")
+
+    ax2 = ax.twinx()
+    ax2.plot(valid_data["epoch"], valid_data["loss"]["mean"], color=colors[0], linewidth=1)
+    ax2.set_ylabel("Validation Loss", color=colors[0]) 
+    ax2.set_yscale("log")
 
     ax.axvline(model_epoch, color="black", linestyle="solid", linewidth=1, alpha=0.8, label="Loaded Model")
-
     ax.set_xlabel("Epoch")
-    ax.set_ylabel("Loss")
     ax.grid(True, linestyle="--", alpha=0.5)
 
     
@@ -186,7 +211,7 @@ def plot_epoch_dependence(
                 twin_axes.append(main_ax)
 
             main_ax.plot(valid_data["epoch"], valid_data[key]["mean"] * 1e3, color=color, label=label, linewidth=1)
-
+            main_ax.set_yscale("log")
             main_ax.set_ylabel(axis_label, color=color)
             main_ax.tick_params(axis="y", colors=color)
     ax.axvline(model_epoch, color="black", linestyle="solid", linewidth=1, alpha=0.8, label="Loaded Model")
@@ -226,36 +251,31 @@ def plot_inference(
             if key == "energy" and "energy" in result:  
                 scatter = ax.scatter(result["energy"]["reference_per_atom"], 
                                     result["energy"]["predicted_per_atom"],
-                                    marker="o",
-                                    size=1, 
+                                    marker="o", 
                                     color=fixed_color_test, label="Test")
             
             elif key == "force" and "forces" in result:  
                 scatter = ax.scatter(result["forces"]["reference"], 
                                     result["forces"]["predicted"], 
                                     marker="o",
-                                    size=1, 
                                     color=fixed_color_test, label="Test")
             
             elif key == "stress" and "stress" in result:  
                 scatter = ax.scatter(result["stress"]["reference"], 
                                     result["stress"]["predicted"], 
                                     marker="o",
-                                    size=1, 
                                     color=fixed_color_test, label="Test")
             
             elif key == "virials" and "virials" in result:  
                 scatter = ax.scatter(result["virials"]["reference_per_atom"], 
                                     result["virials"]["predicted_per_atom"], 
                                     marker="o",
-                                    size=1, 
                                     color=fixed_color_test, label="Test")
 
             legend_labels["Test"] = scatter
 
         # Plot train/valid data (each entry keeps its own name)
         for name, result in train_valid_dict.items():
-            print("Name:", name)
             if "train" in name:
                 fixed_color_train_valid = colors[1]
                 marker = "x"
@@ -288,9 +308,20 @@ def plot_inference(
                                     result["virials"]["predicted_per_atom"], 
                                     marker=marker,
                                     color=fixed_color_train_valid, label=name)
+            
+            elif key == "dipole" and "dipoles" in result:  
+                scatter = ax.scatter(result["dipoles"]["reference_per_atom"], 
+                                    result["dipoles"]["predicted_per_atom"], 
+                                    marker=marker,
+                                    color=fixed_color_train_valid, label=name)
 
             # Add each train/valid dataset's name to the legend
             legend_labels[name] = scatter
+
+        # Add diagonal line for guide
+        min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
+        max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])
+        ax.plot([min_val, max_val], [min_val, max_val], linestyle="--", color="black", alpha=0.7)
 
         # Set legend with unique entries (Test + individual train/valid names)
         ax.legend(handles=legend_labels.values(), labels=legend_labels.keys(), loc="best")
@@ -354,12 +385,15 @@ class InferenceMetric(Metric):
         self.add_state("pred_stress", default=[], dist_reduce_fx="cat")
         self.add_state("ref_virials", default=[], dist_reduce_fx="cat")
         self.add_state("pred_virials", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_dipoles",default=[], dist_reduce_fx="cat" )
+        self.add_state("pred_dipoles",default=[], dist_reduce_fx="cat" )
         
         # Per-atom normalized values
         self.add_state("ref_energies_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("pred_energies_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("ref_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("pred_virials_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_dipoles_per_atom", default=[], dist_reduce_fx="cat")
         
         # Store atom counts for each configuration
         self.add_state("atom_counts", default=[], dist_reduce_fx="cat")
@@ -369,6 +403,7 @@ class InferenceMetric(Metric):
         self.add_state("n_forces", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_stress", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_virials", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("n_dipoles", default=torch.tensor(0.0), dist_reduce_fx="sum")
 
     def update(self, batch, output):
         """Update metric states with new batch data."""
@@ -406,6 +441,16 @@ class InferenceMetric(Metric):
             atoms_per_config_3d = atoms_per_config.view(-1, 1, 1)
             self.ref_virials_per_atom.append(batch.virials / atoms_per_config_3d)
             self.pred_virials_per_atom.append(output["virials"] / atoms_per_config_3d)
+
+        # Dipoles
+        if output.get("dipoles") is not None and batch.dipole is not None:
+            self.n_dipoles += batch.dipole.shape[0]
+            self.ref_dipoles.append(batch.dipole)
+            self.pred_dipoles.append(output["dipoles"])
+            # Per-atom normalization
+            atoms_per_config_3d = atoms_per_config.view(-1, 1, 1)
+            self.ref_dipoles_per_atom.append(batch.dipole / atoms_per_config_3d)
+            self.pred_dipoles_per_atom.append(output["dipoles"] / atoms_per_config_3d)
 
     def _process_data(self, ref_list, pred_list):
         """Helper to process and convert data to numpy arrays."""
