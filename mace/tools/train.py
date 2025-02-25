@@ -357,8 +357,11 @@ def train_one_epoch(
     logging.debug("Check gradients")
     for name, param in model.named_parameters():
         if param.requires_grad:
-            gradient_norm = torch.norm(param.grad).item()
-            logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
+            if param.grad is None:
+                logging.warning(f"Parameter: {name}, Gradient is None")
+            else:
+                gradient_norm = torch.norm(param.grad).item()
+                logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
         else:
             logging.debug(f"Parameter: {name}, Gradient norm: Frozen")
     
