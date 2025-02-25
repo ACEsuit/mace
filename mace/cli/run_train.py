@@ -515,7 +515,7 @@ def run(args: argparse.Namespace) -> None:
             num_replicas=world_size,
             rank=rank,
             shuffle=True,
-            drop_last=False if args.lbfgs else True,
+            drop_last=(not args.lbfgs),
             seed=args.seed,
         )
         valid_samplers = {}
