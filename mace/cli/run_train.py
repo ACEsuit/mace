@@ -26,6 +26,7 @@ from mace import data, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+from mace.cli.visualise_train import TrainingPlotter
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -55,7 +56,6 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
-from mace.cli.visualise_train import TrainingPlotter
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -648,29 +648,33 @@ def run(args: argparse.Namespace) -> None:
     else:
         distributed_model = None
 
-    # train_valid_data_loader = {}
-    # for head_config in head_configs:
-    #     data_loader_name = "train_" + head_config.head_name
-    #     train_valid_data_loader[data_loader_name] = head_config.train_loader
-    # for head, valid_loader in valid_loaders.items():
-    #     data_load_name = "valid_" + head
-    #     train_valid_data_loader[data_load_name] = valid_loader
 
-    # logging.info("train loader:", train_valid_data_loader)
-        
-    # plotter = TrainingPlotter(
-    #     results_dir=logger.path,
-    #     heads=heads,
-    #     table_type=args.error_table,
-    #     train_valid_data=train_valid_data_loader,
-    #     test_data=test_data_loader,
-    #     output_args=output_args,
-    #     log_wandb=args.wandb,
-    #     device=device,
-    #     distributed=args.distributed,
-    #     swa_start=swa.start if swa else None
-    # )
-    plotter = None
+    train_valid_data_loader = {}
+    for head_config in head_configs:
+        data_loader_name = "train_" + head_config.head_name
+        train_valid_data_loader[data_loader_name] = head_config.train_loader
+    for head, valid_loader in valid_loaders.items():
+        data_load_name = "valid_" + head
+        train_valid_data_loader[data_load_name] = valid_loader
+
+    if args.plot and args.plot_frequency > 0:
+        try:
+            plotter = TrainingPlotter(
+                results_dir=logger.path,
+                heads=heads,
+                table_type=args.error_table,
+                train_valid_data=train_valid_data_loader,
+                test_data={},
+                output_args=output_args,
+                device=device,
+                plot_frequency=args.plot_frequency,
+                distributed=args.distributed,
+                swa_start=swa.start if swa else None
+                )
+        except Exception as e:  # pylint: disable=W0718
+            logging.debug(f"Creating Plotter failed: {e}")
+    else:
+        plotter = None
 
     tools.train(
         model=model,
@@ -711,30 +715,6 @@ def run(args: argparse.Namespace) -> None:
     for head, valid_loader in valid_loaders.items():
         data_load_name = "valid_" + head
         train_valid_data_loader[data_load_name] = valid_loader
-
-    logging.info("train loader:", train_valid_data_loader)
-        
-    plotter = TrainingPlotter(
-        results_dir=logger.path,
-        heads=heads,
-        table_type=args.error_table,
-        train_valid_data=train_valid_data_loader,
-        test_data=test_data_loader,
-        output_args=output_args,
-        log_wandb=args.wandb,
-        device=device,
-        distributed=args.distributed,
-        swa_start=swa.start if swa else None
-    )
-
-    # train_valid_data_loader = {}
-    # for head_config in head_configs:
-    #     data_loader_name = "train_" + head_config.head_name
-    #     train_valid_data_loader[data_loader_name] = head_config.train_loader
-    # for head, valid_loader in valid_loaders.items():
-    #     data_load_name = "valid_" + head
-    #     train_valid_data_loader[data_load_name] = valid_loader
-
     test_sets = {}
     stop_first_test = False
     test_data_loader = {}
@@ -842,22 +822,20 @@ def run(args: argparse.Namespace) -> None:
             logging.info("Error-table on TEST:\n" + str(table_test))
         if args.plot:
             try:
-                swa_start = swa.start if swa else None
-                plot_training(
-                    model_epoch=epoch,
-                    swa_start=swa_start,
+                plotter = TrainingPlotter(
                     results_dir=logger.path,
                     heads=heads,
                     table_type=args.error_table,
-                    model=model_to_evaluate,
                     train_valid_data=train_valid_data_loader,
                     test_data=test_data_loader,
                     output_args=output_args,
-                    log_wandb=args.wandb,
                     device=device,
+                    plot_frequency=args.plot_frequency,
                     distributed=args.distributed,
+                    swa_start=swa.start if swa else None
                 )
-            except Exception as e:
+                plotter.plot(epoch,model_to_evaluate)
+            except Exception as e:  # pylint: disable=W0718
                 logging.debug(f"Plotting failed: {e}")
         if rank == 0:
             # Save entire model
@@ -895,7 +873,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception as e:  # pylint: disable=W0718
                     pass
             else:
                 torch.save(model_to_save, Path(args.model_dir) / (args.name + ".model"))
@@ -910,7 +888,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception as e:  # pylint: disable=W0718
                     pass
 
         if args.distributed:
