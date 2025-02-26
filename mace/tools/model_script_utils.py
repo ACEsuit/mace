@@ -6,9 +6,9 @@ from e3nn import o3
 
 from mace import modules
 from mace.tools.finetuning_utils import load_foundations_elements
+from mace.tools.freeze import freeze_layers, freeze_param
 from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.utils import AtomicNumberTable
-from mace.tools.freeze import (freeze_layers, freeze_param)
 
 
 def configure_model(
@@ -139,9 +139,11 @@ def configure_model(
             max_L=args.max_L,
         )
 
-    # Freeze layers or parameter groups 
+    # Freeze layers or parameter groups
     if args.freeze is not None and args.freeze_par is not None:
-        logging.info("Both --freeze and --freeze_par arguments detected, using --freeze")
+        logging.info(
+            "Both --freeze and --freeze_par arguments detected, using --freeze"
+        )
         freeze_layers(model, args.freeze)
     elif args.freeze_par is not None:
         freeze_param(model, args.freeze_par)

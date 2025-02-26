@@ -427,7 +427,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
     )
-    
+
     # Keys
     parser.add_argument(
         "--energy_key",

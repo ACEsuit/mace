@@ -7,7 +7,7 @@
 import dataclasses
 import logging
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -31,7 +31,7 @@ from .utils import (
     compute_rel_rmse,
     compute_rmse,
 )
-from contextlib import contextmanager
+
 
 @dataclasses.dataclass
 class SWAContainer:
@@ -364,7 +364,8 @@ def train_one_epoch(
                 logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
         else:
             logging.debug(f"Parameter: {name}, Gradient norm: Frozen")
-    
+
+
 def take_step(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
@@ -402,6 +403,7 @@ def take_step(
 
     return loss, loss_dict
 
+
 # Keep parameters frozen/active after evaluation
 @contextmanager
 def preserve_grad_state(model):
@@ -416,6 +418,7 @@ def preserve_grad_state(model):
         # restore the original requires_grad states
         for param, requires_grad in requires_grad_backup.items():
             param.requires_grad = requires_grad
+
 
 def evaluate(
     model: torch.nn.Module,
