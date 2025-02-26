@@ -20,10 +20,11 @@ from torch.utils.data.distributed import DistributedSampler
 from torch_ema import ExponentialMovingAverage
 from torchmetrics import Metric
 
+from mace.cli.visualise_train import TrainingPlotter
+
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
 from .torch_tools import to_numpy
-from mace.cli.visualise_train import TrainingPlotter
 from .utils import (
     MetricsLogger,
     compute_mae,
@@ -274,10 +275,10 @@ def train(
                                 ],
                                 "valid_rmse_f": eval_metrics["rmse_f"],
                             }
-                    if plotter:
+                    if plotter and epoch % plotter.plot_frequency == 0:
                         try:
                             plotter.plot(epoch, model)
-                        except Exception as e:
+                        except Exception as e:  # pylint: disable=broad-except
                             logging.warning(f"Plotting failed: {e}")
                 valid_loss = (
                     valid_loss_head  # consider only the last head for the checkpoint
