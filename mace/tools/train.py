@@ -7,7 +7,7 @@
 import dataclasses
 import logging
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -353,6 +353,18 @@ def train_one_epoch(
         if rank == 0:
             logger.log(opt_metrics)
 
+    # Checking gradients in the active layers
+    logging.debug("Check gradients")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            if param.grad is None:
+                logging.warning(f"Parameter: {name}, Gradient is None")
+            else:
+                gradient_norm = torch.norm(param.grad).item()
+                logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
+        else:
+            logging.debug(f"Parameter: {name}, Gradient norm: Frozen")
+
 
 def take_step(
     model: torch.nn.Module,
@@ -392,6 +404,22 @@ def take_step(
     return loss, loss_dict
 
 
+# Keep parameters frozen/active after evaluation
+@contextmanager
+def preserve_grad_state(model):
+    # save the original requires_grad state for all parameters
+    requires_grad_backup = {param: param.requires_grad for param in model.parameters()}
+    try:
+        # temporarily disable gradients for all parameters
+        for param in model.parameters():
+            param.requires_grad = False
+        yield  # perform evaluation here
+    finally:
+        # restore the original requires_grad states
+        for param, requires_grad in requires_grad_backup.items():
+            param.requires_grad = requires_grad
+
+
 def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
@@ -399,30 +427,25 @@ def evaluate(
     output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-    for param in model.parameters():
-        param.requires_grad = False
-
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
     start_time = time.time()
-    for batch in data_loader:
-        batch = batch.to(device)
-        batch_dict = batch.to_dict()
-        output = model(
-            batch_dict,
-            training=False,
-            compute_force=output_args["forces"],
-            compute_virials=output_args["virials"],
-            compute_stress=output_args["stress"],
-        )
-        avg_loss, aux = metrics(batch, output)
+    with preserve_grad_state(model):  # temporarily disable parameter gradients
+        for batch in data_loader:
+            batch = batch.to(device)
+            batch_dict = batch.to_dict()
+            output = model(
+                batch_dict,
+                training=False,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+            )
+            avg_loss, aux = metrics(batch, output)
 
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time
     metrics.reset()
-
-    for param in model.parameters():
-        param.requires_grad = True
 
     return avg_loss, aux
 

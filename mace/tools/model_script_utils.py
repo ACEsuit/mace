@@ -6,6 +6,7 @@ from e3nn import o3
 
 from mace import modules
 from mace.tools.finetuning_utils import load_foundations_elements
+from mace.tools.freeze import freeze_layers, freeze_param
 from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.utils import AtomicNumberTable
 
@@ -80,7 +81,7 @@ def configure_model(
             f"Message passing with hidden irreps {model_config_foundation['hidden_irreps']})"
         )
         logging.info(
-            f"{model_config_foundation['num_interactions']} layers, each with correlation order: {model_config_foundation['correlation']} (body order: {model_config_foundation['correlation']+1}) and spherical harmonics up to: l={model_config_foundation['max_ell']}"
+            f"{model_config_foundation['num_interactions']} message passing iterations, each with correlation order: {model_config_foundation['correlation']} (body order: {model_config_foundation['correlation']+1}) and spherical harmonics up to: l={model_config_foundation['max_ell']}"
         )
         logging.info(
             f"Radial cutoff: {model_config_foundation['r_max']} A (total receptive field for each atom: {model_config_foundation['r_max'] * model_config_foundation['num_interactions']} A)"
@@ -137,6 +138,17 @@ def configure_model(
             load_readout=args.foundation_filter_elements,
             max_L=args.max_L,
         )
+
+    # Freeze layers or parameter groups
+    if args.freeze is not None and args.freeze_par is not None:
+        logging.info(
+            "Both --freeze and --freeze_par arguments detected, using --freeze"
+        )
+        freeze_layers(model, args.freeze)
+    elif args.freeze_par is not None:
+        freeze_param(model, args.freeze_par)
+    elif args.freeze is not None:
+        freeze_layers(model, args.freeze)
 
     return model, output_args
 
