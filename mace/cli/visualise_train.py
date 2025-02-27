@@ -118,7 +118,19 @@ class TrainingPlotter:
         self.distributed = distributed
         self.swa_start = swa_start
 
-    def plot(self, model_epoch: None, model: torch.nn.Module) -> None:
+    def plot(self, model_epoch: str, model: torch.nn.Module, rank: int) -> None:
+
+        # All ranks process data through model_inference
+        train_valid_dict = model_inference(
+            self.train_valid_data, model, self.output_args, self.device, self.distributed
+        )
+        test_dict = model_inference(
+            self.test_data, model, self.output_args, self.device, self.distributed
+        )
+
+        # Only rank 0 creates and saves plots
+        if rank != 0:
+            return
 
         data = pd.DataFrame(
             results for results in parse_training_results(self.results_dir)
@@ -137,16 +149,13 @@ class TrainingPlotter:
 
             plot_epoch_dependence(axsTop, data, head, model_epoch, labels)
 
-            plot_inference(
+            # Use the pre-computed results for plotting
+            plot_inference_from_results(
                 axsBottom,
-                self.train_valid_data,
-                self.test_data,
+                train_valid_dict,
+                test_dict,
                 head,
-                quantities,
-                model,
-                self.output_args,
-                self.device,
-                self.distributed,
+                quantities
             )
 
             if self.swa_start is not None:
@@ -267,22 +276,13 @@ def plot_epoch_dependence(
 # INFERENCE=========
 
 
-def plot_inference(
+def plot_inference_from_results(
     axes: np.ndarray,
-    train_valid_data: dict,
-    test_data: dict,
+    train_valid_dict: dict,
+    test_dict: dict,
     head: str,
     quantities: List[str],
-    model: torch.nn.Module,
-    output_args: Dict[str, bool],
-    device: str,
-    distributed: bool,
 ) -> None:
-
-    train_valid_dict = model_inference(
-        train_valid_data, model, output_args, device, distributed
-    )
-    test_dict = model_inference(test_data, model, output_args, device, distributed)
 
     for ax, quantity in zip(axes, quantities):
         key, label = quantity
@@ -440,8 +440,10 @@ def model_inference(
 
     for param in model.parameters():
         param.requires_grad = False
+
     scatter_metric = InferenceMetric().to(device)
     results_dict = {}
+
     for name in all_data_loaders:
         data_loader = all_data_loaders[name]
         logging.info(f"Running inference on {name} dataset")
