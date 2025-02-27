@@ -277,7 +277,7 @@ def train(
                             }
                     if plotter and epoch % plotter.plot_frequency == 0:
                         try:
-                            plotter.plot(epoch, model)
+                            plotter.plot(epoch, model_to_evaluate, rank)
                         except Exception as e:  # pylint: disable=broad-except
                             logging.warning(f"Plotting failed: {e}")
                 valid_loss = (

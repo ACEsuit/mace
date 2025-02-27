@@ -834,7 +834,7 @@ def run(args: argparse.Namespace) -> None:
                     distributed=args.distributed,
                     swa_start=swa.start if swa else None
                 )
-                plotter.plot(epoch,model_to_evaluate)
+                plotter.plot(epoch, model_to_evaluate, rank)
             except Exception as e:  # pylint: disable=W0718
                 logging.debug(f"Plotting failed: {e}")
         if rank == 0:
