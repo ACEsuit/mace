@@ -1,4 +1,5 @@
 import logging
+from math import isnan
 from typing import Dict
 
 import torch
@@ -20,7 +21,52 @@ def custom_key(key):
     return (2, key)
 
 
-def create_error_table(
+def create_error_tables(
+    train_valid_data_loader: dict,
+    test_data_loader: dict,
+    also_predict_committee: bool = False,
+    **kwargs
+):
+    table_train_valid = _create_error_table(
+            **kwargs,
+            all_data_loaders=train_valid_data_loader,
+            predict_committee=False,
+        )
+    if also_predict_committee:
+        logging.info("Error-table on TRAIN and VALID for single heads:\n" + str(table_train_valid))
+    else:
+        logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
+
+    if also_predict_committee:
+        valid_loader = {"valid_committee": train_valid_data_loader["valid_committee-0"]}
+        table_train_valid = _create_error_table(
+            **kwargs,
+            all_data_loaders=valid_loader,
+            predict_committee=True,
+        )
+        logging.info("Error-table on VALID for whole committee:\n" + str(table_train_valid))
+
+    if test_data_loader:
+        table_test = _create_error_table(
+                **kwargs,
+                all_data_loaders=test_data_loader,
+                predict_committee=False
+            )
+        if also_predict_committee:
+            logging.info("Error-table on TEST for single heads:\n" + str(table_test))
+        else:
+            logging.info("Error-table on TEST:\n" + str(table_test))
+
+    if also_predict_committee and test_data_loader:
+        table_test = _create_error_table(
+            **kwargs,
+            all_data_loaders=test_data_loader,
+            predict_committee=True
+        )
+        logging.info("Error-table on TEST for whole committee:\n" + str(table_test))
+
+
+def _create_error_table(
     table_type: str,
     all_data_loaders: dict,
     model: torch.nn.Module,
@@ -29,6 +75,7 @@ def create_error_table(
     log_wandb: bool,
     device: str,
     distributed: bool = False,
+    predict_committee: bool = False,
 ) -> PrettyTable:
     if log_wandb:
         import wandb
@@ -108,13 +155,14 @@ def create_error_table(
             data_loader=data_loader,
             output_args=output_args,
             device=device,
+            predict_committee=predict_committee
         )
         if distributed:
             torch.distributed.barrier()
 
         del data_loader
         torch.cuda.empty_cache()
-        if log_wandb:
+        if log_wandb and not isnan(metrics["loss"]):
             wandb_log_dict = {
                 name
                 + "_final_rmse_e_per_atom": metrics["rmse_e_per_atom"]
@@ -123,7 +171,9 @@ def create_error_table(
                 name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
             }
             wandb.log(wandb_log_dict)
-        if table_type == "TotalRMSE":
+        if isnan(metrics["loss"]):
+            table.add_row([name, "NaN", "NaN", "NaN"])
+        elif table_type == "TotalRMSE":
             table.add_row(
                 [
                     name,

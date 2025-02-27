@@ -47,6 +47,8 @@ def get_dataset_from_xyz(
     dipole_key: str = "dipoles",
     charges_key: str = "charges",
     head_key: str = "head",
+    n_committee: Optional[int] = None,
+    disjoint_committee: bool = False,
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """Load training and test dataset from xyz file"""
     atomic_energies_dict, all_train_configs = data.load_from_xyz(
@@ -91,6 +93,17 @@ def get_dataset_from_xyz(
         logging.info(
             f"Validaton set contains {len(valid_configs)} configurations [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
         )
+
+    if disjoint_committee:
+        indices = list(range(len(train_configs)))
+        if valid_path is not None:
+            rng = np.random.default_rng(seed)
+            rng.shuffle(indices)
+
+        id_c = int(head_name.split("-")[-1])
+        train_set_split = np.linspace(0, len(train_configs), n_committee + 1, dtype=int)
+        train_set_head_indices = indices[train_set_split[id_c]:train_set_split[id_c + 1]]
+        train_configs = [train_configs[i] for i in train_set_head_indices]
 
     test_configs = []
     if test_path is not None:
@@ -626,8 +639,15 @@ def get_params_options(
         else:
             no_decay_interactions[name] = param
 
-    param_options = dict(
-        params=[
+    params=[
+        {
+            "name": "readouts",
+            "params": model.readouts.parameters(),
+            "weight_decay": 0.0,
+        }
+    ]
+    if not args.optimize_readouts_only:
+        params += [
             {
                 "name": "embedding",
                 "params": model.node_embedding.parameters(),
@@ -648,12 +668,9 @@ def get_params_options(
                 "params": model.products.parameters(),
                 "weight_decay": args.weight_decay,
             },
-            {
-                "name": "readouts",
-                "params": model.readouts.parameters(),
-                "weight_decay": 0.0,
-            },
-        ],
+        ]
+    param_options = dict(
+        params=params,
         lr=args.lr,
         amsgrad=args.amsgrad,
         betas=(args.beta, 0.999),

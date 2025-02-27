@@ -24,7 +24,6 @@ from mace.tools.scatter import scatter_sum
 
 from .irreps_tools import (
     linear_out_irreps,
-    mask_head,
     reshape_irreps,
     tp_out_irreps_with_instructions,
 )
@@ -63,20 +62,21 @@ class LinearReadoutBlock(torch.nn.Module):
     def __init__(
         self,
         irreps_in: o3.Irreps,
-        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        irrep_out: o3.Irreps = o3.Irreps("0e"), # irrep out of a single head
+        num_heads: int = 1,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         super().__init__()
         self.linear = Linear(
-            irreps_in=irreps_in, irreps_out=irrep_out, cueq_config=cueq_config
+            irreps_in=irreps_in, irreps_out=num_heads * irrep_out, cueq_config=cueq_config
         )
 
     def forward(
         self,
         x: torch.Tensor,
-        heads: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
-        return self.linear(x)  # [n_nodes, 1]
+        l = self.linear(x)
+        return l  # [n_nodes, 1]
 
 
 @simplify_if_compile
@@ -85,32 +85,40 @@ class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
         self,
         irreps_in: o3.Irreps,
-        MLP_irreps: o3.Irreps,
+        MLP_irreps: o3.Irreps,  # MLP irrep to be used for each head
         gate: Optional[Callable],
-        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        irrep_out: o3.Irreps = o3.Irreps("0e"), # irrep out of a single head
         num_heads: int = 1,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
         self.num_heads = num_heads
+        instructions_1 = [(0, i) for i in range(num_heads)] if num_heads > 1 else None
         self.linear_1 = Linear(
-            irreps_in=irreps_in, irreps_out=self.hidden_irreps, cueq_config=cueq_config
+            irreps_in=irreps_in,
+            irreps_out=num_heads * self.hidden_irreps,
+            instructions=instructions_1,
+            cueq_config=cueq_config
         )
-        self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
+        self.non_linearity = nn.Activation(
+            irreps_in=num_heads * self.hidden_irreps, acts=num_heads * [gate],
+        )
+        instructions_2 = [(i, i) for i in range(num_heads)] if num_heads > 1 else None
         self.linear_2 = Linear(
-            irreps_in=self.hidden_irreps, irreps_out=irrep_out, cueq_config=cueq_config
+            irreps_in=num_heads * self.hidden_irreps,
+            irreps_out=num_heads * irrep_out,
+            instructions=instructions_2,
+            cueq_config=cueq_config
         )
 
     def forward(
-        self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
+        self, x: torch.Tensor,
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
-        if hasattr(self, "num_heads"):
-            if self.num_heads > 1 and heads is not None:
-                x = mask_head(x, heads, self.num_heads)
-        return self.linear_2(x)  # [n_nodes, len(heads)]
-
+        l2 = self.linear_2(x)
+        return l2  # [n_nodes, len(heads)]
+    
 
 @compile_mode("script")
 class LinearDipoleReadoutBlock(torch.nn.Module):
@@ -1068,10 +1076,16 @@ class ScaleShiftBlock(torch.nn.Module):
             torch.tensor(shift, dtype=torch.get_default_dtype()),
         )
 
-    def forward(self, x: torch.Tensor, head: torch.Tensor) -> torch.Tensor:
-        return (
-            torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]
-        )
+    def forward(self, x: torch.Tensor, head: Optional[torch.Tensor] = None) -> torch.Tensor:
+        # TODO: Is this if even still necessary or does the first case work every time anyways
+        if head is None:
+            return (
+                torch.atleast_1d(self.scale) * x + torch.atleast_1d(self.shift)
+            )
+        else:
+            return (
+                torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]
+            )
 
     def __repr__(self):
         formatted_scale = (

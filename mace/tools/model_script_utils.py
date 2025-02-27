@@ -121,6 +121,7 @@ def configure_model(
             num_interactions=args.num_interactions,
             num_elements=len(z_table),
             hidden_irreps=o3.Irreps(args.hidden_irreps),
+            gate=modules.gate_dict[args.gate],
             atomic_energies=atomic_energies,
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
@@ -134,7 +135,7 @@ def configure_model(
             model,
             model_foundation,
             z_table,
-            load_readout=args.foundation_filter_elements,
+            load_readout=args.foundation_filter_elements and (args.n_committee is None),
             max_L=args.max_L,
         )
 
@@ -171,7 +172,6 @@ def _build_model(
             pair_repulsion=args.pair_repulsion,
             distance_transform=args.distance_transform,
             correlation=args.correlation,
-            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
@@ -186,7 +186,6 @@ def _build_model(
             pair_repulsion=args.pair_repulsion,
             distance_transform=args.distance_transform,
             correlation=args.correlation,
-            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
@@ -200,7 +199,6 @@ def _build_model(
     if args.model == "ScaleShiftBOTNet":
         return modules.ScaleShiftBOTNet(
             **model_config,
-            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
@@ -209,7 +207,6 @@ def _build_model(
     if args.model == "BOTNet":
         return modules.BOTNet(
             **model_config,
-            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
         )
@@ -221,7 +218,6 @@ def _build_model(
         return modules.AtomicDipolesMACE(
             **model_config,
             correlation=args.correlation,
-            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[
                 "RealAgnosticInteractionBlock"
             ],
@@ -237,7 +233,6 @@ def _build_model(
         return modules.EnergyDipolesMACE(
             **model_config,
             correlation=args.correlation,
-            gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[
                 "RealAgnosticInteractionBlock"
             ],

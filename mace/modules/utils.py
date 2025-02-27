@@ -21,14 +21,14 @@ from .blocks import AtomicEnergiesBlock
 
 
 def compute_forces(
-    energy: torch.Tensor, positions: torch.Tensor, training: bool = True
+    energy: torch.Tensor, positions: torch.Tensor, training: bool = True, committee: bool = False,
 ) -> torch.Tensor:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
     gradient = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions],  # [n_nodes, 3]
         grad_outputs=grad_outputs,
-        retain_graph=training,  # Make sure the graph is not destroyed during training
+        retain_graph=training or committee,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,  # For complete dissociation turn to true
     )[
@@ -45,6 +45,7 @@ def compute_forces_virials(
     displacement: torch.Tensor,
     cell: torch.Tensor,
     training: bool = True,
+    committee: bool = False,
     compute_stress: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
@@ -52,7 +53,7 @@ def compute_forces_virials(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions, displacement],  # [n_nodes, 3]
         grad_outputs=grad_outputs,
-        retain_graph=training,  # Make sure the graph is not destroyed during training
+        retain_graph=training or committee,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,
     )
@@ -169,6 +170,7 @@ def get_outputs(
     displacement: Optional[torch.Tensor],
     cell: torch.Tensor,
     training: bool = False,
+    committee: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
@@ -187,6 +189,7 @@ def get_outputs(
             cell=cell,
             compute_stress=compute_stress,
             training=(training or compute_hessian),
+            committee=committee,
         )
     elif compute_force:
         forces, virials, stress = (
@@ -194,6 +197,7 @@ def get_outputs(
                 energy=energy,
                 positions=positions,
                 training=(training or compute_hessian),
+                committee = committee,
             ),
             None,
             None,
@@ -206,6 +210,55 @@ def get_outputs(
     else:
         hessian = None
     return forces, virials, stress, hessian
+
+
+def get_outputs_committee(
+    energy_heads: torch.Tensor,
+    positions: torch.Tensor,
+    displacement: Optional[torch.Tensor],
+    cell: torch.Tensor,
+    committee_heads: torch.Tensor,
+    compute_force: bool = True,
+    compute_virials: bool = True,
+    compute_stress: bool = True,
+    compute_hessian: bool = False,
+) -> Tuple[
+    dict,
+    dict,
+]:
+    means = {}
+    stds = {}
+    
+    properties = ['forces', 'virials', 'stress', 'hessian']
+    head_collector = {key: [] for key in properties}
+    for head in committee_heads:
+        output_head = get_outputs(
+            energy=energy_heads[:, head],
+            positions=positions,
+            displacement=displacement,
+            cell=cell,
+            training=False,
+            committee=True,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+            compute_hessian=compute_hessian,    
+        )
+        for k, key in enumerate(properties):
+            head_collector[key].append(output_head[k])
+
+    for k, v in head_collector.items():
+        if v[0] is not None:
+            prop_stack = torch.stack(v, dim=-1)
+            head_collector[k] = prop_stack
+            means[k] = torch.mean(prop_stack, dim=-1)
+            stds[k] = torch.std(prop_stack, dim=-1)
+        else:
+            means[k] = None
+            stds[k] = None
+            head_collector[k] = None
+
+    return means, stds, head_collector
 
 
 def get_edge_vectors_and_lengths(

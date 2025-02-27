@@ -252,6 +252,7 @@ def train(
                         data_loader=valid_loader,
                         output_args=output_args,
                         device=device,
+                        predict_committee=False
                     )
                     if rank == 0:
                         valid_err_log(
@@ -398,11 +399,18 @@ def evaluate(
     data_loader: DataLoader,
     output_args: Dict[str, bool],
     device: torch.device,
+    predict_committee: bool = False,
 ) -> Tuple[float, Dict[str, Any]]:
     for param in model.parameters():
         param.requires_grad = False
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
+
+    if predict_committee:
+        committee_heads = [i for i, head in enumerate(model.heads) if "committee-" in head]
+        committee_heads = torch.tensor(committee_heads, dtype=int).to(device)
+    else:
+        committee_heads = None
 
     start_time = time.time()
     for batch in data_loader:
@@ -414,6 +422,7 @@ def evaluate(
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
+            committee_heads=committee_heads,
         )
         avg_loss, aux = metrics(batch, output)
 

@@ -348,6 +348,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--n_committee",
+        help="Number of committee members.",
+        type=int,
+        default=None,
+        required=False
+    )
+    parser.add_argument(
+        "--disjoint_committee",
+        help="Use disjoint training sets for each head.",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--heads",
         help="Dict of heads: containing individual files and E0s",
         type=str,
@@ -470,6 +483,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "universal",
             "energy_forces_dipole",
         ],
+    )
+    parser.add_argument(
+        "--optimize_readouts_only",
+        help="optimize only the readout blocks during training",
+        action="store_true",
+        default=False,
     )
     parser.add_argument(
         "--forces_weight", help="weight of forces loss", type=float, default=100.0
@@ -799,6 +818,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
+    )
+    parser.add_argument(
+        "--n_committee",
+        help="Number of multiheads for committee. Will overwrite num_process if smaller.",
+        type=int,
+        default=None
     )
     parser.add_argument(
         "--config_type_weights",
