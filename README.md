@@ -316,16 +316,12 @@ If you want to finetune another model, the model will be loaded from the path pr
 ## MACE-freeze
 
 Freeze the neural network layers for transfer learning or other applications. 
-<!--**MACE-freeze can be used for both bespoke MACE models and MACE-MP foundation models.** -->
 
 To install the MACE-freeze version of MACE, clone the mace-freeze branch into your work folder:
 ```sh
 git clone -b mace-freeze https://github.com/7radians/mace-freeze.git
 pip install ./mace-freeze
 ```
-
-<!-- For bespoke MACE models, the initial model must have the same size as the transfer model, including the number of unique chemical elements present in the model. The elements do not have to be identical. 
-No such restriction applies to the MACE-MP models. -->
 
 Use the command line argument `--freeze` to freeze the layers from 1 to N inclusive. For example, this will freeze the first 5 layers:
 
