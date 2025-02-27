@@ -351,7 +351,7 @@ def run(args: argparse.Namespace) -> None:
         logging.info(
             f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
         )
-    
+
     # Find heads to evaluate in error table
     if args.eval_heads is None:
         eval_heads = heads
@@ -805,7 +805,6 @@ def run(args: argparse.Namespace) -> None:
             output_args=output_args,
             log_wandb=args.wandb,
             device=device,
-            eval_heads=eval_heads,
             distributed=args.distributed,
         )
         logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
@@ -819,7 +818,6 @@ def run(args: argparse.Namespace) -> None:
                 output_args=output_args,
                 log_wandb=args.wandb,
                 device=device,
-                eval_heads=eval_heads,
                 distributed=args.distributed,
             )
             logging.info("Error-table on TEST:\n" + str(table_test))
