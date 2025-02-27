@@ -721,6 +721,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--dry_run",
+        help="Run all steps upto training to test settings.",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--save_cpu",
         help="Save a model to be loaded on cpu",
         action="store_true",

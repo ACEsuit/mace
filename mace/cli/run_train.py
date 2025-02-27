@@ -431,8 +431,8 @@ def run(args) -> None:
         eval_heads = list(args.eval_heads.split(","))
         for eval_head in eval_heads:
             if eval_head not in heads:
-                logging.error(f"Head {eval_head} not found in the list of heads: {heads}.")
-                raise KeyError(f"Head {eval_head} not found in the list of heads: {heads}.")
+                logging.error(f"Head '{eval_head}' not found in the list of heads: {heads}.")
+                raise ValueError(f"Head '{eval_head}' not found in the list of heads: {heads}.")
 
     logging.info(f"Will evalute error table on heads: {eval_heads}")
 
@@ -817,6 +817,11 @@ def run(args) -> None:
             logging.debug(f"Creating Plotter failed: {e}")
     else:
         plotter = None
+
+    #DRY RUN - stop before training starts
+    if args.dry_run:
+        logging.info("DRY RUN mode enabled. Stopping now.")
+        return
 
     tools.train(
         model=model,
