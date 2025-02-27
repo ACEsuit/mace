@@ -695,10 +695,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
     )
     parser.add_argument(
-        "--eval_heads", 
-        help="Select the heads the user wants to evaluate at end of training. Default is to evaluate all heads. " \
-            "Enter as comma seperated string. Example: 'default,pt_head,head3,...'", 
-        type=str, 
+        "--eval_heads",
+        help="Specify heads to evaluate error table for as comma seperated string. Default to evaluate all heads. Example: 'head1,head2,...'",
+        type=str,
         default=None,
         required=False,
     )
