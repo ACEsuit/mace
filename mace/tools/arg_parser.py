@@ -695,6 +695,14 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
     )
     parser.add_argument(
+        "--eval_heads", 
+        help="Select the heads the user wants to evaluate at end of training. Default is to evaluate all heads. " \
+            "Enter as comma seperated string. Example: 'default,pt_head,head3,...'", 
+        type=str, 
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
         "--keep_checkpoints",
         help="keep all checkpoints",
         action="store_true",

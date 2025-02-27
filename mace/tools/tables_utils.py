@@ -1,5 +1,5 @@
 import logging
-from typing import Dict
+from typing import Dict,List
 
 import torch
 from prettytable import PrettyTable
@@ -28,6 +28,7 @@ def create_error_table(
     output_args: Dict[str, bool],
     log_wandb: bool,
     device: str,
+    eval_heads: List[str],
     distributed: bool = False,
 ) -> PrettyTable:
     if log_wandb:
@@ -100,6 +101,9 @@ def create_error_table(
         ]
 
     for name in sorted(all_data_loaders, key=custom_key):
+        #if name not in eval_heads: 
+        #    logging.debug(f"Not evaluating {name} as not user request. SKIP")
+        #    continue
         data_loader = all_data_loaders[name]
         logging.info(f"Evaluating {name} ...")
         _, metrics = evaluate(

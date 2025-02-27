@@ -423,6 +423,18 @@ def run(args) -> None:
             logging.debug(
                 "Using LMDB/HDF5 datasets for pretraining or fine-tuning - skipping ratio check"
             )
+    
+    # Find heads to evaluate in error table
+    if args.eval_heads is None:
+        eval_heads = heads
+    else:
+        eval_heads = list(args.eval_heads.split(","))
+        for eval_head in eval_heads:
+            if eval_head not in heads:
+                logging.error(f"Head {eval_head} not found in the list of heads: {heads}.")
+                raise KeyError(f"Head {eval_head} not found in the list of heads: {heads}.")
+
+    logging.info(f"Will evalute error table on heads: {eval_heads}")
 
     # Atomic number table
     # yapf: disable
@@ -839,9 +851,16 @@ def run(args) -> None:
 
     train_valid_data_loader = {}
     for head_config in head_configs:
+        if head_config.head_name not in eval_heads: 
+            logging.debug(f"Not evaluating head {head_config.head_name} in training set as not user requested. SKIP")
+            continue
         data_loader_name = "train_" + head_config.head_name
         train_valid_data_loader[data_loader_name] = head_config.train_loader
+
     for head, valid_loader in valid_loaders.items():
+        if head not in eval_heads: 
+            logging.debug(f"Not evaluating head {head} in validation set as not user requesedt. SKIP")
+            continue
         data_load_name = "valid_" + head
         train_valid_data_loader[data_load_name] = valid_loader
     test_sets = {}
@@ -858,6 +877,9 @@ def run(args) -> None:
     ) and head_configs[0].test_dir is not None:
         stop_first_test = True
     for head_config in head_configs:
+        if head_config.head_name not in eval_heads: 
+            logging.debug(f"Not evaluating head {head_config.head_name} for test set as not user requested. SKIP")
+            continue
         if all(check_path_ase_read(f) for f in head_config.train_file):
             for name, subset in head_config.collections.tests:
                 test_sets[name] = [
