@@ -251,7 +251,7 @@ def run(args: argparse.Namespace) -> None:
                 f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
             )
         head_configs.append(head_config)
-    
+
     if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
         size_collections_train = sum(
             len(head_config.collections.train) for head_config in head_configs
