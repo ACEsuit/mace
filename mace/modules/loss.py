@@ -356,7 +356,10 @@ class UniversalFieldLoss(torch.nn.Module):
         cell = ref["cell"].view(-1,3,3)
         polarisation_quantum = cell / torch.linalg.det(cell).abs().unsqueeze(-1)[0]
 
-        # Expand polarisation to be modulo the polarisation quantum
+        # modulo ignore zero components to leave pol unfolded and avoid divide by 0
+        polarisation_quantum[polarisation_quantum == 0] = max(torch.cat((ref["polarisation"], pred["polarisation"]))) + 1.0 
+
+        # Expand polarisation to lattice (3x3 matrix) that is modulo the polarisation quantum. Any nan (due to divide by 0), set to zero.
         ref_polarisation = ref["polarisation"].repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
         pred_polarisation = pred["polarisation"].repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
 
@@ -397,7 +400,7 @@ class UniversalFieldLoss(torch.nn.Module):
     def __repr__(self):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
-            f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f}, bec_weight={self.bec_weight:.3f}, polarisability_weight={self.polarisability_weight:.3f})"
+            f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f}, polarisation_weight={self.polarisation_weight:.3f}, bec_weight={self.bec_weight:.3f}, polarisability_weight={self.polarisability_weight:.3f})"
         )
 
 

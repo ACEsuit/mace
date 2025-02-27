@@ -599,7 +599,8 @@ class ScaleShiftFieldMACE(MACE):
         # Spherical harmonic angular edge attributes
         edge_attrs_positions = self.spherical_harmonics(position_vectors) # [nedges, nsh]
         edge_attrs_electric_field = self.spherical_harmonics(electric_field_vectors) # [nedges, nsh]
-        edge_attrs = torch.concat([edge_attrs_positions, edge_attrs_electric_field], axis=1)
+        
+        edge_attrs = torch.concat([edge_attrs_positions, edge_attrs_electric_field], axis=-1)
 
         # Radial edge embeddings
         edge_feats_positions = self.radial_embedding(
@@ -608,7 +609,8 @@ class ScaleShiftFieldMACE(MACE):
         edge_feats_electric_field = self.radial_embedding(
             electric_field_strength, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
-        edge_feats = torch.concat([edge_feats_positions, edge_feats_electric_field], axis=1)
+
+        edge_feats = torch.concat([edge_feats_positions, edge_feats_electric_field], axis=-1)
 
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(

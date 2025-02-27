@@ -61,6 +61,11 @@ import warnings
 warnings.filterwarnings("ignore")
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
+def is_port_in_use(port: int) -> bool:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
+
 def main() -> None:
     """
     This script runs the training/fine tuning for mace
@@ -89,7 +94,8 @@ def run(rank: int, args: argparse.Namespace, world_size: int) -> None:
     if args.distributed:
         local_rank = rank
         os.environ["MASTER_ADDR"] = "localhost"
-        os.environ["MASTER_PORT"] = "12355"
+        os.environ["MASTER_PORT"] = "12410"
+            
         torch.cuda.set_device(rank)
         torch.distributed.init_process_group(
             backend='nccl',

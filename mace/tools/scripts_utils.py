@@ -195,7 +195,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
     model_mlp_irreps = (
         o3.Irreps(str(model.readouts[-1].hidden_irreps))
         if model.num_interactions.item() > 1
-        else 1
+        else [1]
     )
     mlp_irreps = o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e")
     try:

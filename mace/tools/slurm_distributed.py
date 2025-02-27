@@ -9,26 +9,55 @@ import os
 
 import hostlist
 
+# class DistributedEnvironment:
+#     def __init__(self):
+#         self._setup_distr_env()
+#         self.master_addr = os.environ["MASTER_ADDR"]
+#         self.master_port = os.environ["MASTER_PORT"]
+#         self.world_size = int(os.environ["WORLD_SIZE"])
+#         self.local_rank = int(os.environ["LOCAL_RANK"])
+#         self.rank = int(os.environ["RANK"])
+
+#     def _setup_distr_env(self):
+#         hostname = hostlist.expand_hostlist(os.environ["SLURM_JOB_NODELIST"])[0]
+#         os.environ["MASTER_ADDR"] = hostname
+#         os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "33333")
+#         os.environ["WORLD_SIZE"] = os.environ.get(
+#             "SLURM_NTASKS",
+#             str(
+#                 int(os.environ["SLURM_NTASKS_PER_NODE"])
+#                 * int(os.environ["SLURM_NNODES"])
+#             ),
+#         )
+#         os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
+#         os.environ["RANK"] = os.environ["SLURM_PROCID"]
 
 class DistributedEnvironment:
     def __init__(self):
         self._setup_distr_env()
         self.master_addr = os.environ["MASTER_ADDR"]
-        self.master_port = os.environ["MASTER_PORT"]
+        self.master_port = os.environ["MASTER_PORT"] 
         self.world_size = int(os.environ["WORLD_SIZE"])
         self.local_rank = int(os.environ["LOCAL_RANK"])
         self.rank = int(os.environ["RANK"])
 
     def _setup_distr_env(self):
-        hostname = hostlist.expand_hostlist(os.environ["SLURM_JOB_NODELIST"])[0]
+        # Get the list of nodes from PBS
+        nodefile = os.environ["PBS_NODEFILE"]
+        with open(nodefile, 'r') as f:
+            nodes = f.readlines()
+        
+        # First node is the master
+        hostname = nodes[0].strip()
         os.environ["MASTER_ADDR"] = hostname
         os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "33333")
-        os.environ["WORLD_SIZE"] = os.environ.get(
-            "SLURM_NTASKS",
-            str(
-                int(os.environ["SLURM_NTASKS_PER_NODE"])
-                * int(os.environ["SLURM_NNODES"])
-            ),
-        )
-        os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
-        os.environ["RANK"] = os.environ["SLURM_PROCID"]
+        
+        # Calculate world size from PBS environment variables
+        ppn = int(os.environ.get("PBS_NUM_PPN", 1))  # Processes per node
+        num_nodes = len(set(nodes))  # Unique nodes
+        os.environ["WORLD_SIZE"] = str(ppn * num_nodes)
+        
+        # Calculate local rank and global rank
+        node_id = nodes.index(hostname + '\n')
+        os.environ["LOCAL_RANK"] = str(node_id % ppn)
+        os.environ["RANK"] = str(node_id)

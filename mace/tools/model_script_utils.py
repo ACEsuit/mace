@@ -1,5 +1,6 @@
 import ast
 import logging
+import torch
 
 import numpy as np
 from e3nn import o3
@@ -142,7 +143,8 @@ def configure_model(
             max_L=args.max_L,
         )
 
-    model = model.float() # Ensure foundation model weights are updated to specified dtype
+    dtype_dict = {"float32": torch.float32, "float64": torch.float64}
+    model.to(dtype_dict[args.default_dtype]) # Ensure foundation model weights are updated to specified dtype
 
     return model, output_args
 
