@@ -352,20 +352,17 @@ def run(args: argparse.Namespace) -> None:
             f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
         )
 
-    # Find heads to evaluate in error table
+    # Find heads to evaluate error table for
     if args.eval_heads is None:
         eval_heads = heads
     else:
         eval_heads = list(args.eval_heads.split(","))
-        for eval_head in eval_heads:
-            if eval_head not in heads:
-                logging.error(
-                    f"Head '{eval_head}' not found in the list of heads: {heads}."
-                )
-                raise ValueError(
-                    f"Head '{eval_head}' not found in the list of heads: {heads}."
-                )
-    logging.info(f"Will evalute error table on heads: {eval_heads}")
+        missing_heads = [head for head in eval_heads if head not in heads]
+        if missing_heads:
+            error_msg = f"Invalid heads set for evaluation: {missing_heads}. Available heads: {heads}. Check argument --eval_heads."
+            logging.error(error_msg)
+            raise ValueError(error_msg)
+    logging.info(f"Will evalute error table on heads: {eval_heads} at end of training")
 
     # Atomic number table
     # yapf: disable
@@ -701,14 +698,14 @@ def run(args: argparse.Namespace) -> None:
     train_valid_data_loader = {}
     for head_config in head_configs:
         if head_config.head_name not in eval_heads:
-            logging.debug(f"Not evaluating head {head_config.head_name} in training set as not user requested. SKIP")
+            logging.debug(f"Not evaluating head {head_config.head_name} on training set as not set by --eval_head argument. SKIP")
             continue
         data_loader_name = "train_" + head_config.head_name
         train_valid_data_loader[data_loader_name] = head_config.train_loader
 
     for head, valid_loader in valid_loaders.items():
         if head not in eval_heads:
-            logging.debug(f"Not evaluating head {head} in validation set as not user requesedt. SKIP")
+            logging.debug(f"Not evaluating head {head} on validation set as not set by --eval_head argument. SKIP")
             continue
         data_load_name = "valid_" + head
         train_valid_data_loader[data_load_name] = valid_loader
@@ -728,7 +725,7 @@ def run(args: argparse.Namespace) -> None:
         stop_first_test = True
     for head_config in head_configs:
         if head_config.head_name not in eval_heads:
-            logging.debug(f"Not evaluating head {head_config.head_name} for test set as not user requested. SKIP")
+            logging.debug(f"Not evaluating head {head_config.head_name} for test set as not set by --eval_head argument. SKIP")
             continue
         if check_path_ase_read(head_config.train_file):
             for name, subset in head_config.collections.tests:
