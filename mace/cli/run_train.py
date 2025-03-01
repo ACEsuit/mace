@@ -164,9 +164,9 @@ def run(args: argparse.Namespace) -> None:
                 logging.info(
                     "Multihead finetuning mode, setting learning rate to 0.001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
                 )
-                args.lr = 0.001
+                args.lr = 0.0001
                 args.ema = True
-                args.ema_decay = 0.999
+                args.ema_decay = 0.99999
             logging.info(
                 "Using multiheads finetuning mode, setting learning rate to 0.001 and EMA to True"
             )
