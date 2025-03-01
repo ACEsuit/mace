@@ -491,12 +491,12 @@ class ScaleShiftFieldMACE(MACE):
         for i in range(int(self.num_interactions)):
 
             edge_attrs_irreps = self.interactions[i].edge_attrs_irreps
-            edge_attrs_el_irreps = edge_attrs_irreps + edge_attrs_irreps
-            edge_attrs_irreps = edge_attrs_el_irreps.sort()[0].simplify()
+            edge_attrs_el_irreps = o3.FullTensorProduct(edge_attrs_irreps, edge_attrs_irreps).irreps_out
+            edge_attrs_irreps = edge_attrs_el_irreps.simplify()
 
             edge_feats_irreps = self.interactions[i].edge_feats_irreps
-            edge_feats_el_irreps = edge_feats_irreps + edge_feats_irreps
-            edge_feats_irreps = edge_feats_el_irreps.sort()[0].simplify()
+            edge_feats_el_irreps = o3.FullTensorProduct(edge_feats_irreps, edge_feats_irreps).irreps_out
+            edge_feats_irreps = edge_feats_el_irreps.simplify()
 
             # Load Interaction Block
             blocks_mod = __import__('mace.modules.blocks', fromlist=[self.interactions[i].__class__.__name__])
@@ -515,19 +515,19 @@ class ScaleShiftFieldMACE(MACE):
             )
 
             # Inherit weights
-            inter.linear_up.weight = torch.nn.Parameter(self.interactions[i].linear_up.weight.clone())
-            for j in range(4):  # Assuming 4 layers in conv_tp_weights,
-                layer_name = f"layer{j}"
-                if j == 0:
-                    old_weights = getattr(self.interactions[i].conv_tp_weights, layer_name).weight[:self.radial_embedding.out_dim, :].clone()
-                    getattr(inter.conv_tp_weights, layer_name).weight = (torch.nn.Parameter(torch.concat([old_weights, torch.randn_like(old_weights)], axis=0)))
-                elif j == 3:
-                    old_weights = getattr(self.interactions[i].conv_tp_weights, layer_name).weight.clone()
-                    getattr(inter.conv_tp_weights, layer_name).weight = (torch.nn.Parameter(torch.concat([old_weights, torch.randn_like(old_weights)], axis=1)))
-                else:
-                    getattr(inter.conv_tp_weights, layer_name).weight = (
-                        torch.nn.Parameter(getattr(self.interactions[i].conv_tp_weights, layer_name).weight.clone())
-                    )
+            # inter.linear_up.weight = torch.nn.Parameter(self.interactions[i].linear_up.weight.clone())
+            # for j in range(4):  # Assuming 4 layers in conv_tp_weights,
+            #     layer_name = f"layer{j}"
+            #     if j == 0:
+            #         old_weights = getattr(self.interactions[i].conv_tp_weights, layer_name).weight[:self.radial_embedding.out_dim, :].clone()
+            #         getattr(inter.conv_tp_weights, layer_name).weight = (torch.nn.Parameter(torch.concat([old_weights, torch.randn_like(old_weights)], axis=0)))
+            #     elif j == 3:
+            #         old_weights = getattr(self.interactions[i].conv_tp_weights, layer_name).weight.clone()
+            #         getattr(inter.conv_tp_weights, layer_name).weight = (torch.nn.Parameter(torch.concat([old_weights, torch.randn_like(old_weights)], axis=1)))
+            #     else:
+            #         getattr(inter.conv_tp_weights, layer_name).weight = (
+            #             torch.nn.Parameter(getattr(self.interactions[i].conv_tp_weights, layer_name).weight.clone())
+            #         )
 
             self.interactions[i] = inter
                 
@@ -600,7 +600,7 @@ class ScaleShiftFieldMACE(MACE):
         edge_attrs_positions = self.spherical_harmonics(position_vectors) # [nedges, nsh]
         edge_attrs_electric_field = self.spherical_harmonics(electric_field_vectors) # [nedges, nsh]
         
-        edge_attrs = torch.concat([edge_attrs_positions, edge_attrs_electric_field], axis=-1)
+        edge_attrs = torch.einsum('ij, ik -> ijk', edge_attrs_positions, edge_attrs_electric_field).reshape(-1, edge_attrs_positions.shape[1] * edge_attrs_electric_field.shape[1])
 
         # Radial edge embeddings
         edge_feats_positions = self.radial_embedding(
@@ -610,7 +610,7 @@ class ScaleShiftFieldMACE(MACE):
             electric_field_strength, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
 
-        edge_feats = torch.concat([edge_feats_positions, edge_feats_electric_field], axis=-1)
+        edge_feats = torch.einsum('ij, ik -> ijk', edge_feats_positions, edge_feats_electric_field).reshape(-1, edge_feats_positions.shape[1] * edge_feats_electric_field.shape[1])
 
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
