@@ -4,11 +4,15 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-
 import logging
+
+# pylint: disable=wrong-import-position
+import os
 from glob import glob
 from pathlib import Path
 from typing import List, Union
+
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import numpy as np
 import torch

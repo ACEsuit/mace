@@ -377,7 +377,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--num_samples_pt",
         help="Number of samples in the pretrained head",
         type=int,
-        default=1000,
+        default=10000,
     )
     parser.add_argument(
         "--force_mh_ft_lr",
