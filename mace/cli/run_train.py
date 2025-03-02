@@ -362,7 +362,7 @@ def run(args: argparse.Namespace) -> None:
             error_msg = f"Invalid heads set for evaluation: {missing_heads}. Available heads: {heads}. Check argument --eval_heads."
             logging.error(error_msg)
             raise ValueError(error_msg)
-    logging.info(f"Will evalute error table on heads: {eval_heads} at end of training")
+    logging.info(f"Will evaluate Error-Tables on heads: {eval_heads}")
 
     # Atomic number table
     # yapf: disable
@@ -487,7 +487,7 @@ def run(args: argparse.Namespace) -> None:
             except KeyError as e:
                 raise KeyError(f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number") from e
 
-
+    # Data preparation
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
     for head_config in head_configs:
@@ -651,50 +651,9 @@ def run(args: argparse.Namespace) -> None:
     else:
         for group in optimizer.param_groups:
             group["lr"] = args.lr
-
-    if args.wandb:
-        setup_wandb(args)
-    if args.distributed:
-        distributed_model = DDP(model, device_ids=[local_rank])
-    else:
-        distributed_model = None
-
-    #DRY RUN - stop before training starts
-    if args.dry_run:
-        logging.info("DRY RUN mode enabled. Stopping now.")
-        return
-
-    tools.train(
-        model=model,
-        loss_fn=loss_fn,
-        train_loader=train_loader,
-        valid_loaders=valid_loaders,
-        optimizer=optimizer,
-        lr_scheduler=lr_scheduler,
-        checkpoint_handler=checkpoint_handler,
-        eval_interval=args.eval_interval,
-        start_epoch=start_epoch,
-        max_num_epochs=args.max_num_epochs,
-        logger=logger,
-        patience=args.patience,
-        save_all_checkpoints=args.save_all_checkpoints,
-        output_args=output_args,
-        device=device,
-        swa=swa,
-        ema=ema,
-        max_grad_norm=args.clip_grad,
-        log_errors=args.error_table,
-        log_wandb=args.wandb,
-        distributed=args.distributed,
-        distributed_model=distributed_model,
-        train_sampler=train_sampler,
-        rank=rank,
-    )
-
-    logging.info("")
-    logging.info("===========RESULTS===========")
-    logging.info("Computing metrics for training, validation, and test sets")
-
+    
+    # Data loaders for training and validation sets for error tables
+    logging.debug('Loading test set.')
     train_valid_data_loader = {}
     for head_config in head_configs:
         if head_config.head_name not in eval_heads:
@@ -702,14 +661,19 @@ def run(args: argparse.Namespace) -> None:
             continue
         data_loader_name = "train_" + head_config.head_name
         train_valid_data_loader[data_loader_name] = head_config.train_loader
+    logging.debug('Loaded training set.')
 
+    logging.debug('Loading validation set.')
     for head, valid_loader in valid_loaders.items():
         if head not in eval_heads:
             logging.debug(f"Not evaluating head {head} on validation set as not set by --eval_head argument. SKIP")
             continue
         data_load_name = "valid_" + head
         train_valid_data_loader[data_load_name] = valid_loader
+    logging.debug('Loaded validation set.')
 
+    # Data loader for test set for error tables
+    logging.debug('Loading test set.')
     test_sets = {}
     stop_first_test = False
     test_data_loader = {}
@@ -776,6 +740,54 @@ def run(args: argparse.Namespace) -> None:
             test_data_loader[test_name] = test_loader
         if stop_first_test:
             break
+    logging.debug('Loaded test set.')
+    
+    #Wandb
+    if args.wandb:
+        setup_wandb(args)
+    if args.distributed:
+        distributed_model = DDP(model, device_ids=[local_rank])
+    else:
+        distributed_model = None
+
+    #DRY RUN - stop before training starts
+    if args.dry_run:
+        logging.info("DRY RUN mode enabled. Stopping now.")
+        return
+
+    tools.train(
+        model=model,
+        loss_fn=loss_fn,
+        train_loader=train_loader,
+        valid_loaders=valid_loaders,
+        train_valid_data_loader=train_valid_data_loader,
+        test_data_loader=test_data_loader,
+        optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
+        checkpoint_handler=checkpoint_handler,
+        eval_interval=args.eval_interval,
+        error_table_interval=args.error_table_interval,
+        start_epoch=start_epoch,
+        max_num_epochs=args.max_num_epochs,
+        logger=logger,
+        patience=args.patience,
+        save_all_checkpoints=args.save_all_checkpoints,
+        output_args=output_args,
+        device=device,
+        swa=swa,
+        ema=ema,
+        max_grad_norm=args.clip_grad,
+        log_errors=args.error_table,
+        log_wandb=args.wandb,
+        distributed=args.distributed,
+        distributed_model=distributed_model,
+        train_sampler=train_sampler,
+        rank=rank,
+    )
+
+    logging.info("")
+    logging.info("===========RESULTS===========")
+    logging.info("Computing metrics for training, validation, and test sets")
 
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(

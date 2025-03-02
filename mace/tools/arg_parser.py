@@ -650,6 +650,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
     )
     parser.add_argument(
+        "--error_table_interval",
+        help="Print error table every N epochs as well as at end. Value of 0 means only prints at end.",
+        type=int,
+        default=0,
+        required=False,
+    )
+    parser.add_argument(
         "--keep_checkpoints",
         help="keep all checkpoints",
         action="store_true",
