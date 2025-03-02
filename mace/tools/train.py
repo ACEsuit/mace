@@ -275,11 +275,11 @@ def train(
                                 ],
                                 "valid_rmse_f": eval_metrics["rmse_f"],
                             }
-                    if plotter and epoch % plotter.plot_frequency == 0:
-                        try:
-                            plotter.plot(epoch, model_to_evaluate, rank)
-                        except Exception as e:  # pylint: disable=broad-except
-                            logging.warning(f"Plotting failed: {e}")
+                if plotter and epoch % plotter.plot_frequency == 0:
+                    try:
+                        plotter.plot(epoch, model_to_evaluate, rank)
+                    except Exception as e:  # pylint: disable=broad-except
+                        logging.debug(f"Plotting failed: {e}")
                 valid_loss = (
                     valid_loss_head  # consider only the last head for the checkpoint
                 )
