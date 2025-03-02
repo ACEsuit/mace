@@ -139,6 +139,8 @@ def train(
     loss_fn: torch.nn.Module,
     train_loader: DataLoader,
     valid_loaders: Dict[str, DataLoader],
+    train_valid_data_loader: dict,
+    test_data_loader: dict,
     optimizer: torch.optim.Optimizer,
     lr_scheduler: torch.optim.lr_scheduler.ExponentialLR,
     start_epoch: int,
@@ -147,6 +149,7 @@ def train(
     checkpoint_handler: CheckpointHandler,
     logger: MetricsLogger,
     eval_interval: int,
+    error_table_interval: int,
     output_args: Dict[str, bool],
     device: torch.device,
     log_errors: str,
@@ -171,11 +174,18 @@ def train(
     if max_grad_norm is not None:
         logging.info(f"Using gradient clipping with tolerance={max_grad_norm:.3f}")
 
+    
+
     logging.info("")
     logging.info("===========TRAINING===========")
     logging.info("Started training, reporting errors on validation set")
     logging.info("Loss metrics on validation set")
+    
+    if error_table_interval is not 0:
+        from mace.tools.tables_utils import create_error_table
+        logging.info(f"Will print Error-Tables every {error_table_interval} epochs")
     epoch = start_epoch
+    
 
     # log validation loss before _any_ training
     valid_loss = 0.0
@@ -233,6 +243,7 @@ def train(
             torch.distributed.barrier()
 
         # Validate
+
         if epoch % eval_interval == 0:
             model_to_evaluate = (
                 model if distributed_model is None else distributed_model
@@ -315,9 +326,40 @@ def train(
                             keep_last=keep_last,
                         )
                         keep_last = False or save_all_checkpoints
+
+            # Print error table for train, valid and test
+            # For example if interval is 4, print at epoch 3,7,11,... as 0 indexed
+            # Don't print table if this is the final epoch
+            next_epoch = epoch + 1
+            if (error_table_interval is not 0) and ((next_epoch) % error_table_interval == 0) and next_epoch < max_num_epochs:
+                logging.info(f"Epoch {epoch}: Evaluating Error-Tables")
+                table_train_valid = create_error_table(
+                    table_type=log_errors,
+                    all_data_loaders=train_valid_data_loader,
+                    model=model_to_evaluate,
+                    loss_fn=loss_fn,
+                    output_args=output_args,
+                    log_wandb=log_wandb,
+                    device=device,
+                    distributed=distributed,
+                )
+                logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
+
+                if test_data_loader:
+                    table_test = create_error_table(
+                        table_type=log_errors,
+                        all_data_loaders=test_data_loader,
+                        model=model_to_evaluate,
+                        loss_fn=loss_fn,
+                        output_args=output_args,
+                        log_wandb=log_wandb,
+                        device=device,
+                        distributed=distributed,
+                    )
+                    logging.info("Error-table on TEST:\n" + str(table_test))
         if distributed:
             torch.distributed.barrier()
-        epoch += 1
+        epoch = next_epoch
 
     logging.info("Training complete")
 

@@ -643,6 +643,20 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
     )
     parser.add_argument(
+        "--eval_heads",
+        help="Specify heads to evaluate error table for as comma seperated string. Default to evaluate all heads. Example: 'head1,head2,...'",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--error_table_interval",
+        help="Print error table every N epochs as well as at end. Value of 0 means only prints at end.",
+        type=int,
+        default=0,
+        required=False,
+    )
+    parser.add_argument(
         "--keep_checkpoints",
         help="keep all checkpoints",
         action="store_true",
@@ -657,6 +671,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--restart_latest",
         help="restart optimizer from latest checkpoint",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--dry_run",
+        help="Run all steps upto training to test settings.",
         action="store_true",
         default=False,
     )
