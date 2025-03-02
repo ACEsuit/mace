@@ -10,7 +10,7 @@ import torch.distributed
 from torchmetrics import Metric
 
 plt.rcParams.update({"font.size": 8})
-mpl_logger = logging.getLogger('matplotlib')
+mpl_logger = logging.getLogger("matplotlib")
 mpl_logger.setLevel(logging.WARNING)  # Only show WARNING and above
 
 colors = [
@@ -122,7 +122,11 @@ class TrainingPlotter:
 
         # All ranks process data through model_inference
         train_valid_dict = model_inference(
-            self.train_valid_data, model, self.output_args, self.device, self.distributed
+            self.train_valid_data,
+            model,
+            self.output_args,
+            self.device,
+            self.distributed,
         )
         test_dict = model_inference(
             self.test_data, model, self.output_args, self.device, self.distributed
@@ -151,11 +155,7 @@ class TrainingPlotter:
 
             # Use the pre-computed results for plotting
             plot_inference_from_results(
-                axsBottom,
-                train_valid_dict,
-                test_dict,
-                head,
-                quantities
+                axsBottom, train_valid_dict, test_dict, head, quantities
             )
 
             if self.swa_start is not None:
@@ -409,7 +409,6 @@ def plot_inference_from_results(
             if scatter is not None:
                 legend_labels["Test"] = scatter
 
-
         # Add diagonal line for guide
         min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
         max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])
@@ -459,8 +458,8 @@ def model_inference(
                 compute_virials=output_args.get("virials", False),
                 compute_stress=output_args.get("stress", False),
             )
-            
-            results= scatter_metric(batch, output)
+
+            results = scatter_metric(batch, output)
 
         if distributed:
             torch.distributed.barrier()
@@ -579,7 +578,6 @@ class InferenceMetric(Metric):
         else:
             return None, None
         return to_numpy(ref), to_numpy(pred)
-
 
     def compute(self):
         """Compute final results for scatterplot."""
