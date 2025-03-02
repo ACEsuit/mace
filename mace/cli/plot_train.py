@@ -88,7 +88,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--output_format", help="What file type to save plot as", default='pdf', type=str, required=False,
+        "--output_format", help="What file type to save plot as", default='png', type=str, required=False,
     )
 
     parser.add_argument(
@@ -155,15 +155,25 @@ def plot(data: pd.DataFrame,
             }
 
     for head, valid_data in valid_data_dict.items():
-        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 2.5), constrained_layout=True)
+        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 3), constrained_layout=True)
 
         # ---- Plot loss ----
         ax = axes[0]
+        ax.plot(
+            train_data["epoch"], train_data["loss"]["mean"], color=colors[1], linewidth=1
+        )
+        ax.set_ylabel("Training Loss", color=colors[1])
+        ax.set_yscale("log")
+
+        ax2 = ax.twinx()
+        ax2.plot(
+            valid_data["epoch"], valid_data["loss"]["mean"], color=colors[0], linewidth=1
+        )
+        ax2.set_ylabel("Validation Loss", color=colors[0])
+
         if not linear:
             ax.set_yscale("log")
-
-        ax.plot(train_data["epoch"], train_data["loss"]["mean"], color=colors[1], label="Training", linewidth=1)
-        ax.plot(valid_data["epoch"], valid_data["loss"]["mean"], color=colors[0], label="Validation", linewidth=1)
+            ax2.set_yscale("log")
 
         if error_bars:
             ax.fill_between(train_data["epoch"], train_data["loss"]["mean"] - train_data["loss"]["std"],
@@ -183,7 +193,7 @@ def plot(data: pd.DataFrame,
         ax = axes[1]
         twin_axes = []  
         for i, key in enumerate(keys.split(",")):
-            color = colors[(i + 2)]
+            color = colors[(i + 3)]
             label = labels.get(key, key)
 
             if i == 0:

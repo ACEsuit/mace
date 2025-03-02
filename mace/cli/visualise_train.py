@@ -10,8 +10,8 @@ import torch.distributed
 from torchmetrics import Metric
 
 plt.rcParams.update({"font.size": 8})
-plt.style.use("seaborn-v0_8-paper")
-
+mpl_logger = logging.getLogger('matplotlib')
+mpl_logger.setLevel(logging.WARNING)  # Only show WARNING and above
 
 colors = [
     "#1f77b4",  # muted blue
@@ -287,64 +287,8 @@ def plot_inference_from_results(
     for ax, quantity in zip(axes, quantities):
         key, label = quantity
 
-        fixed_color_test = colors[2]  # Color for test dataset
-
         # Store legend handles to avoid duplicates
         legend_labels = {}
-
-        # Plot test data (single legend entry)
-        for name, result in test_dict.items():
-            # Initialize scatter to None to avoid possibly used before assignment
-            scatter = None
-
-            if key == "energy" and "energy" in result:
-                scatter = ax.scatter(
-                    result["energy"]["reference_per_atom"],
-                    result["energy"]["predicted_per_atom"],
-                    marker="o",
-                    color=fixed_color_test,
-                    label="Test",
-                )
-
-            elif key == "force" and "forces" in result:
-                scatter = ax.scatter(
-                    result["forces"]["reference"],
-                    result["forces"]["predicted"],
-                    marker="o",
-                    color=fixed_color_test,
-                    label="Test",
-                )
-
-            elif key == "stress" and "stress" in result:
-                scatter = ax.scatter(
-                    result["stress"]["reference"],
-                    result["stress"]["predicted"],
-                    marker="o",
-                    color=fixed_color_test,
-                    label="Test",
-                )
-
-            elif key == "virials" and "virials" in result:
-                scatter = ax.scatter(
-                    result["virials"]["reference_per_atom"],
-                    result["virials"]["predicted_per_atom"],
-                    marker="o",
-                    color=fixed_color_test,
-                    label="Test",
-                )
-
-            elif key == "dipole" and "dipole" in result:
-                scatter = ax.scatter(
-                    result["dipole"]["reference_per_atom"],
-                    result["dipole"]["predicted_per_atom"],
-                    marker="o",
-                    color=fixed_color_test,
-                    label="Test",
-                )
-
-            # Only add to legend_labels if scatter was assigned
-            if scatter is not None:
-                legend_labels["Test"] = scatter
 
         # Plot train/valid data (each entry keeps its own name)
         for name, result in train_valid_dict.items():
@@ -409,6 +353,63 @@ def plot_inference_from_results(
             if scatter is not None:
                 legend_labels[name] = scatter
 
+        fixed_color_test = colors[2]  # Color for test dataset
+
+        # Plot test data (single legend entry)
+        for name, result in test_dict.items():
+            # Initialize scatter to None to avoid possibly used before assignment
+            scatter = None
+
+            if key == "energy" and "energy" in result:
+                scatter = ax.scatter(
+                    result["energy"]["reference_per_atom"],
+                    result["energy"]["predicted_per_atom"],
+                    marker="o",
+                    color=fixed_color_test,
+                    label="Test",
+                )
+
+            elif key == "force" and "forces" in result:
+                scatter = ax.scatter(
+                    result["forces"]["reference"],
+                    result["forces"]["predicted"],
+                    marker="o",
+                    color=fixed_color_test,
+                    label="Test",
+                )
+
+            elif key == "stress" and "stress" in result:
+                scatter = ax.scatter(
+                    result["stress"]["reference"],
+                    result["stress"]["predicted"],
+                    marker="o",
+                    color=fixed_color_test,
+                    label="Test",
+                )
+
+            elif key == "virials" and "virials" in result:
+                scatter = ax.scatter(
+                    result["virials"]["reference_per_atom"],
+                    result["virials"]["predicted_per_atom"],
+                    marker="o",
+                    color=fixed_color_test,
+                    label="Test",
+                )
+
+            elif key == "dipole" and "dipole" in result:
+                scatter = ax.scatter(
+                    result["dipole"]["reference_per_atom"],
+                    result["dipole"]["predicted_per_atom"],
+                    marker="o",
+                    color=fixed_color_test,
+                    label="Test",
+                )
+
+            # Only add to legend_labels if scatter was assigned
+            if scatter is not None:
+                legend_labels["Test"] = scatter
+
+
         # Add diagonal line for guide
         min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
         max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])
@@ -441,12 +442,13 @@ def model_inference(
     for param in model.parameters():
         param.requires_grad = False
 
-    scatter_metric = InferenceMetric().to(device)
     results_dict = {}
 
     for name in all_data_loaders:
         data_loader = all_data_loaders[name]
-        logging.info(f"Running inference on {name} dataset")
+        logging.debug(f"Running inference on {name} dataset")
+        scatter_metric = InferenceMetric().to(device)
+
         for batch in data_loader:
             batch = batch.to(device)
             batch_dict = batch.to_dict()
@@ -457,8 +459,8 @@ def model_inference(
                 compute_virials=output_args.get("virials", False),
                 compute_stress=output_args.get("stress", False),
             )
-
-            scatter_metric.update(batch, output)
+            
+            results= scatter_metric(batch, output)
 
         if distributed:
             torch.distributed.barrier()
@@ -466,6 +468,8 @@ def model_inference(
         results = scatter_metric.compute()
         results_dict[name] = results
         scatter_metric.reset()
+
+        del data_loader
 
     for param in model.parameters():
         param.requires_grad = True
@@ -520,7 +524,7 @@ class InferenceMetric(Metric):
 
         # Energy
         if output.get("energy") is not None and batch.energy is not None:
-            self.n_energy += batch.num_graphs
+            self.n_energy += 1.0
             self.ref_energies.append(batch.energy)
             self.pred_energies.append(output["energy"])
             # Per-atom normalization
@@ -529,19 +533,19 @@ class InferenceMetric(Metric):
 
         # Forces
         if output.get("forces") is not None and batch.forces is not None:
-            self.n_forces += batch.forces.shape[0]
+            self.n_forces += 1.0
             self.ref_forces.append(batch.forces)
             self.pred_forces.append(output["forces"])
 
         # Stress
         if output.get("stress") is not None and batch.stress is not None:
-            self.n_stress += batch.stress.shape[0]
+            self.n_stress += 1.0
             self.ref_stress.append(batch.stress)
             self.pred_stress.append(output["stress"])
 
         # Virials
         if output.get("virials") is not None and batch.virials is not None:
-            self.n_virials += batch.virials.shape[0]
+            self.n_virials += 1.0
             self.ref_virials.append(batch.virials)
             self.pred_virials.append(output["virials"])
             # Per-atom normalization
@@ -551,27 +555,38 @@ class InferenceMetric(Metric):
 
         # Dipole
         if output.get("dipole") is not None and batch.dipole is not None:
-            self.n_dipole += batch.dipole.shape[0]
+            self.n_dipole += 1.0
             self.ref_dipole.append(batch.dipole)
             self.pred_dipole.append(output["dipole"])
-            atoms_per_config_3d = atoms_per_config.view(-1, 1, 1)
+            atoms_per_config_3d = atoms_per_config.view(-1, 1)
             self.ref_dipole_per_atom.append(batch.dipole / atoms_per_config_3d)
             self.pred_dipole_per_atom.append(output["dipole"] / atoms_per_config_3d)
 
     def _process_data(self, ref_list, pred_list):
-        """Helper to process and convert data to numpy arrays."""
-        if not ref_list:
+        # Handle different possible states of ref_list and pred_list in distributed mode
+
+        # Check if this is a list type object
+        if isinstance(ref_list, (list, tuple)):
+            if len(ref_list) == 0:
+                return None, None
+            ref = torch.cat(ref_list).reshape(-1)
+            pred = torch.cat(pred_list).reshape(-1)
+        # Handle case where ref_list is already a tensor (happens after reset in distributed mode)
+        elif isinstance(ref_list, torch.Tensor):
+            ref = ref_list.reshape(-1)
+            pred = pred_list.reshape(-1)
+        # Handle other possible types
+        else:
             return None, None
-        ref = torch.cat(ref_list).reshape(-1)  # Flatten to 1D
-        pred = torch.cat(pred_list).reshape(-1)  # Flatten to 1D
         return to_numpy(ref), to_numpy(pred)
+
 
     def compute(self):
         """Compute final results for scatterplot."""
         results = {}
 
         # Process energies
-        if self.n_energy > 0:
+        if self.n_energy:
             ref_e, pred_e = self._process_data(self.ref_energies, self.pred_energies)
             ref_e_pa, pred_e_pa = self._process_data(
                 self.ref_energies_per_atom, self.pred_energies_per_atom
@@ -581,29 +596,26 @@ class InferenceMetric(Metric):
                 "predicted": pred_e,
                 "reference_per_atom": ref_e_pa,
                 "predicted_per_atom": pred_e_pa,
-                "n_points": to_numpy(self.n_energy).item(),
             }
 
         # Process forces
-        if self.n_forces > 0:
+        if self.n_forces:
             ref_f, pred_f = self._process_data(self.ref_forces, self.pred_forces)
             results["forces"] = {
                 "reference": ref_f,
                 "predicted": pred_f,
-                "n_points": to_numpy(self.n_forces).item(),
             }
 
         # Process stress
-        if self.n_stress > 0:
+        if self.n_stress:
             ref_s, pred_s = self._process_data(self.ref_stress, self.pred_stress)
             results["stress"] = {
                 "reference": ref_s,
                 "predicted": pred_s,
-                "n_points": to_numpy(self.n_stress).item(),
             }
 
         # Process virials
-        if self.n_virials > 0:
+        if self.n_virials:
             ref_v, pred_v = self._process_data(self.ref_virials, self.pred_virials)
             ref_v_pa, pred_v_pa = self._process_data(
                 self.ref_virials_per_atom, self.pred_virials_per_atom
@@ -613,11 +625,10 @@ class InferenceMetric(Metric):
                 "predicted": pred_v,
                 "reference_per_atom": ref_v_pa,
                 "predicted_per_atom": pred_v_pa,
-                "n_points": to_numpy(self.n_virials).item(),
             }
 
         # Process dipoles
-        if self.n_dipole > 0:
+        if self.n_dipole:
             ref_d, pred_d = self._process_data(self.ref_dipole, self.pred_dipole)
             ref_d_pa, pred_d_pa = self._process_data(
                 self.ref_dipole_per_atom, self.pred_dipole_per_atom
@@ -627,6 +638,5 @@ class InferenceMetric(Metric):
                 "predicted": pred_d,
                 "reference_per_atom": ref_d_pa,
                 "predicted_per_atom": pred_d_pa,
-                "n_points": to_numpy(self.n_dipole).item(),
             }
         return results
