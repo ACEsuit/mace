@@ -7,7 +7,6 @@ import re
 from typing import List
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 plt.rcParams.update({"font.size": 8})
