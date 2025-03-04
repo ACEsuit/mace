@@ -283,14 +283,18 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         sc: Optional[torch.Tensor],
         node_attrs: torch.Tensor,
     ) -> torch.Tensor:
+        use_cueq_mul_ir = False
         if hasattr(self, "cueq_config"):
-            if self.cueq_config is not None and self.cueq_config.layout_str == "mul_ir":
-                node_feats = torch.transpose(node_feats, 1, 2)
-                index_attrs = torch.nonzero(node_attrs)[:, 1].int()
-                node_feats = self.symmetric_contractions(
-                    node_feats.flatten(1),
-                    index_attrs,
-                )
+            if self.cueq_config is not None:
+                if self.cueq_config.layout_str == "mul_ir":
+                    use_cueq_mul_ir = True
+        if use_cueq_mul_ir:
+            node_feats = torch.transpose(node_feats, 1, 2)
+            index_attrs = torch.nonzero(node_attrs)[:, 1].int()
+            node_feats = self.symmetric_contractions(
+                node_feats.flatten(1),
+                index_attrs,
+            )
         else:
             node_feats = self.symmetric_contractions(node_feats, node_attrs)
         if self.use_sc and sc is not None:
