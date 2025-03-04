@@ -15,6 +15,11 @@ from .utils import (
     test_config_types,
 )
 
+try:
+    from .lmdb_dataset import LMDBDataset
+except ImportError:
+    pass
+
 __all__ = [
     "get_neighborhood",
     "Configuration",
@@ -31,4 +36,5 @@ __all__ = [
     "dataset_from_sharded_hdf5",
     "save_AtomicData_to_HDF5",
     "save_configurations_as_HDF5",
+    "LMDBDataset",
 ]
