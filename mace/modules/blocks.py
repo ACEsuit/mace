@@ -288,9 +288,9 @@ class EquivariantProductBasisBlock(torch.nn.Module):
                 node_feats = torch.transpose(node_feats, 1, 2)
             index_attrs = torch.nonzero(node_attrs)[:, 1].int()
             node_feats = self.symmetric_contractions(
-                    node_feats.flatten(1),
-                    index_attrs,
-                )
+                node_feats.flatten(1),
+                index_attrs,
+            )
         else:
             node_feats = self.symmetric_contractions(node_feats, node_attrs)
         if self.use_sc and sc is not None:
