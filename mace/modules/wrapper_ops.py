@@ -79,6 +79,8 @@ class CuEquivarianceConfig:
             self.group = (
                 O3_e3nn if self.group == "O3_e3nn" else getattr(cue, self.group)
             )
+        if not CUET_AVAILABLE:
+            self.enabled = False
 
 
 class Linear:
