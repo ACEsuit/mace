@@ -4,7 +4,6 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 
 import dataclasses
 import itertools
-import types
 from typing import Iterator, List, Optional
 
 import numpy as np
@@ -106,7 +105,7 @@ class Linear:
                 shared_weights=shared_weights,
                 use_fallback=True,
             )
-        
+
         return o3.Linear(
             irreps_in,
             irreps_out,
@@ -218,7 +217,7 @@ class SymmetricContractionWrapper:
                 dtype=torch.get_default_dtype(),
                 math_dtype=torch.get_default_dtype(),
             )
-        
+
         return SymmetricContraction(
             irreps_in=irreps_in,
             irreps_out=irreps_out,
