@@ -501,7 +501,7 @@ def run(args: argparse.Namespace) -> None:
                 head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
         elif head_config.train_file.endswith("_lmdb"):
-            train_sets[head_config.head_name] = data.LMDBDataset(head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name) 
+            train_sets[head_config.head_name] = data.LMDBDataset(head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name)
             valid_sets[head_config.head_name] = data.LMDBDataset(head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name)
         else:  # This case would be for when the file path is to a directory of multiple .h5 files
             train_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(

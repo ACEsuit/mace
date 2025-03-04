@@ -1,30 +1,33 @@
-from mace.data.atomic_data import AtomicData
-from mace.data.utils import Configuration, config_from_atoms
-from torch.utils.data import Dataset
-from mace.tools.utils import AtomicNumberTable
-from ase.io.extxyz import save_calc_results
-import numpy as np
 import os
+
+import numpy as np
+from torch.utils.data import Dataset
+
+from mace.data.atomic_data import AtomicData
+from mace.data.utils import Configuration
 
 try:
     from fairchem.core.datasets import AseDBDataset
-except ImportError:
-    raise ImportError("Please install MACE with LMDB support: pip install mace[lmdb]")
+except ImportError as e:
+    raise ImportError(
+        "Please install MACE with LMDB support: pip install mace[lmdb]"
+    ) from e
+
 
 class LMDBDataset(Dataset):
     def __init__(self, file_path, r_max, z_table, **kwargs):
-        dataset_paths = file_path.split(":") # using : split multiple paths
+        dataset_paths = file_path.split(":")  # using : split multiple paths
         # make sure each of the path exist
         for path in dataset_paths:
             assert os.path.exists(path)
         config_kwargs = {}
-        super(LMDBDataset, self).__init__() # pylint: disable=super-with-arguments
+        super(LMDBDataset, self).__init__()  # pylint: disable=super-with-arguments
         self.AseDB = AseDBDataset(config=dict(src=dataset_paths, **config_kwargs))
         self.r_max = r_max
         self.z_table = z_table
 
         self.kwargs = kwargs
-        self.transform = kwargs['transform'] if 'transform' in kwargs else None
+        self.transform = kwargs["transform"] if "transform" in kwargs else None
 
     def __len__(self):
         return len(self.AseDB)
@@ -32,24 +35,23 @@ class LMDBDataset(Dataset):
     def __getitem__(self, index):
         try:
             atoms = self.AseDB.get_atoms(self.AseDB.ids[index])
-        except:
+        except Exception as e:  # pylint: disable=broad-except
             print(f"Error in index {index}")
+            print(e)
             return None
-
         assert np.sum(atoms.get_cell() == atoms.cell) == 9
 
-        #import ipdb; ipdb.set_trace()
         config = Configuration(
             atomic_numbers=atoms.numbers,
             positions=atoms.positions,
-            energy=atoms.calc.results['energy'],
-            forces=atoms.calc.results['forces'],
-            stress=atoms.calc.results['stress'],
+            energy=atoms.calc.results["energy"],
+            forces=atoms.calc.results["forces"],
+            stress=atoms.calc.results["stress"],
             virials=np.zeros(atoms.get_stress().shape),
             dipole=np.zeros(atoms.get_forces()[0].shape),
             charges=np.zeros(atoms.numbers.shape),
             weight=1.0,
-            head=None, # do not asign head according to h5
+            head=None,  # do not asign head according to h5
             energy_weight=1.0,
             forces_weight=1.0,
             stress_weight=1.0,
@@ -57,18 +59,17 @@ class LMDBDataset(Dataset):
             config_type=None,
             pbc=np.array(atoms.pbc),
             cell=np.array(atoms.cell),
-            alex_config_id=None,
         )
         if config.head is None:
             config.head = self.kwargs.get("head")
         try:
             atomic_data = AtomicData.from_config(
-                    config,
-                    z_table=self.z_table,
-                    cutoff=self.r_max,
-                    heads=self.kwargs.get("heads", ["Default"]),
+                config,
+                z_table=self.z_table,
+                cutoff=self.r_max,
+                heads=self.kwargs.get("heads", ["Default"]),
             )
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-except
             print(f"Error in index {index}")
             print(e)
 
