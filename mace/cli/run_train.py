@@ -26,6 +26,7 @@ from mace import data, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+from mace.cli.visualise_train import TrainingPlotter
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -500,6 +501,9 @@ def run(args: argparse.Namespace) -> None:
             valid_sets[head_config.head_name] = data.HDF5Dataset(
                 head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
             )
+        elif head_config.train_file.endswith("_lmdb"):
+            train_sets[head_config.head_name] = data.LMDBDataset(head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name)
+            valid_sets[head_config.head_name] = data.LMDBDataset(head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name)
         else:  # This case would be for when the file path is to a directory of multiple .h5 files
             train_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
                 head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
@@ -647,6 +651,34 @@ def run(args: argparse.Namespace) -> None:
     else:
         distributed_model = None
 
+
+    train_valid_data_loader = {}
+    for head_config in head_configs:
+        data_loader_name = "train_" + head_config.head_name
+        train_valid_data_loader[data_loader_name] = head_config.train_loader
+    for head, valid_loader in valid_loaders.items():
+        data_load_name = "valid_" + head
+        train_valid_data_loader[data_load_name] = valid_loader
+
+    if args.plot and args.plot_frequency > 0:
+        try:
+            plotter = TrainingPlotter(
+                results_dir=logger.path,
+                heads=heads,
+                table_type=args.error_table,
+                train_valid_data=train_valid_data_loader,
+                test_data={},
+                output_args=output_args,
+                device=device,
+                plot_frequency=args.plot_frequency,
+                distributed=args.distributed,
+                swa_start=swa.start if swa else None
+                )
+        except Exception as e:  # pylint: disable=W0718
+            logging.debug(f"Creating Plotter failed: {e}")
+    else:
+        plotter = None
+
     tools.train(
         model=model,
         loss_fn=loss_fn,
@@ -670,6 +702,7 @@ def run(args: argparse.Namespace) -> None:
         log_wandb=args.wandb,
         distributed=args.distributed,
         distributed_model=distributed_model,
+        plotter=plotter,
         train_sampler=train_sampler,
         rank=rank,
     )
@@ -685,7 +718,6 @@ def run(args: argparse.Namespace) -> None:
     for head, valid_loader in valid_loaders.items():
         data_load_name = "valid_" + head
         train_valid_data_loader[data_load_name] = valid_loader
-
     test_sets = {}
     stop_first_test = False
     test_data_loader = {}
@@ -791,7 +823,23 @@ def run(args: argparse.Namespace) -> None:
                 distributed=args.distributed,
             )
             logging.info("Error-table on TEST:\n" + str(table_test))
-
+        if args.plot:
+            try:
+                plotter = TrainingPlotter(
+                    results_dir=logger.path,
+                    heads=heads,
+                    table_type=args.error_table,
+                    train_valid_data=train_valid_data_loader,
+                    test_data=test_data_loader,
+                    output_args=output_args,
+                    device=device,
+                    plot_frequency=args.plot_frequency,
+                    distributed=args.distributed,
+                    swa_start=swa.start if swa else None
+                )
+                plotter.plot(epoch, model_to_evaluate, rank)
+            except Exception as e:  # pylint: disable=W0718
+                logging.debug(f"Plotting failed: {e}")
         if rank == 0:
             # Save entire model
             if swa_eval:
@@ -828,7 +876,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception as e:  # pylint: disable=W0718
                     pass
             else:
                 torch.save(model_to_save, Path(args.model_dir) / (args.name + ".model"))
@@ -843,7 +891,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception as e:  # pylint: disable=W0718
                     pass
 
         if args.distributed:

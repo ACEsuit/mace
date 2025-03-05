@@ -82,6 +82,20 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
     parser.add_argument(
+        "--plot",
+        help="Plot results of training",
+        type=str2bool,
+        default=True,
+    )
+
+    parser.add_argument(
+        "--plot_frequency",
+        help="Set plotting frequency: '0' for only at the end or an integer N to plot every N epochs.",
+        type=int,
+        default="0",
+    )
+
+    parser.add_argument(
         "--error_table",
         help="Type of error table produced at the end of the training",
         type=str,
