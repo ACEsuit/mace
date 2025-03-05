@@ -5,7 +5,6 @@ from torch.utils.data import Dataset
 
 from mace.data.atomic_data import AtomicData
 from mace.data.utils import Configuration
-
 from mace.tools.fairchem_dataset import AseDBDataset
 
 
