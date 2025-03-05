@@ -15,10 +15,7 @@ from .utils import (
     test_config_types,
 )
 
-try:
-    from .lmdb_dataset import LMDBDataset
-except ImportError:
-    pass
+from .lmdb_dataset import LMDBDataset
 
 __all__ = [
     "get_neighborhood",

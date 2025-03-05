@@ -6,12 +6,7 @@ from torch.utils.data import Dataset
 from mace.data.atomic_data import AtomicData
 from mace.data.utils import Configuration
 
-try:
-    from fairchem.core.datasets import AseDBDataset
-except ImportError as e:
-    raise ImportError(
-        "Please install MACE with LMDB support: pip install mace[lmdb]"
-    ) from e
+from mace.tools.fairchem_dataset import AseDBDataset
 
 
 class LMDBDataset(Dataset):
