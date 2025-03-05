@@ -781,7 +781,14 @@ def check_path_ase_read(filename: str) -> str:
         num_ldb_files = len(list(filepath.glob("*.lmdb")))
         num_aselmbd_files = len(list(filepath.glob("*.aselmdb")))
         num_mdb_files = len(list(filepath.glob("*.mdb")))
-        if num_h5_files + num_hdf5_files + num_ldb_files + num_aselmbd_files + num_mdb_files == 0:
+        if (
+            num_h5_files
+            + num_hdf5_files
+            + num_ldb_files
+            + num_aselmbd_files
+            + num_mdb_files
+            == 0
+        ):
             # print all the files in the directory extension in the directory for debugging
             for file in os.listdir(filepath):
                 print(file)
