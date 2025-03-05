@@ -53,100 +53,60 @@ def create_xyz_file(atoms_list, filename):
     write(filename, atoms_list, format='extxyz')
     return filename
 
-
-def create_h5_dataset(atoms_list, folder_path, r_max, z_table):
-    """Create proper HDF5 datasets compatible with MACE's HDF5Dataset."""
-    import h5py
+def create_h5_dataset(xyz_file, output_dir, r_max=5.0, seed=42):
+    """
+    Run MACE's preprocess_data.py script to convert an xyz file to h5 format.
+    
+    Args:
+        xyz_file: Path to the input xyz file
+        output_dir: Directory to store the preprocessed h5 files
+        r_max: Cutoff radius
+        seed: Random seed
+        
+    Returns:
+        The output directory containing the h5 files
+    """
     import os
-    import numpy as np
-    from mace.data.atomic_data import AtomicData
-    from mace.data.utils import Configuration
+    import subprocess
+    from pathlib import Path
     
-    os.makedirs(folder_path, exist_ok=True)
+    # Make sure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
     
-    # Create the primary HDF5 file
-    h5_path = os.path.join(folder_path, "dataset.h5")
+    # Find the path to the preprocess_data.py script
+    preprocess_script = Path(__file__).parent.parent / "mace" / "cli" / "preprocess_data.py"
     
-    # Group atoms into batches for better efficiency
-    batch_size = 5
-    num_batches = (len(atoms_list) + batch_size - 1) // batch_size
+    # Set up command to run preprocess_data.py
+    cmd = [
+        sys.executable,
+        str(preprocess_script),
+        f"--train_file={xyz_file}",
+        f"--r_max={r_max}",
+        f"--h5_prefix={output_dir}/",
+        f"--seed={seed}",
+        "--compute_statistics",  # Generate statistics file
+        "--num_process=2"        # Create 2 files for testing sharded loading
+    ]
     
-    with h5py.File(h5_path, 'w') as f:
-        for batch_idx in range(num_batches):
-            # Create a batch group
-            batch_group = f.create_group(f"config_batch_{batch_idx}")
-            
-            # Process atoms in this batch
-            start_idx = batch_idx * batch_size
-            end_idx = min(start_idx + batch_size, len(atoms_list))
-            
-            for i, atoms in enumerate(atoms_list[start_idx:end_idx]):
-                # Create a configuration for each atom
-                config = Configuration(
-                    atomic_numbers=atoms.get_atomic_numbers(),
-                    positions=atoms.get_positions(),
-                    energy=atoms.calc.results["energy"],
-                    forces=atoms.calc.results["forces"],
-                    stress=atoms.calc.results["stress"],
-                    virials=None,
-                    dipole=None,
-                    charges=None,
-                    cell=atoms.get_cell(),
-                    pbc=atoms.get_pbc(),
-                    weight=1.0,
-                    energy_weight=1.0,
-                    forces_weight=1.0,
-                    stress_weight=1.0,
-                    virials_weight=1.0,
-                    config_type="Default",
-                    head="Default"
-                )
-                
-                # Create atomic data
-                atomic_data = AtomicData.from_config(config, z_table=z_table, cutoff=r_max)
-                
-                # Create a subgroup for this configuration
-                config_group = batch_group.create_group(f"config_{i}")
-                
-                # Store atomic data fields
-                config_group.create_dataset("num_nodes", data=atomic_data.num_nodes)
-                config_group.create_dataset("edge_index", data=atomic_data.edge_index)
-                config_group.create_dataset("positions", data=atomic_data.positions)
-                config_group.create_dataset("shifts", data=atomic_data.shifts)
-                config_group.create_dataset("unit_shifts", data=atomic_data.unit_shifts)
-                config_group.create_dataset("cell", data=atomic_data.cell)
-                config_group.create_dataset("node_attrs", data=atomic_data.node_attrs)
-                
-                # Store weight parameters
-                config_group.create_dataset("weight", data=atomic_data.weight)
-                config_group.create_dataset("energy_weight", data=atomic_data.energy_weight)
-                config_group.create_dataset("forces_weight", data=atomic_data.forces_weight)
-                config_group.create_dataset("stress_weight", data=atomic_data.stress_weight)
-                config_group.create_dataset("virials_weight", data=1.0)  # Default value
-                
-                # Store target properties
-                config_group.create_dataset("forces", data=atomic_data.forces)
-                config_group.create_dataset("energy", data=atomic_data.energy)
-                
-                # Store stress if available
-                if hasattr(atomic_data, "stress") and atomic_data.stress is not None:
-                    config_group.create_dataset("stress", data=atomic_data.stress)
-                else:
-                    # Create empty stress dataset
-                    config_group.create_dataset("stress", data=np.zeros((1, 3, 3)))
-                
-                # Store other properties (can be None)
-                config_group.create_dataset("virials", data=np.zeros((1, 3, 3)))
-                config_group.create_dataset("dipole", data=np.zeros(3))
-                config_group.create_dataset("charges", data=np.zeros(atomic_data.num_nodes))
-                
-                # Store head information
-                config_group.create_dataset("head", data=0)  # Default head index
-                
-        # Set metadata attributes for the file
-        f.attrs["drop_last"] = False
+    # Set up environment
+    env = os.environ.copy()
+    env['PYTHONPATH'] = str(Path(__file__).parent.parent) + ":" + env.get('PYTHONPATH', '')
     
-    return folder_path
+    # Run the script
+    print(f"Running preprocess command: {' '.join(cmd)}")
+    process = subprocess.run(
+        cmd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True
+    )
+    
+    # Print output for debugging
+    print("Preprocess stdout:", process.stdout.decode())
+    print("Preprocess stderr:", process.stderr.decode())
+    
+    return output_dir
 
 
 def create_lmdb_dataset(atoms_list, folder_path):
@@ -155,8 +115,6 @@ def create_lmdb_dataset(atoms_list, folder_path):
     import lmdb
     import zlib
     import orjson
-    import numpy as np
-    import torch
     
     # Create the folder if it doesn't exist
     os.makedirs(folder_path, exist_ok=True)
@@ -277,7 +235,7 @@ def test_multifile_training():
         # Save datasets using utility functions
         create_xyz_file(xyz_atoms1, xyz_file1)
         create_xyz_file(xyz_atoms2, xyz_file2)
-        create_h5_dataset(h5_atoms, h5_folder, r_max=5.0, z_table=z_table)
+        create_h5_dataset(xyz_file2, h5_folder)
         create_lmdb_dataset(lmdb_atoms1, lmdb_folder1)
         create_lmdb_dataset(lmdb_atoms2, lmdb_folder2)
         

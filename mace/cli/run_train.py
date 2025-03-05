@@ -90,7 +90,7 @@ def load_dataset_for_path(
     heads: List[str],
     head_name: str,
     **kwargs,
-) -> torch_geometric.dataset.Dataset:
+) -> Union[torch_geometric.dataset.Dataset, List]:
     """
     Load a dataset from a file path based on its format.
 
@@ -105,42 +105,162 @@ def load_dataset_for_path(
     Returns:
         Loaded dataset
     """
-    if check_path_ase_read(file_path):
-        collections, _ = get_dataset_from_xyz(
-            work_dir=kwargs.get("work_dir", "."),
-            train_path=file_path,
-            valid_path=None,
-            valid_fraction=kwargs.get("valid_fraction", 0.1),
-            config_type_weights=kwargs.get("config_type_weights"),
-            test_path=None,
-            seed=kwargs.get("seed", 123),
-            energy_key=kwargs.get("energy_key", "REF_energy"),
-            forces_key=kwargs.get("forces_key", "REF_forces"),
-            stress_key=kwargs.get("stress_key", "REF_stress"),
-            virials_key=kwargs.get("virials_key", "REF_virials"),
-            dipole_key=kwargs.get("dipole_key", "REF_dipole"),
-            charges_key=kwargs.get("charges_key", "REF_charges"),
-            head_name=head_name,
-            keep_isolated_atoms=kwargs.get("keep_isolated_atoms", False),
-        )
-        return [
-            data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=r_max, heads=heads
+    filepath = Path(file_path)
+    
+    # Handle XYZ files
+    if filepath.suffix.lower() in ['.xyz', '.extxyz']:
+        logging.info(f"Loading XYZ file dataset: {file_path}")
+        
+        # For XYZ files, we need to get the configurations first
+        config_type_weights = kwargs.get("config_type_weights", {"Default": 1.0})
+        if isinstance(config_type_weights, str):
+            try:
+                import ast
+                config_type_weights = ast.literal_eval(config_type_weights)
+            except:
+                config_type_weights = {"Default": 1.0}
+                
+        try:
+            # Import here to avoid circular imports
+            from mace.data.utils import load_from_xyz
+            
+            # Get configurations directly from the XYZ file
+            _, configs = load_from_xyz(
+                file_path=file_path,
+                config_type_weights=config_type_weights,
+                energy_key=kwargs.get("energy_key", "REF_energy"),
+                forces_key=kwargs.get("forces_key", "REF_forces"),
+                stress_key=kwargs.get("stress_key", "REF_stress"),
+                virials_key=kwargs.get("virials_key", "REF_virials"),
+                dipole_key=kwargs.get("dipole_key", "REF_dipole"),
+                charges_key=kwargs.get("charges_key", "REF_charges"),
+                head_key="head",
+                head_name=head_name,
+                extract_atomic_energies=False,
+                keep_isolated_atoms=kwargs.get("keep_isolated_atoms", False),
             )
-            for config in collections.train
-        ]
-    if file_path.endswith(".h5"):
+            
+            # Convert configurations to AtomicData objects
+            return [
+                data.AtomicData.from_config(
+                    config, z_table=z_table, cutoff=r_max, heads=heads
+                )
+                for config in configs
+            ]
+        except Exception as e:
+            logging.error(f"Error processing XYZ file {file_path}: {e}")
+            raise
+    
+    # Handle directories
+    if filepath.is_dir():
+        # Check if it's an LMDB directory (either by name or by content)
+        if filepath.name.endswith("_lmdb") or any(f.endswith(".lmdb") for f in os.listdir(filepath)):
+            logging.info(f"Loading LMDB dataset from {file_path}")
+            return data.LMDBDataset(
+                file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
+            )
+        
+        # Check if it's a directory with H5 files
+        h5_files = list(filepath.glob("*.h5")) + list(filepath.glob("*.hdf5"))
+        if h5_files:
+            logging.info(f"Loading HDF5 dataset from directory {file_path}")
+            try:
+                return data.dataset_from_sharded_hdf5(
+                    file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
+                )
+            except Exception as e:
+                logging.error(f"Error loading sharded HDF5 dataset: {e}")
+                raise
+        
+        # If no obvious type, check pathname patterns
+        if "lmdb" in str(filepath).lower():
+            logging.info(f"Loading LMDB dataset based on path name: {file_path}")
+            return data.LMDBDataset(
+                file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
+            )
+        
+        # Default to HDF5 for directories without clear type
+        logging.info(f"Attempting to load directory as HDF5 dataset: {file_path}")
+        try:
+            return data.dataset_from_sharded_hdf5(
+                file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
+            )
+        except Exception as e:
+            logging.error(f"Error loading as sharded HDF5: {e}")
+            raise
+    
+    # Handle specific file types
+    suffix = filepath.suffix.lower()
+    if suffix in (".h5", ".hdf5"):
+        logging.info(f"Loading single HDF5 file: {file_path}")
         return data.HDF5Dataset(
             file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
         )
-    if file_path.endswith("_lmdb"):
-        return data.LMDBDataset(
-            file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
-        )
-
+    
+    # Default to sharded HDF5 for any other file type
+    logging.info(f"Attempting to load as sharded HDF5: {file_path}")
     return data.dataset_from_sharded_hdf5(
-            file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
-        )
+        file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
+    )
+
+def combine_datasets(datasets, head_name):
+    """
+    Combine multiple datasets which might be of different types.
+    
+    Args:
+        datasets: List of datasets (can be mixed types)
+        head_name: Name of the current head
+        
+    Returns:
+        Combined dataset
+    """
+    if not datasets:
+        return []
+        
+    # Check if all datasets are of the same type
+    if all(isinstance(ds, list) for ds in datasets):
+        # If all are lists of AtomicData, flatten
+        logging.info(f"Combining {len(datasets)} list datasets for head '{head_name}'")
+        return [item for sublist in datasets for item in sublist]
+    
+    if all(not isinstance(ds, list) for ds in datasets):
+        # If all are Dataset objects, use ConcatDataset
+        logging.info(f"Combining {len(datasets)} Dataset objects for head '{head_name}'")
+        return ConcatDataset(datasets) if len(datasets) > 1 else datasets[0]
+    
+    # Mixed types - try to convert all to one type
+    logging.info(f"Converting mixed dataset types for head '{head_name}'")
+    
+    # Check if we can convert all to lists of AtomicData
+    try:
+        # First attempt: convert all datasets to lists of AtomicData
+        all_items = []
+        for ds in datasets:
+            if isinstance(ds, list):
+                all_items.extend(ds)
+            else:
+                all_items.extend([ds[i] for i in range(len(ds))])
+        return all_items
+    except Exception as e:
+        logging.warning(f"Failed to convert mixed datasets to list: {e}")
+    
+    # Second attempt: convert lists to Dataset objects
+    try:
+        dataset_objects = []
+        for ds in datasets:
+            if isinstance(ds, list):
+                from torch.utils.data import TensorDataset
+                # Convert list to a Dataset
+                dataset_objects.append(TensorDataset(*[torch.tensor([i]) for i in range(len(ds))]))
+            else:
+                dataset_objects.append(ds)
+        return ConcatDataset(dataset_objects)
+    except Exception as e:
+        logging.warning(f"Failed to convert mixed datasets to ConcatDataset: {e}")
+        
+    # If all else fails, just return the first dataset
+    logging.warning(f"Could not combine datasets of different types. Using only the first dataset.")
+    return datasets[0]
 
 
 def run(args) -> None:
@@ -593,67 +713,43 @@ def run(args) -> None:
 
     for head_config in head_configs:
         train_datasets = []
+        
+        logging.info(f"Processing datasets for head '{head_config.head_name}'")
 
         # Process each training file
         for train_file in head_config.train_file:
-            if check_path_ase_read(train_file):
-                # For XYZ files, we've already processed them earlier
-                if not hasattr(head_config, 'collections'):
-                    # This should not normally happen, as we process XYZ files above
-                    logging.warning(f"Processing XYZ file {train_file} without collections!")
-                    config_type_weights = get_config_type_weights(
-                        head_config.config_type_weights
-                    )
-                    collections, _ = get_dataset_from_xyz(
-                        work_dir=args.work_dir,
-                        train_path=train_file,
-                        valid_path=None,
-                        valid_fraction=0,  # Don't take validation from here
-                        config_type_weights=config_type_weights,
-                        test_path=None,
-                        seed=args.seed,
-                        energy_key=head_config.energy_key,
-                        forces_key=head_config.forces_key,
-                        stress_key=head_config.stress_key,
-                        virials_key=head_config.virials_key,
-                        dipole_key=head_config.dipole_key,
-                        charges_key=head_config.charges_key,
-                        head_name=head_config.head_name,
-                        keep_isolated_atoms=head_config.keep_isolated_atoms,
-                    )
-                    train_dataset = [
-                        data.AtomicData.from_config(
-                            config, z_table=z_table, cutoff=args.r_max, heads=heads
-                        )
-                        for config in collections.train
-                    ]
-                    train_datasets.append(train_dataset)
-            elif train_file.endswith(".h5"):
-                train_dataset = data.HDF5Dataset(
-                    train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+            try:
+                # Use the improved function to load datasets based on file type
+                train_dataset = load_dataset_for_path(
+                    file_path=train_file,
+                    r_max=args.r_max,
+                    z_table=z_table,
+                    heads=heads,
+                    head_name=head_config.head_name,
+                    work_dir=args.work_dir,
+                    valid_fraction=0.0,  # Don't take validation from here
+                    config_type_weights=head_config.config_type_weights,
+                    seed=args.seed,
+                    energy_key=head_config.energy_key,
+                    forces_key=head_config.forces_key,
+                    stress_key=head_config.stress_key,
+                    virials_key=head_config.virials_key,
+                    dipole_key=head_config.dipole_key,
+                    charges_key=head_config.charges_key,
+                    keep_isolated_atoms=head_config.keep_isolated_atoms,
                 )
                 train_datasets.append(train_dataset)
-            elif train_file.endswith("_lmdb"):
-                train_dataset = data.LMDBDataset(
-                    train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-                )
-                train_datasets.append(train_dataset)
-            else:  # Directory of .h5 files
-                train_dataset = data.dataset_from_sharded_hdf5(
-                    train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-                )
-                train_datasets.append(train_dataset)
+                logging.debug(f"Successfully loaded dataset from {train_file}")
+            except Exception as e:
+                logging.error(f"Error loading dataset from {train_file}: {e}")
+                if len(train_datasets) == 0:
+                    raise  # Re-raise if we couldn't load any datasets
 
-        # Combine datasets for this head
-        if all(isinstance(ds, list) for ds in train_datasets):
-            # If all are lists of AtomicData, flatten
-            train_sets[head_config.head_name] = [item for sublist in train_datasets for item in sublist]
-        else:
-            # If some are Dataset objects, use ConcatDataset
-            train_sets[head_config.head_name] = ConcatDataset(train_datasets) if len(train_datasets) > 1 else train_datasets[0]
-
-        # Process validation files
-        if hasattr(head_config, 'collections'):
+        # Combine datasets for this head using the improved combination function
+        train_sets[head_config.head_name] = combine_datasets(train_datasets, head_config.head_name)
+        
+        # Process validation files similarly
+        if hasattr(head_config, 'collections') and hasattr(head_config.collections, 'valid'):
             # For XYZ files processed earlier
             valid_sets[head_config.head_name] = [
                 data.AtomicData.from_config(
@@ -661,20 +757,20 @@ def run(args) -> None:
                 )
                 for config in head_config.collections.valid
             ]
+            logging.info(f"Using validation set from collections for {head_config.head_name}")
         elif head_config.valid_file:
             valid_datasets = []
             for valid_file in head_config.valid_file:
-                if check_path_ase_read(valid_file):
-                    config_type_weights = get_config_type_weights(
-                        head_config.config_type_weights
-                    )
-                    collections, _ = get_dataset_from_xyz(
+                try:
+                    valid_dataset = load_dataset_for_path(
+                        file_path=valid_file,
+                        r_max=args.r_max,
+                        z_table=z_table,
+                        heads=heads,
+                        head_name=head_config.head_name,
                         work_dir=args.work_dir,
-                        train_path=valid_file,
-                        valid_path=None,
-                        valid_fraction=0,
-                        config_type_weights=config_type_weights,
-                        test_path=None,
+                        valid_fraction=0.0,
+                        config_type_weights=head_config.config_type_weights,
                         seed=args.seed,
                         energy_key=head_config.energy_key,
                         forces_key=head_config.forces_key,
@@ -682,38 +778,25 @@ def run(args) -> None:
                         virials_key=head_config.virials_key,
                         dipole_key=head_config.dipole_key,
                         charges_key=head_config.charges_key,
-                        head_name=head_config.head_name,
                         keep_isolated_atoms=head_config.keep_isolated_atoms,
                     )
-                    valid_dataset = [
-                        data.AtomicData.from_config(
-                            config, z_table=z_table, cutoff=args.r_max, heads=heads
-                        )
-                        for config in collections.train
-                    ]
                     valid_datasets.append(valid_dataset)
-                elif valid_file.endswith(".h5"):
-                    valid_dataset = data.HDF5Dataset(
-                        valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-                    )
-                    valid_datasets.append(valid_dataset)
-                elif valid_file.endswith("_lmdb"):
-                    valid_dataset = data.LMDBDataset(
-                        valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-                    )
-                    valid_datasets.append(valid_dataset)
-                else:  # Directory of .h5 files
-                    valid_dataset = data.dataset_from_sharded_hdf5(
-                        valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-                    )
-                    valid_datasets.append(valid_dataset)
-
+                    logging.debug(f"Successfully loaded validation dataset from {valid_file}")
+                except Exception as e:
+                    logging.error(f"Error loading validation dataset from {valid_file}: {e}")
+                    
             # Combine validation datasets
-            if all(isinstance(ds, list) for ds in valid_datasets):
-                valid_sets[head_config.head_name] = [item for sublist in valid_datasets for item in sublist]
-            else:
-                valid_sets[head_config.head_name] = ConcatDataset(valid_datasets) if len(valid_datasets) > 1 else valid_datasets[0]
+            if valid_datasets:
+                valid_sets[head_config.head_name] = combine_datasets(valid_datasets, f"{head_config.head_name}_valid")
+                logging.info(f"Combined validation datasets for {head_config.head_name}")
 
+        # Create data loader for this head
+        if isinstance(train_sets[head_config.head_name], list):
+            dataset_size = len(train_sets[head_config.head_name])
+        else:
+            dataset_size = len(train_sets[head_config.head_name])
+        logging.info(f"Head '{head_config.head_name}' training dataset size: {dataset_size}")
+        
         train_loader_head = torch_geometric.dataloader.DataLoader(
             dataset=train_sets[head_config.head_name],
             batch_size=args.batch_size,
