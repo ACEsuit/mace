@@ -16,7 +16,13 @@ import logging
 import os
 import zlib
 from abc import ABC, abstractmethod
-from functools import cache, cached_property
+
+try:
+    from functools import cache, cached_property
+except ImportError:
+    from functools import cached_property, lru_cache
+
+    cache = lru_cache(maxsize=None)
 from glob import glob
 from pathlib import Path
 from typing import Any, Callable, TypeVar
