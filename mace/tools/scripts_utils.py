@@ -776,10 +776,18 @@ def check_folder_subfolder(folder_path):
 def check_path_ase_read(filename: str) -> str:
     filepath = Path(filename)
     if filepath.is_dir():
-        if len(list(filepath.glob("*.h5")) + list(filepath.glob("*.hdf5"))) == 0:
-            raise RuntimeError(f"Got directory {filename} with no .h5/.hdf5 files")
+        num_h5_files = len(list(filepath.glob("*.h5")))
+        num_hdf5_files = len(list(filepath.glob("*.hdf5")))
+        num_ldb_files = len(list(filepath.glob("*.lmdb")))
+        num_aselmbd_files = len(list(filepath.glob("*.aselmdb")))
+        num_mdb_files = len(list(filepath.glob("*.mdb")))
+        if num_h5_files + num_hdf5_files + num_ldb_files + num_aselmbd_files + num_mdb_files == 0:
+            # print all the files in the directory extension in the directory for debugging
+            for file in os.listdir(filepath):
+                print(file)
+            raise RuntimeError(f"No supported files found in directory '{filename}'")
         return False
-    if filepath.suffix in (".h5", ".hdf5"):
+    if filepath.suffix in (".h5", ".hdf5", ".lmdb", ".aselmdb", ".mdb"):
         return False
     return True
 
