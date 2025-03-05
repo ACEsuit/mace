@@ -100,8 +100,8 @@ mace_run_train \
     --r_max=5.0 \
     --batch_size=10 \
     --max_num_epochs=1500 \
-    --swa \
-    --start_swa=1200 \
+    --stage_two \
+    --start_stage_two=1200 \
     --ema \
     --ema_decay=0.99 \
     --amsgrad \
@@ -115,13 +115,15 @@ To control the model's size, you need to change `--hidden_irreps`. For most appl
 
 It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression.
 
-If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs). This setting usually helps lower the energy errors.
+If the keyword `--stage_two` (previously called swa) is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_stage_two` epochs). This setting usually helps lower the energy errors.
 
 The precision can be changed using the keyword `--default_dtype`, the default is `float64` but `float32` gives a significant speed-up (usually a factor of x2 in training).
 
 The keywords `--batch_size` and `--max_num_epochs` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $\text{max-num-epochs}*\frac{\text{num-configs-training}}{\text{batch-size}}$.
 
 The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules. In this example, to make the code ignore stress on molecules, append to your molecules configuration a `config_stress_weight = 0.0`.
+
+By default, a figure displaying the progression of loss and RMSEs during training, along with a scatter plot of the model's inferences on the train, validation, and test sets, will be generated in the results folder at the end of training. This can be disabled using `--plot False`. To track these metrics throughout training (excluding inference on the test set), you can enable periodic plotting for the train and validation sets by specifying `--plot_frequency N`, which updates the plots every Nth epoch.
 
 #### Apple Silicon GPU acceleration
 
@@ -139,8 +141,8 @@ Option to parse all or some arguments using a YAML is available. For example, to
 name: nacl
 seed: 2024
 train_file: train.xyz
-swa: yes
-start_swa: 1200
+stage_two: yes
+start_stage_two: 1200
 max_num_epochs: 1500
 device: cpu
 test_file: test.xyz
@@ -214,8 +216,8 @@ python ./mace/scripts/run_train.py \
     --batch_size=32 \
     --valid_batch_size=32 \
     --max_num_epochs=100 \
-    --swa \
-    --start_swa=60 \
+    --stage_two \
+    --start_stage_two=60 \
     --ema \
     --ema_decay=0.99 \
     --amsgrad \
