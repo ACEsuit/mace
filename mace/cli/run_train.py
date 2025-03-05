@@ -106,26 +106,17 @@ def load_dataset_for_path(
         Loaded dataset
     """
     filepath = Path(file_path)
-    
+
     # Handle XYZ files
-    if filepath.suffix.lower() in ['.xyz', '.extxyz']:
+    if filepath.suffix.lower() in [".xyz", ".extxyz"]:
         logging.info(f"Loading XYZ file dataset: {file_path}")
-        
-        # For XYZ files, we need to get the configurations first
+
         config_type_weights = kwargs.get("config_type_weights", {"Default": 1.0})
         if isinstance(config_type_weights, str):
-            try:
-                import ast
-                config_type_weights = ast.literal_eval(config_type_weights)
-            except:
-                config_type_weights = {"Default": 1.0}
-                
+            config_type_weights = ast.literal_eval(config_type_weights)
+
         try:
-            # Import here to avoid circular imports
-            from mace.data.utils import load_from_xyz
-            
-            # Get configurations directly from the XYZ file
-            _, configs = load_from_xyz(
+            _, configs = data.load_from_xyz(
                 file_path=file_path,
                 config_type_weights=config_type_weights,
                 energy_key=kwargs.get("energy_key", "REF_energy"),
@@ -139,8 +130,7 @@ def load_dataset_for_path(
                 extract_atomic_energies=False,
                 keep_isolated_atoms=kwargs.get("keep_isolated_atoms", False),
             )
-            
-            # Convert configurations to AtomicData objects
+
             return [
                 data.AtomicData.from_config(
                     config, z_table=z_table, cutoff=r_max, heads=heads
@@ -150,17 +140,18 @@ def load_dataset_for_path(
         except Exception as e:
             logging.error(f"Error processing XYZ file {file_path}: {e}")
             raise
-    
+
     # Handle directories
     if filepath.is_dir():
-        # Check if it's an LMDB directory (either by name or by content)
-        if filepath.name.endswith("_lmdb") or any(f.endswith(".lmdb") for f in os.listdir(filepath)):
+
+        if filepath.name.endswith("_lmdb") or any(
+            f.endswith(".lmdb") for f in os.listdir(filepath)
+        ):
             logging.info(f"Loading LMDB dataset from {file_path}")
             return data.LMDBDataset(
                 file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
             )
-        
-        # Check if it's a directory with H5 files
+
         h5_files = list(filepath.glob("*.h5")) + list(filepath.glob("*.hdf5"))
         if h5_files:
             logging.info(f"Loading HDF5 dataset from directory {file_path}")
@@ -171,15 +162,13 @@ def load_dataset_for_path(
             except Exception as e:
                 logging.error(f"Error loading sharded HDF5 dataset: {e}")
                 raise
-        
-        # If no obvious type, check pathname patterns
+
         if "lmdb" in str(filepath).lower():
             logging.info(f"Loading LMDB dataset based on path name: {file_path}")
             return data.LMDBDataset(
                 file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
             )
-        
-        # Default to HDF5 for directories without clear type
+
         logging.info(f"Attempting to load directory as HDF5 dataset: {file_path}")
         try:
             return data.dataset_from_sharded_hdf5(
@@ -188,49 +177,50 @@ def load_dataset_for_path(
         except Exception as e:
             logging.error(f"Error loading as sharded HDF5: {e}")
             raise
-    
-    # Handle specific file types
+
     suffix = filepath.suffix.lower()
     if suffix in (".h5", ".hdf5"):
         logging.info(f"Loading single HDF5 file: {file_path}")
         return data.HDF5Dataset(
             file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
         )
-    
-    # Default to sharded HDF5 for any other file type
+
     logging.info(f"Attempting to load as sharded HDF5: {file_path}")
     return data.dataset_from_sharded_hdf5(
         file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_name
     )
 
+
 def combine_datasets(datasets, head_name):
     """
     Combine multiple datasets which might be of different types.
-    
+
     Args:
         datasets: List of datasets (can be mixed types)
         head_name: Name of the current head
-        
+
     Returns:
         Combined dataset
     """
     if not datasets:
         return []
-        
+
     # Check if all datasets are of the same type
     if all(isinstance(ds, list) for ds in datasets):
         # If all are lists of AtomicData, flatten
         logging.info(f"Combining {len(datasets)} list datasets for head '{head_name}'")
         return [item for sublist in datasets for item in sublist]
-    
+
     if all(not isinstance(ds, list) for ds in datasets):
         # If all are Dataset objects, use ConcatDataset
-        logging.info(f"Combining {len(datasets)} Dataset objects for head '{head_name}'")
+        logging.info(
+            f"Combining {len(datasets)} Dataset objects for head '{head_name}'"
+        )
         return ConcatDataset(datasets) if len(datasets) > 1 else datasets[0]
-    
+
     # Mixed types - try to convert all to one type
     logging.info(f"Converting mixed dataset types for head '{head_name}'")
-    
+
     # Check if we can convert all to lists of AtomicData
     try:
         # First attempt: convert all datasets to lists of AtomicData
@@ -241,25 +231,30 @@ def combine_datasets(datasets, head_name):
             else:
                 all_items.extend([ds[i] for i in range(len(ds))])
         return all_items
-    except Exception as e:
+    except Exception as e:  # pylint: disable=W0703
         logging.warning(f"Failed to convert mixed datasets to list: {e}")
-    
+
     # Second attempt: convert lists to Dataset objects
     try:
         dataset_objects = []
         for ds in datasets:
             if isinstance(ds, list):
                 from torch.utils.data import TensorDataset
+
                 # Convert list to a Dataset
-                dataset_objects.append(TensorDataset(*[torch.tensor([i]) for i in range(len(ds))]))
+                dataset_objects.append(
+                    TensorDataset(*[torch.tensor([i]) for i in range(len(ds))])
+                )
             else:
                 dataset_objects.append(ds)
         return ConcatDataset(dataset_objects)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=W0703
         logging.warning(f"Failed to convert mixed datasets to ConcatDataset: {e}")
-        
+
     # If all else fails, just return the first dataset
-    logging.warning(f"Could not combine datasets of different types. Using only the first dataset.")
+    logging.warning(
+        "Could not combine datasets of different types. Using only the first dataset."
+    )
     return datasets[0]
 
 
@@ -713,7 +708,7 @@ def run(args) -> None:
 
     for head_config in head_configs:
         train_datasets = []
-        
+
         logging.info(f"Processing datasets for head '{head_config.head_name}'")
 
         # Process each training file
@@ -740,14 +735,14 @@ def run(args) -> None:
                 )
                 train_datasets.append(train_dataset)
                 logging.debug(f"Successfully loaded dataset from {train_file}")
-            except Exception as e:
+            except Exception as e: # pylint: disable=W0703
                 logging.error(f"Error loading dataset from {train_file}: {e}")
                 if len(train_datasets) == 0:
                     raise  # Re-raise if we couldn't load any datasets
 
         # Combine datasets for this head using the improved combination function
         train_sets[head_config.head_name] = combine_datasets(train_datasets, head_config.head_name)
-        
+
         # Process validation files similarly
         if hasattr(head_config, 'collections') and hasattr(head_config.collections, 'valid'):
             # For XYZ files processed earlier
@@ -782,9 +777,9 @@ def run(args) -> None:
                     )
                     valid_datasets.append(valid_dataset)
                     logging.debug(f"Successfully loaded validation dataset from {valid_file}")
-                except Exception as e:
+                except Exception as e: # pylint: disable=W0703
                     logging.error(f"Error loading validation dataset from {valid_file}: {e}")
-                    
+
             # Combine validation datasets
             if valid_datasets:
                 valid_sets[head_config.head_name] = combine_datasets(valid_datasets, f"{head_config.head_name}_valid")
@@ -796,7 +791,7 @@ def run(args) -> None:
         else:
             dataset_size = len(train_sets[head_config.head_name])
         logging.info(f"Head '{head_config.head_name}' training dataset size: {dataset_size}")
-        
+
         train_loader_head = torch_geometric.dataloader.DataLoader(
             dataset=train_sets[head_config.head_name],
             batch_size=args.batch_size,
