@@ -35,3 +35,4 @@ dist/
 *.model
 
 .benchmarks
+*.db
