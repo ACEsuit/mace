@@ -86,6 +86,11 @@ def transfer_weights(
     # Transfer symmetric contractions
     transfer_symmetric_contractions(source_dict, target_dict, max_L, correlation)
 
+    # Unsqueeze linear and skip_tp layers
+    for key in source_dict.keys():
+        if any(x in key for x in ["linear", "skip_tp"]) and "weight" in key:
+            target_dict[key] = target_dict[key].unsqueeze(0)
+
     transferred_keys = set(transfer_keys)
     remaining_keys = (
         set(source_dict.keys()) & set(target_dict.keys()) - transferred_keys

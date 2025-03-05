@@ -195,7 +195,7 @@ def test_compile_foundation(calc):
     model = calc.models[0]
     atoms = molecule("CH4")
     atoms.positions += np.random.randn(*atoms.positions.shape) * 0.1
-    batch = calc._atoms_to_batch(atoms)  # pylint disable=protected-access
+    batch = calc._atoms_to_batch(atoms)  # pylint: disable=protected-access
     output_1 = model(batch.to_dict())
     model_compiled = jit.compile(model)
     output = model_compiled(batch.to_dict())
