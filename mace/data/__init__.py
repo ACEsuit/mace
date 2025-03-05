@@ -1,5 +1,6 @@
 from .atomic_data import AtomicData
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
+from .lmdb_dataset import LMDBDataset
 from .neighborhood import get_neighborhood
 from .utils import (
     Configuration,
@@ -14,8 +15,6 @@ from .utils import (
     save_dataset_as_HDF5,
     test_config_types,
 )
-
-from .lmdb_dataset import LMDBDataset
 
 __all__ = [
     "get_neighborhood",

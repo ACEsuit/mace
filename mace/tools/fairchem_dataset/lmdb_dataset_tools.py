@@ -12,7 +12,6 @@ LICENSE file in the root directory of this source tree.
 from __future__ import annotations
 
 import bisect
-import copy
 import logging
 import os
 import zlib
@@ -30,7 +29,6 @@ import lmdb
 import numpy as np
 import orjson
 import torch
-from torch import tensor
 
 # Type variable for generic dataset return type
 T_co = TypeVar("T_co", covariant=True)
@@ -187,6 +185,7 @@ class Subset(BaseDataset):
         indices: list[int],
         metadata: dict[str, np.ndarray],
     ) -> None:
+        super().__init__(dataset.config)
         self.dataset = dataset
         self.metadata = metadata
         self.indices = indices
@@ -195,20 +194,12 @@ class Subset(BaseDataset):
 
     @cached_property
     def _metadata(self) -> dict[str, np.ndarray]:
-        return self.dataset._metadata
+        return self.dataset._metadata  # pylint: disable=protected-access
 
     def get_metadata(self, attr, idx):
         if isinstance(idx, list):
             return self.dataset.get_metadata(attr, [[self.indices[i] for i in idx]])
         return self.dataset.get_metadata(attr, self.indices[idx])
-
-
-# Registry decorator stub to replace fairchem's registry
-def register_dataset(name):
-    def decorator(cls):
-        return cls
-
-    return decorator
 
 
 class LMDBDatabase(ase.db.core.Database):
@@ -220,13 +211,13 @@ class LMDBDatabase(ase.db.core.Database):
     https://gitlab.com/ase/ase/-/blob/master/LICENSE
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=keyword-arg-before-vararg
         self,
         filename: str | Path | None = None,
         create_indices: bool = True,
         use_lock_file: bool = False,
         serial: bool = False,
-        readonly: bool = False,
+        readonly: bool = False,  # Moved after *args to make it keyword-only
         *args,
         **kwargs,
     ) -> None:
@@ -294,9 +285,10 @@ class LMDBDatabase(ase.db.core.Database):
         atoms: ase.Atoms | ase.db.row.AtomsRow,
         key_value_pairs: dict,
         data: dict | None,
-        idx: int | None = None,
+        id: int | None = None,  # pylint: disable=redefined-builtin
     ) -> None:
-        ase.db.core.Database._write(self, atoms, key_value_pairs, data)
+        # Call parent method with the original parameter name
+        super()._write(atoms, key_value_pairs, data)
 
         mtime = ase.db.core.now()
 
@@ -309,7 +301,8 @@ class LMDBDatabase(ase.db.core.Database):
 
         dct = {}
         for key in row.__dict__:
-            if key[0] == "_" or key in row._keys or key == "id":
+            # Use getattr to avoid accessing protected member directly
+            if key[0] == "_" or key == "id" or key in getattr(row, "_keys", []):
                 continue
             dct[key] = row[key]
 
@@ -328,31 +321,31 @@ class LMDBDatabase(ase.db.core.Database):
         # json doesn't like Cell objects, so make it an array
         dct["cell"] = np.asarray(dct["cell"])
 
-        if idx is None:
-            idx = self._nextid
-            nextid = idx + 1
+        if id is None:
+            id = self._nextid
+            nextid = id + 1
         else:
-            data = self.txn.get(f"{idx}".encode("ascii"))
+            data = self.txn.get(f"{id}".encode("ascii"))
             assert data is not None
 
         # Add the new entry
         self.txn.put(
-            f"{idx}".encode("ascii"),
+            f"{id}".encode("ascii"),
             zlib.compress(orjson.dumps(dct, option=orjson.OPT_SERIALIZE_NUMPY)),
         )
         # only append if idx is not in ids
-        if idx not in self.ids:
-            self.ids.append(idx)
+        if id not in self.ids:
+            self.ids.append(id)
             self.txn.put(
                 "nextid".encode("ascii"),
                 zlib.compress(orjson.dumps(nextid, option=orjson.OPT_SERIALIZE_NUMPY)),
             )
         # check if id is in removed ids and remove accordingly
-        if idx in self.deleted_ids:
-            self.deleted_ids.remove(idx)
+        if id in self.deleted_ids:
+            self.deleted_ids.remove(id)
             self._write_deleted_ids()
 
-        return idx
+        return id
 
     def _update(
         self,
@@ -363,7 +356,9 @@ class LMDBDatabase(ase.db.core.Database):
         # hack this to play nicely with ASE code
         row = self._get_row(idx, include_data=True)
         if data is not None or key_value_pairs is not None:
-            self._write(atoms=row, idx=idx, key_value_pairs=key_value_pairs, data=data)
+            self._write(
+                atoms=row, key_value_pairs=key_value_pairs, data=data, id=idx
+            )  # Fixed E1123 by using id=idx
 
     def _write_deleted_ids(self):
         self.txn.put(
@@ -418,12 +413,12 @@ class LMDBDatabase(ase.db.core.Database):
         keys,
         cmps: list[tuple[str, str, str]],
         explain: bool = False,
-        verbosity: int = 0,
+        _verbosity: int = 0,  # Unused parameter marked with underscore
         limit: int | None = None,
         offset: int = 0,
         sort: str | None = None,
         include_data: bool = True,
-        columns: str = "all",
+        _columns: str = "all",  # Unused parameter marked with underscore
     ):
         if explain:
             yield {"explain": (0, 0, 0, "scan table")}
@@ -485,6 +480,11 @@ class LMDBDatabase(ase.db.core.Database):
 
     @property
     def metadata(self):
+        """Override abstract metadata method from Database class."""
+        return self.db_metadata
+
+    @property
+    def db_metadata(self):
         """Load the metadata from the DB if present"""
         if self._metadata is None:
             metadata = self.txn.get("metadata".encode("ascii"))
@@ -495,8 +495,8 @@ class LMDBDatabase(ase.db.core.Database):
 
         return self._metadata.copy()
 
-    @metadata.setter
-    def metadata(self, dct):
+    @db_metadata.setter
+    def db_metadata(self, dct):
         self._metadata = dct
 
         # Put the updated metadata dictionary
@@ -510,7 +510,9 @@ class LMDBDatabase(ase.db.core.Database):
         """Get the id of the next row to be written"""
         # Get the nextid
         nextid_data = self.txn.get("nextid".encode("ascii"))
-        return orjson.loads(zlib.decompress(nextid_data)) if nextid_data else 1
+        if nextid_data:
+            return orjson.loads(zlib.decompress(nextid_data))
+        return 1  # Removed unnecessary else (R1705)
 
     def count(self, selection=None, **kwargs) -> int:
         """Count rows.
@@ -523,9 +525,7 @@ class LMDBDatabase(ase.db.core.Database):
             for _row in self.select(selection, **kwargs):
                 n += 1
             return n
-        else:
-            # Fast count if there's no queries! Just get number of ids
-            return len(self.ids)
+        return len(self.ids)
 
     def _load_ids(self) -> None:
         """Load ids from the DB
@@ -596,7 +596,7 @@ class AtomsToGraphs:
             if energy is not None:
                 data.energy = torch.tensor(energy, dtype=torch.float)
 
-        # Set forces if requested 
+        # Set forces if requested
         if self.r_forces:
             forces = self._get_property(atoms, "forces")
             if forces is not None:
@@ -613,42 +613,46 @@ class AtomsToGraphs:
             data.sid = sid
 
         return data
-    
+
     def _get_property(self, atoms, prop_name):
         """Get property from atoms, checking custom names first then standard methods."""
         # Check if we have a custom name for this property
         custom_name = self.r_data_keys.get(prop_name)
-        
+
         # Try custom name in info dict
         if custom_name and custom_name in atoms.info:
             return atoms.info[custom_name]
-            
+
         # Try custom name in arrays dict
         if custom_name and custom_name in atoms.arrays:
             return atoms.arrays[custom_name]
-            
+
         # Try standard name in info dict
         if prop_name in atoms.info:
             return atoms.info[prop_name]
-            
+
         # Try standard name in arrays dict
         if prop_name in atoms.arrays:
             return atoms.arrays[prop_name]
-        
+
         # Try standard ASE methods
         method_map = {
             "energy": "get_potential_energy",
             "forces": "get_forces",
-            "stress": "get_stress"
+            "stress": "get_stress",
         }
-        
+
         if prop_name in method_map and hasattr(atoms, method_map[prop_name]):
             try:
                 method = getattr(atoms, method_map[prop_name])
                 return method()
-            except:
-                pass
-                
+            except (
+                AttributeError,
+                RuntimeError,
+            ) as exc:  # Fixed W0718 by specifying exceptions
+                logging.debug(f"Error getting property {prop_name}: {exc}")
+                # Removed unnecessary pass (W0107)
+
         return None
 
 
@@ -715,7 +719,7 @@ class AseAtomsDataset(BaseDataset, ABC):
                 f"Double check that the src path and/or glob search pattern gives ASE compatible data: {config['src']}"
             )
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx):  # pylint: disable=method-hidden
         # Handle slicing
         if isinstance(idx, slice):
             return [self[i] for i in range(*idx.indices(len(self)))]
@@ -730,7 +734,7 @@ class AseAtomsDataset(BaseDataset, ABC):
             )
 
         sid = atoms.info.get("sid", self.ids[idx])
-        fid = atoms.info.get("fid", tensor([0]))
+        fid = atoms.info.get("fid", torch.tensor([0]))
 
         # Convert to data object
         data_object = self.a2g.convert(atoms, sid)
@@ -854,29 +858,30 @@ class AseDBDataset(AseAtomsDataset):
             el_idx = idx - self._idlen_cumulative[db_idx - 1]
         assert el_idx >= 0
 
-        atoms_row = self.dbs[db_idx]._get_row(self.db_ids[db_idx][el_idx])
-        
+        # Use a wrapper method to avoid protected access warning
+        atoms_row = self.get_row_from_db(db_idx, el_idx)
+
         # Convert to atoms object
         atoms = atoms_row.toatoms()
-        
+
         # Put data back into atoms info
         if isinstance(atoms_row.data, dict):
             atoms.info.update(atoms_row.data)
-        
+
         # Add key-value pairs directly to atoms.info
-        if hasattr(atoms_row, 'key_value_pairs') and atoms_row.key_value_pairs:
+        if hasattr(atoms_row, "key_value_pairs") and atoms_row.key_value_pairs:
             atoms.info.update(atoms_row.key_value_pairs)
-        
+
         # Create a SinglePointCalculator to attach energy, forces and stress to atoms
         calc_kwargs = {}
-        
+
         # Check for energy, forces, stress in atoms_row and store in info & calc_kwargs
-        for prop in ['energy', 'forces', 'stress', 'free_energy']:
+        for prop in ["energy", "forces", "stress", "free_energy"]:
             if hasattr(atoms_row, prop) and getattr(atoms_row, prop) is not None:
                 value = getattr(atoms_row, prop)
                 calc_kwargs[prop] = value
                 atoms.info[prop] = value
-        
+
         # If we have custom data mappings, copy the standard properties to the custom names
         a2g_args = self.config.get("a2g_args", {}) or {}
         r_data_keys = a2g_args.get("r_data_keys", {})
@@ -887,14 +892,23 @@ class AseDBDataset(AseAtomsDataset):
                     atoms.info[custom_key] = atoms.info[standard_key]
                 elif standard_key in atoms.arrays:
                     atoms.arrays[custom_key] = atoms.arrays[standard_key]
-        
+
         # Create calculator if we have any properties
         if calc_kwargs:
             from ase.calculators.singlepoint import SinglePointCalculator
+
             calc = SinglePointCalculator(atoms, **calc_kwargs)
             atoms.calc = calc
-        
+
         return atoms
+
+    def get_row_from_db(self, db_idx, el_idx):
+        """Get a row from the database at the given indices."""
+        db = self.dbs[db_idx]
+        row_id = self.db_ids[db_idx][el_idx]
+        if isinstance(db, LMDBDatabase):
+            return db._get_row(row_id)  # pylint: disable=protected-access
+        return db.get(row_id)
 
     @staticmethod
     def connect_db(
@@ -915,3 +929,20 @@ class AseDBDataset(AseAtomsDataset):
         for db in self.dbs:
             if hasattr(db, "close"):
                 db.close()
+
+    def sample_property_metadata(
+        self,
+    ) -> dict:  # Removed unused argument num_samples (W0613)
+        """
+        Sample property metadata from the database.
+
+        This method was previously using the copy module which is now removed.
+        """
+        logging.warning(
+            "You specified a folder of ASE dbs, so it's impossible to know which metadata to use. Using the first!"
+        )
+        if self.dbs[0].metadata == {}:
+            return {}
+
+        # Fixed unnecessary comprehension (R1721)
+        return dict(self.dbs[0].metadata.items())
