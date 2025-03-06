@@ -9,13 +9,14 @@ User Guide
 
     intro
     installation
-    cuda_acceleration
+    troubleshooting
     load
     training
     evaluation
     ase
     descriptors
     hessian
+    cuda_acceleration
     openmm
     lammps
     foundation_models

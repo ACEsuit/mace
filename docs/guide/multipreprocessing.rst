@@ -4,6 +4,8 @@
 Large Dataset Pre-processing
 ============
 
+HDF5 files preprocessing
+========================
 
 If you have a large dataset that might not fit into the GPU memory it is recommended to preprocess the data on a CPU and use on-line dataloading for training the model. 
 To preprocess your dataset specified as an xyz file run the `preprocess_data.py` script. 
@@ -71,4 +73,22 @@ In this case, you should use the following command to train the model:
     --error_table='PerAtomMAE' \
     --device=cuda \
     --seed=123 \
-    
+
+LMDB files preprocessing
+========================
+
+.. note::
+
+    This feature is available from version 0.3.11.
+
+MACE support the LMDB data format from fairchem for large dataset pre-processing, such as OMAT.
+Here is an example YAML file for the LMDB data format:
+
+.. code-block:: yaml
+
+    heads:
+    omat_pbe_refit:
+        train_file: "/omat/train/aimd-from-PBE-1000-npt:/omat/train/aimd-from-PBE-3000-nvt:/omat/train/rattled-1000-subsampled:/omat/train/rattled-300:/omat/train/aimd-from-PBE-3000-npt:/omat/train/rattled-300-subsampled:/omat/train/rattled-500:/omat/train/aimd-from-PBE-1000-nvt:/omat/train/rattled-1000:/omat/train/rattled-500-subsampled:/omat/train/rattled-relax"
+        valid_file: "/omat/val/aimd-from-PBE-1000-npt:/omat/val/aimd-from-PBE-3000-nvt:/omat/val/rattled-1000-subsampled:/omat/val/rattled-300:/omat/val/aimd-from-PBE-3000-npt:/omat/val/rattled-300-subsampled:/omat/val/rattled-500:/omat/val/aimd-from-PBE-1000-nvt:/omat/val/rattled-1000:/omat/val/rattled-500-subsampled:/omat/val/rattled-relax"
+
+This format will read the LMDB files inside each folder concatenated with `:` and load them.
