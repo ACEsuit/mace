@@ -370,6 +370,37 @@ class MACECalculator(Calculator):
                     .numpy()
                 )
 
+    def update_weights_from_checkpoint(self, checkpoint_path):
+        """
+        Updates the model's weights from a given checkpoint file.
+
+        Args:
+            checkpoint_path (str): Path to the checkpoint file.
+
+        Example:
+            >>> atoms = read('path/to/atoms_file.xyz')
+            >>> atoms.calc = MACECalculator('path/to/mace_weights', device=device)
+            >>> print("Energy before:", atoms.get_potential_energy())
+            >>> atoms.calc.update_weights_from_checkpoint('path/to/checkpoint.pt')
+            >>> print("Energy after:", atoms.get_potential_energy())
+        """
+
+        assert len(self.models) == 1, (
+            "Checkpoint update only supported for single model, "
+            f"not committee of {len(self.models)} models"
+        )
+
+        # Load the checkpoint
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)["model"]
+        state_dict = checkpoint.get("state_dict", checkpoint)
+
+        # Load the weights into the model
+        self.models[0].load_state_dict(state_dict, strict=True)
+        self.models[0].eval()  # Ensure the model stays in evaluation mode
+        self.reset()  # Clear ase calculator cache
+
+        logging.info("Model weights updated from checkpoint.")
+
     def get_hessian(self, atoms=None):
         if atoms is None and self.atoms is None:
             raise ValueError("atoms not set")
