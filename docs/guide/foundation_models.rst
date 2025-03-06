@@ -18,6 +18,8 @@ Currently available pretrained MACE models:
 | MACE-OFF23    | 10               | SPICE v1         | DFT (wB97M+D3)        | Organic Chemistry    | [small](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model), [medium](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model), [large](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model) | >=v0.3.6       | Initial release covering neutral organic chemistry.   | ASL     |
 +---------------+------------------+------------------+-----------------------+----------------------+---------------------+----------------+-------------------------------------------------------+---------+
 
+Foundation models are a rapidly evolving field. Please look at the `MACE-MP GitHub repository <https://github.com/ACEsuit/mace-mp/releases>`_ and the `MACE-OFF23 GitHub repository <https://github.com/ACEsuit/mace-off/releases>`_ for the latest releases.
+
 ###########################
 Pretrained MACE-MP models
 ###########################
