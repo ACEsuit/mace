@@ -1,7 +1,7 @@
 .. _troubleshooting:
 
 =============================================================
-Troubleshooting Guide
+Troubleshooting and Q&A Guide
 =============================================================
 
 When getting started with MACE, users often encounter similar challenges. This guide addresses the most common issues to help you successfully fit your first MACE model.
