@@ -231,64 +231,51 @@ def run(args) -> None:
                     statistics["atomic_energies"]
                 )
 
-        # Data preparation - handle multiple training files
-        # For XYZ files, we need to process them specially
-        if all(check_path_ase_read(f) for f in head_config.train_file):
-            # For XYZ files, we need to load and combine them
-            train_collections = []
-            valid_collections = []
-            atomic_energies_dicts = []
+        if any(check_path_ase_read(f) for f in head_config.train_file):
 
-            for train_file in head_config.train_file:
-                valid_file = (
-                    head_config.valid_file[0] if head_config.valid_file else None
-                )
-                config_type_weights = get_config_type_weights(
-                    head_config.config_type_weights
-                )
-                collections, atomic_energies_dict = get_dataset_from_xyz(
-                    work_dir=args.work_dir,
-                    train_path=train_file,
-                    valid_path=valid_file,
-                    valid_fraction=head_config.valid_fraction,
-                    config_type_weights=config_type_weights,
-                    test_path=head_config.test_file,
-                    seed=args.seed,
-                    energy_key=head_config.energy_key,
-                    forces_key=head_config.forces_key,
-                    stress_key=head_config.stress_key,
-                    virials_key=head_config.virials_key,
-                    dipole_key=head_config.dipole_key,
-                    charges_key=head_config.charges_key,
-                    head_name=head_config.head_name,
-                    keep_isolated_atoms=head_config.keep_isolated_atoms,
-                )
-                train_collections.extend(collections.train)
-                if valid_file is None:  # Use fraction of train as validation
-                    valid_collections.extend(collections.valid)
-                atomic_energies_dicts.append(atomic_energies_dict)
-
-            # Merge collections
+            train_files_ase_list = [
+                f for f in head_config.train_file if check_path_ase_read(f)
+            ]
+            valid_files_ase_list = None
+            test_files_ase_list = None
+            if head_config.valid_file:
+                valid_files_ase_list = [
+                    f for f in head_config.valid_file if check_path_ase_read(f)
+                ]
+            if head_config.test_file:
+                test_files_ase_list = [
+                    f for f in head_config.test_file if check_path_ase_read(f)
+                ]
+            config_type_weights = get_config_type_weights(
+                head_config.config_type_weights
+            )
+            collections, atomic_energies_dict = get_dataset_from_xyz(
+                work_dir=args.work_dir,
+                train_path=train_files_ase_list,
+                valid_path=valid_files_ase_list,
+                valid_fraction=head_config.valid_fraction,
+                config_type_weights=config_type_weights,
+                test_path=test_files_ase_list,
+                seed=args.seed,
+                energy_key=head_config.energy_key,
+                forces_key=head_config.forces_key,
+                stress_key=head_config.stress_key,
+                virials_key=head_config.virials_key,
+                dipole_key=head_config.dipole_key,
+                charges_key=head_config.charges_key,
+                head_name=head_config.head_name,
+                keep_isolated_atoms=head_config.keep_isolated_atoms,
+            )
             head_config.collections = SubsetCollection(
-                train=train_collections,
-                valid=valid_collections,
-                tests=collections.tests,  # Use last file's test collections
+                train=collections.train,
+                valid=collections.valid,
+                tests=collections.tests,
             )
-
-            # Merge atomic_energies_dict (if they exist)
-            if atomic_energies_dicts:
-                # Combine atomic energies from all files, prioritizing later files
-                merged_atomic_energies = {}
-                for d in atomic_energies_dicts:
-                    if d:  # Only merge if the dictionary is not empty
-                        merged_atomic_energies.update(d)
-                head_config.atomic_energies_dict = merged_atomic_energies
-
+            head_config.atomic_energies_dict = atomic_energies_dict
             logging.info(
-                f"Total number of configurations: train={len(head_config.collections.train)}, valid={len(head_config.collections.valid)}, "
-                f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in head_config.collections.tests])}],"
+                f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
+                f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
             )
-
         head_configs.append(head_config)
 
     if all(
@@ -524,80 +511,80 @@ def run(args) -> None:
         train_datasets = []
 
         logging.info(f"Processing datasets for head '{head_config.head_name}'")
+        ase_files = [f for f in head_config.train_file if check_path_ase_read(f)]
+        non_ase_files = [f for f in head_config.train_file if not check_path_ase_read(f)]
 
-        # Process each training file
-        for train_file in head_config.train_file:
-            try:
-                # Use the improved function to load datasets based on file type
-                train_dataset = load_dataset_for_path(
-                    file_path=train_file,
-                    r_max=args.r_max,
-                    z_table=z_table,
-                    heads=heads,
-                    head_name=head_config.head_name,
-                    work_dir=args.work_dir,
-                    valid_fraction=0.0,  # Don't take validation from here
-                    config_type_weights=head_config.config_type_weights,
-                    seed=args.seed,
-                    energy_key=head_config.energy_key,
-                    forces_key=head_config.forces_key,
-                    stress_key=head_config.stress_key,
-                    virials_key=head_config.virials_key,
-                    dipole_key=head_config.dipole_key,
-                    charges_key=head_config.charges_key,
-                    keep_isolated_atoms=head_config.keep_isolated_atoms,
-                )
-                train_datasets.append(train_dataset)
-                logging.debug(f"Successfully loaded dataset from {train_file}")
-            except Exception as e: # pylint: disable=W0703
-                logging.error(f"Error loading dataset from {train_file}: {e}")
-                if len(train_datasets) == 0:
-                    raise  # Re-raise if we couldn't load any datasets
+        if ase_files:
+            dataset = load_dataset_for_path(
+            file_path=ase_files,
+            r_max=args.r_max,
+            z_table=z_table,
+            head_config=head_config,
+            heads=heads,
+            collection=head_config.collections.train,
+            )
+            train_datasets.append(dataset)
+            logging.debug(f"Successfully loaded dataset from ASE files: {ase_files}")
 
-        # Combine datasets for this head using the improved combination function
+        for file in non_ase_files:
+            dataset = load_dataset_for_path(
+            file_path=file,
+            r_max=args.r_max,
+            z_table=z_table,
+            head_config=head_config,
+            heads=heads,
+            )
+            train_datasets.append(dataset)
+            logging.debug(f"Successfully loaded dataset from non-ASE file: {file}")
+
+        if not train_datasets:
+            raise ValueError(f"No valid training datasets found for head {head_config.head_name}")
+
         train_sets[head_config.head_name] = combine_datasets(train_datasets, head_config.head_name)
 
-        # Process validation files similarly
-        if hasattr(head_config, 'collections') and hasattr(head_config.collections, 'valid'):
-            # For XYZ files processed earlier
+        if head_config.valid_file:
+            valid_datasets = []
+
+            valid_ase_files = [f for f in head_config.valid_file if check_path_ase_read(f)]
+            valid_non_ase_files = [f for f in head_config.valid_file if not check_path_ase_read(f)]
+
+            if valid_ase_files:
+                valid_dataset = load_dataset_for_path(
+                    file_path=valid_ase_files,
+                    r_max=args.r_max,
+                    z_table=z_table,
+                    head_config=head_config,
+                    heads=heads,
+                    collection=head_config.collections.valid,
+                )
+                valid_datasets.append(valid_dataset)
+                logging.debug(f"Successfully loaded validation dataset from ASE files: {valid_ase_files}")
+            for valid_file in valid_non_ase_files:
+                valid_dataset = load_dataset_for_path(
+                file_path=valid_non_ase_files,
+                r_max=args.r_max,
+                z_table=z_table,
+                head_config=head_config,
+                heads=heads,
+            )
+                valid_datasets.append(valid_dataset)
+                logging.debug(f"Successfully loaded validation dataset from {valid_file}")
+
+            # Combine validation datasets
+            if valid_datasets:
+                valid_sets[head_config.head_name] = combine_datasets(valid_datasets, f"{head_config.head_name}_valid")
+                logging.info(f"Combined validation datasets for {head_config.head_name}")
+
+        # If no valid file is provided but collection exist, use the validation set from the collection
+        if head_config.valid_file is None and head_config.collections.valid:
             valid_sets[head_config.head_name] = [
                 data.AtomicData.from_config(
                     config, z_table=z_table, cutoff=args.r_max, heads=heads
                 )
                 for config in head_config.collections.valid
             ]
-            logging.info(f"Using validation set from collections for {head_config.head_name}")
-        elif head_config.valid_file:
-            valid_datasets = []
-            for valid_file in head_config.valid_file:
-                try:
-                    valid_dataset = load_dataset_for_path(
-                        file_path=valid_file,
-                        r_max=args.r_max,
-                        z_table=z_table,
-                        heads=heads,
-                        head_name=head_config.head_name,
-                        work_dir=args.work_dir,
-                        valid_fraction=0.0,
-                        config_type_weights=head_config.config_type_weights,
-                        seed=args.seed,
-                        energy_key=head_config.energy_key,
-                        forces_key=head_config.forces_key,
-                        stress_key=head_config.stress_key,
-                        virials_key=head_config.virials_key,
-                        dipole_key=head_config.dipole_key,
-                        charges_key=head_config.charges_key,
-                        keep_isolated_atoms=head_config.keep_isolated_atoms,
-                    )
-                    valid_datasets.append(valid_dataset)
-                    logging.debug(f"Successfully loaded validation dataset from {valid_file}")
-                except Exception as e: # pylint: disable=W0703
-                    logging.error(f"Error loading validation dataset from {valid_file}: {e}")
-
-            # Combine validation datasets
-            if valid_datasets:
-                valid_sets[head_config.head_name] = combine_datasets(valid_datasets, f"{head_config.head_name}_valid")
-                logging.info(f"Combined validation datasets for {head_config.head_name}")
+        if not valid_sets[head_config.head_name]:
+            raise ValueError(f"No valid datasets found for head {head_config.head_name}, please provide a valid_file or a valid_fraction")
 
         # Create data loader for this head
         if isinstance(train_sets[head_config.head_name], list):
