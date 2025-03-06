@@ -13,6 +13,7 @@ User Guide
     load
     training
     evaluation
+    heterogeneous_data
     ase
     descriptors
     hessian
