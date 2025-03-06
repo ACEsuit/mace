@@ -1,7 +1,7 @@
 .. _troubleshooting:
 
 =============================================================
-MACE: Troubleshooting Guide
+Troubleshooting Guide
 =============================================================
 
 When getting started with MACE, users often encounter similar challenges. This guide addresses the most common issues to help you successfully fit your first MACE model.
@@ -30,6 +30,10 @@ If you see a warning like *"standard deviation is zero,"* your data might not be
 If any numbers are unexpectedly zero, your data isn't being read properly. 
 If your model is not training properly, check the data loading step first. 
 A hint that the data is not loaded correctly is unusually high initial loss values and a rapid plateau in training loss.
+
+**Q:** What units should I use for energy and forces?
+
+**A:** MACE uses eV for energy and eV/Å for forces. Make sure your data is in these units. The internal normalization of MACE is made to work best with these units.
 
 Energy Offset (E0s) Problems
 ----------------------------
@@ -82,10 +86,37 @@ Multi-head Finetuning Issues
 If you see significantly larger values, check:
 
 - Data parsing (keys match both pretraining and finetuning datasets)
-- E0s (should be recomputed with your finetuning DFT settings)
+- E0s (should be recomputed with your finetuning DFT settings and using spin-polarized calculations)
 - Spin polarization (use spin-polarized calculations if your system requires it)
 
 Remember to use the ``--foundation_model`` flag to specify your base model.
+
+**Q** What foundation model should I use for finetuning?
+
+**A:** Foundation models are a rapidly evolving field. 
+At this time, the best foundation models for finetuning are the MPA-0 model and the OMAT-O models that you can download `here <https://github.com/ACEsuit/mace-mp>`_.
+Do check this page for the latest foundation models.
+
+**Q:** When should I use multi-head finetuning?
+
+**A:** Multi-head finetuning is the recommended way to fine-tune if you have access to the recomputed E0s for your new DFT settings.
+
+**Q:** How many data should I use for finetuning?
+
+**A:** A starting dataset of about 10-50 diverse configurations is recommended for finetuning. An good amount is around 100.
+
+**Q:** How should I set the hyperparameters for multi-head finetuning?
+
+**A:** A good starting point for hyperparameters for multi-head finetuning is:
+
+.. code-block:: bash
+
+    --ema_decay=0.99999
+    --lr=0.0001
+    --num_samples_pt=100000
+    --forces_weight=10
+    --energy_weight=1
+    --stress_weight=1
 
 Cutoff Radius Selection
 -----------------------
