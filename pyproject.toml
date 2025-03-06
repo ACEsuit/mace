@@ -20,6 +20,7 @@ disable = [
     "too-many-arguments",
     "too-many-positional-arguments",
     "too-many-locals",
+    "too-many-return-statements",
     "not-callable",
     "logging-fstring-interpolation",
     "logging-not-lazy",
