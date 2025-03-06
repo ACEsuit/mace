@@ -142,7 +142,7 @@ def get_dataset_from_xyz(
         )
 
     # Log total training set info
-    logging.debug(
+    logging.info(
         f"Total training set [{len(all_train_configs)} configs, "
         f"{np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, "
         f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in all_train_configs])} forces, "
@@ -175,7 +175,7 @@ def get_dataset_from_xyz(
             )
 
         # Log total validation set info
-        logging.debug(
+        logging.info(
             f"Total validation set [{len(all_valid_configs)} configs, "
             f"{np.sum([1 if config.energy else 0 for config in all_valid_configs])} energy, "
             f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in all_valid_configs])} forces, "
