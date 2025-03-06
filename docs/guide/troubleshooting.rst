@@ -35,7 +35,7 @@ A hint that the data is not loaded correctly is unusually high initial loss valu
 
 **A:** MACE uses eV for energy and eV/Å for forces. Make sure your data is in these units. The internal normalization of MACE is made to work best with these units.
 
-Energy Offset (E0s) Problems
+Energy reference (E0s) Problems
 ----------------------------
 
 **Q:** What values should I use for atomic reference energies (E0s)?
