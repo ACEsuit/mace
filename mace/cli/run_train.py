@@ -4,7 +4,6 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-import argparse
 import ast
 import glob
 import json
@@ -35,8 +34,14 @@ from mace.tools.multihead_tools import (
     dict_head_to_dataclass,
     prepare_default_head,
 )
+from mace.tools.run_train_utils import (
+    combine_datasets,
+    load_dataset_for_path,
+    normalize_file_paths,
+)
 from mace.tools.scripts_utils import (
     LRScheduler,
+    SubsetCollection,
     check_path_ase_read,
     convert_to_json_format,
     dict_to_array,
@@ -67,7 +72,7 @@ def main() -> None:
     run(args)
 
 
-def run(args: argparse.Namespace) -> None:
+def run(args) -> None:
     """
     This script runs the training/fine tuning for mace
     """
@@ -194,6 +199,13 @@ def run(args: argparse.Namespace) -> None:
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
+
+        # Handle train_file and valid_file - normalize to lists
+        if hasattr(head_config, "train_file") and head_config.train_file is not None:
+            head_config.train_file = normalize_file_paths(head_config.train_file)
+        if hasattr(head_config, "valid_file") and head_config.valid_file is not None:
+            head_config.valid_file = normalize_file_paths(head_config.valid_file)
+
         if head_config.statistics_file is not None:
             with open(head_config.statistics_file, "r") as f:  # pylint: disable=W1514
                 statistics = json.load(f)
@@ -219,22 +231,31 @@ def run(args: argparse.Namespace) -> None:
                     statistics["atomic_energies"]
                 )
 
-        # Data preparation
-        if check_path_ase_read(head_config.train_file):
-            if head_config.valid_file is not None:
-                assert check_path_ase_read(
-                    head_config.valid_file
-                ), "valid_file if given must be same format as train_file"
+        if any(check_path_ase_read(f) for f in head_config.train_file):
+
+            train_files_ase_list = [
+                f for f in head_config.train_file if check_path_ase_read(f)
+            ]
+            valid_files_ase_list = None
+            test_files_ase_list = None
+            if head_config.valid_file:
+                valid_files_ase_list = [
+                    f for f in head_config.valid_file if check_path_ase_read(f)
+                ]
+            if head_config.test_file:
+                test_files_ase_list = [
+                    f for f in head_config.test_file if check_path_ase_read(f)
+                ]
             config_type_weights = get_config_type_weights(
                 head_config.config_type_weights
             )
             collections, atomic_energies_dict = get_dataset_from_xyz(
                 work_dir=args.work_dir,
-                train_path=head_config.train_file,
-                valid_path=head_config.valid_file,
+                train_path=train_files_ase_list,
+                valid_path=valid_files_ase_list,
                 valid_fraction=head_config.valid_fraction,
                 config_type_weights=config_type_weights,
-                test_path=head_config.test_file,
+                test_path=test_files_ase_list,
                 seed=args.seed,
                 energy_key=head_config.energy_key,
                 forces_key=head_config.forces_key,
@@ -245,7 +266,11 @@ def run(args: argparse.Namespace) -> None:
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
             )
-            head_config.collections = collections
+            head_config.collections = SubsetCollection(
+                train=collections.train,
+                valid=collections.valid,
+                tests=collections.tests,
+            )
             head_config.atomic_energies_dict = atomic_energies_dict
             logging.info(
                 f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
@@ -253,7 +278,9 @@ def run(args: argparse.Namespace) -> None:
             )
         head_configs.append(head_config)
 
-    if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
+    if all(
+        check_path_ase_read(head_config.train_file[0]) for head_config in head_configs
+    ):
         size_collections_train = sum(
             len(head_config.collections.train) for head_config in head_configs
         )
@@ -291,7 +318,7 @@ def run(args: argparse.Namespace) -> None:
             )
             collections = assemble_mp_data(args, tag, head_configs)
             head_config_pt.collections = collections
-            head_config_pt.train_file = f"mp_finetuning-{tag}.xyz"
+            head_config_pt.train_file = [f"mp_finetuning-{tag}.xyz"]
             head_configs.append(head_config_pt)
         else:
             logging.info(
@@ -317,8 +344,8 @@ def run(args: argparse.Namespace) -> None:
             )
             head_config_pt = HeadConfig(
                 head_name="pt_head",
-                train_file=args.pt_train_file,
-                valid_file=args.pt_valid_file,
+                train_file=[args.pt_train_file],
+                valid_file=[args.pt_valid_file] if args.pt_valid_file else None,
                 E0s="foundation",
                 statistics_file=args.statistics_file,
                 valid_fraction=args.valid_fraction,
@@ -357,7 +384,7 @@ def run(args: argparse.Namespace) -> None:
     # yapf: disable
     for head_config in head_configs:
         if head_config.atomic_numbers is None:
-            assert check_path_ase_read(head_config.train_file), "Must specify atomic_numbers when using .h5 train_file input"
+            assert all(check_path_ase_read(f) for f in head_config.train_file), "Must specify atomic_numbers when using .h5 train_file input"
             z_table_head = tools.get_atomic_number_table_from_zs(
                 z
                 for configs in (head_config.collections.train, head_config.collections.valid)
@@ -390,7 +417,7 @@ def run(args: argparse.Namespace) -> None:
     for head_config in head_configs:
         if head_config.atomic_energies_dict is None or len(head_config.atomic_energies_dict) == 0:
             assert head_config.E0s is not None, "Atomic energies must be provided"
-            if check_path_ase_read(head_config.train_file) and head_config.E0s.lower() != "foundation":
+            if all(check_path_ase_read(f) for f in head_config.train_file) and head_config.E0s.lower() != "foundation":
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(
                     head_config.E0s, head_config.collections.train, head_config.z_table
                 )
@@ -476,41 +503,96 @@ def run(args: argparse.Namespace) -> None:
             except KeyError as e:
                 raise KeyError(f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number") from e
 
-
+    # Load datasets for each head, supporting multiple files per head
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
+
     for head_config in head_configs:
-        if check_path_ase_read(head_config.train_file):
-            train_sets[head_config.head_name] = [
+        train_datasets = []
+
+        logging.info(f"Processing datasets for head '{head_config.head_name}'")
+        ase_files = [f for f in head_config.train_file if check_path_ase_read(f)]
+        non_ase_files = [f for f in head_config.train_file if not check_path_ase_read(f)]
+
+        if ase_files:
+            dataset = load_dataset_for_path(
+            file_path=ase_files,
+            r_max=args.r_max,
+            z_table=z_table,
+            head_config=head_config,
+            heads=heads,
+            collection=head_config.collections.train,
+            )
+            train_datasets.append(dataset)
+            logging.debug(f"Successfully loaded dataset from ASE files: {ase_files}")
+
+        for file in non_ase_files:
+            dataset = load_dataset_for_path(
+            file_path=file,
+            r_max=args.r_max,
+            z_table=z_table,
+            head_config=head_config,
+            heads=heads,
+            )
+            train_datasets.append(dataset)
+            logging.debug(f"Successfully loaded dataset from non-ASE file: {file}")
+
+        if not train_datasets:
+            raise ValueError(f"No valid training datasets found for head {head_config.head_name}")
+
+        train_sets[head_config.head_name] = combine_datasets(train_datasets, head_config.head_name)
+
+        if head_config.valid_file:
+            valid_datasets = []
+
+            valid_ase_files = [f for f in head_config.valid_file if check_path_ase_read(f)]
+            valid_non_ase_files = [f for f in head_config.valid_file if not check_path_ase_read(f)]
+
+            if valid_ase_files:
+                valid_dataset = load_dataset_for_path(
+                    file_path=valid_ase_files,
+                    r_max=args.r_max,
+                    z_table=z_table,
+                    head_config=head_config,
+                    heads=heads,
+                    collection=head_config.collections.valid,
+                )
+                valid_datasets.append(valid_dataset)
+                logging.debug(f"Successfully loaded validation dataset from ASE files: {valid_ase_files}")
+            for valid_file in valid_non_ase_files:
+                valid_dataset = load_dataset_for_path(
+                file_path=valid_non_ase_files,
+                r_max=args.r_max,
+                z_table=z_table,
+                head_config=head_config,
+                heads=heads,
+            )
+                valid_datasets.append(valid_dataset)
+                logging.debug(f"Successfully loaded validation dataset from {valid_file}")
+
+            # Combine validation datasets
+            if valid_datasets:
+                valid_sets[head_config.head_name] = combine_datasets(valid_datasets, f"{head_config.head_name}_valid")
+                logging.info(f"Combined validation datasets for {head_config.head_name}")
+
+        # If no valid file is provided but collection exist, use the validation set from the collection
+        if head_config.valid_file is None and head_config.collections.valid:
+            valid_sets[head_config.head_name] = [
                 data.AtomicData.from_config(
                     config, z_table=z_table, cutoff=args.r_max, heads=heads
                 )
-                for config in head_config.collections.train
+                for config in head_config.collections.valid
             ]
-            valid_sets[head_config.head_name] = [
-                    data.AtomicData.from_config(
-                        config, z_table=z_table, cutoff=args.r_max, heads=heads
-                    )
-                    for config in head_config.collections.valid
-                ]
+        if not valid_sets[head_config.head_name]:
+            raise ValueError(f"No valid datasets found for head {head_config.head_name}, please provide a valid_file or a valid_fraction")
 
-        elif head_config.train_file.endswith(".h5"):
-            train_sets[head_config.head_name] = data.HDF5Dataset(
-                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
-            valid_sets[head_config.head_name] = data.HDF5Dataset(
-                head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
-        elif head_config.train_file.endswith("_lmdb"):
-            train_sets[head_config.head_name] = data.LMDBDataset(head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name)
-            valid_sets[head_config.head_name] = data.LMDBDataset(head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name)
-        else:  # This case would be for when the file path is to a directory of multiple .h5 files
-            train_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
-                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
-            valid_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
-                head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
+        # Create data loader for this head
+        if isinstance(train_sets[head_config.head_name], list):
+            dataset_size = len(train_sets[head_config.head_name])
+        else:
+            dataset_size = len(train_sets[head_config.head_name])
+        logging.info(f"Head '{head_config.head_name}' training dataset size: {dataset_size}")
+
         train_loader_head = torch_geometric.dataloader.DataLoader(
             dataset=train_sets[head_config.head_name],
             batch_size=args.batch_size,
@@ -521,6 +603,7 @@ def run(args: argparse.Namespace) -> None:
             generator=torch.Generator().manual_seed(args.seed),
         )
         head_config.train_loader = train_loader_head
+
     # concatenate all the trainsets
     train_set = ConcatDataset([train_sets[head] for head in heads])
     train_sampler, valid_sampler = None, None
@@ -732,7 +815,7 @@ def run(args: argparse.Namespace) -> None:
     ) and head_configs[0].test_dir is not None:
         stop_first_test = True
     for head_config in head_configs:
-        if check_path_ase_read(head_config.train_file):
+        if all(check_path_ase_read(f) for f in head_config.train_file):
             for name, subset in head_config.collections.tests:
                 test_sets[name] = [
                     data.AtomicData.from_config(

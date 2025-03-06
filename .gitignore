@@ -36,3 +36,4 @@ dist/
 
 .benchmarks
 *.db
+*.png
