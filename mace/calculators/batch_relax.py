@@ -204,10 +204,9 @@ class BatchRelaxer:
     """
 
     def __init__(
-        self, calculator, optimizer, batch_size=20, relax_cell=False, fmax=0.01
+        self, calculator, optimizer, batch_size=20, relax_cell=False,
     ):
         """Batch relaxation using MACE"""
-        self.fmax = fmax
         self.calc = calculator
         self.optimizer = optimizer
         self.filter = FrechetCellFilter if relax_cell else None
@@ -216,7 +215,7 @@ class BatchRelaxer:
     def __repr__(self):
         return f"BatchRelaxer with batch size: {self.batch_size}"
 
-    def relax(self, atoms_list, inplace=True):
+    def relax(self, atoms_list, inplace=True, max_n_steps=200, fmax=0.02):
         """Relax a bunch of atoms"""
         self.trajectories = {}
         if inplace:
@@ -230,7 +229,8 @@ class BatchRelaxer:
 
         # Initialize the batch relax object
         relax_batch = RelaxBatch(
-            [], self.calc, optimizer=self.optimizer, fmax=self.fmax, filter=self.filter
+            [], self.calc, optimizer=self.optimizer, fmax=fmax, filter=self.filter,
+            max_n_steps=max_n_steps
         )
 
         last_report = 0
@@ -266,6 +266,8 @@ def benchmark_batch_size(
     calculator,
     optimizer=FIRE,
     batch_sizes=[4, 8, 16, 32],
+    fmax=0.02,
+    max_n_steps=100,
     **kwargs,
 ) -> tuple:
     """
@@ -279,7 +281,7 @@ def benchmark_batch_size(
         br = BatchRelaxer(calculator, optimizer=optimizer, batch_size=size, **kwargs)
         start = time()
         print(f"Testing batch size: {size}")
-        br.relax(relax_atoms)
+        br.relax(relax_atoms, fmax=fmax, max_n_steps=max_n_steps)
         results[size] = time() - start
     best_size = sorted(results.items(), key=lambda x: x[1])[0][0]
     return best_size, results
