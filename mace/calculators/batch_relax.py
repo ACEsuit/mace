@@ -1,6 +1,7 @@
 """
 Module for doing batch relaxation
 """
+
 from typing import List, Dict, Any
 from ase import Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
@@ -12,8 +13,10 @@ from ase.optimize.optimize import Optimizer
 from logging import getLogger
 
 from mace import data
-from mace.tools import torch_geometric, torch_tools, utils
+from mace.tools import torch_geometric
+
 logger = getLogger(__name__)
+
 
 class RelaxBatch:
     """
@@ -22,7 +25,15 @@ class RelaxBatch:
     The energies and forces are computed as a single batch to increase the efficiency
     """
 
-    def __init__(self, atoms_list: List[Atoms], calculator, optimizer=FIRE, fmax=0.01, filter=None, max_n_steps=500):
+    def __init__(
+        self,
+        atoms_list: List[Atoms],
+        calculator,
+        optimizer=FIRE,
+        fmax=0.01,
+        filter=None,
+        max_n_steps=500,
+    ):
         """
         Instantiate a RelaxBatch object
         """
@@ -40,8 +51,8 @@ class RelaxBatch:
         assert len(calculator.models) == 1, "Committee models are not supported"
         self.model = calculator.models[0]
         self.calc = calculator
-        self.max_n_steps=max_n_steps
-    
+        self.max_n_steps = max_n_steps
+
     def __repr__(self):
         return f"RelaxBatch with {len(self.all_atoms)} atoms (active {len(self.active_opt_index)})"
 
@@ -58,16 +69,17 @@ class RelaxBatch:
         self.opt_flags.append(True)
         self.all_atoms.append(atoms)
 
-
     def pop_relaxed(self) -> List[Atoms]:
         """Pop the relaxed atoms"""
         idx_kept = self.active_opt_index
-        relaxed = [self.all_atoms[i] for i in range(len(self.all_atoms)) if i not in idx_kept]
+        relaxed = [
+            self.all_atoms[i] for i in range(len(self.all_atoms)) if i not in idx_kept
+        ]
         if self.filter is not None:
             relaxed = [atoms.atoms for atoms in relaxed]
         # Remove the relaxed atoms
         self.opt_list = [self.opt_list[i] for i in idx_kept]
-        self.all_atoms =[self.all_atoms[i] for i in idx_kept]
+        self.all_atoms = [self.all_atoms[i] for i in idx_kept]
         self.opt_flags = [True] * len(idx_kept)
         return relaxed
 
@@ -87,11 +99,17 @@ class RelaxBatch:
         active_index = self.active_opt_index
         to_calc = self.active_atoms
 
-        configs = [ data.config_from_atoms(atoms, charges_key=self.calc.charges_key) for atoms in to_calc]
+        configs = [
+            data.config_from_atoms(atoms, charges_key=self.calc.charges_key)
+            for atoms in to_calc
+        ]
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
                 data.AtomicData.from_config(
-                    config, z_table=self.calc.z_table, cutoff=self.calc.r_max, heads=self.calc.heads
+                    config,
+                    z_table=self.calc.z_table,
+                    cutoff=self.calc.r_max,
+                    heads=self.calc.heads,
                 )
                 for config in configs
             ],
@@ -111,22 +129,20 @@ class RelaxBatch:
         out = self.model(
             batch.to_dict(),
             compute_stress=compute_stress,
-            training=self.calc.use_compile
+            training=self.calc.use_compile,
         )
         results = {}
-        results['energies'] = out["energy"].detach().cpu().numpy()
-        results['stresses'] = out["stress"].detach().cpu().numpy()  # [n_graph, 3, 3]
-        node_forces = out["forces"].detach().cpu().numpy() # [n_nodes, 3]
+        results["energies"] = out["energy"].detach().cpu().numpy()
+        results["stresses"] = out["stress"].detach().cpu().numpy()  # [n_graph, 3, 3]
+        node_forces = out["forces"].detach().cpu().numpy()  # [n_nodes, 3]
         # Break the forces per node into a list of force arrays for each atoms
-        results['forces'] = []
+        results["forces"] = []
         pointer = 0
         for atoms in to_calc:
-            results['forces'].append(node_forces[pointer:pointer + len(atoms), :])
+            results["forces"].append(node_forces[pointer : pointer + len(atoms), :])
             pointer += len(atoms)
         # TODO: process dipoles
         return results
-
-        
 
     def _clone_batch(self, batch):
         batch_clone = batch.clone()
@@ -135,12 +151,10 @@ class RelaxBatch:
             batch_clone["positions"].requires_grad_(True)
         return batch_clone
 
-
     @property
     def active_opt_index(self) -> List[int]:
         """Return the index of active optimizers"""
         return [i for i, flag in enumerate(self.opt_flags) if flag is True]
- 
 
     def step_batch(self):
         """
@@ -149,12 +163,18 @@ class RelaxBatch:
         results = self.compute()
         self.finished = True
         for i, (opt, atoms) in enumerate(zip(self.active_opts, self.active_atoms)):
-            sp_calc = SinglePointCalculator(atoms, 
-                                            energy=results['energies'][i] * self.calc.energy_units_to_eV,
-                                            forces=results['forces'][i] * self.calc.energy_units_to_eV / self.calc.length_units_to_A, 
-                                            stress=full_3x3_to_voigt_6_stress(results['stresses'][i] * self.calc.energy_units_to_eV / 
-                                                                              self.calc.length_units_to_A ** 3)
-                                            )
+            sp_calc = SinglePointCalculator(
+                atoms,
+                energy=results["energies"][i] * self.calc.energy_units_to_eV,
+                forces=results["forces"][i]
+                * self.calc.energy_units_to_eV
+                / self.calc.length_units_to_A,
+                stress=full_3x3_to_voigt_6_stress(
+                    results["stresses"][i]
+                    * self.calc.energy_units_to_eV
+                    / self.calc.length_units_to_A**3
+                ),
+            )
             if self.filter is None:
                 opt.atoms.calc = sp_calc
             else:
@@ -167,21 +187,25 @@ class RelaxBatch:
             # Step the optimizer
             opt.step()
 
+
 def get_nstep(opt):
     """
     Get the current step number of the optimizer object
     """
     try:
-        return getattr(opt, 'Nsteps') 
+        return getattr(opt, "Nsteps")
     except AttributeError:
-        return getattr(opt, 'nsteps')
+        return getattr(opt, "nsteps")
+
 
 class BatchRelaxer:
     """
     Relax a collection of atoms in batch with increased efficiency
     """
 
-    def __init__(self, calculator, optimizer, batch_size=20, relax_cell=False, fmax=0.01):
+    def __init__(
+        self, calculator, optimizer, batch_size=20, relax_cell=False, fmax=0.01
+    ):
         """Batch relaxation using MACE"""
         self.fmax = fmax
         self.calc = calculator
@@ -201,54 +225,61 @@ class BatchRelaxer:
             atoms_to_relax = {i: atoms.copy() for i, atoms in enumerate(atoms_list)}
 
         for i, atoms in atoms_to_relax.items():
-            atoms.info['_batch_relax_index'] = i
+            atoms.info["_batch_relax_index"] = i
         relaxed_atoms = {}
 
         # Initialize the batch relax object
-        relax_batch = RelaxBatch([], 
-                                 self.calc, optimizer=self.optimizer, fmax=self.fmax, 
-                                 filter=self.filter)
+        relax_batch = RelaxBatch(
+            [], self.calc, optimizer=self.optimizer, fmax=self.fmax, filter=self.filter
+        )
 
         last_report = 0
         while len(relaxed_atoms) != len(atoms_list):
-
-            # Fill batch with unrelaxed atoms 
-            while len(relax_batch.opt_list) < self.batch_size and len(atoms_to_relax) > 0:
+            # Fill batch with unrelaxed atoms
+            while (
+                len(relax_batch.opt_list) < self.batch_size and len(atoms_to_relax) > 0
+            ):
                 relax_batch.insert(atoms_to_relax.pop(list(atoms_to_relax.keys())[0]))
             relax_batch.step_batch()
             for atoms in relax_batch.pop_relaxed():
-                key = atoms.info['_batch_relax_index'] 
+                key = atoms.info["_batch_relax_index"]
                 # Record a flag for the atoms that has been relaxed
-                atoms.info['_batch_relaxed'] = True
+                atoms.info["_batch_relaxed"] = True
                 # Save this atoms to the collection of relaxed atoms
                 relaxed_atoms[key] = atoms
             nrelaxed = len(relaxed_atoms)
 
             # Report the progress
-            if nrelaxed % 100 and last_report != nrelaxed: 
-                print(f'Relaxed {nrelaxed}/{len(atoms_list)} atoms')
-                last_report=nrelaxed
+            if nrelaxed % 100 and last_report != nrelaxed:
+                print(f"Relaxed {nrelaxed}/{len(atoms_list)} atoms")
+                last_report = nrelaxed
 
         # Reconstruct a list of relaxed atoms in the original order
-        relaxed_atoms_list = [relaxed_atoms[i] for i in range(len(relaxed_atoms))] 
+        relaxed_atoms_list = [relaxed_atoms[i] for i in range(len(relaxed_atoms))]
         for atoms in relaxed_atoms_list:
-            del atoms.info['_batch_relax_index']
+            del atoms.info["_batch_relax_index"]
         return relaxed_atoms_list
 
 
-def benchmark_batch_size(atoms_list: List[Atoms], calculator, 
-                         optimizer=FIRE, batch_sizes=[4, 8, 16, 32], **kwargs) -> tuple:
+def benchmark_batch_size(
+    atoms_list: List[Atoms],
+    calculator,
+    optimizer=FIRE,
+    batch_sizes=[4, 8, 16, 32],
+    **kwargs,
+) -> tuple:
     """
     Relax the same bucket of structure with different batch size and record the timings.
     """
     from time import time
+
     results = {}
     for size in batch_sizes:
         relax_atoms = [atoms.copy() for atoms in atoms_list]
         br = BatchRelaxer(calculator, optimizer=optimizer, batch_size=size, **kwargs)
         start = time()
-        print(f'Testing batch size: {size}')
+        print(f"Testing batch size: {size}")
         br.relax(relax_atoms)
-        results[size] = (time() - start)
+        results[size] = time() - start
     best_size = sorted(results.items(), key=lambda x: x[1])[0][0]
     return best_size, results
