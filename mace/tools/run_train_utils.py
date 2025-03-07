@@ -52,6 +52,9 @@ def load_dataset_for_path(
         Loaded dataset
     """
     if isinstance(file_path, list):
+        if len(file_path) == 1:
+            file_path = file_path[0]
+    if isinstance(file_path, list):
         is_ase_readable = all(check_path_ase_read(p) for p in file_path)
         if not is_ase_readable:
             raise ValueError("Not all paths are ASE readable, not supported")

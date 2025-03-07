@@ -368,7 +368,7 @@ def run(args) -> None:
         if ratio_pt_ft < 0.1:
             logging.warning(
                 f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
-                f"increasing the number of configurations in the pt_train_file by a factor of {int(0.1 / ratio_pt_ft)}"
+                f"increasing the number of configurations in the fine-tuning heads by {int(0.1 / ratio_pt_ft)}"
             )
             for head_config in head_configs:
                 if head_config.head_name == "pt_head":
