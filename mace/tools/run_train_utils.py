@@ -143,10 +143,14 @@ def load_dataset_for_path(
             head=head_config.head_name,
         )
 
-    logging.info(f"Attempting to load as sharded HDF5: {file_path}")
-    return data.dataset_from_sharded_hdf5(
-        file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_config.head_name
-    )
+    logging.info(f"Attempting to load as LMDB: {file_path}")
+    return data.LMDBDataset(
+                file_path,
+                r_max=r_max,
+                z_table=z_table,
+                heads=heads,
+                head=head_config.head_name,
+            )
 
 
 def combine_datasets(datasets, head_name):
