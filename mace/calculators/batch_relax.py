@@ -22,7 +22,10 @@ class RelaxBatch:
     The energies and forces are computed as a single batch to increase the efficiency
     """
 
-    def __init__(self, atoms_list, calc, optimizer=FIRE, fmax=0.01, filter=None, max_n_steps=500):
+    def __init__(self, atoms_list: List[Atoms], calculator, optimizer=FIRE, fmax=0.01, filter=None, max_n_steps=500):
+        """
+        Instantiate a RelaxBatch object
+        """
         self.optimizer = optimizer
         if filter:
             self.opt_list = [optimizer(filter(atoms)) for atoms in atoms_list]
@@ -31,14 +34,18 @@ class RelaxBatch:
         for opt in self.opt_list:
             opt.fmax = fmax
         self.fmax = fmax
+        self.all_atoms = atoms_list
         self.opt_flags = [True] * len(atoms_list)
         self.filter = filter
-        assert len(calc.models) == 1, "Committee models are not supported"
-        self.model = calc.models[0]
-        self.calc = calc
-        self.max_n_steps=500
+        assert len(calculator.models) == 1, "Committee models are not supported"
+        self.model = calculator.models[0]
+        self.calc = calculator
+        self.max_n_steps=max_n_steps
+    
+    def __repr__(self):
+        return f"RelaxBatch with {len(self.all_atoms)} atoms (active {len(self.active_opt_index)})"
 
-    def insert(self, atoms):
+    def insert(self, atoms) -> None:
         """Insert an atoms object to the batch"""
         atoms._calc_bak = atoms.calc
         atoms.calc = SinglePointCalculator(atoms)
@@ -49,32 +56,36 @@ class RelaxBatch:
         opt_instance.fmax = self.fmax
         self.opt_list.append(opt_instance)
         self.opt_flags.append(True)
+        self.all_atoms.append(atoms)
 
 
     def pop_relaxed(self) -> List[Atoms]:
         """Pop the relaxed atoms"""
-        relaxed = [opt.atoms for opt, flag in zip(self.opt_list, self.opt_flags) if flag is False]
+        idx_kept = self.active_opt_index
+        relaxed = [self.all_atoms[i] for i in range(len(self.all_atoms)) if i not in idx_kept]
         if self.filter is not None:
             relaxed = [atoms.atoms for atoms in relaxed]
         # Remove the relaxed atoms
-        self.opt_list = [opt for opt, flag in zip(self.opt_list, self.opt_flags) if flag is True]
-        self.opt_flags = [True] * len(self.opt_list)
+        self.opt_list = [self.opt_list[i] for i in idx_kept]
+        self.all_atoms =[self.all_atoms[i] for i in idx_kept]
+        self.opt_flags = [True] * len(idx_kept)
         return relaxed
 
-    def get_active_atoms(self) -> List[Atoms]:
-        idx = self.get_activate_opt_index()
+    @property
+    def active_atoms(self) -> List[Atoms]:
+        idx = self.active_opt_index
         if self.filter is not None:
             return [self.opt_list[i].atoms.atoms for i in idx]
         return [self.opt_list[i].atoms for i in idx]
 
-    def get_active_opts(self) -> List[Optimizer]:
-        idx = self.get_activate_opt_index()
-        return [self.opt_list[i] for i in idx]
+    @property
+    def active_opts(self) -> List[Optimizer]:
+        return [self.opt_list[i] for i in self.active_opt_index]
 
-    def compute(self) -> Dict[str, Any]:
+    def compute(self, skip_inactive=True) -> Dict[str, Any]:
         """Compute the energy, forces and stress for the active atoms"""
-        active_index = self.get_activate_opt_index()
-        to_calc = self.get_active_atoms()
+        active_index = self.active_opt_index
+        to_calc = self.active_atoms
 
         configs = [ data.config_from_atoms(atoms, charges_key=self.calc.charges_key) for atoms in to_calc]
         data_loader = torch_geometric.dataloader.DataLoader(
@@ -125,7 +136,8 @@ class RelaxBatch:
         return batch_clone
 
 
-    def get_activate_opt_index(self) -> List[int]:
+    @property
+    def active_opt_index(self) -> List[int]:
         """Return the index of active optimizers"""
         return [i for i, flag in enumerate(self.opt_flags) if flag is True]
  
@@ -136,7 +148,7 @@ class RelaxBatch:
         """
         results = self.compute()
         self.finished = True
-        for i, (opt, atoms) in enumerate(zip(self.get_active_opts(), self.get_active_atoms())):
+        for i, (opt, atoms) in enumerate(zip(self.active_opts, self.active_atoms)):
             sp_calc = SinglePointCalculator(atoms, 
                                             energy=results['energies'][i] * self.calc.energy_units_to_eV,
                                             forces=results['forces'][i] * self.calc.energy_units_to_eV / self.calc.length_units_to_A, 
@@ -175,8 +187,10 @@ class BatchRelaxer:
         self.calc = calculator
         self.optimizer = optimizer
         self.filter = FrechetCellFilter if relax_cell else None
-        self.batch = None
         self.batch_size = batch_size
+
+    def __repr__(self):
+        return f"BatchRelaxer with batch size: {self.batch_size}"
 
     def relax(self, atoms_list, inplace=True):
         """Relax a bunch of atoms"""
@@ -204,9 +218,13 @@ class BatchRelaxer:
             relax_batch.step_batch()
             for atoms in relax_batch.pop_relaxed():
                 key = atoms.info['_batch_relax_index'] 
+                # Record a flag for the atoms that has been relaxed
+                atoms.info['_batch_relaxed'] = True
                 # Save this atoms to the collection of relaxed atoms
                 relaxed_atoms[key] = atoms
             nrelaxed = len(relaxed_atoms)
+
+            # Report the progress
             if nrelaxed % 100 and last_report != nrelaxed: 
                 print(f'Relaxed {nrelaxed}/{len(atoms_list)} atoms')
                 last_report=nrelaxed
@@ -218,7 +236,8 @@ class BatchRelaxer:
         return relaxed_atoms_list
 
 
-def benchmark_batch_size(atoms_list, calculator, optimizer=FIRE, batch_sizes=[4, 8, 16, 32], **kwargs):
+def benchmark_batch_size(atoms_list: List[Atoms], calculator, 
+                         optimizer=FIRE, batch_sizes=[4, 8, 16, 32], **kwargs) -> tuple:
     """
     Relax the same bucket of structure with different batch size and record the timings.
     """
