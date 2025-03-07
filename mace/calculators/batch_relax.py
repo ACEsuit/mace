@@ -179,7 +179,7 @@ class RelaxBatch:
                 opt.atoms.calc = sp_calc
             else:
                 opt.atoms.atoms.calc = sp_calc
-            if opt.converged() or get_nstep(opt) >= self.max_n_steps:
+            if opt.converged() or (get_nstep(opt) >= self.max_n_steps):
                 self.opt_flags[i] = False
                 continue
             else:
@@ -205,12 +205,14 @@ class BatchRelaxer:
 
     def __init__(
         self, calculator, optimizer, batch_size=20, relax_cell=False,
+        report_every=10,
     ):
         """Batch relaxation using MACE"""
         self.calc = calculator
         self.optimizer = optimizer
         self.filter = FrechetCellFilter if relax_cell else None
         self.batch_size = batch_size
+        self.report_every = report_every
 
     def __repr__(self):
         return f"BatchRelaxer with batch size: {self.batch_size}"
@@ -250,7 +252,7 @@ class BatchRelaxer:
             nrelaxed = len(relaxed_atoms)
 
             # Report the progress
-            if nrelaxed % 100 and last_report != nrelaxed:
+            if nrelaxed % self.report_every == 0 and last_report != nrelaxed:
                 print(f"Relaxed {nrelaxed}/{len(atoms_list)} atoms")
                 last_report = nrelaxed
 
