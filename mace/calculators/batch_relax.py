@@ -252,7 +252,7 @@ class BatchRelaxer:
             nrelaxed = len(relaxed_atoms)
 
             # Report the progress
-            if nrelaxed % self.report_every == 0 and last_report != nrelaxed:
+            if (nrelaxed % self.report_every == 0) and (last_report != nrelaxed):
                 print(f"Relaxed {nrelaxed}/{len(atoms_list)} atoms")
                 last_report = nrelaxed
 
