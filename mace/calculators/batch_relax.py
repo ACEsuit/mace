@@ -2,15 +2,15 @@
 Module for doing batch relaxation
 """
 
-from typing import List, Dict, Any
+from logging import getLogger
+from typing import Any, Dict, List
+
 from ase import Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
-from ase.stress import full_3x3_to_voigt_6_stress
 from ase.filters import FrechetCellFilter
 from ase.optimize import FIRE
 from ase.optimize.optimize import Optimizer
-
-from logging import getLogger
+from ase.stress import full_3x3_to_voigt_6_stress
 
 from mace import data
 from mace.tools import torch_geometric
@@ -27,27 +27,23 @@ class RelaxBatch:
 
     def __init__(
         self,
-        atoms_list: List[Atoms],
         calculator,
         optimizer=FIRE,
         fmax=0.01,
-        filter=None,
+        atoms_filter=None,
         max_n_steps=500,
     ):
         """
         Instantiate a RelaxBatch object
         """
         self.optimizer = optimizer
-        if filter:
-            self.opt_list = [optimizer(filter(atoms)) for atoms in atoms_list]
-        else:
-            self.opt_list = [optimizer(atoms) for atoms in atoms_list]
+        self.opt_list = []
         for opt in self.opt_list:
             opt.fmax = fmax
         self.fmax = fmax
-        self.all_atoms = atoms_list
-        self.opt_flags = [True] * len(atoms_list)
-        self.filter = filter
+        self.all_atoms = []
+        self.opt_flags = []
+        self.atoms_filter = atoms_filter
         assert len(calculator.models) == 1, "Committee models are not supported"
         self.model = calculator.models[0]
         self.calc = calculator
@@ -58,12 +54,11 @@ class RelaxBatch:
 
     def insert(self, atoms) -> None:
         """Insert an atoms object to the batch"""
-        atoms._calc_bak = atoms.calc
         atoms.calc = SinglePointCalculator(atoms)
-        if not self.filter:
+        if not self.atoms_filter:
             opt_instance = self.optimizer(atoms)
         else:
-            opt_instance = self.optimizer(self.filter(atoms))
+            opt_instance = self.optimizer(self.atoms_filter(atoms))
         opt_instance.fmax = self.fmax
         self.opt_list.append(opt_instance)
         self.opt_flags.append(True)
@@ -75,7 +70,7 @@ class RelaxBatch:
         relaxed = [
             self.all_atoms[i] for i in range(len(self.all_atoms)) if i not in idx_kept
         ]
-        if self.filter is not None:
+        if self.atoms_filter is not None:
             relaxed = [atoms.atoms for atoms in relaxed]
         # Remove the relaxed atoms
         self.opt_list = [self.opt_list[i] for i in idx_kept]
@@ -86,7 +81,7 @@ class RelaxBatch:
     @property
     def active_atoms(self) -> List[Atoms]:
         idx = self.active_opt_index
-        if self.filter is not None:
+        if self.atoms_filter is not None:
             return [self.opt_list[i].atoms.atoms for i in idx]
         return [self.opt_list[i].atoms for i in idx]
 
@@ -96,8 +91,12 @@ class RelaxBatch:
 
     def compute(self, skip_inactive=True) -> Dict[str, Any]:
         """Compute the energy, forces and stress for the active atoms"""
-        active_index = self.active_opt_index
-        to_calc = self.active_atoms
+        if skip_inactive:
+            active_index = self.active_opt_index
+            to_calc = self.active_atoms
+        else:
+            active_index = list(range(len(self.all_atoms)))
+            to_calc = self.all_atoms
 
         configs = [
             data.config_from_atoms(atoms, charges_key=self.calc.charges_key)
@@ -141,7 +140,6 @@ class RelaxBatch:
         for atoms in to_calc:
             results["forces"].append(node_forces[pointer : pointer + len(atoms), :])
             pointer += len(atoms)
-        # TODO: process dipoles
         return results
 
     def _clone_batch(self, batch):
@@ -161,7 +159,6 @@ class RelaxBatch:
         Compute the energy and forces and take step for the optimizers
         """
         results = self.compute()
-        self.finished = True
         for i, (opt, atoms) in enumerate(zip(self.active_opts, self.active_atoms)):
             sp_calc = SinglePointCalculator(
                 atoms,
@@ -175,17 +172,15 @@ class RelaxBatch:
                     / self.calc.length_units_to_A**3
                 ),
             )
-            if self.filter is None:
+            if self.atoms_filter is None:
                 opt.atoms.calc = sp_calc
             else:
                 opt.atoms.atoms.calc = sp_calc
             if opt.converged() or (get_nstep(opt) >= self.max_n_steps):
                 self.opt_flags[i] = False
-                continue
             else:
-                self.finished = False
-            # Step the optimizer
-            opt.step()
+                # Step the optimizer
+                opt.step()
 
 
 def get_nstep(opt):
@@ -204,7 +199,11 @@ class BatchRelaxer:
     """
 
     def __init__(
-        self, calculator, optimizer, batch_size=20, relax_cell=False,
+        self,
+        calculator,
+        optimizer,
+        batch_size=20,
+        relax_cell=False,
         report_every=10,
     ):
         """Batch relaxation using MACE"""
@@ -219,9 +218,8 @@ class BatchRelaxer:
 
     def relax(self, atoms_list, inplace=True, max_n_steps=200, fmax=0.02):
         """Relax a bunch of atoms"""
-        self.trajectories = {}
         if inplace:
-            atoms_to_relax = {i: atoms for i, atoms in enumerate(atoms_list)}
+            atoms_to_relax = dict(enumerate(atoms_list))
         else:
             atoms_to_relax = {i: atoms.copy() for i, atoms in enumerate(atoms_list)}
 
@@ -231,8 +229,11 @@ class BatchRelaxer:
 
         # Initialize the batch relax object
         relax_batch = RelaxBatch(
-            [], self.calc, optimizer=self.optimizer, fmax=fmax, filter=self.filter,
-            max_n_steps=max_n_steps
+            self.calc,
+            optimizer=self.optimizer,
+            fmax=fmax,
+            atoms_filter=self.filter,
+            max_n_steps=max_n_steps,
         )
 
         last_report = 0
@@ -267,7 +268,7 @@ def benchmark_batch_size(
     atoms_list: List[Atoms],
     calculator,
     optimizer=FIRE,
-    batch_sizes=[4, 8, 16, 32],
+    batch_sizes=(4, 8, 16, 32),
     fmax=0.02,
     max_n_steps=100,
     **kwargs,
