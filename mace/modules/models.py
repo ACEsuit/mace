@@ -87,6 +87,21 @@ class MACE(torch.nn.Module):
             irreps_out=node_feats_irreps,
             cueq_config=cueq_config,
         )
+        self.spin_embedding = LinearNodeEmbeddingBlock(
+            irreps_in=o3.Irreps("1x0e"),
+            irreps_out=node_feats_irreps,
+            cueq_config=cueq_config,
+        )
+        self.charges_embedding = LinearNodeEmbeddingBlock(
+            irreps_in=o3.Irreps("1x0e"),
+            irreps_out=node_feats_irreps,
+            cueq_config=cueq_config,
+        )
+        self.spin_charge_mixing = LinearNodeEmbeddingBlock(
+            irreps_in=(2*node_feats_irreps).sort()[0].simplify(),
+            irreps_out=node_feats_irreps,
+            cueq_config=cueq_config,
+        )
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
             num_bessel=num_bessel,
@@ -260,6 +275,12 @@ class MACE(torch.nn.Module):
             pair_node_energy = torch.zeros_like(node_e0)
             pair_energy = torch.zeros_like(e0)
 
+        if hasattr(self, "spin_embedding") and hasattr(self, "charges_embedding"):
+            spin_feats = self.spin_embedding(data["total_spin"])
+            charge_feats = self.charges_embedding(data["total_charge"])
+            spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
+            node_feats += self.spin_charge_mixing(torch.nn.functional.silu(spin_charge_feats))[data["batch"], :]
+            
         # Interactions
         energies = [e0, pair_energy]
         node_energies_list = [node_e0, pair_node_energy]
@@ -406,6 +427,13 @@ class ScaleShiftMACE(MACE):
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list = []
+
+        if hasattr(self, "spin_embedding") and hasattr(self, "charges_embedding"):
+            spin_feats = self.spin_embedding(data["total_spin"])
+            charge_feats = self.charges_embedding(data["total_charge"])
+            spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
+            node_feats += self.spin_charge_mixing(torch.nn.functional.silu(spin_charge_feats))[data["batch"], :]
+
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
         ):

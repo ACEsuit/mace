@@ -791,6 +791,22 @@ def get_params_options(
         amsgrad=args.amsgrad,
         betas=(args.beta, 0.999),
     )
+    if hasattr(model, "spin_embedding"):
+        param_options["params"].append(
+            {
+                "name": "spin_embedding",
+                "params": model.spin_embedding.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+    if hasattr(model, "charge_embedding"):
+        param_options["params"].append(
+            {
+                "name": "charge_embedding",
+                "params": model.charge_embedding.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
     return param_options
 
 

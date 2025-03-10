@@ -34,7 +34,7 @@ class LMDBDataset(Dataset):
             print(e)
             return None
         assert np.sum(atoms.get_cell() == atoms.cell) == 9
-
+        
         config = Configuration(
             atomic_numbers=atoms.numbers,
             positions=atoms.positions,
@@ -45,7 +45,7 @@ class LMDBDataset(Dataset):
             dipole=np.zeros(atoms.get_forces()[0].shape),
             charges=np.zeros(atoms.numbers.shape),
             weight=1.0,
-            head=None,  # do not asign head according to h5
+            head=None,
             energy_weight=1.0,
             forces_weight=1.0,
             stress_weight=1.0,
@@ -53,6 +53,8 @@ class LMDBDataset(Dataset):
             config_type=None,
             pbc=np.array(atoms.pbc),
             cell=np.array(atoms.cell),
+            total_charge=atoms.info.get('charge', None),
+            total_spin=atoms.info.get('spin', None),
         )
         if config.head is None:
             config.head = self.kwargs.get("head")
