@@ -76,7 +76,7 @@ def load_dataset_for_path(
     if filepath.is_dir():
 
         if filepath.name.endswith("_lmdb") or any(
-            f.endswith(".lmdb") for f in os.listdir(filepath)
+            f.endswith(".lmdb") or f.endswith(".aselmdb") for f in os.listdir(filepath)
         ):
             logging.info(f"Loading LMDB dataset from {file_path}")
             return data.LMDBDataset(
@@ -102,7 +102,7 @@ def load_dataset_for_path(
                 logging.error(f"Error loading sharded HDF5 dataset: {e}")
                 raise
 
-        if "lmdb" in str(filepath).lower():
+        if "lmdb" in str(filepath).lower() or "aselmdb" in str(filepath).lower():
             logging.info(f"Loading LMDB dataset based on path name: {file_path}")
             return data.LMDBDataset(
                 file_path,
