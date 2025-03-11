@@ -5,55 +5,24 @@ Foundation models
 =================
 
 Currently available pretrained MACE models:
-.. list-table::
-   :header-rows: 1
-   :widths: 10 10 10 15 15 15 10 20 10
 
-   * - Model Name
-     - Elements Covered
-     - Training Dataset
-     - Level of Theory
-     - Target System
-     - Model Size
-     - GitHub Release
-     - Notes
-     - License
-   * - MACE-MP-0
-     - 89
-     - MPTrj
-     - DFT (PBE+U)
-     - Materials
-     - `small <https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model>`_, `medium <https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model>`_, `large <https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2024-01-07-mace-128-L2_epoch-199.model>`_
-     - >=v0.3.6
-     - Initial release of foundation model.
-     - MIT
-   * - MACE-MPA-0
-     - 89
-     - MPTrj + sAlex
-     - DFT (PBE+U)
-     - Materials
-     - `medium-mpa-0 <https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model>`_
-     - >=v0.3.10
-     - Improved accuracy for materials, improved high pressure stability.
-     - MIT
-   * - MACE-OMAT-0
-     - 89
-     - OMAT
-     - DFT (PBE+U) VASP 54
-     - Materials
-     - `medium-omat-0 <https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model>`_
-     - >=v0.3.10
-     - 
-     - ASL
-   * - MACE-OFF23
-     - 10
-     - SPICE v1
-     - DFT (wB97M+D3)
-     - Organic Chemistry
-     - `small <https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model>`_, `medium <https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model>`_, `large <https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model>`_
-     - >=v0.3.6
-     - Initial release covering neutral organic chemistry.
-     - ASL
+.. csv-table::
+   :header: "Model Name", "Elements Covered", "Training Dataset", "Level of Theory", "Target System", "Model Size", "GitHub Release", "Notes", "License"
+   :widths: 10, 10, 10, 15, 15, 15, 10, 20, 10
+
+   "MACE-MP-0", "89", "MPTrj", "DFT (PBE+U)", "Materials", "small_, medium_, large_", ">=v0.3.6", "Initial release of foundation model.", "MIT"
+   "MACE-MPA-0", "89", "MPTrj + sAlex", "DFT (PBE+U)", "Materials", "medium-mpa-0_", ">=v0.3.10", "Improved accuracy for materials, improved high pressure stability.", "MIT"
+   "MACE-OMAT-0", "89", "OMAT", "DFT (PBE+U) VASP 54", "Materials", "medium-omat-0_", ">=v0.3.10", "", "ASL"
+   "MACE-OFF23", "10", "SPICE v1", "DFT (wB97M+D3)", "Organic Chemistry", "small-off_, medium-off_, large-off_", ">=v0.3.6", "Initial release covering neutral organic chemistry.", "ASL"
+
+.. _small: https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model
+.. _medium: https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model
+.. _large: https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2024-01-07-mace-128-L2_epoch-199.model
+.. _medium-mpa-0: https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model
+.. _medium-omat-0: https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model
+.. _small-off: https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model
+.. _medium-off: https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model
+.. _large-off: https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model
 
 Foundation models are a rapidly evolving field. Please look at the `MACE-MP GitHub repository <https://github.com/ACEsuit/mace-mp/releases>`_ and the `MACE-OFF23 GitHub repository <https://github.com/ACEsuit/mace-off/releases>`_ for the latest releases.
 
