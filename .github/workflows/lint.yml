@@ -1,8 +1,7 @@
 name: Linting and code formatting
 
-on: []
+on:
   push:
-    branches: []
 
 
 jobs:
