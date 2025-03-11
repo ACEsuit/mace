@@ -11,16 +11,15 @@ jobs:
     steps:
       # Setup
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: ctions/setup-python@v5
         with:
           python-version: 3.8.10
       - name: Get cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: /opt/hostedtoolcache/Python/3.8.10/x64/lib/python3.8/site-packages
-          # Look to see if there is a cache hit for the corresponding requirements file
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
 
       # Install packages
