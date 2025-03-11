@@ -325,7 +325,7 @@ def run(args) -> None:
                 f"Using foundation model for multiheads finetuning with {args.pt_train_file}"
             )
             heads = list(dict.fromkeys(["pt_head"] + heads))
-            
+
             # Use pt-specific keys if provided, otherwise fall back to general keys
             pt_energy_key = args.pt_energy_key or args.energy_key
             pt_forces_key = args.pt_forces_key or args.forces_key
@@ -333,17 +333,21 @@ def run(args) -> None:
             pt_virials_key = args.pt_virials_key or args.virials_key
             pt_dipole_key = args.pt_dipole_key or args.dipole_key
             pt_charges_key = args.pt_charges_key or args.charges_key
-            
-            logging.info(f"Using the following keys for pt_head: energy={pt_energy_key}, forces={pt_forces_key}, "
-                        f"stress={pt_stress_key}, virials={pt_virials_key}, dipole={pt_dipole_key}, charges={pt_charges_key}")
-            
+
+            logging.info(
+                f"Using the following keys for pt_head: energy={pt_energy_key}, forces={pt_forces_key}, "
+                f"stress={pt_stress_key}, virials={pt_virials_key}, dipole={pt_dipole_key}, charges={pt_charges_key}"
+            )
+
             # Normalize file paths
             pt_train_file = normalize_file_paths(args.pt_train_file)
-            pt_valid_file = normalize_file_paths(args.pt_valid_file) if args.pt_valid_file else None
-            
+            pt_valid_file = (
+                normalize_file_paths(args.pt_valid_file) if args.pt_valid_file else None
+            )
+
             # Check if pt_train_file is ASE readable (e.g., xyz) vs LMDB/HDF5
             is_ase_readable = all(check_path_ase_read(f) for f in pt_train_file)
-            
+
             head_config_pt = HeadConfig(
                 head_name="pt_head",
                 train_file=pt_train_file,
@@ -362,7 +366,7 @@ def run(args) -> None:
                 avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
                 compute_avg_num_neighbors=False,
             )
-            
+
             if is_ase_readable:
                 # For xyz files, use get_dataset_from_xyz
                 collections, atomic_energies_dict = get_dataset_from_xyz(
@@ -390,11 +394,11 @@ def run(args) -> None:
                 logging.info(
                     f"Pretraining data file(s) will be loaded as LMDB/HDF5: {pt_train_file}"
                 )
-            
+
             head_configs.append(head_config_pt)
-        
+
         all_ase_readable = all(
-            all(check_path_ase_read(f) for f in head_config.train_file) 
+            all(check_path_ase_read(f) for f in head_config.train_file)
             for head_config in head_configs
         )
         if all_ase_readable:
@@ -407,8 +411,8 @@ def run(args) -> None:
                 for head_config in head_configs:
                     if head_config.head_name == "pt_head":
                         continue
-                    head_config.collections.train += head_config.collections.train * int(
-                        0.1 / ratio_pt_ft
+                    head_config.collections.train += (
+                        head_config.collections.train * int(0.1 / ratio_pt_ft)
                     )
             logging.info(
                 f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
