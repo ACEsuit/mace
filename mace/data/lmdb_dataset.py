@@ -4,7 +4,7 @@ import numpy as np
 from torch.utils.data import Dataset
 
 from mace.data.atomic_data import AtomicData
-from mace.data.utils import Configuration
+from mace.data.utils import config_from_atoms
 from mace.tools.fairchem_dataset import AseDBDataset
 
 
@@ -35,27 +35,27 @@ class LMDBDataset(Dataset):
             return None
         assert np.sum(atoms.get_cell() == atoms.cell) == 9
 
-        config = Configuration(
-            atomic_numbers=atoms.numbers,
-            positions=atoms.positions,
-            energy=atoms.calc.results["energy"],
-            forces=atoms.calc.results["forces"],
-            stress=atoms.calc.results["stress"],
-            virials=np.zeros(atoms.get_stress().shape),
-            dipole=np.zeros(atoms.get_forces()[0].shape),
-            charges=np.zeros(atoms.numbers.shape),
-            weight=1.0,
-            head=None,  # do not asign head according to h5
-            energy_weight=1.0,
-            forces_weight=1.0,
-            stress_weight=1.0,
-            virials_weight=1.0,
-            config_type=None,
-            pbc=np.array(atoms.pbc),
-            cell=np.array(atoms.cell),
+        if hasattr(atoms, 'calc') and hasattr(atoms.calc, 'results'):
+            if 'energy' in atoms.calc.results:
+                atoms.info['REF_energy'] = atoms.calc.results['energy']
+            if 'forces' in atoms.calc.results:
+                atoms.arrays['REF_forces'] = atoms.calc.results['forces']
+            if 'stress' in atoms.calc.results:
+                atoms.info['REF_stress'] = atoms.calc.results['stress']
+
+        config = config_from_atoms(
+            atoms,
+            energy_key='REF_energy',
+            forces_key='REF_forces',
+            stress_key='REF_stress',
+            dipole_key='dipole',
+            head_key='head'
         )
-        if config.head is None:
-            config.head = self.kwargs.get("head")
+        
+        # Set head if not already set
+        if config.head == "Default":
+            config.head = self.kwargs.get("head", "Default")
+
         try:
             atomic_data = AtomicData.from_config(
                 config,

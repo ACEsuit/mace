@@ -52,9 +52,14 @@ def load_dataset_for_path(
         Loaded dataset
     """
     if isinstance(file_path, list):
+        if len(file_path) == 1:
+            file_path = file_path[0]
+    if isinstance(file_path, list):
         is_ase_readable = all(check_path_ase_read(p) for p in file_path)
         if not is_ase_readable:
-            raise ValueError("Not all paths are ASE readable, not supported")
+            raise ValueError(
+                "Not all paths in the list are ASE readable, not supported"
+            )
     if isinstance(file_path, str):
         is_ase_readable = check_path_ase_read(file_path)
 
@@ -73,7 +78,7 @@ def load_dataset_for_path(
     if filepath.is_dir():
 
         if filepath.name.endswith("_lmdb") or any(
-            f.endswith(".lmdb") for f in os.listdir(filepath)
+            f.endswith(".lmdb") or f.endswith(".aselmdb") for f in os.listdir(filepath)
         ):
             logging.info(f"Loading LMDB dataset from {file_path}")
             return data.LMDBDataset(
@@ -99,7 +104,7 @@ def load_dataset_for_path(
                 logging.error(f"Error loading sharded HDF5 dataset: {e}")
                 raise
 
-        if "lmdb" in str(filepath).lower():
+        if "lmdb" in str(filepath).lower() or "aselmdb" in str(filepath).lower():
             logging.info(f"Loading LMDB dataset based on path name: {file_path}")
             return data.LMDBDataset(
                 file_path,
@@ -143,9 +148,13 @@ def load_dataset_for_path(
             head=head_config.head_name,
         )
 
-    logging.info(f"Attempting to load as sharded HDF5: {file_path}")
-    return data.dataset_from_sharded_hdf5(
-        file_path, r_max=r_max, z_table=z_table, heads=heads, head=head_config.head_name
+    logging.info(f"Attempting to load as LMDB: {file_path}")
+    return data.LMDBDataset(
+        file_path,
+        r_max=r_max,
+        z_table=z_table,
+        heads=heads,
+        head=head_config.head_name,
     )
 
 

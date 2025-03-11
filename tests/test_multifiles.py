@@ -66,7 +66,7 @@ def create_e0s_file(e0s_dict, filename):
     """Create an E0s JSON file with isolated atom energies."""
     # Convert keys to integers since MACE expects atomic numbers as integers
     e0s_dict_int_keys = {int(k): v for k, v in e0s_dict.items()}
-    
+
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(e0s_dict_int_keys, f)
     return filename
@@ -295,7 +295,7 @@ def test_multifile_training():
         # Save isolated atoms to xyz files first, then create the h5 datasets
         create_xyz_file(xyz_atoms1, xyz_file1)
         create_xyz_file(xyz_atoms2, xyz_file2)
-        
+
         # Create h5 data from xyz file, using both isolated atoms and real data
         all_atoms_for_h5 = isolated_atoms + xyz_atoms2
         all_atoms_xyz = os.path.join(temp_dir, "all_atoms_for_h5.xyz")
@@ -434,9 +434,9 @@ def test_multiple_xyz_per_head():
         test_xyz_files = [
             os.path.join(temp_dir, f"test_data{i}.xyz") for i in range(1, 3)
         ]  # 2 test files
-        
+
         iso_atoms_file = os.path.join(temp_dir, "isolated_atoms.xyz")
-        
+
         config_path = os.path.join(temp_dir, "config.yaml")
         results_dir = os.path.join(temp_dir, "results")
         checkpoints_dir = os.path.join(temp_dir, "checkpoints")
@@ -484,21 +484,27 @@ def test_multiple_xyz_per_head():
         train_datasets = []
         for i, file in enumerate(train_xyz_files):
             # Create atoms with different seeds
-            atoms = [create_test_atoms(num_atoms=5, seed=seeds[i] + j) for j in range(5)]
+            atoms = [
+                create_test_atoms(num_atoms=5, seed=seeds[i] + j) for j in range(5)
+            ]
             create_xyz_file(atoms, file)
             train_datasets.append(atoms)
-            
+
         # Create atoms for validation datasets
         valid_datasets = []
         for i, file in enumerate(valid_xyz_files):
-            atoms = [create_test_atoms(num_atoms=5, seed=seeds[i+3] + j) for j in range(3)]
+            atoms = [
+                create_test_atoms(num_atoms=5, seed=seeds[i + 3] + j) for j in range(3)
+            ]
             create_xyz_file(atoms, file)
             valid_datasets.append(atoms)
-            
+
         # Create atoms for test datasets
         test_datasets = []
         for i, file in enumerate(test_xyz_files):
-            atoms = [create_test_atoms(num_atoms=5, seed=seeds[i+5] + j) for j in range(3)]
+            atoms = [
+                create_test_atoms(num_atoms=5, seed=seeds[i + 5] + j) for j in range(3)
+            ]
             create_xyz_file(atoms, file)
             test_datasets.append(atoms)
 
