@@ -468,6 +468,44 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="REF_charges",
     )
 
+    # Pretraining-specific keys
+    parser.add_argument(
+        "--pt_energy_key",
+        help="Key of reference energies in pretraining data (defaults to energy_key if not specified)",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--pt_forces_key",
+        help="Key of reference forces in pretraining data (defaults to forces_key if not specified)",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--pt_virials_key",
+        help="Key of reference virials in pretraining data (defaults to virials_key if not specified)",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--pt_stress_key",
+        help="Key of reference stress in pretraining data (defaults to stress_key if not specified)",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--pt_dipole_key",
+        help="Key of reference dipoles in pretraining data (defaults to dipole_key if not specified)",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--pt_charges_key",
+        help="Key of atomic charges in pretraining data (defaults to charges_key if not specified)",
+        type=str,
+        default=None,
+    )
+
     # Loss and optimization
     parser.add_argument(
         "--loss",

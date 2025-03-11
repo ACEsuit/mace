@@ -297,6 +297,34 @@ def mace_anicc(
         print(
             "Using ANI couple cluster model for MACECalculator, see https://doi.org/10.1063/5.0155322"
         )
+
+    if not os.path.exists(model_path):
+        model_dir = os.path.dirname(model_path)
+        os.makedirs(model_dir, exist_ok=True)
+
+        # Download the model
+        print(f"Model not found at {model_path}. Downloading...")
+        model_url = "https://github.com/ACEsuit/mace/raw/main/mace/calculators/foundations_models/ani500k_large_CC.model"
+
+        try:
+
+            def report_progress(block_num, block_size, total_size):
+                downloaded = block_num * block_size
+                percent = min(100, downloaded * 100 / total_size)
+                if total_size > 0:
+                    print(
+                        f"\rDownloading model: {percent:.1f}% ({downloaded / 1024 / 1024:.1f} MB / {total_size / 1024 / 1024:.1f} MB)",
+                        end="",
+                    )
+
+            urllib.request.urlretrieve(
+                model_url, model_path, reporthook=report_progress
+            )
+            print("\nDownload complete!")
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to download model: {e}") from e
+
     if return_raw_model:
         return torch.load(model_path, map_location=device)
     return MACECalculator(
