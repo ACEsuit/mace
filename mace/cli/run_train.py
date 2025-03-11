@@ -325,66 +325,104 @@ def run(args) -> None:
                 f"Using foundation model for multiheads finetuning with {args.pt_train_file}"
             )
             heads = list(dict.fromkeys(["pt_head"] + heads))
-            collections, atomic_energies_dict = get_dataset_from_xyz(
-                work_dir=args.work_dir,
-                train_path=args.pt_train_file,
-                valid_path=args.pt_valid_file,
-                valid_fraction=args.valid_fraction,
-                config_type_weights=None,
-                test_path=None,
-                seed=args.seed,
-                energy_key=args.energy_key,
-                forces_key=args.forces_key,
-                stress_key=args.stress_key,
-                virials_key=args.virials_key,
-                dipole_key=args.dipole_key,
-                charges_key=args.charges_key,
-                head_name="pt_head",
-                keep_isolated_atoms=args.keep_isolated_atoms,
-            )
+            
+            # Use pt-specific keys if provided, otherwise fall back to general keys
+            pt_energy_key = args.pt_energy_key or args.energy_key
+            pt_forces_key = args.pt_forces_key or args.forces_key
+            pt_stress_key = args.pt_stress_key or args.stress_key
+            pt_virials_key = args.pt_virials_key or args.virials_key
+            pt_dipole_key = args.pt_dipole_key or args.dipole_key
+            pt_charges_key = args.pt_charges_key or args.charges_key
+            
+            logging.info(f"Using the following keys for pt_head: energy={pt_energy_key}, forces={pt_forces_key}, "
+                        f"stress={pt_stress_key}, virials={pt_virials_key}, dipole={pt_dipole_key}, charges={pt_charges_key}")
+            
+            # Normalize file paths
+            pt_train_file = normalize_file_paths(args.pt_train_file)
+            pt_valid_file = normalize_file_paths(args.pt_valid_file) if args.pt_valid_file else None
+            
+            # Check if pt_train_file is ASE readable (e.g., xyz) vs LMDB/HDF5
+            is_ase_readable = all(check_path_ase_read(f) for f in pt_train_file)
+            
             head_config_pt = HeadConfig(
                 head_name="pt_head",
-                train_file=[args.pt_train_file],
-                valid_file=[args.pt_valid_file] if args.pt_valid_file else None,
+                train_file=pt_train_file,
+                valid_file=pt_valid_file,
                 E0s="foundation",
                 statistics_file=args.statistics_file,
                 valid_fraction=args.valid_fraction,
                 config_type_weights=None,
-                energy_key=args.energy_key,
-                forces_key=args.forces_key,
-                stress_key=args.stress_key,
-                virials_key=args.virials_key,
-                dipole_key=args.dipole_key,
-                charges_key=args.charges_key,
+                energy_key=pt_energy_key,
+                forces_key=pt_forces_key,
+                stress_key=pt_stress_key,
+                virials_key=pt_virials_key,
+                dipole_key=pt_dipole_key,
+                charges_key=pt_charges_key,
                 keep_isolated_atoms=args.keep_isolated_atoms,
-                collections=collections,
                 avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
                 compute_avg_num_neighbors=False,
             )
-            head_config_pt.collections = collections
-            head_configs.append(head_config_pt)
-
-        ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
-        if ratio_pt_ft < 0.1:
-            logging.warning(
-                f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
-                f"increasing the number of configurations in the fine-tuning heads by {int(0.1 / ratio_pt_ft)}"
-            )
-            for head_config in head_configs:
-                if head_config.head_name == "pt_head":
-                    continue
-                head_config.collections.train += head_config.collections.train * int(
-                    0.1 / ratio_pt_ft
+            
+            if is_ase_readable:
+                # For xyz files, use get_dataset_from_xyz
+                collections, atomic_energies_dict = get_dataset_from_xyz(
+                    work_dir=args.work_dir,
+                    train_path=args.pt_train_file,
+                    valid_path=args.pt_valid_file,
+                    valid_fraction=args.valid_fraction,
+                    config_type_weights=None,
+                    test_path=None,
+                    seed=args.seed,
+                    energy_key=pt_energy_key,
+                    forces_key=pt_forces_key,
+                    stress_key=pt_stress_key,
+                    virials_key=pt_virials_key,
+                    dipole_key=pt_dipole_key,
+                    charges_key=pt_charges_key,
+                    head_name="pt_head",
+                    keep_isolated_atoms=args.keep_isolated_atoms,
                 )
-        logging.info(
-            f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
+                head_config_pt.collections = collections
+                logging.info(
+                    f"Loaded ASE readable pretraining data: train={len(collections.train)}, valid={len(collections.valid)}"
+                )
+            else:
+                logging.info(
+                    f"Pretraining data file(s) will be loaded as LMDB/HDF5: {pt_train_file}"
+                )
+            
+            head_configs.append(head_config_pt)
+        
+        all_ase_readable = all(
+            all(check_path_ase_read(f) for f in head_config.train_file) 
+            for head_config in head_configs
         )
+        if all_ase_readable:
+            ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
+            if ratio_pt_ft < 0.1:
+                logging.warning(
+                    f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
+                    f"increasing the number of configurations in the fine-tuning heads by {int(0.1 / ratio_pt_ft)}"
+                )
+                for head_config in head_configs:
+                    if head_config.head_name == "pt_head":
+                        continue
+                    head_config.collections.train += head_config.collections.train * int(
+                        0.1 / ratio_pt_ft
+                    )
+            logging.info(
+                f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
+            )
+        else:
+            logging.debug(
+                "Using LMDB/HDF5 datasets for pretraining or fine-tuning - skipping ratio check"
+            )
 
     # Atomic number table
     # yapf: disable
     for head_config in head_configs:
         if head_config.atomic_numbers is None:
-            assert all(check_path_ase_read(f) for f in head_config.train_file), "Must specify atomic_numbers when using .h5 train_file input"
+            assert all(check_path_ase_read(f) for f in head_config.train_file), "Must specify atomic_numbers when using .h5 or .aselmdb train_file input"
             z_table_head = tools.get_atomic_number_table_from_zs(
                 z
                 for configs in (head_config.collections.train, head_config.collections.valid)
