@@ -3,14 +3,13 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 """
 
 import dataclasses
-import itertools
-from typing import Iterator, List, Optional
+from typing import List, Optional
 
-import numpy as np
 import torch
 from e3nn import o3
 
 from mace.modules.symmetric_contraction import SymmetricContraction
+from mace.tools.cg import O3_e3nn
 
 try:
     import cuequivariance as cue
@@ -19,43 +18,6 @@ try:
     CUET_AVAILABLE = True
 except ImportError:
     CUET_AVAILABLE = False
-
-if CUET_AVAILABLE:
-
-    class O3_e3nn(cue.O3):
-        def __mul__(  # pylint: disable=no-self-argument
-            rep1: "O3_e3nn", rep2: "O3_e3nn"
-        ) -> Iterator["O3_e3nn"]:
-            return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
-
-        @classmethod
-        def clebsch_gordan(
-            cls, rep1: "O3_e3nn", rep2: "O3_e3nn", rep3: "O3_e3nn"
-        ) -> np.ndarray:
-            rep1, rep2, rep3 = cls._from(rep1), cls._from(rep2), cls._from(rep3)
-
-            if rep1.p * rep2.p == rep3.p:
-                return o3.wigner_3j(rep1.l, rep2.l, rep3.l).numpy()[None] * np.sqrt(
-                    rep3.dim
-                )
-            return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
-
-        def __lt__(  # pylint: disable=no-self-argument
-            rep1: "O3_e3nn", rep2: "O3_e3nn"
-        ) -> bool:
-            rep2 = rep1._from(rep2)
-            return (rep1.l, rep1.p) < (rep2.l, rep2.p)
-
-        @classmethod
-        def iterator(cls) -> Iterator["O3_e3nn"]:
-            for l in itertools.count(0):
-                yield O3_e3nn(l=l, p=1 * (-1) ** l)
-                yield O3_e3nn(l=l, p=-1 * (-1) ** l)
-
-else:
-    print(
-        "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
-    )
 
 
 @dataclasses.dataclass
