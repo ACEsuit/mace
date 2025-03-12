@@ -10,17 +10,16 @@ import dataclasses
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import torch.distributed
 from e3nn import o3
-from prettytable import PrettyTable
 from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules, tools
-from mace.tools import evaluate
 from mace.tools.train import SWAContainer
 
 
@@ -33,11 +32,11 @@ class SubsetCollection:
 
 def get_dataset_from_xyz(
     work_dir: str,
-    train_path: str,
-    valid_path: Optional[str],
+    train_path: Union[str, List[str]],
+    valid_path: Optional[Union[str, List[str]]],
     valid_fraction: float,
     config_type_weights: Dict,
-    test_path: str = None,
+    test_path: Optional[Union[str, List[str]]] = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
@@ -49,27 +48,68 @@ def get_dataset_from_xyz(
     charges_key: str = "charges",
     head_key: str = "head",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
-    """Load training and test dataset from xyz file"""
-    atomic_energies_dict, all_train_configs = data.load_from_xyz(
-        file_path=train_path,
-        config_type_weights=config_type_weights,
-        energy_key=energy_key,
-        forces_key=forces_key,
-        stress_key=stress_key,
-        virials_key=virials_key,
-        dipole_key=dipole_key,
-        charges_key=charges_key,
-        head_key=head_key,
-        extract_atomic_energies=True,
-        keep_isolated_atoms=keep_isolated_atoms,
-        head_name=head_name,
+    """
+    Load training, validation, and test datasets from xyz files.
+
+    Args:
+        work_dir: Working directory for saving split information
+        train_path: Path or list of paths to training xyz files
+        valid_path: Path or list of paths to validation xyz files
+        valid_fraction: Fraction of training data to use for validation if valid_path is None
+        config_type_weights: Dictionary of weights for each configuration type
+        test_path: Path or list of paths to test xyz files
+        seed: Random seed for train/validation split
+        keep_isolated_atoms: Whether to keep isolated atoms in the dataset
+        head_name: Name of the head for multi-head models
+        energy_key: Key for energy values in xyz file
+        forces_key: Key for forces values in xyz file
+        stress_key: Key for stress values in xyz file
+        virials_key: Key for virials values in xyz file
+        dipole_key: Key for dipole values in xyz file
+        charges_key: Key for charges values in xyz file
+        head_key: Key for head values in xyz file
+
+    Returns:
+        Tuple containing:
+            - SubsetCollection with train, valid, and test configurations
+            - Dictionary of atomic energies (or None if not available)
+    """
+    # Convert input paths to lists if they're not already
+    train_paths = [train_path] if isinstance(train_path, str) else train_path
+    valid_paths = (
+        [valid_path]
+        if isinstance(valid_path, str) and valid_path is not None
+        else valid_path
     )
-    logging.info(
-        f"Training set [{len(all_train_configs)} configs, {np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, {np.sum([config.forces.size for config in all_train_configs])} forces] loaded from '{train_path}'"
+    test_paths = (
+        [test_path]
+        if isinstance(test_path, str) and test_path is not None
+        else test_path
     )
-    if valid_path is not None:
-        _, valid_configs = data.load_from_xyz(
-            file_path=valid_path,
+
+    # Initialize collections and atomic energies tracking
+    all_train_configs = []
+    all_valid_configs = []
+    all_test_configs = []
+
+    # For tracking atomic energies across files
+    atomic_energies_values = {}  # Element Z -> list of energy values
+    atomic_energies_counts = {}  # Element Z -> count of files with this element
+
+    # Process training files
+    for i, path in enumerate(train_paths):
+        logging.debug("Loading training file: %s", path)
+        logging.debug(
+            "Using keys: energy=%s, forces=%s, stress=%s, virials=%s, dipole=%s, charges=%s",
+            energy_key,
+            forces_key,
+            stress_key,
+            virials_key,
+            dipole_key,
+            charges_key,
+        )
+        ae_dict, train_configs = data.load_from_xyz(
+            file_path=path,
             config_type_weights=config_type_weights,
             energy_key=energy_key,
             forces_key=forces_key,
@@ -78,49 +118,141 @@ def get_dataset_from_xyz(
             dipole_key=dipole_key,
             charges_key=charges_key,
             head_key=head_key,
-            extract_atomic_energies=False,
+            extract_atomic_energies=True,  # Extract from all files to average
+            keep_isolated_atoms=keep_isolated_atoms,
             head_name=head_name,
         )
+        all_train_configs.extend(train_configs)
+
+        # Track atomic energies from each file for averaging
+        if ae_dict:
+            for element, energy in ae_dict.items():
+                if element not in atomic_energies_values:
+                    atomic_energies_values[element] = []
+                    atomic_energies_counts[element] = 0
+
+                atomic_energies_values[element].append(energy)
+                atomic_energies_counts[element] += 1
+
         logging.info(
-            f"Validation set [{len(valid_configs)} configs, {np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces] loaded from '{valid_path}'"
+            f"Training file {i+1}/{len(train_paths)} [{len(train_configs)} configs, "
+            f"{np.sum([1 if config.energy else 0 for config in train_configs])} energy, "
+            f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in train_configs])} forces, "
+            f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in train_configs])} stresses] loaded from '{path}'"
         )
+
+    # Log total training set info
+    logging.info(
+        f"Total training set [{len(all_train_configs)} configs, "
+        f"{np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, "
+        f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in all_train_configs])} forces, "
+        f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in all_train_configs])} stresses]"
+    )
+
+    # Process validation files if provided
+    if valid_paths:
+        for i, path in enumerate(valid_paths):
+            _, valid_configs = data.load_from_xyz(
+                file_path=path,
+                config_type_weights=config_type_weights,
+                energy_key=energy_key,
+                forces_key=forces_key,
+                stress_key=stress_key,
+                virials_key=virials_key,
+                dipole_key=dipole_key,
+                charges_key=charges_key,
+                head_key=head_key,
+                extract_atomic_energies=False,
+                head_name=head_name,
+            )
+            all_valid_configs.extend(valid_configs)
+
+            logging.info(
+                f"Validation file {i+1}/{len(valid_paths)} [{len(valid_configs)} configs, "
+                f"{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, "
+                f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in valid_configs])} forces, "
+                f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in valid_configs])} stresses] loaded from '{path}'"
+            )
+
+        # Log total validation set info
+        logging.info(
+            f"Total validation set [{len(all_valid_configs)} configs, "
+            f"{np.sum([1 if config.energy else 0 for config in all_valid_configs])} energy, "
+            f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in all_valid_configs])} forces, "
+            f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in all_valid_configs])} stresses]"
+        )
+
         train_configs = all_train_configs
+        valid_configs = all_valid_configs
     else:
+        # Split training data if no validation files are provided
         train_configs, valid_configs = data.random_train_valid_split(
             all_train_configs, valid_fraction, seed, work_dir
         )
         logging.info(
-            f"Validaton set contains {len(valid_configs)} configurations [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
+            f"Validation set contains {len(valid_configs)} configurations "
+            f"[{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, "
+            f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in valid_configs])} forces, "
+            f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in valid_configs])} stresses]"
         )
 
-    test_configs = []
-    if test_path is not None:
-        _, all_test_configs = data.load_from_xyz(
-            file_path=test_path,
-            config_type_weights=config_type_weights,
-            energy_key=energy_key,
-            forces_key=forces_key,
-            dipole_key=dipole_key,
-            stress_key=stress_key,
-            virials_key=virials_key,
-            charges_key=charges_key,
-            head_key=head_key,
-            extract_atomic_energies=False,
-            head_name=head_name,
-        )
-        # create list of tuples (config_type, list(Atoms))
-        test_configs = data.test_config_types(all_test_configs)
-        logging.info(
-            f"Test set ({len(all_test_configs)} configs) loaded from '{test_path}':"
-        )
-        for name, tmp_configs in test_configs:
+    # Process test files if provided
+    test_configs_by_type = []
+    if test_paths:
+        for i, path in enumerate(test_paths):
+            _, test_configs = data.load_from_xyz(
+                file_path=path,
+                config_type_weights=config_type_weights,
+                energy_key=energy_key,
+                forces_key=forces_key,
+                dipole_key=dipole_key,
+                stress_key=stress_key,
+                virials_key=virials_key,
+                charges_key=charges_key,
+                head_key=head_key,
+                extract_atomic_energies=False,
+                head_name=head_name,
+            )
+            all_test_configs.extend(test_configs)
+
             logging.info(
-                f"{name}: {len(tmp_configs)} configs, {np.sum([1 if config.energy else 0 for config in tmp_configs])} energy, {np.sum([config.forces.size for config in tmp_configs])} forces"
+                f"Test file {i+1}/{len(test_paths)} [{len(test_configs)} configs, "
+                f"{np.sum([1 if config.energy else 0 for config in test_configs])} energy, "
+                f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in test_configs])} forces, "
+                f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in test_configs])} stresses] loaded from '{path}'"
+            )
+
+        # Create list of tuples (config_type, list(Atoms))
+        test_configs_by_type = data.test_config_types(all_test_configs)
+
+        # Log total test set info
+        logging.info(f"Total test set ({len(all_test_configs)} configs):")
+        for name, tmp_configs in test_configs_by_type:
+            logging.info(
+                f"{name}: {len(tmp_configs)} configs, "
+                f"{np.sum([1 if config.energy else 0 for config in tmp_configs])} energy, "
+                f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in tmp_configs])} forces, "
+                f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in tmp_configs])} stresses"
+            )
+
+    atomic_energies_dict = {}
+    for element, values in atomic_energies_values.items():
+        if atomic_energies_counts[element] > 1:
+            atomic_energies_dict[element] = sum(values) / len(values)
+            logging.debug(
+                f"Element {element} found in {atomic_energies_counts[element]} files. Using average E0: {atomic_energies_dict[element]:.6f} eV"
+            )
+        else:
+            atomic_energies_dict[element] = values[0]
+            logging.debug(
+                f"Element {element} found in 1 file. Using E0: {atomic_energies_dict[element]:.6f} eV"
             )
 
     return (
-        SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
-        atomic_energies_dict,
+        SubsetCollection(
+            train=train_configs, valid=valid_configs, tests=test_configs_by_type
+        ),
+        atomic_energies_dict if atomic_energies_dict else None,
     )
 
 
@@ -176,6 +308,19 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
 
     scale = model.scale_shift.scale
     shift = model.scale_shift.shift
+    heads = model.heads if hasattr(model, "heads") else ["default"]
+    model_mlp_irreps = (
+        o3.Irreps(str(model.readouts[-1].hidden_irreps))
+        if model.num_interactions.item() > 1
+        else 1
+    )
+    mlp_irreps = o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e")
+    try:
+        correlation = (
+            len(model.products[0].symmetric_contractions.contractions[0].weights) + 1
+        )
+    except AttributeError:
+        correlation = model.products[0].symmetric_contractions.contraction_degree
     config = {
         "r_max": model.r_max.item(),
         "num_bessel": len(model.radial_embedding.bessel_fn.bessel_weights),
@@ -186,11 +331,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "num_interactions": model.num_interactions.item(),
         "num_elements": len(model.atomic_numbers),
         "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
-        "MLP_irreps": (
-            o3.Irreps(str(model.readouts[-1].hidden_irreps))
-            if model.num_interactions.item() > 1
-            else 1
-        ),
+        "MLP_irreps": (mlp_irreps if model.num_interactions.item() > 1 else 1),
         "gate": (
             model.readouts[-1]  # pylint: disable=protected-access
             .non_linearity._modules["acts"][0]
@@ -201,10 +342,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
         "atomic_numbers": model.atomic_numbers,
-        "correlation": len(
-            model.products[0].symmetric_contractions.contractions[0].weights
-        )
-        + 1,
+        "correlation": correlation,
         "radial_type": radial_to_name(
             model.radial_embedding.bessel_fn.__class__.__name__
         ),
@@ -213,15 +351,107 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "distance_transform": radial_to_transform(model.radial_embedding),
         "atomic_inter_scale": scale.cpu().numpy(),
         "atomic_inter_shift": shift.cpu().numpy(),
+        "heads": heads,
     }
     return config
 
 
 def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
-    model = torch.load(f=f, map_location=map_location)
-    model_copy = model.__class__(**extract_config_mace_model(model))
-    model_copy.load_state_dict(model.state_dict())
-    return model_copy.to(map_location)
+    return extract_model(
+        torch.load(f=f, map_location=map_location), map_location=map_location
+    )
+
+
+def remove_pt_head(
+    model: torch.nn.Module, head_to_keep: Optional[str] = None
+) -> torch.nn.Module:
+    """Converts a multihead MACE model to a single head model by removing the pretraining head.
+
+    Args:
+        model (ScaleShiftMACE): The multihead MACE model to convert
+        head_to_keep (Optional[str]): The name of the head to keep. If None, keeps the first non-PT head.
+
+    Returns:
+        ScaleShiftMACE: A new MACE model with only the specified head
+
+    Raises:
+        ValueError: If the model is not a multihead model or if the specified head is not found
+    """
+    if not hasattr(model, "heads") or len(model.heads) <= 1:
+        raise ValueError("Model must be a multihead model with more than one head")
+
+    # Get index of head to keep
+    if head_to_keep is None:
+        # Find first non-PT head
+        try:
+            head_idx = next(i for i, h in enumerate(model.heads) if h != "pt_head")
+        except StopIteration as e:
+            raise ValueError("No non-PT head found in model") from e
+    else:
+        try:
+            head_idx = model.heads.index(head_to_keep)
+        except ValueError as e:
+            raise ValueError(f"Head {head_to_keep} not found in model") from e
+
+    # Extract config and modify for single head
+    model_config = extract_config_mace_model(model)
+    model_config["heads"] = [model.heads[head_idx]]
+    model_config["atomic_energies"] = (
+        model.atomic_energies_fn.atomic_energies[head_idx]
+        .unsqueeze(0)
+        .detach()
+        .cpu()
+        .numpy()
+    )
+    model_config["atomic_inter_scale"] = model.scale_shift.scale[head_idx].item()
+    model_config["atomic_inter_shift"] = model.scale_shift.shift[head_idx].item()
+    mlp_count_irreps = model_config["MLP_irreps"].count((0, 1))
+    # model_config["MLP_irreps"] = o3.Irreps(f"{mlp_count_irreps}x0e")
+
+    new_model = model.__class__(**model_config)
+    state_dict = model.state_dict()
+    new_state_dict = {}
+
+    for name, param in state_dict.items():
+        if "atomic_energies" in name:
+            new_state_dict[name] = param[head_idx : head_idx + 1]
+        elif "scale" in name or "shift" in name:
+            new_state_dict[name] = param[head_idx : head_idx + 1]
+        elif "readouts" in name:
+            channels_per_head = param.shape[0] // len(model.heads)
+            start_idx = head_idx * channels_per_head
+            end_idx = start_idx + channels_per_head
+            if "linear_2.weight" in name:
+                end_idx = start_idx + channels_per_head // 2
+            # if (
+            #     "readouts.0.linear.weight" in name
+            #     or "readouts.1.linear_2.weight" in name
+            # ):
+            #     new_state_dict[name] = param[start_idx:end_idx] / (
+            #         len(model.heads) ** 0.5
+            #     )
+            if "readouts.0.linear.weight" in name:
+                new_state_dict[name] = param.reshape(-1, len(model.heads))[
+                    :, head_idx
+                ].flatten()
+            elif "readouts.1.linear_1.weight" in name:
+                new_state_dict[name] = param.reshape(
+                    -1, len(model.heads), mlp_count_irreps
+                )[:, head_idx, :].flatten()
+            elif "readouts.1.linear_2.weight" in name:
+                new_state_dict[name] = param.reshape(
+                    len(model.heads), -1, len(model.heads)
+                )[head_idx, :, head_idx].flatten() / (len(model.heads) ** 0.5)
+            else:
+                new_state_dict[name] = param[start_idx:end_idx]
+
+        else:
+            new_state_dict[name] = param
+
+    # Load state dict into new model
+    new_model.load_state_dict(new_state_dict)
+
+    return new_model
 
 
 def extract_model(model: torch.nn.Module, map_location: str = "cpu") -> torch.nn.Module:
@@ -327,6 +557,9 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                 logging.info(f"Loading atomic energies from {E0s}")
                 with open(E0s, "r", encoding="utf-8") as f:
                     atomic_energies_dict = json.load(f)
+                    atomic_energies_dict = {
+                        int(key): value for key, value in atomic_energies_dict.items()
+                    }
             else:
                 try:
                     atomic_energies_eval = ast.literal_eval(E0s)
@@ -449,10 +682,11 @@ def get_swa(
     if args.start_swa is None:
         args.start_swa = max(1, args.max_num_epochs // 4 * 3)
     else:
-        if args.start_swa > args.max_num_epochs:
+        if args.start_swa >= args.max_num_epochs:
             logging.warning(
                 f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
             )
+            swas[-1] = False
     if args.loss == "forces_only":
         raise ValueError("Can not select Stage Two with forces only loss.")
     if args.loss == "virials":
@@ -619,22 +853,11 @@ def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
     ]
 
 
-def custom_key(key):
-    """
-    Helper function to sort the keys of the data loader dictionary
-    to ensure that the training set, and validation set
-    are evaluated first
-    """
-    if key == "train":
-        return (0, key)
-    if key == "valid":
-        return (1, key)
-    return (2, key)
-
-
 def dict_to_array(input_data, heads):
+    if all(isinstance(value, np.ndarray) for value in input_data.values()):
+        return np.array([input_data[head] for head in heads])
     if not all(isinstance(value, dict) for value in input_data.values()):
-        return np.array(list(input_data.values()))
+        return np.array([[input_data[head]] for head in heads])
     unique_keys = set()
     for inner_dict in input_data.values():
         unique_keys.update(inner_dict.keys())
@@ -646,7 +869,7 @@ def dict_to_array(input_data, heads):
             key_index = sorted_keys.index(int(key))
             head_index = heads.index(head_name)
             result_array[head_index][key_index] = value
-    return np.squeeze(result_array)
+    return result_array
 
 
 class LRScheduler:
@@ -684,227 +907,6 @@ class LRScheduler:
         return getattr(self.lr_scheduler, name)
 
 
-def create_error_table(
-    table_type: str,
-    all_data_loaders: dict,
-    model: torch.nn.Module,
-    loss_fn: torch.nn.Module,
-    output_args: Dict[str, bool],
-    log_wandb: bool,
-    device: str,
-    distributed: bool = False,
-) -> PrettyTable:
-    if log_wandb:
-        import wandb
-    table = PrettyTable()
-    if table_type == "TotalRMSE":
-        table.field_names = [
-            "config_type",
-            "RMSE E / meV",
-            "RMSE F / meV / A",
-            "relative F RMSE %",
-        ]
-    elif table_type == "PerAtomRMSE":
-        table.field_names = [
-            "config_type",
-            "RMSE E / meV / atom",
-            "RMSE F / meV / A",
-            "relative F RMSE %",
-        ]
-    elif table_type == "PerAtomRMSEstressvirials":
-        table.field_names = [
-            "config_type",
-            "RMSE E / meV / atom",
-            "RMSE F / meV / A",
-            "relative F RMSE %",
-            "RMSE Stress (Virials) / meV / A (A^3)",
-        ]
-    elif table_type == "PerAtomMAEstressvirials":
-        table.field_names = [
-            "config_type",
-            "MAE E / meV / atom",
-            "MAE F / meV / A",
-            "relative F MAE %",
-            "MAE Stress (Virials) / meV / A (A^3)",
-        ]
-    elif table_type == "TotalMAE":
-        table.field_names = [
-            "config_type",
-            "MAE E / meV",
-            "MAE F / meV / A",
-            "relative F MAE %",
-        ]
-    elif table_type == "PerAtomMAE":
-        table.field_names = [
-            "config_type",
-            "MAE E / meV / atom",
-            "MAE F / meV / A",
-            "relative F MAE %",
-        ]
-    elif table_type == "DipoleRMSE":
-        table.field_names = [
-            "config_type",
-            "RMSE MU / mDebye / atom",
-            "relative MU RMSE %",
-        ]
-    elif table_type == "DipoleMAE":
-        table.field_names = [
-            "config_type",
-            "MAE MU / mDebye / atom",
-            "relative MU MAE %",
-        ]
-    elif table_type == "EnergyDipoleRMSE":
-        table.field_names = [
-            "config_type",
-            "RMSE E / meV / atom",
-            "RMSE F / meV / A",
-            "rel F RMSE %",
-            "RMSE MU / mDebye / atom",
-            "rel MU RMSE %",
-        ]
-
-    for name in sorted(all_data_loaders, key=custom_key):
-        data_loader = all_data_loaders[name]
-        logging.info(f"Evaluating {name} ...")
-        _, metrics = evaluate(
-            model,
-            loss_fn=loss_fn,
-            data_loader=data_loader,
-            output_args=output_args,
-            device=device,
-        )
-        if distributed:
-            torch.distributed.barrier()
-
-        del data_loader
-        torch.cuda.empty_cache()
-        if log_wandb:
-            wandb_log_dict = {
-                name
-                + "_final_rmse_e_per_atom": metrics["rmse_e_per_atom"]
-                * 1e3,  # meV / atom
-                name + "_final_rmse_f": metrics["rmse_f"] * 1e3,  # meV / A
-                name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
-            }
-            wandb.log(wandb_log_dict)
-        if table_type == "TotalRMSE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.2f}",
-                ]
-            )
-        elif table_type == "PerAtomRMSE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.2f}",
-                ]
-            )
-        elif (
-            table_type == "PerAtomRMSEstressvirials"
-            and metrics["rmse_stress"] is not None
-        ):
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.2f}",
-                    f"{metrics['rmse_stress'] * 1000:8.1f}",
-                ]
-            )
-        elif (
-            table_type == "PerAtomRMSEstressvirials"
-            and metrics["rmse_virials"] is not None
-        ):
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.2f}",
-                    f"{metrics['rmse_virials'] * 1000:8.1f}",
-                ]
-            )
-        elif (
-            table_type == "PerAtomMAEstressvirials"
-            and metrics["mae_stress"] is not None
-        ):
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['mae_f'] * 1000:8.1f}",
-                    f"{metrics['rel_mae_f']:8.2f}",
-                    f"{metrics['mae_stress'] * 1000:8.1f}",
-                ]
-            )
-        elif (
-            table_type == "PerAtomMAEstressvirials"
-            and metrics["mae_virials"] is not None
-        ):
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['mae_f'] * 1000:8.1f}",
-                    f"{metrics['rel_mae_f']:8.2f}",
-                    f"{metrics['mae_virials'] * 1000:8.1f}",
-                ]
-            )
-        elif table_type == "TotalMAE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_e'] * 1000:8.1f}",
-                    f"{metrics['mae_f'] * 1000:8.1f}",
-                    f"{metrics['rel_mae_f']:8.2f}",
-                ]
-            )
-        elif table_type == "PerAtomMAE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['mae_f'] * 1000:8.1f}",
-                    f"{metrics['rel_mae_f']:8.2f}",
-                ]
-            )
-        elif table_type == "DipoleRMSE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_mu_per_atom'] * 1000:8.2f}",
-                    f"{metrics['rel_rmse_mu']:8.1f}",
-                ]
-            )
-        elif table_type == "DipoleMAE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['mae_mu_per_atom'] * 1000:8.2f}",
-                    f"{metrics['rel_mae_mu']:8.1f}",
-                ]
-            )
-        elif table_type == "EnergyDipoleRMSE":
-            table.add_row(
-                [
-                    name,
-                    f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rmse_f'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_f']:8.1f}",
-                    f"{metrics['rmse_mu_per_atom'] * 1000:8.1f}",
-                    f"{metrics['rel_rmse_mu']:8.1f}",
-                ]
-            )
-    return table
-
-
 def check_folder_subfolder(folder_path):
     entries = os.listdir(folder_path)
     for entry in entries:
@@ -912,6 +914,32 @@ def check_folder_subfolder(folder_path):
         if os.path.isdir(full_path):
             return True
     return False
+
+
+def check_path_ase_read(filename: str) -> str:
+    filepath = Path(filename)
+    if filepath.is_dir():
+        num_h5_files = len(list(filepath.glob("*.h5")))
+        num_hdf5_files = len(list(filepath.glob("*.hdf5")))
+        num_ldb_files = len(list(filepath.glob("*.lmdb")))
+        num_aselmbd_files = len(list(filepath.glob("*.aselmdb")))
+        num_mdb_files = len(list(filepath.glob("*.mdb")))
+        if (
+            num_h5_files
+            + num_hdf5_files
+            + num_ldb_files
+            + num_aselmbd_files
+            + num_mdb_files
+            == 0
+        ):
+            # print all the files in the directory extension in the directory for debugging
+            for file in os.listdir(filepath):
+                print(file)
+            raise RuntimeError(f"No supported files found in directory '{filename}'")
+        return False
+    if filepath.suffix in (".h5", ".hdf5", ".lmdb", ".aselmdb", ".mdb"):
+        return False
+    return True
 
 
 def dict_to_namespace(dictionary):

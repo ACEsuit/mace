@@ -66,7 +66,22 @@ def pool_compute_stats(inputs: List):
         pool.join()
 
     results = [r.get() for r in tqdm.tqdm(re)]
-    return np.average(results, axis=0)
+
+    if not results:
+        raise ValueError(
+            "No results were computed. Check if the input files exist and are readable."
+        )
+
+    # Separate avg_num_neighbors, mean, and std
+    avg_num_neighbors = np.mean([r[0] for r in results])
+    means = np.array([r[1] for r in results])
+    stds = np.array([r[2] for r in results])
+
+    # Compute averages
+    mean = np.mean(means, axis=0).item()
+    std = np.mean(stds, axis=0).item()
+
+    return avg_num_neighbors, mean, std
 
 
 def split_array(a: np.ndarray, max_size: int):
@@ -209,6 +224,17 @@ def run(args: argparse.Namespace):
         logging.info("Computing statistics")
         if len(atomic_energies_dict) == 0:
             atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
+
+        # Remove atomic energies if element not in z_table
+        removed_atomic_energies = {}
+        for z in list(atomic_energies_dict):
+            if z not in z_table.zs:
+                removed_atomic_energies[z] = atomic_energies_dict.pop(z)
+        if len(removed_atomic_energies) > 0:
+            logging.warning("Atomic energies for elements not present in the atomic number table have been removed.")
+            logging.warning(f"Removed atomic energies (eV): {str(removed_atomic_energies)}")
+            logging.warning("To include these elements in the model, specify all atomic numbers explicitly using the --atomic_numbers argument.")
+
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
@@ -225,7 +251,7 @@ def run(args: argparse.Namespace):
             "avg_num_neighbors": avg_num_neighbors,
             "mean": mean,
             "std": std,
-            "atomic_numbers": str(z_table.zs),
+            "atomic_numbers": str([int(z) for z in z_table.zs]),
             "r_max": args.r_max,
         }
 

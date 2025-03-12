@@ -3,6 +3,7 @@ import dataclasses
 import logging
 import os
 import urllib.request
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -18,8 +19,8 @@ from mace.tools.scripts_utils import (
 @dataclasses.dataclass
 class HeadConfig:
     head_name: str
-    train_file: Optional[str] = None
-    valid_file: Optional[str] = None
+    train_file: Optional[Union[str, List[str]]] = None
+    valid_file: Optional[Union[str, List[str]]] = None
     test_file: Optional[str] = None
     test_dir: Optional[str] = None
     E0s: Optional[Any] = None
@@ -47,6 +48,7 @@ class HeadConfig:
 def dict_head_to_dataclass(
     head: Dict[str, Any], head_name: str, args: argparse.Namespace
 ) -> HeadConfig:
+    r"""Convert head dictionary to HeadConfig dataclass."""
 
     return HeadConfig(
         head_name=head_name,
@@ -76,6 +78,7 @@ def dict_head_to_dataclass(
 
 
 def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
+    r"""Prepare a default head from args."""
     return {
         "default": {
             "train_file": args.train_file,
@@ -100,10 +103,13 @@ def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
 def assemble_mp_data(
     args: argparse.Namespace, tag: str, head_configs: List[HeadConfig]
 ) -> Dict[str, Any]:
+    r"""Assemble Materials Project data for fine-tuning."""
     try:
         checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mp_traj_combined.xyz"
         descriptors_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/descriptors.npy"
-        cache_dir = os.path.expanduser("~/.cache/mace")
+        cache_dir = (
+            Path(os.environ.get("XDG_CACHE_HOME", "~/")).expanduser() / ".cache/mace"
+        )
         checkpoint_url_name = "".join(
             c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
         )
@@ -142,7 +148,15 @@ def assemble_mp_data(
         logging.info(msg)
         msg = f"Using Materials Project descriptors with {descriptors_mp}"
         logging.info(msg)
-        config_pt_paths = [head.train_file for head in head_configs]
+
+        # Use the first file if train_file is a list
+        config_pt_paths = []
+        for head in head_configs:
+            if isinstance(head.train_file, list):
+                config_pt_paths.append(head.train_file[0])
+            else:
+                config_pt_paths.append(head.train_file)
+
         args_samples = {
             "configs_pt": dataset_mp,
             "configs_ft": config_pt_paths,

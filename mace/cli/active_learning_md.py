@@ -14,7 +14,9 @@ from mace.calculators.mace import MACECalculator
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--config", help="path to XYZ configurations", required=True)
     parser.add_argument(
         "--config_index", help="index of configuration", type=int, default=-1
@@ -149,8 +151,8 @@ def run(args: argparse.Namespace) -> None:
     atoms_index = args.config_index
 
     mace_calc = MACECalculator(
-        mace_fname,
-        args.device,
+        model_paths=mace_fname,
+        device=args.device,
         default_dtype=args.default_dtype,
     )
 

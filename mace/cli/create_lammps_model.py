@@ -1,4 +1,8 @@
+# pylint: disable=wrong-import-position
 import argparse
+import os
+
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import torch
 from e3nn.util import jit
@@ -7,7 +11,9 @@ from mace.calculators import LAMMPS_MACE
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument(
         "model_path",
         type=str,
@@ -19,6 +25,13 @@ def parse_args():
         nargs="?",
         help="Head of the model to be converted to LAMMPS",
         default=None,
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        nargs="?",
+        help="Data type of the model to be converted to LAMMPS",
+        default="float64",
     )
     return parser.parse_args()
 
@@ -54,8 +67,15 @@ def select_head(model):
 def main():
     args = parse_args()
     model_path = args.model_path  # takes model name as command-line input
-    model = torch.load(model_path)
-    model = model.double().to("cpu")
+    model = torch.load(
+        model_path,
+        map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    )
+    if args.dtype == "float64":
+        model = model.double().to("cpu")
+    elif args.dtype == "float32":
+        print("Converting model to float32, this may cause loss of precision.")
+        model = model.float().to("cpu")
 
     if args.head is None:
         head = select_head(model)
