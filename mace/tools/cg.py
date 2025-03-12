@@ -6,6 +6,7 @@
 
 import collections
 import itertools
+import os
 from typing import Iterator, List, Union
 
 import numpy as np
@@ -18,6 +19,8 @@ try:
     CUET_AVAILABLE = True
 except ImportError:
     CUET_AVAILABLE = False
+
+USE_CUEQ_CG = os.environ.get("MACE_USE_CUEQ_CG", "0").lower() in ("1", "true", "yes", "y")
 
 _TP = collections.namedtuple("_TP", "op, args")
 _INPUT = collections.namedtuple("_INPUT", "tensor, start, stop")
@@ -102,7 +105,7 @@ def U_matrix_real(
     normalization: str = "component",
     filter_ir_mid=None,
     dtype=None,
-    use_cueq_cg=False,
+    use_cueq_cg=None,
 ):
     irreps_out = o3.Irreps(irreps_out)
     irrepss = [o3.Irreps(irreps_in)] * correlation
@@ -110,6 +113,8 @@ def U_matrix_real(
     if correlation == 4:
         filter_ir_mid = [(i, 1 if i % 2 == 0 else -1) for i in range(12)]
 
+    if use_cueq_cg is None:
+        use_cueq_cg = USE_CUEQ_CG
     if use_cueq_cg and CUET_AVAILABLE:
         return compute_U_cueq(irreps_in, irreps_out=irreps_out, correlation=correlation)
 
