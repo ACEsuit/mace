@@ -15,7 +15,6 @@ from e3nn import o3
 
 try:
     import cuequivariance as cue
-
     CUET_AVAILABLE = True
 except ImportError:
     CUET_AVAILABLE = False
@@ -196,6 +195,8 @@ if CUET_AVAILABLE:
                 yield O3_e3nn(l=l, p=1 * (-1) ** l)
                 yield O3_e3nn(l=l, p=-1 * (-1) ** l)
 else:
+    class O3_e3nn:
+        pass
     print(
         "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
     )
