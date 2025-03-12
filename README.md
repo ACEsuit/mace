@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/License-MIT%202.0-blue.svg)](https://opensource.org/licenses/mit)
 [![GitHub issues](https://img.shields.io/github/issues/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/issues/)
 [![Documentation Status](https://readthedocs.org/projects/mace/badge/)](https://mace-docs.readthedocs.io/en/latest/)
+[![DOI](https://zenodo.org/badge/505964914.svg)](https://doi.org/10.5281/zenodo.14103332)
 
 ## Table of contents
 
@@ -19,6 +20,7 @@
     - [Training](#training)
     - [Evaluation](#evaluation)
   - [Tutorials](#tutorials)
+  - [CUDA acceleration with cuEquivariance](#cuda-acceleration-with-cuequivariance)
   - [Weights and Biases for experiment tracking](#weights-and-biases-for-experiment-tracking)
   - [Pretrained Foundation Models](#pretrained-foundation-models)
     - [MACE-MP: Materials Project Force Fields](#mace-mp-materials-project-force-fields)
@@ -26,6 +28,8 @@
     - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
       - [Example usage in ASE](#example-usage-in-ase-1)
     - [Finetuning foundation models](#finetuning-foundation-models)
+    - [Latest recommended foundation models](#latest-recommended-foundation-models)
+  - [Caching](#caching)
   - [Development](#development)
   - [References](#references)
   - [Contact](#contact)
@@ -57,7 +61,7 @@ A partial documentation is available at: https://mace-docs.readthedocs.io
 **Make sure to install PyTorch.** Please refer to the [official PyTorch installation](https://pytorch.org/get-started/locally/) for the installation instructions. Select the appropriate options for your system.
 
 ### Installation from PyPI
-This is the recommended way to install MACE. 
+This is the recommended way to install MACE.
 
 ```sh
 pip install --upgrade pip
@@ -96,8 +100,8 @@ mace_run_train \
     --r_max=5.0 \
     --batch_size=10 \
     --max_num_epochs=1500 \
-    --swa \
-    --start_swa=1200 \
+    --stage_two \
+    --start_stage_two=1200 \
     --ema \
     --ema_decay=0.99 \
     --amsgrad \
@@ -107,17 +111,19 @@ mace_run_train \
 
 To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`.
 
-To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys. 
+To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys.
 
 It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression.
 
-If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs). This setting usually helps lower the energy errors.
+If the keyword `--stage_two` (previously called swa) is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_stage_two` epochs). This setting usually helps lower the energy errors.
 
 The precision can be changed using the keyword `--default_dtype`, the default is `float64` but `float32` gives a significant speed-up (usually a factor of x2 in training).
 
 The keywords `--batch_size` and `--max_num_epochs` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $\text{max-num-epochs}*\frac{\text{num-configs-training}}{\text{batch-size}}$.
 
 The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules. In this example, to make the code ignore stress on molecules, append to your molecules configuration a `config_stress_weight = 0.0`.
+
+By default, a figure displaying the progression of loss and RMSEs during training, along with a scatter plot of the model's inferences on the train, validation, and test sets, will be generated in the results folder at the end of training. This can be disabled using `--plot False`. To track these metrics throughout training (excluding inference on the test set), you can enable periodic plotting for the train and validation sets by specifying `--plot_frequency N`, which updates the plots every Nth epoch.
 
 #### Apple Silicon GPU acceleration
 
@@ -135,8 +141,8 @@ Option to parse all or some arguments using a YAML is available. For example, to
 name: nacl
 seed: 2024
 train_file: train.xyz
-swa: yes
-start_swa: 1200
+stage_two: yes
+start_stage_two: 1200
 max_num_epochs: 1500
 device: cpu
 test_file: test.xyz
@@ -170,6 +176,9 @@ We also have a more detailed Colab tutorials on:
  - [Introduction to MACE active learning and fine-tuning](https://colab.research.google.com/drive/1oCSVfMhWrqHTeHbKgUSQN9hTKxLzoNyb)
  - [MACE theory and code (advanced)](https://colab.research.google.com/drive/1AlfjQETV_jZ0JQnV5M3FGwAM2SGCl2aU)
 
+## CUDA acceleration with cuEquivariance
+
+MACE supports CUDA acceleration with the cuEquivariance library. To install the library and use the acceleration, see our documentation at https://mace-docs.readthedocs.io/en/latest/guide/cuda_acceleration.html.
 
 ## On-line data loading for large datasets
 
@@ -207,8 +216,8 @@ python ./mace/scripts/run_train.py \
     --batch_size=32 \
     --valid_batch_size=32 \
     --max_num_epochs=100 \
-    --swa \
-    --start_swa=60 \
+    --stage_two \
+    --start_stage_two=60 \
     --ema \
     --ema_decay=0.99 \
     --amsgrad \
@@ -267,6 +276,15 @@ atoms.calc = calc
 print(atoms.get_potential_energy())
 ```
 
+### Latest Recommended Foundation Models
+
+| Model Name        | Elements Covered | Training Dataset | Level of Theory       | Target System         | Model Size          | GitHub Release | Notes                                                | License |
+|-------------------|------------------|------------------|-----------------------|----------------------|---------------------|----------------|-------------------------------------------------------|---------|
+| MACE-MP-0         | 89               | MPTrj            | DFT (PBE+U)           | Materials            | [small](https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model), [medium](https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model), [large](https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2024-01-07-mace-128-L2_epoch-199.model)| >=v0.3.6       | Initial release of foundation model.                          | MIT |
+| MACE-MPA-0        | 89               | MPTrj + sAlex    | DFT (PBE+U)           | Materials            | [medium-mpa-0](https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model)              | >=v0.3.10      | Improved accuracy for materials, improved high pressure stability. | MIT |
+| MACE-OMAT-0        | 89               | OMAT         | DFT (PBE+U) VASP 54        | Materials    | [medium-omat-0](https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model) | >=v0.3.10       |             | ASL |
+| MACE-OFF23        | 10               | SPICE v1         | DFT (wB97M+D3)        | Organic Chemistry    | [small](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model), [medium](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model), [large](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model)| >=v0.3.6       | Initial release covering neutral organic chemistry.              | ASL |
+
 ### Finetuning foundation models
 
 To finetune one of the mace-mp-0 foundation model, you can use the `mace_run_train` script with the extra argument `--foundation_model=model_type`. For example to finetune the small model on a new dataset, you can use:
@@ -290,10 +308,15 @@ mace_run_train \
   --amsgrad \
   --default_dtype="float32" \
   --device=cuda \
-  --seed=3 
+  --seed=3
 ```
-Other options are "medium" and "large", or the path to a foundation model. 
+Other options are "medium" and "large", or the path to a foundation model.
 If you want to finetune another model, the model will be loaded from the path provided `--foundation_model=$path_model`, but you will need to provide the full set of hyperparameters (hidden irreps, r_max, etc.) matching the model.
+
+## Caching
+
+By default automatically downloaded models, like mace_mp, mace_off and data for fine tuning, end up in `~/.cache/mace`. The path can be changed by using
+the environment variable XDG_CACHE_HOME. When set, the new cache path expands to $XDG_CACHE_HOME/.cache/mace
 
 ## Development
 
@@ -315,7 +338,7 @@ We are happy to accept pull requests under an [MIT license](https://choosealicen
 
 If you use this code, please cite our papers:
 
-```text
+```bibtex
 @inproceedings{Batatia2022mace,
   title={{MACE}: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields},
   author={Ilyes Batatia and David Peter Kovacs and Gregor N. C. Simm and Christoph Ortner and Gabor Csanyi},

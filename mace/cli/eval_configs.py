@@ -16,7 +16,9 @@ from mace.tools import torch_geometric, torch_tools, utils
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--configs", help="path to XYZ configurations", required=True)
     parser.add_argument("--model", help="path to model", required=True)
     parser.add_argument("--output", help="output path", required=True)
@@ -58,7 +60,7 @@ def parse_args() -> argparse.Namespace:
         help="Model head used for evaluation",
         type=str,
         required=False,
-        default=None
+        default=None,
     )
     return parser.parse_args()
 
@@ -94,7 +96,7 @@ def run(args: argparse.Namespace) -> None:
         heads = model.heads
     except AttributeError:
         heads = None
-        
+
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
             data.AtomicData.from_config(

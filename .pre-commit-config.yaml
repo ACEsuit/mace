@@ -37,6 +37,7 @@ repos:
         args: [
           '--disable=line-too-long',
           '--disable=no-member',
+          '--disable=no-else-return',
           '--disable=missing-module-docstring',
           '--disable=missing-class-docstring',
           '--disable=missing-function-docstring',
@@ -55,5 +56,6 @@ repos:
           '--disable=cell-var-from-loop',
           '--disable=duplicate-code',
           '--disable=use-dict-literal',
+          '--max-module-lines=1500',
         ]
         exclude: *exclude_files

@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
+from torch.utils.data import DataLoader
 
 from mace.data import AtomicData
 from mace.modules.radial import ZBLBasis
@@ -36,10 +37,8 @@ from .utils import (
     get_huber_mask,
     get_outputs,
     get_symmetric_displacement,
-    
 )
 
-from torch.utils.data import DataLoader
 # pylint: disable=C0302
 
 
@@ -67,6 +66,7 @@ class MACE(torch.nn.Module):
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -87,7 +87,9 @@ class MACE(torch.nn.Module):
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
         self.node_embedding = LinearNodeEmbeddingBlock(
-            irreps_in=node_attr_irreps, irreps_out=node_feats_irreps
+            irreps_in=node_attr_irreps,
+            irreps_out=node_feats_irreps,
+            cueq_config=cueq_config,
         )
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
@@ -98,7 +100,7 @@ class MACE(torch.nn.Module):
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
-            self.pair_repulsion_fn = ZBLBasis(r_max=r_max, p=num_polynomial_cutoff)
+            self.pair_repulsion_fn = ZBLBasis(p=num_polynomial_cutoff)
             self.pair_repulsion = True
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
@@ -121,6 +123,7 @@ class MACE(torch.nn.Module):
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
+            cueq_config=cueq_config,
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -136,12 +139,15 @@ class MACE(torch.nn.Module):
             correlation=correlation[0],
             num_elements=num_elements,
             use_sc=use_sc_first,
+            cueq_config=cueq_config,
         )
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
         self.readouts.append(
-            LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
+            LinearReadoutBlock(
+                hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+            )
         )
 
         for i in range(num_interactions - 1):
@@ -160,6 +166,7 @@ class MACE(torch.nn.Module):
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
                 radial_MLP=radial_MLP,
+                cueq_config=cueq_config,
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(
@@ -168,6 +175,7 @@ class MACE(torch.nn.Module):
                 correlation=correlation[i + 1],
                 num_elements=num_elements,
                 use_sc=True,
+                cueq_config=cueq_config,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
@@ -178,11 +186,14 @@ class MACE(torch.nn.Module):
                         gate,
                         o3.Irreps(f"{len(heads)}x0e"),
                         len(heads),
+                        cueq_config,
                     )
                 )
             else:
                 self.readouts.append(
-                    LinearReadoutBlock(hidden_irreps, o3.Irreps(f"{len(heads)}x0e"))
+                    LinearReadoutBlock(
+                        hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+                    )
                 )
 
     def forward(
@@ -490,6 +501,7 @@ class BOTNet(torch.nn.Module):
         gate: Optional[Callable],
         avg_num_neighbors: float,
         atomic_numbers: List[int],
+        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.r_max = r_max
@@ -694,6 +706,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         ],  # Just here to make it compatible with energy models, MUST be None
         radial_type: Optional[str] = "bessel",
         radial_MLP: Optional[List[int]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
@@ -895,6 +908,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         gate: Optional[Callable],
         atomic_energies: Optional[np.ndarray],
         radial_MLP: Optional[List[int]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
@@ -1146,32 +1160,42 @@ class LLPRModel(torch.nn.Module):
         for readout in self.orig_model.readouts.children():
             if readout_is_linear(readout):
                 self.readouts_are_linear.append(True)
-                cur_size_before_readout = sum(irrep.dim for irrep in o3.Irreps(readout.linear.irreps_in))
+                cur_size_before_readout = sum(
+                    irrep.dim for irrep in o3.Irreps(readout.linear.irreps_in)
+                )
                 self.hidden_sizes_before_readout.append(cur_size_before_readout)
                 cur_size = o3.Irreps(readout.linear.irreps_in)[0].dim
                 self.hidden_sizes.append(cur_size)
                 self.hidden_size_sum += cur_size
             elif readout_is_nonlinear(readout):
                 self.readouts_are_linear.append(False)
-                cur_size_before_readout = sum(irrep.dim for irrep in o3.Irreps(readout.linear_1.irreps_in))
+                cur_size_before_readout = sum(
+                    irrep.dim for irrep in o3.Irreps(readout.linear_1.irreps_in)
+                )
                 self.hidden_sizes_before_readout.append(cur_size_before_readout)
                 cur_size = o3.Irreps(readout.linear_2.irreps_in).dim
                 self.hidden_sizes.append(cur_size)
                 self.hidden_size_sum += cur_size
             else:
-                raise TypeError("Unknown readout block type for LLPR at initialization!")
+                raise TypeError(
+                    "Unknown readout block type for LLPR at initialization!"
+                )
 
         # initialize (inv_)covariance matrices
-        self.register_buffer("covariance",
-                             torch.zeros((self.hidden_size_sum, self.hidden_size_sum),
-                                         device=next(self.orig_model.parameters()).device
-                                         )
-                             )
-        self.register_buffer("inv_covariance",
-                             torch.zeros((self.hidden_size_sum, self.hidden_size_sum),
-                                         device=next(self.orig_model.parameters()).device
-                                         )
-                             )
+        self.register_buffer(
+            "covariance",
+            torch.zeros(
+                (self.hidden_size_sum, self.hidden_size_sum),
+                device=next(self.orig_model.parameters()).device,
+            ),
+        )
+        self.register_buffer(
+            "inv_covariance",
+            torch.zeros(
+                (self.hidden_size_sum, self.hidden_size_sum),
+                device=next(self.orig_model.parameters()).device,
+            ),
+        )
 
         # extra params associated with LLPR
         self.ll_feat_format = ll_feat_format
@@ -1192,25 +1216,46 @@ class LLPRModel(torch.nn.Module):
         compute_stress_uncertainty: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         if compute_force_uncertainty and not compute_force:
-            raise RuntimeError("Cannot compute force uncertainty without computing forces")
+            raise RuntimeError(
+                "Cannot compute force uncertainty without computing forces"
+            )
         if compute_virial_uncertainty and not compute_virials:
-            raise RuntimeError("Cannot compute virial uncertainty without computing virials")
+            raise RuntimeError(
+                "Cannot compute virial uncertainty without computing virials"
+            )
         if compute_stress_uncertainty and not compute_stress:
-            raise RuntimeError("Cannot compute stress uncertainty without computing stress")
+            raise RuntimeError(
+                "Cannot compute stress uncertainty without computing stress"
+            )
 
         num_graphs = data["ptr"].numel() - 1
 
         output = self.orig_model(
-            data, (compute_force_uncertainty or compute_stress_uncertainty or compute_virial_uncertainty), compute_force, compute_virials, compute_stress, compute_displacement
+            data,
+            (
+                compute_force_uncertainty
+                or compute_stress_uncertainty
+                or compute_virial_uncertainty
+            ),
+            compute_force,
+            compute_virials,
+            compute_stress,
+            compute_displacement,
         )
-        ll_feats = self.aggregate_ll_features(output["node_feats"], data["batch"], num_graphs)
+        ll_feats = self.aggregate_ll_features(
+            output["node_feats"], data["batch"], num_graphs
+        )
 
         energy_uncertainty = None
         force_uncertainty = None
         virial_uncertainty = None
         stress_uncertainty = None
         if self.inv_covariance_computed:
-            if compute_force_uncertainty or compute_virial_uncertainty or compute_stress_uncertainty:
+            if (
+                compute_force_uncertainty
+                or compute_virial_uncertainty
+                or compute_stress_uncertainty
+            ):
                 f_grads, v_grads, s_grads = compute_ll_feat_gradients(
                     ll_feats=ll_feats,
                     displacement=output["displacement"],
@@ -1223,29 +1268,21 @@ class LLPRModel(torch.nn.Module):
                 f_grads, v_grads, s_grads = None, None, None
             ll_feats = ll_feats.detach()
             if compute_energy_uncertainty:
-                energy_uncertainty = torch.einsum("ij, jk, ik -> i",
-                                        ll_feats,
-                                        self.inv_covariance,
-                                        ll_feats
-                                        )
+                energy_uncertainty = torch.einsum(
+                    "ij, jk, ik -> i", ll_feats, self.inv_covariance, ll_feats
+                )
             if compute_force_uncertainty:
-                force_uncertainty = torch.einsum("iaj, jk, iak -> ia",
-                                        f_grads,
-                                        self.inv_covariance,
-                                        f_grads
-                                        )
+                force_uncertainty = torch.einsum(
+                    "iaj, jk, iak -> ia", f_grads, self.inv_covariance, f_grads
+                )
             if compute_virial_uncertainty:
-                virial_uncertainty = torch.einsum("iabj, jk, iabk -> iab",
-                                        v_grads,
-                                        self.inv_covariance,
-                                        v_grads
-                                        )
+                virial_uncertainty = torch.einsum(
+                    "iabj, jk, iabk -> iab", v_grads, self.inv_covariance, v_grads
+                )
             if compute_stress_uncertainty:
-                stress_uncertainty = torch.einsum("iabj, jk, iabk -> iab",
-                                        s_grads,
-                                        self.inv_covariance,
-                                        s_grads
-                                        )
+                stress_uncertainty = torch.einsum(
+                    "iabj, jk, iabk -> iab", s_grads, self.inv_covariance, s_grads
+                )
 
         output["energy_uncertainty"] = energy_uncertainty
         output["force_uncertainty"] = force_uncertainty
@@ -1255,14 +1292,23 @@ class LLPRModel(torch.nn.Module):
         return output
 
     def aggregate_ll_features(
-            self,
-            ll_feats: torch.Tensor,
-            indices: torch.Tensor,
-            num_graphs: int
+        self, ll_feats: torch.Tensor, indices: torch.Tensor, num_graphs: int
     ) -> torch.Tensor:
         # Aggregates (sums) node features over each structure
         ll_feats_list = torch.split(ll_feats, self.hidden_sizes_before_readout, dim=-1)
-        ll_feats_list = [(ll_feats if is_linear else readout.non_linearity(readout.linear_1(ll_feats)))[:, :size] for ll_feats, readout, size, is_linear in zip(ll_feats_list, self.orig_model.readouts.children(), self.hidden_sizes, self.readouts_are_linear)]
+        ll_feats_list = [
+            (
+                ll_feats
+                if is_linear
+                else readout.non_linearity(readout.linear_1(ll_feats))
+            )[:, :size]
+            for ll_feats, readout, size, is_linear in zip(
+                ll_feats_list,
+                self.orig_model.readouts.children(),
+                self.hidden_sizes,
+                self.readouts_are_linear,
+            )
+        ]
 
         # Aggregate node features
         ll_feats_cat = torch.cat(ll_feats_list, dim=-1)
@@ -1290,15 +1336,21 @@ class LLPRModel(torch.nn.Module):
             output = self.orig_model(
                 batch_dict,
                 training=(include_forces or include_virials or include_stresses),
-                compute_force=(is_universal and include_forces),  # we need this for the Huber loss force mask
+                compute_force=(
+                    is_universal and include_forces
+                ),  # we need this for the Huber loss force mask
                 compute_virials=False,
-                compute_stress=(is_universal and include_stresses),  # we need this for the Huber loss force mask
+                compute_stress=(
+                    is_universal and include_stresses
+                ),  # we need this for the Huber loss force mask
                 compute_displacement=(include_virials or include_stresses),
             )
 
             num_graphs = batch_dict["ptr"].numel() - 1
             num_atoms = batch_dict["ptr"][1:] - batch_dict["ptr"][:-1]
-            ll_feats = self.aggregate_ll_features(output["node_feats"], batch_dict["batch"], num_graphs)
+            ll_feats = self.aggregate_ll_features(
+                output["node_feats"], batch_dict["batch"], num_graphs
+            )
 
             if include_forces or include_virials or include_stresses:
                 f_grads, v_grads, s_grads = compute_ll_feat_gradients(
@@ -1324,14 +1376,18 @@ class LLPRModel(torch.nn.Module):
                         huber_delta,
                     )
                     cur_weights = torch.mul(cur_weights, huber_mask)
-                ll_feats = torch.mul(ll_feats, cur_weights.unsqueeze(-1)**(0.5))
-                self.covariance += (ll_feats / num_atoms.unsqueeze(-1)).T @ (ll_feats / num_atoms.unsqueeze(-1))
+                ll_feats = torch.mul(ll_feats, cur_weights.unsqueeze(-1) ** (0.5))
+                self.covariance += (ll_feats / num_atoms.unsqueeze(-1)).T @ (
+                    ll_feats / num_atoms.unsqueeze(-1)
+                )
 
             if include_forces:
                 # Account for the weighting of structures and targets
                 # Apply Huber loss mask if universal model
                 f_conf_weights = torch.stack([batch.weight[ii] for ii in batch.batch])
-                f_forces_weights = torch.stack([batch.forces_weight[ii] for ii in batch.batch])
+                f_forces_weights = torch.stack(
+                    [batch.forces_weight[ii] for ii in batch.batch]
+                )
                 cur_f_weights = torch.mul(f_conf_weights, f_forces_weights)
                 cur_f_weights = cur_f_weights.view(-1, 1).expand(-1, 3)
                 if is_universal:
@@ -1341,22 +1397,22 @@ class LLPRModel(torch.nn.Module):
                         huber_delta,
                     )
                     cur_f_weights = torch.mul(cur_f_weights, huber_mask_force)
-                f_grads = torch.mul(f_grads, cur_f_weights.unsqueeze(-1)**(0.5))
+                f_grads = torch.mul(f_grads, cur_f_weights.unsqueeze(-1) ** (0.5))
                 f_grads = f_grads.reshape(-1, ll_feats.shape[-1])
                 self.covariance += f_grads.T @ f_grads
 
             if include_virials:
                 # No Huber mask in the case of virials as it was not used in the
-                # universal model                
+                # universal model
                 cur_v_weights = torch.mul(batch.weight, batch.virials_weight)
                 cur_v_weights = cur_v_weights.view(-1, 1, 1).expand(-1, 3, 3)
-                v_grads = torch.mul(v_grads, cur_v_weights.unsqueeze(-1)**(0.5))
+                v_grads = torch.mul(v_grads, cur_v_weights.unsqueeze(-1) ** (0.5))
                 v_grads = v_grads.reshape(-1, ll_feats.shape[-1])
                 self.covariance += v_grads.T @ v_grads
 
             if include_stresses:
                 # Account for the weighting of structures and targets
-                # Apply Huber loss mask if universal model                
+                # Apply Huber loss mask if universal model
                 cur_s_weights = torch.mul(batch.weight, batch.stress_weight)
                 cur_s_weights = cur_s_weights.view(-1, 1, 1).expand(-1, 3, 3)
                 if is_universal:
@@ -1366,7 +1422,7 @@ class LLPRModel(torch.nn.Module):
                         huber_delta,
                     )
                     cur_s_weights = torch.mul(cur_s_weights, huber_mask_stress)
-                s_grads = torch.mul(s_grads, cur_s_weights.unsqueeze(-1)**(0.5))
+                s_grads = torch.mul(s_grads, cur_s_weights.unsqueeze(-1) ** (0.5))
                 s_grads = s_grads.reshape(-1, ll_feats.shape[-1])
                 # The stresses seem to be normalized by n_atoms in the normal loss, but
                 # not in the universal loss.
@@ -1374,25 +1430,33 @@ class LLPRModel(torch.nn.Module):
                     self.covariance += s_grads.T @ s_grads
                 else:
                     # repeat num_atoms for 9 elements of stress tensor
-                    self.covariance += (s_grads / num_atoms.repeat_interleave(9).unsqueeze(-1)).T \
-                        @ (s_grads / num_atoms.repeat_interleave(9).unsqueeze(-1))
+                    self.covariance += (
+                        s_grads / num_atoms.repeat_interleave(9).unsqueeze(-1)
+                    ).T @ (s_grads / num_atoms.repeat_interleave(9).unsqueeze(-1))
 
         self.covariance_computed = True
 
     def compute_inv_covariance(self, C: float, sigma: float) -> None:
         # Utility function to set the hyperparameters of the uncertainty model.
         if not self.covariance_computed:
-            raise RuntimeError("You must compute the covariance matrix before "
-                               "computing the inverse covariance matrix!")
-        self.inv_covariance = C * torch.linalg.inv(
-            self.covariance + sigma**2 * torch.eye(self.hidden_size_sum, device=self.covariance.device)
+            raise RuntimeError(
+                "You must compute the covariance matrix before "
+                "computing the inverse covariance matrix!"
             )
+        self.inv_covariance[:] = C * torch.linalg.inv(
+            self.covariance
+            + sigma**2 * torch.eye(self.hidden_size_sum, device=self.covariance.device)
+        )
         self.inv_covariance_computed = True
 
     def reset_matrices(self) -> None:
         # Utility function to reset covariance and inv covariance matrices.
-        self.covariance = torch.zeros(self.covariance.shape, device=self.covariance.device)
-        self.inv_covariance = torch.zeros(self.covariance.shape, device=self.covariance.device)
+        self.covariance[:] = torch.zeros(
+            self.covariance.shape, device=self.covariance.device
+        )
+        self.inv_covariance[:] = torch.zeros(
+            self.covariance.shape, device=self.covariance.device
+        )
         self.covariance_computed = False
         self.inv_covariance_computed = False
         self.covariance_gradients_computed = False

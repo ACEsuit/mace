@@ -15,6 +15,8 @@ from .blocks import (
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     RealAgnosticAttResidualInteractionBlock,
+    RealAgnosticDensityInteractionBlock,
+    RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
     ResidualElementDependentInteractionBlock,
@@ -35,9 +37,9 @@ from .models import (
     AtomicDipolesMACE,
     BOTNet,
     EnergyDipolesMACE,
+    LLPRModel,
     ScaleShiftBOTNet,
     ScaleShiftMACE,
-    LLPRModel,
 )
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
@@ -57,6 +59,8 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticResidualInteractionBlock": RealAgnosticResidualInteractionBlock,
     "RealAgnosticAttResidualInteractionBlock": RealAgnosticAttResidualInteractionBlock,
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
+    "RealAgnosticDensityInteractionBlock": RealAgnosticDensityInteractionBlock,
+    "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
 }
 
 scaling_classes: Dict[str, Callable] = {

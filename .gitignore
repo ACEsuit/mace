@@ -34,4 +34,6 @@ dist/
 /checkpoints
 *.model
 
-.history
+.benchmarks
+*.db
+*.png

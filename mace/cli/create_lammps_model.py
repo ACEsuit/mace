@@ -1,4 +1,8 @@
+# pylint: disable=wrong-import-position
 import argparse
+import os
+
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import torch
 from e3nn.util import jit
@@ -7,7 +11,9 @@ from mace.calculators import LAMMPS_MACE
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument(
         "model_path",
         type=str,
