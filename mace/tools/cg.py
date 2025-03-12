@@ -148,49 +148,54 @@ def U_matrix_real(
     return out
 
 
-def compute_U_cueq(irreps_in, irreps_out, correlation=2):
-    U = []
-    irreps_in = cue.Irreps(O3_e3nn, str(irreps_in))
-    irreps_out = cue.Irreps(O3_e3nn, str(irreps_out))
-    for _, ir in irreps_out:
-        ir_str = str(ir)
-        U.append(ir_str)
-        U_matrix = cue.reduced_symmetric_tensor_product_basis(
-            irreps_in, correlation, keep_ir=ir, layout=cue.ir_mul
-        ).array
-        U_matrix = U_matrix.reshape(ir.dim, *([irreps_in.dim] * correlation), -1)
-        if ir.dim == 1:
-            U_matrix = U_matrix[0]
-        U.append(torch.tensor(U_matrix))
-    return U
+if CUET_AVAILABLE:
+    def compute_U_cueq(irreps_in, irreps_out, correlation=2):
+        U = []
+        irreps_in = cue.Irreps(O3_e3nn, str(irreps_in))
+        irreps_out = cue.Irreps(O3_e3nn, str(irreps_out))
+        for _, ir in irreps_out:
+            ir_str = str(ir)
+            U.append(ir_str)
+            U_matrix = cue.reduced_symmetric_tensor_product_basis(
+                irreps_in, correlation, keep_ir=ir, layout=cue.ir_mul
+            ).array
+            U_matrix = U_matrix.reshape(ir.dim, *([irreps_in.dim] * correlation), -1)
+            if ir.dim == 1:
+                U_matrix = U_matrix[0]
+            U.append(torch.tensor(U_matrix))
+        return U
 
 
-class O3_e3nn(cue.O3):
-    def __mul__(  # pylint: disable=no-self-argument
-        rep1: "O3_e3nn", rep2: "O3_e3nn"
-    ) -> Iterator["O3_e3nn"]:
-        return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
+    class O3_e3nn(cue.O3):
+        def __mul__(  # pylint: disable=no-self-argument
+            rep1: "O3_e3nn", rep2: "O3_e3nn"
+        ) -> Iterator["O3_e3nn"]:
+            return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
 
-    @classmethod
-    def clebsch_gordan(
-        cls, rep1: "O3_e3nn", rep2: "O3_e3nn", rep3: "O3_e3nn"
-    ) -> np.ndarray:
-        rep1, rep2, rep3 = cls._from(rep1), cls._from(rep2), cls._from(rep3)
+        @classmethod
+        def clebsch_gordan(
+            cls, rep1: "O3_e3nn", rep2: "O3_e3nn", rep3: "O3_e3nn"
+        ) -> np.ndarray:
+            rep1, rep2, rep3 = cls._from(rep1), cls._from(rep2), cls._from(rep3)
 
-        if rep1.p * rep2.p == rep3.p:
-            return o3.wigner_3j(rep1.l, rep2.l, rep3.l).numpy()[None] * np.sqrt(
-                rep3.dim
-            )
-        return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
+            if rep1.p * rep2.p == rep3.p:
+                return o3.wigner_3j(rep1.l, rep2.l, rep3.l).numpy()[None] * np.sqrt(
+                    rep3.dim
+                )
+            return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
 
-    def __lt__(  # pylint: disable=no-self-argument
-        rep1: "O3_e3nn", rep2: "O3_e3nn"
-    ) -> bool:
-        rep2 = rep1._from(rep2)
-        return (rep1.l, rep1.p) < (rep2.l, rep2.p)
+        def __lt__(  # pylint: disable=no-self-argument
+            rep1: "O3_e3nn", rep2: "O3_e3nn"
+        ) -> bool:
+            rep2 = rep1._from(rep2)
+            return (rep1.l, rep1.p) < (rep2.l, rep2.p)
 
-    @classmethod
-    def iterator(cls) -> Iterator["O3_e3nn"]:
-        for l in itertools.count(0):
-            yield O3_e3nn(l=l, p=1 * (-1) ** l)
-            yield O3_e3nn(l=l, p=-1 * (-1) ** l)
+        @classmethod
+        def iterator(cls) -> Iterator["O3_e3nn"]:
+            for l in itertools.count(0):
+                yield O3_e3nn(l=l, p=1 * (-1) ** l)
+                yield O3_e3nn(l=l, p=-1 * (-1) ** l)
+else:
+    print(
+        "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
+    )
