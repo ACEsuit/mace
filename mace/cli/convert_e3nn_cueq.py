@@ -13,6 +13,9 @@ def get_transfer_keys() -> List[str]:
     """Get list of keys that need to be transferred"""
     return [
         "node_embedding.linear.weight",
+        "charges_embedding.linear.weight",
+        "spin_embedding.linear.weight",
+        "spin_charge_mixing.linear.weight",
         "radial_embedding.bessel_fn.bessel_weights",
         "atomic_energies_fn.atomic_energies",
         "readouts.0.linear.weight",
