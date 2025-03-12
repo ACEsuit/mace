@@ -834,7 +834,6 @@ def run(args) -> None:
 
     logging.info("")
     logging.info("===========RESULTS===========")
-    logging.info("Computing metrics for training, validation, and test sets")
 
     train_valid_data_loader = {}
     for head_config in head_configs:
@@ -922,49 +921,6 @@ def run(args) -> None:
         else:
             logging.info(f"Loaded Stage one model from epoch {epoch} for evaluation")
 
-        for param in model.parameters():
-            param.requires_grad = False
-        table_train_valid = create_error_table(
-            table_type=args.error_table,
-            all_data_loaders=train_valid_data_loader,
-            model=model_to_evaluate,
-            loss_fn=loss_fn,
-            output_args=output_args,
-            log_wandb=args.wandb,
-            device=device,
-            distributed=args.distributed,
-        )
-        logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
-
-        if test_data_loader:
-            table_test = create_error_table(
-                table_type=args.error_table,
-                all_data_loaders=test_data_loader,
-                model=model_to_evaluate,
-                loss_fn=loss_fn,
-                output_args=output_args,
-                log_wandb=args.wandb,
-                device=device,
-                distributed=args.distributed,
-            )
-            logging.info("Error-table on TEST:\n" + str(table_test))
-        if args.plot:
-            try:
-                plotter = TrainingPlotter(
-                    results_dir=logger.path,
-                    heads=heads,
-                    table_type=args.error_table,
-                    train_valid_data=train_valid_data_loader,
-                    test_data=test_data_loader,
-                    output_args=output_args,
-                    device=device,
-                    plot_frequency=args.plot_frequency,
-                    distributed=args.distributed,
-                    swa_start=swa.start if swa else None
-                )
-                plotter.plot(epoch, model_to_evaluate, rank)
-            except Exception as e:  # pylint: disable=W0718
-                logging.debug(f"Plotting failed: {e}")
         if rank == 0:
             # Save entire model
             if swa_eval:
@@ -1018,6 +974,51 @@ def run(args) -> None:
                     )
                 except Exception as e:  # pylint: disable=W0718
                     pass
+
+        logging.info("Computing metrics for training, validation, and test sets")
+        for param in model.parameters():
+            param.requires_grad = False
+        table_train_valid = create_error_table(
+            table_type=args.error_table,
+            all_data_loaders=train_valid_data_loader,
+            model=model_to_evaluate,
+            loss_fn=loss_fn,
+            output_args=output_args,
+            log_wandb=args.wandb,
+            device=device,
+            distributed=args.distributed,
+        )
+        logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
+
+        if test_data_loader:
+            table_test = create_error_table(
+                table_type=args.error_table,
+                all_data_loaders=test_data_loader,
+                model=model_to_evaluate,
+                loss_fn=loss_fn,
+                output_args=output_args,
+                log_wandb=args.wandb,
+                device=device,
+                distributed=args.distributed,
+            )
+            logging.info("Error-table on TEST:\n" + str(table_test))
+        if args.plot:
+            try:
+                plotter = TrainingPlotter(
+                    results_dir=logger.path,
+                    heads=heads,
+                    table_type=args.error_table,
+                    train_valid_data=train_valid_data_loader,
+                    test_data=test_data_loader,
+                    output_args=output_args,
+                    device=device,
+                    plot_frequency=args.plot_frequency,
+                    distributed=args.distributed,
+                    swa_start=swa.start if swa else None
+                )
+                plotter.plot(epoch, model_to_evaluate, rank)
+            except Exception as e:  # pylint: disable=W0718
+                logging.debug(f"Plotting failed: {e}")
 
         if args.distributed:
             torch.distributed.barrier()
