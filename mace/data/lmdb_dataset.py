@@ -35,23 +35,23 @@ class LMDBDataset(Dataset):
             return None
         assert np.sum(atoms.get_cell() == atoms.cell) == 9
 
-        if hasattr(atoms, 'calc') and hasattr(atoms.calc, 'results'):
-            if 'energy' in atoms.calc.results:
-                atoms.info['REF_energy'] = atoms.calc.results['energy']
-            if 'forces' in atoms.calc.results:
-                atoms.arrays['REF_forces'] = atoms.calc.results['forces']
-            if 'stress' in atoms.calc.results:
-                atoms.info['REF_stress'] = atoms.calc.results['stress']
+        if hasattr(atoms, "calc") and hasattr(atoms.calc, "results"):
+            if "energy" in atoms.calc.results:
+                atoms.info["REF_energy"] = atoms.calc.results["energy"]
+            if "forces" in atoms.calc.results:
+                atoms.arrays["REF_forces"] = atoms.calc.results["forces"]
+            if "stress" in atoms.calc.results:
+                atoms.info["REF_stress"] = atoms.calc.results["stress"]
 
         config = config_from_atoms(
             atoms,
-            energy_key='REF_energy',
-            forces_key='REF_forces',
-            stress_key='REF_stress',
-            dipole_key='dipole',
-            head_key='head'
+            energy_key="REF_energy",
+            forces_key="REF_forces",
+            stress_key="REF_stress",
+            dipole_key="dipole",
+            head_key="head",
         )
-        
+
         # Set head if not already set
         if config.head == "Default":
             config.head = self.kwargs.get("head", "Default")
