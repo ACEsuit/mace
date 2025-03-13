@@ -704,6 +704,17 @@ def run(args) -> None:
     logging.debug(model)
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
     logging.info("")
+
+   # Check which layers are frozen
+    logging.info("===========ACTIVE/FROZEN PARAMETERS===========")
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            logging.info(f"Parameter: {name}, Active")
+        else:
+            logging.info(f"Parameter: {name}, Frozen")
+
+    logging.info("")
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
     logging.info(f"Batch size: {args.batch_size}")
