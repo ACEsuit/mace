@@ -194,7 +194,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         if model.num_interactions.item() > 1
         else 1
     )
-    mlp_irreps = o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e")
+    mlp_irreps = o3.Irreps(f"{model_mlp_irreps.count((0, 1))}x0e")
     try:
         correlation = (
             len(model.products[0].symmetric_contractions.contractions[0].weights) + 1
@@ -301,30 +301,7 @@ def remove_pt_head(
             channels_per_head = param.shape[0] // len(model.heads)
             start_idx = head_idx * channels_per_head
             end_idx = start_idx + channels_per_head
-            if "linear_2.weight" in name:
-                end_idx = start_idx + channels_per_head // 2
-            # if (
-            #     "readouts.0.linear.weight" in name
-            #     or "readouts.1.linear_2.weight" in name
-            # ):
-            #     new_state_dict[name] = param[start_idx:end_idx] / (
-            #         len(model.heads) ** 0.5
-            #     )
-            if "readouts.0.linear.weight" in name:
-                new_state_dict[name] = param.reshape(-1, len(model.heads))[
-                    :, head_idx
-                ].flatten()
-            elif "readouts.1.linear_1.weight" in name:
-                new_state_dict[name] = param.reshape(
-                    -1, len(model.heads), mlp_count_irreps
-                )[:, head_idx, :].flatten()
-            elif "readouts.1.linear_2.weight" in name:
-                new_state_dict[name] = param.reshape(
-                    len(model.heads), -1, len(model.heads)
-                )[head_idx, :, head_idx].flatten() / (len(model.heads) ** 0.5)
-            else:
-                new_state_dict[name] = param[start_idx:end_idx]
-
+            new_state_dict[name] = param[start_idx:end_idx]
         else:
             new_state_dict[name] = param
 
