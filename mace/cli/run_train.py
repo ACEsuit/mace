@@ -4,7 +4,6 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-import argparse
 import ast
 import glob
 import json
@@ -26,6 +25,7 @@ from mace import data, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+from mace.cli.visualise_train import TrainingPlotter
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -34,8 +34,14 @@ from mace.tools.multihead_tools import (
     dict_head_to_dataclass,
     prepare_default_head,
 )
+from mace.tools.run_train_utils import (
+    combine_datasets,
+    load_dataset_for_path,
+    normalize_file_paths,
+)
 from mace.tools.scripts_utils import (
     LRScheduler,
+    SubsetCollection,
     check_path_ase_read,
     convert_to_json_format,
     dict_to_array,
@@ -66,7 +72,7 @@ def main() -> None:
     run(args)
 
 
-def run(args: argparse.Namespace) -> None:
+def run(args) -> None:
     """
     This script runs the training/fine tuning for mace
     """
@@ -193,6 +199,13 @@ def run(args: argparse.Namespace) -> None:
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
+
+        # Handle train_file and valid_file - normalize to lists
+        if hasattr(head_config, "train_file") and head_config.train_file is not None:
+            head_config.train_file = normalize_file_paths(head_config.train_file)
+        if hasattr(head_config, "valid_file") and head_config.valid_file is not None:
+            head_config.valid_file = normalize_file_paths(head_config.valid_file)
+
         if head_config.statistics_file is not None:
             with open(head_config.statistics_file, "r") as f:  # pylint: disable=W1514
                 statistics = json.load(f)
@@ -218,22 +231,31 @@ def run(args: argparse.Namespace) -> None:
                     statistics["atomic_energies"]
                 )
 
-        # Data preparation
-        if check_path_ase_read(head_config.train_file):
-            if head_config.valid_file is not None:
-                assert check_path_ase_read(
-                    head_config.valid_file
-                ), "valid_file if given must be same format as train_file"
+        if any(check_path_ase_read(f) for f in head_config.train_file):
+
+            train_files_ase_list = [
+                f for f in head_config.train_file if check_path_ase_read(f)
+            ]
+            valid_files_ase_list = None
+            test_files_ase_list = None
+            if head_config.valid_file:
+                valid_files_ase_list = [
+                    f for f in head_config.valid_file if check_path_ase_read(f)
+                ]
+            if head_config.test_file:
+                test_files_ase_list = [
+                    f for f in head_config.test_file if check_path_ase_read(f)
+                ]
             config_type_weights = get_config_type_weights(
                 head_config.config_type_weights
             )
             collections, atomic_energies_dict = get_dataset_from_xyz(
                 work_dir=args.work_dir,
-                train_path=head_config.train_file,
-                valid_path=head_config.valid_file,
+                train_path=train_files_ase_list,
+                valid_path=valid_files_ase_list,
                 valid_fraction=head_config.valid_fraction,
                 config_type_weights=config_type_weights,
-                test_path=head_config.test_file,
+                test_path=test_files_ase_list,
                 seed=args.seed,
                 energy_key=head_config.energy_key,
                 forces_key=head_config.forces_key,
@@ -244,7 +266,11 @@ def run(args: argparse.Namespace) -> None:
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
             )
-            head_config.collections = collections
+            head_config.collections = SubsetCollection(
+                train=collections.train,
+                valid=collections.valid,
+                tests=collections.tests,
+            )
             head_config.atomic_energies_dict = atomic_energies_dict
             logging.info(
                 f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
@@ -252,7 +278,9 @@ def run(args: argparse.Namespace) -> None:
             )
         head_configs.append(head_config)
 
-    if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
+    if all(
+        check_path_ase_read(head_config.train_file[0]) for head_config in head_configs
+    ):
         size_collections_train = sum(
             len(head_config.collections.train) for head_config in head_configs
         )
@@ -290,73 +318,115 @@ def run(args: argparse.Namespace) -> None:
             )
             collections = assemble_mp_data(args, tag, head_configs)
             head_config_pt.collections = collections
-            head_config_pt.train_file = f"mp_finetuning-{tag}.xyz"
+            head_config_pt.train_file = [f"mp_finetuning-{tag}.xyz"]
             head_configs.append(head_config_pt)
         else:
             logging.info(
                 f"Using foundation model for multiheads finetuning with {args.pt_train_file}"
             )
             heads = list(dict.fromkeys(["pt_head"] + heads))
-            collections, atomic_energies_dict = get_dataset_from_xyz(
-                work_dir=args.work_dir,
-                train_path=args.pt_train_file,
-                valid_path=args.pt_valid_file,
-                valid_fraction=args.valid_fraction,
-                config_type_weights=None,
-                test_path=None,
-                seed=args.seed,
-                energy_key=args.energy_key,
-                forces_key=args.forces_key,
-                stress_key=args.stress_key,
-                virials_key=args.virials_key,
-                dipole_key=args.dipole_key,
-                charges_key=args.charges_key,
-                head_name="pt_head",
-                keep_isolated_atoms=args.keep_isolated_atoms,
+
+            # Use pt-specific keys if provided, otherwise fall back to general keys
+            pt_energy_key = args.pt_energy_key or args.energy_key
+            pt_forces_key = args.pt_forces_key or args.forces_key
+            pt_stress_key = args.pt_stress_key or args.stress_key
+            pt_virials_key = args.pt_virials_key or args.virials_key
+            pt_dipole_key = args.pt_dipole_key or args.dipole_key
+            pt_charges_key = args.pt_charges_key or args.charges_key
+
+            logging.info(
+                f"Using the following keys for pt_head: energy={pt_energy_key}, forces={pt_forces_key}, "
+                f"stress={pt_stress_key}, virials={pt_virials_key}, dipole={pt_dipole_key}, charges={pt_charges_key}"
             )
+
+            # Normalize file paths
+            pt_train_file = normalize_file_paths(args.pt_train_file)
+            pt_valid_file = (
+                normalize_file_paths(args.pt_valid_file) if args.pt_valid_file else None
+            )
+
+            # Check if pt_train_file is ASE readable (e.g., xyz) vs LMDB/HDF5
+            is_ase_readable = all(check_path_ase_read(f) for f in pt_train_file)
+
             head_config_pt = HeadConfig(
                 head_name="pt_head",
-                train_file=args.pt_train_file,
-                valid_file=args.pt_valid_file,
+                train_file=pt_train_file,
+                valid_file=pt_valid_file,
                 E0s="foundation",
                 statistics_file=args.statistics_file,
                 valid_fraction=args.valid_fraction,
                 config_type_weights=None,
-                energy_key=args.energy_key,
-                forces_key=args.forces_key,
-                stress_key=args.stress_key,
-                virials_key=args.virials_key,
-                dipole_key=args.dipole_key,
-                charges_key=args.charges_key,
+                energy_key=pt_energy_key,
+                forces_key=pt_forces_key,
+                stress_key=pt_stress_key,
+                virials_key=pt_virials_key,
+                dipole_key=pt_dipole_key,
+                charges_key=pt_charges_key,
                 keep_isolated_atoms=args.keep_isolated_atoms,
-                collections=collections,
                 avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
                 compute_avg_num_neighbors=False,
             )
-            head_config_pt.collections = collections
+
+            if is_ase_readable:
+                # For xyz files, use get_dataset_from_xyz
+                collections, atomic_energies_dict = get_dataset_from_xyz(
+                    work_dir=args.work_dir,
+                    train_path=args.pt_train_file,
+                    valid_path=args.pt_valid_file,
+                    valid_fraction=args.valid_fraction,
+                    config_type_weights=None,
+                    test_path=None,
+                    seed=args.seed,
+                    energy_key=pt_energy_key,
+                    forces_key=pt_forces_key,
+                    stress_key=pt_stress_key,
+                    virials_key=pt_virials_key,
+                    dipole_key=pt_dipole_key,
+                    charges_key=pt_charges_key,
+                    head_name="pt_head",
+                    keep_isolated_atoms=args.keep_isolated_atoms,
+                )
+                head_config_pt.collections = collections
+                logging.info(
+                    f"Loaded ASE readable pretraining data: train={len(collections.train)}, valid={len(collections.valid)}"
+                )
+            else:
+                logging.info(
+                    f"Pretraining data file(s) will be loaded as LMDB/HDF5: {pt_train_file}"
+                )
+
             head_configs.append(head_config_pt)
 
-        ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
-        if ratio_pt_ft < 0.1:
-            logging.warning(
-                f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
-                f"increasing the number of configurations in the pt_train_file by a factor of {int(0.1 / ratio_pt_ft)}"
-            )
-            for head_config in head_configs:
-                if head_config.head_name == "pt_head":
-                    continue
-                head_config.collections.train += head_config.collections.train * int(
-                    0.1 / ratio_pt_ft
-                )
-        logging.info(
-            f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
+        all_ase_readable = all(
+            all(check_path_ase_read(f) for f in head_config.train_file)
+            for head_config in head_configs
         )
+        if all_ase_readable:
+            ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
+            if ratio_pt_ft < 0.1:
+                logging.warning(
+                    f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
+                    f"increasing the number of configurations in the fine-tuning heads by {int(0.1 / ratio_pt_ft)}"
+                )
+                for head_config in head_configs:
+                    if head_config.head_name == "pt_head":
+                        continue
+                    head_config.collections.train += (
+                        head_config.collections.train * int(0.1 / ratio_pt_ft)
+                    )
+            logging.info(
+                f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
+            )
+        else:
+            logging.debug(
+                "Using LMDB/HDF5 datasets for pretraining or fine-tuning - skipping ratio check"
+            )
 
     # Atomic number table
     # yapf: disable
     for head_config in head_configs:
         if head_config.atomic_numbers is None:
-            assert check_path_ase_read(head_config.train_file), "Must specify atomic_numbers when using .h5 train_file input"
+            assert all(check_path_ase_read(f) for f in head_config.train_file), "Must specify atomic_numbers when using .h5 or .aselmdb train_file input"
             z_table_head = tools.get_atomic_number_table_from_zs(
                 z
                 for configs in (head_config.collections.train, head_config.collections.valid)
@@ -389,7 +459,7 @@ def run(args: argparse.Namespace) -> None:
     for head_config in head_configs:
         if head_config.atomic_energies_dict is None or len(head_config.atomic_energies_dict) == 0:
             assert head_config.E0s is not None, "Atomic energies must be provided"
-            if check_path_ase_read(head_config.train_file) and head_config.E0s.lower() != "foundation":
+            if all(check_path_ase_read(f) for f in head_config.train_file) and head_config.E0s.lower() != "foundation":
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(
                     head_config.E0s, head_config.collections.train, head_config.z_table
                 )
@@ -475,38 +545,96 @@ def run(args: argparse.Namespace) -> None:
             except KeyError as e:
                 raise KeyError(f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number") from e
 
-
+    # Load datasets for each head, supporting multiple files per head
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
+
     for head_config in head_configs:
-        if check_path_ase_read(head_config.train_file):
-            train_sets[head_config.head_name] = [
+        train_datasets = []
+
+        logging.info(f"Processing datasets for head '{head_config.head_name}'")
+        ase_files = [f for f in head_config.train_file if check_path_ase_read(f)]
+        non_ase_files = [f for f in head_config.train_file if not check_path_ase_read(f)]
+
+        if ase_files:
+            dataset = load_dataset_for_path(
+            file_path=ase_files,
+            r_max=args.r_max,
+            z_table=z_table,
+            head_config=head_config,
+            heads=heads,
+            collection=head_config.collections.train,
+            )
+            train_datasets.append(dataset)
+            logging.debug(f"Successfully loaded dataset from ASE files: {ase_files}")
+
+        for file in non_ase_files:
+            dataset = load_dataset_for_path(
+            file_path=file,
+            r_max=args.r_max,
+            z_table=z_table,
+            head_config=head_config,
+            heads=heads,
+            )
+            train_datasets.append(dataset)
+            logging.debug(f"Successfully loaded dataset from non-ASE file: {file}")
+
+        if not train_datasets:
+            raise ValueError(f"No valid training datasets found for head {head_config.head_name}")
+
+        train_sets[head_config.head_name] = combine_datasets(train_datasets, head_config.head_name)
+
+        if head_config.valid_file:
+            valid_datasets = []
+
+            valid_ase_files = [f for f in head_config.valid_file if check_path_ase_read(f)]
+            valid_non_ase_files = [f for f in head_config.valid_file if not check_path_ase_read(f)]
+
+            if valid_ase_files:
+                valid_dataset = load_dataset_for_path(
+                    file_path=valid_ase_files,
+                    r_max=args.r_max,
+                    z_table=z_table,
+                    head_config=head_config,
+                    heads=heads,
+                    collection=head_config.collections.valid,
+                )
+                valid_datasets.append(valid_dataset)
+                logging.debug(f"Successfully loaded validation dataset from ASE files: {valid_ase_files}")
+            for valid_file in valid_non_ase_files:
+                valid_dataset = load_dataset_for_path(
+                file_path=valid_non_ase_files,
+                r_max=args.r_max,
+                z_table=z_table,
+                head_config=head_config,
+                heads=heads,
+            )
+                valid_datasets.append(valid_dataset)
+                logging.debug(f"Successfully loaded validation dataset from {valid_file}")
+
+            # Combine validation datasets
+            if valid_datasets:
+                valid_sets[head_config.head_name] = combine_datasets(valid_datasets, f"{head_config.head_name}_valid")
+                logging.info(f"Combined validation datasets for {head_config.head_name}")
+
+        # If no valid file is provided but collection exist, use the validation set from the collection
+        if head_config.valid_file is None and head_config.collections.valid:
+            valid_sets[head_config.head_name] = [
                 data.AtomicData.from_config(
                     config, z_table=z_table, cutoff=args.r_max, heads=heads
                 )
-                for config in head_config.collections.train
+                for config in head_config.collections.valid
             ]
-            valid_sets[head_config.head_name] = [
-                    data.AtomicData.from_config(
-                        config, z_table=z_table, cutoff=args.r_max, heads=heads
-                    )
-                    for config in head_config.collections.valid
-                ]
+        if not valid_sets[head_config.head_name]:
+            raise ValueError(f"No valid datasets found for head {head_config.head_name}, please provide a valid_file or a valid_fraction")
 
-        elif head_config.train_file.endswith(".h5"):
-            train_sets[head_config.head_name] = data.HDF5Dataset(
-                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
-            valid_sets[head_config.head_name] = data.HDF5Dataset(
-                head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
-        else:  # This case would be for when the file path is to a directory of multiple .h5 files
-            train_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
-                head_config.train_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
-            valid_sets[head_config.head_name] = data.dataset_from_sharded_hdf5(
-                head_config.valid_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
-            )
+        # Create data loader for this head
+        if isinstance(train_sets[head_config.head_name], list):
+            dataset_size = len(train_sets[head_config.head_name])
+        else:
+            dataset_size = len(train_sets[head_config.head_name])
+        logging.info(f"Head '{head_config.head_name}' training dataset size: {dataset_size}")
+
         train_loader_head = torch_geometric.dataloader.DataLoader(
             dataset=train_sets[head_config.head_name],
             batch_size=args.batch_size,
@@ -517,6 +645,7 @@ def run(args: argparse.Namespace) -> None:
             generator=torch.Generator().manual_seed(args.seed),
         )
         head_config.train_loader = train_loader_head
+
     # concatenate all the trainsets
     train_set = ConcatDataset([train_sets[head] for head in heads])
     train_sampler, valid_sampler = None, None
@@ -658,6 +787,34 @@ def run(args: argparse.Namespace) -> None:
     else:
         distributed_model = None
 
+
+    train_valid_data_loader = {}
+    for head_config in head_configs:
+        data_loader_name = "train_" + head_config.head_name
+        train_valid_data_loader[data_loader_name] = head_config.train_loader
+    for head, valid_loader in valid_loaders.items():
+        data_load_name = "valid_" + head
+        train_valid_data_loader[data_load_name] = valid_loader
+
+    if args.plot and args.plot_frequency > 0:
+        try:
+            plotter = TrainingPlotter(
+                results_dir=logger.path,
+                heads=heads,
+                table_type=args.error_table,
+                train_valid_data=train_valid_data_loader,
+                test_data={},
+                output_args=output_args,
+                device=device,
+                plot_frequency=args.plot_frequency,
+                distributed=args.distributed,
+                swa_start=swa.start if swa else None
+                )
+        except Exception as e:  # pylint: disable=W0718
+            logging.debug(f"Creating Plotter failed: {e}")
+    else:
+        plotter = None
+
     tools.train(
         model=model,
         loss_fn=loss_fn,
@@ -681,6 +838,7 @@ def run(args: argparse.Namespace) -> None:
         log_wandb=args.wandb,
         distributed=args.distributed,
         distributed_model=distributed_model,
+        plotter=plotter,
         train_sampler=train_sampler,
         rank=rank,
     )
@@ -696,7 +854,6 @@ def run(args: argparse.Namespace) -> None:
     for head, valid_loader in valid_loaders.items():
         data_load_name = "valid_" + head
         train_valid_data_loader[data_load_name] = valid_loader
-
     test_sets = {}
     stop_first_test = False
     test_data_loader = {}
@@ -711,7 +868,7 @@ def run(args: argparse.Namespace) -> None:
     ) and head_configs[0].test_dir is not None:
         stop_first_test = True
     for head_config in head_configs:
-        if check_path_ase_read(head_config.train_file):
+        if all(check_path_ase_read(f) for f in head_config.train_file):
             for name, subset in head_config.collections.tests:
                 test_sets[name] = [
                     data.AtomicData.from_config(
@@ -802,7 +959,23 @@ def run(args: argparse.Namespace) -> None:
                 distributed=args.distributed,
             )
             logging.info("Error-table on TEST:\n" + str(table_test))
-
+        if args.plot:
+            try:
+                plotter = TrainingPlotter(
+                    results_dir=logger.path,
+                    heads=heads,
+                    table_type=args.error_table,
+                    train_valid_data=train_valid_data_loader,
+                    test_data=test_data_loader,
+                    output_args=output_args,
+                    device=device,
+                    plot_frequency=args.plot_frequency,
+                    distributed=args.distributed,
+                    swa_start=swa.start if swa else None
+                )
+                plotter.plot(epoch, model_to_evaluate, rank)
+            except Exception as e:  # pylint: disable=W0718
+                logging.debug(f"Plotting failed: {e}")
         if rank == 0:
             # Save entire model
             if swa_eval:
@@ -839,7 +1012,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception as e:  # pylint: disable=W0718
                     pass
             else:
                 torch.save(model_to_save, Path(args.model_dir) / (args.name + ".model"))
@@ -854,7 +1027,7 @@ def run(args: argparse.Namespace) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0703
+                except Exception as e:  # pylint: disable=W0718
                     pass
 
         if args.distributed:
