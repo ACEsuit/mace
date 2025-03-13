@@ -432,7 +432,7 @@ class ScaleShiftMACE(MACE):
             spin_feats = self.spin_embedding(data["total_spin"])
             charge_feats = self.charges_embedding(data["total_charge"])
             spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
-            node_feats += self.spin_charge_mixing(torch.nn.functional.silu(spin_charge_feats))[data["batch"], :]
+            node_feats += torch.nn.functional.silu(self.spin_charge_mixing(spin_charge_feats))[data["batch"], :]
 
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
