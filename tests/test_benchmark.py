@@ -1,13 +1,14 @@
+import json
 import os
-from typing import Optional
+from pathlib import Path
+from typing import List, Optional
 
 import pandas as pd
-import json
 import pytest
 import torch
 from ase import build
 
-from mace import data
+from mace import data as mace_data
 from mace.calculators.foundations_models import mace_mp
 from mace.tools import AtomicNumberTable, torch_geometric, torch_tools
 
@@ -57,8 +58,8 @@ def create_batch(size: int, model: torch.nn.Module, device: str) -> dict:
     z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
     atoms = build.bulk("C", "diamond", a=3.567, cubic=True)
     atoms = atoms.repeat((size, size, size))
-    config = data.config_from_atoms(atoms)
-    dataset = [data.AtomicData.from_config(config, z_table=z_table, cutoff=cutoff)]
+    config = mace_data.config_from_atoms(atoms)
+    dataset = [mace_data.AtomicData.from_config(config, z_table=z_table, cutoff=cutoff)]
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=dataset,
         batch_size=1,
@@ -78,32 +79,33 @@ def log_bench_info(benchmark, dtype, compile_mode, batch):
     benchmark.extra_info["device_name"] = torch.cuda.get_device_name()
 
 
-def read_bench_results(files: list[str]) -> pd.DataFrame:
-    def read(file):
-        with open(file, "r") as f:
-            data = json.load(f)
+def process_benchmark_file(bench_file: Path) -> pd.DataFrame:
+    with open(bench_file, "r", encoding="utf-8") as f:
+        bench_data = json.load(f)
 
-        records = []
-        for bench in data["benchmarks"]:
-            record = {**bench["extra_info"], **bench["stats"]}
-            records.append(record)
+    records = []
+    for bench in bench_data["benchmarks"]:
+        record = {**bench["extra_info"], **bench["stats"]}
+        records.append(record)
 
-        df = pd.DataFrame(records)
-        df["ns/day (1 fs/step)"] = 0.086400 / df["median"]
-        df["Steps per day"] = df["ops"] * 86400
-        columns = [
-            "num_atoms",
-            "num_edges",
-            "dtype",
-            "is_compiled",
-            "device_name",
-            "median",
-            "Steps per day",
-            "ns/day (1 fs/step)",
-        ]
-        return df[columns]
+    result_df = pd.DataFrame(records)
+    result_df["ns/day (1 fs/step)"] = 0.086400 / result_df["median"]
+    result_df["Steps per day"] = result_df["ops"] * 86400
+    columns = [
+        "num_atoms",
+        "num_edges",
+        "dtype",
+        "is_compiled",
+        "device_name",
+        "median",
+        "Steps per day",
+        "ns/day (1 fs/step)",
+    ]
+    return result_df[columns]
 
-    return pd.concat([read(f) for f in files])
+
+def read_bench_results(result_files: List[str]) -> pd.DataFrame:
+    return pd.concat([process_benchmark_file(Path(f)) for f in result_files])
 
 
 if __name__ == "__main__":
@@ -111,12 +113,9 @@ if __name__ == "__main__":
     import subprocess
 
     result = subprocess.run(
-        ["pytest-benchmark", "list"], capture_output=True, text=True
+        ["pytest-benchmark", "list"], capture_output=True, text=True, check=True
     )
 
-    if result.returncode != 0:
-        raise RuntimeError(f"Command failed with return code {result.returncode}")
-
-    files = result.stdout.strip().split("\n")
-    df = read_bench_results(files)
-    print(df.to_csv(index=False))
+    bench_files = result.stdout.strip().split("\n")
+    bench_results = read_bench_results(bench_files)
+    print(bench_results.to_csv(index=False))

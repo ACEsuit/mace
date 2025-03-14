@@ -35,3 +35,5 @@ dist/
 *.model
 
 .benchmarks
+*.db
+*.png

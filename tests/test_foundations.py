@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional
 from ase.build import molecule
 from e3nn import o3
+from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
@@ -174,6 +175,33 @@ def test_multi_reference():
     assert np.allclose(
         forces, forces_loaded.detach().numpy()[:5, :], atol=1e-5, rtol=1e-5
     )
+
+
+@pytest.mark.parametrize(
+    "calc",
+    [
+        mace_mp(device="cpu", default_dtype="float64"),
+        mace_mp(model="small", device="cpu", default_dtype="float64"),
+        mace_mp(model="medium", device="cpu", default_dtype="float64"),
+        mace_mp(model="large", device="cpu", default_dtype="float64"),
+        mace_mp(model=MODEL_PATH, device="cpu", default_dtype="float64"),
+        mace_off(model="small", device="cpu", default_dtype="float64"),
+        mace_off(model="medium", device="cpu", default_dtype="float64"),
+        mace_off(model="large", device="cpu", default_dtype="float64"),
+        mace_off(model=MODEL_PATH, device="cpu", default_dtype="float64"),
+    ],
+)
+def test_compile_foundation(calc):
+    model = calc.models[0]
+    atoms = molecule("CH4")
+    atoms.positions += np.random.randn(*atoms.positions.shape) * 0.1
+    batch = calc._atoms_to_batch(atoms)  # pylint: disable=protected-access
+    output_1 = model(batch.to_dict())
+    model_compiled = jit.compile(model)
+    output = model_compiled(batch.to_dict())
+    for key in output_1.keys():
+        if isinstance(output_1[key], torch.Tensor):
+            assert torch.allclose(output_1[key], output[key], atol=1e-5)
 
 
 @pytest.mark.parametrize(

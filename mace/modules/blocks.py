@@ -275,6 +275,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             shared_weights=True,
             cueq_config=cueq_config,
         )
+        self.cueq_config = cueq_config
 
     def forward(
         self,
@@ -282,7 +283,26 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         sc: Optional[torch.Tensor],
         node_attrs: torch.Tensor,
     ) -> torch.Tensor:
-        node_feats = self.symmetric_contractions(node_feats, node_attrs)
+        use_cueq = False
+        use_cueq_mul_ir = False
+        if hasattr(self, "cueq_config"):
+            if self.cueq_config is not None:
+                if self.cueq_config.enabled and (
+                    self.cueq_config.optimize_all or self.cueq_config.optimize_symmetric
+                ):
+                    use_cueq = True
+                if self.cueq_config.layout_str == "mul_ir":
+                    use_cueq_mul_ir = True
+        if use_cueq:
+            if use_cueq_mul_ir:
+                node_feats = torch.transpose(node_feats, 1, 2)
+            index_attrs = torch.nonzero(node_attrs)[:, 1].int()
+            node_feats = self.symmetric_contractions(
+                node_feats.flatten(1),
+                index_attrs,
+            )
+        else:
+            node_feats = self.symmetric_contractions(node_feats, node_attrs)
         if self.use_sc and sc is not None:
             return self.linear(node_feats) + sc
         return self.linear(node_feats)
