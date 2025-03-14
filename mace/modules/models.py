@@ -1285,8 +1285,8 @@ class LLPRModel(torch.nn.Module):
                 )
 
         output["energy_uncertainty"] = energy_uncertainty
-        output["force_uncertainty"] = force_uncertainty
-        output["virial_uncertainty"] = virial_uncertainty
+        output["forces_uncertainty"] = force_uncertainty
+        output["virials_uncertainty"] = virial_uncertainty
         output["stress_uncertainty"] = stress_uncertainty
 
         return output
