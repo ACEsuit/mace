@@ -113,9 +113,20 @@ class MACECalculator(Calculator):
                 "stress",
                 "dipole",
             ]
+        elif model_type == "LLPRModel":
+            self.implemented_properties = [
+                "energy",
+                "energy_pred_var",
+                "free_energy",
+                "node_energy",
+                "forces",
+                "forces_pred_var",
+                "stress",
+                "stress_pred_var",
+            ]
         else:
             raise ValueError(
-                f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE], {model_type} not supported"
+                f"Give a valid model_type: [MACE, DipoleMACE, EnergyDipoleMACE, LLPRModel], {model_type} not supported"
             )
 
         if model_paths is not None:
@@ -157,6 +168,10 @@ class MACECalculator(Calculator):
             self.num_models = len(models)
 
         if self.num_models > 1:
+
+            if self.model_type == "LLPRModel":
+                raise ValueError("You should provide a single LLPRModel!")
+
             print(f"Running committee mace with {self.num_models} models")
 
             if model_type in ["MACE", "EnergyDipoleMACE"]:
@@ -167,6 +182,10 @@ class MACECalculator(Calculator):
                 self.implemented_properties.extend(["dipole_var"])
 
         if compile_mode is not None:
+
+            if self.model_type == "LLPRModel":
+                raise ValueError("Torch compile not supported for LLPRModel!")
+
             print(f"Torch compile is enabled with mode: {compile_mode}")
             self.models = [
                 torch.compile(
@@ -226,12 +245,12 @@ class MACECalculator(Calculator):
         """
         Create tensors to store the results of the committee
         :param model_type: str, type of model to load
-            Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+            Options: [MACE, DipoleMACE, EnergyDipoleMACE, LLPRModel]
         :param num_models: int, number of models in the committee
         :return: tuple of torch tensors
         """
         dict_of_tensors = {}
-        if model_type in ["MACE", "EnergyDipoleMACE"]:
+        if model_type in ["MACE", "EnergyDipoleMACE", "LLPRModel"]:
             energies = torch.zeros(num_models, device=self.device)
             node_energy = torch.zeros(num_models, num_atoms, device=self.device)
             forces = torch.zeros(num_models, num_atoms, 3, device=self.device)
@@ -247,6 +266,17 @@ class MACECalculator(Calculator):
         if model_type in ["EnergyDipoleMACE", "DipoleMACE"]:
             dipole = torch.zeros(num_models, 3, device=self.device)
             dict_of_tensors.update({"dipole": dipole})
+        if model_type == "LLPRModel":
+            energies_pred_var = torch.zeros(num_models, device=self.device)
+            forces_pred_var = torch.zeros(num_models, num_atoms, 3, device=self.device)
+            stress_pred_var = torch.zeros(num_models, 3, 3, device=self.device)
+            dict_of_tensors.update(
+                {
+                    "energies_pred_var": energies_pred_var,
+                    "forces_pred_var": forces_pred_var,
+                    "stress_pred_var": stress_pred_var,
+                }
+            )
         return dict_of_tensors
 
     def _atoms_to_batch(self, atoms):
@@ -285,7 +315,7 @@ class MACECalculator(Calculator):
 
         batch_base = self._atoms_to_batch(atoms)
 
-        if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+        if self.model_type in ["MACE", "EnergyDipoleMACE", "LLPRModel"]:
             batch = self._clone_batch(batch_base)
             node_heads = batch["head"][batch["batch"]]
             num_atoms_arange = torch.arange(batch["positions"].shape[0])
@@ -306,7 +336,7 @@ class MACECalculator(Calculator):
                 compute_stress=compute_stress,
                 training=self.use_compile,
             )
-            if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+            if self.model_type in ["MACE", "EnergyDipoleMACE", "LLPRModel"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
                 ret_tensors["forces"][i] = out["forces"].detach()
@@ -314,6 +344,11 @@ class MACECalculator(Calculator):
                     ret_tensors["stress"][i] = out["stress"].detach()
             if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
                 ret_tensors["dipole"][i] = out["dipole"].detach()
+            if self.model_type == "LLPRModel":
+                ret_tensors["energies_pred_var"] = out["energy_uncertainty"].detach()
+                ret_tensors["forces_pred_var"] = out["forces_uncertainty"].detach()
+                if out["stress"] is not None:
+                    ret_tensors["stress_pred_var"] = out["stress_uncertainty"].detach()
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
@@ -368,6 +403,45 @@ class MACECalculator(Calculator):
                     torch.var(ret_tensors["dipole"], dim=0, unbiased=False)
                     .cpu()
                     .numpy()
+                )
+        if self.model_type == "LLPRModel":
+            self.results["energy"] = (
+                torch.mean(ret_tensors["energies"], dim=0).cpu().item()
+                * self.energy_units_to_eV
+            )
+            self.results["free_energy"] = self.results["energy"]
+            self.results["node_energy"] = (
+                torch.mean(ret_tensors["node_energy"], dim=0).cpu().numpy()
+            )
+            self.results["forces"] = (
+                torch.mean(ret_tensors["forces"], dim=0).cpu().numpy()
+                * self.energy_units_to_eV
+                / self.length_units_to_A
+            )
+            self.results["energy_pred_var"] = (
+                torch.mean(ret_tensors["energies_pred_var"], dim=0).cpu().item()
+                * self.energy_units_to_eV
+                * self.energy_units_to_eV
+            )
+            self.results["forces_pred_var"] = (
+                torch.mean(ret_tensors["forces"], dim=0).cpu().numpy()
+                * self.energy_units_to_eV
+                * self.energy_units_to_eV
+                / self.length_units_to_A
+                / self.length_units_to_A
+            )
+            if out["stress"] is not None:
+                self.results["stress"] = (
+                    torch.mean(ret_tensors["stress"], dim=0).cpu().numpy()
+                    * self.energy_units_to_eV
+                    / self.length_units_to_A**3
+                )
+                self.results["stress_pred_var"] = (
+                    torch.mean(ret_tensors["stress_uncertainty"], dim=0).cpu().numpy()
+                    * self.energy_units_to_eV
+                    * self.energy_units_to_eV
+                    / self.length_units_to_A**3
+                    / self.length_units_to_A**3
                 )
 
     def get_hessian(self, atoms=None):
