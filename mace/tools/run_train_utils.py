@@ -74,9 +74,9 @@ def load_dataset_for_path(
 
     filepath = Path(file_path)
     if filepath.is_dir():
-
+        
         if filepath.name.endswith("_lmdb") or any(
-            f.endswith(".lmdb") for f in os.listdir(filepath)
+            f.endswith(".lmdb") or f.endswith(".aselmdb") for f in os.listdir(filepath)
         ):
             logging.info(f"Loading LMDB dataset from {file_path}")
             return data.LMDBDataset(

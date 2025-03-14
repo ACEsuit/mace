@@ -429,8 +429,8 @@ class ScaleShiftMACE(MACE):
         node_feats_list = []
 
         if hasattr(self, "spin_embedding") and hasattr(self, "charges_embedding"):
-            spin_feats = self.spin_embedding(data["total_spin"])
-            charge_feats = self.charges_embedding(data["total_charge"])
+            spin_feats = self.spin_embedding(data["total_spin"].unsqueeze(-1))
+            charge_feats = self.charges_embedding(data["total_charge"].unsqueeze(-1))
             spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
             node_feats += torch.nn.functional.silu(self.spin_charge_mixing(spin_charge_feats))[data["batch"], :]
 
