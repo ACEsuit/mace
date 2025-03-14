@@ -603,7 +603,7 @@ def run(args) -> None:
                 logging.debug(f"Successfully loaded validation dataset from ASE files: {valid_ase_files}")
             for valid_file in valid_non_ase_files:
                 valid_dataset = load_dataset_for_path(
-                file_path=valid_non_ase_files,
+                file_path=valid_file,
                 r_max=args.r_max,
                 z_table=z_table,
                 head_config=head_config,
