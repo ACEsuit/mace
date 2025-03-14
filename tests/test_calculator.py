@@ -586,6 +586,7 @@ def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
     assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
 def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_cueq):
     at = fitting_configs[2].copy()
     at_rotated = fitting_configs[2].copy()

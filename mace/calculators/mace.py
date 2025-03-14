@@ -4,11 +4,15 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-
 import logging
+
+# pylint: disable=wrong-import-position
+import os
 from glob import glob
 from pathlib import Path
-from typing import Union
+from typing import List, Union
+
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import numpy as np
 import torch
@@ -53,7 +57,7 @@ class MACECalculator(Calculator):
     def __init__(
         self,
         model_paths: Union[list, str, None] = None,
-        models: Union[list[torch.nn.Module], torch.nn.Module, None] = None,
+        models: Union[List[torch.nn.Module], torch.nn.Module, None] = None,
         device: str = "cpu",
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,

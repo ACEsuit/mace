@@ -28,6 +28,7 @@
     - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
       - [Example usage in ASE](#example-usage-in-ase-1)
     - [Finetuning foundation models](#finetuning-foundation-models)
+    - [Latest recommended foundation models](#latest-recommended-foundation-models)
   - [Caching](#caching)
   - [Development](#development)
   - [References](#references)
@@ -99,8 +100,8 @@ mace_run_train \
     --r_max=5.0 \
     --batch_size=10 \
     --max_num_epochs=1500 \
-    --swa \
-    --start_swa=1200 \
+    --stage_two \
+    --start_stage_two=1200 \
     --ema \
     --ema_decay=0.99 \
     --amsgrad \
@@ -114,13 +115,15 @@ To control the model's size, you need to change `--hidden_irreps`. For most appl
 
 It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression.
 
-If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs). This setting usually helps lower the energy errors.
+If the keyword `--stage_two` (previously called swa) is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_stage_two` epochs). This setting usually helps lower the energy errors.
 
 The precision can be changed using the keyword `--default_dtype`, the default is `float64` but `float32` gives a significant speed-up (usually a factor of x2 in training).
 
 The keywords `--batch_size` and `--max_num_epochs` should be adapted based on the size of the training set. The batch size should be increased when the number of training data increases, and the number of epochs should be decreased. An heuristic for initial settings, is to consider the number of gradient update constant to 200 000, which can be computed as $\text{max-num-epochs}*\frac{\text{num-configs-training}}{\text{batch-size}}$.
 
 The code can handle training set with heterogeneous labels, for example containing both bulk structures with stress and isolated molecules. In this example, to make the code ignore stress on molecules, append to your molecules configuration a `config_stress_weight = 0.0`.
+
+By default, a figure displaying the progression of loss and RMSEs during training, along with a scatter plot of the model's inferences on the train, validation, and test sets, will be generated in the results folder at the end of training. This can be disabled using `--plot False`. To track these metrics throughout training (excluding inference on the test set), you can enable periodic plotting for the train and validation sets by specifying `--plot_frequency N`, which updates the plots every Nth epoch.
 
 #### Apple Silicon GPU acceleration
 
@@ -138,8 +141,8 @@ Option to parse all or some arguments using a YAML is available. For example, to
 name: nacl
 seed: 2024
 train_file: train.xyz
-swa: yes
-start_swa: 1200
+stage_two: yes
+start_stage_two: 1200
 max_num_epochs: 1500
 device: cpu
 test_file: test.xyz
@@ -213,8 +216,8 @@ python ./mace/scripts/run_train.py \
     --batch_size=32 \
     --valid_batch_size=32 \
     --max_num_epochs=100 \
-    --swa \
-    --start_swa=60 \
+    --stage_two \
+    --start_stage_two=60 \
     --ema \
     --ema_decay=0.99 \
     --amsgrad \
@@ -272,6 +275,15 @@ calc = mace_off(model="medium", device='cuda')
 atoms.calc = calc
 print(atoms.get_potential_energy())
 ```
+
+### Latest Recommended Foundation Models
+
+| Model Name        | Elements Covered | Training Dataset | Level of Theory       | Target System         | Model Size          | GitHub Release | Notes                                                | License |
+|-------------------|------------------|------------------|-----------------------|----------------------|---------------------|----------------|-------------------------------------------------------|---------|
+| MACE-MP-0         | 89               | MPTrj            | DFT (PBE+U)           | Materials            | [small](https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model), [medium](https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model), [large](https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2024-01-07-mace-128-L2_epoch-199.model)| >=v0.3.6       | Initial release of foundation model.                          | MIT |
+| MACE-MPA-0        | 89               | MPTrj + sAlex    | DFT (PBE+U)           | Materials            | [medium-mpa-0](https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model)              | >=v0.3.10      | Improved accuracy for materials, improved high pressure stability. | MIT |
+| MACE-OMAT-0        | 89               | OMAT         | DFT (PBE+U) VASP 54        | Materials    | [medium-omat-0](https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model) | >=v0.3.10       |             | ASL |
+| MACE-OFF23        | 10               | SPICE v1         | DFT (wB97M+D3)        | Organic Chemistry    | [small](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model), [medium](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model), [large](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model)| >=v0.3.6       | Initial release covering neutral organic chemistry.              | ASL |
 
 ### Finetuning foundation models
 

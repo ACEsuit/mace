@@ -1,10 +1,13 @@
 import pytest
 import torch
-from mace.modules.radial import ZBLBasis, AgnesiTransform
+
+from mace.modules.radial import AgnesiTransform, ZBLBasis
+
 
 @pytest.fixture
 def zbl_basis():
     return ZBLBasis(p=6, trainable=False)
+
 
 def test_zbl_basis_initialization(zbl_basis):
     assert zbl_basis.p == torch.tensor(6.0)
@@ -14,6 +17,7 @@ def test_zbl_basis_initialization(zbl_basis):
     assert zbl_basis.a_prefactor == torch.tensor(0.4543)
     assert not zbl_basis.a_exp.requires_grad
     assert not zbl_basis.a_prefactor.requires_grad
+
 
 def test_trainable_zbl_basis_initialization(zbl_basis):
     zbl_basis = ZBLBasis(p=6, trainable=True)
@@ -25,9 +29,12 @@ def test_trainable_zbl_basis_initialization(zbl_basis):
     assert zbl_basis.a_exp.requires_grad
     assert zbl_basis.a_prefactor.requires_grad
 
+
 def test_forward(zbl_basis):
     x = torch.tensor([1.0, 1.0, 2.0]).unsqueeze(-1)  # [n_edges]
-    node_attrs = torch.tensor([[1, 0], [0, 1]])  # [n_nodes, n_node_features] - one_hot encoding of atomic numbers
+    node_attrs = torch.tensor(
+        [[1, 0], [0, 1]]
+    )  # [n_nodes, n_node_features] - one_hot encoding of atomic numbers
     edge_index = torch.tensor([[0, 1, 1], [1, 0, 1]])  # [2, n_edges]
     atomic_numbers = torch.tensor([1, 6])  # [n_nodes]
     output = zbl_basis(x, node_attrs, edge_index, atomic_numbers)
@@ -37,12 +44,14 @@ def test_forward(zbl_basis):
     assert torch.allclose(
         output,
         torch.tensor([0.0031, 0.0031], dtype=torch.get_default_dtype()),
-        rtol=1e-2
+        rtol=1e-2,
     )
+
 
 @pytest.fixture
 def agnesi():
     return AgnesiTransform(trainable=False)
+
 
 def test_agnesi_transform_initialization(agnesi: AgnesiTransform):
     assert agnesi.q.item() == pytest.approx(0.9183, rel=1e-4)
@@ -51,6 +60,7 @@ def test_agnesi_transform_initialization(agnesi: AgnesiTransform):
     assert not agnesi.a.requires_grad
     assert not agnesi.q.requires_grad
     assert not agnesi.p.requires_grad
+
 
 def test_trainable_agnesi_transform_initialization():
     agnesi = AgnesiTransform(trainable=True)
@@ -61,6 +71,7 @@ def test_trainable_agnesi_transform_initialization():
     assert agnesi.a.requires_grad
     assert agnesi.q.requires_grad
     assert agnesi.p.requires_grad
+
 
 def test_agnesi_transform_forward():
     agnesi = AgnesiTransform()
@@ -76,8 +87,9 @@ def test_agnesi_transform_forward():
         torch.tensor(
             [0.3646, 0.2175, 0.2089], dtype=torch.get_default_dtype()
         ).unsqueeze(-1),
-        rtol=1e-2
+        rtol=1e-2,
     )
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

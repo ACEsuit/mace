@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -32,11 +32,11 @@ class SubsetCollection:
 
 def get_dataset_from_xyz(
     work_dir: str,
-    train_path: str,
-    valid_path: Optional[str],
+    train_path: Union[str, List[str]],
+    valid_path: Optional[Union[str, List[str]]],
     valid_fraction: float,
     config_type_weights: Dict,
-    test_path: str = None,
+    test_path: Optional[Union[str, List[str]]] = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
@@ -48,27 +48,68 @@ def get_dataset_from_xyz(
     charges_key: str = "charges",
     head_key: str = "head",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
-    """Load training and test dataset from xyz file"""
-    atomic_energies_dict, all_train_configs = data.load_from_xyz(
-        file_path=train_path,
-        config_type_weights=config_type_weights,
-        energy_key=energy_key,
-        forces_key=forces_key,
-        stress_key=stress_key,
-        virials_key=virials_key,
-        dipole_key=dipole_key,
-        charges_key=charges_key,
-        head_key=head_key,
-        extract_atomic_energies=True,
-        keep_isolated_atoms=keep_isolated_atoms,
-        head_name=head_name,
+    """
+    Load training, validation, and test datasets from xyz files.
+
+    Args:
+        work_dir: Working directory for saving split information
+        train_path: Path or list of paths to training xyz files
+        valid_path: Path or list of paths to validation xyz files
+        valid_fraction: Fraction of training data to use for validation if valid_path is None
+        config_type_weights: Dictionary of weights for each configuration type
+        test_path: Path or list of paths to test xyz files
+        seed: Random seed for train/validation split
+        keep_isolated_atoms: Whether to keep isolated atoms in the dataset
+        head_name: Name of the head for multi-head models
+        energy_key: Key for energy values in xyz file
+        forces_key: Key for forces values in xyz file
+        stress_key: Key for stress values in xyz file
+        virials_key: Key for virials values in xyz file
+        dipole_key: Key for dipole values in xyz file
+        charges_key: Key for charges values in xyz file
+        head_key: Key for head values in xyz file
+
+    Returns:
+        Tuple containing:
+            - SubsetCollection with train, valid, and test configurations
+            - Dictionary of atomic energies (or None if not available)
+    """
+    # Convert input paths to lists if they're not already
+    train_paths = [train_path] if isinstance(train_path, str) else train_path
+    valid_paths = (
+        [valid_path]
+        if isinstance(valid_path, str) and valid_path is not None
+        else valid_path
     )
-    logging.info(
-        f"Training set [{len(all_train_configs)} configs, {np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, {np.sum([config.forces.size for config in all_train_configs])} forces] loaded from '{train_path}'"
+    test_paths = (
+        [test_path]
+        if isinstance(test_path, str) and test_path is not None
+        else test_path
     )
-    if valid_path is not None:
-        _, valid_configs = data.load_from_xyz(
-            file_path=valid_path,
+
+    # Initialize collections and atomic energies tracking
+    all_train_configs = []
+    all_valid_configs = []
+    all_test_configs = []
+
+    # For tracking atomic energies across files
+    atomic_energies_values = {}  # Element Z -> list of energy values
+    atomic_energies_counts = {}  # Element Z -> count of files with this element
+
+    # Process training files
+    for i, path in enumerate(train_paths):
+        logging.debug("Loading training file: %s", path)
+        logging.debug(
+            "Using keys: energy=%s, forces=%s, stress=%s, virials=%s, dipole=%s, charges=%s",
+            energy_key,
+            forces_key,
+            stress_key,
+            virials_key,
+            dipole_key,
+            charges_key,
+        )
+        ae_dict, train_configs = data.load_from_xyz(
+            file_path=path,
             config_type_weights=config_type_weights,
             energy_key=energy_key,
             forces_key=forces_key,
@@ -77,49 +118,141 @@ def get_dataset_from_xyz(
             dipole_key=dipole_key,
             charges_key=charges_key,
             head_key=head_key,
-            extract_atomic_energies=False,
+            extract_atomic_energies=True,  # Extract from all files to average
+            keep_isolated_atoms=keep_isolated_atoms,
             head_name=head_name,
         )
+        all_train_configs.extend(train_configs)
+
+        # Track atomic energies from each file for averaging
+        if ae_dict:
+            for element, energy in ae_dict.items():
+                if element not in atomic_energies_values:
+                    atomic_energies_values[element] = []
+                    atomic_energies_counts[element] = 0
+
+                atomic_energies_values[element].append(energy)
+                atomic_energies_counts[element] += 1
+
         logging.info(
-            f"Validation set [{len(valid_configs)} configs, {np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces] loaded from '{valid_path}'"
+            f"Training file {i+1}/{len(train_paths)} [{len(train_configs)} configs, "
+            f"{np.sum([1 if config.energy else 0 for config in train_configs])} energy, "
+            f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in train_configs])} forces, "
+            f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in train_configs])} stresses] loaded from '{path}'"
         )
+
+    # Log total training set info
+    logging.info(
+        f"Total training set [{len(all_train_configs)} configs, "
+        f"{np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, "
+        f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in all_train_configs])} forces, "
+        f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in all_train_configs])} stresses]"
+    )
+
+    # Process validation files if provided
+    if valid_paths:
+        for i, path in enumerate(valid_paths):
+            _, valid_configs = data.load_from_xyz(
+                file_path=path,
+                config_type_weights=config_type_weights,
+                energy_key=energy_key,
+                forces_key=forces_key,
+                stress_key=stress_key,
+                virials_key=virials_key,
+                dipole_key=dipole_key,
+                charges_key=charges_key,
+                head_key=head_key,
+                extract_atomic_energies=False,
+                head_name=head_name,
+            )
+            all_valid_configs.extend(valid_configs)
+
+            logging.info(
+                f"Validation file {i+1}/{len(valid_paths)} [{len(valid_configs)} configs, "
+                f"{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, "
+                f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in valid_configs])} forces, "
+                f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in valid_configs])} stresses] loaded from '{path}'"
+            )
+
+        # Log total validation set info
+        logging.info(
+            f"Total validation set [{len(all_valid_configs)} configs, "
+            f"{np.sum([1 if config.energy else 0 for config in all_valid_configs])} energy, "
+            f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in all_valid_configs])} forces, "
+            f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in all_valid_configs])} stresses]"
+        )
+
         train_configs = all_train_configs
+        valid_configs = all_valid_configs
     else:
+        # Split training data if no validation files are provided
         train_configs, valid_configs = data.random_train_valid_split(
             all_train_configs, valid_fraction, seed, work_dir
         )
         logging.info(
-            f"Validaton set contains {len(valid_configs)} configurations [{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, {np.sum([config.forces.size for config in valid_configs])} forces]"
+            f"Validation set contains {len(valid_configs)} configurations "
+            f"[{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, "
+            f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in valid_configs])} forces, "
+            f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in valid_configs])} stresses]"
         )
 
-    test_configs = []
-    if test_path is not None:
-        _, all_test_configs = data.load_from_xyz(
-            file_path=test_path,
-            config_type_weights=config_type_weights,
-            energy_key=energy_key,
-            forces_key=forces_key,
-            dipole_key=dipole_key,
-            stress_key=stress_key,
-            virials_key=virials_key,
-            charges_key=charges_key,
-            head_key=head_key,
-            extract_atomic_energies=False,
-            head_name=head_name,
-        )
-        # create list of tuples (config_type, list(Atoms))
-        test_configs = data.test_config_types(all_test_configs)
-        logging.info(
-            f"Test set ({len(all_test_configs)} configs) loaded from '{test_path}':"
-        )
-        for name, tmp_configs in test_configs:
+    # Process test files if provided
+    test_configs_by_type = []
+    if test_paths:
+        for i, path in enumerate(test_paths):
+            _, test_configs = data.load_from_xyz(
+                file_path=path,
+                config_type_weights=config_type_weights,
+                energy_key=energy_key,
+                forces_key=forces_key,
+                dipole_key=dipole_key,
+                stress_key=stress_key,
+                virials_key=virials_key,
+                charges_key=charges_key,
+                head_key=head_key,
+                extract_atomic_energies=False,
+                head_name=head_name,
+            )
+            all_test_configs.extend(test_configs)
+
             logging.info(
-                f"{name}: {len(tmp_configs)} configs, {np.sum([1 if config.energy else 0 for config in tmp_configs])} energy, {np.sum([config.forces.size for config in tmp_configs])} forces"
+                f"Test file {i+1}/{len(test_paths)} [{len(test_configs)} configs, "
+                f"{np.sum([1 if config.energy else 0 for config in test_configs])} energy, "
+                f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in test_configs])} forces, "
+                f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in test_configs])} stresses] loaded from '{path}'"
+            )
+
+        # Create list of tuples (config_type, list(Atoms))
+        test_configs_by_type = data.test_config_types(all_test_configs)
+
+        # Log total test set info
+        logging.info(f"Total test set ({len(all_test_configs)} configs):")
+        for name, tmp_configs in test_configs_by_type:
+            logging.info(
+                f"{name}: {len(tmp_configs)} configs, "
+                f"{np.sum([1 if config.energy else 0 for config in tmp_configs])} energy, "
+                f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in tmp_configs])} forces, "
+                f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in tmp_configs])} stresses"
+            )
+
+    atomic_energies_dict = {}
+    for element, values in atomic_energies_values.items():
+        if atomic_energies_counts[element] > 1:
+            atomic_energies_dict[element] = sum(values) / len(values)
+            logging.debug(
+                f"Element {element} found in {atomic_energies_counts[element]} files. Using average E0: {atomic_energies_dict[element]:.6f} eV"
+            )
+        else:
+            atomic_energies_dict[element] = values[0]
+            logging.debug(
+                f"Element {element} found in 1 file. Using E0: {atomic_energies_dict[element]:.6f} eV"
             )
 
     return (
-        SubsetCollection(train=train_configs, valid=valid_configs, tests=test_configs),
-        atomic_energies_dict,
+        SubsetCollection(
+            train=train_configs, valid=valid_configs, tests=test_configs_by_type
+        ),
+        atomic_energies_dict if atomic_energies_dict else None,
     )
 
 
@@ -776,10 +909,25 @@ def check_folder_subfolder(folder_path):
 def check_path_ase_read(filename: str) -> str:
     filepath = Path(filename)
     if filepath.is_dir():
-        if len(list(filepath.glob("*.h5")) + list(filepath.glob("*.hdf5"))) == 0:
-            raise RuntimeError(f"Got directory {filename} with no .h5/.hdf5 files")
+        num_h5_files = len(list(filepath.glob("*.h5")))
+        num_hdf5_files = len(list(filepath.glob("*.hdf5")))
+        num_ldb_files = len(list(filepath.glob("*.lmdb")))
+        num_aselmbd_files = len(list(filepath.glob("*.aselmdb")))
+        num_mdb_files = len(list(filepath.glob("*.mdb")))
+        if (
+            num_h5_files
+            + num_hdf5_files
+            + num_ldb_files
+            + num_aselmbd_files
+            + num_mdb_files
+            == 0
+        ):
+            # print all the files in the directory extension in the directory for debugging
+            for file in os.listdir(filepath):
+                print(file)
+            raise RuntimeError(f"No supported files found in directory '{filename}'")
         return False
-    if filepath.suffix in (".h5", ".hdf5"):
+    if filepath.suffix in (".h5", ".hdf5", ".lmdb", ".aselmdb", ".mdb"):
         return False
     return True
 

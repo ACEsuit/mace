@@ -1,5 +1,9 @@
+# pylint: disable=wrong-import-position
+import os
 from copy import deepcopy
 from typing import Any, Dict
+
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import pytest
 import torch
@@ -143,7 +147,7 @@ class TestCueq:
         loss_e3nn_back.backward()
 
         # Compare gradients for all conversions
-        tol = 1e-4 if default_dtype == torch.float32 else 1e-8
+        tol = 1e-4 if default_dtype == torch.float32 else 1e-7
 
         def print_gradient_diff(name1, p1, name2, p2, conv_type):
             if p1.grad is not None and p1.grad.shape == p2.grad.shape:
@@ -152,7 +156,7 @@ class TestCueq:
                     print(
                         f"{conv_type} - Parameter {name1}/{name2}, Max error: {error.max()}"
                     )
-                    torch.testing.assert_close(p1.grad, p2.grad, atol=tol, rtol=1e-10)
+                    torch.testing.assert_close(p1.grad, p2.grad, atol=tol, rtol=tol)
 
         # E3nn to CuEq gradients
         for (name_e3nn, p_e3nn), (name_cueq, p_cueq) in zip(

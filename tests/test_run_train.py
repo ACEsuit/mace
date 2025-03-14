@@ -10,7 +10,7 @@ import pytest
 import torch
 from ase.atoms import Atoms
 
-from mace.calculators.mace import MACECalculator
+from mace.calculators import MACECalculator, mace_mp
 
 try:
     import cuequivariance as cue  # pylint: disable=unused-import
@@ -1052,7 +1052,6 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     ]
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
-
 def test_run_train_lbfgs(tmp_path, fitting_configs):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
@@ -1068,7 +1067,7 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
     sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
     print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
-
+    
     cmd = (
         sys.executable
         + " "
@@ -1081,7 +1080,7 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
             ]
         )
     )
-
+    
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
@@ -1119,3 +1118,249 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
         -0.17593904833220647
     ]
     assert np.allclose(Es, ref_Es, atol=1e-2)
+
+
+def test_run_train_foundation_elements(tmp_path, fitting_configs):
+
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    base_params = {
+        "name": "MACE",
+        "checkpoints_dir": str(tmp_path),
+        "model_dir": str(tmp_path),
+        "train_file": tmp_path / "fit.xyz",
+        "loss": "weighted",
+        "foundation_model": "small",
+        "hidden_irreps": "128x0e",
+        "r_max": 6.0,
+        "default_dtype": "float64",
+        "max_num_epochs": 5,
+        "num_radial_basis": 10,
+        "interaction_first": "RealAgnosticResidualInteractionBlock",
+        "multiheads_finetuning": False,
+    }
+
+    # Run environment setup
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    # First run: without foundation_model_elements (default behavior)
+    mace_params = base_params.copy()
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    # Load model and check elements
+    model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu")
+    filtered_elements = set(int(z) for z in model_filtered.atomic_numbers)
+    assert filtered_elements == {1, 8}  # Only H and O should be present
+
+    # Second run: with foundation_model_elements
+    mace_params = base_params.copy()
+    mace_params["name"] = "MACE_all_elements"
+    mace_params["foundation_model_elements"] = True  # Flag-only argument
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    # Load model and check elements
+    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu")
+    all_elements = set(int(z) for z in model_all.atomic_numbers)
+
+    # Get elements from foundation model for comparison
+    calc = mace_mp(model="small", device="cpu")
+    foundation_elements = set(int(z) for z in calc.models[0].atomic_numbers)
+
+    # Check that all foundation model elements are preserved
+    assert all_elements == foundation_elements
+    assert len(all_elements) > len(filtered_elements)
+
+    # Check that both models can make predictions
+    at = fitting_configs[2].copy()
+
+    # Test filtered model
+    calc_filtered = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+    )
+    at.calc = calc_filtered
+    e1 = at.get_potential_energy()
+
+    # Test all-elements model
+    calc_all = MACECalculator(
+        model_paths=tmp_path / "MACE_all_elements.model",
+        device="cpu",
+        default_dtype="float64",
+    )
+    at.calc = calc_all
+    e2 = at.get_potential_energy()
+
+    # Energies should be different since the models are trained differently,
+    # but both should give reasonable results
+    assert np.isfinite(e1)
+    assert np.isfinite(e2)
+
+
+def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
+
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
+    for i, c in enumerate(fitting_configs):
+        if i in (0, 1):
+            c_dft = c.copy()
+            c_dft.info["head"] = "DFT"
+            fitting_configs_dft.append(c_dft)
+            c_mp2 = c.copy()
+            c_mp2.info["head"] = "MP2"
+            fitting_configs_mp2.append(c_mp2)
+        if i % 2 == 0:
+            c_copy = c.copy()
+            c_copy.info["head"] = "DFT"
+            fitting_configs_dft.append(c_copy)
+        else:
+            c_copy = c.copy()
+            c_copy.info["head"] = "MP2"
+            fitting_configs_mp2.append(c_copy)
+
+    ase.io.write(tmp_path / "fit_dft.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / "fit_mp2.xyz", fitting_configs_mp2)
+
+    # Create multihead configuration
+    heads = {
+        "DFT": {"train_file": f"{str(tmp_path)}/fit_dft.xyz"},
+        "MP2": {"train_file": f"{str(tmp_path)}/fit_mp2.xyz"},
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    config_file = tmp_path / "config.yaml"
+    with open(config_file, "w", encoding="utf-8") as file:
+        file.write(yaml_str)
+
+    base_params = {
+        "name": "MACE",
+        "checkpoints_dir": str(tmp_path),
+        "model_dir": str(tmp_path),
+        "config": str(config_file),
+        "loss": "weighted",
+        "foundation_model": "small",
+        "hidden_irreps": "128x0e",
+        "r_max": 6.0,
+        "default_dtype": "float64",
+        "max_num_epochs": 5,
+        "num_radial_basis": 10,
+        "interaction_first": "RealAgnosticResidualInteractionBlock",
+        "force_mh_ft_lr": True,
+        "batch_size": 1,
+        "num_samples_pt": 50,
+        "subselect_pt": "random",
+        "valid_fraction": 0.1,
+        "valid_batch_size": 1,
+    }
+
+    # Run environment setup
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    # First run: without foundation_model_elements (default behavior)
+    mace_params = base_params.copy()
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+    
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    # Load model and check elements
+    model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu")
+    filtered_elements = set(int(z) for z in model_filtered.atomic_numbers)
+    assert filtered_elements == {1, 8}  # Only H and O should be present
+    assert len(model_filtered.heads) == 3  # pt_head + DFT + MP2
+
+    # Second run: with foundation_model_elements
+    mace_params = base_params.copy()
+    mace_params["name"] = "MACE_all_elements"
+    mace_params["foundation_model_elements"] = True
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    # Load model and check elements
+    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu")
+    all_elements = set(int(z) for z in model_all.atomic_numbers)
+
+    # Get elements from foundation model for comparison
+    calc = mace_mp(model="small", device="cpu")
+    foundation_elements = set(int(z) for z in calc.models[0].atomic_numbers)
+
+    # Check that all foundation model elements are preserved
+    assert all_elements == foundation_elements
+    assert len(all_elements) > len(filtered_elements)
+    assert len(model_all.heads) == 3  # pt_head + DFT + MP2
+
+    # Check that both models can make predictions
+    at = fitting_configs_dft[2].copy()
+
+    # Test filtered model
+    calc_filtered = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+    )
+    at.calc = calc_filtered
+    e1 = at.get_potential_energy()
+
+    # Test all-elements model
+    calc_all = MACECalculator(
+        model_paths=tmp_path / "MACE_all_elements.model",
+        device="cpu",
+        default_dtype="float64",
+    )
+    at.calc = calc_all
+    e2 = at.get_potential_energy()
+
+    assert np.isfinite(e1)
+    assert np.isfinite(e2)
