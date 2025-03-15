@@ -205,6 +205,8 @@ def run(args) -> None:
             head_config.train_file = normalize_file_paths(head_config.train_file)
         if hasattr(head_config, "valid_file") and head_config.valid_file is not None:
             head_config.valid_file = normalize_file_paths(head_config.valid_file)
+        if hasattr(head_config, "test_file") and head_config.test_file is not None:
+            head_config.test_file = normalize_file_paths(head_config.test_file)
 
         if head_config.statistics_file is not None:
             with open(head_config.statistics_file, "r") as f:  # pylint: disable=W1514

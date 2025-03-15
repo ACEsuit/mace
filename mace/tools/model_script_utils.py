@@ -41,7 +41,7 @@ def configure_model(
         args.std = 1.0
         logging.info("No scaling selected")
 
-    if head_configs is not None and not isinstance(args.std, list):
+    if head_configs is not None and args.std is not None and not isinstance(args.std, list):
         atomic_inter_scale = []
         for head_config in head_configs:
             if hasattr(head_config, "std") and head_config.std is not None:
