@@ -15,11 +15,17 @@ from e3nn import o3
 
 try:
     import cuequivariance as cue
+
     CUET_AVAILABLE = True
 except ImportError:
     CUET_AVAILABLE = False
 
-USE_CUEQ_CG = os.environ.get("MACE_USE_CUEQ_CG", "0").lower() in ("1", "true", "yes", "y")
+USE_CUEQ_CG = os.environ.get("MACE_USE_CUEQ_CG", "0").lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+)
 
 _TP = collections.namedtuple("_TP", "op, args")
 _INPUT = collections.namedtuple("_INPUT", "tensor, start, stop")
@@ -148,6 +154,7 @@ def U_matrix_real(
 
 
 if CUET_AVAILABLE:
+
     def compute_U_cueq(irreps_in, irreps_out, correlation=2):
         U = []
         irreps_in = cue.Irreps(O3_e3nn, str(irreps_in))
@@ -163,7 +170,6 @@ if CUET_AVAILABLE:
                 U_matrix = U_matrix[0]
             U.append(torch.tensor(U_matrix))
         return U
-
 
     class O3_e3nn(cue.O3):
         def __mul__(  # pylint: disable=no-self-argument
@@ -194,9 +200,12 @@ if CUET_AVAILABLE:
             for l in itertools.count(0):
                 yield O3_e3nn(l=l, p=1 * (-1) ** l)
                 yield O3_e3nn(l=l, p=-1 * (-1) ** l)
+
 else:
+
     class O3_e3nn:
         pass
+
     print(
         "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
     )
