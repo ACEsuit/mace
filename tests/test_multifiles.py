@@ -608,6 +608,7 @@ def test_multiple_xyz_per_head():
         # Clean up
         shutil.rmtree(temp_dir)
 
+
 @pytest.mark.slow
 def test_single_xyz_per_head():
     """Test training with multiple XYZ files per head for train, valid and test sets"""
