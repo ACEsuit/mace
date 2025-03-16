@@ -11,7 +11,13 @@ from mace.tools.utils import AtomicNumberTable
 
 
 def configure_model(
-    args, train_loader, atomic_energies, model_foundation=None, heads=None, z_table=None
+    args,
+    train_loader,
+    atomic_energies,
+    model_foundation=None,
+    heads=None,
+    z_table=None,
+    head_configs=None,
 ):
     # Selecting outputs
     compute_virials = args.loss in ("stress", "virials", "huber", "universal")
@@ -34,6 +40,18 @@ def configure_model(
     if args.scaling == "no_scaling":
         args.std = 1.0
         logging.info("No scaling selected")
+
+    if head_configs is not None and args.std is not None and not isinstance(args.std, list):
+        atomic_inter_scale = []
+        for head_config in head_configs:
+            if hasattr(head_config, "std") and head_config.std is not None:
+                atomic_inter_scale.append(head_config.std)
+            elif args.std is not None:
+                atomic_inter_scale.append(
+                    args.std if isinstance(args.std, float) else 1.0
+                )
+        args.std = atomic_inter_scale
+
     elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
