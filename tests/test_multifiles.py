@@ -607,3 +607,193 @@ def test_multiple_xyz_per_head():
     finally:
         # Clean up
         shutil.rmtree(temp_dir)
+
+@pytest.mark.slow
+def test_single_xyz_per_head():
+    """Test training with multiple XYZ files per head for train, valid and test sets"""
+    # Create temporary directory
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Set up file paths - create multiple xyz files for each dataset
+        train_xyz_files = [
+            os.path.join(temp_dir, f"train_data{i}.xyz") for i in range(1, 2)
+        ]  # 3 train files
+        valid_xyz_files = [
+            os.path.join(temp_dir, f"valid_data{i}.xyz") for i in range(1, 2)
+        ]  # 2 valid files
+        test_xyz_files = [
+            os.path.join(temp_dir, f"test_data{i}.xyz") for i in range(1, 2)
+        ]  # 2 test files
+
+        iso_atoms_file = os.path.join(temp_dir, "isolated_atoms.xyz")
+
+        config_path = os.path.join(temp_dir, "config.yaml")
+        results_dir = os.path.join(temp_dir, "results")
+        checkpoints_dir = os.path.join(temp_dir, "checkpoints")
+        model_dir = os.path.join(temp_dir, "models")
+        e0s_file = os.path.join(temp_dir, "e0s.json")
+
+        # Create directories
+        os.makedirs(results_dir, exist_ok=True)
+        os.makedirs(checkpoints_dir, exist_ok=True)
+        os.makedirs(model_dir, exist_ok=True)
+
+        # Set atomic numbers for z_table
+        z_table_elements = [1, 6, 7, 8]  # H, C, N, O
+
+        # Create test data for each format
+        rng = np.random.RandomState(42)
+        seeds = rng.randint(0, 10000, size=10)  # More seeds for multiple files
+
+        # Create isolated atoms for E0s (one of each element)
+        isolated_atoms = []
+        e0s_dict = {}
+        for z in z_table_elements:
+            # Create isolated atom
+            atom = Atoms(
+                numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True
+            )
+            energy = float(rng.uniform(-5.0, -1.0))  # Random reference energy
+            forces = np.zeros((1, 3))
+            stress = np.zeros(6)
+            calc = SinglePointCalculator(
+                atom, energy=energy, forces=forces, stress=stress
+            )
+            atom.calc = calc
+            atom.info["config_type"] = "IsolatedAtom"
+            isolated_atoms.append(atom)
+            e0s_dict[str(z)] = energy  # Store energy for E0s file
+
+        # Create E0s file
+        create_e0s_file(e0s_dict, e0s_file)
+
+        # Create isolated atoms xyz file
+        create_xyz_file(isolated_atoms, iso_atoms_file)
+
+        # Create atoms for each train dataset - use different seeds for variety
+        train_datasets = []
+        for i, file in enumerate(train_xyz_files):
+            # Create atoms with different seeds
+            atoms = [
+                create_test_atoms(num_atoms=5, seed=seeds[i] + j) for j in range(5)
+            ]
+            create_xyz_file(atoms, file)
+            train_datasets.append(atoms)
+
+        # Create atoms for validation datasets
+        valid_datasets = []
+        for i, file in enumerate(valid_xyz_files):
+            atoms = [
+                create_test_atoms(num_atoms=5, seed=seeds[i + 3] + j) for j in range(3)
+            ]
+            create_xyz_file(atoms, file)
+            valid_datasets.append(atoms)
+
+        # Create atoms for test datasets
+        test_datasets = []
+        for i, file in enumerate(test_xyz_files):
+            atoms = [
+                create_test_atoms(num_atoms=5, seed=seeds[i + 5] + j) for j in range(3)
+            ]
+            create_xyz_file(atoms, file)
+            test_datasets.append(atoms)
+
+        # Create config.yaml for training with multiple xyz files per dataset
+        config = {
+            "name": "multi_xyz_test",
+            "seed": 42,
+            "model": "MACE",
+            "hidden_irreps": "32x0e",
+            "r_max": 5.0,
+            "batch_size": 5,
+            "max_num_epochs": 2,
+            "patience": 5,
+            "device": "cpu",
+            "energy_weight": 1.0,
+            "forces_weight": 10.0,
+            "loss": "weighted",
+            "optimizer": "adam",
+            "default_dtype": "float64",
+            "lr": 0.01,
+            "swa": False,
+            "work_dir": temp_dir,
+            "results_dir": results_dir,
+            "checkpoints_dir": checkpoints_dir,
+            "model_dir": model_dir,
+            "E0s": e0s_file,
+            "atomic_numbers": str(z_table_elements),
+            "heads": {
+                "multi_xyz_head": {
+                    # Using lists of multiple xyz files for each dataset
+                    "train_file": train_xyz_files,
+                    "valid_file": valid_xyz_files,
+                    "test_file": test_xyz_files,
+                    "energy_key": "energy",
+                    "forces_key": "forces",
+                    "stress_key": "stress",
+                },
+            },
+        }
+
+        # Write config file
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.dump(config, f)
+
+        # Import the modified run_train from our local module
+        run_train_script = (
+            Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
+        )
+
+        # Run training with subprocess
+        cmd = [sys.executable, str(run_train_script), f"--config={config_path}"]
+
+        # Set environment to add the current path to PYTHONPATH
+        env = os.environ.copy()
+        env["PYTHONPATH"] = (
+            str(Path(__file__).parent.parent) + ":" + env.get("PYTHONPATH", "")
+        )
+
+        # Run the process
+        process = subprocess.run(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        # Print output for debugging
+        print("\n" + "=" * 40 + " STDOUT " + "=" * 40)
+        print(process.stdout.decode())
+        print("\n" + "=" * 40 + " STDERR " + "=" * 40)
+        print(process.stderr.decode())
+
+        # Check that process completed successfully
+        assert (
+            process.returncode == 0
+        ), f"Training failed with error: {process.stderr.decode()}"
+
+        # Check that model was created
+        model_path = os.path.join(model_dir, "multi_xyz_test.model")
+        assert os.path.exists(model_path), f"Model was not created at {model_path}"
+
+        # Try to load and run the model
+        model = torch.load(model_path, map_location="cpu")
+        assert model is not None, "Failed to load model"
+
+        # Create a calculator
+        calc = MACECalculator(model_paths=model_path, device="cpu")
+
+        # Run prediction on a test atom
+        test_atom = create_test_atoms(num_atoms=5, seed=99999)
+        test_atom.calc = calc
+        energy = test_atom.get_potential_energy()
+        forces = test_atom.get_forces()
+
+        # Assert we got sensible outputs
+        assert np.isfinite(energy), "Model produced non-finite energy"
+        assert np.all(np.isfinite(forces)), "Model produced non-finite forces"
+
+    finally:
+        # Clean up
+        shutil.rmtree(temp_dir)
