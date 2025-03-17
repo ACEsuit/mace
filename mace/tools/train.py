@@ -34,7 +34,7 @@ from .utils import (
     compute_rmse,
 )
 from importlib.util import find_spec
-has_ipex = find_spec("ipex")
+has_ipex = find_spec("intel_extension_for_pytorch")
 if has_ipex:
     import intel_extension_for_pytorch as ipex
 
