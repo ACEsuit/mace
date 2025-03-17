@@ -27,6 +27,7 @@ from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.visualise_train import TrainingPlotter
 from mace.tools import torch_geometric
+from mace.tools.distributed import get_distributed_environment
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -59,7 +60,6 @@ from mace.tools.scripts_utils import (
     remove_pt_head,
     setup_wandb,
 )
-from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
 
@@ -88,7 +88,7 @@ def run(args) -> None:
             ) from e
     if args.distributed:
         try:
-            distr_env = DistributedEnvironment()
+            distr_env = get_distributed_environment(args.batch_scheduler)
         except Exception as e:  # pylint: disable=W0703
             logging.error(f"Failed to initialize distributed environment: {e}")
             return
