@@ -33,7 +33,10 @@ from .utils import (
     compute_rel_rmse,
     compute_rmse,
 )
-
+from importlib.util import find_spec
+has_ipex = find_spec("ipex")
+if has_ipex:
+    import intel_extension_for_pytorch as ipex
 
 @dataclasses.dataclass
 class SWAContainer:
@@ -377,6 +380,10 @@ def take_step(
     batch = batch.to(device)
     optimizer.zero_grad(set_to_none=True)
     batch_dict = batch.to_dict()
+
+    if device == torch.device("xpu"):
+        model, optimizer = ipex.optimize(model, optimizer=optimizer)
+
     output = model(
         batch_dict,
         training=True,
@@ -416,6 +423,9 @@ def evaluate(
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
+        if device == torch.device("xpu"):
+            batch = batch.to(device)
+            model = model.to(device)
         batch_dict = batch.to_dict()
         output = model(
             batch_dict,

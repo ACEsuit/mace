@@ -27,6 +27,11 @@ from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import prepare
 from mace.tools.scripts_utils import extract_model
 
+from importlib.util import find_spec
+has_ipex = find_spec("ipex")
+
+if has_ipex:
+    import intel_extension_for_pytorch as ipex
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
     """Get the dtype of the model"""
@@ -43,7 +48,7 @@ class MACECalculator(Calculator):
     args:
         model_paths: str, path to model or models if a committee is produced
                 to make a committee use a wild card notation like mace_*.model
-        device: str, device to run on (cuda or cpu)
+        device: str, device to run on (cuda, cpu, xpu)
         energy_units_to_eV: float, conversion factor from model energy units to eV
         length_units_to_A: float, conversion factor from model length units to Angstroms
         default_dtype: str, default dtype of model
@@ -183,6 +188,10 @@ class MACECalculator(Calculator):
         # Ensure all models are on the same device
         for model in self.models:
             model.to(device)
+
+        if device == "xpu":
+            for model in self.models:
+                model = ipex.optimize(model)
 
         r_maxs = [model.r_max.cpu() for model in self.models]
         r_maxs = np.array(r_maxs)

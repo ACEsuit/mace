@@ -11,9 +11,13 @@ from typing import Dict, Union
 import numpy as np
 import torch
 from e3nn.io import CartesianTensor
+from importlib.util import find_spec
+has_ipex = find_spec("ipex")
+
+if has_ipex:
+    import intel_extension_for_pytorch as ipex
 
 TensorDict = Dict[str, torch.Tensor]
-
 
 def to_one_hot(indices: torch.Tensor, num_classes: int) -> torch.Tensor:
     """
@@ -66,6 +70,11 @@ def init_device(device_str: str) -> torch.device:
         return torch.device("mps")
     if device_str == "xpu":
         torch.xpu.is_available()
+        devices = torch.xpu.device_count()
+        is_available = devices > 0
+        assert is_available, logging.info("No XPU backend is available")
+        torch.xpu.memory_stats()
+        logging.info("Using XPU GPU acceleration")
         return torch.device("xpu")
 
     logging.info("Using CPU")
