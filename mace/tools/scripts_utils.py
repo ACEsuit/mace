@@ -807,6 +807,22 @@ def get_params_options(
                 "weight_decay": 0.0,
             }
         )
+    if hasattr(model, "spin_charge_mixing"):
+        param_options["params"].append(
+            {
+                "name": "spin_charge_mixing",
+                "params": model.spin_charge_mixing.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+    if hasattr(model, "spin_charge_readout"):
+        param_options["params"].append(
+            {
+                "name": "spin_charge_readout",
+                "params": model.spin_charge_readout.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
     return param_options
 
 

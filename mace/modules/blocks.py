@@ -1160,18 +1160,7 @@ class RealAgnosticNormalizedResidualInteractionBlock(InteractionBlock):
             cueq_config=self.cueq_config,
         )
         self.reshape = reshape_irreps(self.irreps_out, cueq_config=self.cueq_config)
-        self.normalization_first = nn.BatchNorm(irreps_mid, affine=True, instance_norm=True, normalization="norm")
-        self.normalization_second = nn.BatchNorm(self.irreps_out, affine=True, instance_norm=True, normalization="norm")
-        self.linear_2 = Linear(
-            self.irreps_out,
-            self.irreps_out,
-            internal_weights=True,
-            shared_weights=True,
-            cueq_config=self.cueq_config,
-        )
-        self.gated_non_linearity = nn.NormActivation(
-            self.irreps_out, activation=torch.nn.functional.silu, bias=True
-        )
+
     def forward(
         self,
         node_attrs: torch.Tensor,
@@ -1192,11 +1181,7 @@ class RealAgnosticNormalizedResidualInteractionBlock(InteractionBlock):
         message = scatter_sum(
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
-        message = self.normalization_first(message)
         message = self.linear(message) / self.avg_num_neighbors
-        gated_message = self.linear_2(self.gated_non_linearity(message))
-        message = gated_message + message
-        message = self.normalization_second(message)
         return (
             self.reshape(message),
             sc,
