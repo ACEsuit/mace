@@ -178,6 +178,7 @@ def _build_model(
             atomic_inter_shift=[0.0] * len(heads),
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
+            attention_irreps=o3.Irreps(args.attention_irreps) if args.attention_irreps is not None else None,
             heads=heads,
         )
     if args.model == "ScaleShiftMACE":
@@ -193,6 +194,7 @@ def _build_model(
             atomic_inter_shift=args.mean,
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
+            attention_irreps=o3.Irreps(args.attention_irreps) if args.attention_irreps is not None else None,
             heads=heads,
         )
     if args.model == "FoundationMACE":

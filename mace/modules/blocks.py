@@ -320,6 +320,7 @@ class InteractionBlock(torch.nn.Module):
         hidden_irreps: o3.Irreps,
         avg_num_neighbors: float,
         radial_MLP: Optional[List[int]] = None,
+        attention_irreps: Optional[o3.Irreps]= None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ) -> None:
         super().__init__()
@@ -330,6 +331,7 @@ class InteractionBlock(torch.nn.Module):
         self.target_irreps = target_irreps
         self.hidden_irreps = hidden_irreps
         self.avg_num_neighbors = avg_num_neighbors
+        self.attention_irreps = attention_irreps
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
         self.radial_MLP = radial_MLP
@@ -1107,7 +1109,7 @@ class ScaleShiftBlock(torch.nn.Module):
         return f"{self.__class__.__name__}(scale={formatted_scale}, shift={formatted_shift})"
 
 @compile_mode("script")
-class RealAgnosticNormalizedResidualInteractionBlock(InteractionBlock):
+class RealAgnosticAttentionResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
@@ -1145,7 +1147,7 @@ class RealAgnosticNormalizedResidualInteractionBlock(InteractionBlock):
         # Linear
         self.irreps_out = self.target_irreps
         self.linear = Linear(
-            irreps_mid,
+            self.attention_irreps,
             self.irreps_out,
             internal_weights=True,
             shared_weights=True,
@@ -1160,6 +1162,15 @@ class RealAgnosticNormalizedResidualInteractionBlock(InteractionBlock):
             cueq_config=self.cueq_config,
         )
         self.reshape = reshape_irreps(self.irreps_out, cueq_config=self.cueq_config)
+
+        # Attention
+        self.linear_queries = Linear(irreps_in=irreps_mid, irreps_out=self.attention_irreps, internal_weights=True, shared_weights=True, cueq_config=self.cueq_config)
+        self.linear_keys = Linear(irreps_in=irreps_mid, irreps_out=self.attention_irreps, internal_weights=True, shared_weights=True, cueq_config=self.cueq_config)
+        self.linear_values = Linear(irreps_in=irreps_mid, irreps_out=self.attention_irreps, internal_weights=True, shared_weights=True, cueq_config=self.cueq_config)
+
+        self.tp_dot = o3.ElementwiseTensorProduct(irreps_in1=self.attention_irreps, irreps_in2=self.attention_irreps, filter_ir_out=("0e",), normalization='component')
+        self.scalar_irreps = self.tp_dot.irreps_out
+        self.tp_scalar_att = o3.ElementwiseTensorProduct(irreps_in1=self.scalar_irreps, irreps_in2=self.attention_irreps, normalization='component')
 
     def forward(
         self,
@@ -1178,6 +1189,17 @@ class RealAgnosticNormalizedResidualInteractionBlock(InteractionBlock):
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
+        # project Qji = linear(mji), Vji = linear(mij), Kji = linear(mji)
+        Qji, Kji, Vji = (
+                self.linear_queries(mji),
+                self.linear_keys(mji),
+                self.linear_values(mji),
+            )
+        # alphaji = exp(Qji . Kji)/sum(exp(Qij.Kij))
+        alphaji_num = self.tp_dot(Qji, Kji).exp()
+        alphaji = alphaji_num / scatter_sum(src=alphaji_num, index=receiver, dim=0, dim_size=num_nodes)[receiver, :]
+        # mji = sum_j alphaji Vji
+        mji = self.tp_scalar_att(alphaji, Vji)
         message = scatter_sum(
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]

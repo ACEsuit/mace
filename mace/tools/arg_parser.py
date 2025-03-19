@@ -172,7 +172,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
-            "RealAgnosticNormalizedResidualInteractionBlock",
+            "RealAgnosticAttentionResidualInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -185,7 +185,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
-            "RealAgnosticNormalizedResidualInteractionBlock",
+            "RealAgnosticAttentionResidualInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -212,6 +212,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hidden_irreps",
         help="irreps for hidden node states",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--attention_irreps",
+        help="irreps for attention layer",
         type=str,
         default=None,
     )

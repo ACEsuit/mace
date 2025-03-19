@@ -348,6 +348,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         ),
         "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
+        "attention_irreps": o3.Irreps(model.attention_irreps),
         "distance_transform": radial_to_transform(model.radial_embedding),
         "atomic_inter_scale": scale.cpu().numpy(),
         "atomic_inter_shift": shift.cpu().numpy(),
@@ -799,11 +800,11 @@ def get_params_options(
                 "weight_decay": 0.0,
             }
         )
-    if hasattr(model, "charge_embedding"):
+    if hasattr(model, "charges_embedding"):
         param_options["params"].append(
             {
                 "name": "charge_embedding",
-                "params": model.charge_embedding.parameters(),
+                "params": model.charges_embedding.parameters(),
                 "weight_decay": 0.0,
             }
         )

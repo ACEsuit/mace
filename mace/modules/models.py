@@ -63,6 +63,7 @@ class MACE(torch.nn.Module):
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,
+        attention_irreps: Optional[o3.Irreps] = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -79,6 +80,7 @@ class MACE(torch.nn.Module):
         self.heads = heads
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
+        self.attention_irreps = attention_irreps
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -130,6 +132,7 @@ class MACE(torch.nn.Module):
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
+            attention_irreps=attention_irreps,
             cueq_config=cueq_config,
         )
         self.interactions = torch.nn.ModuleList([inter])
@@ -173,6 +176,7 @@ class MACE(torch.nn.Module):
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
                 radial_MLP=radial_MLP,
+                attention_irreps=attention_irreps,
                 cueq_config=cueq_config,
             )
             self.interactions.append(inter)
