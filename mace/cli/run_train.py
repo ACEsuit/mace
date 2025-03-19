@@ -27,6 +27,7 @@ from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.visualise_train import TrainingPlotter
 from mace.tools import torch_geometric
+from mace.tools.freeze import freeze_layers, freeze_param
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -62,7 +63,6 @@ from mace.tools.scripts_utils import (
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
-from mace.tools.freeze import freeze_layers, freeze_param
 
 
 def main() -> None:
