@@ -62,6 +62,7 @@ from mace.tools.scripts_utils import (
 from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
+from mace.tools.freeze import freeze_layers, freeze_param
 
 
 def main() -> None:
@@ -707,7 +708,24 @@ def run(args) -> None:
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
     logging.info("")
 
-   # Check which layers are frozen
+    # Cueq
+    if args.enable_cueq:
+        logging.info("Converting model to CUEQ for accelerated training")
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        model = run_e3nn_to_cueq(deepcopy(model), device=device)
+
+    # Freeze layers or parameter groups
+    if args.freeze is not None and args.freeze_par is not None:
+        logging.info(
+            "Both --freeze and --freeze_par arguments detected, using --freeze"
+        )
+        freeze_layers(model, args.freeze)
+    elif args.freeze_par is not None:
+        freeze_param(model, args.freeze_par)
+    elif args.freeze is not None:
+        freeze_layers(model, args.freeze)
+
+    # Check which layers are frozen
     logging.info("===========ACTIVE/FROZEN PARAMETERS===========")
 
     for name, param in model.named_parameters():
@@ -728,11 +746,7 @@ def run(args) -> None:
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
 
-    # Cueq
-    if args.enable_cueq:
-        logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
-        model = run_e3nn_to_cueq(deepcopy(model), device=device)
+
     # Optimizer
     param_options = get_params_options(args, model)
     optimizer: torch.optim.Optimizer
