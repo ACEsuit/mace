@@ -302,8 +302,8 @@ def test_remove_pt_head():
     config_pt_head = data.Configuration(
         atomic_numbers=mol.numbers,
         positions=mol.positions,
-        energy=1.0,
-        forces=np.random.randn(len(mol), 3),
+        properties={"energy":1.0, "forces":np.random.randn(len(mol), 3)},
+        property_weights={"forces": 1.0, "energy": 1.0},
         head="DFT",
     )
     atomic_data = data.AtomicData.from_config(
@@ -395,8 +395,8 @@ def test_remove_pt_head_multihead():
         config_pt_head = data.Configuration(
             atomic_numbers=mol.numbers,
             positions=mol.positions,
-            energy=1.0,
-            forces=np.random.randn(len(mol), 3),
+            properties={"energy":1.0, "forces":np.random.randn(len(mol), 3)},
+            property_weights={"forces": 1.0, "energy": 1.0},
             head=head,
         )
         configs[head] = config_pt_head
