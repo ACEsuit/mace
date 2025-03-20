@@ -50,8 +50,8 @@ def get_dataset_from_xyz(
     train_path: Union[str, List[str]],
     valid_path: Optional[Union[str, List[str]]],
     valid_fraction: float,
-    config_type_weights: Dict,
     key_specification: KeySpecification,
+    config_type_weights: Optional[Dict]=None,
     test_path: Optional[Union[str, List[str]]] = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
@@ -842,7 +842,9 @@ def check_folder_subfolder(folder_path):
     return False
 
 
-def check_path_ase_read(filename: str) -> str:
+def check_path_ase_read(filename: Optional[str]) -> bool:
+    if filename is None:
+        return False
     filepath = Path(filename)
     if filepath.is_dir():
         num_h5_files = len(list(filepath.glob("*.h5")))

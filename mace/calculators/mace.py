@@ -199,15 +199,21 @@ class MACECalculator(Calculator):
         self.charges_key = charges_key
 
         try:
-            self.available_heads = self.models[0].heads
+            self.available_heads: List[str] = self.models[0].heads # type: ignore
         except AttributeError:
             self.available_heads = ["Default"]
-        self.head = kwargs.get("head", "Default")
-        assert (
-            self.head in self.available_heads
-        ), f"specified head {self.head}, but model available model heads are {self.available_heads}"
+        kwarg_head = kwargs.get("head", None)
+        if kwarg_head is not None:
+            self.head = kwarg_head
+        else:
+            self.head = self.available_heads[0]
+        if kwarg_head is None and self.head.lower() != "default":
+            raise ValueError(
+                "Head keyword was not provided, and the head in the model is not 'Default'"
+                f"Please provide a head keyword to specify the head you want to use. Available heads are: {self.available_heads}"
+            )
 
-        print("using head", self.head, "out of", self.available_heads)
+        print("Using head", self.head, "out of", self.available_heads)
 
         model_dtype = get_model_dtype(self.models[0])
         if default_dtype == "":

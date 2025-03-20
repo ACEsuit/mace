@@ -401,7 +401,7 @@ def test_multifile_training():
         assert model is not None, "Failed to load model"
 
         # Create a calculator
-        calc = MACECalculator(model_paths=model_path, device="cpu")
+        calc = MACECalculator(model_paths=model_path, device="cpu", head="head1")
 
         # Run prediction on a test atom
         test_atom = create_test_atoms(num_atoms=5, seed=99999)
@@ -592,7 +592,7 @@ def test_multiple_xyz_per_head():
         assert model is not None, "Failed to load model"
 
         # Create a calculator
-        calc = MACECalculator(model_paths=model_path, device="cpu")
+        calc = MACECalculator(model_paths=model_path, device="cpu", head="multi_xyz_head")
 
         # Run prediction on a test atom
         test_atom = create_test_atoms(num_atoms=5, seed=99999)

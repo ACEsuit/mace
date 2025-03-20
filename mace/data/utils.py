@@ -13,7 +13,7 @@ import ase.io
 import h5py
 import numpy as np
 
-from mace.tools import AtomicNumberTable
+from mace.tools import AtomicNumberTable, DefaultKeys
 
 Positions = np.ndarray  # [..., 3]
 Cell = np.ndarray  # [3,3]
@@ -38,6 +38,11 @@ class KeySpecification:
         if arrays_keys is not None:
             self.arrays_keys.update(arrays_keys)
         return self
+    
+    @classmethod
+    def from_defaults(cls):
+        instance = cls()
+        return update_keyspec_from_kwargs(instance, DefaultKeys.keydict())
 
 
 def update_keyspec_from_kwargs(
