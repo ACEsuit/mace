@@ -229,7 +229,7 @@ def get_outputs_committee(
     means = {}
     stds = {}
     
-    properties = ['forces', 'virials', 'stress', 'hessian']
+    properties = ["forces", "virials", "stress", "hessian"]
     head_collector = {key: [] for key in properties}
     for head in committee_heads:
         output_head = get_outputs(

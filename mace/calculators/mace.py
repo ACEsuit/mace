@@ -46,6 +46,7 @@ class MACECalculator(Calculator):
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
                     Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+        multihead_committee: bool, use multihead committee for prediction
 
     Dipoles are returned in units of Debye
     """
@@ -60,6 +61,7 @@ class MACECalculator(Calculator):
         default_dtype="",
         charges_key="Qs",
         model_type="MACE",
+        multihead_committee=False,
         compile_mode=None,
         fullgraph=True,
         enable_cueq=False,
@@ -89,6 +91,7 @@ class MACECalculator(Calculator):
         self.results = {}
 
         self.model_type = model_type
+        self.multihead_committee = multihead_committee
 
         if model_type == "MACE":
             self.implemented_properties = [
@@ -162,6 +165,9 @@ class MACECalculator(Calculator):
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
 
+        if self.multihead_committee:
+            self.implemented_properties.extend(["energy_stds", "force_stds"])
+
         if compile_mode is not None:
             print(f"Torch compile is enabled with mode: {compile_mode}")
             self.models = [
@@ -197,6 +203,11 @@ class MACECalculator(Calculator):
             self.heads = self.models[0].heads
         except AttributeError:
             self.heads = ["Default"]
+        if self.multihead_committee:
+            self.committee_heads = [i for i, head in enumerate(self.heads) if "committee-" in head]
+            self.committee_heads = torch.tensor(self.committee_heads, dtype=int).to(device)
+        else:
+            self.committee_heads = None
         model_dtype = get_model_dtype(self.models[0])
         if default_dtype == "":
             print(
@@ -240,6 +251,15 @@ class MACECalculator(Calculator):
                     "stress": stress,
                 }
             )
+            if self.multihead_committee:
+                energy_stds = torch.zeros(num_models, device=self.device)
+                force_stds = torch.zeros(num_models, num_atoms, 3, device=self.device)
+                dict_of_tensors.update(
+                    {
+                        "energy_stds": energy_stds,
+                        "force_stds": force_stds,
+                    }
+                )
         if model_type in ["EnergyDipoleMACE", "DipoleMACE"]:
             dipole = torch.zeros(num_models, 3, device=self.device)
             dict_of_tensors.update({"dipole": dipole})
@@ -301,6 +321,7 @@ class MACECalculator(Calculator):
                 batch.to_dict(),
                 compute_stress=compute_stress,
                 training=self.use_compile,
+                committee_heads=self.committee_heads,
             )
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
@@ -308,6 +329,9 @@ class MACECalculator(Calculator):
                 ret_tensors["forces"][i] = out["forces"].detach()
                 if out["stress"] is not None:
                     ret_tensors["stress"][i] = out["stress"].detach()
+                if self.multihead_committee:
+                    ret_tensors["energy_stds"][i] = out["stds"]["energy"].detach()
+                    ret_tensors["force_stds"][i] = out["stds"]["forces"].detach()
             if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
                 ret_tensors["dipole"][i] = out["dipole"].detach()
 
@@ -340,6 +364,14 @@ class MACECalculator(Calculator):
                     ret_tensors["forces"].cpu().numpy()
                     * self.energy_units_to_eV
                     / self.length_units_to_A
+                )
+            if self.multihead_committee:
+                self.results["energy_stds"] = (
+                    ret_tensors["energy_stds"].cpu().numpy() * self.energy_units_to_eV
+                )
+                self.results["force_stds"] = (
+                    ret_tensors["force_stds"].cpu().numpy()
+                    * self.energy_units_to_eV / self.length_units_to_A
                 )
             if out["stress"] is not None:
                 self.results["stress"] = full_3x3_to_voigt_6_stress(
@@ -380,6 +412,7 @@ class MACECalculator(Calculator):
                 compute_hessian=True,
                 compute_stress=False,
                 training=self.use_compile,
+                committee_heads=self.committee_heads,
             )["hessian"]
             for model in self.models
         ]
