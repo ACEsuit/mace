@@ -1,4 +1,8 @@
+# pylint: disable=wrong-import-position
 import argparse
+import os
+
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import torch
 from e3nn.util import jit

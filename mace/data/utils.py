@@ -68,8 +68,8 @@ class Configuration:
     pbc: Optional[Pbc] = None
 
     weight: float = 1.0  # weight of config in loss
-    config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
-    head: Optional[str] = "Default"  # head used to compute the config
+    config_type: str = DEFAULT_CONFIG_TYPE  # config_type of config
+    head: str = "Default"  # head used to compute the config
 
 
 Configurations = List[Configuration]
@@ -179,7 +179,7 @@ def config_from_atoms(
 
 def test_config_types(
     test_configs: Configurations,
-) -> List[Tuple[Optional[str], List[Configuration]]]:
+) -> List[Tuple[str, List[Configuration]]]:
     """Split test set based on config_type-s"""
     test_by_ct = []
     all_cts = []
@@ -196,9 +196,9 @@ def test_config_types(
 
 def load_from_xyz(
     file_path: str,
-    config_type_weights: Dict,
     key_specification: KeySpecification,
     head_name: str = "Default",
+    config_type_weights: Optional[Dict]=None,
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
@@ -206,6 +206,7 @@ def load_from_xyz(
     energy_key = key_specification.info_keys["energy"]
     forces_key = key_specification.arrays_keys["forces"]
     stress_key = key_specification.info_keys["stress"]
+    head_key = key_specification.info_keys["head"]
     if energy_key == "energy":
         logging.warning(
             "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'energy' to 'REF_energy'. You need to use --energy_key='REF_energy' to specify the chosen key name."
@@ -246,21 +247,20 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
-            atoms.info[key_specification.info_keys["head"]] = head_name
+            atoms.info[head_key] = head_name
             isolated_atom_config = (
                 len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
             )
             if isolated_atom_config:
+                atomic_number = int(atoms.get_atomic_numbers()[0])
                 if energy_key in atoms.info.keys():
-                    atomic_energies_dict[atoms.get_atomic_numbers()[0]] = atoms.info[
-                        energy_key
-                    ]
+                    atomic_energies_dict[atomic_number] = float(atoms.info[energy_key])
                 else:
                     logging.warning(
                         f"Configuration '{idx}' is marked as 'IsolatedAtom' "
                         "but does not contain an energy. Zero energy will be used."
                     )
-                    atomic_energies_dict[atoms.get_atomic_numbers()[0]] = np.zeros(1)
+                    atomic_energies_dict[atomic_number] = 0.0
             else:
                 atoms_without_iso_atoms.append(atoms)
 
@@ -268,6 +268,9 @@ def load_from_xyz(
             logging.info("Using isolated atom energies from training file")
         if not keep_isolated_atoms:
             atoms_list = atoms_without_iso_atoms
+
+    for atoms in atoms_list:
+        atoms.info[head_key] = head_name
 
     configs = config_from_atoms_list(
         atoms_list,

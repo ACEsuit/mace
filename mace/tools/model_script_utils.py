@@ -7,6 +7,7 @@ from e3nn import o3
 from mace import modules
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.utils import AtomicNumberTable
 
 
 def configure_model(
@@ -43,8 +44,22 @@ def configure_model(
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
-        model_config_foundation["atomic_numbers"] = z_table.zs
-        model_config_foundation["num_elements"] = len(z_table)
+
+        if args.foundation_model_elements:
+            foundation_z_table = AtomicNumberTable(
+                [int(z) for z in model_foundation.atomic_numbers]
+            )
+            model_config_foundation["atomic_numbers"] = foundation_z_table.zs
+            model_config_foundation["num_elements"] = len(foundation_z_table)
+            z_table = foundation_z_table
+            logging.info(
+                f"Using all elements from foundation model: {foundation_z_table.zs}"
+            )
+        else:
+            model_config_foundation["atomic_numbers"] = z_table.zs
+            model_config_foundation["num_elements"] = len(z_table)
+            logging.info(f"Using filtered elements: {z_table.zs}")
+
         args.max_L = model_config_foundation["hidden_irreps"].lmax
 
         if args.model == "MACE" and model_foundation.__class__.__name__ == "MACE":
@@ -53,7 +68,6 @@ def configure_model(
             model_config_foundation["atomic_inter_shift"] = (
                 _determine_atomic_inter_shift(args.mean, heads)
             )
-
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
         args.model = "FoundationMACE"
@@ -147,15 +161,18 @@ def _build_model(
     args, model_config, model_config_foundation, heads
 ):  # pylint: disable=too-many-return-statements
     if args.model == "MACE":
+        if args.interaction_first not in [
+            "RealAgnosticInteractionBlock",
+            "RealAgnosticDensityInteractionBlock",
+        ]:
+            args.interaction_first = "RealAgnosticInteractionBlock"
         return modules.ScaleShiftMACE(
             **model_config,
             pair_repulsion=args.pair_repulsion,
             distance_transform=args.distance_transform,
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[
-                "RealAgnosticInteractionBlock"
-            ],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
             atomic_inter_shift=[0.0] * len(heads),
