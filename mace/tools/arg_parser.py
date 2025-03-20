@@ -21,7 +21,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "--config",
             type=str,
             is_config_file=True,
-            help="config file to agregate options",
+            help="config file to aggregate options",
         )
     except ImportError:
         parser = argparse.ArgumentParser(
@@ -80,6 +80,20 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
+
+    parser.add_argument(
+        "--plot",
+        help="Plot results of training",
+        type=str2bool,
+        default=True,
+    )
+
+    parser.add_argument(
+        "--plot_frequency",
+        help="Set plotting frequency: '0' for only at the end or an integer N to plot every N epochs.",
+        type=int,
+        default="0",
+    )
 
     parser.add_argument(
         "--error_table",
@@ -361,6 +375,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--foundation_head",
+        help="Name of the head to use for fine-tuning",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
         "--weight_pt_head",
         help="Weight of the pretrained head in the loss function",
         type=float,
@@ -370,13 +391,25 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--num_samples_pt",
         help="Number of samples in the pretrained head",
         type=int,
-        default=1000,
+        default=10000,
+    )
+    parser.add_argument(
+        "--force_mh_ft_lr",
+        help="Force the multiheaded fine-tuning to use arg_parser lr",
+        type=str2bool,
+        default=False,
     )
     parser.add_argument(
         "--subselect_pt",
         help="Method to subselect the configurations of the pretraining set",
         choices=["fps", "random"],
         default="random",
+    )
+    parser.add_argument(
+        "--filter_type_pt",
+        help="Filtering method for collecting the pretraining set",
+        choices=["none", "combinations", "inclusive", "exclusive"],
+        default="none",
     )
     parser.add_argument(
         "--pt_train_file",
@@ -389,6 +422,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Validation set file for the pretrained head",
         type=str,
         default=None,
+    )
+    parser.add_argument(
+        "--foundation_model_elements",
+        help="Keep all elements of the foundation model during fine-tuning",
+        type=str2bool,
+        default=False,
     )
     parser.add_argument(
         "--keep_isolated_atoms",
@@ -659,6 +698,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=check_float_or_none,
         default=10.0,
     )
+    # option for cuequivariance acceleration
+    parser.add_argument(
+        "--enable_cueq",
+        help="Enable cuequivariance acceleration",
+        type=str2bool,
+        default=False,
+    )
     # options for using Weights and Biases for experiment tracking
     # to install see https://wandb.ai
     parser.add_argument(
@@ -724,13 +770,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
             "--config",
             type=str,
             is_config_file=True,
-            help="config file to agregate options",
+            help="config file to aggregate options",
         )
     except ImportError:
         parser = argparse.ArgumentParser(
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         )
-    
     parser.add_argument(
         "--train_file",
         help="Training set h5 file",
