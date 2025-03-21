@@ -3,9 +3,9 @@ import os
 import numpy as np
 from torch.utils.data import Dataset
 
-from mace.tools.default_keys import DefaultKeys
 from mace.data.atomic_data import AtomicData
 from mace.data.utils import KeySpecification, config_from_atoms
+from mace.tools.default_keys import DefaultKeys
 from mace.tools.fairchem_dataset import AseDBDataset
 
 

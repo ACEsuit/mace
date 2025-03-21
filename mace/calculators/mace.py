@@ -199,7 +199,7 @@ class MACECalculator(Calculator):
         self.charges_key = charges_key
 
         try:
-            self.available_heads: List[str] = self.models[0].heads # type: ignore
+            self.available_heads: List[str] = self.models[0].heads  # type: ignore
         except AttributeError:
             self.available_heads = ["Default"]
         kwarg_head = kwargs.get("head", None)

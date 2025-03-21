@@ -21,7 +21,6 @@ from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules, tools
 from mace.data import KeySpecification
-from mace.tools import evaluate
 from mace.tools.train import SWAContainer
 
 
@@ -32,9 +31,7 @@ class SubsetCollection:
     tests: List[Tuple[str, data.Configurations]]
 
 
-def log_dataset_contents(
-    dataset: data.Configurations, dataset_name: str
-) -> None:
+def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> None:
     log_string = f"{dataset_name} ["
     for prop_name in dataset[0].properties.keys():
         if prop_name == "dipole":
@@ -51,7 +48,7 @@ def get_dataset_from_xyz(
     valid_path: Optional[Union[str, List[str]]],
     valid_fraction: float,
     key_specification: KeySpecification,
-    config_type_weights: Optional[Dict]=None,
+    config_type_weights: Optional[Dict] = None,
     test_path: Optional[Union[str, List[str]]] = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
@@ -126,7 +123,7 @@ def get_dataset_from_xyz(
 
     # Log total training set info
     log_dataset_contents(all_train_configs, "Total Training set")
-    
+
     # Process validation files if provided
     if valid_paths:
         for i, path in enumerate(valid_paths):
@@ -138,7 +135,9 @@ def get_dataset_from_xyz(
                 head_name=head_name,
             )
             all_valid_configs.extend(valid_configs)
-            log_dataset_contents(valid_configs, f"Validation set {i+1}/{len(valid_paths)}")
+            log_dataset_contents(
+                valid_configs, f"Validation set {i+1}/{len(valid_paths)}"
+            )
 
         # Log total validation set info
         log_dataset_contents(all_valid_configs, "Total Validation set")
@@ -152,7 +151,7 @@ def get_dataset_from_xyz(
         )
         log_dataset_contents(train_configs, "Random Split Training set")
         log_dataset_contents(valid_configs, "Random Split Validation set")
-        
+
     test_configs_by_type = []
     if test_paths:
         for i, path in enumerate(test_paths):
