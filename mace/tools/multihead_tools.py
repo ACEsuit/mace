@@ -1,6 +1,6 @@
 import argparse
-import dataclasses
 import ast
+import dataclasses
 import logging
 import os
 import urllib.request
@@ -9,14 +9,14 @@ from typing import Any, Dict, List, Optional, Union
 
 import torch
 
-from mace.cli.fine_tuning_select import select_samples, SelectionSettings, FilteringType, SubselectType
-from mace.data import KeySpecification
-from mace.data.utils import update_keyspec_from_kwargs
-from mace.tools.scripts_utils import (
-    SubsetCollection,
-    dict_to_namespace,
-    get_dataset_from_xyz,
+from mace.cli.fine_tuning_select import (
+    FilteringType,
+    SelectionSettings,
+    SubselectType,
+    select_samples,
 )
+from mace.data import KeySpecification
+from mace.tools.scripts_utils import SubsetCollection, get_dataset_from_xyz
 
 
 @dataclasses.dataclass
@@ -92,38 +92,47 @@ def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
         }
     }
 
-def prepare_pt_head(args:argparse.Namespace, pt_keyspec:KeySpecification, foundation_model_num_neighbours:float) -> Dict[str, Any]:
+
+def prepare_pt_head(
+    args: argparse.Namespace,
+    pt_keyspec: KeySpecification,
+    foundation_model_num_neighbours: float,
+) -> Dict[str, Any]:
     """Prepare a pretraining head from args."""
-    if args.foundation_model in ["small", "medium", "large"] or args.pt_train_file == "mp":
-       logging.info(
-                "Using foundation model for multiheads finetuning with Materials Project data"
-            )
-       pt_keyspec.update(
-                info_keys={"energy": "energy", "stress": "stress"},
-                arrays_keys={"forces": "forces"},
-            )
-       pt_head = {
-                "train_file": "mp",
-                "E0s":"foundation",
-                "statistics_file": None,
-                "key_specification": pt_keyspec,
-                "avg_num_neighbors": foundation_model_num_neighbours,
-                "compute_avg_num_neighbors": False,
-            }
+    if (
+        args.foundation_model in ["small", "medium", "large"]
+        or args.pt_train_file == "mp"
+    ):
+        logging.info(
+            "Using foundation model for multiheads finetuning with Materials Project data"
+        )
+        pt_keyspec.update(
+            info_keys={"energy": "energy", "stress": "stress"},
+            arrays_keys={"forces": "forces"},
+        )
+        pt_head = {
+            "train_file": "mp",
+            "E0s": "foundation",
+            "statistics_file": None,
+            "key_specification": pt_keyspec,
+            "avg_num_neighbors": foundation_model_num_neighbours,
+            "compute_avg_num_neighbors": False,
+        }
     else:
         pt_head = {
-                "train_file": args.pt_train_file,
-                "valid_file": args.pt_valid_file,
-                "E0s": "foundation",
-                "statistics_file": args.statistics_file,
-                "valid_fraction": args.valid_fraction,
-                "key_specification": pt_keyspec,
-                "avg_num_neighbors": foundation_model_num_neighbours,
-                "keep_isolated_atoms": args.keep_isolated_atoms,
-                "compute_avg_num_neighbors": False,
-            }
-        
+            "train_file": args.pt_train_file,
+            "valid_file": args.pt_valid_file,
+            "E0s": "foundation",
+            "statistics_file": args.statistics_file,
+            "valid_fraction": args.valid_fraction,
+            "key_specification": pt_keyspec,
+            "avg_num_neighbors": foundation_model_num_neighbours,
+            "keep_isolated_atoms": args.keep_isolated_atoms,
+            "compute_avg_num_neighbors": False,
+        }
+
     return pt_head
+
 
 def assemble_mp_data(
     args: argparse.Namespace,
@@ -153,7 +162,11 @@ def assemble_mp_data(
                 )
             logging.info(f"Materials Project dataset to {cached_dataset_path}")
         output = f"mp_finetuning-{tag}.xyz"
-        atomic_numbers = ast.literal_eval(args.atomic_numbers) if args.atomic_numbers is not None else None
+        atomic_numbers = (
+            ast.literal_eval(args.atomic_numbers)
+            if args.atomic_numbers is not None
+            else None
+        )
         settings = SelectionSettings(
             configs_pt=cached_dataset_path,
             output=f"mp_finetuning-{tag}.xyz",
@@ -165,7 +178,7 @@ def assemble_mp_data(
             filtering_type=FilteringType(args.filter_type_pt),
             subselect=SubselectType(args.subselect_pt),
             default_dtype=args.default_dtype,
-        )    
+        )
         select_samples(settings)
         head_config_pt.train_file = [output]
         collections_mp, _ = get_dataset_from_xyz(

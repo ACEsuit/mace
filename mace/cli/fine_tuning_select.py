@@ -1,12 +1,13 @@
 ###########################################################################################
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import argparse
-from enum import Enum
 import logging
-from typing import List, Tuple, Union
 from dataclasses import dataclass
+from enum import Enum
+from typing import List, Tuple, Union
 
 import ase.data
 import ase.io
@@ -16,7 +17,7 @@ import torch
 from mace.calculators import MACECalculator, mace_mp
 
 try:
-    import fpsample # type: ignore
+    import fpsample  # type: ignore
 except ImportError:
     pass
 
@@ -38,7 +39,7 @@ class SelectionSettings:
     configs_pt: str
     output: str
     configs_ft: str | None = None
-    atomic_numbers: List[int]|None = None
+    atomic_numbers: List[int] | None = None
     num_samples: int | None = None
     subselect: SubselectType = SubselectType.FPS
     model: str = "small"
@@ -195,7 +196,7 @@ class FPS:
     def __init__(self, atoms_list: List[ase.Atoms], n_samples: int):
         self.n_samples = n_samples
         self.atoms_list = atoms_list
-        self.species = np.unique([x.symbol for atoms in atoms_list for x in atoms]) # type: ignore
+        self.species = np.unique([x.symbol for atoms in atoms_list for x in atoms])  # type: ignore
         self.species_dict = {x: i for i, x in enumerate(self.species)}
         # start from a random configuration
         self.list_index = [np.random.randint(0, len(atoms_list))]
@@ -256,10 +257,15 @@ def _load_calc(
         )
     return calc
 
-def _get_finetuning_elements(atoms: List[ase.Atoms], atomic_numbers:List[int]|None) -> List[str]:
+
+def _get_finetuning_elements(
+    atoms: List[ase.Atoms], atomic_numbers: List[int] | None
+) -> List[str]:
     if atoms:
-        logging.debug("Using elements from the finetuning configurations for filtering.")
-        species = np.unique([x.symbol for atoms in atoms for x in atoms]).tolist() # type: ignore
+        logging.debug(
+            "Using elements from the finetuning configurations for filtering."
+        )
+        species = np.unique([x.symbol for atoms in atoms for x in atoms]).tolist()  # type: ignore
     elif atomic_numbers is not None and atomic_numbers:
         logging.debug("Using the supplied atomic numbers for filtering.")
         species = [ase.data.chemical_symbols[z] for z in atomic_numbers]
@@ -267,22 +273,22 @@ def _get_finetuning_elements(atoms: List[ase.Atoms], atomic_numbers:List[int]|No
         species = []
     return species
 
+
 def _read_finetuning_configs(
     configs_ft: Union[str, list[str], None],
 ) -> List[ase.Atoms]:
     if isinstance(configs_ft, str):
         path = configs_ft
         return ase.io.read(path, index=":")  # type: ignore
-    elif isinstance(configs_ft, list):
+    if isinstance(configs_ft, list):
         assert all(isinstance(x, str) for x in configs_ft)
         atoms_list_ft = []
         for path in configs_ft:
             atoms_list_ft += ase.io.read(path, index=":")
         return atoms_list_ft
-    elif configs_ft is None:
+    if configs_ft is None:
         return []
-    else:
-        raise ValueError(f"Invalid type for configs_ft: {type(configs_ft)}")
+    raise ValueError(f"Invalid type for configs_ft: {type(configs_ft)}")
 
 
 def _filter_pretraining_data(
@@ -332,7 +338,9 @@ def _load_descriptors(
                 f"Length of the descriptors ({len(descriptors)}) does not match the length of the data ({full_data_length})"
                 "Please provide descriptors for all configurations"
             )
-        required_descriptors = [descriptors[i] for i, passes in enumerate(passes_filter) if passes]
+        required_descriptors = [
+            descriptors[i] for i, passes in enumerate(passes_filter) if passes
+        ]
         for i, atoms_ in enumerate(atoms):
             atoms_.info["mace_descriptors"] = required_descriptors[i]
     else:
@@ -350,7 +358,7 @@ def _maybe_save_descriptors(
     Save the descriptors if they are present in the atoms objects.
     Also, delete the descriptors from the atoms objects.
     """
-    if all(["mace_descriptors" in x.info for x in atoms]):
+    if all("mace_descriptors" in x.info for x in atoms):
         descriptor_save_path = output_path.replace(".xyz", "_descriptors.npy")
         logging.info(f"Saving descriptors at {descriptor_save_path}")
         descriptors_list = [x.info["mace_descriptors"] for x in atoms]
@@ -384,7 +392,7 @@ def _subsample_data(
             f"No subsampling, keeping all {len(filtered_atoms)} filtered configurations"
         )
         return filtered_atoms
-    elif num_samples > len(filtered_atoms):
+    if num_samples > len(filtered_atoms):
         num_sample_randomly = num_samples - len(filtered_atoms)
         logging.info(
             f"Number of configurations after filtering {len(filtered_atoms)} "
@@ -394,7 +402,7 @@ def _subsample_data(
         return filtered_atoms + _get_random_configs(
             num_sample_randomly, remaining_atoms
         )
-    elif num_samples == 0:
+    if num_samples == 0:
         raise ValueError("Number of samples must be greater than 0")
     if subselect == SubselectType.FPS:
         _load_descriptors(
@@ -402,14 +410,13 @@ def _subsample_data(
             passes_filter,
             descriptors_path,
             calc,
-            full_data_length=len(filtered_atoms)+len(remaining_atoms),
+            full_data_length=len(filtered_atoms) + len(remaining_atoms),
         )
         logging.info("Selecting configurations using Farthest Point Sampling")
         return _maybe_fps(filtered_atoms, num_samples)
-    elif subselect == SubselectType.RANDOM:
+    if subselect == SubselectType.RANDOM:
         return _get_random_configs(num_samples, filtered_atoms)
-    else:
-        raise ValueError(f"Invalid subselect type: {subselect}")
+    raise ValueError(f"Invalid subselect type: {subselect}")
 
 
 def _write_metadata(
@@ -432,7 +439,7 @@ def select_samples(
     )
     atoms_list_ft = _read_finetuning_configs(settings.configs_ft)
     all_species_ft = _get_finetuning_elements(atoms_list_ft, settings.atomic_numbers)
-    
+
     if settings.filtering_type is not FilteringType.NONE and not all_species_ft:
         raise ValueError(
             "Filtering types other than NONE require elements for filtering. They can be specified via the `--atomic_numbers` flag."
@@ -455,18 +462,24 @@ def select_samples(
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(
-        subsampled_atoms, pretrained=True, config_weight=settings.weight_pt, head=settings.head_pt
+        subsampled_atoms,
+        pretrained=True,
+        config_weight=settings.weight_pt,
+        head=settings.head_pt,
     )
     _write_metadata(
-        atoms_list_ft, pretrained=False, config_weight=settings.weight_ft, head=settings.head_ft
+        atoms_list_ft,
+        pretrained=False,
+        config_weight=settings.weight_ft,
+        head=settings.head_ft,
     )
 
     logging.info("Saving the selected configurations")
     ase.io.write(settings.output, subsampled_atoms, format="extxyz")
-    
+
     logging.info("Saving a combined XYZ file")
     atoms_fps_pt_ft = subsampled_atoms + atoms_list_ft
-    
+
     ase.io.write(
         settings.output.replace(".xyz", "_combined.xyz"),
         atoms_fps_pt_ft,
