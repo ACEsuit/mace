@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from enum import Enum
+
 
 class DefaultKeys(Enum):
     ENERGY = "REF_energy"
@@ -8,14 +11,14 @@ class DefaultKeys(Enum):
     DIPOLE = "dipole"
     HEAD = "head"
     CHARGES = "REF_charges"
-    
+
     @staticmethod
-    def keydict() -> dict[str,str]:
+    def keydict() -> dict[str, str]:
         key_dict = {}
         for member in DefaultKeys:
             if member is DefaultKeys.HEAD:
                 key_dict["head"] = member.value
             else:
-                key_name = f"{member.name.lower()}_key" 
-                key_dict[key_name] = member.value 
+                key_name = f"{member.name.lower()}_key"
+                key_dict[key_name] = member.value
         return key_dict
