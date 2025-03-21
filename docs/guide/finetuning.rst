@@ -87,9 +87,17 @@ To fine-tune a small mp0b model, you can use:
         --batch_size=2 \
         --max_num_epochs=6 \
         --ema \
-        --ema_decay=0.99 \
+        --ema_decay=0.9999 \
+        --lr=0.0001 \
         --amsgrad \
         --pt_train_file="mp" \
+        --num_samples_pt=100000 \
         --default_dtype="float64" \
         --device=cuda \
         --seed=3 
+
+.. note::
+
+    The recommended setting for the `--num_samples_pt` is between 100000 and 10000. 
+    As your input data will be repeatedly sampled, you can use a smaller number of epochs.
+    The number of epochs for convergence is between 10 and 30 epochs.
