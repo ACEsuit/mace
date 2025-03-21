@@ -23,10 +23,10 @@ from torch_ema import ExponentialMovingAverage
 import mace
 from mace import data, tools
 from mace.calculators.foundations_models import mace_mp, mace_off
-from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.visualise_train import TrainingPlotter
+from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -129,6 +129,7 @@ def run(args) -> None:
     device = tools.init_device(args.device)
     commit = print_git_commit()
     model_foundation: Optional[torch.nn.Module] = None
+    foundation_model_avg_num_neighbors = 0
     if args.foundation_model is not None:
         if args.foundation_model in ["small", "medium", "large"]:
             logging.info(
@@ -159,7 +160,9 @@ def run(args) -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
-        foundation_model_avg_num_neighbors = model_foundation.interactions[0].avg_num_neighbors
+        foundation_model_avg_num_neighbors = model_foundation.interactions[
+            0
+        ].avg_num_neighbors
         if (
             args.foundation_model not in ["small", "medium", "large"]
             and args.pt_train_file is None
@@ -208,8 +211,14 @@ def run(args) -> None:
     else:
         args.heads = prepare_default_head(args)
     if args.multiheads_finetuning:
-        pt_keyspec = args.heads["pt_head"]["key_specification"] if "pt_head" in args.heads else args.key_specification
-        args.heads["pt_head"] = prepare_pt_head(args, pt_keyspec, foundation_model_avg_num_neighbors)
+        pt_keyspec = (
+            args.heads["pt_head"]["key_specification"]
+            if "pt_head" in args.heads
+            else args.key_specification
+        )
+        args.heads["pt_head"] = prepare_pt_head(
+            args, pt_keyspec, foundation_model_avg_num_neighbors
+        )
 
     logging.info("===========LOADING INPUT DATA===========")
     heads = list(args.heads.keys())
@@ -230,7 +239,10 @@ def run(args) -> None:
         if hasattr(head_config, "valid_file") and head_config.valid_file is not None:
             head_config.valid_file = normalize_file_paths(head_config.valid_file)
 
-        if head_config.statistics_file is not None and head_config.head_name != "pt_head":
+        if (
+            head_config.statistics_file is not None
+            and head_config.head_name != "pt_head"
+        ):
             with open(head_config.statistics_file, "r") as f:  # pylint: disable=W1514
                 statistics = json.load(f)
             logging.info("Using statistics json file")
@@ -252,8 +264,12 @@ def run(args) -> None:
                     statistics["atomic_energies"]
                 )
         if head_config.train_file == ["mp"]:
-            assert head_config.head_name == "pt_head", "Only pt_head should use mp as train_file"
-            logging.info("Using the full Materials Project data for replay. You can construct a different subset using `fine_tuning_select.py` script.")
+            assert (
+                head_config.head_name == "pt_head"
+            ), "Only pt_head should use mp as train_file"
+            logging.info(
+                "Using the full Materials Project data for replay. You can construct a different subset using `fine_tuning_select.py` script."
+            )
             collections = assemble_mp_data(args, head_config, tag)
             head_config.collections = collections
         elif any(check_path_ase_read(f) for f in head_config.train_file):
@@ -320,7 +336,7 @@ def run(args) -> None:
             "==================Using multiheads finetuning mode=================="
         )
         args.loss = "universal"
-        
+
         all_ase_readable = all(
             all(check_path_ase_read(f) for f in head_config.train_file)
             for head_config in head_configs

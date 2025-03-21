@@ -38,7 +38,7 @@ class KeySpecification:
         if arrays_keys is not None:
             self.arrays_keys.update(arrays_keys)
         return self
-    
+
     @classmethod
     def from_defaults(cls):
         instance = cls()
@@ -203,7 +203,7 @@ def load_from_xyz(
     file_path: str,
     key_specification: KeySpecification,
     head_name: str = "Default",
-    config_type_weights: Optional[Dict]=None,
+    config_type_weights: Optional[Dict] = None,
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:

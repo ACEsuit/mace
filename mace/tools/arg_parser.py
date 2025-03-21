@@ -10,6 +10,7 @@ from typing import Optional
 
 from .default_keys import DefaultKeys
 
+
 def build_default_arg_parser() -> argparse.ArgumentParser:
     try:
         import configargparse
