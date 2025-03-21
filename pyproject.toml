@@ -18,7 +18,9 @@ disable = [
     "missing-class-docstring",
     "missing-function-docstring",
     "too-many-arguments",
+    "too-many-positional-arguments",
     "too-many-locals",
+    "too-many-return-statements",
     "not-callable",
     "logging-fstring-interpolation",
     "logging-not-lazy",
@@ -39,3 +41,6 @@ ignore-paths = [
     "^mace/tools/torch_geometric/.*$",
     "^mace/tools/scatter.py$",
 ]
+
+[tool.pylint.FORMAT]
+max-module-lines = 1500

@@ -73,10 +73,10 @@ def load_foundations_elements(
         model.interactions[i].linear.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear.weight.clone()
         )
-        if (
-            model.interactions[i].__class__.__name__
-            == "RealAgnosticResidualInteractionBlock"
-        ):
+        if model.interactions[i].__class__.__name__ in [
+            "RealAgnosticResidualInteractionBlock",
+            "RealAgnosticDensityResidualInteractionBlock",
+        ]:
             model.interactions[i].skip_tp.weight = torch.nn.Parameter(
                 model_foundations.interactions[i]
                 .skip_tp.weight.reshape(
@@ -101,7 +101,19 @@ def load_foundations_elements(
                 .clone()
                 / (num_species_foundations / num_species) ** 0.5
             )
-
+        if model.interactions[i].__class__.__name__ in [
+            "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticDensityResidualInteractionBlock",
+        ]:
+            # Assuming only 1 layer in density_fn
+            getattr(model.interactions[i].density_fn, "layer0").weight = (
+                torch.nn.Parameter(
+                    getattr(
+                        model_foundations.interactions[i].density_fn,
+                        "layer0",
+                    ).weight.clone()
+                )
+            )
     # Transferring products
     for i in range(2):  # Assuming 2 products modules
         max_range = max_L + 1 if i == 0 else 1

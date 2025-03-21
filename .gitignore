@@ -33,3 +33,7 @@ dist/
 *.xyz
 /checkpoints
 *.model
+
+.benchmarks
+*.db
+*.png
