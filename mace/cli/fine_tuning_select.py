@@ -301,12 +301,9 @@ def _filter_pretraining_data(
         f"filtering type: {filtering_type}, elements: {all_species_ft}"
     )
     passes_filter = [filter_atoms(x, all_species_ft, filtering_type) for x in atoms]
-    filtered_atoms = [
-        x for x, passes in zip(atoms, passes_filter, strict=True) if passes
-    ]
-    remaining_atoms = [
-        x for x, passes in zip(atoms, passes_filter, strict=True) if not passes
-    ]
+    assert len(passes_filter) == len(atoms), "Filtering failed"
+    filtered_atoms = [x for x, passes in zip(atoms, passes_filter) if passes]
+    remaining_atoms = [x for x, passes in zip(atoms, passes_filter) if not passes]
     return filtered_atoms, remaining_atoms, passes_filter
 
 
