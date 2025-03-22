@@ -82,7 +82,6 @@ To fine-tune a small mp0b model, you can use:
         --energy_weight=1.0 \
         --forces_weight=1.0 \
         --E0s="{"1": 130.0 }" \
-        --lr=0.01 \
         --scaling="rms_forces_scaling" \
         --batch_size=2 \
         --max_num_epochs=6 \
