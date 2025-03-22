@@ -52,7 +52,7 @@ def freeze_param(model: torch.nn.Module, n: int) -> None:
 
     freeze_until = n if n > 0 else num_params + n
 
-    for idx, param in enumerate(param_list):
+    for idx, (_name, param) in enumerate(param_list):
         param.requires_grad = (
             idx >= freeze_until
         )  # Freeze first `n` or last `|n|` parameters
