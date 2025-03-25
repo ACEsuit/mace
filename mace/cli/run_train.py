@@ -820,6 +820,7 @@ def run(args) -> None:
         logger=logger,
         patience=args.patience,
         save_all_checkpoints=args.save_all_checkpoints,
+        eval_interval_steps=args.eval_interval_steps,
         output_args=output_args,
         device=device,
         swa=swa,

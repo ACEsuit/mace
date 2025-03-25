@@ -55,15 +55,19 @@ def valid_err_log(
     eval_metrics["epoch"] = epoch
     eval_metrics["head"] = valid_loader_name
     logger.log(eval_metrics)
+
     if epoch is None:
-        inintial_phrase = "Initial"
+        initial_phrase = "Initial"
+    elif isinstance(epoch, str) and "step" in epoch:
+        initial_phrase = f"Epoch {epoch}"
     else:
-        inintial_phrase = f"Epoch {epoch}"
+        initial_phrase = f"Epoch {epoch}"
+    
     if log_errors == "PerAtomRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A"
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A"
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -73,7 +77,7 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         error_stress = eval_metrics["rmse_stress"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3",
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -83,7 +87,7 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         error_virials = eval_metrics["rmse_virials_per_atom"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_virials_per_atom={error_virials:8.2f} meV",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_virials_per_atom={error_virials:8.2f} meV",
         )
     elif (
         log_errors == "PerAtomMAEstressvirials"
@@ -93,7 +97,7 @@ def valid_err_log(
         error_f = eval_metrics["mae_f"] * 1e3
         error_stress = eval_metrics["mae_stress"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_stress={error_stress:8.2f} meV / A^3"
+            f"{initial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_stress={error_stress:8.2f} meV / A^3"
         )
     elif (
         log_errors == "PerAtomMAEstressvirials"
@@ -103,39 +107,38 @@ def valid_err_log(
         error_f = eval_metrics["mae_f"] * 1e3
         error_virials = eval_metrics["mae_virials"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_virials={error_virials:8.2f} meV"
+            f"{initial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_virials={error_virials:8.2f} meV"
         )
     elif log_errors == "TotalRMSE":
         error_e = eval_metrics["rmse_e"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A",
         )
     elif log_errors == "PerAtomMAE":
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A",
         )
     elif log_errors == "TotalMAE":
         error_e = eval_metrics["mae_e"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A",
         )
     elif log_errors == "DipoleRMSE":
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_MU_per_atom={error_mu:8.2f} mDebye",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_MU_per_atom={error_mu:8.2f} mDebye",
         )
     elif log_errors == "EnergyDipoleRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_Mu_per_atom={error_mu:8.2f} mDebye",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_Mu_per_atom={error_mu:8.2f} mDebye",
         )
-
 
 def train(
     model: torch.nn.Module,
@@ -153,6 +156,7 @@ def train(
     output_args: Dict[str, bool],
     device: torch.device,
     log_errors: str,
+    eval_interval_steps: Optional[int] = None,
     swa: Optional[SWAContainer] = None,
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
@@ -169,6 +173,8 @@ def train(
     patience_counter = 0
     swa_start = True
     keep_last = False
+    step_count = 0  # Track total steps for step-based validation
+    
     if log_wandb:
         import wandb
 
@@ -219,33 +225,125 @@ def train(
             train_sampler.set_epoch(epoch)
         if "ScheduleFree" in type(optimizer).__name__:
             optimizer.train()
-        train_one_epoch(
-            model=model,
-            loss_fn=loss_fn,
-            data_loader=train_loader,
-            optimizer=optimizer,
-            epoch=epoch,
-            output_args=output_args,
-            max_grad_norm=max_grad_norm,
-            ema=ema,
-            logger=logger,
-            device=device,
-            distributed_model=distributed_model,
-            rank=rank,
-        )
+        
+        # Instead of train_one_epoch, process batches directly
+        model_to_train = model if distributed_model is None else distributed_model
+        for batch in train_loader:
+            # Take single optimization step
+            _, opt_metrics = take_step(
+                model=model_to_train,
+                loss_fn=loss_fn,
+                batch=batch,
+                optimizer=optimizer,
+                ema=ema,
+                output_args=output_args,
+                max_grad_norm=max_grad_norm,
+                device=device,
+            )
+            opt_metrics["mode"] = "opt"
+            opt_metrics["epoch"] = epoch
+            opt_metrics["step"] = step_count
+            if rank == 0:
+                logger.log(opt_metrics)
+                
+            step_count += 1
+            
+            # Step-based validation
+            if eval_interval_steps is not None and step_count % eval_interval_steps == 0:
+                model_to_evaluate = model if distributed_model is None else distributed_model
+                param_context = ema.average_parameters() if ema is not None else nullcontext()
+                if "ScheduleFree" in type(optimizer).__name__:
+                    optimizer.eval()
+                    
+                with param_context:
+                    valid_loss = 0.0
+                    wandb_log_dict = {}
+                    for valid_loader_name, valid_loader in valid_loaders.items():
+                        valid_loss_head, eval_metrics = evaluate(
+                            model=model_to_evaluate,
+                            loss_fn=loss_fn,
+                            data_loader=valid_loader,
+                            output_args=output_args,
+                            device=device,
+                        )
+                        if rank == 0:
+                            valid_err_log(
+                                valid_loss_head,
+                                eval_metrics,
+                                logger,
+                                log_errors,
+                                f"{epoch} (step {step_count})",
+                                valid_loader_name,
+                            )
+                            if log_wandb:
+                                wandb_log_dict[valid_loader_name] = {
+                                    "epoch": epoch,
+                                    "step": step_count,
+                                    "valid_loss": valid_loss_head,
+                                    "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
+                                    "valid_rmse_f": eval_metrics["rmse_f"],
+                                }
+                    if plotter and step_count % plotter.plot_frequency == 0:
+                        try:
+                            plotter.plot(epoch, model_to_evaluate, rank)
+                        except Exception as e:  # pylint: disable=broad-except
+                            logging.debug(f"Plotting failed: {e}")
+                    valid_loss = valid_loss_head  # consider only the last head for the checkpoint
+                
+                if log_wandb:
+                    wandb.log(wandb_log_dict)
+                
+                # Update checkpoint based on validation results
+                if rank == 0:
+                    if valid_loss >= lowest_loss:
+                        patience_counter += 1
+                        if patience_counter >= patience:
+                            if swa is not None and epoch < swa.start:
+                                logging.info(
+                                    f"Stopping optimization after {patience_counter} validations without improvement and starting Stage Two"
+                                )
+                                epoch = swa.start
+                            else:
+                                logging.info(
+                                    f"Stopping optimization after {patience_counter} validations without improvement"
+                                )
+                                break
+                        if save_all_checkpoints:
+                            param_context = ema.average_parameters() if ema is not None else nullcontext()
+                            with param_context:
+                                checkpoint_handler.save(
+                                    state=CheckpointState(model, optimizer, lr_scheduler),
+                                    epochs=epoch,
+                                    keep_last=True,
+                                )
+                    else:
+                        lowest_loss = valid_loss
+                        patience_counter = 0
+                        param_context = ema.average_parameters() if ema is not None else nullcontext()
+                        with param_context:
+                            checkpoint_handler.save(
+                                state=CheckpointState(model, optimizer, lr_scheduler),
+                                epochs=epoch,
+                                keep_last=keep_last,
+                            )
+                            keep_last = False or save_all_checkpoints
+                if distributed:
+                    torch.distributed.barrier()
+                
+                # Return to training mode
+                if "ScheduleFree" in type(optimizer).__name__:
+                    optimizer.train()
+        
         if distributed:
             torch.distributed.barrier()
 
-        # Validate
-        if epoch % eval_interval == 0:
-            model_to_evaluate = (
-                model if distributed_model is None else distributed_model
-            )
-            param_context = (
-                ema.average_parameters() if ema is not None else nullcontext()
-            )
+        # Epoch-based validation (only if step-based validation is not enabled)
+        if eval_interval_steps is None and epoch % eval_interval == 0:
+            model_to_evaluate = model if distributed_model is None else distributed_model
+            param_context = ema.average_parameters() if ema is not None else nullcontext()
             if "ScheduleFree" in type(optimizer).__name__:
                 optimizer.eval()
+                
             with param_context:
                 valid_loss = 0.0
                 wandb_log_dict = {}
@@ -270,21 +368,20 @@ def train(
                             wandb_log_dict[valid_loader_name] = {
                                 "epoch": epoch,
                                 "valid_loss": valid_loss_head,
-                                "valid_rmse_e_per_atom": eval_metrics[
-                                    "rmse_e_per_atom"
-                                ],
+                                "valid_rmse_e_per_atom": eval_metrics["rmse_e_per_atom"],
                                 "valid_rmse_f": eval_metrics["rmse_f"],
                             }
+                    
                 if plotter and epoch % plotter.plot_frequency == 0:
                     try:
                         plotter.plot(epoch, model_to_evaluate, rank)
                     except Exception as e:  # pylint: disable=broad-except
                         logging.debug(f"Plotting failed: {e}")
-                valid_loss = (
-                    valid_loss_head  # consider only the last head for the checkpoint
-                )
+                valid_loss = valid_loss_head  # consider only the last head for the checkpoint
+                
             if log_wandb:
                 wandb.log(wandb_log_dict)
+                
             if rank == 0:
                 if valid_loss >= lowest_loss:
                     patience_counter += 1
@@ -300,11 +397,7 @@ def train(
                             )
                             break
                     if save_all_checkpoints:
-                        param_context = (
-                            ema.average_parameters()
-                            if ema is not None
-                            else nullcontext()
-                        )
+                        param_context = ema.average_parameters() if ema is not None else nullcontext()
                         with param_context:
                             checkpoint_handler.save(
                                 state=CheckpointState(model, optimizer, lr_scheduler),
@@ -314,9 +407,7 @@ def train(
                 else:
                     lowest_loss = valid_loss
                     patience_counter = 0
-                    param_context = (
-                        ema.average_parameters() if ema is not None else nullcontext()
-                    )
+                    param_context = ema.average_parameters() if ema is not None else nullcontext()
                     with param_context:
                         checkpoint_handler.save(
                             state=CheckpointState(model, optimizer, lr_scheduler),
@@ -324,6 +415,7 @@ def train(
                             keep_last=keep_last,
                         )
                         keep_last = False or save_all_checkpoints
+            
         if distributed:
             torch.distributed.barrier()
         epoch += 1
