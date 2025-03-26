@@ -652,6 +652,11 @@ def get_loss_fn(
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
         )
+    elif args.loss == "l1l2_forces":
+        loss_fn = modules.WeightedEnergyForcesL1L2Loss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
@@ -803,7 +808,7 @@ def get_params_options(
     if hasattr(model, "charges_embedding"):
         param_options["params"].append(
             {
-                "name": "charge_embedding",
+                "name": "charges_embedding",
                 "params": model.charges_embedding.parameters(),
                 "weight_decay": 0.0,
             }

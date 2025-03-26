@@ -104,6 +104,7 @@ def load_foundations_elements(
         if model.interactions[i].__class__.__name__ in [
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
+            "RealAgnosticNonLinearDensityResidualInteractionBlock",
         ]:
             # Assuming only 1 layer in density_fn
             getattr(model.interactions[i].density_fn, "layer0").weight = (

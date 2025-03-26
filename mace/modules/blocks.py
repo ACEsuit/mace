@@ -1208,3 +1208,127 @@ class RealAgnosticAttentionResidualInteractionBlock(InteractionBlock):
             self.reshape(message),
             sc,
         )  # [n_nodes, channels, (lmax + 1)**2]
+    
+@compile_mode("script")
+class RealAgnosticNonLinearDensityResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        if not hasattr(self, "cueq_config"):
+            self.cueq_config = None
+
+        # First linear
+        self.linear_up = Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+            cueq_config=self.cueq_config,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        self.irreps_out = self.target_irreps
+        self.linear = Linear(
+            irreps_mid,
+            self.irreps_out,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = Linear(
+            self.node_feats_irreps,
+            self.hidden_irreps,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        # Create gates nonlinearity
+        irreps_scalars = o3.Irreps(
+            [(mul, ir) for mul, ir in self.irreps_out if ir.l == 0]
+        )
+        irreps_gated = o3.Irreps(
+            [(mul, ir) for mul, ir in self.irreps_out if ir.l > 0]
+        )
+        irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
+        activation_fn = torch.nn.functional.silu
+        self.equivariant_nonlin = nn.Gate(
+            irreps_scalars=irreps_scalars,
+            act_scalars=[activation_fn for _ in irreps_scalars],
+            irreps_gates=irreps_gates,
+            act_gates=[activation_fn] * len(irreps_gates),
+            irreps_gated=irreps_gated,
+        )
+        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
+        self.linear_1 = Linear(
+            irreps_in=self.irreps_out, irreps_out=self.irreps_nonlin, cueq_config=self.cueq_config
+        )
+        self.linear_2 = Linear(
+            irreps_in=self.irreps_out,
+            irreps_out=self.irreps_out,
+            cueq_config=self.cueq_config,
+        )
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out, cueq_config=self.cueq_config)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+        message = self.linear_2(self.equivariant_nonlin(self.linear_1(message)))
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
