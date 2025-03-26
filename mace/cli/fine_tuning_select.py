@@ -227,48 +227,34 @@ def select_samples(
             "Filtering configurations based on the finetuning set, "
             f"filtering type: combinations, elements: {all_species_ft}"
         )
+        atoms_list_pt = ase.io.read(args.configs_pt, index=":")
         if args.subselect != "random":
             if args.descriptors is not None:
                 logging.info("Loading descriptors")
                 descriptors = np.load(args.descriptors, allow_pickle=True)
-                atoms_list_pt = ase.io.read(args.configs_pt, index=":")
-                for i, atoms in enumerate(atoms_list_pt):
-                    atoms.info["mace_descriptors"] = descriptors[i]
-                atoms_list_pt_filtered = [
-                    x
-                    for x in atoms_list_pt
-                    if filter_atoms(x, all_species_ft, "combinations")
-                ]
-            else:
-                atoms_list_pt = ase.io.read(args.configs_pt, index=":")
-                atoms_list_pt_filtered = [
-                    x
-                    for x in atoms_list_pt
-                    if filter_atoms(x, all_species_ft, "combinations")
-                ]
-        else:
-            atoms_list_pt = ase.io.read(args.configs_pt, index=":")
-            atoms_list_pt_filtered = [
-                x
-                for x in atoms_list_pt
-                if filter_atoms(x, all_species_ft, "combinations")
-            ]
+                for atoms_i, atoms in enumerate(atoms_list_pt):
+                    atoms.info["mace_descriptors"] = descriptors[atoms_i]
+        atoms_list_pt_filtered_inds = [
+            _i
+            for _i, x in enumerate(atoms_list_pt)
+            if filter_atoms(x, all_species_ft, "combinations")
+        ]
+        atoms_list_pt_filtered = [atoms_list_pt[i] for i in atoms_list_pt_filtered_inds]
         if len(atoms_list_pt_filtered) <= args.num_samples:
             logging.info(
                 f"Number of configurations after filtering {len(atoms_list_pt_filtered)} "
                 f"is less than the number of samples {args.num_samples}, "
                 "selecting random configurations for the rest."
             )
-            atoms_list_pt_minus_filtered = [
-                x for x in atoms_list_pt if x not in atoms_list_pt_filtered
-            ]
+            atoms_list_pt_minus_filtered_inds = sorted(set(range(len(atoms_list_pt))) - set(atoms_list_pt_filtered_inds))
+
             atoms_list_pt_random_inds = np.random.choice(
-                list(range(len(atoms_list_pt_minus_filtered))),
+                atoms_list_pt_minus_filtered_inds,
                 args.num_samples - len(atoms_list_pt_filtered),
                 replace=False,
             )
             atoms_list_pt = atoms_list_pt_filtered + [
-                atoms_list_pt_minus_filtered[ind] for ind in atoms_list_pt_random_inds
+                atoms_list_pt[ind] for ind in atoms_list_pt_random_inds
             ]
         else:
             atoms_list_pt = atoms_list_pt_filtered
