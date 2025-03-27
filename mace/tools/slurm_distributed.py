@@ -32,3 +32,9 @@ class DistributedEnvironment:
         )
         os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
         os.environ["RANK"] = os.environ["SLURM_PROCID"]
+
+    def __repr__(self):
+        return (
+            f"DistributedEnvironment(master_addr={self.master_addr}, master_port={self.master_port}, "
+            f"world_size={self.world_size}, local_rank={self.local_rank}, rank={self.rank})"
+        )
