@@ -191,6 +191,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
+        "--embedding_type",
+        help="type of embedding",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         "--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3
     )
     parser.add_argument(

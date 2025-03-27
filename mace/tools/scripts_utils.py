@@ -829,6 +829,17 @@ def get_params_options(
                 "weight_decay": 0.0,
             }
         )
+    if hasattr(model, "joint_embedding"):
+        param_options["params"].append(
+            {
+                "name": "joint_embedding",
+                "params": model.joint_embedding.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+    logging.debug(
+        f"Optimizer parameters: {[param["name"] for param in param_options['params']]}"
+    )
     return param_options
 
 

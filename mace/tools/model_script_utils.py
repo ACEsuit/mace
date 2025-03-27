@@ -180,6 +180,7 @@ def _build_model(
             radial_type=args.radial_type,
             attention_irreps=o3.Irreps(args.attention_irreps) if args.attention_irreps is not None else None,
             heads=heads,
+            embedding_type=args.embedding_type,
         )
     if args.model == "ScaleShiftMACE":
         return modules.ScaleShiftMACE(
@@ -196,6 +197,7 @@ def _build_model(
             radial_type=args.radial_type,
             attention_irreps=o3.Irreps(args.attention_irreps) if args.attention_irreps is not None else None,
             heads=heads,
+            embedding_type=args.embedding_type,
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)
