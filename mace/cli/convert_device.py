@@ -22,7 +22,7 @@ def main():
     if args.output_file is None:
         args.output_file = args.model_file + "." + args.target_device
 
-    model = torch.load(args.model_file)
+    model = torch.load(args.model_file, weights_only=False)
     model.to(args.target_device)
     torch.save(model, args.output_file)
 

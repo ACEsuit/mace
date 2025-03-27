@@ -76,7 +76,7 @@ class HDF5Dataset(Dataset):
             z_table=self.z_table,
             cutoff=self.r_max,
             heads=self.kwargs.get("heads", ["Default"]),
-            **self.kwargs,
+            **{k: v for k, v in self.kwargs.items() if k != "heads"},
         )
         return atomic_data
 

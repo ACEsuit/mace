@@ -5,10 +5,27 @@
 ###########################################################################################
 
 import collections
-from typing import List, Union
+import itertools
+import os
+from typing import Iterator, List, Union
 
+import numpy as np
 import torch
 from e3nn import o3
+
+try:
+    import cuequivariance as cue
+
+    CUET_AVAILABLE = True
+except ImportError:
+    CUET_AVAILABLE = False
+
+USE_CUEQ_CG = os.environ.get("MACE_USE_CUEQ_CG", "0").lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+)
 
 _TP = collections.namedtuple("_TP", "op, args")
 _INPUT = collections.namedtuple("_INPUT", "tensor, start, stop")
@@ -93,25 +110,30 @@ def U_matrix_real(
     normalization: str = "component",
     filter_ir_mid=None,
     dtype=None,
+    use_cueq_cg=None,
 ):
     irreps_out = o3.Irreps(irreps_out)
     irrepss = [o3.Irreps(irreps_in)] * correlation
+
     if correlation == 4:
-        filter_ir_mid = [
-            (0, 1),
-            (1, -1),
-            (2, 1),
-            (3, -1),
-            (4, 1),
-            (5, -1),
-            (6, 1),
-            (7, -1),
-            (8, 1),
-            (9, -1),
-            (10, 1),
-            (11, -1),
-        ]
-    wigners = _wigner_nj(irrepss, normalization, filter_ir_mid, dtype)
+        filter_ir_mid = [(i, 1 if i % 2 == 0 else -1) for i in range(12)]
+
+    if use_cueq_cg is None:
+        use_cueq_cg = USE_CUEQ_CG
+    if use_cueq_cg and CUET_AVAILABLE:
+        return compute_U_cueq(irreps_in, irreps_out=irreps_out, correlation=correlation)
+
+    try:
+        wigners = _wigner_nj(irrepss, normalization, filter_ir_mid, dtype)
+    except NotImplementedError as e:
+        if CUET_AVAILABLE:
+            return compute_U_cueq(
+                irreps_in, irreps_out=irreps_out, correlation=correlation
+            )
+        raise NotImplementedError(
+            "The requested Clebsch-Gordan coefficients are not implemented, please install cuequivariance; pip install cuequivariance"
+        ) from e
+
     current_ir = wigners[0][0]
     out = []
     stack = torch.tensor([])
@@ -129,3 +151,61 @@ def U_matrix_real(
             current_ir = ir
     out += [last_ir, stack]
     return out
+
+
+if CUET_AVAILABLE:
+
+    def compute_U_cueq(irreps_in, irreps_out, correlation=2):
+        U = []
+        irreps_in = cue.Irreps(O3_e3nn, str(irreps_in))
+        irreps_out = cue.Irreps(O3_e3nn, str(irreps_out))
+        for _, ir in irreps_out:
+            ir_str = str(ir)
+            U.append(ir_str)
+            U_matrix = cue.reduced_symmetric_tensor_product_basis(
+                irreps_in, correlation, keep_ir=ir, layout=cue.ir_mul
+            ).array
+            U_matrix = U_matrix.reshape(ir.dim, *([irreps_in.dim] * correlation), -1)
+            if ir.dim == 1:
+                U_matrix = U_matrix[0]
+            U.append(torch.tensor(U_matrix))
+        return U
+
+    class O3_e3nn(cue.O3):
+        def __mul__(  # pylint: disable=no-self-argument
+            rep1: "O3_e3nn", rep2: "O3_e3nn"
+        ) -> Iterator["O3_e3nn"]:
+            return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
+
+        @classmethod
+        def clebsch_gordan(
+            cls, rep1: "O3_e3nn", rep2: "O3_e3nn", rep3: "O3_e3nn"
+        ) -> np.ndarray:
+            rep1, rep2, rep3 = cls._from(rep1), cls._from(rep2), cls._from(rep3)
+
+            if rep1.p * rep2.p == rep3.p:
+                return o3.wigner_3j(rep1.l, rep2.l, rep3.l).numpy()[None] * np.sqrt(
+                    rep3.dim
+                )
+            return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
+
+        def __lt__(  # pylint: disable=no-self-argument
+            rep1: "O3_e3nn", rep2: "O3_e3nn"
+        ) -> bool:
+            rep2 = rep1._from(rep2)
+            return (rep1.l, rep1.p) < (rep2.l, rep2.p)
+
+        @classmethod
+        def iterator(cls) -> Iterator["O3_e3nn"]:
+            for l in itertools.count(0):
+                yield O3_e3nn(l=l, p=1 * (-1) ** l)
+                yield O3_e3nn(l=l, p=-1 * (-1) ** l)
+
+else:
+
+    class O3_e3nn:
+        pass
+
+    print(
+        "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
+    )
