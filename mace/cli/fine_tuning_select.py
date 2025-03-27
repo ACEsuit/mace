@@ -246,7 +246,9 @@ def select_samples(
                 f"is less than the number of samples {args.num_samples}, "
                 "selecting random configurations for the rest."
             )
-            atoms_list_pt_minus_filtered_inds = sorted(set(range(len(atoms_list_pt))) - set(atoms_list_pt_filtered_inds))
+            atoms_list_pt_minus_filtered_inds = sorted(
+                set(range(len(atoms_list_pt))) - set(atoms_list_pt_filtered_inds)
+            )
 
             atoms_list_pt_random_inds = np.random.choice(
                 atoms_list_pt_minus_filtered_inds,
