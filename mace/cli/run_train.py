@@ -27,6 +27,7 @@ from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.visualise_train import TrainingPlotter
 from mace.tools import torch_geometric
+from mace.tools.freeze import freeze_layers, freeze_param
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -706,6 +707,34 @@ def run(args) -> None:
     logging.debug(model)
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
     logging.info("")
+
+    # Cueq
+    if args.enable_cueq:
+        logging.info("Converting model to CUEQ for accelerated training")
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        model = run_e3nn_to_cueq(deepcopy(model), device=device)
+
+    # Freeze layers or parameter groups
+    if args.freeze is not None and args.freeze_par is not None:
+        logging.info(
+            "Both --freeze and --freeze_par arguments detected, using --freeze"
+        )
+        freeze_layers(model, args.freeze)
+    elif args.freeze_par is not None:
+        freeze_param(model, args.freeze_par)
+    elif args.freeze is not None:
+        freeze_layers(model, args.freeze)
+
+    # Check which layers are frozen
+    logging.info("===========ACTIVE/FROZEN PARAMETERS===========")
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            logging.info(f"Parameter: {name}, Active")
+        else:
+            logging.info(f"Parameter: {name}, Frozen")
+
+    logging.info("")
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
     logging.info(f"Batch size: {args.batch_size}")
@@ -717,11 +746,7 @@ def run(args) -> None:
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
 
-    # Cueq
-    if args.enable_cueq:
-        logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
-        model = run_e3nn_to_cueq(deepcopy(model), device=device)
+
     # Optimizer
     param_options = get_params_options(args, model)
     optimizer: torch.optim.Optimizer
