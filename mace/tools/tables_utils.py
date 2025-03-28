@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import torch
 from prettytable import PrettyTable
@@ -29,7 +29,7 @@ def create_error_table(
     log_wandb: bool,
     device: str,
     distributed: bool = False,
-    skip_heads: Optional[List[str]] = None,
+    skip_heads: List[str] = [],
 ) -> PrettyTable:
     if log_wandb:
         import wandb
