@@ -111,8 +111,8 @@ def test_preprocess_data(tmp_path, sample_configs):
         config = f["config_batch_0"]["config_0"]
         assert "atomic_numbers" in config
         assert "positions" in config
-        assert "energy" in config
-        assert "forces" in config
+        assert "energy" in config["properties"]
+        assert "forces" in config["properties"]
 
     original_energies = [
         config.info["REF_energy"]
@@ -135,19 +135,19 @@ def test_preprocess_data(tmp_path, sample_configs):
                     config = batch[config_key]
                     assert "atomic_numbers" in config
                     assert "positions" in config
-                    assert "energy" in config
-                    assert "forces" in config
+                    assert "energy" in config["properties"]
+                    assert "forces" in config["properties"]
 
-                    h5_energies.append(config["energy"][()])
-                    h5_forces.append(config["forces"][()])
+                    h5_energies.append(config["properties"]["energy"][()])
+                    h5_forces.append(config["properties"]["forces"][()])
 
     for val_file in val_files:
         with h5py.File(val_file, "r") as f:
             for _, batch in f.items():
                 for config_key in batch.keys():
                     config = batch[config_key]
-                    h5_energies.append(config["energy"][()])
-                    h5_forces.append(config["forces"][()])
+                    h5_energies.append(config["properties"]["energy"][()])
+                    h5_forces.append(config["properties"]["forces"][()])
 
     print("Original energies", original_energies)
     print("H5 energies", h5_energies)
