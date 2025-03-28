@@ -17,6 +17,7 @@ import numpy as np
 import tqdm
 
 from mace import data, tools
+from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.data.utils import save_configurations_as_HDF5
 from mace.modules import compute_statistics
 from mace.tools import torch_geometric
@@ -144,6 +145,10 @@ def run(args: argparse.Namespace):
     new hdf5 file that is ready for training with on-the-fly dataloading
     """
 
+    # currently support only command line property_key syntax
+    args.key_specification = KeySpecification()
+    update_keyspec_from_kwargs(args.key_specification, vars(args))
+
     # Setup
     tools.set_seeds(args.seed)
     random.seed(args.seed)
@@ -177,12 +182,8 @@ def run(args: argparse.Namespace):
         config_type_weights=config_type_weights,
         test_path=args.test_file,
         seed=args.seed,
-        energy_key=args.energy_key,
-        forces_key=args.forces_key,
-        stress_key=args.stress_key,
-        virials_key=args.virials_key,
-        dipole_key=args.dipole_key,
-        charges_key=args.charges_key,
+        key_specification=args.key_specification,
+        head_name=None,
     )
 
     # Atomic number table
