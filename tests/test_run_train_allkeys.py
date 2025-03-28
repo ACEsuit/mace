@@ -355,9 +355,7 @@ _trial_yamls_and_and_expected = trial_yamls_and_and_expected()
 @pytest.mark.parametrize(
     "yaml_contents, name, expected_value", _trial_yamls_and_and_expected
 )
-def test_key_specification_methods(
-    tmp_path, yaml_contents, name, expected_value
-):
+def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value):
     fitting_configs = configs_numbered_keys()
 
     ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs)

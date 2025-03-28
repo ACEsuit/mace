@@ -502,7 +502,9 @@ def test_run_train_foundation(tmp_path, fitting_configs):
 def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
-    atomic_numbers = np.unique(np.concatenate([at.numbers for at in fitting_configs])).tolist()
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
     for i, c in enumerate(fitting_configs):
         if i in (0, 1):
             c_dft = c.copy()
@@ -572,11 +574,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
 
     try:
         completed_process = subprocess.run(
-            cmd.split(),
-            env=run_env,
-            capture_output=True,
-            text=True,
-            check=True
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
         )
         # Process executed successfully
         print(completed_process.stdout)
@@ -584,7 +582,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
         # Process failed with non-zero exit code
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}") 
+        print(f"STDERR: {e.stderr}")
         raise e
     assert completed_process.returncode == 0
 
@@ -632,7 +630,9 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
 def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
-    atomic_numbers = np.unique(np.concatenate([at.numbers for at in fitting_configs])).tolist()
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
     for i, c in enumerate(fitting_configs):
 
         if i in (0, 1):
@@ -711,11 +711,7 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
 
     try:
         completed_process = subprocess.run(
-            cmd.split(),
-            env=run_env,
-            capture_output=True,
-            text=True,
-            check=True
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
         )
         # Process executed successfully
         print(completed_process.stdout)
@@ -723,7 +719,7 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
         # Process failed with non-zero exit code
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}") 
+        print(f"STDERR: {e.stderr}")
         raise e
     assert completed_process.returncode == 0
 
@@ -738,7 +734,6 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
         )
         at.calc = calc
         Es.append(at.get_potential_energy())
-
 
     print("Es", Es)
     # from a run on 20/08/2024 on commit
@@ -937,11 +932,7 @@ def test_run_train_cueq(tmp_path, fitting_configs):
 
     try:
         completed_process = subprocess.run(
-            cmd.split(),
-            env=run_env,
-            capture_output=True,
-            text=True,
-            check=True
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
         )
         # Process executed successfully
         print(completed_process.stdout)
@@ -949,7 +940,7 @@ def test_run_train_cueq(tmp_path, fitting_configs):
         # Process failed with non-zero exit code
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}") 
+        print(f"STDERR: {e.stderr}")
         raise e
     assert completed_process.returncode == 0
 
@@ -999,7 +990,9 @@ def test_run_train_cueq(tmp_path, fitting_configs):
 def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
-    atomic_numbers = np.unique(np.concatenate([at.numbers for at in fitting_configs])).tolist()
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
     for i, c in enumerate(fitting_configs):
 
         if i in (0, 1):
@@ -1080,11 +1073,7 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
 
     try:
         completed_process = subprocess.run(
-            cmd.split(),
-            env=run_env,
-            capture_output=True,
-            text=True,
-            check=True
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
         )
         # Process executed successfully
         print(completed_process.stdout)
@@ -1092,12 +1081,15 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
         # Process failed with non-zero exit code
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}") 
+        print(f"STDERR: {e.stderr}")
         raise e
     assert completed_process.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cuda", default_dtype="float64", head="DFT"
+        model_paths=tmp_path / "MACE.model",
+        device="cuda",
+        default_dtype="float64",
+        head="DFT",
     )
 
     Es = []
@@ -1308,7 +1300,9 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
 def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
-    atomic_numbers = np.unique(np.concatenate([at.numbers for at in fitting_configs])).tolist()
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
     for i, c in enumerate(fitting_configs):
         if i in (0, 1):
             c_dft = c.copy()
@@ -1387,11 +1381,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
     )
     try:
         completed_process = subprocess.run(
-            cmd.split(),
-            env=run_env,
-            capture_output=True,
-            text=True,
-            check=True
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
         )
         # Process executed successfully
         print(completed_process.stdout)
@@ -1399,7 +1389,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
         # Process failed with non-zero exit code
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}") 
+        print(f"STDERR: {e.stderr}")
         raise e
     assert completed_process.returncode == 0
 
@@ -1446,7 +1436,10 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
 
     # Test filtered model
     calc_filtered = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64", head="DFT"
+        model_paths=tmp_path / "MACE.model",
+        device="cpu",
+        default_dtype="float64",
+        head="DFT",
     )
     at.calc = calc_filtered
     e1 = at.get_potential_energy()
