@@ -423,6 +423,18 @@ def run(args) -> None:
             logging.debug(
                 "Using LMDB/HDF5 datasets for pretraining or fine-tuning - skipping ratio check"
             )
+    
+    # Find heads to evaluate error table for
+    if args.eval_heads is None:
+        eval_heads = heads
+    else:
+        eval_heads = list(args.eval_heads.split(","))
+        missing_heads = [head for head in eval_heads if head not in heads]
+        if missing_heads:
+            error_msg = f"Invalid heads set for evaluation: {missing_heads}. Available heads: {heads}. Check argument --eval_heads."
+            logging.error(error_msg)
+            raise ValueError(error_msg)
+    logging.info(f"Will evalute error table on heads: {eval_heads} at end of training")
 
     # Atomic number table
     # yapf: disable
@@ -806,6 +818,11 @@ def run(args) -> None:
     else:
         plotter = None
 
+    #DRY RUN - stop before training starts
+    if args.dry_run:
+        logging.info("DRY RUN mode enabled. Stopping now.")
+        return
+
     tools.train(
         model=model,
         loss_fn=loss_fn,
@@ -839,9 +856,16 @@ def run(args) -> None:
 
     train_valid_data_loader = {}
     for head_config in head_configs:
+        if head_config.head_name not in eval_heads:
+            logging.debug(f"Not evaluating head {head_config.head_name} on training set as not set by --eval_head argument. SKIP")
+            continue
         data_loader_name = "train_" + head_config.head_name
         train_valid_data_loader[data_loader_name] = head_config.train_loader
+
     for head, valid_loader in valid_loaders.items():
+        if head not in eval_heads:
+            logging.debug(f"Not evaluating head {head} on validation set as not set by --eval_head argument. SKIP")
+            continue
         data_load_name = "valid_" + head
         train_valid_data_loader[data_load_name] = valid_loader
     test_sets = {}
@@ -858,6 +882,9 @@ def run(args) -> None:
     ) and head_configs[0].test_dir is not None:
         stop_first_test = True
     for head_config in head_configs:
+        if head_config.head_name not in eval_heads:
+            logging.debug(f"Not evaluating head {head_config.head_name} for test set as not set by --eval_head argument. SKIP")
+            continue
         if all(check_path_ase_read(f) for f in head_config.train_file):
             for name, subset in head_config.collections.tests:
                 test_sets[name] = [
