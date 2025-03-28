@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
 import torch
 from prettytable import PrettyTable

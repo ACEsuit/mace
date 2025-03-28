@@ -1052,6 +1052,7 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     ]
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
+
 def test_run_train_lbfgs(tmp_path, fitting_configs):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
@@ -1067,7 +1068,7 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
     sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
     print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
-    
+
     cmd = (
         sys.executable
         + " "
@@ -1080,7 +1081,7 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
             ]
         )
     )
-    
+
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
@@ -1115,7 +1116,7 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
         -0.06664444189210728,
         -0.4230467426992034,
         -0.2348250569553676,
-        -0.17593904833220647
+        -0.17593904833220647,
     ]
     assert np.allclose(Es, ref_Es, atol=1e-2)
 
@@ -1301,7 +1302,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
             ]
         )
     )
-    
+
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
