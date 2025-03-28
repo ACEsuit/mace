@@ -980,6 +980,9 @@ def run(args) -> None:
         logging.info("Computing metrics for training, validation, and test sets")
         for param in model.parameters():
             param.requires_grad = False
+        skip_heads = args.skip_evaluate_heads.split(",") if args.skip_evaluate_heads else []
+        if skip_heads:
+            logging.info(f"Skipping evaluation for heads: {skip_heads}")
         table_train_valid = create_error_table(
             table_type=args.error_table,
             all_data_loaders=train_valid_data_loader,
@@ -989,6 +992,7 @@ def run(args) -> None:
             log_wandb=args.wandb,
             device=device,
             distributed=args.distributed,
+            skip_heads=skip_heads,
         )
         logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
 
