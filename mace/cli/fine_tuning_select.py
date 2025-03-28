@@ -120,7 +120,7 @@ def parse_args() -> argparse.Namespace:
         "--filtering_type",
         help="filtering type",
         type=FilteringType,
-        hoices=list(FilteringType),
+        choices=list(FilteringType),
         default=FilteringType.NONE,
     )
     parser.add_argument(
