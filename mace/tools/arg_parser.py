@@ -505,6 +505,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "--skip_evaluate_heads",
+        help="Comma-separated list of heads to skip during final evaluation",
+        type=str,
+        default="pt_head",
+    )
 
     # Loss and optimization
     parser.add_argument(
@@ -557,7 +563,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_virials_weight",
     )
     parser.add_argument(
-        "--stress_weight", help="weight of virials loss", type=float, default=1.0
+        "--stress_weight", help="weight of stress loss", type=float, default=1.0
     )
     parser.add_argument(
         "--swa_stress_weight",
@@ -659,6 +665,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="start_swa",
     )
     parser.add_argument(
+        "--lbfgs",
+        help="Switch to L-BFGS optimizer",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--ema",
         help="use Exponential Moving Average",
         action="store_true",
@@ -723,6 +735,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Gradient Clipping Value",
         type=check_float_or_none,
         default=10.0,
+    )
+    parser.add_argument(
+        "--dry_run",
+        help="Run all steps upto training to test settings.",
+        action="store_true",
+        default=False,
     )
     # option for cuequivariance acceleration
     parser.add_argument(

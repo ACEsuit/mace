@@ -1053,6 +1053,74 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
 
+def test_run_train_lbfgs(tmp_path, fitting_configs):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["lbfgs"] = None
+    mace_params["max_num_epochs"] = 2
+
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+    # from a run on 14/03/2025
+    ref_Es = [
+        0.0,
+        0.0,
+        -0.1874197850340979,
+        -0.25991775038059006,
+        0.18263492399322268,
+        -0.15026829765490662,
+        -0.2403061362015996,
+        0.1689257170630718,
+        -0.2095568077455055,
+        -0.2957758160829075,
+        -0.0035370913684985364,
+        -0.2195416610745775,
+        -0.25405549447739517,
+        -0.06201390990366806,
+        -0.13332219494388334,
+        -0.19633181702040337,
+        0.013014932630445699,
+        -0.08808335967147174,
+        -0.06664444189210728,
+        -0.4230467426992034,
+        -0.2348250569553676,
+        -0.17593904833220647,
+    ]
+    assert np.allclose(Es, ref_Es, atol=1e-2)
+
+
 def test_run_train_foundation_elements(tmp_path, fitting_configs):
 
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
@@ -1234,6 +1302,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
             ]
         )
     )
+
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
