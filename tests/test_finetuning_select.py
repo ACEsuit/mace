@@ -16,7 +16,7 @@ from mace.cli.fine_tuning_select import (
 )
 
 
-@pytest.fixture()
+@pytest.fixture(name="train_atoms_fixture")
 def train_atoms():
     return [
         molecule("H2O"),
@@ -28,11 +28,11 @@ def train_atoms():
     ]
 
 
-@pytest.fixture()
-def train_atom_descriptors(train_atoms_fixture_fixture):
+@pytest.fixture(name="train_atom_descriptors_fixture")
+def train_atom_descriptors(train_atoms_fixture):
     return [
         {x: np.zeros(5) + i for x in atoms.symbols}
-        for i, atoms in enumerate(train_atoms_fixture_fixture)
+        for i, atoms in enumerate(train_atoms_fixture)
     ]
 
 
