@@ -33,6 +33,7 @@ def create_error_table(
 ) -> PrettyTable:
     if log_wandb:
         import wandb
+    skip_heads = skip_heads or []
     table = PrettyTable()
     if table_type == "TotalRMSE":
         table.field_names = [
