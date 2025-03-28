@@ -17,6 +17,7 @@ import torch.distributed
 import torch.nn.functional
 from e3nn.util import jit
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim import LBFGS
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
 
@@ -238,6 +239,8 @@ def run(args) -> None:
             head_config.train_file = normalize_file_paths(head_config.train_file)
         if hasattr(head_config, "valid_file") and head_config.valid_file is not None:
             head_config.valid_file = normalize_file_paths(head_config.valid_file)
+        if hasattr(head_config, "test_file") and head_config.test_file is not None:
+            head_config.test_file = normalize_file_paths(head_config.test_file)
 
         if (
             head_config.statistics_file is not None
@@ -546,7 +549,7 @@ def run(args) -> None:
                 logging.debug(f"Successfully loaded validation dataset from ASE files: {valid_ase_files}")
             for valid_file in valid_non_ase_files:
                 valid_dataset = load_dataset_for_path(
-                file_path=valid_non_ase_files,
+                file_path=valid_file,
                 r_max=args.r_max,
                 z_table=z_table,
                 head_config=head_config,
@@ -582,7 +585,7 @@ def run(args) -> None:
             dataset=train_sets[head_config.head_name],
             batch_size=args.batch_size,
             shuffle=True,
-            drop_last=True,
+            drop_last=(not args.lbfgs),
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
@@ -598,7 +601,7 @@ def run(args) -> None:
             num_replicas=world_size,
             rank=rank,
             shuffle=True,
-            drop_last=True,
+            drop_last=(not args.lbfgs),
             seed=args.seed,
         )
         valid_samplers = {}
@@ -617,7 +620,7 @@ def run(args) -> None:
         batch_size=args.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
-        drop_last=(train_sampler is None),
+        drop_last=(train_sampler is None and not args.lbfgs),
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
@@ -641,7 +644,7 @@ def run(args) -> None:
     args.avg_num_neighbors = get_avg_num_neighbors(head_configs, args, train_loader, device)
 
     # Model
-    model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table)
+    model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
     model.to(device)
 
     logging.debug(model)
@@ -689,6 +692,8 @@ def run(args) -> None:
     )
 
     start_epoch = 0
+    restart_lbfgs = False
+    opt_start_epoch = None
     if args.restart_latest:
         try:
             opt_start_epoch = checkpoint_handler.load_latest(
@@ -697,11 +702,14 @@ def run(args) -> None:
                 device=device,
             )
         except Exception:  # pylint: disable=W0703
-            opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
-                swa=False,
-                device=device,
-            )
+            try:
+                opt_start_epoch = checkpoint_handler.load_latest(
+                    state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                    swa=False,
+                    device=device,
+                )
+            except Exception: # pylint: disable=W0703
+                restart_lbfgs = True
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
@@ -711,6 +719,21 @@ def run(args) -> None:
     else:
         for group in optimizer.param_groups:
             group["lr"] = args.lr
+
+    if args.lbfgs:
+        logging.info("Switching optimizer to LBFGS")
+        optimizer = LBFGS(model.parameters(),
+                          history_size=200,
+                          max_iter=20,
+                          line_search_fn="strong_wolfe")
+        if restart_lbfgs:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=False,
+                device=device,
+            )
+            if opt_start_epoch is not None:
+                start_epoch = opt_start_epoch
 
     if args.wandb:
         setup_wandb(args)
@@ -746,6 +769,11 @@ def run(args) -> None:
             logging.debug(f"Creating Plotter failed: {e}")
     else:
         plotter = None
+
+    if args.dry_run:
+        logging.info("DRY RUN mode enabled. Stopping now.")
+        return
+
 
     tools.train(
         model=model,
@@ -921,6 +949,9 @@ def run(args) -> None:
         logging.info("Computing metrics for training, validation, and test sets")
         for param in model.parameters():
             param.requires_grad = False
+        skip_heads = args.skip_evaluate_heads.split(",") if args.skip_evaluate_heads else []
+        if skip_heads:
+            logging.info(f"Skipping evaluation for heads: {skip_heads}")
         table_train_valid = create_error_table(
             table_type=args.error_table,
             all_data_loaders=train_valid_data_loader,
@@ -930,6 +961,7 @@ def run(args) -> None:
             log_wandb=args.wandb,
             device=device,
             distributed=args.distributed,
+            skip_heads=skip_heads,
         )
         logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
 
