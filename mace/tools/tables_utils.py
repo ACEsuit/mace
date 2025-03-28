@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import torch
 from prettytable import PrettyTable
@@ -29,10 +29,11 @@ def create_error_table(
     log_wandb: bool,
     device: str,
     distributed: bool = False,
-    skip_heads: List[str] = [],
+    skip_heads: Optional[List[str]] = None,
 ) -> PrettyTable:
     if log_wandb:
         import wandb
+    skip_heads = skip_heads or []
     table = PrettyTable()
     if table_type == "TotalRMSE":
         table.field_names = [
