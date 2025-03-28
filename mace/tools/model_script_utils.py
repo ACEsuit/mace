@@ -20,8 +20,13 @@ def configure_model(
     head_configs=None,
 ):
     # Selecting outputs
-    compute_virials = args.loss in ("stress", "virials", "huber", "universal")
+    compute_virials = args.loss == "virials"
+    compute_stress = args.loss in ("stress", "huber", "universal")
+
     if compute_virials:
+        args.compute_virials = True
+        args.error_table = "PerAtomRMSEstressvirials"
+    elif compute_stress:
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
 
@@ -29,7 +34,7 @@ def configure_model(
         "energy": args.compute_energy,
         "forces": args.compute_forces,
         "virials": compute_virials,
-        "stress": args.compute_stress,
+        "stress": compute_stress,
         "dipoles": args.compute_dipole,
     }
     logging.info(

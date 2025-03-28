@@ -1,5 +1,5 @@
 import logging
-from typing import Dict
+from typing import Dict, List, Optional
 
 import torch
 from prettytable import PrettyTable
@@ -29,9 +29,11 @@ def create_error_table(
     log_wandb: bool,
     device: str,
     distributed: bool = False,
+    skip_heads: Optional[List[str]] = None,
 ) -> PrettyTable:
     if log_wandb:
         import wandb
+    skip_heads = skip_heads or []
     table = PrettyTable()
     if table_type == "TotalRMSE":
         table.field_names = [
@@ -100,6 +102,9 @@ def create_error_table(
         ]
 
     for name in sorted(all_data_loaders, key=custom_key):
+        if any(skip_head in name for skip_head in skip_heads):
+            logging.info(f"Skipping evaluation of {name} (in skip_heads list)")
+            continue
         data_loader = all_data_loaders[name]
         logging.info(f"Evaluating {name} ...")
         _, metrics = evaluate(
