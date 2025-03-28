@@ -758,12 +758,12 @@ def setup_wandb(args: argparse.Namespace):
     for key, value in args_dict.items():
         if isinstance(value, np.ndarray):
             args_dict[key] = value.tolist()
-    
+
     class CustomEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, KeySpecification): 
-                return obj.__dict__  
-            return super().default(obj)
+        def default(self, o):
+            if isinstance(o, KeySpecification):
+                return o.__dict__
+            return super().default(o)
 
     args_dict_json = json.dumps(args_dict, cls=CustomEncoder)
     for key in args.wandb_log_hypers:
