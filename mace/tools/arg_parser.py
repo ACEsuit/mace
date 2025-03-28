@@ -505,6 +505,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "--skip_evaluate_heads",
+        help="Comma-separated list of heads to skip during final evaluation",
+        type=str,
+        default="pt_head",
+    )
 
     # Loss and optimization
     parser.add_argument(
@@ -557,7 +563,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_virials_weight",
     )
     parser.add_argument(
-        "--stress_weight", help="weight of virials loss", type=float, default=1.0
+        "--stress_weight", help="weight of stress loss", type=float, default=1.0
     )
     parser.add_argument(
         "--swa_stress_weight",
