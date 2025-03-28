@@ -730,6 +730,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=check_float_or_none,
         default=10.0,
     )
+    parser.add_argument(
+        "--dry_run",
+        help="Run all steps upto training to test settings.",
+        action="store_true",
+        default=False,
+    )
     # option for cuequivariance acceleration
     parser.add_argument(
         "--enable_cueq",

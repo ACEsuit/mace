@@ -806,6 +806,11 @@ def run(args) -> None:
     else:
         plotter = None
 
+    if args.dry_run:
+        logging.info("DRY RUN mode enabled. Stopping now.")
+        return
+
+
     tools.train(
         model=model,
         loss_fn=loss_fn,
