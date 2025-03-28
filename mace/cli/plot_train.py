@@ -7,13 +7,11 @@ import re
 from typing import List
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
-fig_width = 2.5
-fig_height = 2.1
+plt.rcParams.update({"font.size": 8})
+plt.style.use("seaborn-v0_8-paper")
 
-plt.rcParams.update({"font.size": 6})
 
 colors = [
     "#1f77b4",  # muted blue
@@ -65,101 +63,242 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--path", help="path to results file or directory", required=True
+        "--path", help="Path to results file (.txt) or directory.", required=True
     )
     parser.add_argument(
-        "--min_epoch", help="minimum epoch", default=50, type=int, required=False
+        "--min_epoch", help="Minimum epoch.", default=0, type=int, required=False
     )
+    parser.add_argument(
+        "--start_stage_two",
+        "--start_swa",
+        help="Epoch that stage two (swa) loss began. Plots dashed line on plot to indicate. If None then assumed tag not used in training.",
+        default=None,
+        type=int,
+        required=False,
+        dest="start_swa",
+    )
+    parser.add_argument(
+        "--linear",
+        help="Whether to plot linear instead of log scales.",
+        default=False,
+        required=False,
+        action="store_true",
+    )
+    parser.add_argument(
+        "--error_bars",
+        help="Whether to plot standard deviations.",
+        default=False,
+        required=False,
+        action="store_true",
+    )
+    parser.add_argument(
+        "--keys",
+        help="Comma-separated list of keys to plot.",
+        default="rmse_e,rmse_f",
+        type=str,
+        required=False,
+    )
+
+    parser.add_argument(
+        "--output_format",
+        help="What file type to save plot as",
+        default="png",
+        type=str,
+        required=False,
+    )
+
+    parser.add_argument(
+        "--heads",
+        help="Comma-separated name of the heads used for multihead training",
+        default=None,
+        type=str,
+        required=False,
+    )
+
     return parser.parse_args()
 
 
-def plot(data: pd.DataFrame, min_epoch: int, output_path: str) -> None:
+def plot(
+    data: pd.DataFrame,
+    min_epoch: int,
+    output_path: str,
+    output_format: str,
+    linear: bool,
+    start_swa: int,
+    error_bars: bool,
+    keys: str,
+    heads: str,
+) -> None:
+    """
+    Plots train,validation loss and errors as a function of epoch.
+    min_epoch: minimum epoch to plot.
+    output_path: path to save the plot.
+    output_format: format to save the plot.
+    start_swa: whether to plot a dashed line to show epoch when stage two loss (swa) begins.
+    error_bars: whether to plot standard deviation of loss.
+    linear: whether to plot in linear scale or logscale (default).
+    keys: Values to plot.
+    heads: Heads used for multihead training.
+    """
+
+    labels = {
+        "mae_e": "MAE E [meV]",
+        "mae_e_per_atom": "MAE E/atom [meV]",
+        "rmse_e": "RMSE E [meV]",
+        "rmse_e_per_atom": "RMSE E/atom [meV]",
+        "q95_e": "Q95 E [meV]",
+        "mae_f": "MAE F [meV / A]",
+        "rel_mae_f": "Relative MAE F [meV / A]",
+        "rmse_f": "RMSE F [meV / A]",
+        "rel_rmse_f": "Relative RMSE F [meV / A]",
+        "q95_f": "Q95 F [meV / A]",
+        "mae_stress": "MAE Stress",
+        "rmse_stress": "RMSE Stress [meV / A^3]",
+        "rmse_virials_per_atom": " RMSE virials/atom [meV]",
+        "mae_virials": "MAE Virials [meV]",
+        "rmse_mu_per_atom": "RMSE MU/atom [mDebye]",
+    }
+
     data = data[data["epoch"] > min_epoch]
+    if heads is None:
+        data = (
+            data.groupby(["name", "mode", "epoch"]).agg(["mean", "std"]).reset_index()
+        )
 
-    data = data.groupby(["name", "mode", "epoch"]).agg([np.mean, np.std]).reset_index()
+        valid_data = data[data["mode"] == "eval"]
+        valid_data_dict = {"default": valid_data}
+        train_data = data[data["mode"] == "opt"]
+    else:
+        heads = heads.split(",")
+        # Separate eval and opt data
+        valid_data = (
+            data[data["mode"] == "eval"]
+            .groupby(["name", "mode", "epoch", "head"])
+            .agg(["mean", "std"])
+            .reset_index()
+        )
+        train_data = (
+            data[data["mode"] == "opt"]
+            .groupby(["name", "mode", "epoch"])
+            .agg(["mean", "std"])
+            .reset_index()
+        )
+        valid_data_dict = {
+            head: valid_data[valid_data["head"] == head] for head in heads
+        }
 
-    valid_data = data[data["mode"] == "eval"]
-    train_data = data[data["mode"] == "opt"]
+    for head, valid_data in valid_data_dict.items():
+        fig, axes = plt.subplots(
+            nrows=1, ncols=2, figsize=(10, 3), constrained_layout=True
+        )
 
-    fig, axes = plt.subplots(
-        nrows=1, ncols=2, figsize=(2 * fig_width, fig_height), constrained_layout=True
-    )
+        # ---- Plot loss ----
+        ax = axes[0]
+        ax.plot(
+            train_data["epoch"],
+            train_data["loss"]["mean"],
+            color=colors[1],
+            linewidth=1,
+        )
+        ax.set_ylabel("Training Loss", color=colors[1])
+        ax.set_yscale("log")
 
-    ax = axes[0]
-    ax.plot(
-        valid_data["epoch"],
-        valid_data["loss"]["mean"],
-        color=colors[0],
-        zorder=1,
-        label="Validation",
-    )
-    ax.fill_between(
-        x=valid_data["epoch"],
-        y1=valid_data["loss"]["mean"] - valid_data["loss"]["std"],
-        y2=valid_data["loss"]["mean"] + valid_data["loss"]["std"],
-        alpha=0.5,
-        zorder=-1,
-        color=colors[0],
-    )
-    ax.plot(
-        train_data["epoch"],
-        train_data["loss"]["mean"],
-        color=colors[3],
-        zorder=1,
-        label="Training",
-    )
-    ax.fill_between(
-        x=train_data["epoch"],
-        y1=train_data["loss"]["mean"] - train_data["loss"]["std"],
-        y2=train_data["loss"]["mean"] + train_data["loss"]["std"],
-        alpha=0.5,
-        zorder=-1,
-        color=colors[3],
-    )
+        ax2 = ax.twinx()
+        ax2.plot(
+            valid_data["epoch"],
+            valid_data["loss"]["mean"],
+            color=colors[0],
+            linewidth=1,
+        )
+        ax2.set_ylabel("Validation Loss", color=colors[0])
 
-    ax.set_ylim(bottom=0.0)
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("Loss")
-    ax.legend()
+        if not linear:
+            ax.set_yscale("log")
+            ax2.set_yscale("log")
 
-    ax = axes[1]
-    ax.plot(
-        valid_data["epoch"],
-        valid_data["mae_e"]["mean"],
-        color=colors[1],
-        zorder=1,
-        label="MAE Energy [eV]",
-    )
-    ax.fill_between(
-        x=valid_data["epoch"],
-        y1=valid_data["mae_e"]["mean"] - valid_data["mae_e"]["std"],
-        y2=valid_data["mae_e"]["mean"] + valid_data["mae_e"]["std"],
-        alpha=0.5,
-        zorder=-1,
-        color=colors[1],
-    )
-    ax.plot(
-        valid_data["epoch"],
-        valid_data["mae_f"]["mean"],
-        color=colors[2],
-        zorder=1,
-        label="MAE Forces [eV/Å]",
-    )
-    ax.fill_between(
-        x=valid_data["epoch"],
-        y1=valid_data["mae_f"]["mean"] - valid_data["mae_f"]["std"],
-        y2=valid_data["mae_f"]["mean"] + valid_data["mae_f"]["std"],
-        alpha=0.5,
-        zorder=-1,
-        color=colors[2],
-    )
+        if error_bars:
+            ax.fill_between(
+                train_data["epoch"],
+                train_data["loss"]["mean"] - train_data["loss"]["std"],
+                train_data["loss"]["mean"] + train_data["loss"]["std"],
+                alpha=0.3,
+                color=colors[1],
+            )
+            ax.fill_between(
+                valid_data["epoch"],
+                valid_data["loss"]["mean"] - valid_data["loss"]["std"],
+                valid_data["loss"]["mean"] + valid_data["loss"]["std"],
+                alpha=0.3,
+                color=colors[0],
+            )
 
-    ax.set_ylim(bottom=0.0)
-    ax.set_xlabel("Epoch")
-    ax.legend()
+        if start_swa is not None:
+            ax.axvline(
+                start_swa,
+                color="black",
+                linestyle="dashed",
+                linewidth=1,
+                alpha=0.6,
+                label="Stage Two Starts",
+            )
 
-    fig.savefig(output_path)
-    plt.close(fig)
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Loss")
+        ax.legend(loc="upper right", fontsize=4)
+        ax.grid(True, linestyle="--", alpha=0.5)
+
+        # ---- Plot selected keys ----
+        ax = axes[1]
+        twin_axes = []
+        for i, key in enumerate(keys.split(",")):
+            color = colors[(i + 3)]
+            label = labels.get(key, key)
+
+            if i == 0:
+                main_ax = ax
+            else:
+                main_ax = ax.twinx()
+                main_ax.spines.right.set_position(("outward", 40 * (i - 1)))
+                twin_axes.append(main_ax)
+
+            main_ax.plot(
+                valid_data["epoch"],
+                valid_data[key]["mean"] * 1e3,
+                color=color,
+                label=label,
+                linewidth=1,
+            )
+
+            if error_bars:
+                main_ax.fill_between(
+                    valid_data["epoch"],
+                    (valid_data[key]["mean"] - valid_data[key]["std"]) * 1e3,
+                    (valid_data[key]["mean"] + valid_data[key]["std"]) * 1e3,
+                    alpha=0.3,
+                    color=color,
+                )
+
+            main_ax.set_ylabel(label, color=color)
+            main_ax.tick_params(axis="y", colors=color)
+
+        if start_swa is not None:
+            ax.axvline(
+                start_swa,
+                color="black",
+                linestyle="dashed",
+                linewidth=1,
+                alpha=0.6,
+                label="Stage Two Starts",
+            )
+
+        ax.set_xlabel("Epoch")
+        ax.set_xlim(left=min_epoch)
+        ax.grid(True, linestyle="--", alpha=0.5)
+
+        fig.savefig(
+            f"{output_path}_{head}.{output_format}", dpi=300, bbox_inches="tight"
+        )
+        plt.close(fig)
 
 
 def get_paths(path: str) -> List[str]:
@@ -186,7 +325,17 @@ def run(args: argparse.Namespace) -> None:
     )
 
     for name, group in data.groupby("name"):
-        plot(group, min_epoch=args.min_epoch, output_path=f"{name}.pdf")
+        plot(
+            group,
+            min_epoch=args.min_epoch,
+            output_path=name,
+            output_format=args.output_format,
+            linear=args.linear,
+            start_swa=args.start_swa,
+            error_bars=args.error_bars,
+            keys=args.keys,
+            heads=args.heads,
+        )
 
 
 if __name__ == "__main__":
