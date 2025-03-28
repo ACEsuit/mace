@@ -22,7 +22,7 @@ def configure_model(
     # Selecting outputs
     compute_virials = args.loss == "virials"
     compute_stress = args.loss in ("stress", "huber", "universal")
-    
+
     if compute_virials:
         args.compute_virials = True
         args.error_table = "PerAtomRMSEstressvirials"
