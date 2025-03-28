@@ -1,5 +1,6 @@
 from .atomic_data import AtomicData
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
+from .lmdb_dataset import LMDBDataset
 from .neighborhood import get_neighborhood
 from .utils import (
     Configuration,
@@ -35,4 +36,5 @@ __all__ = [
     "save_configurations_as_HDF5",
     "KeySpecification",
     "update_keyspec_from_kwargs",
+    "LMDBDataset",
 ]
