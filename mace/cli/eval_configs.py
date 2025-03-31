@@ -13,6 +13,7 @@ import torch
 from e3nn import o3
 
 from mace import data
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.modules.utils import extract_invariant
 
@@ -29,6 +30,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         choices=["cpu", "cuda"],
         default="cpu",
+    )
+    parser.add_argument(
+        "--enable_cueq",
+        help="enable cuequivariance acceleration",
+        action="store_true",
+        default=False,
     )
     parser.add_argument(
         "--default_dtype",
@@ -101,6 +108,9 @@ def run(args: argparse.Namespace) -> None:
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+    if args.enable_cueq:
+        print("Converting models to CuEq for acceleration")
+        model = run_e3nn_to_cueq(model, device=device)
     model = model.to(
         args.device
     )  # shouldn't be necessary but seems to help with CUDA problems
