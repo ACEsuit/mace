@@ -4,7 +4,8 @@ import numpy as np
 from torch.utils.data import Dataset
 
 from mace.data.atomic_data import AtomicData
-from mace.data.utils import config_from_atoms
+from mace.data.utils import KeySpecification, config_from_atoms
+from mace.tools.default_keys import DefaultKeys
 from mace.tools.fairchem_dataset import AseDBDataset
 
 
@@ -37,19 +38,15 @@ class LMDBDataset(Dataset):
 
         if hasattr(atoms, "calc") and hasattr(atoms.calc, "results"):
             if "energy" in atoms.calc.results:
-                atoms.info["REF_energy"] = atoms.calc.results["energy"]
+                atoms.info[DefaultKeys.ENERGY.value] = atoms.calc.results["energy"]
             if "forces" in atoms.calc.results:
-                atoms.arrays["REF_forces"] = atoms.calc.results["forces"]
+                atoms.arrays[DefaultKeys.FORCES.value] = atoms.calc.results["forces"]
             if "stress" in atoms.calc.results:
-                atoms.info["REF_stress"] = atoms.calc.results["stress"]
+                atoms.info[DefaultKeys.STRESS.value] = atoms.calc.results["stress"]
 
         config = config_from_atoms(
             atoms,
-            energy_key="REF_energy",
-            forces_key="REF_forces",
-            stress_key="REF_stress",
-            dipole_key="dipole",
-            head_key="head",
+            key_specification=KeySpecification.from_defaults(),
         )
 
         # Set head if not already set

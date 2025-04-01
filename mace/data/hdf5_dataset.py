@@ -10,7 +10,9 @@ from mace.tools.utils import AtomicNumberTable
 
 
 class HDF5Dataset(Dataset):
-    def __init__(self, file_path, r_max, z_table, **kwargs):
+    def __init__(
+        self, file_path, r_max, z_table, atomic_dataclass=AtomicData, **kwargs
+    ):
         super(HDF5Dataset, self).__init__()  # pylint: disable=super-with-arguments
         self.file_path = file_path
         self._file = None
@@ -19,6 +21,7 @@ class HDF5Dataset(Dataset):
         self.length = len(self.file.keys()) * self.batch_size
         self.r_max = r_max
         self.z_table = z_table
+        self.atomic_dataclass = atomic_dataclass
         try:
             self.drop_last = bool(self.file.attrs["drop_last"])
         except KeyError:
@@ -48,31 +51,32 @@ class HDF5Dataset(Dataset):
         config_index = index % self.batch_size
         grp = self.file["config_batch_" + str(batch_index)]
         subgrp = grp["config_" + str(config_index)]
+
+        properties = {}
+        property_weights = {}
+        for key in subgrp["properties"]:
+            properties[key] = unpack_value(subgrp["properties"][key][()])
+        for key in subgrp["property_weights"]:
+            property_weights[key] = unpack_value(subgrp["property_weights"][key][()])
+
         config = Configuration(
             atomic_numbers=subgrp["atomic_numbers"][()],
             positions=subgrp["positions"][()],
-            energy=unpack_value(subgrp["energy"][()]),
-            forces=unpack_value(subgrp["forces"][()]),
-            stress=unpack_value(subgrp["stress"][()]),
-            virials=unpack_value(subgrp["virials"][()]),
-            dipole=unpack_value(subgrp["dipole"][()]),
-            charges=unpack_value(subgrp["charges"][()]),
+            properties=properties,
             weight=unpack_value(subgrp["weight"][()]),
-            energy_weight=unpack_value(subgrp["energy_weight"][()]),
-            forces_weight=unpack_value(subgrp["forces_weight"][()]),
-            stress_weight=unpack_value(subgrp["stress_weight"][()]),
-            virials_weight=unpack_value(subgrp["virials_weight"][()]),
+            property_weights=property_weights,
             config_type=unpack_value(subgrp["config_type"][()]),
             pbc=unpack_value(subgrp["pbc"][()]),
             cell=unpack_value(subgrp["cell"][()]),
         )
         if config.head is None:
             config.head = self.kwargs.get("head")
-        atomic_data = AtomicData.from_config(
+        atomic_data = self.atomic_dataclass.from_config(
             config,
             z_table=self.z_table,
             cutoff=self.r_max,
             heads=self.kwargs.get("heads", ["Default"]),
+            **{k: v for k, v in self.kwargs.items() if k != "heads"},
         )
         return atomic_data
 

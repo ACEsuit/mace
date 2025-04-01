@@ -1,10 +1,13 @@
 ###########################################################################################
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import argparse
 import logging
-from typing import List
+from dataclasses import dataclass
+from enum import Enum
+from typing import List, Tuple, Union
 
 import ase.data
 import ase.io
@@ -14,9 +17,41 @@ import torch
 from mace.calculators import MACECalculator, mace_mp
 
 try:
-    import fpsample
+    import fpsample  # type: ignore
 except ImportError:
     pass
+
+
+class FilteringType(Enum):
+    NONE = "none"
+    COMBINATIONS = "combinations"
+    EXCLUSIVE = "exclusive"
+    INCLUSIVE = "inclusive"
+
+
+class SubselectType(Enum):
+    FPS = "fps"
+    RANDOM = "random"
+
+
+@dataclass
+class SelectionSettings:
+    configs_pt: str
+    output: str
+    configs_ft: str | None = None
+    atomic_numbers: List[int] | None = None
+    num_samples: int | None = None
+    subselect: SubselectType = SubselectType.FPS
+    model: str = "small"
+    descriptors: str | None = None
+    device: str = "cpu"
+    default_dtype: str = "float64"
+    head_pt: str | None = None
+    head_ft: str | None = None
+    filtering_type: FilteringType = FilteringType.COMBINATIONS
+    weight_ft: float = 1.0
+    weight_pt: float = 1.0
+    seed: int = 42
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,7 +66,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--configs_ft",
         help="path or list of paths to XYZ configurations for the finetuning",
-        required=True,
+        required=False,
+        default=None,
     )
     parser.add_argument(
         "--num_samples",
@@ -43,9 +79,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--subselect",
         help="method to subselect the configurations of the pretraining set",
-        type=str,
-        choices=["fps", "random"],
-        default="fps",
+        type=SubselectType,
+        choices=list(SubselectType),
+        default=SubselectType.FPS,
     )
     parser.add_argument(
         "--model", help="path to model", default="small", required=False
@@ -83,9 +119,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--filtering_type",
         help="filtering type",
-        type=str,
-        choices=[None, "combinations", "exclusive", "inclusive"],
-        default=None,
+        type=FilteringType,
+        choices=list(FilteringType),
+        default=FilteringType.NONE,
     )
     parser.add_argument(
         "--weight_ft",
@@ -116,7 +152,9 @@ def calculate_descriptors(atoms: List[ase.Atoms], calc: MACECalculator) -> None:
 
 
 def filter_atoms(
-    atoms: ase.Atoms, element_subset: List[str], filtering_type: str
+    atoms: ase.Atoms,
+    element_subset: List[str],
+    filtering_type: FilteringType = FilteringType.COMBINATIONS,
 ) -> bool:
     """
     Filters atoms based on the provided filtering type and element subset.
@@ -124,32 +162,33 @@ def filter_atoms(
     Parameters:
     atoms (ase.Atoms): The atoms object to filter.
     element_subset (list): The list of elements to consider during filtering.
-    filtering_type (str): The type of filtering to apply. Can be 'none', 'exclusive', or 'inclusive'.
-        'none' - No filtering is applied.
-        'combinations' - Return true if `atoms` is composed of combinations of elements in the subset, false otherwise. I.e. does not require all of the specified elements to be present.
-        'exclusive' - Return true if `atoms` contains *only* elements in the subset, false otherwise.
-        'inclusive' - Return true if `atoms` contains all elements in the subset, false otherwise. I.e. allows additional elements.
+    filtering_type (FilteringType): The type of filtering to apply.
+        Can be one of the following `FilteringType` enum members:
+          - `FilteringType.NONE`: No filtering is applied.
+          - `FilteringType.COMBINATIONS`: Return true if `atoms` is composed of combinations of elements in the subset, false otherwise. I.e. does not require all of the specified elements to be present.
+          - `FilteringType.EXCLUSIVE`: Return true if `atoms` contains *only* elements in the subset, false otherwise.
+          - `FilteringType.INCLUSIVE`: Return true if `atoms` contains all elements in the subset, false otherwise. I.e. allows additional elements.
 
     Returns:
     bool: True if the atoms pass the filter, False otherwise.
     """
-    if filtering_type == "none":
+    if filtering_type == FilteringType.NONE:
         return True
-    if filtering_type == "combinations":
+    if filtering_type == FilteringType.COMBINATIONS:
         atom_symbols = np.unique(atoms.symbols)
         return all(
             x in element_subset for x in atom_symbols
         )  # atoms must *only* contain elements in the subset
-    if filtering_type == "exclusive":
+    if filtering_type == FilteringType.EXCLUSIVE:
         atom_symbols = set(list(atoms.symbols))
         return atom_symbols == set(element_subset)
-    if filtering_type == "inclusive":
+    if filtering_type == FilteringType.INCLUSIVE:
         atom_symbols = np.unique(atoms.symbols)
         return all(
             x in atom_symbols for x in element_subset
         )  # atoms must *at least* contain elements in the subset
     raise ValueError(
-        f"Filtering type {filtering_type} not recognised. Must be one of 'none', 'exclusive', or 'inclusive'."
+        f"Filtering type {filtering_type} not recognised. Must be one of {list(FilteringType)}."
     )
 
 
@@ -157,7 +196,7 @@ class FPS:
     def __init__(self, atoms_list: List[ase.Atoms], n_samples: int):
         self.n_samples = n_samples
         self.atoms_list = atoms_list
-        self.species = np.unique([x.symbol for atoms in atoms_list for x in atoms])
+        self.species = np.unique([x.symbol for atoms in atoms_list for x in atoms])  # type: ignore
         self.species_dict = {x: i for i, x in enumerate(self.species)}
         # start from a random configuration
         self.list_index = [np.random.randint(0, len(atoms_list))]
@@ -182,7 +221,7 @@ class FPS:
         )
         return self.list_index
 
-    def assemble_descriptors(self) -> np.ndarray:
+    def assemble_descriptors(self) -> None:
         """
         Assemble the descriptors for all the configurations.
         """
@@ -203,133 +242,252 @@ class FPS:
                 ).astype(np.float32)
 
 
-def select_samples(
-    args: argparse.Namespace,
-) -> None:
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if args.model in ["small", "medium", "large"]:
-        calc = mace_mp(args.model, device=args.device, default_dtype=args.default_dtype)
+def _load_calc(
+    model: str, device: str, default_dtype: str, subselect: SubselectType
+) -> Union[MACECalculator, None]:
+    if subselect == SubselectType.RANDOM:
+        return None
+    if model in ["small", "medium", "large"]:
+        calc = mace_mp(model, device=device, default_dtype=default_dtype)
     else:
         calc = MACECalculator(
-            model_paths=args.model, device=args.device, default_dtype=args.default_dtype
+            model_paths=model,
+            device=device,
+            default_dtype=default_dtype,
         )
-    if isinstance(args.configs_ft, str):
-        atoms_list_ft = ase.io.read(args.configs_ft, index=":")
+    return calc
+
+
+def _get_finetuning_elements(
+    atoms: List[ase.Atoms], atomic_numbers: List[int] | None
+) -> List[str]:
+    if atoms:
+        logging.debug(
+            "Using elements from the finetuning configurations for filtering."
+        )
+        species = np.unique([x.symbol for atoms in atoms for x in atoms]).tolist()  # type: ignore
+    elif atomic_numbers is not None and atomic_numbers:
+        logging.debug("Using the supplied atomic numbers for filtering.")
+        species = [ase.data.chemical_symbols[z] for z in atomic_numbers]
     else:
+        species = []
+    return species
+
+
+def _read_finetuning_configs(
+    configs_ft: Union[str, list[str], None],
+) -> List[ase.Atoms]:
+    if isinstance(configs_ft, str):
+        path = configs_ft
+        return ase.io.read(path, index=":")  # type: ignore
+    if isinstance(configs_ft, list):
+        assert all(isinstance(x, str) for x in configs_ft)
         atoms_list_ft = []
-        for path in args.configs_ft:
+        for path in configs_ft:
             atoms_list_ft += ase.io.read(path, index=":")
+        return atoms_list_ft
+    if configs_ft is None:
+        return []
+    raise ValueError(f"Invalid type for configs_ft: {type(configs_ft)}")
 
-    if args.filtering_type is not None:
-        all_species_ft = np.unique([x.symbol for atoms in atoms_list_ft for x in atoms])
-        logging.info(
-            "Filtering configurations based on the finetuning set, "
-            f"filtering type: combinations, elements: {all_species_ft}"
+
+def _filter_pretraining_data(
+    atoms: list[ase.Atoms],
+    filtering_type: FilteringType,
+    all_species_ft: List[str],
+) -> Tuple[List[ase.Atoms], List[ase.Atoms], list[bool]]:
+    logging.info(
+        "Filtering configurations based on the finetuning set, "
+        f"filtering type: {filtering_type}, elements: {all_species_ft}"
+    )
+    passes_filter = [filter_atoms(x, all_species_ft, filtering_type) for x in atoms]
+    assert len(passes_filter) == len(atoms), "Filtering failed"
+    filtered_atoms = [x for x, passes in zip(atoms, passes_filter) if passes]
+    remaining_atoms = [x for x, passes in zip(atoms, passes_filter) if not passes]
+    return filtered_atoms, remaining_atoms, passes_filter
+
+
+def _get_random_configs(
+    num_samples: int,
+    atoms: List[ase.Atoms],
+) -> list[ase.Atoms]:
+    if num_samples > len(atoms):
+        raise ValueError(
+            f"Requested more samples ({num_samples}) than available in the remaining set ({len(atoms)})"
         )
-        atoms_list_pt = ase.io.read(args.configs_pt, index=":")
-        if args.subselect != "random":
-            if args.descriptors is not None:
-                logging.info("Loading descriptors")
-                descriptors = np.load(args.descriptors, allow_pickle=True)
-                for atoms_i, atoms in enumerate(atoms_list_pt):
-                    atoms.info["mace_descriptors"] = descriptors[atoms_i]
-        atoms_list_pt_filtered_inds = [
-            _i
-            for _i, x in enumerate(atoms_list_pt)
-            if filter_atoms(x, all_species_ft, "combinations")
+    indices = np.random.choice(list(range(len(atoms))), num_samples, replace=False)
+    return [atoms[i] for i in indices]
+
+
+def _load_descriptors(
+    atoms: List[ase.Atoms],
+    passes_filter: List[bool],
+    descriptors_path: str | None,
+    calc: MACECalculator | None,
+    full_data_length: int,
+) -> None:
+    if descriptors_path is not None:
+        logging.info(f"Loading descriptors from {descriptors_path}")
+        descriptors = np.load(descriptors_path, allow_pickle=True)
+        assert sum(passes_filter) == len(atoms)
+        if len(descriptors) != full_data_length:
+            raise ValueError(
+                f"Length of the descriptors ({len(descriptors)}) does not match the length of the data ({full_data_length})"
+                "Please provide descriptors for all configurations"
+            )
+        required_descriptors = [
+            descriptors[i] for i, passes in enumerate(passes_filter) if passes
         ]
-        atoms_list_pt_filtered = [atoms_list_pt[i] for i in atoms_list_pt_filtered_inds]
-        if len(atoms_list_pt_filtered) <= args.num_samples:
-            logging.info(
-                f"Number of configurations after filtering {len(atoms_list_pt_filtered)} "
-                f"is less than the number of samples {args.num_samples}, "
-                "selecting random configurations for the rest."
-            )
-            atoms_list_pt_minus_filtered_inds = sorted(
-                set(range(len(atoms_list_pt))) - set(atoms_list_pt_filtered_inds)
-            )
-
-            atoms_list_pt_random_inds = np.random.choice(
-                atoms_list_pt_minus_filtered_inds,
-                args.num_samples - len(atoms_list_pt_filtered),
-                replace=False,
-            )
-            atoms_list_pt = atoms_list_pt_filtered + [
-                atoms_list_pt[ind] for ind in atoms_list_pt_random_inds
-            ]
-        else:
-            atoms_list_pt = atoms_list_pt_filtered
-
+        for i, atoms_ in enumerate(atoms):
+            atoms_.info["mace_descriptors"] = required_descriptors[i]
     else:
-        atoms_list_pt = ase.io.read(args.configs_pt, index=":")
-        if args.descriptors is not None:
-            logging.info(
-                f"Loading descriptors for the pretraining set from {args.descriptors}"
-            )
-            descriptors = np.load(args.descriptors, allow_pickle=True)
-            for i, atoms in enumerate(atoms_list_pt):
-                atoms.info["mace_descriptors"] = descriptors[i]
+        logging.info("Calculating descriptors")
+        if calc is None:
+            raise ValueError("MACECalculator must be provided to calculate descriptors")
+        calculate_descriptors(atoms, calc)
 
-    if args.num_samples is not None and args.num_samples < len(atoms_list_pt):
-        if args.subselect == "fps":
-            if args.descriptors is None:
-                logging.info("Calculating descriptors for the pretraining set")
-                calculate_descriptors(atoms_list_pt, calc)
-                descriptors_list = [
-                    atoms.info["mace_descriptors"] for atoms in atoms_list_pt
-                ]
-                logging.info(
-                    f"Saving descriptors at {args.output.replace('.xyz', '_descriptors.npy')}"
-                )
-                np.save(
-                    args.output.replace(".xyz", "_descriptors.npy"), descriptors_list
-                )
-            logging.info("Selecting configurations using Farthest Point Sampling")
-            try:
-                fps_pt = FPS(atoms_list_pt, args.num_samples)
-                idx_pt = fps_pt.run()
-                logging.info(f"Selected {len(idx_pt)} configurations")
-            except Exception as e:  # pylint: disable=W0703
-                logging.error(
-                    f"FPS failed, selecting random configurations instead: {e}"
-                )
-                idx_pt = np.random.choice(
-                    list(range(len(atoms_list_pt))), args.num_samples, replace=False
-                )
-            atoms_list_pt = [atoms_list_pt[i] for i in idx_pt]
-        else:
-            logging.info("Selecting random configurations")
-            idx_pt = np.random.choice(
-                list(range(len(atoms_list_pt))), args.num_samples, replace=False
-            )
-            atoms_list_pt = [atoms_list_pt[i] for i in idx_pt]
-    for atoms in atoms_list_pt:
-        # del atoms.info["mace_descriptors"]
-        atoms.info["pretrained"] = True
-        atoms.info["config_weight"] = args.weight_pt
-        atoms.info["mace_descriptors"] = None
-        if args.head_pt is not None:
-            atoms.info["head"] = args.head_pt
+
+def _maybe_save_descriptors(
+    atoms: List[ase.Atoms],
+    output_path: str,
+) -> None:
+    """
+    Save the descriptors if they are present in the atoms objects.
+    Also, delete the descriptors from the atoms objects.
+    """
+    if all("mace_descriptors" in x.info for x in atoms):
+        descriptor_save_path = output_path.replace(".xyz", "_descriptors.npy")
+        logging.info(f"Saving descriptors at {descriptor_save_path}")
+        descriptors_list = [x.info["mace_descriptors"] for x in atoms]
+        np.save(descriptor_save_path, descriptors_list, allow_pickle=True)
+        for x in atoms:
+            del x.info["mace_descriptors"]
+
+
+def _maybe_fps(atoms: List[ase.Atoms], num_samples: int) -> List[ase.Atoms]:
+    try:
+        fps_pt = FPS(atoms, num_samples)
+        idx_pt = fps_pt.run()
+        logging.info(f"Selected {len(idx_pt)} configurations")
+        return [atoms[i] for i in idx_pt]
+    except Exception as e:  # pylint: disable=W0703
+        logging.error(f"FPS failed, selecting random configurations instead: {e}")
+        return _get_random_configs(num_samples, atoms)
+
+
+def _subsample_data(
+    filtered_atoms: List[ase.Atoms],
+    remaining_atoms: List[ase.Atoms],
+    passes_filter: List[bool],
+    num_samples: int | None,
+    subselect: SubselectType,
+    descriptors_path: str | None,
+    calc: MACECalculator | None,
+) -> List[ase.Atoms]:
+    if num_samples is None or num_samples == len(filtered_atoms):
+        logging.info(
+            f"No subsampling, keeping all {len(filtered_atoms)} filtered configurations"
+        )
+        return filtered_atoms
+    if num_samples > len(filtered_atoms):
+        num_sample_randomly = num_samples - len(filtered_atoms)
+        logging.info(
+            f"Number of configurations after filtering {len(filtered_atoms)} "
+            f"is less than the number of samples {num_samples}, "
+            f"selecting {num_sample_randomly} random configurations for the rest."
+        )
+        return filtered_atoms + _get_random_configs(
+            num_sample_randomly, remaining_atoms
+        )
+    if num_samples == 0:
+        raise ValueError("Number of samples must be greater than 0")
+    if subselect == SubselectType.FPS:
+        _load_descriptors(
+            filtered_atoms,
+            passes_filter,
+            descriptors_path,
+            calc,
+            full_data_length=len(filtered_atoms) + len(remaining_atoms),
+        )
+        logging.info("Selecting configurations using Farthest Point Sampling")
+        return _maybe_fps(filtered_atoms, num_samples)
+    if subselect == SubselectType.RANDOM:
+        return _get_random_configs(num_samples, filtered_atoms)
+    raise ValueError(f"Invalid subselect type: {subselect}")
+
+
+def _write_metadata(
+    atoms: list[ase.Atoms], pretrained: bool, config_weight: float, head: str | None
+) -> None:
+    for a in atoms:
+        a.info["pretrained"] = pretrained
+        a.info["config_weight"] = config_weight
+        if head is not None:
+            a.info["head"] = head
+
+
+def select_samples(
+    settings: SelectionSettings,
+) -> None:
+    np.random.seed(settings.seed)
+    torch.manual_seed(settings.seed)
+    calc = _load_calc(
+        settings.model, settings.device, settings.default_dtype, settings.subselect
+    )
+    atoms_list_ft = _read_finetuning_configs(settings.configs_ft)
+    all_species_ft = _get_finetuning_elements(atoms_list_ft, settings.atomic_numbers)
+
+    if settings.filtering_type is not FilteringType.NONE and not all_species_ft:
+        raise ValueError(
+            "Filtering types other than NONE require elements for filtering. They can be specified via the `--atomic_numbers` flag."
+        )
+
+    atoms_list_pt: list[ase.Atoms] = ase.io.read(settings.configs_pt, index=":")  # type: ignore
+    filtered_pt_atoms, remaining_atoms, passes_filter = _filter_pretraining_data(
+        atoms_list_pt, settings.filtering_type, all_species_ft
+    )
+
+    subsampled_atoms = _subsample_data(
+        filtered_pt_atoms,
+        remaining_atoms,
+        passes_filter,
+        settings.num_samples,
+        settings.subselect,
+        settings.descriptors,
+        calc,
+    )
+    _maybe_save_descriptors(subsampled_atoms, settings.output)
+
+    _write_metadata(
+        subsampled_atoms,
+        pretrained=True,
+        config_weight=settings.weight_pt,
+        head=settings.head_pt,
+    )
+    _write_metadata(
+        atoms_list_ft,
+        pretrained=False,
+        config_weight=settings.weight_ft,
+        head=settings.head_ft,
+    )
 
     logging.info("Saving the selected configurations")
-    ase.io.write(args.output, atoms_list_pt, format="extxyz")
+    ase.io.write(settings.output, subsampled_atoms, format="extxyz")
+
     logging.info("Saving a combined XYZ file")
-    for atoms in atoms_list_ft:
-        atoms.info["pretrained"] = False
-        atoms.info["config_weight"] = args.weight_ft
-        atoms.info["mace_descriptors"] = None
-        if args.head_ft is not None:
-            atoms.info["head"] = args.head_ft
-    atoms_fps_pt_ft = atoms_list_pt + atoms_list_ft
+    atoms_fps_pt_ft = subsampled_atoms + atoms_list_ft
+
     ase.io.write(
-        args.output.replace(".xyz", "_combined.xyz"), atoms_fps_pt_ft, format="extxyz"
+        settings.output.replace(".xyz", "_combined.xyz"),
+        atoms_fps_pt_ft,
+        format="extxyz",
     )
 
 
 def main():
     args = parse_args()
-    select_samples(args)
+    settings = SelectionSettings(**vars(args))
+    select_samples(settings)
 
 
 if __name__ == "__main__":
