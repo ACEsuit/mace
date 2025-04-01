@@ -829,6 +829,10 @@ def get_params_options(
                 "weight_decay": 0.0,
             }
         )
+
+    logging.info(
+        f"Parameter groups: {[param_group['name'] for param_group in param_options['params']]}"
+    )
     return param_options
 
 
