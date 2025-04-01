@@ -493,6 +493,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "huber",
             "universal",
             "energy_forces_dipole",
+            "l1l2_forces",
         ],
     )
     parser.add_argument(
