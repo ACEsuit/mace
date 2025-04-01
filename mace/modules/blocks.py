@@ -320,6 +320,7 @@ class InteractionBlock(torch.nn.Module):
         hidden_irreps: o3.Irreps,
         avg_num_neighbors: float,
         radial_MLP: Optional[List[int]] = None,
+        attention_irreps: Optional[o3.Irreps]= None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ) -> None:
         super().__init__()
@@ -330,6 +331,7 @@ class InteractionBlock(torch.nn.Module):
         self.target_irreps = target_irreps
         self.hidden_irreps = hidden_irreps
         self.avg_num_neighbors = avg_num_neighbors
+        self.attention_irreps = attention_irreps
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
         self.radial_MLP = radial_MLP
@@ -1105,3 +1107,228 @@ class ScaleShiftBlock(torch.nn.Module):
             else f"{self.shift.item():.4f}"
         )
         return f"{self.__class__.__name__}(scale={formatted_scale}, shift={formatted_shift})"
+
+@compile_mode("script")
+class RealAgnosticAttentionResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        if not hasattr(self, "cueq_config"):
+            self.cueq_config = None
+        # First linear
+        self.linear_up = Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+            cueq_config=self.cueq_config,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        self.irreps_out = self.target_irreps
+        self.linear = Linear(
+            self.attention_irreps,
+            self.irreps_out,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = FullyConnectedTensorProduct(
+            self.node_feats_irreps,
+            self.node_attrs_irreps,
+            self.hidden_irreps,
+            cueq_config=self.cueq_config,
+        )
+        self.reshape = reshape_irreps(self.irreps_out, cueq_config=self.cueq_config)
+
+        # Attention
+        self.linear_queries = Linear(irreps_in=irreps_mid, irreps_out=self.attention_irreps, internal_weights=True, shared_weights=True, cueq_config=self.cueq_config)
+        self.linear_keys = Linear(irreps_in=irreps_mid, irreps_out=self.attention_irreps, internal_weights=True, shared_weights=True, cueq_config=self.cueq_config)
+        self.linear_values = Linear(irreps_in=irreps_mid, irreps_out=self.attention_irreps, internal_weights=True, shared_weights=True, cueq_config=self.cueq_config)
+
+        self.tp_dot = o3.ElementwiseTensorProduct(irreps_in1=self.attention_irreps, irreps_in2=self.attention_irreps, filter_ir_out=("0e",), normalization='component')
+        self.scalar_irreps = self.tp_dot.irreps_out
+        self.tp_scalar_att = o3.ElementwiseTensorProduct(irreps_in1=self.scalar_irreps, irreps_in2=self.attention_irreps, normalization='component')
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        # project Qji = linear(mji), Vji = linear(mij), Kji = linear(mji)
+        Qji, Kji, Vji = (
+                self.linear_queries(mji),
+                self.linear_keys(mji),
+                self.linear_values(mji),
+            )
+        # alphaji = exp(Qji . Kji)/sum(exp(Qij.Kij))
+        alphaji_num = self.tp_dot(Qji, Kji).exp()
+        alphaji = alphaji_num / scatter_sum(src=alphaji_num, index=receiver, dim=0, dim_size=num_nodes)[receiver, :]
+        # mji = sum_j alphaji Vji
+        mji = self.tp_scalar_att(alphaji, Vji)
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / self.avg_num_neighbors
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+    
+@compile_mode("script")
+class RealAgnosticNonLinearDensityResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        if not hasattr(self, "cueq_config"):
+            self.cueq_config = None
+
+        # First linear
+        self.linear_up = Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+            cueq_config=self.cueq_config,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        self.irreps_out = self.target_irreps
+        self.linear = Linear(
+            irreps_mid,
+            self.irreps_out,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = Linear(
+            self.node_feats_irreps,
+            self.hidden_irreps,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        # Create gates nonlinearity
+        irreps_scalars = o3.Irreps(
+            [(mul, ir) for mul, ir in self.irreps_out if ir.l == 0]
+        )
+        irreps_gated = o3.Irreps(
+            [(mul, ir) for mul, ir in self.irreps_out if ir.l > 0]
+        )
+        irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
+        activation_fn = torch.nn.functional.silu
+        self.equivariant_nonlin = nn.Gate(
+            irreps_scalars=irreps_scalars,
+            act_scalars=[activation_fn for _ in irreps_scalars],
+            irreps_gates=irreps_gates,
+            act_gates=[activation_fn] * len(irreps_gates),
+            irreps_gated=irreps_gated,
+        )
+        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
+        self.linear_1 = Linear(
+            irreps_in=self.irreps_out, irreps_out=self.irreps_nonlin, cueq_config=self.cueq_config
+        )
+        self.linear_2 = Linear(
+            irreps_in=self.irreps_out,
+            irreps_out=self.irreps_out,
+            cueq_config=self.cueq_config,
+        )
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out, cueq_config=self.cueq_config)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+        message = self.linear_2(self.equivariant_nonlin(self.linear_1(message)))
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]

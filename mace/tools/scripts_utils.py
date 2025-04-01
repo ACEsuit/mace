@@ -348,6 +348,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         ),
         "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
+        "attention_irreps": o3.Irreps(model.attention_irreps),
         "distance_transform": radial_to_transform(model.radial_embedding),
         "atomic_inter_scale": scale.cpu().numpy(),
         "atomic_inter_shift": shift.cpu().numpy(),
@@ -651,6 +652,11 @@ def get_loss_fn(
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
         )
+    elif args.loss == "l1l2_forces":
+        loss_fn = modules.WeightedEnergyForcesL1L2Loss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
@@ -790,6 +796,42 @@ def get_params_options(
         lr=args.lr,
         amsgrad=args.amsgrad,
         betas=(args.beta, 0.999),
+    )
+    if hasattr(model, "spin_embedding"):
+        param_options["params"].append(
+            {
+                "name": "spin_embedding",
+                "params": model.spin_embedding.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+    if hasattr(model, "charges_embedding"):
+        param_options["params"].append(
+            {
+                "name": "charges_embedding",
+                "params": model.charges_embedding.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+    if hasattr(model, "spin_charge_mixing"):
+        param_options["params"].append(
+            {
+                "name": "spin_charge_mixing",
+                "params": model.spin_charge_mixing.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+    if hasattr(model, "spin_charge_readout"):
+        param_options["params"].append(
+            {
+                "name": "spin_charge_readout",
+                "params": model.spin_charge_readout.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+
+    logging.info(
+        f"Parameter groups: {[param_group['name'] for param_group in param_options['params']]}"
     )
     return param_options
 

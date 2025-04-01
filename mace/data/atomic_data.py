@@ -37,6 +37,8 @@ class AtomicData(torch_geometric.data.Data):
     virials: torch.Tensor
     dipole: torch.Tensor
     charges: torch.Tensor
+    total_charge: torch.Tensor
+    total_spin: torch.Tensor
     weight: torch.Tensor
     energy_weight: torch.Tensor
     forces_weight: torch.Tensor
@@ -63,6 +65,8 @@ class AtomicData(torch_geometric.data.Data):
         virials: Optional[torch.Tensor],  # [1,3,3]
         dipole: Optional[torch.Tensor],  # [, 3]
         charges: Optional[torch.Tensor],  # [n_nodes, ]
+        total_charge: Optional[torch.Tensor] = None,  # [,]
+        total_spin: Optional[torch.Tensor] = None,    # [,]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -85,6 +89,9 @@ class AtomicData(torch_geometric.data.Data):
         assert virials is None or virials.shape == (1, 3, 3)
         assert dipole is None or dipole.shape[-1] == 3
         assert charges is None or charges.shape == (num_nodes,)
+        assert total_charge is None or len(total_charge.shape) == 0
+        assert total_spin is None or len(total_spin.shape) == 0
+        
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -106,6 +113,8 @@ class AtomicData(torch_geometric.data.Data):
             "virials": virials,
             "dipole": dipole,
             "charges": charges,
+            "total_charge": total_charge,
+            "total_spin": total_spin,
         }
         super().__init__(**data)
 
@@ -204,6 +213,18 @@ class AtomicData(torch_geometric.data.Data):
             if config.charges is not None
             else None
         )
+        
+        # Convert total_charge and total_spin to tensors if provided
+        total_charge = (
+            torch.tensor(config.total_charge, dtype=torch.get_default_dtype())
+            if config.total_charge is not None
+            else None
+        )
+        total_spin = (
+            torch.tensor(config.total_spin, dtype=torch.get_default_dtype())
+            if config.total_spin is not None
+            else None
+        )
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
@@ -224,6 +245,8 @@ class AtomicData(torch_geometric.data.Data):
             virials=virials,
             dipole=dipole,
             charges=charges,
+            total_charge=total_charge,
+            total_spin=total_spin,
         )
 
 

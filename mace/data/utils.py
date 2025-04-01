@@ -40,6 +40,8 @@ class Configuration:
     charges: Optional[Charges] = None  # atomic unit
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
+    total_charge: Optional[float] = None  # total charge of the system
+    total_spin: Optional[float] = None  # total spin multiplicity of the system
 
     weight: float = 1.0  # weight of config in loss
     energy_weight: float = 1.0  # weight of config energy in loss

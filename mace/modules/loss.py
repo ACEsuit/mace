@@ -26,6 +26,16 @@ def weighted_mean_squared_error_energy(ref: Batch, pred: TensorDict) -> torch.Te
         * torch.square((ref["energy"] - pred["energy"]) / num_atoms)
     )  # []
 
+def weighted_mean_absolute_error_energy(ref: Batch, pred: TensorDict) -> torch.Tensor:
+    # energy: [n_graphs, ]
+    configs_weight = ref.weight  # [n_graphs, ]
+    configs_energy_weight = ref.energy_weight  # [n_graphs, ]
+    num_atoms = ref.ptr[1:] - ref.ptr[:-1]  # [n_graphs,]
+    return torch.mean(
+        configs_weight
+        * configs_energy_weight
+        * torch.abs((ref["energy"] - pred["energy"]) / num_atoms)
+    )  # []
 
 def weighted_mean_squared_stress(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # energy: [n_graphs, ]
@@ -68,6 +78,19 @@ def mean_squared_error_forces(ref: Batch, pred: TensorDict) -> torch.Tensor:
         * torch.square(ref["forces"] - pred["forces"])
     )  # []
 
+def mean_normed_error_forces(ref: Batch, pred: TensorDict) -> torch.Tensor:
+    # forces: [n_atoms, 3]
+    configs_weight = torch.repeat_interleave(
+        ref.weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+    configs_forces_weight = torch.repeat_interleave(
+        ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(
+        -1
+    )  # [n_atoms, 1]
+    return torch.linalg.vector_norm(ref["forces"] - pred["forces"], ord=2, dim=-1).mean()  # []
 
 def weighted_mean_squared_error_dipole(ref: Batch, pred: TensorDict) -> torch.Tensor:
     # dipole: [n_graphs, ]
@@ -376,6 +399,29 @@ class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
             + self.dipole_weight * weighted_mean_squared_error_dipole(ref, pred) * 100
         )
 
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}, dipole_weight={self.dipole_weight:.3f})"
+        )
+
+class WeightedEnergyForcesL1L2Loss(torch.nn.Module):
+    def __init__(self, energy_weight=1.0, forces_weight=1.0, dipole_weight=1.0) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        return (
+            self.energy_weight * weighted_mean_absolute_error_energy(ref, pred)
+            + self.forces_weight * mean_normed_error_forces(ref, pred)
+        )
     def __repr__(self):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "

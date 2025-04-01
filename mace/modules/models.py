@@ -63,6 +63,7 @@ class MACE(torch.nn.Module):
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,
+        attention_irreps: Optional[o3.Irreps] = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -79,6 +80,7 @@ class MACE(torch.nn.Module):
         self.heads = heads
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
+        self.attention_irreps = attention_irreps
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -86,6 +88,17 @@ class MACE(torch.nn.Module):
             irreps_in=node_attr_irreps,
             irreps_out=node_feats_irreps,
             cueq_config=cueq_config,
+        )
+        embedding_size = node_feats_irreps.count(o3.Irrep(0, 1))
+        self.spin_embedding = torch.nn.Embedding(101, embedding_size)
+        self.charges_embedding = torch.nn.Embedding(201, embedding_size)
+        self.spin_charge_mixing = LinearNodeEmbeddingBlock(
+            irreps_in=(2*node_feats_irreps).sort()[0].simplify(),
+            irreps_out=node_feats_irreps,
+            cueq_config=cueq_config,
+        )
+        self.spin_charge_readout = LinearReadoutBlock(
+            node_feats_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
         )
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
@@ -119,6 +132,7 @@ class MACE(torch.nn.Module):
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
+            attention_irreps=attention_irreps,
             cueq_config=cueq_config,
         )
         self.interactions = torch.nn.ModuleList([inter])
@@ -162,6 +176,7 @@ class MACE(torch.nn.Module):
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
                 radial_MLP=radial_MLP,
+                attention_irreps=attention_irreps,
                 cueq_config=cueq_config,
             )
             self.interactions.append(inter)
@@ -260,6 +275,20 @@ class MACE(torch.nn.Module):
             pair_node_energy = torch.zeros_like(node_e0)
             pair_energy = torch.zeros_like(e0)
 
+        if hasattr(self, "spin_embedding") and hasattr(self, "charges_embedding"):
+            spin_indices = data["total_spin"].to(torch.long)
+            charge_indices = (data["total_charge"] + 100).to(torch.long)
+            spin_feats = self.spin_embedding(spin_indices)
+            charge_feats = self.charges_embedding(charge_indices)
+            spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
+            csp_embedding = torch.nn.functional.silu(self.spin_charge_mixing(spin_charge_feats))
+            node_feats += csp_embedding[data["batch"], :]
+            csp_energy_atom = self.spin_charge_readout(node_feats).squeeze(-1)
+            csp_energy = scatter_sum(
+                src=csp_energy_atom, index=data["batch"], dim=0, dim_size=num_graphs
+            )
+            e0 += csp_energy
+            
         # Interactions
         energies = [e0, pair_energy]
         node_energies_list = [node_e0, pair_node_energy]
@@ -406,6 +435,21 @@ class ScaleShiftMACE(MACE):
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list = []
+
+        if hasattr(self, "spin_embedding") and hasattr(self, "charges_embedding"):
+            spin_indices = data["total_spin"].to(torch.long)
+            charge_indices = (data["total_charge"] + 100).to(torch.long)
+            spin_feats = self.spin_embedding(spin_indices)
+            charge_feats = self.charges_embedding(charge_indices)
+            spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
+            csp_embedding = torch.nn.functional.silu(self.spin_charge_mixing(spin_charge_feats))
+            node_feats += csp_embedding[data["batch"], :]
+            csp_energy_atom = self.spin_charge_readout(node_feats).squeeze(-1)
+            csp_energy = scatter_sum(
+                src=csp_energy_atom, index=data["batch"], dim=0, dim_size=num_graphs
+            )
+            e0 += csp_energy
+
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
         ):
