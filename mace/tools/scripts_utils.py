@@ -705,7 +705,7 @@ def get_swa(
             stress_weight=args.swa_stress_weight,
         )
         logging.info(
-            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.stress_weight} and learning rate : {args.swa_lr}"
+            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
         )
     elif args.loss == "energy_forces_dipole":
         loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
