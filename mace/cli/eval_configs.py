@@ -14,8 +14,9 @@ from e3nn import o3
 
 from mace import data
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
-from mace.tools import torch_geometric, torch_tools, utils
 from mace.modules.utils import extract_invariant
+from mace.tools import torch_geometric, torch_tools, utils
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -72,7 +73,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--descriptor_aggregation_method",
         help="method for aggregating node features. None saves descriptors for each atom.",
-        choices=["mean", "per_element_mean",],
+        choices=["mean", "per_element_mean"],
         default=None,
     )
     parser.add_argument(
@@ -168,12 +169,14 @@ def run(args: argparse.Namespace) -> None:
             irreps_out = o3.Irreps(str(model.products[0].linear.irreps_out))
             l_max = irreps_out.lmax
             num_invariant_features = irreps_out.dim // (l_max + 1) ** 2
-            per_layer_features = [irreps_out.dim for _ in range(int(model.num_interactions))]
+            per_layer_features = [
+                irreps_out.dim for _ in range(int(model.num_interactions))
+            ]
             per_layer_features[-1] = (
                 num_invariant_features  # Equivariant features not created for the last layer
             )
 
-            descriptors = output['node_feats']
+            descriptors = output["node_feats"]
 
             if args.descriptor_invariants_only:
                 descriptors = extract_invariant(
@@ -181,7 +184,7 @@ def run(args: argparse.Namespace) -> None:
                     num_layers=num_layers,
                     num_features=num_invariant_features,
                     l_max=l_max,
-                    )
+                )
 
             to_keep = np.sum(per_layer_features[:num_layers])
             descriptors = descriptors[:, :to_keep].detach().cpu().numpy()
@@ -191,7 +194,7 @@ def run(args: argparse.Namespace) -> None:
                 indices_or_sections=batch.ptr[1:],
                 axis=0,
             )
-            descriptors_list.extend(descriptors[:-1]) # drop last as its empty
+            descriptors_list.extend(descriptors[:-1])  # drop last as its empty
 
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
@@ -232,11 +235,13 @@ def run(args: argparse.Namespace) -> None:
         if args.return_descriptors:
             descriptors = descriptors_list[i]
             if args.descriptor_aggregation_method:
-                if args.descriptor_aggregation_method == 'mean':
+                if args.descriptor_aggregation_method == "mean":
                     descriptors = np.mean(descriptors, axis=0)
-                elif args.descriptor_aggregation_method == 'per_element_mean':
+                elif args.descriptor_aggregation_method == "per_element_mean":
                     descriptors = {
-                        element: np.mean(descriptors[atoms.symbols == element], axis=0).tolist()
+                        element: np.mean(
+                            descriptors[atoms.symbols == element], axis=0
+                        ).tolist()
                         for element in np.unique(atoms.symbols)
                     }
                 atoms.info[args.info_prefix + "descriptors"] = descriptors
