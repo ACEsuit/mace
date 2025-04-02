@@ -73,7 +73,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--descriptor_aggregation_method",
         help="method for aggregating node features. None saves descriptors for each atom.",
-        choices=["mean", "per_element_mean"],
+        choices=["mean", "per_element_mean", None],
         default=None,
     )
     parser.add_argument(
@@ -245,7 +245,8 @@ def run(args: argparse.Namespace) -> None:
                         for element in np.unique(atoms.symbols)
                     }
                 atoms.info[args.info_prefix + "descriptors"] = descriptors
-            else:
+            else:  # args.descriptor_aggregation_method is None
+                # Save descriptors for each atom (default behavior)
                 atoms.arrays[args.info_prefix + "descriptors"] = np.array(descriptors)
 
     # Write atoms to output path
