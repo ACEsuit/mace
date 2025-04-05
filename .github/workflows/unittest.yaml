@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   pytest-general:
     runs-on: ubuntu-latest
@@ -12,7 +16,7 @@ jobs:
         python-version: ['3.8','3.9','3.10','3.11','3.12','3.13']
 
     steps:
-      - name: checkout 
+      - name: checkout
         uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
