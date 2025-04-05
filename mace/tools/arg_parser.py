@@ -842,6 +842,13 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         default=int(os.cpu_count() / 4),
     )
     parser.add_argument(
+        "--default_dtype",
+        help="set default dtype",
+        type=str,
+        choices=["float32", "float64"],
+        default="float64",
+    )
+    parser.add_argument(
         "--valid_fraction",
         help="Fraction of training set used for validation",
         type=float,

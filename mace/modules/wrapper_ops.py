@@ -163,7 +163,9 @@ class SymmetricContractionWrapper:
         correlation: int,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        dtype: Optional[torch.dtype] = None,
     ):
+        dtype = dtype or torch.get_default_dtype()
         if (
             CUET_AVAILABLE
             and cueq_config is not None
@@ -178,8 +180,8 @@ class SymmetricContractionWrapper:
                 contraction_degree=correlation,
                 num_elements=num_elements,
                 original_mace=True,
-                dtype=torch.get_default_dtype(),
-                math_dtype=torch.get_default_dtype(),
+                dtype=dtype,
+                math_dtype=dtype,
             )
 
         return SymmetricContraction(

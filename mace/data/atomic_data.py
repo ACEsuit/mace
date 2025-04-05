@@ -116,7 +116,9 @@ class AtomicData(torch_geometric.data.Data):
         z_table: AtomicNumberTable,
         cutoff: float,
         heads: Optional[list] = None,
+        dtype: Optional[torch.dtype] = None,
     ) -> "AtomicData":
+        dtype = dtype or torch.get_default_dtype()
         if heads is None:
             heads = ["default"]
         edge_index, shifts, unit_shifts, cell = get_neighborhood(
@@ -133,83 +135,75 @@ class AtomicData(torch_geometric.data.Data):
             head = torch.tensor(len(heads) - 1, dtype=torch.long)
 
         cell = (
-            torch.tensor(cell, dtype=torch.get_default_dtype())
+            torch.tensor(cell, dtype=dtype)
             if cell is not None
-            else torch.tensor(
-                3 * [0.0, 0.0, 0.0], dtype=torch.get_default_dtype()
-            ).view(3, 3)
+            else torch.tensor(3 * [0.0, 0.0, 0.0], dtype=dtype).view(3, 3)
         )
 
         weight = (
-            torch.tensor(config.weight, dtype=torch.get_default_dtype())
-            if config.weight is not None
-            else 1
+            torch.tensor(config.weight, dtype=dtype) if config.weight is not None else 1
         )
 
         energy_weight = (
-            torch.tensor(config.energy_weight, dtype=torch.get_default_dtype())
+            torch.tensor(config.energy_weight, dtype=dtype)
             if config.energy_weight is not None
             else 1
         )
 
         forces_weight = (
-            torch.tensor(config.forces_weight, dtype=torch.get_default_dtype())
+            torch.tensor(config.forces_weight, dtype=dtype)
             if config.forces_weight is not None
             else 1
         )
 
         stress_weight = (
-            torch.tensor(config.stress_weight, dtype=torch.get_default_dtype())
+            torch.tensor(config.stress_weight, dtype=dtype)
             if config.stress_weight is not None
             else 1
         )
 
         virials_weight = (
-            torch.tensor(config.virials_weight, dtype=torch.get_default_dtype())
+            torch.tensor(config.virials_weight, dtype=dtype)
             if config.virials_weight is not None
             else 1
         )
 
         forces = (
-            torch.tensor(config.forces, dtype=torch.get_default_dtype())
+            torch.tensor(config.forces, dtype=dtype)
             if config.forces is not None
             else None
         )
         energy = (
-            torch.tensor(config.energy, dtype=torch.get_default_dtype())
+            torch.tensor(config.energy, dtype=dtype)
             if config.energy is not None
             else None
         )
         stress = (
-            voigt_to_matrix(
-                torch.tensor(config.stress, dtype=torch.get_default_dtype())
-            ).unsqueeze(0)
+            voigt_to_matrix(torch.tensor(config.stress, dtype=dtype)).unsqueeze(0)
             if config.stress is not None
             else None
         )
         virials = (
-            voigt_to_matrix(
-                torch.tensor(config.virials, dtype=torch.get_default_dtype())
-            ).unsqueeze(0)
+            voigt_to_matrix(torch.tensor(config.virials, dtype=dtype)).unsqueeze(0)
             if config.virials is not None
             else None
         )
         dipole = (
-            torch.tensor(config.dipole, dtype=torch.get_default_dtype()).unsqueeze(0)
+            torch.tensor(config.dipole, dtype=dtype).unsqueeze(0)
             if config.dipole is not None
             else None
         )
         charges = (
-            torch.tensor(config.charges, dtype=torch.get_default_dtype())
+            torch.tensor(config.charges, dtype=dtype)
             if config.charges is not None
             else None
         )
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
-            positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
-            shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),
-            unit_shifts=torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),
+            positions=torch.tensor(config.positions, dtype=dtype),
+            shifts=torch.tensor(shifts, dtype=dtype),
+            unit_shifts=torch.tensor(unit_shifts, dtype=dtype),
             cell=cell,
             node_attrs=one_hot,
             weight=weight,
