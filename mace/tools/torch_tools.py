@@ -75,7 +75,7 @@ def init_device(device_str: str) -> torch.device:
     return torch.device("cpu")
 
 
-dtype_dict = {"float32": torch.float32, "float64": torch.float64}
+dtype_dict = {"float32": torch.float32, "float64": torch.float64, "": torch.get_default_dtype()}
 
 
 def set_default_dtype(dtype: str) -> None:
