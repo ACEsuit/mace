@@ -50,6 +50,7 @@ def test_preprocess_data(tmp_path, sample_configs):
         "r_max": 5.0,
         "config_type_weights": "{'Default':1.0}",
         "num_process": 2,
+        "default_dtype": "float32",
         "valid_fraction": 0.1,
         "h5_prefix": tmp_path / "preprocessed_",
         "compute_statistics": None,
