@@ -10,10 +10,11 @@ import os
 import random
 from functools import partial
 from glob import glob
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import h5py
 import numpy as np
+import torch
 import tqdm
 
 from mace import data, tools
@@ -22,6 +23,7 @@ from mace.data.utils import save_configurations_as_HDF5
 from mace.modules import compute_statistics
 from mace.tools import torch_geometric
 from mace.tools.scripts_utils import get_atomic_energies, get_dataset_from_xyz
+from mace.tools.torch_tools import dtype_dict
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -31,8 +33,9 @@ def compute_stats_target(
     r_max: float,
     atomic_energies: Tuple,
     batch_size: int,
+    dtype: Optional[torch.dtype] = None,
 ):
-    train_dataset = data.HDF5Dataset(file, z_table=z_table, r_max=r_max)
+    train_dataset = data.HDF5Dataset(file, z_table=z_table, r_max=r_max, dtype=dtype)
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_dataset,
         batch_size=batch_size,
@@ -40,13 +43,17 @@ def compute_stats_target(
         drop_last=False,
     )
 
-    avg_num_neighbors, mean, std = compute_statistics(train_loader, atomic_energies)
+    avg_num_neighbors, mean, std = compute_statistics(
+        train_loader, atomic_energies, dtype=dtype
+    )
     output = [avg_num_neighbors, mean, std]
     return output
 
 
 def pool_compute_stats(inputs: List):
-    path_to_files, z_table, r_max, atomic_energies, batch_size, num_process = inputs
+    path_to_files, z_table, r_max, atomic_energies, batch_size, num_process, dtype = (
+        inputs
+    )
 
     with mp.Pool(processes=num_process) as pool:
         re = [
@@ -58,6 +65,7 @@ def pool_compute_stats(inputs: List):
                     r_max,
                     atomic_energies,
                     batch_size,
+                    dtype,
                 ),
             )
             for file in glob(path_to_files + "/*")
@@ -168,6 +176,8 @@ def run(args: argparse.Namespace):
         )
         config_type_weights = {"Default": 1.0}
 
+    dtype = dtype_dict[args.default_dtype]
+
     folders = ["train", "val", "test"]
     for sub_dir in folders:
         if not os.path.exists(args.h5_prefix + sub_dir):
@@ -240,7 +250,7 @@ def run(args: argparse.Namespace):
             [atomic_energies_dict[z] for z in z_table.zs]
         )
         logging.info(f"Atomic Energies: {atomic_energies.tolist()}")
-        _inputs = [args.h5_prefix+'train', z_table, args.r_max, atomic_energies, args.batch_size, args.num_process]
+        _inputs = [args.h5_prefix+'train', z_table, args.r_max, atomic_energies, args.batch_size, args.num_process, dtype]
         avg_num_neighbors, mean, std=pool_compute_stats(_inputs)
         logging.info(f"Average number of neighbors: {avg_num_neighbors}")
         logging.info(f"Mean: {mean}")

@@ -229,27 +229,43 @@ class MACECalculator(Calculator):
                 self.models = [model.double() for model in self.models]
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
-        torch_tools.set_default_dtype(default_dtype)
+
+        self._dtype = torch_tools.dtype_dict[default_dtype]
+
         for model in self.models:
             for param in model.parameters():
                 param.requires_grad = False
 
+    @property
+    def dtype(self):
+        return self._dtype
+
     def _create_result_tensors(
         self, model_type: str, num_models: int, num_atoms: int
     ) -> dict:
-        """
-        Create tensors to store the results of the committee
-        :param model_type: str, type of model to load
-            Options: [MACE, DipoleMACE, EnergyDipoleMACE]
-        :param num_models: int, number of models in the committee
-        :return: tuple of torch tensors
+        """Creates tensors to store the results of the committee.
+
+        Args:
+            model_type: Type of model to load. Must be one of:
+                - 'MACE'
+                - 'DipoleMACE'
+                - 'EnergyDipoleMACE'
+            num_models: Number of models in the committee.
+            num_atoms: Number of atoms in the system.
+
+        Returns:
+            dict: Dictionary containing initialized tensors for storing committee results.
         """
         dict_of_tensors = {}
         if model_type in ["MACE", "EnergyDipoleMACE"]:
-            energies = torch.zeros(num_models, device=self.device)
-            node_energy = torch.zeros(num_models, num_atoms, device=self.device)
-            forces = torch.zeros(num_models, num_atoms, 3, device=self.device)
-            stress = torch.zeros(num_models, 3, 3, device=self.device)
+            energies = torch.zeros(num_models, device=self.device, dtype=self.dtype)
+            node_energy = torch.zeros(
+                num_models, num_atoms, device=self.device, dtype=self.dtype
+            )
+            forces = torch.zeros(
+                num_models, num_atoms, 3, device=self.device, dtype=self.dtype
+            )
+            stress = torch.zeros(num_models, 3, 3, device=self.device, dtype=self.dtype)
             dict_of_tensors.update(
                 {
                     "energies": energies,
@@ -259,7 +275,7 @@ class MACECalculator(Calculator):
                 }
             )
         if model_type in ["EnergyDipoleMACE", "DipoleMACE"]:
-            dipole = torch.zeros(num_models, 3, device=self.device)
+            dipole = torch.zeros(num_models, 3, device=self.device, dtype=self.dtype)
             dict_of_tensors.update({"dipole": dipole})
         return dict_of_tensors
 
@@ -277,6 +293,7 @@ class MACECalculator(Calculator):
                     z_table=self.z_table,
                     cutoff=self.r_max,
                     heads=self.available_heads,
+                    dtype=self.dtype,
                 )
             ],
             batch_size=1,
@@ -293,14 +310,19 @@ class MACECalculator(Calculator):
             batch_clone["positions"].requires_grad_(True)
         return batch_clone
 
-    # pylint: disable=dangerous-default-value
-    def calculate(self, atoms=None, properties=None, system_changes=all_changes):
-        """
-        Calculate properties.
-        :param atoms: ase.Atoms object
-        :param properties: [str], properties to be computed, used by ASE internally
-        :param system_changes: [str], system changes since last calculation, used by ASE internally
-        :return:
+    def calculate(self, atoms=None, properties=None, system_changes=tuple(all_changes)):
+        """Calculates atomic properties using the MACE model.
+
+        Args:
+            atoms: ASE Atoms object representing the atomic structure.
+            properties: List of strings specifying the properties to be computed.
+                Used internally by ASE.
+            system_changes: List of strings indicating what has changed in the system
+                since the last calculation. Used internally by ASE.
+                Defaults to all_changes.
+
+        Note:
+            This method is part of ASE's calculator interface.
         """
         # call to base-class to set atoms attribute
         Calculator.calculate(self, atoms)
@@ -416,10 +438,19 @@ class MACECalculator(Calculator):
 
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
         """Extracts the descriptors from MACE model.
-        :param atoms: ase.Atoms object
-        :param invariants_only: bool, if True only the invariant descriptors are returned
-        :param num_layers: int, number of layers to extract descriptors from, if -1 all layers are used
-        :return: np.ndarray (num_atoms, num_interactions, invariant_features) of invariant descriptors if num_models is 1 or list[np.ndarray] otherwise
+
+        Args:
+            atoms: ASE Atoms object representing the atomic structure.
+            invariants_only: If True, only the invariant descriptors are returned.
+                Defaults to True.
+            num_layers: Number of layers to extract descriptors from.
+                If -1, descriptors from all layers are used.
+                Defaults to -1.
+
+        Returns:
+            Union[np.ndarray, List[np.ndarray]]: If num_models is 1, returns a numpy array
+                of shape (num_atoms, num_interactions, invariant_features) containing
+                the invariant descriptors. Otherwise, returns a list of such arrays.
         """
         if atoms is None and self.atoms is None:
             raise ValueError("atoms not set")
