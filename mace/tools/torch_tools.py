@@ -15,7 +15,9 @@ from e3nn.io import CartesianTensor
 TensorDict = Dict[str, torch.Tensor]
 
 
-def to_one_hot(indices: torch.Tensor, num_classes: int, dtype: torch.dtype) -> torch.Tensor:
+def to_one_hot(
+    indices: torch.Tensor, num_classes: int, dtype: torch.dtype
+) -> torch.Tensor:
     """Generates one-hot encoding from indices.
 
     Args:
@@ -75,7 +77,11 @@ def init_device(device_str: str) -> torch.device:
     return torch.device("cpu")
 
 
-dtype_dict = {"float32": torch.float32, "float64": torch.float64, "": torch.get_default_dtype()}
+dtype_dict = {
+    "float32": torch.float32,
+    "float64": torch.float64,
+    "": torch.get_default_dtype(),
+}
 
 
 def set_default_dtype(dtype: str) -> None:
