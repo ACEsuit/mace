@@ -72,7 +72,7 @@ def create_e0s_file(e0s_dict, filename):
     return filename
 
 
-def create_h5_dataset(xyz_file, output_dir, e0s_file=None, r_max=5.0, seed=42):
+def create_h5_dataset(xyz_file, output_dir, e0s_file=None, r_max=5.0, seed=42, default_dtype="float64"):
     """
     Run MACE's preprocess_data.py script to convert an xyz file to h5 format.
 
@@ -103,6 +103,7 @@ def create_h5_dataset(xyz_file, output_dir, e0s_file=None, r_max=5.0, seed=42):
         f"--h5_prefix={output_dir}/",
         f"--seed={seed}",
         "--compute_statistics",  # Generate statistics file
+        f"--default_dtype={default_dtype}",
         "--num_process=2",  # Create 2 files for testing sharded loading
     ]
 
@@ -300,7 +301,8 @@ def test_multifile_training():
         all_atoms_for_h5 = isolated_atoms + xyz_atoms2
         all_atoms_xyz = os.path.join(temp_dir, "all_atoms_for_h5.xyz")
         create_xyz_file(all_atoms_for_h5, all_atoms_xyz)
-        create_h5_dataset(all_atoms_xyz, h5_folder)
+        default_dtype="float32"
+        create_h5_dataset(all_atoms_xyz, h5_folder, default_dtype=default_dtype)
 
         # Create LMDB datasets
         lmdb_atoms1 = [
@@ -327,7 +329,7 @@ def test_multifile_training():
             "forces_weight": 10.0,
             "loss": "weighted",
             "optimizer": "adam",
-            "default_dtype": "float64",
+            "default_dtype": default_dtype,
             "lr": 0.01,
             "swa": False,
             "work_dir": temp_dir,
@@ -401,7 +403,7 @@ def test_multifile_training():
         assert model is not None, "Failed to load model"
 
         # Create a calculator
-        calc = MACECalculator(model_paths=model_path, device="cpu")
+        calc = MACECalculator(model_paths=model_path, device="cpu", default_dtype=config["default_dtype"])
 
         # Run prediction on a test atom
         test_atom = create_test_atoms(num_atoms=5, seed=99999)
