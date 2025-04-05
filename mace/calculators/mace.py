@@ -224,12 +224,18 @@ class MACECalculator(Calculator):
     def _create_result_tensors(
         self, model_type: str, num_models: int, num_atoms: int
     ) -> dict:
-        """
-        Create tensors to store the results of the committee
-        :param model_type: str, type of model to load
-            Options: [MACE, DipoleMACE, EnergyDipoleMACE]
-        :param num_models: int, number of models in the committee
-        :return: tuple of torch tensors
+        """Creates tensors to store the results of the committee.
+
+        Args:
+            model_type: Type of model to load. Must be one of:
+                - 'MACE'
+                - 'DipoleMACE'
+                - 'EnergyDipoleMACE'
+            num_models: Number of models in the committee.
+            num_atoms: Number of atoms in the system.
+
+        Returns:
+            dict: Dictionary containing initialized tensors for storing committee results.
         """
         dict_of_tensors = {}
         if model_type in ["MACE", "EnergyDipoleMACE"]:
@@ -272,14 +278,19 @@ class MACECalculator(Calculator):
             batch_clone["positions"].requires_grad_(True)
         return batch_clone
 
-    # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
-        """
-        Calculate properties.
-        :param atoms: ase.Atoms object
-        :param properties: [str], properties to be computed, used by ASE internally
-        :param system_changes: [str], system changes since last calculation, used by ASE internally
-        :return:
+        """Calculates atomic properties using the MACE model.
+
+        Args:
+            atoms: ASE Atoms object representing the atomic structure.
+            properties: List of strings specifying the properties to be computed.
+                Used internally by ASE.
+            system_changes: List of strings indicating what has changed in the system
+                since the last calculation. Used internally by ASE.
+                Defaults to all_changes.
+
+        Note:
+            This method is part of ASE's calculator interface.
         """
         # call to base-class to set atoms attribute
         Calculator.calculate(self, atoms)
@@ -395,10 +406,19 @@ class MACECalculator(Calculator):
 
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
         """Extracts the descriptors from MACE model.
-        :param atoms: ase.Atoms object
-        :param invariants_only: bool, if True only the invariant descriptors are returned
-        :param num_layers: int, number of layers to extract descriptors from, if -1 all layers are used
-        :return: np.ndarray (num_atoms, num_interactions, invariant_features) of invariant descriptors if num_models is 1 or list[np.ndarray] otherwise
+
+        Args:
+            atoms: ASE Atoms object representing the atomic structure.
+            invariants_only: If True, only the invariant descriptors are returned.
+                Defaults to True.
+            num_layers: Number of layers to extract descriptors from.
+                If -1, descriptors from all layers are used.
+                Defaults to -1.
+
+        Returns:
+            Union[np.ndarray, List[np.ndarray]]: If num_models is 1, returns a numpy array
+                of shape (num_atoms, num_interactions, invariant_features) containing
+                the invariant descriptors. Otherwise, returns a list of such arrays.
         """
         if atoms is None and self.atoms is None:
             raise ValueError("atoms not set")

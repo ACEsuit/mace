@@ -128,6 +128,7 @@ class AtomicData(torch_geometric.data.Data):
         one_hot = to_one_hot(
             torch.tensor(indices, dtype=torch.long).unsqueeze(-1),
             num_classes=len(z_table),
+            dtype=dtype,
         )
         try:
             head = torch.tensor(heads.index(config.head), dtype=torch.long)
