@@ -305,10 +305,11 @@ class UniversalLoss(torch.nn.Module):
     
 class UniversalFieldLoss(torch.nn.Module):
     def __init__(
-        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01, polarisation_weight=1.0, bec_weight=1.0, polarisability_weight=1.0) -> None:
+        self, energy_weight=0.0, forces_weight=0.0, stress_weight=0.0, huber_delta=0.01, polarisation_weight=0.0, bec_weight=0.0, polarisability_weight=0.0) -> None:
         super().__init__()
         self.huber_delta = huber_delta
-        self.huber_loss = torch.nn.HuberLoss(reduction="mean", delta=huber_delta)
+        self.huber_loss = torch.nn.HuberLoss(reduction="mean", delta=self.huber_delta)
+        self.mse_loss = torch.nn.MSELoss()
 
         self.register_buffer(
             "energy_weight",
@@ -360,8 +361,8 @@ class UniversalFieldLoss(torch.nn.Module):
         polarisation_quantum[polarisation_quantum == 0] = max(torch.cat((ref["polarisation"], pred["polarisation"]))) + 1.0 
 
         # Expand polarisation to lattice (3x3 matrix) that is modulo the polarisation quantum. Any nan (due to divide by 0), set to zero.
-        ref_polarisation = ref["polarisation"].repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
-        pred_polarisation = pred["polarisation"].repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
+        ref_polarisation = ref["polarisation"]#.repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
+        pred_polarisation = pred["polarisation"]#.repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
 
         return (
             self.energy_weight
@@ -380,21 +381,9 @@ class UniversalFieldLoss(torch.nn.Module):
                 configs_stress_weight * ref["stress"],
                 configs_stress_weight * pred["stress"],
             )
-            + self.polarisation_weight
-            * self.huber_loss(
-                configs_polarisation_weight * ref_polarisation,
-                configs_polarisation_weight * pred_polarisation
-            ) 
-            + self.bec_weight 
-            * self.huber_loss(
-                configs_bec_weight * ref["bec"],
-                configs_bec_weight * pred["bec"],
-            )
-            + self.polarisability_weight
-            * self.huber_loss(
-                configs_polarisability_weight * ref["polarisability"],
-                configs_polarisability_weight * pred["polarisability"],
-            )
+            + self.polarisation_weight * self.huber_loss(ref_polarisation / num_atoms, pred_polarisation / num_atoms) 
+            + self.bec_weight * self.huber_loss(ref["bec"], pred["bec"])
+            + self.polarisability_weight * self.huber_loss(ref["polarisability"] / num_atoms, pred["polarisability"] / num_atoms)
         )
 
     def __repr__(self):

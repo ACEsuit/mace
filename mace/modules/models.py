@@ -30,6 +30,9 @@ from .blocks import (
 from .utils import (
     compute_fixed_charge_dipole,
     compute_forces,
+    compute_forces_virials,
+    compute_polarisation,
+    compute_becs_polarisability,
     get_edge_vectors_and_lengths,
     get_outputs,
     get_symmetric_displacement,
@@ -83,11 +86,13 @@ class MACE(torch.nn.Module):
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
+
         self.node_embedding = LinearNodeEmbeddingBlock(
             irreps_in=node_attr_irreps,
             irreps_out=node_feats_irreps,
             cueq_config=cueq_config,
         )
+
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
             num_bessel=num_bessel,
@@ -487,49 +492,72 @@ class ScaleShiftFieldMACE(MACE):
             scale=atomic_inter_scale, shift=atomic_inter_shift
         )
 
-        # Extend the model to include electric field edge attrs (radial embedding) and edge feats (spherical harmonic embedding)
-        for i in range(int(self.num_interactions)):
+        hidden_irreps = kwargs["hidden_irreps"]
+        hidden_dim = hidden_irreps.dim
+        field_irreps = o3.Irreps("0e") + o3.Irreps.spherical_harmonics(1)
+        field_irreps_out = o3.Irreps(f"{len(self.heads) * hidden_dim * field_irreps}").sort()[0].simplify()
 
-            edge_attrs_irreps = self.interactions[i].edge_attrs_irreps
-            edge_attrs_el_irreps = o3.FullTensorProduct(edge_attrs_irreps, edge_attrs_irreps).irreps_out
-            edge_attrs_irreps = edge_attrs_el_irreps.simplify()
+        self.field_readouts = torch.nn.ModuleList()
 
-            edge_feats_irreps = self.interactions[i].edge_feats_irreps
-            edge_feats_el_irreps = o3.FullTensorProduct(edge_feats_irreps, edge_feats_irreps).irreps_out
-            edge_feats_irreps = edge_feats_el_irreps.simplify()
+        for i in range(len(self.interactions)):
 
             # Load Interaction Block
-            blocks_mod = __import__('mace.modules.blocks', fromlist=[self.interactions[i].__class__.__name__])
-            inter_block = getattr(blocks_mod, self.interactions[i].__class__.__name__)
+            inter_blocks_mod = __import__('mace.modules.blocks', fromlist=[self.interactions[i].__class__.__name__])
+            inter_block = getattr(inter_blocks_mod, self.interactions[i].__class__.__name__)
 
             inter = inter_block(
                 node_attrs_irreps=self.interactions[i].node_attrs_irreps,
                 node_feats_irreps=self.interactions[i].node_feats_irreps,
-                edge_attrs_irreps=edge_attrs_irreps,
-                edge_feats_irreps=edge_feats_irreps,
+                edge_attrs_irreps=self.interactions[i].edge_attrs_irreps,
+                edge_feats_irreps=self.interactions[i].edge_feats_irreps,
                 target_irreps=self.interactions[i].target_irreps,
-                hidden_irreps=self.interactions[i].hidden_irreps,
+                hidden_irreps=hidden_irreps,
                 avg_num_neighbors=self.interactions[i].avg_num_neighbors,
                 radial_MLP=self.interactions[i].radial_MLP,
                 cueq_config=self.interactions[i].cueq_config,
             )
 
-            # Inherit weights
-            # inter.linear_up.weight = torch.nn.Parameter(self.interactions[i].linear_up.weight.clone())
-            # for j in range(4):  # Assuming 4 layers in conv_tp_weights,
-            #     layer_name = f"layer{j}"
-            #     if j == 0:
-            #         old_weights = getattr(self.interactions[i].conv_tp_weights, layer_name).weight[:self.radial_embedding.out_dim, :].clone()
-            #         getattr(inter.conv_tp_weights, layer_name).weight = (torch.nn.Parameter(torch.concat([old_weights, torch.randn_like(old_weights)], axis=0)))
-            #     elif j == 3:
-            #         old_weights = getattr(self.interactions[i].conv_tp_weights, layer_name).weight.clone()
-            #         getattr(inter.conv_tp_weights, layer_name).weight = (torch.nn.Parameter(torch.concat([old_weights, torch.randn_like(old_weights)], axis=1)))
-            #     else:
-            #         getattr(inter.conv_tp_weights, layer_name).weight = (
-            #             torch.nn.Parameter(getattr(self.interactions[i].conv_tp_weights, layer_name).weight.clone())
-            #         )
-
             self.interactions[i] = inter
+
+             # Load Interaction Block
+            prod_blocks_mod = __import__('mace.modules.blocks', fromlist=[self.products[i].__class__.__name__])
+            prod_block = getattr(prod_blocks_mod, self.products[i].__class__.__name__)
+
+            prod = prod_block(
+                node_feats_irreps=inter.target_irreps,
+                target_irreps=hidden_irreps,
+                correlation=kwargs['correlation'],
+                num_elements=kwargs['num_elements'],
+                use_sc=self.products[i].use_sc
+            )
+
+            self.products[i] = prod
+
+            if i == len(self.interactions) - 1:
+                readout = NonLinearReadoutBlock(
+                    o3.Irreps(f"{hidden_dim}x0e"),
+                    (len(self.heads) * kwargs['MLP_irreps']).simplify(),
+                    kwargs['gate'],
+                    o3.Irreps(f"{len(self.heads)}x0e"),
+                    len(self.heads),
+                    self.interactions[i].cueq_config,
+                )
+            else:
+                readout = LinearReadoutBlock(
+                    o3.Irreps(f"{hidden_dim}x0e"), 
+                    o3.Irreps(f"{len(self.heads)}x0e"), 
+                    self.interactions[i].cueq_config
+                )
+
+            self.readouts[i] = readout
+
+            self.field_readouts.append(
+                LinearReadoutBlock(
+                    hidden_irreps,
+                    field_irreps_out,
+                    self.interactions[i].cueq_config
+                )
+            )
                 
     def forward(
         self,
@@ -540,7 +568,7 @@ class ScaleShiftFieldMACE(MACE):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
-        compute_field: bool = False,
+        compute_field: bool = True,
     ) -> Dict[str, Optional[torch.Tensor]]:
         
         # Setup
@@ -587,30 +615,20 @@ class ScaleShiftFieldMACE(MACE):
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
+
         position_vectors, position_lengths = get_edge_vectors_and_lengths(
             positions=data["positions"],
             edge_index=data["edge_index"],
             shifts=data["shifts"],
         )
 
-        electric_field_vectors = data["electric_field"].repeat(position_vectors.shape[0], 1)
-        electric_field_strength = torch.linalg.norm(electric_field_vectors, dim=-1, keepdim=True)
-
         # Spherical harmonic angular edge attributes
-        edge_attrs_positions = self.spherical_harmonics(position_vectors) # [nedges, nsh]
-        edge_attrs_electric_field = self.spherical_harmonics(electric_field_vectors) # [nedges, nsh]
-        
-        edge_attrs = torch.einsum('ij, ik -> ijk', edge_attrs_positions, edge_attrs_electric_field).reshape(-1, edge_attrs_positions.shape[1] * edge_attrs_electric_field.shape[1])
+        edge_attrs = self.spherical_harmonics(position_vectors) # [nedges, nsh] 
 
         # Radial edge embeddings
-        edge_feats_positions = self.radial_embedding(
+        edge_feats = self.radial_embedding(
             position_lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
-        edge_feats_electric_field = self.radial_embedding(
-            electric_field_strength, data["node_attrs"], data["edge_index"], self.atomic_numbers
-        )
-
-        edge_feats = torch.einsum('ij, ik -> ijk', edge_feats_positions, edge_feats_electric_field).reshape(-1, edge_feats_positions.shape[1] * edge_feats_electric_field.shape[1])
 
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
@@ -622,8 +640,8 @@ class ScaleShiftFieldMACE(MACE):
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list = []
-        for interaction, product, readout in zip(
-            self.interactions, self.products, self.readouts
+        for interaction, product, readout, field_readout in zip(
+            self.interactions, self.products, self.readouts, self.field_readouts
         ):
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
@@ -636,9 +654,15 @@ class ScaleShiftFieldMACE(MACE):
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
             node_feats_list.append(node_feats)
-            node_es_list.append(
-                readout(node_feats, node_heads)[num_atoms_arange, node_heads]
-            )  # {[n_nodes, ], }
+            node_out = field_readout(node_feats, node_heads).reshape(node_feats.shape[0], node_feats.shape[1], -1) 
+            node_energy_feats, node_charge_feats, node_electronic_dipole_feats = node_out[:,:,0],  node_out[:,:,1], node_out[:,:,2:]
+            
+            node_atomic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, data["positions"])
+            node_dipole_feats = node_atomic_dipole_feats + node_electronic_dipole_feats
+            
+            node_energies = node_energy_feats - torch.einsum('ijk,k->ij', node_dipole_feats, data["electric_field"])
+            node_energies = readout(node_energies.flatten(start_dim=1), node_heads)[num_atoms_arange, node_heads]
+            node_es_list.append(node_energies)  # {[n_nodes, ], }
 
         # Concatenate node features
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -659,20 +683,28 @@ class ScaleShiftFieldMACE(MACE):
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
 
-        forces, virials, stress, hessian, polarisation, bec, polarisability = get_outputs(
+        # Compute forces, virials and stress
+        forces, virials, stress = compute_forces_virials(
             energy=inter_e,
             positions=data["positions"],
-            electric_field=data["electric_field"],
             displacement=displacement,
             cell=data["cell"],
-            training=training,
-            compute_force=compute_force,
-            compute_virials=compute_virials,
-            compute_stress=compute_stress,
-            compute_hessian=compute_hessian,
-            compute_field=compute_field,
+            training=True,
+            compute_stress=compute_stress
         )
 
+        polarisations = compute_polarisation(
+            energy=inter_e,
+            electric_field=data["electric_field"],
+            cell=data["cell"]
+        )
+
+        becs, polarisabilities = compute_becs_polarisability(
+            polarisation=polarisations,
+            positions=data["positions"],
+            electric_field=data["electric_field"],
+            cell=data["cell"]
+        )
 
         output = {
             "energy": total_energy,
@@ -681,10 +713,9 @@ class ScaleShiftFieldMACE(MACE):
             "forces": forces,
             "virials": virials,
             "stress": stress,
-            "hessian": hessian,
-            "polarisation": polarisation,
-            "bec": bec,
-            "polarisability": polarisability,
+            "polarisation": polarisations,
+            "bec": becs,
+            "polarisability": polarisabilities,
             "displacement": displacement,
             "node_feats": node_feats_out,
         }
