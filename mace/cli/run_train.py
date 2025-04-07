@@ -10,6 +10,7 @@ import glob
 import json
 import logging
 import os
+import socket
 from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional
@@ -73,11 +74,14 @@ def main() -> None:
     args = tools.build_default_arg_parser().parse_args()
     if args.distributed:
         world_size = torch.cuda.device_count()
-        mp.spawn(run, args=(args, world_size), nprocs=world_size)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.bind(('127.0.0.1', 0))
+        port = s.getsockname()[1]
+        mp.spawn(run, args=(args, world_size, port), nprocs=world_size)
     else:
-        run(0, args, 1)
+        run(0, args, 1, port)
 
-def run(rank: int, args: argparse.Namespace, world_size: int) -> None:
+def run(rank: int, args: argparse.Namespace, world_size: int, port: int) -> None:
     """
     This script runs the training/fine tuning for mace
     """
@@ -94,7 +98,7 @@ def run(rank: int, args: argparse.Namespace, world_size: int) -> None:
     if args.distributed:
         local_rank = rank
         os.environ["MASTER_ADDR"] = "localhost"
-        os.environ["MASTER_PORT"] = "12410"
+        os.environ["MASTER_PORT"] = str(port)
             
         torch.cuda.set_device(rank)
         torch.distributed.init_process_group(
