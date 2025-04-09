@@ -635,8 +635,9 @@ def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_c
     assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
-def test_mace_mp(capsys: pytest.CaptureFixture):
-    mp_mace = mace_mp()
+@pytest.mark.parametrize("default_dtype", ["float32", "float64"])
+def test_mace_mp(default_dtype, capsys: pytest.CaptureFixture):
+    mp_mace = mace_mp(default_dtype=default_dtype)
     assert isinstance(mp_mace, MACECalculator)
     assert mp_mace.model_type == "MACE"
     assert len(mp_mace.models) == 1
@@ -645,9 +646,9 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
     _, stderr = capsys.readouterr()
     assert stderr == ""
 
-
-def test_mace_off():
-    mace_off_model = mace_off(model="small", device="cpu")
+@pytest.mark.parametrize("default_dtype", ["float32", "float64"])
+def test_mace_off(default_dtype):
+    mace_off_model = mace_off(model="small", device="cpu", default_dtype=default_dtype)
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"
     assert len(mace_off_model.models) == 1

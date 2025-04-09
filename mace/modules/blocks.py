@@ -182,14 +182,16 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
 class AtomicEnergiesBlock(torch.nn.Module):
     atomic_energies: torch.Tensor
 
-    def __init__(self, atomic_energies: Union[np.ndarray, torch.Tensor]):
+    def __init__(
+        self,
+        atomic_energies: Union[np.ndarray, torch.Tensor],
+        dtype: Optional[torch.dtype] = None,
+    ):
         super().__init__()
-        # assert len(atomic_energies.shape) == 1
-
         self.register_buffer(
             "atomic_energies",
-            torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
-        )  # [n_elements, n_heads]
+            torch.tensor(atomic_energies, dtype=dtype or torch.get_default_dtype()),
+        )
 
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
@@ -215,19 +217,26 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_polynomial_cutoff: int,
         radial_type: str = "bessel",
         distance_transform: str = "None",
+        dtype: Optional[torch.dtype] = None,
     ):
         super().__init__()
         if radial_type == "bessel":
-            self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
+            self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel, dtype=dtype)
         elif radial_type == "gaussian":
-            self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
+            self.bessel_fn = GaussianBasis(
+                r_max=r_max, num_basis=num_bessel, dtype=dtype
+            )
         elif radial_type == "chebyshev":
-            self.bessel_fn = ChebychevBasis(r_max=r_max, num_basis=num_bessel)
+            self.bessel_fn = ChebychevBasis(
+                r_max=r_max, num_basis=num_bessel, dtype=dtype
+            )
         if distance_transform == "Agnesi":
-            self.distance_transform = AgnesiTransform()
+            self.distance_transform = AgnesiTransform(dtype=dtype)
         elif distance_transform == "Soft":
-            self.distance_transform = SoftTransform()
-        self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
+            self.distance_transform = SoftTransform(dtype=dtype)
+        self.cutoff_fn = PolynomialCutoff(
+            r_max=r_max, p=num_polynomial_cutoff, dtype=dtype
+        )
         self.out_dim = num_bessel
 
     def forward(
@@ -358,12 +367,18 @@ nonlinearities = {1: torch.nn.functional.silu, -1: torch.tanh}
 
 @compile_mode("script")
 class TensorProductWeightsBlock(torch.nn.Module):
-    def __init__(self, num_elements: int, num_edge_feats: int, num_feats_out: int):
+    def __init__(
+        self,
+        num_elements: int,
+        num_edge_feats: int,
+        num_feats_out: int,
+        dtype: torch.dtype = torch.float32,
+    ):
         super().__init__()
 
         weights = torch.empty(
             (num_elements, num_edge_feats, num_feats_out),
-            dtype=torch.get_default_dtype(),
+            dtype=dtype,
         )
         torch.nn.init.xavier_uniform_(weights)
         self.weights = torch.nn.Parameter(weights)
@@ -1077,15 +1092,15 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
 
 @compile_mode("script")
 class ScaleShiftBlock(torch.nn.Module):
-    def __init__(self, scale: float, shift: float):
+    def __init__(self, scale: float, shift: float, dtype: torch.dtype = torch.float32):
         super().__init__()
         self.register_buffer(
             "scale",
-            torch.tensor(scale, dtype=torch.get_default_dtype()),
+            torch.tensor(scale, dtype=dtype),
         )
         self.register_buffer(
             "shift",
-            torch.tensor(shift, dtype=torch.get_default_dtype()),
+            torch.tensor(shift, dtype=dtype),
         )
 
     def forward(self, x: torch.Tensor, head: torch.Tensor) -> torch.Tensor:
