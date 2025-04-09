@@ -48,6 +48,7 @@ class CheckpointPathInfo:
     tag: str
     epochs: int
     swa: bool
+    step: Optional[int] = None  # Add step field
 
 
 class CheckpointIO:
@@ -63,23 +64,26 @@ class CheckpointIO:
         self._epochs_string = "_epoch-"
         self._filename_extension = "pt"
 
-    def _get_checkpoint_filename(self, epochs: int, swa_start=None) -> str:
+    def _get_checkpoint_filename(self, epochs: int, swa_start=None, step=None) -> str:
         if swa_start is not None and epochs >= swa_start:
-            return (
+            filename = (
                 self.tag
                 + self._epochs_string
                 + str(epochs)
                 + "_swa"
-                + "."
-                + self._filename_extension
             )
-        return (
-            self.tag
-            + self._epochs_string
-            + str(epochs)
-            + "."
-            + self._filename_extension
-        )
+        else:
+            filename = (
+                self.tag
+                + self._epochs_string
+                + str(epochs)
+            )
+            
+        if step is not None:
+            filename += f"_step-{step}"
+            
+        filename += "." + self._filename_extension
+        return filename
 
     def _list_file_paths(self) -> List[str]:
         if not os.path.isdir(self.directory):
@@ -91,11 +95,13 @@ class CheckpointIO:
 
     def _parse_checkpoint_path(self, path: str) -> Optional[CheckpointPathInfo]:
         filename = os.path.basename(path)
+        # Match regular checkpoints with or without step
         regex = re.compile(
-            rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)\.{self._filename_extension}$"
+            rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)(?:_step-(?P<step>\d+))?\.{self._filename_extension}$"
         )
+        # Match SWA checkpoints with or without step
         regex2 = re.compile(
-            rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)_swa\.{self._filename_extension}$"
+            rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)(?:_step-(?P<step>\d+))?_swa\.{self._filename_extension}$"
         )
         match = regex.match(filename)
         match2 = regex2.match(filename)
@@ -106,10 +112,16 @@ class CheckpointIO:
             match = match2
             swa = True
 
+        # Extract step number if it exists
+        step = None
+        if match.group("step"):
+            step = int(match.group("step"))
+
         return CheckpointPathInfo(
             path=path,
             tag=match.group("tag"),
             epochs=int(match.group("epochs")),
+            step=step,
             swa=swa,
         )
 
@@ -136,29 +148,35 @@ class CheckpointIO:
                 selected_checkpoint_info_list_swa.append(ckp)
             else:
                 selected_checkpoint_info_list_no_swa.append(ckp)
+            
         if swa:
             try:
+                # First sort by epoch, then by step (if available)
                 latest_checkpoint_info = max(
-                    selected_checkpoint_info_list_swa, key=lambda info: info.epochs
+                    selected_checkpoint_info_list_swa, 
+                    key=lambda info: (info.epochs, info.step if info.step is not None else 0)
                 )
             except ValueError:
                 logging.warning(
                     "No SWA checkpoint found, while SWA is enabled. Compare the swa_start parameter and the latest checkpoint."
                 )
+                return None
         else:
+            # First sort by epoch, then by step (if available)
             latest_checkpoint_info = max(
-                selected_checkpoint_info_list_no_swa, key=lambda info: info.epochs
+                selected_checkpoint_info_list_no_swa, 
+                key=lambda info: (info.epochs, info.step if info.step is not None else 0)
             )
         return latest_checkpoint_info.path
 
     def save(
-        self, checkpoint: Checkpoint, epochs: int, keep_last: bool = False
+        self, checkpoint: Checkpoint, epochs: int, keep_last: bool = False, step=None
     ) -> None:
         if not self.keep and self.old_path and not keep_last:
             logging.debug(f"Deleting old checkpoint file: {self.old_path}")
             os.remove(self.old_path)
 
-        filename = self._get_checkpoint_filename(epochs, self.swa_start)
+        filename = self._get_checkpoint_filename(epochs, self.swa_start, step)
         path = os.path.join(self.directory, filename)
         logging.debug(f"Saving checkpoint: {path}")
         os.makedirs(self.directory, exist_ok=True)
@@ -195,10 +213,10 @@ class CheckpointHandler:
         self.builder = CheckpointBuilder()
 
     def save(
-        self, state: CheckpointState, epochs: int, keep_last: bool = False
+        self, state: CheckpointState, epochs: int, keep_last: bool = False, step=None
     ) -> None:
         checkpoint = self.builder.create_checkpoint(state)
-        self.io.save(checkpoint, epochs, keep_last)
+        self.io.save(checkpoint, epochs, keep_last, step)
 
     def load_latest(
         self,
