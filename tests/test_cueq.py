@@ -39,7 +39,7 @@ class TestCueq:
                 "RealAgnosticResidualInteractionBlock"
             ],
             "interaction_cls_first": interaction_cls_first,
-            "num_interactions": 2,
+            "num_interactions": 3,
             "num_elements": 1,
             "hidden_irreps": hidden_irreps,
             "MLP_irreps": o3.Irreps("16x0e"),

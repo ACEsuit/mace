@@ -218,12 +218,12 @@ class AtomicData(torch_geometric.data.Data):
         total_charge = (
             torch.tensor(config.total_charge, dtype=torch.get_default_dtype())
             if config.total_charge is not None
-            else None
+            else torch.tensor(0.0, dtype=torch.get_default_dtype())
         )
         total_spin = (
             torch.tensor(config.total_spin, dtype=torch.get_default_dtype())
             if config.total_spin is not None
-            else None
+            else torch.tensor(0.0, dtype=torch.get_default_dtype())
         )
 
         return cls(
