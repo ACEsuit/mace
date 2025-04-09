@@ -56,12 +56,9 @@ def transfer_symmetric_contractions(
     num_layers: int,
 ):
     """Transfer symmetric contraction weights"""
-    print("num_layers", num_layers)
     kmax_pairs = get_kmax_pairs(max_L, correlation, num_layers)
-    print("kmax_pairs", kmax_pairs)
 
     for i, kmax in kmax_pairs:
-        print("kmax", kmax)
         wm = torch.concatenate(
             [
                 source_dict[
@@ -72,7 +69,6 @@ def transfer_symmetric_contractions(
             ],
             dim=1,
         )
-        print("wm", wm.shape)
         target_dict[f"products.{i}.symmetric_contractions.weight"] = wm
 
 
@@ -88,13 +84,9 @@ def transfer_weights(
     source_dict = source_model.state_dict()
     target_dict = target_model.state_dict()
 
-    # print source keys dict with every line a key
 
     # Transfer main weights
     transfer_keys = get_transfer_keys(num_layers)
-    print("Transfer keys:")
-    for key in transfer_keys:
-        print(key)
     for key in transfer_keys:
         if key in source_dict:  # Check if key exists
             target_dict[key] = source_dict[key]
