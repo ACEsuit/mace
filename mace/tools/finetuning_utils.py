@@ -79,17 +79,21 @@ def load_foundations_elements(
             "RealAgnosticResidualInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
         ]:
-            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
-                model_foundations.interactions[i]
-                .skip_tp.weight.reshape(
-                    num_channels_foundation,
-                    num_species_foundations,
-                    num_channels_foundation,
-                )[:, indices_weights, :]
-                .flatten()
-                .clone()
-                / (num_species_foundations / num_species) ** 0.5
-            )
+            if i < model.num_interactions-1:
+                model.interactions[i].skip_tp.weight = torch.nn.Parameter(
+                    model_foundations.interactions[i]
+                    .skip_tp.weight.reshape(
+                        num_channels_foundation,
+                        num_species_foundations,
+                        num_channels_foundation,
+                    )[:, indices_weights, :]
+                    
+                )
+            else:
+                model_interaction_skip_tp_weight = model.interactions[i].skip_tp.weight.clone().reshape(num_channels_foundation, -1, num_species, num_channels_foundation)
+                foundation_interaction_skip_tp_weight = model_foundations.interactions[i].skip_tp.weight.clone().reshape(num_channels_foundation, num_species, num_channels_foundation)
+                model_interaction_skip_tp_weight[:,0,:,:] = foundation_interaction_skip_tp_weight[:,indices_weights,:]
+                model.interactions[i].skip_tp.weight = torch.nn.Parameter(model_interaction_skip_tp_weight.flatten().clone() / (num_species_foundations / num_species) ** 0.5)
         else:
             model.interactions[i].skip_tp.weight = torch.nn.Parameter(
                 model_foundations.interactions[i]
@@ -139,9 +143,15 @@ def load_foundations_elements(
                     )
                 )
 
-        model.products[i].linear.weight = torch.nn.Parameter(
-            model_foundations.products[i].linear.weight.clone()
-        )
+        if i < int(model.num_interactions-1):
+            model.products[i].linear.weight = torch.nn.Parameter(
+                model_foundations.products[i].linear.weight.clone()
+            )
+        else:
+            model_product_linear_weight = model.products[i].linear.weight.clone().reshape(num_channels_foundation, -1, num_channels_foundation)
+            foundation_product_linear_weight = model_foundations.products[i].linear.weight.clone().reshape(num_channels_foundation, num_channels_foundation)
+            model_product_linear_weight[:,0,:] = foundation_product_linear_weight[:,:]
+            model.products[i].linear.weight = torch.nn.Parameter(model_product_linear_weight.clone().flatten())
 
     if load_readout:
         # Transferring readouts

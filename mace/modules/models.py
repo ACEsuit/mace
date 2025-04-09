@@ -493,71 +493,27 @@ class ScaleShiftFieldMACE(MACE):
         )
 
         hidden_irreps = kwargs["hidden_irreps"]
-        hidden_dim = hidden_irreps.dim
+        num_channels = hidden_irreps.count(o3.Irrep(0, 1))
         field_irreps = o3.Irreps("0e") + o3.Irreps.spherical_harmonics(1)
-        field_irreps_out = o3.Irreps(f"{len(self.heads) * hidden_dim * field_irreps}").sort()[0].simplify()
+        field_irreps_out = o3.Irreps(f"{num_channels * field_irreps}").sort()[0].simplify()
 
-        self.field_readouts = torch.nn.ModuleList()
+        self.field_readout = LinearReadoutBlock(
+            hidden_irreps,
+            field_irreps_out,
+        )
+    
+        self.interactions[-1].skip_tp = o3.FullyConnectedTensorProduct(
+            hidden_irreps,
+            self.interactions[-1].node_attrs_irreps,
+            hidden_irreps,
+            self.interactions[-1].cueq_config,
+        )
+        self.products[-1] = self.products[-2]
 
-        for i in range(len(self.interactions)):
+        for i in range(len(self.readouts)-1):
+            self.readouts[i].linear = o3.Linear(f"{num_channels}x0e", f"{len(self.heads)}x0e")
 
-            # Load Interaction Block
-            inter_blocks_mod = __import__('mace.modules.blocks', fromlist=[self.interactions[i].__class__.__name__])
-            inter_block = getattr(inter_blocks_mod, self.interactions[i].__class__.__name__)
-
-            inter = inter_block(
-                node_attrs_irreps=self.interactions[i].node_attrs_irreps,
-                node_feats_irreps=self.interactions[i].node_feats_irreps,
-                edge_attrs_irreps=self.interactions[i].edge_attrs_irreps,
-                edge_feats_irreps=self.interactions[i].edge_feats_irreps,
-                target_irreps=self.interactions[i].target_irreps,
-                hidden_irreps=hidden_irreps,
-                avg_num_neighbors=self.interactions[i].avg_num_neighbors,
-                radial_MLP=self.interactions[i].radial_MLP,
-                cueq_config=self.interactions[i].cueq_config,
-            )
-
-            self.interactions[i] = inter
-
-             # Load Interaction Block
-            prod_blocks_mod = __import__('mace.modules.blocks', fromlist=[self.products[i].__class__.__name__])
-            prod_block = getattr(prod_blocks_mod, self.products[i].__class__.__name__)
-
-            prod = prod_block(
-                node_feats_irreps=inter.target_irreps,
-                target_irreps=hidden_irreps,
-                correlation=kwargs['correlation'],
-                num_elements=kwargs['num_elements'],
-                use_sc=self.products[i].use_sc
-            )
-
-            self.products[i] = prod
-
-            if i == len(self.interactions) - 1:
-                readout = NonLinearReadoutBlock(
-                    o3.Irreps(f"{hidden_dim}x0e"),
-                    (len(self.heads) * kwargs['MLP_irreps']).simplify(),
-                    kwargs['gate'],
-                    o3.Irreps(f"{len(self.heads)}x0e"),
-                    len(self.heads),
-                    self.interactions[i].cueq_config,
-                )
-            else:
-                readout = LinearReadoutBlock(
-                    o3.Irreps(f"{hidden_dim}x0e"), 
-                    o3.Irreps(f"{len(self.heads)}x0e"), 
-                    self.interactions[i].cueq_config
-                )
-
-            self.readouts[i] = readout
-
-            self.field_readouts.append(
-                LinearReadoutBlock(
-                    hidden_irreps,
-                    field_irreps_out,
-                    self.interactions[i].cueq_config
-                )
-            )
+        self.readouts[-1].linear_1 = o3.Linear(f"{num_channels}x0e", f"{len(self.heads) * kwargs['MLP_irreps']}")
                 
     def forward(
         self,
@@ -640,8 +596,8 @@ class ScaleShiftFieldMACE(MACE):
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list = []
-        for interaction, product, readout, field_readout in zip(
-            self.interactions, self.products, self.readouts, self.field_readouts
+        for interaction, product, readout in zip(
+            self.interactions, self.products, self.readouts
         ):
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
@@ -654,14 +610,14 @@ class ScaleShiftFieldMACE(MACE):
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
             node_feats_list.append(node_feats)
-            node_out = field_readout(node_feats, node_heads).reshape(node_feats.shape[0], node_feats.shape[1], -1) 
+            node_out = self.field_readout(node_feats, node_heads).reshape(node_feats.shape[0], -1, 5) 
             node_energy_feats, node_charge_feats, node_electronic_dipole_feats = node_out[:,:,0],  node_out[:,:,1], node_out[:,:,2:]
             
             node_atomic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, data["positions"])
             node_dipole_feats = node_atomic_dipole_feats + node_electronic_dipole_feats
             
             node_energies = node_energy_feats - torch.einsum('ijk,k->ij', node_dipole_feats, data["electric_field"])
-            node_energies = readout(node_energies.flatten(start_dim=1), node_heads)[num_atoms_arange, node_heads]
+            node_energies = readout(node_energies, node_heads)[num_atoms_arange, node_heads]
             node_es_list.append(node_energies)  # {[n_nodes, ], }
 
         # Concatenate node features

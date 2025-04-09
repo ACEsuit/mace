@@ -79,7 +79,7 @@ def main() -> None:
         port = s.getsockname()[1]
         mp.spawn(run, args=(args, world_size, port), nprocs=world_size)
     else:
-        run(0, args, 1, port)
+        run(0, args, 1, 1)
 
 def run(rank: int, args: argparse.Namespace, world_size: int, port: int) -> None:
     """
