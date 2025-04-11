@@ -5,6 +5,8 @@
 ###########################################################################################
 
 from typing import Any, Callable, Dict, List, Optional, Type, Union
+import logging
+import os
 
 import numpy as np
 import torch
@@ -465,6 +467,224 @@ class ScaleShiftMACE(MACE):
 
         return output
 
+@compile_mode("script")
+class MACELES(MACE):
+    def __init__(
+        self,
+        atomic_inter_scale: float,
+        atomic_inter_shift: float,
+        **kwargs,
+    ):  
+
+        hidden_irreps = kwargs.get('hidden_irreps', None)
+        MLP_irreps = kwargs.get('MLP_irreps', None)
+        heads = kwargs.get('heads', None)
+        gate = kwargs.get('gate', None)
+        cueq_config = kwargs.get('cueq_config', None)
+
+        super().__init__(**kwargs)
+       
+        self.scale_shift = ScaleShiftBlock(
+            scale=atomic_inter_scale, shift=atomic_inter_shift
+        )
+        logging.info('######### Using ScaleShift #########')
+
+        from les import Les
+        logging.info('######### Using Latent Eward Summation (LES)  #########')
+
+        if os.path.isfile('les.yaml'):
+            self.les = Les(les_arguments='les.yaml')
+        else:
+            self.les = Les(les_arguments={}) # use default arguments
+
+        self.les_readouts = torch.nn.ModuleList()
+        self.les_readouts.append(
+            LinearReadoutBlock(
+                hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+            )
+        )
+
+        for i in range(self.num_interactions - 1):
+            if i == self.num_interactions - 2:
+                hidden_irreps_out = str(
+                    hidden_irreps[0]
+                )  # Select only scalars for last layer
+            else:
+                hidden_irreps_out = hidden_irreps
+
+            if i == self.num_interactions - 2:
+                self.les_readouts.append(
+                    NonLinearReadoutBlock(
+                        hidden_irreps_out,
+                        (len(heads) * MLP_irreps).simplify(),
+                        gate,
+                        o3.Irreps(f"{len(heads)}x0e"),
+                        len(heads),
+                        cueq_config,
+                    )
+                )
+            else:
+                self.les_readouts.append(
+                    LinearReadoutBlock(
+                        hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+                    )
+                )
+
+
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
+        compute_force: bool = True,
+        compute_virials: bool = False,
+        compute_stress: bool = False,
+        compute_displacement: bool = False,
+        compute_hessian: bool = False,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        # Setup
+        data["positions"].requires_grad_(True)
+        data["node_attrs"].requires_grad_(True)
+        num_graphs = data["ptr"].numel() - 1
+        num_atoms_arange = torch.arange(data["positions"].shape[0])
+        node_heads = (
+            data["head"][data["batch"]]
+            if "head" in data
+            else torch.zeros_like(data["batch"])
+        )
+        displacement = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=data["positions"].dtype,
+            device=data["positions"].device,
+        )
+        if compute_virials or compute_stress or compute_displacement:
+            (
+                data["positions"],
+                data["shifts"],
+                displacement,
+            ) = get_symmetric_displacement(
+                positions=data["positions"],
+                unit_shifts=data["unit_shifts"],
+                cell=data["cell"],
+                edge_index=data["edge_index"],
+                num_graphs=num_graphs,
+                batch=data["batch"],
+            )
+
+        # Atomic energies
+        node_e0 = self.atomic_energies_fn(data["node_attrs"])[
+            num_atoms_arange, node_heads
+        ]
+        e0 = scatter_sum(
+            src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+        )  # [n_graphs, num_heads]
+
+        # Embeddings
+        node_feats = self.node_embedding(data["node_attrs"])
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
+        )
+        edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
+        if hasattr(self, "pair_repulsion"):
+            pair_node_energy = self.pair_repulsion_fn(
+                lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+            )
+        else:
+            pair_node_energy = torch.zeros_like(node_e0)
+        # Interactions
+        node_es_list = [pair_node_energy]
+        node_feats_list = []
+        node_q_list = []
+
+        for interaction, product, readout, les_readout in zip(
+            self.interactions, self.products, self.readouts, self.les_readouts
+        ):
+            node_feats, sc = interaction(
+                node_attrs=data["node_attrs"],
+                node_feats=node_feats,
+                edge_attrs=edge_attrs,
+                edge_feats=edge_feats,
+                edge_index=data["edge_index"],
+            )
+            node_feats = product(
+                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
+            )
+            node_feats_list.append(node_feats)
+            node_es_list.append(
+                readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+            )  # {[n_nodes, ], }
+
+            node_q_list.append(
+                les_readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+            )  # {[n_nodes, ], }
+
+        # Concatenate node features
+        node_feats_out = torch.cat(node_feats_list, dim=-1)
+        # Sum over interactions
+        node_inter_es = torch.sum(
+            torch.stack(node_es_list, dim=0), dim=0
+        )  # [n_nodes, ]
+
+        # Sum over interactions
+        les_q = torch.sum(
+            torch.stack(node_q_list, dim=0), dim=0
+        )  # [n_nodes, ]
+
+        node_inter_es = self.scale_shift(node_inter_es, node_heads)
+
+        # Sum over nodes in graph
+        inter_e = scatter_sum(
+            src=node_inter_es, index=data["batch"], dim=-1, dim_size=num_graphs
+        )  # [n_graphs,]
+
+        # Add E_0 and (scaled) interaction energy
+        total_energy = e0 + inter_e
+        node_energy = node_e0 + node_inter_es
+
+        les_result = self.les(
+            latent_charges=les_q,
+            positions=data['positions'],
+            cell=data['cell'].view(-1, 3, 3),
+            batch=data["batch"],
+            compute_energy=True,
+            compute_bec=False,
+            bec_output_index=None,
+            )
+
+        les_energy = les_result['E_lr']
+        total_energy = total_energy + les_energy
+
+        forces, virials, stress, hessian = get_outputs(
+            energy=total_energy,
+            positions=data["positions"],
+            displacement=displacement,
+            cell=data["cell"],
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+            compute_hessian=compute_hessian,
+        )
+
+        output = {
+            "energy": total_energy,
+            "node_energy": node_energy,
+            "interaction_energy": inter_e,
+            "forces": forces,
+            "virials": virials,
+            "stress": stress,
+            "hessian": hessian,
+            "displacement": displacement,
+            "node_feats": node_feats_out,
+            "les_energy": les_energy,
+            "latent_charges": les_q,
+        }
+
+        return output
 
 class BOTNet(torch.nn.Module):
     def __init__(
