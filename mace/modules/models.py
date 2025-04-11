@@ -492,8 +492,17 @@ class MACELES(MACE):
         from les import Les
         logging.info('######### Using Latent Eward Summation (LES)  #########')
 
+        self.compute_bec = False
+        self.bec_output_index = None
         if os.path.isfile('les.yaml'):
             self.les = Les(les_arguments='les.yaml')
+
+            # also read other arguments from les.yaml
+            import yaml
+            with open('les.yaml', 'r') as file:
+                les_arguments = yaml.safe_load(file)
+                self.compute_bec = les_arguments.get('compute_bec', False)
+                self.bec_output_index = les_arguments.get('bec_output_index', None)
         else:
             self.les = Les(les_arguments={}) # use default arguments
 
@@ -651,8 +660,8 @@ class MACELES(MACE):
             cell=data['cell'].view(-1, 3, 3),
             batch=data["batch"],
             compute_energy=True,
-            compute_bec=False,
-            bec_output_index=None,
+            compute_bec=self.compute_bec,
+            bec_output_index=self.bec_output_index,
             )
 
         les_energy = les_result['E_lr']
@@ -682,6 +691,7 @@ class MACELES(MACE):
             "node_feats": node_feats_out,
             "les_energy": les_energy,
             "latent_charges": les_q,
+            "BEC": les_result['BEC'],
         }
 
         return output
