@@ -119,7 +119,8 @@ class AtomicData(torch_geometric.data.Data):
     ) -> "AtomicData":
         if heads is None:
             heads = ["default"]
-        edge_index, shifts, unit_shifts, cell = get_neighborhood(
+        cell = config.cell
+        edge_index, shifts, unit_shifts, cell2 = get_neighborhood(
             positions=config.positions, cutoff=cutoff, pbc=config.pbc, cell=config.cell
         )
         indices = atomic_numbers_to_indices(config.atomic_numbers, z_table=z_table)
