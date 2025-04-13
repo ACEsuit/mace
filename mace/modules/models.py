@@ -549,6 +549,7 @@ class MACELES(MACE):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
+        compute_bec: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
@@ -660,7 +661,7 @@ class MACELES(MACE):
             cell=data['cell'].view(-1, 3, 3),
             batch=data["batch"],
             compute_energy=True,
-            compute_bec=self.compute_bec,
+            compute_bec=(self.compute_bec or compute_bec),
             bec_output_index=self.bec_output_index,
             )
 

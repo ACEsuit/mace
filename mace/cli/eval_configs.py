@@ -44,6 +44,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
     )
     parser.add_argument(
+        "--compute_bec",
+        help="compute BEC",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--return_contributions",
         help="model outputs energy contributions for each body order, only supported for MACE, not ScaleShiftMACE",
         action="store_true",
@@ -80,6 +86,11 @@ def run(args: argparse.Namespace) -> None:
         args.device
     )  # shouldn't be necessary but seems to help with CUDA problems
 
+    if model.__class__.__name__ == 'MACELES':
+        model_has_les = True
+    else:
+        model_has_les = False
+
     for param in model.parameters():
         param.requires_grad = False
 
@@ -114,16 +125,29 @@ def run(args: argparse.Namespace) -> None:
     contributions_list = []
     stresses_list = []
     forces_collection = []
+    becs_collection = []
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch.to_dict(), compute_stress=args.compute_stress)
+        if model_has_les:
+            output = model(batch.to_dict(), compute_stress=args.compute_stress, compute_bec=args.compute_bec)
+        else:
+            output = model(batch.to_dict(), compute_stress=args.compute_stress)
         energies_list.append(torch_tools.to_numpy(output["energy"]))
         if args.compute_stress:
             stresses_list.append(torch_tools.to_numpy(output["stress"]))
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
+
+        if args.compute_bec and model_has_les:
+            becs = np.split(
+                torch_tools.to_numpy(output["BEC"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+        becs_collection.append(becs[:-1])  # drop last as its empty
+
 
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
@@ -145,6 +169,11 @@ def run(args: argparse.Namespace) -> None:
         contributions = np.concatenate(contributions_list, axis=0)
         assert len(atoms_list) == contributions.shape[0]
 
+    if args.compute_bec and model_has_les:
+        becs_list = [
+            becs for becs_list in becs_collection for becs in becs_list
+        ]
+
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
         atoms.calc = None  # crucial
@@ -156,6 +185,9 @@ def run(args: argparse.Namespace) -> None:
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
+
+        if args.compute_bec and model_has_les:
+            atoms.arrays[args.info_prefix + "BEC"] = becs_list[i].reshape(-1, 9)
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
