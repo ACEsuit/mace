@@ -56,7 +56,7 @@ def compute_forces_virials(
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,
     )
-    stress = torch.zeros_like(displacement)
+    stress = None
     if compute_stress and virials is not None:
         cell = cell.view(-1, 3, 3)
         volume = torch.linalg.det(cell).abs().unsqueeze(-1)
