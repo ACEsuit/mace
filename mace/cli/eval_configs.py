@@ -83,6 +83,12 @@ def parse_args() -> argparse.Namespace:
         default=True,
     )
     parser.add_argument(
+        "--return_node_energies",
+        help="model outputs MACE node energies",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--info_prefix",
         help="prefix for energy, forces and stress keys",
         type=str,
@@ -149,6 +155,7 @@ def run(args: argparse.Namespace) -> None:
     energies_list = []
     contributions_list = []
     descriptors_list = []
+    node_energies_list = []
     stresses_list = []
     forces_collection = []
 
@@ -196,6 +203,15 @@ def run(args: argparse.Namespace) -> None:
             )
             descriptors_list.extend(descriptors[:-1])  # drop last as its empty
 
+        if args.return_node_energies:
+            node_energies_list.append(
+                np.split(
+                    torch_tools.to_numpy(output['node_energy']),
+                    indices_or_sections=batch.ptr[1:],
+                    axis=0,
+                    )[:-1] # drop last as its empty
+            )
+
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
             indices_or_sections=batch.ptr[1:],
@@ -219,6 +235,10 @@ def run(args: argparse.Namespace) -> None:
     if args.return_descriptors:
         # no concatentation  - elements of descriptors_list have non-uniform shapes
         assert len(atoms_list) == len(descriptors_list)
+
+    if args.return_node_energies:
+        node_energies = np.concatenate(node_energies_list, axis=0)
+        assert len(atoms_list) == node_energies.shape[0]
 
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
@@ -248,6 +268,9 @@ def run(args: argparse.Namespace) -> None:
             else:  # args.descriptor_aggregation_method is None
                 # Save descriptors for each atom (default behavior)
                 atoms.arrays[args.info_prefix + "descriptors"] = np.array(descriptors)
+
+        if args.return_node_energies:
+            atoms.arrays[args.info_prefix + "node_energies"] = node_energies[i]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
