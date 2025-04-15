@@ -586,6 +586,11 @@ def get_loss_fn(
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
         )
+    if args.loss == "l1l2energyforces":
+        loss_fn = modules.WeightedEnergyForcesL1L2Loss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
