@@ -291,15 +291,18 @@ def get_outputs(
             energy=energy,
             electric_field=electric_field,
             cell=cell,
+            training=training,
         )
         bec = compute_bec(
             polarisation=polarisation,
             positions=positions,
             cell=cell,
+            training=training,
         )
         polarisability = compute_polarisability(
             polarisation=polarisation,
             electric_field=electric_field,
+            training=training,
         )
     else:
         polarisation, bec, polarisability = (None, None, None)

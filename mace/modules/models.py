@@ -653,7 +653,7 @@ class ScaleShiftFieldMACE(MACE):
             electric_field=data["electric_field"],
             displacement=displacement,
             cell=data["cell"],
-            training=training,
+            training=True,
             compute_force=compute_force,
             compute_virials=compute_virials,
             compute_stress=compute_stress,
