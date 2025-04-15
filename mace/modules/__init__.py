@@ -26,12 +26,12 @@ from .loss import (
     DipoleSingleLoss,
     UniversalLoss,
     WeightedEnergyForcesDipoleLoss,
+    WeightedEnergyForcesL1L2Loss,
     WeightedEnergyForcesLoss,
     WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
-    WeightedEnergyForcesL1L2Loss,
 )
 from .models import (
     MACE,
