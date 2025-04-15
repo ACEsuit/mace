@@ -361,8 +361,12 @@ class UniversalFieldLoss(torch.nn.Module):
         polarisation_quantum[polarisation_quantum == 0] = max(torch.cat((ref["polarisation"], pred["polarisation"]))) + 1.0 
 
         # Expand polarisation to lattice (3x3 matrix) that is modulo the polarisation quantum. Any nan (due to divide by 0), set to zero.
-        ref_polarisation = ref["polarisation"]#.repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
-        pred_polarisation = pred["polarisation"]#.repeat(3,1).view(-1,3,3).fmod(polarisation_quantum).nan_to_num(nan=0)
+        ref_polarisation = ref["polarisation"].repeat(3,1).view(-1,3,3)
+        pred_polarisation = pred["polarisation"].repeat(3,1).view(-1,3,3)
+
+        polarisation_loss = self.huber_loss((ref_polarisation - pred_polarisation).fmod(polarisation_quantum).nan_to_num(nan=0) / num_atoms, torch.zeros_like(ref_polarisation))
+        bec_loss = self.huber_loss(ref["bec"] / num_atoms, pred["bec"] / num_atoms)
+        alp_loss = self.huber_loss(ref["polarisability"] / num_atoms, pred["polarisability"] / num_atoms)
 
         return (
             self.energy_weight
@@ -381,9 +385,9 @@ class UniversalFieldLoss(torch.nn.Module):
                 configs_stress_weight * ref["stress"],
                 configs_stress_weight * pred["stress"],
             )
-            + self.polarisation_weight * self.huber_loss(ref_polarisation / num_atoms, pred_polarisation / num_atoms) 
-            + self.bec_weight * self.huber_loss(ref["bec"], pred["bec"])
-            + self.polarisability_weight * self.huber_loss(ref["polarisability"] / num_atoms, pred["polarisability"] / num_atoms)
+            + self.polarisation_weight * polarisation_loss
+            + self.bec_weight * bec_loss
+            + self.polarisability_weight * alp_loss
         )
 
     def __repr__(self):
