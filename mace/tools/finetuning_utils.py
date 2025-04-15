@@ -40,60 +40,63 @@ def load_foundations_elements(
         model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
             model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
         )
-    if model.__class__.__name__ != "ScaleShiftFieldMACE":    
-        for i in range(int(model.num_interactions)):
-            model.interactions[i].linear_up.weight = torch.nn.Parameter(
-                model_foundations.interactions[i].linear_up.weight.clone()
-            )
-            model.interactions[i].avg_num_neighbors = model_foundations.interactions[
-                i
-            ].avg_num_neighbors
-            for j in range(4):  # Assuming 4 layers in conv_tp_weights,
-                layer_name = f"layer{j}"
-                if j == 0:
-                    getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
-                        torch.nn.Parameter(
-                            getattr(
-                                model_foundations.interactions[i].conv_tp_weights,
-                                layer_name,
-                            )
-                            .weight[:num_radial, :]
-                            .clone()
+    for i in range(int(model.num_interactions)):
+        model.interactions[i].linear_up.weight = torch.nn.Parameter(
+            model_foundations.interactions[i].linear_up.weight.clone()
+        )
+        model.interactions[i].avg_num_neighbors = model_foundations.interactions[
+            i
+        ].avg_num_neighbors
+        for j in range(4):  # Assuming 4 layers in conv_tp_weights,
+            layer_name = f"layer{j}"
+            if j == 0:
+                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
+                    torch.nn.Parameter(
+                        getattr(
+                            model_foundations.interactions[i].conv_tp_weights,
+                            layer_name,
                         )
+                        .weight[:num_radial, :]
+                        .clone()
                     )
-                else:
-                    getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
-                        torch.nn.Parameter(
-                            getattr(
-                                model_foundations.interactions[i].conv_tp_weights,
-                                layer_name,
-                            ).weight.clone()
-                        )
+                )
+            else:
+                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
+                    torch.nn.Parameter(
+                        getattr(
+                            model_foundations.interactions[i].conv_tp_weights,
+                            layer_name,
+                        ).weight.clone()
                     )
+                )
 
-            model.interactions[i].linear.weight = torch.nn.Parameter(
-                model_foundations.interactions[i].linear.weight.clone()
-            )
+        model.interactions[i].linear.weight = torch.nn.Parameter(
+            model_foundations.interactions[i].linear.weight.clone()
+        )
         
         if model.interactions[i].__class__.__name__ in [
             "RealAgnosticResidualInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
         ]:
-            if i < model.num_interactions-1:
-                model.interactions[i].skip_tp.weight = torch.nn.Parameter(
-                    model_foundations.interactions[i]
-                    .skip_tp.weight.reshape(
-                        num_channels_foundation,
-                        num_species_foundations,
-                        num_channels_foundation,
-                    )[:, indices_weights, :]
-                    
-                )
-            else:
+            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
+                model_foundations.interactions[i]
+                .skip_tp.weight.reshape(
+                    num_channels_foundation,
+                    num_species_foundations,
+                    num_channels_foundation,
+                )[:, indices_weights, :]
+                .flatten()
+                .clone()
+                / (num_species_foundations / num_species) ** 0.5
+            )
+
+            # If MACE Field then inherit scalar weights in last layer. l>0 weights remain randomly initialised.
+            if model.__class__.__name__ == "ScaleShiftFieldMACE" and i == int(model.num_interactions)-1:    
                 model_interaction_skip_tp_weight = model.interactions[i].skip_tp.weight.clone().reshape(num_channels_foundation, -1, num_species, num_channels_foundation)
                 foundation_interaction_skip_tp_weight = model_foundations.interactions[i].skip_tp.weight.clone().reshape(num_channels_foundation, num_species, num_channels_foundation)
                 model_interaction_skip_tp_weight[:,0,:,:] = foundation_interaction_skip_tp_weight[:,indices_weights,:]
                 model.interactions[i].skip_tp.weight = torch.nn.Parameter(model_interaction_skip_tp_weight.flatten().clone() / (num_species_foundations / num_species) ** 0.5)
+             
         else:
             model.interactions[i].skip_tp.weight = torch.nn.Parameter(
                 model_foundations.interactions[i]
@@ -143,11 +146,12 @@ def load_foundations_elements(
                     )
                 )
 
-        if i < int(model.num_interactions-1):
-            model.products[i].linear.weight = torch.nn.Parameter(
-                model_foundations.products[i].linear.weight.clone()
-            )
-        else:
+        model.products[i].linear.weight = torch.nn.Parameter(
+            model_foundations.products[i].linear.weight.clone()
+        )
+
+        # If MACE Field then inherit scalar weights in last layer. l>0 weights remain randomly initialised.
+        if model.__class__.__name__ == "ScaleShiftFieldMACE" and i == int(model.num_interactions)-1:    
             model_product_linear_weight = model.products[i].linear.weight.clone().reshape(num_channels_foundation, -1, num_channels_foundation)
             foundation_product_linear_weight = model_foundations.products[i].linear.weight.clone().reshape(num_channels_foundation, num_channels_foundation)
             model_product_linear_weight[:,0,:] = foundation_product_linear_weight[:,:]

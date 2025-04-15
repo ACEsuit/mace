@@ -30,9 +30,6 @@ from .blocks import (
 from .utils import (
     compute_fixed_charge_dipole,
     compute_forces,
-    compute_forces_virials,
-    compute_polarisation,
-    compute_becs_polarisability,
     get_edge_vectors_and_lengths,
     get_outputs,
     get_symmetric_displacement,
@@ -494,6 +491,9 @@ class ScaleShiftFieldMACE(MACE):
 
         hidden_irreps = kwargs["hidden_irreps"]
         num_channels = hidden_irreps.count(o3.Irrep(0, 1))
+
+        # Linearly map node features to 2x0e + 1x1o (energy, charge & electronic dipole) features
+        # Channels are maintained and not mixed yet!
         field_irreps = o3.Irreps("0e") + o3.Irreps.spherical_harmonics(1)
         field_irreps_out = o3.Irreps(f"{num_channels * field_irreps}").sort()[0].simplify()
 
@@ -502,14 +502,19 @@ class ScaleShiftFieldMACE(MACE):
             field_irreps_out,
         )
     
+        # Want to maintain l>0 features in last layer.
+        # Redefine last layer interaction block's skip_tp .
         self.interactions[-1].skip_tp = o3.FullyConnectedTensorProduct(
             hidden_irreps,
             self.interactions[-1].node_attrs_irreps,
             hidden_irreps,
             self.interactions[-1].cueq_config,
         )
+
+        # Easiest to copy penultimate layer's product block.
         self.products[-1] = self.products[-2]
 
+        # Update energy readout irreps_in
         for i in range(len(self.readouts)-1):
             self.readouts[i].linear = o3.Linear(f"{num_channels}x0e", f"{len(self.heads)}x0e")
 
@@ -519,7 +524,7 @@ class ScaleShiftFieldMACE(MACE):
         self,
         data: Dict[str, torch.Tensor],
         training: bool = False,
-        compute_force: bool = True,
+        compute_force: bool = False,
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
@@ -571,24 +576,18 @@ class ScaleShiftFieldMACE(MACE):
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
-
-        position_vectors, position_lengths = get_edge_vectors_and_lengths(
+        vectors, lengths = get_edge_vectors_and_lengths(
             positions=data["positions"],
             edge_index=data["edge_index"],
             shifts=data["shifts"],
         )
-
-        # Spherical harmonic angular edge attributes
-        edge_attrs = self.spherical_harmonics(position_vectors) # [nedges, nsh] 
-
-        # Radial edge embeddings
+        edge_attrs = self.spherical_harmonics(vectors)
         edge_feats = self.radial_embedding(
-            position_lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
-
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
-                position_lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+                lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
             )
         else:
             pair_node_energy = torch.zeros_like(node_e0)
@@ -610,13 +609,21 @@ class ScaleShiftFieldMACE(MACE):
                 node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
             node_feats_list.append(node_feats)
+
+            # Extract node features for energy, charge and electronic dipole
             node_out = self.field_readout(node_feats, node_heads).reshape(node_feats.shape[0], -1, 5) 
             node_energy_feats, node_charge_feats, node_electronic_dipole_feats = node_out[:,:,0],  node_out[:,:,1], node_out[:,:,2:]
             
-            node_atomic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, data["positions"])
-            node_dipole_feats = node_atomic_dipole_feats + node_electronic_dipole_feats
+            # Compute ionic dipole features as charge * atomic positions
+            node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, data["positions"])
             
+            # Total dipole feature is sum of ionic and electronic dipole features 
+            node_dipole_feats = node_ionic_dipole_feats + node_electronic_dipole_feats
+            
+            # New k channel node energy features E_i = E_{0,i} - p_i \cdot E_field in analogy to electric enthalpy
             node_energies = node_energy_feats - torch.einsum('ijk,k->ij', node_dipole_feats, data["electric_field"])
+            
+            # Mix k channels as normal
             node_energies = readout(node_energies, node_heads)[num_atoms_arange, node_heads]
             node_es_list.append(node_energies)  # {[n_nodes, ], }
 
@@ -639,27 +646,19 @@ class ScaleShiftFieldMACE(MACE):
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
 
-        # Compute forces, virials and stress
-        forces, virials, stress = compute_forces_virials(
+        # Compute macroscopic derivative properties
+        forces, virials, stress, hessian, polarisations, becs, polarisabilities = get_outputs(
             energy=inter_e,
             positions=data["positions"],
+            electric_field=data["electric_field"],
             displacement=displacement,
             cell=data["cell"],
-            training=True,
-            compute_stress=compute_stress
-        )
-
-        polarisations = compute_polarisation(
-            energy=inter_e,
-            electric_field=data["electric_field"],
-            cell=data["cell"]
-        )
-
-        becs, polarisabilities = compute_becs_polarisability(
-            polarisation=polarisations,
-            positions=data["positions"],
-            electric_field=data["electric_field"],
-            cell=data["cell"]
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+            compute_hessian=compute_hessian,
+            compute_field=compute_field,
         )
 
         output = {
@@ -669,10 +668,11 @@ class ScaleShiftFieldMACE(MACE):
             "forces": forces,
             "virials": virials,
             "stress": stress,
+            "hessian": hessian,
+            "displacement": displacement,
             "polarisation": polarisations,
             "bec": becs,
             "polarisability": polarisabilities,
-            "displacement": displacement,
             "node_feats": node_feats_out,
         }
 

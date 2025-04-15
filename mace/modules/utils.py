@@ -73,50 +73,72 @@ def compute_polarisation(
     energy: torch.Tensor,
     electric_field: torch.Tensor,
     cell: torch.Tensor,
+    training: bool = True,
 ) -> torch.Tensor:
     
     volume = torch.linalg.det(cell.view(-1, 3, 3)).abs()
     
     polarisation = torch.autograd.grad(
-        outputs=energy,                    
-        inputs=electric_field,
+        outputs=energy,  # [n_graphs, ]            
+        inputs=electric_field,  # [3, ]
         grad_outputs=torch.ones_like(energy),
-        retain_graph=True,                 
-        create_graph=True,
+        retain_graph=training,  # Make sure the graph is not destroyed during training  
+        create_graph=training,  # Create graph for higher derivatives
         allow_unused=True,
     )[0]
 
     return -polarisation / volume
 
 
-def compute_becs_polarisability(
+def compute_bec(
     polarisation: torch.Tensor,
     positions: torch.Tensor,
-    electric_field: torch.Tensor,
     cell: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    training: bool = True,
+) -> torch.Tensor:
     
     volume = torch.linalg.det(cell.view(-1, 3, 3)).abs()
     
-    bec_list = []
+    bec_polar_list = []
+    for d in range(3): # Loop over dimensions
+        polar_component = polarisation[d] 
+        gradient = torch.autograd.grad(
+            outputs=polar_component, # [n_graphs, 1]
+            inputs=positions, # [n_nodes, 3]
+            grad_outputs=torch.ones_like(polar_component),
+            retain_graph=training,  # Make sure the graph is not destroyed during training
+            create_graph=training,  # Create graph for higher derivatives
+            allow_unused=True,
+        )[0]
+        bec_polar_list.append(gradient) # [n_nodes, 3]
+        
+    bec = torch.stack(bec_polar_list, dim=1) # [n_nodes, 3, 3]
+
+    return bec * volume
+
+def compute_polarisability(
+    polarisation: torch.Tensor,
+    electric_field: torch.Tensor,
+    training: bool = True,
+) -> torch.Tensor:
+    
+    # Second derivatives (BEC and polarisability) computed for each polarisation component.   
     polarisability_list = []
     for d in range(3):
-        polar_comp = polarisation[d]
-        grad_pos, grad_field = torch.autograd.grad(
-            outputs=polar_comp,
-            inputs=[positions, electric_field],
-            grad_outputs=torch.ones_like(polar_comp),
-            retain_graph=True,
-            create_graph=True,
+        polar_component = polarisation[d]
+        grad_field = torch.autograd.grad(
+            outputs=polar_component, # [n_graphs, 1]
+            inputs=electric_field, # [3, ]
+            grad_outputs=torch.ones_like(polar_component),
+            retain_graph=training,  # Make sure the graph is not destroyed during training
+            create_graph=training,  # Create graph for higher derivatives
             allow_unused=True,
-        )
-        bec_list.append(grad_pos)
-        polarisability_list.append(grad_field)
+        )[0]
+        polarisability_list.append(grad_field) # [n_graphs, 3]
         
-    bec = torch.stack(bec_list, dim=1) * volume               # [n_graphs, 3, 3]
     polarisability = torch.stack(polarisability_list, dim=1)  # [n_graphs, 3, 3]
 
-    return (bec, polarisability)
+    return polarisability
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
@@ -229,30 +251,11 @@ def get_outputs(
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
 ]:
-    if compute_field and electric_field is not None:
-        volume = torch.linalg.det(cell.view(-1, 3, 3)).abs()
-        forces, virials, stress = compute_forces_virials(
-            energy=energy,
-            positions=positions,
-            displacement=displacement,
-            cell=cell,
-            training=True,
-            compute_stress=compute_stress
-        )
-        polarisation = compute_polarisation(
-            energy=energy,
-            electric_field=electric_field
-        ) / volume
-        bec, polarisability = compute_becs_polarisability(
-            polarisation=polarisation,
-            positions=positions,
-            electric_field=electric_field,
-        )
-        bec = bec * volume
-
-    elif (compute_virials or compute_stress) and displacement is not None:
-        forces, virials, stress, polarisation, bec, polarisability = (
+    if (compute_virials or compute_stress) and displacement is not None:
+        forces, virials, stress = (
             compute_forces_virials(
             energy=energy,
             positions=positions,
@@ -260,34 +263,46 @@ def get_outputs(
             cell=cell,
             compute_stress=compute_stress,
             training=(training or compute_hessian),
-            ) + (
-            None,
-            None,
-            None
             )
         )
     elif compute_force:
-        forces, virials, stress, polarisation, bec, polarisability = (
+        forces, virials, stress = (
             compute_forces(
                 energy=energy,
                 positions=positions,
                 training=(training or compute_hessian),
             ) + (
             None,
-            None,
-            None,
-            None,
             None
             )
         )
     else:
-        forces, virials, stress, polarisation, bec, polarisability = (None, None, None, None, None, None)
+        forces, virials, stress = (None, None, None)
     
     if compute_hessian:
         assert forces is not None, "Forces must be computed to get the hessian"
         hessian = compute_hessians_vmap(forces, positions)
     else:
         hessian = None
+
+    if compute_field:
+        assert electric_field is not None, "Electric field must be specified"
+        polarisation = compute_polarisation(
+            energy=energy,
+            electric_field=electric_field,
+            cell=cell,
+        )
+        bec = compute_bec(
+            polarisation=polarisation,
+            positions=positions,
+            cell=cell,
+        )
+        polarisability = compute_polarisability(
+            polarisation=polarisation,
+            electric_field=electric_field,
+        )
+    else:
+        polarisation, bec, polarisability = (None, None, None)
 
     return forces, virials, stress, hessian, polarisation, bec, polarisability
 
