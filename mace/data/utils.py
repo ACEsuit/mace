@@ -207,8 +207,8 @@ def config_from_atoms(
     if polarisability is None:
         polarisability = np.zeros((3, 3))
         polarisability_weight = 0.0
-    electric_field = np.array([0.0, 0.0, 0.0])
-    # electric_field = np.random.random(3) / 1000
+    if electric_field is None:
+        electric_field = np.array([0.0, 0.0, 0.0])
 
     return Configuration(
         atomic_numbers=atomic_numbers,
