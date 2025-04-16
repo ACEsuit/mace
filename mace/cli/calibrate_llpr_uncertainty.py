@@ -272,7 +272,7 @@ def run(args: argparse.Namespace) -> None:
                     cutoff=r_max,
                     heads=heads,
                 )
-                for config in collections.valid
+                for config in collections.test
             ],
             batch_size=args.batch_size,
             shuffle=False,
