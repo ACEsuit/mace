@@ -146,7 +146,7 @@ def run(args: argparse.Namespace) -> None:
                 indices_or_sections=batch.ptr[1:],
                 axis=0,
             )
-        becs_collection.append(becs[:-1])  # drop last as its empty
+            becs_collection.append(becs[:-1])  # drop last as its empty
 
 
         forces = np.split(
