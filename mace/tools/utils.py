@@ -145,3 +145,19 @@ class MetricsLogger:
         with open(self.path, mode="a", encoding="utf-8") as f:
             f.write(json.dumps(d, cls=UniversalEncoder))
             f.write("\n")
+
+# Class for lammps plugin
+class lammps_mp(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, feats, data):
+        ctx.vec_len = int(feats.shape[-1])
+        ctx.data = data
+        feats_out = torch.zeros(feats.shape, dtype=feats.dtype, device=feats.device)
+        ctx.data.forward_exchange(feats, feats_out, ctx.vec_len)
+        return feats_out
+
+    @staticmethod
+    def backward(ctx, grad):
+        grad_out = torch.zeros(grad.shape, dtype=grad.dtype, device=grad.device)
+        ctx.data.reverse_exchange(grad, grad_out, ctx.vec_len)
+        return grad_out, None
