@@ -38,6 +38,7 @@ from .models import (
     AtomicDipolesMACE,
     BOTNet,
     EnergyDipolesMACE,
+    LLPRModel,
     ScaleShiftBOTNet,
     ScaleShiftMACE,
 )
