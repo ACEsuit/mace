@@ -63,7 +63,6 @@ class MACE(torch.nn.Module):
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,
-        lammps_mliap: Optional[bool] = False,
     ):
         super().__init__()
         self.register_buffer(
@@ -80,7 +79,6 @@ class MACE(torch.nn.Module):
         self.heads = heads
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
-        self.lammps_mliap = lammps_mliap
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -122,7 +120,6 @@ class MACE(torch.nn.Module):
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
             cueq_config=cueq_config,
-            first=True,
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -166,7 +163,6 @@ class MACE(torch.nn.Module):
                 avg_num_neighbors=avg_num_neighbors,
                 radial_MLP=radial_MLP,
                 cueq_config=cueq_config,
-                first=False,
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(
@@ -354,53 +350,33 @@ class ScaleShiftMACE(MACE):
         compute_hessian: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
+        data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
-        # To allow for old models without with attribute
-        if not hasattr(self, 'lammps_mliap'):
-            lammps_mliap = False
-        else:
-            lammps_mliap = self.lammps_mliap
-        if lammps_mliap:
-            num_graphs = 2
-            lammps_natoms = data["natoms"]
-            num_atoms_arange = torch.arange(lammps_natoms[0])
-            # num_atoms_arange = torch.arange(data["node_attrs"].shape[0])
-            # Just for compile's sake
-            displacement = None
-        else:
-            data["positions"].requires_grad_(True)
-            num_atoms_arange = torch.arange(data["positions"].shape[0])
-            num_graphs = data["ptr"].numel() - 1
-            displacement = torch.zeros(
-                (num_graphs, 3, 3),
-                dtype=data["positions"].dtype,
-                device=data["positions"].device,
-            )
-            if compute_virials or compute_stress or compute_displacement:
-                (
-                    data["positions"],
-                    data["shifts"],
-                    displacement,
-                ) = get_symmetric_displacement(
-                    positions=data["positions"],
-                    unit_shifts=data["unit_shifts"],
-                    cell=data["cell"],
-                    edge_index=data["edge_index"],
-                    num_graphs=num_graphs,
-                    batch=data["batch"],
-                )
-            lammps_natoms = (0, 0)
+        num_graphs = data["ptr"].numel() - 1
+        num_atoms_arange = torch.arange(data["positions"].shape[0])
         node_heads = (
             data["head"][data["batch"]]
             if "head" in data
             else torch.zeros_like(data["batch"])
         )
-        
-        # Lammps pointer if available
-        if lammps_mliap:
-            lammps_class = data["lammps_class"]
-        else:
-            lammps_class = None
+        displacement = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=data["positions"].dtype,
+            device=data["positions"].device,
+        )
+        if compute_virials or compute_stress or compute_displacement:
+            (
+                data["positions"],
+                data["shifts"],
+                displacement,
+            ) = get_symmetric_displacement(
+                positions=data["positions"],
+                unit_shifts=data["unit_shifts"],
+                cell=data["cell"],
+                edge_index=data["edge_index"],
+                num_graphs=num_graphs,
+                batch=data["batch"],
+            )
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
@@ -412,18 +388,11 @@ class ScaleShiftMACE(MACE):
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
-
-        if lammps_mliap:
-            vectors = data['vectors']
-            vectors.requires_grad_(True)
-            lengths = torch.linalg.vector_norm(
-                vectors, dim=1, keepdim=True)
-        else:
-            vectors, lengths = get_edge_vectors_and_lengths(
-                positions=data["positions"],
-                edge_index=data["edge_index"],
-                shifts=data["shifts"],
-            )
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
+        )
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
@@ -437,27 +406,18 @@ class ScaleShiftMACE(MACE):
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list = []
-        for i, (interaction, product, readout) in enumerate(zip(
-            self.interactions, self.products, self.readouts)
+        for interaction, product, readout in zip(
+            self.interactions, self.products, self.readouts
         ):
-            node_attrs = data["node_attrs"]
-            # For lammps, removing ghosts from node_attrs
-            if lammps_mliap and i>0:
-                node_attrs = node_attrs[:lammps_natoms[0]]
             node_feats, sc = interaction(
-                node_attrs=node_attrs,
+                node_attrs=data["node_attrs"],
                 node_feats=node_feats,
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
-                lammps_class=lammps_class,
-                lammps_natoms=lammps_natoms,
             )
-            # For lammps, removing ghosts from node_attrs
-            if lammps_mliap and i==0:
-                node_attrs = node_attrs[:lammps_natoms[0]]
             node_feats = product(
-                node_feats=node_feats, sc=sc, node_attrs=node_attrs
+                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
             )
             node_feats_list.append(node_feats)
             node_es_list.append(
@@ -480,16 +440,6 @@ class ScaleShiftMACE(MACE):
         # Add E_0 and (scaled) interaction energy
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
-        
-        # For lammps_mliap, we can exit here
-        if lammps_mliap:
-            # Making sure the last sum is done in fp64
-            node_energy = node_e0.double() + node_inter_es.double()
-            return {
-            "energy": total_energy,
-            "node_energy": node_energy,
-            }
-
         forces, virials, stress, hessian = get_outputs(
             energy=inter_e,
             positions=data["positions"],

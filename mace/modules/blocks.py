@@ -5,7 +5,7 @@
 ###########################################################################################
 
 from abc import abstractmethod
-from typing import Callable, List, Optional, Tuple, Union, Any
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch.nn.functional
@@ -21,7 +21,6 @@ from mace.modules.wrapper_ops import (
 )
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
-from mace.tools.utils import lammps_mp
 
 from .irreps_tools import (
     linear_out_irreps,
@@ -322,7 +321,6 @@ class InteractionBlock(torch.nn.Module):
         avg_num_neighbors: float,
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        first: Optional[bool] = False,
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -336,7 +334,6 @@ class InteractionBlock(torch.nn.Module):
             radial_MLP = [64, 64, 64]
         self.radial_MLP = radial_MLP
         self.cueq_config = cueq_config
-        self.first = first
 
         self._setup()
 
@@ -682,25 +679,11 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-        lammps_class: Optional[Any]=None,
-        lammps_natoms: Optional[Tuple]=(0,0),
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         node_feats = self.linear_up(node_feats)
-        # Guarding for scripting
-        if not torch.jit.is_scripting():
-            # Letting lammps update features on ghosts
-            if lammps_class is not None:
-                # We can skip MP for the first layer
-                if not self.first:
-                    # Padding features with zeros
-                    node_feats = torch.cat((node_feats, 
-                        torch.zeros((lammps_natoms[1],node_feats.shape[1]),
-                                     dtype=node_feats.dtype, 
-                                     device=node_feats.device)), 0)
-                    node_feats = lammps_mp.apply(node_feats, lammps_class)
         tp_weights = self.conv_tp_weights(edge_feats)
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
@@ -708,10 +691,6 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         message = scatter_sum(
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
-        # For lammps, removing ghosts
-        if lammps_class is not None:
-            message = message[:lammps_natoms[0]]
-            node_attrs = node_attrs[:lammps_natoms[0]]
         message = self.linear(message) / self.avg_num_neighbors
         message = self.skip_tp(message, node_attrs)
         return (
@@ -782,26 +761,12 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-        lammps_class: Optional[Any]=None,
-        lammps_natoms: Optional[Tuple]=(0,0),
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
-        # Guarding for scripting
-        if not torch.jit.is_scripting():
-            # Letting lammps update features on ghosts
-            if lammps_class is not None:
-                # We can skip MP for the first layer
-                if not self.first:
-                    # Padding features with zeros
-                    node_feats = torch.cat((node_feats, 
-                        torch.zeros((lammps_natoms[1],node_feats.shape[1]),
-                                     dtype=node_feats.dtype, 
-                                     device=node_feats.device)), 0)
-                    node_feats = lammps_mp.apply(node_feats, lammps_class)
         tp_weights = self.conv_tp_weights(edge_feats)
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
@@ -809,11 +774,6 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         message = scatter_sum(
             src=mji, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, irreps]
-        # For lammps, removing ghosts
-        if lammps_class is not None:
-            message = message[:lammps_natoms[0]]
-            node_attrs = node_attrs[:lammps_natoms[0]]
-            sc = sc[:lammps_natoms[0]]
         message = self.linear(message) / self.avg_num_neighbors
         return (
             self.reshape(message),
