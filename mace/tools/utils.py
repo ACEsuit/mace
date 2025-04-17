@@ -145,3 +145,22 @@ class MetricsLogger:
         with open(self.path, mode="a", encoding="utf-8") as f:
             f.write(json.dumps(d, cls=UniversalEncoder))
             f.write("\n")
+
+
+# pylint: disable=abstract-method, arguments-differ
+class LAMMPS_MP(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, *args):
+        feats, data = args  # unpack
+        ctx.vec_len = feats.shape[-1]
+        ctx.data = data
+        out = torch.empty_like(feats)
+        data.forward_exchange(feats, out, ctx.vec_len)
+        return out
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        (grad,) = grad_outputs  # unpack
+        gout = torch.empty_like(grad)
+        ctx.data.reverse_exchange(grad, gout, ctx.vec_len)
+        return gout, None
