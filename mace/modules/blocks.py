@@ -23,11 +23,7 @@ from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
 from mace.tools.utils import LAMMPS_MP
 
-from .irreps_tools import (
-    mask_head,
-    reshape_irreps,
-    tp_out_irreps_with_instructions,
-)
+from .irreps_tools import mask_head, reshape_irreps, tp_out_irreps_with_instructions
 from .radial import (
     AgnesiTransform,
     BesselBasis,
