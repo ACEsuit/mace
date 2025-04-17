@@ -355,7 +355,7 @@ class InteractionBlock(torch.nn.Module):
         node_feats = LAMMPS_MP.apply(node_feats, lammps_class)
         return node_feats
 
-    def truncate_ghosts(self, tensor: torch.Tensor, n_real: int | None) -> torch.Tensor:
+    def truncate_ghosts(self, tensor: torch.Tensor, n_real: Optional[int] = None) -> torch.Tensor:
         """Truncate the tensor to only keep the real atoms in case of presence of ghost atoms during multi-GPU MD simulations."""
         return tensor[:n_real] if n_real is not None else tensor
 
@@ -436,8 +436,9 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
+        lammps_natoms: Tuple[int, int] = (0, 0),
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Optional[Tuple] = (0, 0),
+        first_layer: bool = False,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -448,7 +449,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             node_feats,
             lammps_class=lammps_class,
             lammps_natoms=lammps_natoms,
-            first_layer=self.first,
+            first_layer=first_layer,
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         mji = self.conv_tp(
@@ -530,7 +531,8 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Optional[Tuple] = (0, 0),
+        lammps_natoms: Tuple[int, int] = (0, 0),
+        first_layer: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -542,7 +544,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             node_feats,
             lammps_class=lammps_class,
             lammps_natoms=lammps_natoms,
-            first_layer=self.first,
+            first_layer=first_layer,
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         mji = self.conv_tp(
@@ -634,8 +636,8 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Optional[Tuple] = (0, 0),
-        first_layer: Optional[bool] = False,
+        lammps_natoms: Tuple[int, int] = (0, 0),
+        first_layer: bool = False,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -745,8 +747,8 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Optional[Tuple] = (0, 0),
-        first_layer: Optional[bool] = False,
+        lammps_natoms: Tuple[int, int] = (0, 0),
+        first_layer: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -853,8 +855,8 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Optional[Tuple] = (0, 0),
-        first_layer: Optional[bool] = False,
+        lammps_natoms: Tuple[int, int] = (0, 0),
+        first_layer: bool = False,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
