@@ -122,7 +122,6 @@ class MACE(torch.nn.Module):
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
             cueq_config=cueq_config,
-            first=True,
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -166,7 +165,6 @@ class MACE(torch.nn.Module):
                 avg_num_neighbors=avg_num_neighbors,
                 radial_MLP=radial_MLP,
                 cueq_config=cueq_config,
-                first=False,
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(
@@ -217,16 +215,18 @@ class MACE(torch.nn.Module):
             compute_displacement=compute_displacement,
             lammps_mliap=lammps_mliap,
         )
-        is_lammps = ctx["is_lammps"]
-        num_atoms_arange = ctx["num_atoms_arange"]
-        num_graphs = ctx["num_graphs"]
-        displacement = ctx["displacement"]
-        positions = ctx["positions"]
-        vectors = ctx["vectors"]
-        lengths = ctx["lengths"]
-        cell = ctx["cell"]
-        node_heads = ctx["node_heads"]
-        interaction_kwargs = ctx["interaction_kwargs"]
+        is_lammps        = ctx.is_lammps
+        num_atoms_arange = ctx.num_atoms_arange
+        num_graphs       = ctx.num_graphs
+        displacement     = ctx.displacement
+        positions        = ctx.positions
+        vectors          = ctx.vectors
+        lengths          = ctx.lengths
+        cell             = ctx.cell
+        node_heads       = ctx.node_heads
+        interaction_kwargs = ctx.interaction_kwargs
+        lammps_natoms = interaction_kwargs.lammps_natoms
+        lammps_class = interaction_kwargs.lammps_class
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
@@ -263,7 +263,7 @@ class MACE(torch.nn.Module):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
                 node_attrs_slice = node_attrs_slice[
-                    : ctx["interaction_kwargs"].get("lammps_natoms", (0, 0))[0]
+                    : lammps_natoms[0]
                 ]
             node_feats, sc = interaction(
                 node_attrs=node_attrs_slice,
@@ -271,11 +271,13 @@ class MACE(torch.nn.Module):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
-                **interaction_kwargs,
+                first_layer=(i == 0),
+                lammps_class=lammps_class,
+                lammps_natoms=lammps_natoms,
             )
             if is_lammps and i == 0:
                 node_attrs_slice = node_attrs_slice[
-                    : ctx["interaction_kwargs"].get("lammps_natoms", (0, 0))[0]
+                    : lammps_natoms[0]
                 ]
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
@@ -367,16 +369,19 @@ class ScaleShiftMACE(MACE):
             compute_displacement=compute_displacement,
             lammps_mliap=lammps_mliap,
         )
-        is_lammps = ctx["is_lammps"]
-        num_atoms_arange = ctx["num_atoms_arange"]
-        num_graphs = ctx["num_graphs"]
-        displacement = ctx["displacement"]
-        positions = ctx["positions"]
-        vectors = ctx["vectors"]
-        lengths = ctx["lengths"]
-        cell = ctx["cell"]
-        node_heads = ctx["node_heads"]
-        interaction_kwargs = ctx["interaction_kwargs"]
+
+        is_lammps        = ctx.is_lammps
+        num_atoms_arange = ctx.num_atoms_arange
+        num_graphs       = ctx.num_graphs
+        displacement     = ctx.displacement
+        positions        = ctx.positions
+        vectors          = ctx.vectors
+        lengths          = ctx.lengths
+        cell             = ctx.cell
+        node_heads       = ctx.node_heads
+        interaction_kwargs = ctx.interaction_kwargs
+        lammps_natoms = interaction_kwargs.lammps_natoms
+        lammps_class = interaction_kwargs.lammps_class
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
@@ -409,7 +414,7 @@ class ScaleShiftMACE(MACE):
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
-                node_attrs_slice = node_attrs_slice[: ctx["lammps_natoms"][0]]
+                node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
             node_feats, sc = interaction(
                 node_attrs=node_attrs_slice,
                 node_feats=node_feats,
@@ -417,10 +422,11 @@ class ScaleShiftMACE(MACE):
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
                 first_layer=(i == 0),
-                **interaction_kwargs,
+                lammps_class=lammps_class,
+                lammps_natoms=lammps_natoms,
             )
             if is_lammps and i == 0:
-                node_attrs_slice = node_attrs_slice[: ctx["lammps_natoms"][0]]
+                node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
