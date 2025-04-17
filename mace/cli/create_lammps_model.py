@@ -1,7 +1,7 @@
 # pylint: disable=wrong-import-position
 import argparse
-import os
 import copy
+import os
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -85,8 +85,8 @@ def main():
     elif args.dtype == "float32":
         print("Converting model to float32, this may cause loss of precision.")
         model = model.float().to("cpu")
-    
-    if args.format == 'mliap':
+
+    if args.format == "mliap":
         # Enabling cuequivariance by default. TODO: switch?
         model = run_e3nn_to_cueq(copy.deepcopy(model))
         model.lammps_mliap = True
@@ -99,11 +99,11 @@ def main():
             f"Selected head: {head} from command line in the list available heads: {model.heads}"
         )
 
-    lammps_class = LAMMPS_MLIAP_MACE if args.format=='mliap' else LAMMPS_MACE
+    lammps_class = LAMMPS_MLIAP_MACE if args.format == "mliap" else LAMMPS_MACE
     lammps_model = (
         lammps_class(model, head=head) if head is not None else lammps_class(model)
     )
-    if args.format == 'mliap':
+    if args.format == "mliap":
         torch.save(lammps_model, model_path + "-mliap_lammps.pt")
     else:
         lammps_model_compiled = jit.compile(lammps_model)

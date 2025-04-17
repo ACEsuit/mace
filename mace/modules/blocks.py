@@ -5,7 +5,7 @@
 ###########################################################################################
 
 from abc import abstractmethod
-from typing import Callable, List, Optional, Tuple, Union, Any
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch.nn.functional
@@ -379,6 +379,7 @@ class InteractionBlock(torch.nn.Module):
 
 nonlinearities = {1: torch.nn.functional.silu, -1: torch.tanh}
 
+
 @compile_mode("script")
 class RealAgnosticInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
@@ -441,8 +442,8 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-        lammps_class: Optional[Any]=None,
-        lammps_natoms: Optional[Tuple]=(0,0),
+        lammps_class: Optional[Any] = None,
+        lammps_natoms: Optional[Tuple] = (0, 0),
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -534,8 +535,8 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-        lammps_class: Optional[Any]=None,
-        lammps_natoms: Optional[Tuple]=(0,0),
+        lammps_class: Optional[Any] = None,
+        lammps_natoms: Optional[Tuple] = (0, 0),
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -638,9 +639,9 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-        lammps_class: Optional[Any]=None,
-        lammps_natoms: Optional[Tuple]=(0,0),
-        first_layer: Optional[bool]=False,
+        lammps_class: Optional[Any] = None,
+        lammps_natoms: Optional[Tuple] = (0, 0),
+        first_layer: Optional[bool] = False,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -749,9 +750,9 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-        lammps_class: Optional[Any]=None,
-        lammps_natoms: Optional[Tuple]=(0,0),
-        first_layer: Optional[bool]=False,
+        lammps_class: Optional[Any] = None,
+        lammps_natoms: Optional[Tuple] = (0, 0),
+        first_layer: Optional[bool] = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -856,9 +857,9 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         edge_attrs: torch.Tensor,
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
-        lammps_class: Optional[Any]=None,
-        lammps_natoms: Optional[Tuple]=(0,0),
-        first_layer: Optional[bool]=False,
+        lammps_class: Optional[Any] = None,
+        lammps_natoms: Optional[Tuple] = (0, 0),
+        first_layer: Optional[bool] = False,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
