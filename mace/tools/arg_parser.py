@@ -8,6 +8,8 @@ import argparse
 import os
 from typing import Optional
 
+from .default_keys import DefaultKeys
+
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
     try:
@@ -406,6 +408,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="random",
     )
     parser.add_argument(
+        "--filter_type_pt",
+        help="Filtering method for collecting the pretraining set",
+        choices=["none", "combinations", "inclusive", "exclusive"],
+        default="none",
+    )
+    parser.add_argument(
         "--pt_train_file",
         help="Training set file for the pretrained head",
         type=str,
@@ -435,75 +443,43 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--energy_key",
         help="Key of reference energies in training xyz",
         type=str,
-        default="REF_energy",
+        default=DefaultKeys.ENERGY.value,
     )
     parser.add_argument(
         "--forces_key",
         help="Key of reference forces in training xyz",
         type=str,
-        default="REF_forces",
+        default=DefaultKeys.FORCES.value,
     )
     parser.add_argument(
         "--virials_key",
         help="Key of reference virials in training xyz",
         type=str,
-        default="REF_virials",
+        default=DefaultKeys.VIRIALS.value,
     )
     parser.add_argument(
         "--stress_key",
         help="Key of reference stress in training xyz",
         type=str,
-        default="REF_stress",
+        default=DefaultKeys.STRESS.value,
     )
     parser.add_argument(
         "--dipole_key",
         help="Key of reference dipoles in training xyz",
         type=str,
-        default="REF_dipole",
+        default=DefaultKeys.DIPOLE.value,
+    )
+    parser.add_argument(
+        "--head_key",
+        help="Key of head in training xyz",
+        type=str,
+        default=DefaultKeys.HEAD.value,
     )
     parser.add_argument(
         "--charges_key",
         help="Key of atomic charges in training xyz",
         type=str,
-        default="REF_charges",
-    )
-
-    # Pretraining-specific keys
-    parser.add_argument(
-        "--pt_energy_key",
-        help="Key of reference energies in pretraining data (defaults to energy_key if not specified)",
-        type=str,
-        default=None,
-    )
-    parser.add_argument(
-        "--pt_forces_key",
-        help="Key of reference forces in pretraining data (defaults to forces_key if not specified)",
-        type=str,
-        default=None,
-    )
-    parser.add_argument(
-        "--pt_virials_key",
-        help="Key of reference virials in pretraining data (defaults to virials_key if not specified)",
-        type=str,
-        default=None,
-    )
-    parser.add_argument(
-        "--pt_stress_key",
-        help="Key of reference stress in pretraining data (defaults to stress_key if not specified)",
-        type=str,
-        default=None,
-    )
-    parser.add_argument(
-        "--pt_dipole_key",
-        help="Key of reference dipoles in pretraining data (defaults to dipole_key if not specified)",
-        type=str,
-        default=None,
-    )
-    parser.add_argument(
-        "--pt_charges_key",
-        help="Key of atomic charges in pretraining data (defaults to charges_key if not specified)",
-        type=str,
-        default=None,
+        default=DefaultKeys.CHARGES.value,
     )
     parser.add_argument(
         "--skip_evaluate_heads",
@@ -527,6 +503,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "huber",
             "universal",
             "energy_forces_dipole",
+            "l1l2energyforces",
         ],
     )
     parser.add_argument(
@@ -820,7 +797,6 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         )
-
     parser.add_argument(
         "--train_file",
         help="Training set h5 file",
@@ -880,37 +856,37 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         "--energy_key",
         help="Key of reference energies in training xyz",
         type=str,
-        default="REF_energy",
+        default=DefaultKeys.ENERGY.value,
     )
     parser.add_argument(
         "--forces_key",
         help="Key of reference forces in training xyz",
         type=str,
-        default="REF_forces",
+        default=DefaultKeys.FORCES.value,
     )
     parser.add_argument(
         "--virials_key",
         help="Key of reference virials in training xyz",
         type=str,
-        default="REF_virials",
+        default=DefaultKeys.VIRIALS.value,
     )
     parser.add_argument(
         "--stress_key",
         help="Key of reference stress in training xyz",
         type=str,
-        default="REF_stress",
+        default=DefaultKeys.STRESS.value,
     )
     parser.add_argument(
         "--dipole_key",
         help="Key of reference dipoles in training xyz",
         type=str,
-        default="REF_dipole",
+        default=DefaultKeys.DIPOLE.value,
     )
     parser.add_argument(
         "--charges_key",
         help="Key of atomic charges in training xyz",
         type=str,
-        default="REF_charges",
+        default=DefaultKeys.CHARGES.value,
     )
     parser.add_argument(
         "--atomic_numbers",
@@ -957,6 +933,19 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="Random seed for splitting training and validation sets",
         type=int,
         default=123,
+    )
+    parser.add_argument(
+        "--head_key",
+        help="Key of head in training xyz",
+        type=str,
+        default=DefaultKeys.HEAD.value,
+    )
+    parser.add_argument(
+        "--heads",
+        help="Dict of heads: containing individual files and E0s",
+        type=str,
+        default=None,
+        required=False,
     )
     return parser
 

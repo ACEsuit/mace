@@ -27,6 +27,7 @@ from mace.calculators.foundations_models import mace_mp, mace_off
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.visualise_train import TrainingPlotter
+from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -34,6 +35,7 @@ from mace.tools.multihead_tools import (
     assemble_mp_data,
     dict_head_to_dataclass,
     prepare_default_head,
+    prepare_pt_head,
 )
 from mace.tools.run_train_utils import (
     combine_datasets,
@@ -80,6 +82,10 @@ def run(args) -> None:
     tag = tools.get_tag(name=args.name, seed=args.seed)
     args, input_log_messages = tools.check_args(args)
 
+    # default keyspec to update using heads dictionary
+    args.key_specification = KeySpecification()
+    update_keyspec_from_kwargs(args.key_specification, vars(args))
+
     if args.device == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
@@ -124,6 +130,7 @@ def run(args) -> None:
     device = tools.init_device(args.device)
     commit = print_git_commit()
     model_foundation: Optional[torch.nn.Module] = None
+    foundation_model_avg_num_neighbors = 0
     if args.foundation_model is not None:
         if args.foundation_model in ["small", "medium", "large"]:
             logging.info(
@@ -154,6 +161,9 @@ def run(args) -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
+        foundation_model_avg_num_neighbors = model_foundation.interactions[
+            0
+        ].avg_num_neighbors
         if (
             args.foundation_model not in ["small", "medium", "large"]
             and args.pt_train_file is None
@@ -169,13 +179,13 @@ def run(args) -> None:
             # check that the foundation model has a single head, if not, use the first head
             if not args.force_mh_ft_lr:
                 logging.info(
-                    "Multihead finetuning mode, setting learning rate to 0.001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
+                    "Multihead finetuning mode, setting learning rate to 0.0001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
                 )
                 args.lr = 0.0001
                 args.ema = True
                 args.ema_decay = 0.99999
             logging.info(
-                "Using multiheads finetuning mode, setting learning rate to 0.001 and EMA to True"
+                "Using multiheads finetuning mode, setting learning rate to 0.0001 and EMA to True"
             )
             if hasattr(model_foundation, "heads"):
                 if len(model_foundation.heads) > 1:
@@ -190,12 +200,35 @@ def run(args) -> None:
 
     if args.heads is not None:
         args.heads = ast.literal_eval(args.heads)
+        for _, head_dict in args.heads.items():
+            # priority is global args < head property_key values < head info_keys+arrays_keys
+            head_keyspec = deepcopy(args.key_specification)
+            update_keyspec_from_kwargs(head_keyspec, head_dict)
+            head_keyspec.update(
+                info_keys=head_dict.get("info_keys", {}),
+                arrays_keys=head_dict.get("arrays_keys", {}),
+            )
+            head_dict["key_specification"] = head_keyspec
     else:
         args.heads = prepare_default_head(args)
+    if args.multiheads_finetuning:
+        pt_keyspec = (
+            args.heads["pt_head"]["key_specification"]
+            if "pt_head" in args.heads
+            else args.key_specification
+        )
+        args.heads["pt_head"] = prepare_pt_head(
+            args, pt_keyspec, foundation_model_avg_num_neighbors
+        )
 
     logging.info("===========LOADING INPUT DATA===========")
     heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
+    logging.info("Using the key specifications to parse data:")
+    for name, head_dict in args.heads.items():
+        head_keyspec = head_dict["key_specification"]
+        logging.info(f"{name}: {head_keyspec}")
+
     head_configs: List[HeadConfig] = []
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
@@ -209,13 +242,13 @@ def run(args) -> None:
         if hasattr(head_config, "test_file") and head_config.test_file is not None:
             head_config.test_file = normalize_file_paths(head_config.test_file)
 
-        if head_config.statistics_file is not None:
+        if (
+            head_config.statistics_file is not None
+            and head_config.head_name != "pt_head"
+        ):
             with open(head_config.statistics_file, "r") as f:  # pylint: disable=W1514
                 statistics = json.load(f)
             logging.info("Using statistics json file")
-            head_config.r_max = (
-                statistics["r_max"] if args.foundation_model is None else args.r_max
-            )
             head_config.atomic_numbers = statistics["atomic_numbers"]
             head_config.mean = statistics["mean"]
             head_config.std = statistics["std"]
@@ -233,9 +266,16 @@ def run(args) -> None:
                 head_config.atomic_energies_dict = ast.literal_eval(
                     statistics["atomic_energies"]
                 )
-
-        if any(check_path_ase_read(f) for f in head_config.train_file):
-
+        if head_config.train_file == ["mp"]:
+            assert (
+                head_config.head_name == "pt_head"
+            ), "Only pt_head should use mp as train_file"
+            logging.info(
+                "Using the full Materials Project data for replay. You can construct a different subset using `fine_tuning_select.py` script."
+            )
+            collections = assemble_mp_data(args, head_config, tag)
+            head_config.collections = collections
+        elif any(check_path_ase_read(f) for f in head_config.train_file):
             train_files_ase_list = [
                 f for f in head_config.train_file if check_path_ase_read(f)
             ]
@@ -260,12 +300,7 @@ def run(args) -> None:
                 config_type_weights=config_type_weights,
                 test_path=test_files_ase_list,
                 seed=args.seed,
-                energy_key=head_config.energy_key,
-                forces_key=head_config.forces_key,
-                stress_key=head_config.stress_key,
-                virials_key=head_config.virials_key,
-                dipole_key=head_config.dipole_key,
-                charges_key=head_config.charges_key,
+                key_specification=head_config.key_specification,
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
             )
@@ -304,106 +339,14 @@ def run(args) -> None:
             "==================Using multiheads finetuning mode=================="
         )
         args.loss = "universal"
-        if (
-            args.foundation_model in ["small", "medium", "large"]
-            or args.pt_train_file == "mp"
-        ):
-            logging.info(
-                "Using foundation model for multiheads finetuning with Materials Project data"
-            )
-            heads = list(dict.fromkeys(["pt_head"] + heads))
-            head_config_pt = HeadConfig(
-                head_name="pt_head",
-                E0s="foundation",
-                statistics_file=args.statistics_file,
-                compute_avg_num_neighbors=False,
-                avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
-            )
-            collections = assemble_mp_data(args, tag, head_configs)
-            head_config_pt.collections = collections
-            head_config_pt.train_file = [f"mp_finetuning-{tag}.xyz"]
-            head_configs.append(head_config_pt)
-        else:
-            logging.info(
-                f"Using foundation model for multiheads finetuning with {args.pt_train_file}"
-            )
-            heads = list(dict.fromkeys(["pt_head"] + heads))
-
-            # Use pt-specific keys if provided, otherwise fall back to general keys
-            pt_energy_key = args.pt_energy_key or args.energy_key
-            pt_forces_key = args.pt_forces_key or args.forces_key
-            pt_stress_key = args.pt_stress_key or args.stress_key
-            pt_virials_key = args.pt_virials_key or args.virials_key
-            pt_dipole_key = args.pt_dipole_key or args.dipole_key
-            pt_charges_key = args.pt_charges_key or args.charges_key
-
-            logging.info(
-                f"Using the following keys for pt_head: energy={pt_energy_key}, forces={pt_forces_key}, "
-                f"stress={pt_stress_key}, virials={pt_virials_key}, dipole={pt_dipole_key}, charges={pt_charges_key}"
-            )
-
-            # Normalize file paths
-            pt_train_file = normalize_file_paths(args.pt_train_file)
-            pt_valid_file = (
-                normalize_file_paths(args.pt_valid_file) if args.pt_valid_file else None
-            )
-
-            # Check if pt_train_file is ASE readable (e.g., xyz) vs LMDB/HDF5
-            is_ase_readable = all(check_path_ase_read(f) for f in pt_train_file)
-
-            head_config_pt = HeadConfig(
-                head_name="pt_head",
-                train_file=pt_train_file,
-                valid_file=pt_valid_file,
-                E0s="foundation",
-                statistics_file=args.statistics_file,
-                valid_fraction=args.valid_fraction,
-                config_type_weights=None,
-                energy_key=pt_energy_key,
-                forces_key=pt_forces_key,
-                stress_key=pt_stress_key,
-                virials_key=pt_virials_key,
-                dipole_key=pt_dipole_key,
-                charges_key=pt_charges_key,
-                keep_isolated_atoms=args.keep_isolated_atoms,
-                avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
-                compute_avg_num_neighbors=False,
-            )
-
-            if is_ase_readable:
-                # For xyz files, use get_dataset_from_xyz
-                collections, atomic_energies_dict = get_dataset_from_xyz(
-                    work_dir=args.work_dir,
-                    train_path=args.pt_train_file,
-                    valid_path=args.pt_valid_file,
-                    valid_fraction=args.valid_fraction,
-                    config_type_weights=None,
-                    test_path=None,
-                    seed=args.seed,
-                    energy_key=pt_energy_key,
-                    forces_key=pt_forces_key,
-                    stress_key=pt_stress_key,
-                    virials_key=pt_virials_key,
-                    dipole_key=pt_dipole_key,
-                    charges_key=pt_charges_key,
-                    head_name="pt_head",
-                    keep_isolated_atoms=args.keep_isolated_atoms,
-                )
-                head_config_pt.collections = collections
-                logging.info(
-                    f"Loaded ASE readable pretraining data: train={len(collections.train)}, valid={len(collections.valid)}"
-                )
-            else:
-                logging.info(
-                    f"Pretraining data file(s) will be loaded as LMDB/HDF5: {pt_train_file}"
-                )
-
-            head_configs.append(head_config_pt)
 
         all_ase_readable = all(
             all(check_path_ase_read(f) for f in head_config.train_file)
             for head_config in head_configs
         )
+        head_config_pt = filter(lambda x: x.head_name == "pt_head", head_configs)
+        head_config_pt = next(head_config_pt, None)
+        assert head_config_pt is not None, "Pretraining head not found"
         if all_ase_readable:
             ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
             if ratio_pt_ft < 0.1:
@@ -508,7 +451,7 @@ def run(args) -> None:
             ].item()
             for z in z_table.zs
         }
-
+    heads = sorted(heads, key=lambda x: -1000 if x == "pt_head" else 0)
     # Padding atomic energies if keeping all elements of the foundation model
     if args.foundation_model_elements and model_foundation:
         atomic_energies_dict_padded = {}

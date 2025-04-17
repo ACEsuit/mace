@@ -76,7 +76,7 @@ class MACE(torch.nn.Module):
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
         if heads is None:
-            heads = ["default"]
+            heads = ["Default"]
         self.heads = heads
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
@@ -355,7 +355,6 @@ class ScaleShiftMACE(MACE):
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)
-        # To allow for old models without this attribute
         if not hasattr(self, 'lammps_mliap'):
             lammps_mliap = False
         else:
@@ -364,7 +363,6 @@ class ScaleShiftMACE(MACE):
             num_graphs = 2
             lammps_natoms = data["natoms"]
             num_atoms_arange = torch.arange(lammps_natoms[0])
-            # Just for compiler's sake
             displacement = None
         else:
             data["positions"].requires_grad_(True)
