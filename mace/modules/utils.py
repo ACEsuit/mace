@@ -166,9 +166,9 @@ def compute_hessians_loop(
 def get_outputs(
     energy: torch.Tensor,
     positions: torch.Tensor,
-    displacement: Optional[torch.Tensor],
-    vectors: Optional[torch.Tensor],
     cell: torch.Tensor,
+    displacement: Optional[torch.Tensor],
+    vectors: Optional[torch.Tensor] = None,
     training: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,

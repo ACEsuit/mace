@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import time
 from contextlib import contextmanager
 from typing import Dict, Tuple
@@ -155,15 +156,13 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
                 batch = self._prepare_batch(data, natoms, nghosts, species)
 
             with timer("model_forward", enabled=self.config.debug_time):
-                total_energy, atom_energies, pair_forces = self.model(batch)
+                _, atom_energies, pair_forces = self.model(batch)
 
                 if self.device.type != "cpu":
                     torch.cuda.synchronize()
 
             with timer("update_lammps", enabled=self.config.debug_time):
-                self._update_lammps_data(
-                    data, atom_energies, total_energy, pair_forces, natoms
-                )
+                self._update_lammps_data(data, atom_energies, pair_forces, natoms)
 
     def _prepare_batch(self, data, natoms, nghosts, species):
         """Prepare the input batch for the MACE model."""
@@ -184,9 +183,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
             "natoms": (natoms, nghosts),
         }
 
-    def _update_lammps_data(
-        self, data, atom_energies, total_energy, pair_forces, natoms
-    ):
+    def _update_lammps_data(self, data, atom_energies, pair_forces, natoms):
         """Update LAMMPS data structures with computed energies and forces."""
         if self.dtype == torch.float32:
             pair_forces = pair_forces.double()
@@ -207,7 +204,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
             logging.info(f"Stopping CUDA profiler at step {self.step}")
             torch.cuda.profiler.stop()
             logging.info("Profiling complete. Exiting.")
-            exit()
+            sys.exit()
 
     def compute_descriptors(self, data):
         pass
