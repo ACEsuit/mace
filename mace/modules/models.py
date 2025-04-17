@@ -259,10 +259,14 @@ class MACE(torch.nn.Module):
         node_energies_list = [node_e0, pair_node_energy]
         node_feats_concat: List[torch.Tensor] = []
 
-        for i, (interaction, product, readout) in enumerate(zip(self.interactions, self.products, self.readouts)):
+        for i, (interaction, product, readout) in enumerate(
+            zip(self.interactions, self.products, self.readouts)
+        ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
-                node_attrs_slice = node_attrs_slice[: ctx["interaction_kwargs"].get("lammps_natoms", (0, 0))[0]]
+                node_attrs_slice = node_attrs_slice[
+                    : ctx["interaction_kwargs"].get("lammps_natoms", (0, 0))[0]
+                ]
             node_feats, sc = interaction(
                 node_attrs=node_attrs_slice,
                 node_feats=node_feats,
@@ -272,8 +276,12 @@ class MACE(torch.nn.Module):
                 **interaction_kwargs,
             )
             if is_lammps and i == 0:
-                node_attrs_slice = node_attrs_slice[: ctx["interaction_kwargs"].get("lammps_natoms", (0, 0))[0]]
-            node_feats = product(node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice)
+                node_attrs_slice = node_attrs_slice[
+                    : ctx["interaction_kwargs"].get("lammps_natoms", (0, 0))[0]
+                ]
+            node_feats = product(
+                node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
+            )
             node_feats_concat.append(node_feats)
             node_es = readout(node_feats, node_heads)[num_atoms_arange, node_heads]
             energy = scatter_sum(node_es, data["batch"], dim=0, dim_size=num_graphs)
@@ -397,7 +405,9 @@ class ScaleShiftMACE(MACE):
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
 
-        for i, (interaction, product, readout) in enumerate(zip(self.interactions, self.products, self.readouts)):
+        for i, (interaction, product, readout) in enumerate(
+            zip(self.interactions, self.products, self.readouts)
+        ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
                 node_attrs_slice = node_attrs_slice[: ctx["lammps_natoms"][0]]
@@ -412,9 +422,13 @@ class ScaleShiftMACE(MACE):
             )
             if is_lammps and i == 0:
                 node_attrs_slice = node_attrs_slice[: ctx["lammps_natoms"][0]]
-            node_feats = product(node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice)
+            node_feats = product(
+                node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
+            )
             node_feats_list.append(node_feats)
-            node_es_list.append(readout(node_feats, node_heads)[num_atoms_arange, node_heads])
+            node_es_list.append(
+                readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+            )
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
         node_inter_es = torch.sum(torch.stack(node_es_list, dim=0), dim=0)
@@ -435,7 +449,7 @@ class ScaleShiftMACE(MACE):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
             compute_hessian=compute_hessian,
-            compute_edge_forces= compute_edge_forces,
+            compute_edge_forces=compute_edge_forces,
         )
 
         atomic_virials: Optional[torch.Tensor] = None

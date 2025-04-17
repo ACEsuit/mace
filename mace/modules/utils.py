@@ -218,13 +218,14 @@ def get_outputs(
         edge_forces = None
     return forces, virials, stress, hessian, edge_forces
 
+
 def get_atomic_virials_stresses(
     edge_forces: torch.Tensor,  # [n_edges, 3]
-    edge_index: torch.Tensor,   # [2, n_edges]
-    vectors: torch.Tensor,      # [n_edges, 3]
-    num_atoms: int,    
+    edge_index: torch.Tensor,  # [2, n_edges]
+    vectors: torch.Tensor,  # [n_edges, 3]
+    num_atoms: int,
     batch: torch.Tensor,
-    cell: torch.Tensor, # [n_graphs, 3, 3]
+    cell: torch.Tensor,  # [n_graphs, 3, 3]
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
     Compute atomic virials and optionally atomic stresses from edge forces and vectors.
@@ -235,8 +236,12 @@ def get_atomic_virials_stresses(
             - Atomic stresses [num_atoms, 3, 3] (None if not computed)
     """
     edge_virial = torch.einsum("zi,zj->zij", edge_forces, vectors)
-    atom_virial_sender = scatter_sum(src=edge_virial, index=edge_index[0], dim=0, dim_size=num_atoms)
-    atom_virial_receiver = scatter_sum(src=edge_virial, index=edge_index[1], dim=0, dim_size=num_atoms)
+    atom_virial_sender = scatter_sum(
+        src=edge_virial, index=edge_index[0], dim=0, dim_size=num_atoms
+    )
+    atom_virial_receiver = scatter_sum(
+        src=edge_virial, index=edge_index[1], dim=0, dim_size=num_atoms
+    )
     atom_virial = (atom_virial_sender + atom_virial_receiver) / 2
     atom_virial = (atom_virial + atom_virial.transpose(-1, -2)) / 2
     atom_stress = None
@@ -250,6 +255,7 @@ def get_atomic_virials_stresses(
         torch.abs(atom_stress) < 1e10, atom_stress, torch.zeros_like(atom_stress)
     )
     return -1 * atom_virial, atom_stress
+
 
 def get_edge_vectors_and_lengths(
     positions: torch.Tensor,  # [n_nodes, 3]
@@ -495,7 +501,8 @@ def prepare_graph(
 ) -> Dict[str, Any]:
     node_heads = (
         data["head"][data["batch"]]
-        if "head" in data else torch.zeros_like(data["batch"])
+        if "head" in data
+        else torch.zeros_like(data["batch"])
     )
     if lammps_mliap:
         n_real, n_total = map(int, data["natoms"])  # (n_real, n_total)
@@ -507,7 +514,7 @@ def prepare_graph(
             (n_real, 3),
             dtype=data["positions"].dtype,
             device=data["positions"].device,
-        ) # As a placeholder
+        )  # As a placeholder
         cell = torch.zeros(
             (num_graphs, 3, 3),
             dtype=data["positions"].dtype,
@@ -524,7 +531,9 @@ def prepare_graph(
         data["positions"].requires_grad_(True)
         positions = data["positions"]
         cell = data["cell"]
-        num_atoms_arange = torch.arange(data["positions"].shape[0], device=data["node_attrs"].device)
+        num_atoms_arange = torch.arange(
+            data["positions"].shape[0], device=data["node_attrs"].device
+        )
         num_graphs = int(data["ptr"].numel() - 1)
         displacement = torch.zeros(
             (num_graphs, 3, 3),

@@ -229,13 +229,9 @@ def _build_model(
         return modules.ScaleShiftMACE(**model_config_foundation)
     if args.model == "ScaleShiftBOTNet":
         # say it is deprecated
-        raise RuntimeError(
-            "ScaleShiftBOTNet is deprecated, use MACE instead"
-        )
+        raise RuntimeError("ScaleShiftBOTNet is deprecated, use MACE instead")
     if args.model == "BOTNet":
-        raise RuntimeError(
-            "BOTNet is deprecated, use MACE instead"
-        )
+        raise RuntimeError("BOTNet is deprecated, use MACE instead")
     if args.model == "AtomicDipolesMACE":
         assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
         assert (

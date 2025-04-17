@@ -146,6 +146,7 @@ class MetricsLogger:
             f.write(json.dumps(d, cls=UniversalEncoder))
             f.write("\n")
 
+
 # Class for lammps plugin
 class lammps_mp(torch.autograd.Function):
     @staticmethod
