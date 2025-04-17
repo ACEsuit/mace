@@ -21,10 +21,9 @@ from mace.modules.wrapper_ops import (
 )
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
-from mace.tools.utils import lammps_mp
+from mace.tools.utils import LAMMPS_MP
 
 from .irreps_tools import (
-    linear_out_irreps,
     mask_head,
     reshape_irreps,
     tp_out_irreps_with_instructions,
@@ -322,7 +321,6 @@ class InteractionBlock(torch.nn.Module):
         avg_num_neighbors: float,
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        first: Optional[bool] = False,
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -343,8 +341,8 @@ class InteractionBlock(torch.nn.Module):
         raise NotImplementedError
 
     def handle_lammps(
+        self,
         node_feats: torch.Tensor,
-        *,
         lammps_class: Optional[Any],
         lammps_natoms: Tuple[int, int],
         first_layer: bool,
@@ -358,10 +356,10 @@ class InteractionBlock(torch.nn.Module):
             device=node_feats.device,
         )
         node_feats = torch.cat((node_feats, pad), dim=0)
-        node_feats = lammps_mp.apply(node_feats, lammps_class)
+        node_feats = LAMMPS_MP.apply(node_feats, lammps_class)
         return node_feats
 
-    def truncate_ghosts(tensor: torch.Tensor, n_real: int | None) -> torch.Tensor:
+    def truncate_ghosts(self, tensor: torch.Tensor, n_real: int | None) -> torch.Tensor:
         """Truncate the tensor to only keep the real atoms in case of presence of ghost atoms during multi-GPU MD simulations."""
         return tensor[:n_real] if n_real is not None else tensor
 
@@ -850,6 +848,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             self.node_feats_irreps, self.hidden_irreps, cueq_config=self.cueq_config
         )
 
+    # pylint: disable=unused-argument
     def forward(
         self,
         node_attrs: torch.Tensor,

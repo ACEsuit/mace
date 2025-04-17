@@ -11,7 +11,6 @@ import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
-from mace.data import AtomicData
 from mace.modules.radial import ZBLBasis
 from mace.tools.scatter import scatter_sum
 
@@ -29,7 +28,6 @@ from .blocks import (
 )
 from .utils import (
     compute_fixed_charge_dipole,
-    get_atomic_virials_stress,
     get_atomic_virials_stresses,
     get_edge_vectors_and_lengths,
     get_outputs,
@@ -298,6 +296,7 @@ class MACE(torch.nn.Module):
             energy=total_energy,
             positions=positions,
             displacement=displacement,
+            vectors=vectors,
             cell=cell,
             training=training,
             compute_force=compute_force,
