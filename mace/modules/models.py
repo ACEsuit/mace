@@ -355,7 +355,6 @@ class ScaleShiftMACE(MACE):
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)
-        # To allow for old models without with attribute
         if not hasattr(self, 'lammps_mliap'):
             lammps_mliap = False
         else:
@@ -364,8 +363,6 @@ class ScaleShiftMACE(MACE):
             num_graphs = 2
             lammps_natoms = data["natoms"]
             num_atoms_arange = torch.arange(lammps_natoms[0])
-            # num_atoms_arange = torch.arange(data["node_attrs"].shape[0])
-            # Just for compile's sake
             displacement = None
         else:
             data["positions"].requires_grad_(True)
