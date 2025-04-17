@@ -1,153 +1,76 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Tuple
 import os
-import copy
+import time
+import logging
+from contextlib import contextmanager
 
 import torch
 from e3nn.util.jit import compile_mode
-from e3nn.util import jit
 from ase.data import chemical_symbols
-from time import perf_counter
 
 try:
     from lammps.mliap.mliap_unified_abc import MLIAPUnified
-except:
-    pass
+except ImportError:
+    class MLIAPUnified:
+        def __init__(self): pass
 
-class LAMMPS_MLIAP_MACE(MLIAPUnified):
-    def __init__(
-        self,
-        model,
-        **kwargs
-    ):
-        super().__init__()
-        self.ndescriptors = 1
-        self.model = LAMMPS_MACE_MLIAP(model, **kwargs)
-        # self.model = jit.compile(copy.deepcopy(self.model))
-        self.element_types = [chemical_symbols[s] for s in model.atomic_numbers]
-        self.num_species = len(self.element_types)
-        self.rcutfac = 0.5*model.r_max # Half of radial cutoff
-        # Inferring type from the model
-        self.dtype = model.r_max.dtype
-        self.device = 'cpu'
-        self.nparams = 1 # TODO: estimate the actual number
-        self.first_run = False
-        self.step = 0
-        self.time = perf_counter()
-        self.debug_time = False
-        self.debug_profile = False
 
-    def compute_gradients(self, data):
-        pass
-
-    def compute_descriptors(self, data):
-        pass
-
-    def compute_forces(self, data):
+class MACELammpsConfig:
+    """Configuration settings for MACE-LAMMPS integration."""
+    
+    def __init__(self):
+        self.debug_time = self._get_env_bool('MACE_TIME', False)
+        self.debug_profile = self._get_env_bool('MACE_PROFILE', False)
+        self.profile_start_step = int(os.environ.get('MACE_PROFILE_START', '5'))
+        self.profile_end_step = int(os.environ.get('MACE_PROFILE_END', '10'))
+        self.allow_cpu = self._get_env_bool('MACE_ALLOW_CPU', False)
+        self.force_cpu = self._get_env_bool('MACE_FORCE_CPU', False)
         
-        natoms = data.nlocal
-        ntotal = data.ntotal
-        nghosts = ntotal - natoms
-        npairs = data.npairs
-        species = torch.as_tensor(data.elems, dtype=torch.int64)
-
-        # Do things only once
-        if not self.first_run:
-            using_kokkos = "kokkos" in data.__class__.__module__.lower()
-            if using_kokkos:
-                # Getting device in torch format
-                self.device = species.device
-            else:
-                self.device = "cpu"
-            if not using_kokkos:
-                raise ValueError("Only kokkos backend supported for now")
-            if self.device=="cpu":
-                raise ValueError("Only GPU HW supported for now")
-            
-            self.model = self.model.to(self.device)
-            self.debug_time = os.environ.get('MACE_TIME', 'False').lower() in ('true', '1', 't')
-            self.debug_profile = os.environ.get('MACE_PROFILE', 'False').lower() in ('true', '1', 't')
-            self.first_run = True
-
-        # Code for timing
-        if self.debug_time:
-            newtime = perf_counter()
-            if self.step>0:
-                print(f"Step: {self.step-1}, time: {1000*(newtime-self.time)} ms")
-            self.time = newtime
-
-        # Code for profiling
-        if self.debug_profile:
-            # Arbitrarily profile from step 5 to step 10
-            if self.step==5:
-                # torch.cuda.profiler.profile()
-                torch.cuda.profiler.start()
-            if self.step==10:
-                torch.cuda.profiler.stop()
-                exit() # Just to make sure we stop
-
-        self.step += 1
-
-        if natoms>0 and npairs>1:            
-            # Making batch
-            batch = {
-                "vectors": torch.as_tensor(data.rij).to(self.dtype), # n_pairs
-                "node_attrs": torch.nn.functional.one_hot(species, 
-                    num_classes=self.num_species).to(self.dtype), # n_total, nspecies
-                "edge_index": torch.stack([
-                    torch.as_tensor(data.pair_j, dtype=torch.int64),
-                    torch.as_tensor(data.pair_i, dtype=torch.int64)], dim=0), #n_pairs
-                # "batch": torch.cat([
-                #     torch.zeros(natoms, dtype=torch.int64, device=self.device),
-                #     torch.ones(nghosts, dtype=torch.int64, device=self.device)], dim=0), # n_total
-                "batch": torch.zeros(natoms, dtype=torch.int64, device=self.device), # n_atoms
-                "lammps_class": data,
-                "natoms": (natoms, nghosts),
-            }
-            Ee, Ei, fij = self.model(batch)
-            # Recomputing Etotal for improved accuracy
-            E = torch.sum(Ei[:natoms])
-            # print(Ee.detach().cpu().numpy(), E.detach().cpu().numpy())
-            # Making sure computations are finished
-            torch.cuda.synchronize()
-            
-            # Copying values at the existing energies address in fp64
-            if self.dtype == torch.float32:
-                # Ei = Ei.double()
-                fij = fij.double()
-            eatoms = torch.as_tensor(data.eatoms)
-            eatoms.copy_(Ei[:natoms])
-            data.energy = E
-            data.update_pair_forces_gpu(fij)
+    @staticmethod
+    def _get_env_bool(var_name: str, default: bool) -> bool:
+        return os.environ.get(var_name, str(default)).lower() in ('true', '1', 't', 'yes')
 
 
-# TODO: Should we bake this into the other class? Or keep for sake of integration?
+@contextmanager
+def timer(name: str, enabled: bool = True):
+    """Context manager for timing code blocks."""
+    if not enabled:
+        yield
+        return
+    
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start
+        logging.info(f"Timer - {name}: {elapsed*1000:.3f} ms")
+
+
 @compile_mode("script")
-class LAMMPS_MACE_MLIAP(torch.nn.Module):
-    def __init__(self, model, **kwargs):
+class MACEEdgeForcesWrapper(torch.nn.Module):
+    """Wrapper that adds per-pair force computation to a MACE model."""
+
+    def __init__(self, model: torch.nn.Module, **kwargs):
         super().__init__()
         self.model = model
         self.register_buffer("atomic_numbers", model.atomic_numbers)
         self.register_buffer("r_max", model.r_max)
         self.register_buffer("num_interactions", model.num_interactions)
+        
         if not hasattr(model, "heads"):
-            model.heads = [None]
-        self.register_buffer(
-            "head",
-            torch.tensor(
-                self.model.heads.index(kwargs.get("head", self.model.heads[-1])),
-                dtype=torch.long,
-            ).unsqueeze(0),
-        )
+            model.heads = ["Default"]
+            
+        head_name = kwargs.get("head", model.heads[-1])
+        head_idx = model.heads.index(head_name)
+        self.register_buffer("head", torch.tensor([head_idx], dtype=torch.long))
+        
+        for p in self.model.parameters():
+            p.requires_grad = False
 
-        for param in self.model.parameters():
-            param.requires_grad = False
-
-    def forward(
-        self,
-        data: Dict[str, torch.Tensor],
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
-        # Disregarding heads for now...
-        # data["head"] = self.head
+    def forward(self, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Compute energies and per-pair forces."""
+        data["head"] = self.head
+        
         out = self.model(
             data,
             training=False,
@@ -155,20 +78,121 @@ class LAMMPS_MACE_MLIAP(torch.nn.Module):
             compute_virials=False,
             compute_stress=False,
             compute_displacement=False,
+            compute_edge_forces=True,
         )
-        total_energy = out['energy'][0]
-        # ...for pedantic compile
-        # assert total_energy is not None
-        # total_energy = total_energy[0]
-        node_energy = out["node_energy"]
-        # Compute forces w.r.t each edge
-        edge_forces = torch.autograd.grad(
-            outputs=[total_energy],
-            inputs=[data['vectors']],
-            grad_outputs=None,
-            retain_graph=False,
-            create_graph=False,
-            allow_unused=True,
-        )[0]
-        return total_energy, node_energy, edge_forces
+        
+        node_energy = out["node_energy"][0]
+        pair_forces = out["edge_forces"]
+        total_energy = out["total_energy"][0]
+        
+        if pair_forces is None:
+            pair_forces = torch.zeros_like(data["vectors"])
+        
+        return total_energy, node_energy, pair_forces
 
+
+class LAMMPS_MLIAP_MACE(MLIAPUnified):
+    """MACE integration for LAMMPS using the MLIAP interface."""
+    
+    def __init__(self, model, **kwargs):
+        super().__init__()
+        self.config = MACELammpsConfig()
+        self.model = MACEEdgeForcesWrapper(model, **kwargs)
+        self.element_types = [chemical_symbols[s] for s in model.atomic_numbers]
+        self.num_species = len(self.element_types)
+        self.rcutfac = 0.5 * float(model.r_max)
+        self.ndescriptors = 1
+        self.nparams = 1
+        self.dtype = model.r_max.dtype
+        self.device = 'cpu'
+        self.initialized = False
+        self.step = 0
+    
+    def _initialize_device(self, data):
+        using_kokkos = "kokkos" in data.__class__.__module__.lower()
+        
+        if using_kokkos and not self.config.force_cpu:
+            device = torch.as_tensor(data.elems).device
+            if device.type == "cpu" and not self.config.allow_cpu:
+                raise ValueError("GPU requested but tensor is on CPU. Set MACE_ALLOW_CPU=true to allow CPU computation.")
+        else:
+            device = torch.device("cpu")
+            
+        self.device = device
+        self.model = self.model.to(device)
+        logging.info(f"MACE model initialized on device: {device}")
+        self.initialized = True
+
+    def compute_forces(self, data):
+        natoms = data.nlocal
+        ntotal = data.ntotal
+        nghosts = ntotal - natoms
+        npairs = data.npairs
+        species = torch.as_tensor(data.elems, dtype=torch.int64)
+        
+        if not self.initialized:
+            self._initialize_device(data)
+            
+        self.step += 1
+        self._manage_profiling()
+
+        if natoms == 0 or npairs <= 1:
+            return
+            
+        with timer("total_step", enabled=self.config.debug_time):
+            with timer("prepare_batch", enabled=self.config.debug_time):
+                batch = self._prepare_batch(data, natoms, nghosts, species)
+            
+            with timer("model_forward", enabled=self.config.debug_time):
+                total_energy, atom_energies, pair_forces = self.model(batch)
+            
+                if self.device.type != "cpu":
+                    torch.cuda.synchronize()
+            
+            with timer("update_lammps", enabled=self.config.debug_time):
+                self._update_lammps_data(data, atom_energies, total_energy, pair_forces, natoms)
+
+    def _prepare_batch(self, data, natoms, nghosts, species):
+        """Prepare the input batch for the MACE model."""
+        return {
+            "vectors": torch.as_tensor(data.rij).to(self.dtype).to(self.device),
+            "node_attrs": torch.nn.functional.one_hot(
+                species.to(self.device), num_classes=self.num_species
+            ).to(self.dtype),
+            "edge_index": torch.stack([
+                torch.as_tensor(data.pair_j, dtype=torch.int64).to(self.device),
+                torch.as_tensor(data.pair_i, dtype=torch.int64).to(self.device)
+            ], dim=0),
+            "batch": torch.zeros(natoms, dtype=torch.int64, device=self.device),
+            "lammps_class": data,
+            "natoms": (natoms, nghosts),
+        }
+    
+    def _update_lammps_data(self, data, atom_energies, total_energy, pair_forces, natoms):
+        """Update LAMMPS data structures with computed energies and forces."""
+        if self.dtype == torch.float32:
+            pair_forces = pair_forces.double()
+        eatoms = torch.as_tensor(data.eatoms)
+        eatoms.copy_(atom_energies[:natoms])
+        data.energy = torch.sum(atom_energies[:natoms])
+        data.update_pair_forces_gpu(pair_forces)
+    
+    def _manage_profiling(self):
+        if not self.config.debug_profile:
+            return
+            
+        if self.step == self.config.profile_start_step:
+            logging.info(f"Starting CUDA profiler at step {self.step}")
+            torch.cuda.profiler.start()
+            
+        if self.step == self.config.profile_end_step:
+            logging.info(f"Stopping CUDA profiler at step {self.step}")
+            torch.cuda.profiler.stop()
+            logging.info("Profiling complete. Exiting.")
+            exit()
+
+    def compute_descriptors(self, data):
+        pass
+
+    def compute_gradients(self, data):
+        pass

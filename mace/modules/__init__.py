@@ -3,8 +3,6 @@ from typing import Callable, Dict, Optional, Type
 import torch
 
 from .blocks import (
-    AgnosticNonlinearInteractionBlock,
-    AgnosticResidualNonlinearInteractionBlock,
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
     InteractionBlock,
@@ -19,7 +17,6 @@ from .blocks import (
     RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
-    ResidualElementDependentInteractionBlock,
     ScaleShiftBlock,
 )
 from .loss import (
@@ -36,9 +33,7 @@ from .loss import (
 from .models import (
     MACE,
     AtomicDipolesMACE,
-    BOTNet,
     EnergyDipolesMACE,
-    ScaleShiftBOTNet,
     ScaleShiftMACE,
 )
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
@@ -53,9 +48,6 @@ from .utils import (
 )
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {
-    "AgnosticNonlinearInteractionBlock": AgnosticNonlinearInteractionBlock,
-    "ResidualElementDependentInteractionBlock": ResidualElementDependentInteractionBlock,
-    "AgnosticResidualNonlinearInteractionBlock": AgnosticResidualNonlinearInteractionBlock,
     "RealAgnosticResidualInteractionBlock": RealAgnosticResidualInteractionBlock,
     "RealAgnosticAttResidualInteractionBlock": RealAgnosticAttResidualInteractionBlock,
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
@@ -93,8 +85,6 @@ __all__ = [
     "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
-    "BOTNet",
-    "ScaleShiftBOTNet",
     "AtomicDipolesMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
