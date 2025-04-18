@@ -19,6 +19,9 @@ try:
 except ImportError:
     CUET_AVAILABLE = False
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+#device = "cpu"
+
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
 
@@ -96,13 +99,13 @@ _mace_params = {
     "ema_decay": 0.99,
     "amsgrad": None,
     "restart_latest": None,
-    "device": "cpu",
+    "device": device,
     "seed": 5,
     "loss": "stress",
     "energy_key": "REF_energy",
     "forces_key": "REF_forces",
     "stress_key": "REF_stress",
-    "eval_interval": 2
+    "eval_interval": 2,
 }
 
 
@@ -136,7 +139,7 @@ def test_run_train(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device=device)
 
     Es = []
     for at in fitting_configs:
@@ -207,7 +210,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device=device)
 
     Es = []
     for at in fitting_configs:
@@ -278,7 +281,7 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device=device)
 
     Es = []
     for at in fitting_configs:
@@ -385,7 +388,7 @@ def test_run_train_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
 
     Es = []
@@ -459,7 +462,7 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
 
     Es = []
@@ -494,7 +497,6 @@ def test_run_train_foundation(tmp_path, fitting_configs):
         0.7301387786865234,
     ]
     assert np.allclose(Es, ref_Es)
-
 
 
 def test_run_train_freeze_par(tmp_path, fitting_configs):
@@ -535,7 +537,7 @@ def test_run_train_freeze_par(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
 
     Es = []
@@ -546,7 +548,7 @@ def test_run_train_freeze_par(tmp_path, fitting_configs):
     print("Es", Es)
 
     ref_Es = [
-        3.4404297977, 
+        3.4404297977,
         1.7308105589,
         3.8779711236,
         3.8445259524,
@@ -567,9 +569,9 @@ def test_run_train_freeze_par(tmp_path, fitting_configs):
         3.3714840691,
         3.6015980979,
         3.6587433162,
-        3.6195737863
-        ]
-    
+        3.6195737863,
+    ]
+
     assert np.allclose(Es, ref_Es)
 
 
@@ -611,7 +613,7 @@ def test_run_train_freeze(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
 
     Es = []
@@ -643,9 +645,9 @@ def test_run_train_freeze(tmp_path, fitting_configs):
         5.5037692727,
         6.3979570745,
         6.4291638326,
-        6.3360278320
-        ]
-    
+        6.3360278320,
+    ]
+
     assert np.allclose(Es, ref_Es)
 
 
@@ -722,7 +724,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
 
     Es = []
@@ -840,7 +842,7 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
 
     Es = []
@@ -896,7 +898,7 @@ def test_run_train_multihead_replay_custum_finetuning(
         "max_num_epochs": 5,
         "swa": None,
         "start_swa": 3,
-        "device": "cpu",
+        "device": device,
         "seed": 42,
         "loss": "weighted",
         "energy_key": "REF_energy",
@@ -967,7 +969,7 @@ def test_run_train_multihead_replay_custum_finetuning(
         "r_max": 5.0,
         "batch_size": 2,
         "max_num_epochs": 5,
-        "device": "cpu",
+        "device": device,
         "seed": 42,
         "loss": "weighted",
         "default_dtype": "float64",
@@ -993,7 +995,7 @@ def test_run_train_multihead_replay_custum_finetuning(
 
     # Load and test the finetuned model
     calc = MACECalculator(
-        model_paths=tmp_path / "finetuned.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "finetuned.model", device=device, default_dtype="float64"
     )
 
     Es = []
@@ -1009,7 +1011,7 @@ def test_run_train_multihead_replay_custum_finetuning(
     assert len(set(Es)) > 1  # Ens
 
 
-@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+@pytest.mark.skipif(not CUET_AVAILABLE or device != "cuda", reason="cuequivariance not installed or cuda not available")
 def test_run_train_cueq(tmp_path, fitting_configs):
     torch.set_default_dtype(torch.float64)
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
@@ -1043,14 +1045,14 @@ def test_run_train_cueq(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device=device)
     Es = []
     for at in fitting_configs[2:]:
         at.calc = calc
         Es.append(at.get_potential_energy())
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", enable_cueq=True
+        model_paths=tmp_path / "MACE.model", device=device, enable_cueq=True
     )
     Es_cueq = []
     for at in fitting_configs[2:]:
@@ -1085,7 +1087,7 @@ def test_run_train_cueq(tmp_path, fitting_configs):
     assert np.allclose(ref_Es, Es_cueq)
 
 
-@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+@pytest.mark.skipif(not CUET_AVAILABLE or device != "cuda", reason="cuequivariance not installed or cuda not available")
 def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
@@ -1169,7 +1171,7 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
 
     Es = []
@@ -1206,8 +1208,7 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
 
-
-@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+@pytest.mark.skipif(not CUET_AVAILABLE or device != "cuda", reason="cuequivariance not installed or cuda not available")
 def test_run_train_foundation_freeze_cueq(tmp_path, fitting_configs):
     torch.set_default_dtype(torch.float64)
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
@@ -1224,7 +1225,8 @@ def test_run_train_foundation_freeze_cueq(tmp_path, fitting_configs):
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
     mace_params["multiheads_finetuning"] = False
-    mace_params["freeze_par"] = 9
+    mace_params["freeze_par"] = 8
+    mace_params["enable_cueq"] = True
 
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -1247,7 +1249,7 @@ def test_run_train_foundation_freeze_cueq(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
 
     Es = []
@@ -1258,7 +1260,7 @@ def test_run_train_foundation_freeze_cueq(tmp_path, fitting_configs):
     print("Es", Es)
 
     ref_Es = [
-        3.4404297977, 
+        3.4404297977,
         1.7308105589,
         3.8779711236,
         3.8445259524,
@@ -1279,9 +1281,9 @@ def test_run_train_foundation_freeze_cueq(tmp_path, fitting_configs):
         3.3714840691,
         3.6015980979,
         3.6587433162,
-        3.6195737863
-        ]
-    
+        3.6195737863,
+    ]
+
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
 
@@ -1317,7 +1319,7 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device=device)
 
     Es = []
     for at in fitting_configs:
@@ -1396,7 +1398,7 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     # Load model and check elements
-    model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu")
+    model_filtered = torch.load(tmp_path / "MACE.model", map_location=device)
     filtered_elements = set(int(z) for z in model_filtered.atomic_numbers)
     assert filtered_elements == {1, 8}  # Only H and O should be present
 
@@ -1420,11 +1422,11 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     # Load model and check elements
-    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu")
+    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location=device)
     all_elements = set(int(z) for z in model_all.atomic_numbers)
 
     # Get elements from foundation model for comparison
-    calc = mace_mp(model="small", device="cpu")
+    calc = mace_mp(model="small", device=device)
     foundation_elements = set(int(z) for z in calc.models[0].atomic_numbers)
 
     # Check that all foundation model elements are preserved
@@ -1436,7 +1438,7 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
 
     # Test filtered model
     calc_filtered = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
     at.calc = calc_filtered
     e1 = at.get_potential_energy()
@@ -1444,7 +1446,7 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
     # Test all-elements model
     calc_all = MACECalculator(
         model_paths=tmp_path / "MACE_all_elements.model",
-        device="cpu",
+        device=device,
         default_dtype="float64",
     )
     at.calc = calc_all
@@ -1539,7 +1541,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     # Load model and check elements
-    model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu")
+    model_filtered = torch.load(tmp_path / "MACE.model", map_location=device)
     filtered_elements = set(int(z) for z in model_filtered.atomic_numbers)
     assert filtered_elements == {1, 8}  # Only H and O should be present
     assert len(model_filtered.heads) == 3  # pt_head + DFT + MP2
@@ -1564,11 +1566,11 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     # Load model and check elements
-    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu")
+    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location=device)
     all_elements = set(int(z) for z in model_all.atomic_numbers)
 
     # Get elements from foundation model for comparison
-    calc = mace_mp(model="small", device="cpu")
+    calc = mace_mp(model="small", device=device)
     foundation_elements = set(int(z) for z in calc.models[0].atomic_numbers)
 
     # Check that all foundation model elements are preserved
@@ -1581,7 +1583,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
 
     # Test filtered model
     calc_filtered = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
     )
     at.calc = calc_filtered
     e1 = at.get_potential_energy()
@@ -1589,7 +1591,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
     # Test all-elements model
     calc_all = MACECalculator(
         model_paths=tmp_path / "MACE_all_elements.model",
-        device="cpu",
+        device=device,
         default_dtype="float64",
     )
     at.calc = calc_all
