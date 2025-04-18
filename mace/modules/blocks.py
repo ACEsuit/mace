@@ -355,7 +355,9 @@ class InteractionBlock(torch.nn.Module):
         node_feats = LAMMPS_MP.apply(node_feats, lammps_class)
         return node_feats
 
-    def truncate_ghosts(self, tensor: torch.Tensor, n_real: Optional[int] = None) -> torch.Tensor:
+    def truncate_ghosts(
+        self, tensor: torch.Tensor, n_real: Optional[int] = None
+    ) -> torch.Tensor:
         """Truncate the tensor to only keep the real atoms in case of presence of ghost atoms during multi-GPU MD simulations."""
         return tensor[:n_real] if n_real is not None else tensor
 

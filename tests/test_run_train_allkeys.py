@@ -421,7 +421,9 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
     print(name)
     print("Es", Es)
 
-    assert np.allclose(np.asarray(Es), expected_value, rtol=1e-6, atol=1e-6), f"Expected {expected_value} but got {Es} with error {np.max(np.abs(Es - expected_value))}"
+    assert np.allclose(
+        np.asarray(Es), expected_value, rtol=1e-8, atol=1e-8
+    ), f"Expected {expected_value} but got {Es} with error {np.max(np.abs(Es - expected_value))}"
 
 
 # for creating values

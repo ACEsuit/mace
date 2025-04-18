@@ -5,11 +5,10 @@
 ###########################################################################################
 
 import logging
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 import torch
-import torch.nn
 import torch.utils.data
 from scipy.constants import c, e
 
@@ -493,20 +492,22 @@ def compute_fixed_charge_dipole(
 
 
 class InteractionKwargs(NamedTuple):
-    lammps_class:   Optional[torch.Tensor]
-    lammps_natoms:  Tuple[int, int] = (0, 0)
+    lammps_class: Optional[torch.Tensor]
+    lammps_natoms: Tuple[int, int] = (0, 0)
+
 
 class GraphContext(NamedTuple):
-    is_lammps:        bool
-    num_graphs:       int
+    is_lammps: bool
+    num_graphs: int
     num_atoms_arange: torch.Tensor
-    displacement:     Optional[torch.Tensor]
-    positions:        torch.Tensor
-    vectors:          torch.Tensor
-    lengths:          torch.Tensor
-    cell:             torch.Tensor
-    node_heads:       torch.Tensor
+    displacement: Optional[torch.Tensor]
+    positions: torch.Tensor
+    vectors: torch.Tensor
+    lengths: torch.Tensor
+    cell: torch.Tensor
+    node_heads: torch.Tensor
     interaction_kwargs: InteractionKwargs
+
 
 @torch.jit.script
 def prepare_graph(
@@ -519,15 +520,27 @@ def prepare_graph(
     if torch.jit.is_scripting():
         lammps_mliap = False
 
-    node_heads = data["head"][data["batch"]] if "head" in data else torch.zeros_like(data["batch"])
+    node_heads = (
+        data["head"][data["batch"]]
+        if "head" in data
+        else torch.zeros_like(data["batch"])
+    )
 
     if lammps_mliap:
         n_real, n_total = data["natoms"][0], data["natoms"][1]
         num_graphs = 2
         num_atoms_arange = torch.arange(n_real, device=data["node_attrs"].device)
         displacement = None
-        positions = torch.zeros((int(n_real), 3), dtype=data["positions"].dtype, device=data["positions"].device)
-        cell = torch.zeros((num_graphs, 3, 3), dtype=data["positions"].dtype, device=data["positions"].device)
+        positions = torch.zeros(
+            (int(n_real), 3),
+            dtype=data["positions"].dtype,
+            device=data["positions"].device,
+        )
+        cell = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=data["positions"].dtype,
+            device=data["positions"].device,
+        )
         vectors = data["vectors"].requires_grad_(True)
         lengths = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
         ikw = InteractionKwargs(data["lammps_class"], (n_real, n_total))
@@ -537,7 +550,9 @@ def prepare_graph(
         cell = data["cell"]
         num_atoms_arange = torch.arange(positions.shape[0], device=positions.device)
         num_graphs = int(data["ptr"].numel() - 1)
-        displacement = torch.zeros((num_graphs, 3, 3), dtype=positions.dtype, device=positions.device)
+        displacement = torch.zeros(
+            (num_graphs, 3, 3), dtype=positions.dtype, device=positions.device
+        )
         if compute_virials or compute_stress or compute_displacement:
             p, s, displacement = get_symmetric_displacement(
                 positions=positions,
@@ -553,7 +568,7 @@ def prepare_graph(
             edge_index=data["edge_index"],
             shifts=data["shifts"],
         )
-        ikw = InteractionKwargs(None, (0,0))
+        ikw = InteractionKwargs(None, (0, 0))
 
     return GraphContext(
         is_lammps=lammps_mliap,
