@@ -71,7 +71,11 @@ class reshape_irreps(torch.nn.Module):
     ) -> None:
         super().__init__()
         self.irreps = o3.Irreps(irreps)
-        self.cueq_config = cueq_config
+        self.cueq_enabled = False
+        self.cueq_layout_str = "mul_ir"
+        if cueq_config is not None:
+            self.cueq_enabled = cueq_config.enabled
+            self.cueq_layout_str = cueq_config.layout_str
         self.dims = []
         self.muls = []
         for mul, ir in self.irreps:
@@ -86,25 +90,19 @@ class reshape_irreps(torch.nn.Module):
         for mul, d in zip(self.muls, self.dims):
             field = tensor[:, ix : ix + mul * d]  # [batch, sample, mul * repr]
             ix += mul * d
-            if hasattr(self, "cueq_config"):
-                if self.cueq_config is not None:
-                    if self.cueq_config.layout_str == "mul_ir":
-                        field = field.reshape(batch, mul, d)
-                    else:
-                        field = field.reshape(batch, d, mul)
-                else:
+            if self.cueq_enabled:
+                if self.cueq_layout_str == "mul_ir":
                     field = field.reshape(batch, mul, d)
+                else:
+                    field = field.reshape(batch, d, mul)
             else:
                 field = field.reshape(batch, mul, d)
             out.append(field)
 
-        if hasattr(self, "cueq_config"):
-            if self.cueq_config is not None:  # pylint: disable=no-else-return
-                if self.cueq_config.layout_str == "mul_ir":
-                    return torch.cat(out, dim=-1)
-                return torch.cat(out, dim=-2)
-            else:
+        if self.cueq_enabled:
+            if self.cueq_layout_str == "mul_ir":
                 return torch.cat(out, dim=-1)
+            return torch.cat(out, dim=-2)
         return torch.cat(out, dim=-1)
 
 
