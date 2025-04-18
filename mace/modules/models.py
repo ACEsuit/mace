@@ -450,7 +450,7 @@ class ScaleShiftMACE(MACE):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
             compute_hessian=compute_hessian,
-            compute_edge_forces=compute_edge_forces,
+            compute_edge_forces=compute_edge_forces or compute_atomic_stresses,
         )
 
         atomic_virials: Optional[torch.Tensor] = None
