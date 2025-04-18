@@ -29,6 +29,7 @@
       - [Example usage in ASE](#example-usage-in-ase-1)
     - [Finetuning foundation models](#finetuning-foundation-models)
     - [Latest recommended foundation models](#latest-recommended-foundation-models)
+    - [MACE-freeze](#mace-freeze)
   - [Caching](#caching)
   - [Development](#development)
   - [References](#references)
@@ -318,6 +319,42 @@ mace_run_train \
 ```
 Other options are "medium" and "large", or the path to a foundation model.
 If you want to finetune another model, the model will be loaded from the path provided `--foundation_model=$path_model`, all the hypers will be extracted automatically.
+
+<a id="mace-freeze"></a>
+## MACE-freeze
+
+Freeze the neural network layers for transfer learning or other applications. 
+
+To install the MACE-freeze version of MACE, clone the mace-freeze branch into your work folder:
+```sh
+git clone -b mace-freeze https://github.com/7radians/mace-freeze.git
+pip install ./mace-freeze
+```
+
+Use the command line argument `--freeze` to freeze the layers from 1 to N inclusive. For example, this will freeze the first 5 layers:
+
+```sh
+--freeze=5
+```
+
+There is an option to freeze the last N layers. This will freeze the last 5 layers:
+
+```sh
+--freeze=-5
+```
+
+For finer tuning, parameter tensors can be frozen in each layer. The log file will contain the hierarchical list of the named parameters of the model.
+For example, to freeze these parameters, use:
+
+```sh
+--freeze_par=6 
+```
+`--freeze_par` takes integer values and works in the same manner as `--freeze`, freezing from 1 to N (if positive) or the last N (if negative).
+
+By default, MACE-freeze assumes all layers are active, equating to `--freeze=0` or `--freeze_par=0`. 
+`--freeze` and `--freeze_par` are not designed to be used in combination. If both arguments are stated, the model would take `--freeze`.
+If using MACE-freeze, please set `--multiheads_finetuning=False`. If using the multiheads finetuning method, please either set `--freeze=0`, or remove this argument from your training script. 
+
 
 ## Caching
 
