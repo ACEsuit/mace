@@ -2,6 +2,7 @@ from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
 from .arg_parser_tools import check_args
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
+from .default_keys import DefaultKeys
 from .finetuning_utils import load_foundations, load_foundations_elements
 from .torch_tools import (
     TensorDict,
@@ -40,6 +41,7 @@ __all__ = [
     "to_one_hot",
     "build_default_arg_parser",
     "check_args",
+    "DefaultKeys",
     "set_seeds",
     "init_device",
     "setup_logger",

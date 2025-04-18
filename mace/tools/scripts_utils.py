@@ -20,6 +20,7 @@ from e3nn import o3
 from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules, tools
+from mace.data import KeySpecification
 from mace.tools.train import SWAContainer
 
 
@@ -30,23 +31,28 @@ class SubsetCollection:
     tests: List[Tuple[str, data.Configurations]]
 
 
+def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> None:
+    log_string = f"{dataset_name} ["
+    for prop_name in dataset[0].properties.keys():
+        if prop_name == "dipole":
+            log_string += f"{prop_name} components: {int(np.sum([np.sum(config.property_weights[prop_name]) for config in dataset]))}, "
+        else:
+            log_string += f"{prop_name}: {int(np.sum([config.property_weights[prop_name] for config in dataset]))}, "
+    log_string = log_string[:-2] + "]"
+    logging.info(log_string)
+
+
 def get_dataset_from_xyz(
     work_dir: str,
     train_path: Union[str, List[str]],
     valid_path: Optional[Union[str, List[str]]],
     valid_fraction: float,
-    config_type_weights: Dict,
+    key_specification: KeySpecification,
+    config_type_weights: Optional[Dict] = None,
     test_path: Optional[Union[str, List[str]]] = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
-    energy_key: str = "REF_energy",
-    forces_key: str = "REF_forces",
-    stress_key: str = "REF_stress",
-    virials_key: str = "virials",
-    dipole_key: str = "dipoles",
-    charges_key: str = "charges",
-    head_key: str = "head",
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """
     Load training, validation, and test datasets from xyz files.
@@ -57,17 +63,11 @@ def get_dataset_from_xyz(
         valid_path: Path or list of paths to validation xyz files
         valid_fraction: Fraction of training data to use for validation if valid_path is None
         config_type_weights: Dictionary of weights for each configuration type
+        key_specification: KeySpecification object for loading data
         test_path: Path or list of paths to test xyz files
         seed: Random seed for train/validation split
         keep_isolated_atoms: Whether to keep isolated atoms in the dataset
         head_name: Name of the head for multi-head models
-        energy_key: Key for energy values in xyz file
-        forces_key: Key for forces values in xyz file
-        stress_key: Key for stress values in xyz file
-        virials_key: Key for virials values in xyz file
-        dipole_key: Key for dipole values in xyz file
-        charges_key: Key for charges values in xyz file
-        head_key: Key for head values in xyz file
 
     Returns:
         Tuple containing:
@@ -98,26 +98,11 @@ def get_dataset_from_xyz(
 
     # Process training files
     for i, path in enumerate(train_paths):
-        logging.debug("Loading training file: %s", path)
-        logging.debug(
-            "Using keys: energy=%s, forces=%s, stress=%s, virials=%s, dipole=%s, charges=%s",
-            energy_key,
-            forces_key,
-            stress_key,
-            virials_key,
-            dipole_key,
-            charges_key,
-        )
+        logging.debug(f"Loading training file: {path}")
         ae_dict, train_configs = data.load_from_xyz(
             file_path=path,
             config_type_weights=config_type_weights,
-            energy_key=energy_key,
-            forces_key=forces_key,
-            stress_key=stress_key,
-            virials_key=virials_key,
-            dipole_key=dipole_key,
-            charges_key=charges_key,
-            head_key=head_key,
+            key_specification=key_specification,
             extract_atomic_energies=True,  # Extract from all files to average
             keep_isolated_atoms=keep_isolated_atoms,
             head_name=head_name,
@@ -134,20 +119,10 @@ def get_dataset_from_xyz(
                 atomic_energies_values[element].append(energy)
                 atomic_energies_counts[element] += 1
 
-        logging.info(
-            f"Training file {i+1}/{len(train_paths)} [{len(train_configs)} configs, "
-            f"{np.sum([1 if config.energy else 0 for config in train_configs])} energy, "
-            f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in train_configs])} forces, "
-            f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in train_configs])} stresses] loaded from '{path}'"
-        )
+        log_dataset_contents(train_configs, f"Training set {i+1}/{len(train_paths)}")
 
     # Log total training set info
-    logging.info(
-        f"Total training set [{len(all_train_configs)} configs, "
-        f"{np.sum([1 if config.energy else 0 for config in all_train_configs])} energy, "
-        f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in all_train_configs])} forces, "
-        f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in all_train_configs])} stresses]"
-    )
+    log_dataset_contents(all_train_configs, "Total Training set")
 
     # Process validation files if provided
     if valid_paths:
@@ -155,85 +130,45 @@ def get_dataset_from_xyz(
             _, valid_configs = data.load_from_xyz(
                 file_path=path,
                 config_type_weights=config_type_weights,
-                energy_key=energy_key,
-                forces_key=forces_key,
-                stress_key=stress_key,
-                virials_key=virials_key,
-                dipole_key=dipole_key,
-                charges_key=charges_key,
-                head_key=head_key,
+                key_specification=key_specification,
                 extract_atomic_energies=False,
                 head_name=head_name,
             )
             all_valid_configs.extend(valid_configs)
-
-            logging.info(
-                f"Validation file {i+1}/{len(valid_paths)} [{len(valid_configs)} configs, "
-                f"{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, "
-                f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in valid_configs])} forces, "
-                f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in valid_configs])} stresses] loaded from '{path}'"
+            log_dataset_contents(
+                valid_configs, f"Validation set {i+1}/{len(valid_paths)}"
             )
 
         # Log total validation set info
-        logging.info(
-            f"Total validation set [{len(all_valid_configs)} configs, "
-            f"{np.sum([1 if config.energy else 0 for config in all_valid_configs])} energy, "
-            f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in all_valid_configs])} forces, "
-            f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in all_valid_configs])} stresses]"
-        )
-
+        log_dataset_contents(all_valid_configs, "Total Validation set")
         train_configs = all_train_configs
         valid_configs = all_valid_configs
     else:
         # Split training data if no validation files are provided
+        logging.info("No validation set provided, splitting training data instead.")
         train_configs, valid_configs = data.random_train_valid_split(
             all_train_configs, valid_fraction, seed, work_dir
         )
-        logging.info(
-            f"Validation set contains {len(valid_configs)} configurations "
-            f"[{np.sum([1 if config.energy else 0 for config in valid_configs])} energy, "
-            f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in valid_configs])} forces, "
-            f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in valid_configs])} stresses]"
-        )
+        log_dataset_contents(train_configs, "Random Split Training set")
+        log_dataset_contents(valid_configs, "Random Split Validation set")
 
-    # Process test files if provided
     test_configs_by_type = []
     if test_paths:
         for i, path in enumerate(test_paths):
             _, test_configs = data.load_from_xyz(
                 file_path=path,
                 config_type_weights=config_type_weights,
-                energy_key=energy_key,
-                forces_key=forces_key,
-                dipole_key=dipole_key,
-                stress_key=stress_key,
-                virials_key=virials_key,
-                charges_key=charges_key,
-                head_key=head_key,
+                key_specification=key_specification,
                 extract_atomic_energies=False,
                 head_name=head_name,
             )
             all_test_configs.extend(test_configs)
 
-            logging.info(
-                f"Test file {i+1}/{len(test_paths)} [{len(test_configs)} configs, "
-                f"{np.sum([1 if config.energy else 0 for config in test_configs])} energy, "
-                f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in test_configs])} forces, "
-                f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in test_configs])} stresses] loaded from '{path}'"
-            )
+            log_dataset_contents(test_configs, f"Test set {i+1}/{len(test_paths)}")
 
         # Create list of tuples (config_type, list(Atoms))
         test_configs_by_type = data.test_config_types(all_test_configs)
-
-        # Log total test set info
-        logging.info(f"Total test set ({len(all_test_configs)} configs):")
-        for name, tmp_configs in test_configs_by_type:
-            logging.info(
-                f"{name}: {len(tmp_configs)} configs, "
-                f"{np.sum([1 if config.energy else 0 for config in tmp_configs])} energy, "
-                f"{np.sum([1 if getattr(config, 'forces', None) is not None else 0 for config in tmp_configs])} forces, "
-                f"{np.sum([1 if getattr(config, 'stress', None) is not None else 0 for config in tmp_configs])} stresses"
-            )
+        log_dataset_contents(all_test_configs, "Total Test set")
 
     atomic_energies_dict = {}
     for element, values in atomic_energies_values.items():
@@ -651,6 +586,11 @@ def get_loss_fn(
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
         )
+    elif args.loss == "l1l2energyforces":
+        loss_fn = modules.WeightedEnergyForcesL1L2Loss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
@@ -705,7 +645,7 @@ def get_swa(
             stress_weight=args.swa_stress_weight,
         )
         logging.info(
-            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.stress_weight} and learning rate : {args.swa_lr}"
+            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
         )
     elif args.loss == "energy_forces_dipole":
         loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
@@ -824,7 +764,13 @@ def setup_wandb(args: argparse.Namespace):
         if isinstance(value, np.ndarray):
             args_dict[key] = value.tolist()
 
-    args_dict_json = json.dumps(args_dict)
+    class CustomEncoder(json.JSONEncoder):
+        def default(self, o):
+            if isinstance(o, KeySpecification):
+                return o.__dict__
+            return super().default(o)
+
+    args_dict_json = json.dumps(args_dict, cls=CustomEncoder)
     for key in args.wandb_log_hypers:
         wandb_config[key] = args_dict[key]
     tools.init_wandb(
@@ -906,7 +852,9 @@ def check_folder_subfolder(folder_path):
     return False
 
 
-def check_path_ase_read(filename: str) -> str:
+def check_path_ase_read(filename: Optional[str]) -> bool:
+    if filename is None:
+        return False
     filepath = Path(filename)
     if filepath.is_dir():
         num_h5_files = len(list(filepath.glob("*.h5")))

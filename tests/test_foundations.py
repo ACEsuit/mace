@@ -28,21 +28,38 @@ torch.set_default_dtype(torch.float64)
 config = data.Configuration(
     atomic_numbers=molecule("H2COH").numbers,
     positions=molecule("H2COH").positions,
-    forces=molecule("H2COH").positions,
-    energy=-1.5,
-    charges=molecule("H2COH").numbers,
-    dipole=np.array([-1.5, 1.5, 2.0]),
+    properties={
+        "forces": molecule("H2COH").positions,
+        "energy": -1.5,
+        "charges": molecule("H2COH").numbers,
+        "dipole": np.array([-1.5, 1.5, 2.0]),
+    },
+    property_weights={
+        "forces": 1.0,
+        "energy": 1.0,
+        "charges": 1.0,
+        "dipole": 1.0,
+    },
 )
+
 # Created the rotated environment
 rot = R.from_euler("z", 60, degrees=True).as_matrix()
 positions_rotated = np.array(rot @ config.positions.T).T
 config_rotated = data.Configuration(
     atomic_numbers=molecule("H2COH").numbers,
     positions=positions_rotated,
-    forces=molecule("H2COH").positions,
-    energy=-1.5,
-    charges=molecule("H2COH").numbers,
-    dipole=np.array([-1.5, 1.5, 2.0]),
+    properties={
+        "forces": molecule("H2COH").positions,
+        "energy": -1.5,
+        "charges": molecule("H2COH").numbers,
+        "dipole": np.array([-1.5, 1.5, 2.0]),
+    },
+    property_weights={
+        "forces": 1.0,
+        "energy": 1.0,
+        "charges": 1.0,
+        "dipole": 1.0,
+    },
 )
 table = tools.AtomicNumberTable([1, 6, 8])
 atomic_energies = np.array([0.0, 0.0, 0.0], dtype=float)
@@ -102,8 +119,8 @@ def test_foundations():
         drop_last=False,
     )
     batch = next(iter(data_loader))
-    forces_loaded = model_loaded(batch)["forces"]
-    forces = model(batch)["forces"]
+    forces_loaded = model_loaded(batch.to_dict())["forces"]
+    forces = model(batch.to_dict())["forces"]
     assert torch.allclose(forces, forces_loaded)
 
 
@@ -111,10 +128,18 @@ def test_multi_reference():
     config_multi = data.Configuration(
         atomic_numbers=molecule("H2COH").numbers,
         positions=molecule("H2COH").positions,
-        forces=molecule("H2COH").positions,
-        energy=-1.5,
-        charges=molecule("H2COH").numbers,
-        dipole=np.array([-1.5, 1.5, 2.0]),
+        properties={
+            "forces": molecule("H2COH").positions,
+            "energy": -1.5,
+            "charges": molecule("H2COH").numbers,
+            "dipole": np.array([-1.5, 1.5, 2.0]),
+        },
+        property_weights={
+            "forces": 1.0,
+            "energy": 1.0,
+            "charges": 1.0,
+            "dipole": 1.0,
+        },
         head="MP2",
     )
     table_multi = tools.AtomicNumberTable([1, 6, 8])
@@ -166,7 +191,7 @@ def test_multi_reference():
         drop_last=False,
     )
     batch = next(iter(data_loader))
-    forces_loaded = model_loaded(batch)["forces"]
+    forces_loaded = model_loaded(batch.to_dict())["forces"]
     calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
     atoms = molecule("H2COH")
     atoms.info["head"] = "MP2"
@@ -230,8 +255,8 @@ def test_extract_config(model):
         drop_last=False,
     )
     batch = next(iter(data_loader))
-    output = model(batch)
-    output_copy = model_copy(batch)
+    output = model(batch.to_dict())
+    output_copy = model_copy(batch.to_dict())
     # assert all items of the output dicts are equal
     for key in output.keys():
         if isinstance(output[key], torch.Tensor):
@@ -277,8 +302,8 @@ def test_remove_pt_head():
     config_pt_head = data.Configuration(
         atomic_numbers=mol.numbers,
         positions=mol.positions,
-        energy=1.0,
-        forces=np.random.randn(len(mol), 3),
+        properties={"energy": 1.0, "forces": np.random.randn(len(mol), 3)},
+        property_weights={"forces": 1.0, "energy": 1.0},
         head="DFT",
     )
     atomic_data = data.AtomicData.from_config(
@@ -289,7 +314,7 @@ def test_remove_pt_head():
     )
     batch = next(iter(dataloader))
     # Test original mode
-    output_orig = model(batch)
+    output_orig = model(batch.to_dict())
 
     # Convert to single head model
     new_model = remove_pt_head(model, head_to_keep="DFT")
@@ -309,7 +334,7 @@ def test_remove_pt_head():
         dataset=[atomic_data], batch_size=1, shuffle=False
     )
     batch = next(iter(dataloader))
-    output_new = new_model(batch)
+    output_new = new_model(batch.to_dict())
     torch.testing.assert_close(
         output_orig["energy"], output_new["energy"], rtol=1e-5, atol=1e-5
     )
@@ -370,8 +395,8 @@ def test_remove_pt_head_multihead():
         config_pt_head = data.Configuration(
             atomic_numbers=mol.numbers,
             positions=mol.positions,
-            energy=1.0,
-            forces=np.random.randn(len(mol), 3),
+            properties={"energy": 1.0, "forces": np.random.randn(len(mol), 3)},
+            property_weights={"forces": 1.0, "energy": 1.0},
             head=head,
         )
         configs[head] = config_pt_head
@@ -387,7 +412,7 @@ def test_remove_pt_head_multihead():
         dataloaders[head] = dataloader
 
         batch = next(iter(dataloader))
-        output = model(batch)
+        output = model(batch.to_dict())
         original_outputs[head] = output
 
     # Now test each head separately
@@ -424,7 +449,7 @@ def test_remove_pt_head_multihead():
             dataset=[single_head_data], batch_size=1, shuffle=False
         )
         batch = next(iter(single_head_loader))
-        new_output = new_model(batch)
+        new_output = new_model(batch.to_dict())
 
         # Compare outputs
         print(
@@ -466,7 +491,7 @@ def test_remove_pt_head_multihead():
             dataset=[single_head_data], batch_size=1, shuffle=False
         )
         batch = next(iter(single_head_loader))
-        results[head] = head_model(batch)
+        results[head] = head_model(batch.to_dict())
 
     # Verify each model produces different outputs
     energies = torch.stack([results[head]["energy"] for head in model.heads])
