@@ -89,6 +89,7 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
             compute_stress=False,
             compute_displacement=False,
             compute_edge_forces=True,
+            lammps_mliap=True,
         )
 
         node_energy = out["node_energy"][0]
