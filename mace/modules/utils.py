@@ -506,7 +506,6 @@ class GraphContext(NamedTuple):
     interaction_kwargs: InteractionKwargs
 
 
-@torch.jit.script
 def prepare_graph(
     data: Dict[str, torch.Tensor],
     compute_virials: bool = False,
