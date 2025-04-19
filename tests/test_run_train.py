@@ -901,7 +901,6 @@ def test_run_train_multihead_replay_custum_finetuning(
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
 def test_run_train_cueq(tmp_path, fitting_configs):
-    torch.set_default_dtype(torch.float64)
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     mace_params = _mace_params.copy()

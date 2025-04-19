@@ -24,7 +24,8 @@ MODEL_PATH = (
     / "2023-12-03-mace-mp.model"
 )
 
-torch.set_default_dtype(torch.float64)
+test_dtype = torch.float64
+
 config = data.Configuration(
     atomic_numbers=molecule("H2COH").numbers,
     positions=molecule("H2COH").positions,

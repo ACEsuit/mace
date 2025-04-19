@@ -17,12 +17,10 @@ except ImportError:
         "Skipping schedulefree tests due to ImportError", allow_module_level=True
     )
 
-torch.set_default_dtype(torch.float64)
-
 table = tools.AtomicNumberTable([6])
 atomic_energies = np.array([1.0], dtype=float)
 cutoff = 5.0
-
+test_dtype = torch.float64
 
 def create_mace(device: str, seed: int = 1702):
     torch_geometric.seed_everything(seed)
@@ -48,6 +46,7 @@ def create_mace(device: str, seed: int = 1702):
         "atomic_numbers": table.zs,
         "correlation": 3,
         "radial_type": "bessel",
+        "dtype": test_dtype,
     }
     model = modules.MACE(**model_config)
     return model.to(device)
