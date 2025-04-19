@@ -143,12 +143,6 @@ class MACECalculator(Calculator):
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
             ]
-            if enable_cueq:
-                print("Converting models to CuEq for acceleration")
-                self.models = [
-                    run_e3nn_to_cueq(model, device=device).to(device)
-                    for model in self.models
-                ]
 
         elif models is not None:
             if not isinstance(models, list):
@@ -234,6 +228,12 @@ class MACECalculator(Calculator):
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
         torch_tools.set_default_dtype(default_dtype)
+        if enable_cueq:
+            print("Converting models to CuEq for acceleration")
+            self.models = [
+                run_e3nn_to_cueq(model, device=device).to(device)
+                for model in self.models
+            ]
         for model in self.models:
             for param in model.parameters():
                 param.requires_grad = False
