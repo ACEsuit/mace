@@ -654,6 +654,9 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        print("node feats dtype", node_feats.dtype)
+        print("edge feats dtype", edge_feats.dtype)
+        print("edge density dtype", edge_density.dtype)
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]

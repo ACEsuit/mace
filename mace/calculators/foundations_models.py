@@ -41,6 +41,8 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
         "medium-0b3": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b3/mace-mp-0b3-medium.model",
         "medium-mpa-0": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model",
         "medium-omat-0": "https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model",
+        "mace-matpes-pbe-0": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-pbe-omat-ft.model",
+        "mace-matpes-r2scan-0": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-r2scan-omat-ft.model",
     }
 
     checkpoint_url = (
@@ -67,9 +69,14 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
         print(
             "Using medium MPA-0 model as default MACE-MP model, to use previous (before 3.10) default model please specify 'medium' as model argument"
         )
-    if checkpoint_url == urls["medium-omat-0"]:
+    ASL_checkpoint_urls = {
+        urls["medium-omat-0"],
+        urls["mace-matpes-pbe-0"],
+        urls["mace-matpes-r2scan-0"],
+    }
+    if checkpoint_url in ASL_checkpoint_urls:
         print(
-            "Using medium OMAT-0 model under Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use this model you accept the terms of the license."
+            "Using model under Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use this model you accept the terms of the license."
         )
 
     cache_dir = os.path.expanduser("~/.cache/mace")
