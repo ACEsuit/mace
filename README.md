@@ -251,6 +251,8 @@ Foundation models are a rapidly evolving field. Please look at the `MACE-MP GitH
 | MACE-MPA-0        | 89               | MPTrj + sAlex    | DFT (PBE+U)           | Materials            | [medium-mpa-0](https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model)              | >=v0.3.10      | Improved accuracy for materials, improved high pressure stability. | MIT |
 | MACE-OMAT-0        | 89               | OMAT         | DFT (PBE+U) VASP 54        | Materials    | [medium-omat-0](https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model) | >=v0.3.10       |             | ASL |
 | MACE-OFF23        | 10               | SPICE v1         | DFT (wB97M+D3)        | Organic Chemistry    | [small](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model), [medium](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model), [large](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model)| >=v0.3.6       | Initial release covering neutral organic chemistry.              | ASL |
+| MACE-MATPES-PBE-0        | 89               | MATPES-PBE         | DFT (PBE)        | Materials    | [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-pbe-omat-ft.model) | >=v0.3.10       | No +U correction.            | ASL |
+| MACE-MATPES-r2SCAN-0        | 89               | MATPES-r2SCAN         | DFT (r2SCAN)        | Materials    | [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-r2scan-omat-ft.model) | >=v0.3.10       |  Better functional for materials.           | ASL |
 
 ### MACE-MP: Materials Project Force Fields
 

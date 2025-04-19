@@ -58,7 +58,9 @@ def train_atom_descriptors(train_atoms_fixture):
         ),
     ],
 )
-def test_filter_data(train_atoms_fixture, filtering_type, passes_filter, element_sublist):
+def test_filter_data(
+    train_atoms_fixture, filtering_type, passes_filter, element_sublist
+):
     filtered, _, passes = _filter_pretraining_data(
         train_atoms_fixture, filtering_type, element_sublist
     )
@@ -69,13 +71,17 @@ def test_filter_data(train_atoms_fixture, filtering_type, passes_filter, element
 @pytest.mark.parametrize(
     "passes_filter", [[True] * 6, [False, True, False, True, False, True]]
 )
-def test_load_descriptors(train_atoms_fixture, train_atom_descriptors_fixture, passes_filter, tmp_path):
+def test_load_descriptors(
+    train_atoms_fixture, train_atom_descriptors_fixture, passes_filter, tmp_path
+):
     for i, atoms in enumerate(train_atoms_fixture):
         atoms.info["mace_descriptors"] = train_atom_descriptors_fixture[i]
     save_path = tmp_path / "test.xyz"
     _maybe_save_descriptors(train_atoms_fixture, save_path.as_posix())
     assert all(not "mace_descriptors" in atoms.info for atoms in train_atoms_fixture)
-    filtered_atoms = [x for x, passes in zip(train_atoms_fixture, passes_filter) if passes]
+    filtered_atoms = [
+        x for x, passes in zip(train_atoms_fixture, passes_filter) if passes
+    ]
     descriptors_path = save_path.as_posix().replace(".xyz", "_descriptors.npy")
 
     _load_descriptors(
@@ -86,7 +92,9 @@ def test_load_descriptors(train_atoms_fixture, train_atom_descriptors_fixture, p
         full_data_length=len(train_atoms_fixture),
     )
     expected_descriptors = [
-        train_atom_descriptors_fixture[i] for i, passes in enumerate(passes_filter) if passes
+        train_atom_descriptors_fixture[i]
+        for i, passes in enumerate(passes_filter)
+        if passes
     ]
     for i, atoms in enumerate(filtered_atoms):
         assert "mace_descriptors" in atoms.info

@@ -3,8 +3,6 @@ from typing import Callable, Dict, Optional, Type
 import torch
 
 from .blocks import (
-    AgnosticNonlinearInteractionBlock,
-    AgnosticResidualNonlinearInteractionBlock,
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
     InteractionBlock,
@@ -19,27 +17,20 @@ from .blocks import (
     RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
-    ResidualElementDependentInteractionBlock,
     ScaleShiftBlock,
 )
 from .loss import (
     DipoleSingleLoss,
     UniversalLoss,
     WeightedEnergyForcesDipoleLoss,
+    WeightedEnergyForcesL1L2Loss,
     WeightedEnergyForcesLoss,
     WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
 )
-from .models import (
-    MACE,
-    AtomicDipolesMACE,
-    BOTNet,
-    EnergyDipolesMACE,
-    ScaleShiftBOTNet,
-    ScaleShiftMACE,
-)
+from .models import MACE, AtomicDipolesMACE, EnergyDipolesMACE, ScaleShiftMACE
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
@@ -52,9 +43,6 @@ from .utils import (
 )
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {
-    "AgnosticNonlinearInteractionBlock": AgnosticNonlinearInteractionBlock,
-    "ResidualElementDependentInteractionBlock": ResidualElementDependentInteractionBlock,
-    "AgnosticResidualNonlinearInteractionBlock": AgnosticResidualNonlinearInteractionBlock,
     "RealAgnosticResidualInteractionBlock": RealAgnosticResidualInteractionBlock,
     "RealAgnosticAttResidualInteractionBlock": RealAgnosticAttResidualInteractionBlock,
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
@@ -92,8 +80,6 @@ __all__ = [
     "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
-    "BOTNet",
-    "ScaleShiftBOTNet",
     "AtomicDipolesMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
@@ -104,6 +90,7 @@ __all__ = [
     "WeightedEnergyForcesDipoleLoss",
     "WeightedHuberEnergyForcesStressLoss",
     "UniversalLoss",
+    "WeightedEnergyForcesL1L2Loss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
