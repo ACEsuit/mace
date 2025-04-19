@@ -63,15 +63,15 @@ class MACE(torch.nn.Module):
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,
+        dtype: Optional[torch.dtype] = None,
         lammps_mliap: Optional[bool] = False,
     ):
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
             "atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64)
         )
-        self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
-        )
+        self.register_buffer("r_max", torch.tensor(r_max, dtype=dtype))
         self.register_buffer(
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
@@ -110,7 +110,7 @@ class MACE(torch.nn.Module):
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
         # Interactions and readout
-        self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
+        self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies, dtype=dtype)
 
         inter = interaction_cls_first(
             node_attrs_irreps=node_attr_irreps,
@@ -706,12 +706,14 @@ class EnergyDipolesMACE(torch.nn.Module):
         atomic_energies: Optional[np.ndarray],
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
+        dtype: Optional[torch.dtype] = None,
     ):
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
             "atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64)
         )
-        self.register_buffer("r_max", torch.tensor(r_max, dtype=torch.float64))
+        self.register_buffer("r_max", torch.tensor(r_max, dtype=dtype))
         self.register_buffer(
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
@@ -725,6 +727,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             r_max=r_max,
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
+            dtype=dtype,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
@@ -737,7 +740,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
         # Interactions and readouts
-        self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
+        self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies, dtype=dtype)
 
         inter = interaction_cls_first(
             node_attrs_irreps=node_attr_irreps,

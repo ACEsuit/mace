@@ -300,8 +300,12 @@ def extract_invariant(x: torch.Tensor, num_layers: int, num_features: int, l_max
 def compute_mean_std_atomic_inter_energy(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
+    dtype: Optional[torch.dtype] = None,
 ) -> Tuple[float, float]:
-    atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
+    dtype = dtype or torch.get_default_dtype()
+    atomic_energies_fn = AtomicEnergiesBlock(
+        atomic_energies=atomic_energies, dtype=dtype
+    )
 
     avg_atom_inter_es_list = []
     head_list = []
@@ -319,8 +323,6 @@ def compute_mean_std_atomic_inter_energy(
 
     avg_atom_inter_es = torch.cat(avg_atom_inter_es_list)  # [total_n_graphs]
     head = torch.cat(head_list, dim=0)  # [total_n_graphs]
-    # mean = to_numpy(torch.mean(avg_atom_inter_es)).item()
-    # std = to_numpy(torch.std(avg_atom_inter_es)).item()
     mean = to_numpy(scatter_mean(src=avg_atom_inter_es, index=head, dim=0).squeeze(-1))
     std = to_numpy(scatter_std(src=avg_atom_inter_es, index=head, dim=0).squeeze(-1))
     std = _check_non_zero(std)
@@ -345,8 +347,11 @@ def _compute_mean_std_atomic_inter_energy(
 def compute_mean_rms_energy_forces(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
+    dtype: Optional[torch.dtype] = None,
 ) -> Tuple[float, float]:
-    atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
+    atomic_energies_fn = AtomicEnergiesBlock(
+        atomic_energies=atomic_energies, dtype=dtype
+    )
 
     atom_energy_list = []
     forces_list = []
@@ -401,7 +406,9 @@ def _compute_mean_rms_energy_forces(
     return atom_energies, forces
 
 
-def compute_avg_num_neighbors(data_loader: torch.utils.data.DataLoader) -> float:
+def compute_avg_num_neighbors(
+    data_loader: torch.utils.data.DataLoader, dtype: Optional[torch.dtype] = None
+) -> float:
     num_neighbors = []
     for batch in data_loader:
         _, receivers = batch.edge_index
@@ -409,7 +416,7 @@ def compute_avg_num_neighbors(data_loader: torch.utils.data.DataLoader) -> float
         num_neighbors.append(counts)
 
     avg_num_neighbors = torch.mean(
-        torch.cat(num_neighbors, dim=0).type(torch.get_default_dtype())
+        torch.cat(num_neighbors, dim=0).to(dtype or torch.get_default_dtype())
     )
     return to_numpy(avg_num_neighbors).item()
 
@@ -417,8 +424,11 @@ def compute_avg_num_neighbors(data_loader: torch.utils.data.DataLoader) -> float
 def compute_statistics(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
+    dtype: Optional[torch.dtype] = None,
 ) -> Tuple[float, float, float, float]:
-    atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
+    atomic_energies_fn = AtomicEnergiesBlock(
+        atomic_energies=atomic_energies, dtype=dtype
+    )
 
     atom_energy_list = []
     forces_list = []
@@ -457,7 +467,7 @@ def compute_statistics(
     )
 
     avg_num_neighbors = torch.mean(
-        torch.cat(num_neighbors, dim=0).type(torch.get_default_dtype())
+        torch.cat(num_neighbors, dim=0).to(dtype or torch.get_default_dtype())
     )
 
     return to_numpy(avg_num_neighbors).item(), mean, rms

@@ -9,7 +9,8 @@ from scipy.spatial.transform import Rotation as R
 from mace import data, modules, tools
 from mace.tools import torch_geometric
 
-torch.set_default_dtype(torch.float64)
+test_dtype = torch.float64
+
 config = data.Configuration(
     atomic_numbers=np.array([8, 1, 1]),
     positions=np.array(
@@ -90,6 +91,7 @@ def test_mace():
         atomic_numbers=table.zs,
         correlation=3,
         radial_type="bessel",
+        dtype=test_dtype,
     )
     model = modules.MACE(**model_config)
     model_compiled = jit.compile(model)
@@ -135,6 +137,7 @@ def test_dipole_mace():
         atomic_numbers=table.zs,
         correlation=3,
         radial_type="gaussian",
+        dtype=test_dtype,
     )
     model = modules.AtomicDipolesMACE(**model_config)
 
@@ -185,6 +188,7 @@ def test_energy_dipole_mace():
         avg_num_neighbors=3,
         atomic_numbers=table.zs,
         correlation=3,
+        dtype=test_dtype,
     )
     model = modules.EnergyDipolesMACE(**model_config)
 
@@ -243,6 +247,7 @@ def test_mace_multi_reference():
         # radial_type="chebyshev",
         atomic_inter_scale=[1.0, 1.0],
         atomic_inter_shift=[0.0, 0.1],
+        dtype=test_dtype,
     )
     model = modules.ScaleShiftMACE(**model_config)
     model_compiled = jit.compile(model)
@@ -272,9 +277,6 @@ def test_atomic_virials_stresses():
     """
     Test that atomic virials and stresses sum to the total virials and stress.
     """
-    # Set default dtype for reproducibility
-    torch.set_default_dtype(torch.float64)
-
     # Create a periodic cell with ASE
     atoms = build.bulk("Si", "diamond", a=5.43)
     # Apply strain to ensure non-zero stress
@@ -312,6 +314,7 @@ def test_atomic_virials_stresses():
         correlation=3,
         atomic_inter_scale=1.0,
         atomic_inter_shift=0.0,
+        dtype=test_dtype,
     )
 
     # Create the model
@@ -324,6 +327,7 @@ def test_atomic_virials_stresses():
         ),
         z_table=stress_z_table,
         cutoff=5.0,
+        dtype=test_dtype,
     )
 
     data_loader = torch_geometric.dataloader.DataLoader(

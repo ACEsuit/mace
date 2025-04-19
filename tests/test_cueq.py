@@ -14,6 +14,7 @@ from mace import data, modules, tools
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import torch_geometric
+from mace.tools.torch_tools import dtype_dict
 
 try:
     import cuequivariance as cue  # pylint: disable=unused-import
@@ -57,8 +58,6 @@ class TestCueq:
     def batch(self, device: str, default_dtype: torch.dtype) -> Dict[str, torch.Tensor]:
         from ase import build
 
-        torch.set_default_dtype(default_dtype)
-
         table = tools.AtomicNumberTable([6])
 
         atoms = build.bulk("C", "diamond", a=3.567, cubic=True)
@@ -71,7 +70,7 @@ class TestCueq:
         configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
-                data.AtomicData.from_config(config, z_table=table, cutoff=5.0)
+                data.AtomicData.from_config(config, z_table=table, cutoff=5.0, dtype=default_dtype)
                 for config in configs
             ],
             batch_size=1,
