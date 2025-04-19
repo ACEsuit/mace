@@ -213,8 +213,6 @@ def get_outputs(
             positions=vectors,
             training=(training or compute_hessian),
         )
-        if edge_forces is not None:
-            edge_forces = -1 * edge_forces  # Match LAMMPS sign convention
     else:
         edge_forces = None
     return forces, virials, stress, hessian, edge_forces
@@ -253,7 +251,7 @@ def get_atomic_virials_stresses(
     atom_stress = torch.where(
         torch.abs(atom_stress) < 1e10, atom_stress, torch.zeros_like(atom_stress)
     )
-    return -1 * atom_virial, atom_stress
+    return atom_virial, -1 * atom_stress
 
 
 def get_edge_vectors_and_lengths(
@@ -532,13 +530,13 @@ def prepare_graph(
         displacement = None
         positions = torch.zeros(
             (int(n_real), 3),
-            dtype=data["positions"].dtype,
-            device=data["positions"].device,
+            dtype=data["vectors"].dtype,
+            device=data["vectors"].device,
         )
         cell = torch.zeros(
             (num_graphs, 3, 3),
-            dtype=data["positions"].dtype,
-            device=data["positions"].device,
+            dtype=data["vectors"].dtype,
+            device=data["vectors"].device,
         )
         vectors = data["vectors"].requires_grad_(True)
         lengths = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
