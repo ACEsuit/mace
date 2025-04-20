@@ -340,6 +340,9 @@ class MACECalculator(Calculator):
                 ret_tensors["forces"][i] = out["forces"].detach()
                 if out["stress"] is not None:
                     ret_tensors["stress"][i] = out["stress"].detach()
+            if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
+                ret_tensors["dipole"][i] = out["dipole"].detach()
+            if self.model_type in ["MACE"]:
                 if out["atomic_stresses"] is not None:
                     ret_tensors.setdefault("atomic_stresses", []).append(
                         out["atomic_stresses"].detach()
@@ -348,8 +351,6 @@ class MACECalculator(Calculator):
                     ret_tensors.setdefault("atomic_virials", []).append(
                         out["atomic_virials"].detach()
                     )
-            if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
-                ret_tensors["dipole"][i] = out["dipole"].detach()
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
