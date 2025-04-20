@@ -437,7 +437,7 @@ class ScaleShiftMACE(MACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         total_energy = e0 + inter_e
-        node_energy = node_e0.double() + node_inter_es.double()
+        node_energy = node_e0.clone().double() + node_inter_es.clone().double()
 
         forces, virials, stress, hessian, edge_forces = get_outputs(
             energy=inter_e,
@@ -617,6 +617,8 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        compute_edge_forces: bool = False, # pylint: disable=W0613
+        compute_atomic_stresses: bool = False, # pylint: disable=W0613
     ) -> Dict[str, Optional[torch.Tensor]]:
         assert compute_force is False
         assert compute_virials is False
@@ -817,6 +819,8 @@ class EnergyDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        compute_edge_forces: bool = False, # pylint: disable=W0613
+        compute_atomic_stresses: bool = False, # pylint: disable=W0613
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)
