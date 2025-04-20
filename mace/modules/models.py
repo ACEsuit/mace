@@ -245,6 +245,8 @@ class MACE(torch.nn.Module):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
             )
+            if is_lammps:
+                pair_node_energy = pair_node_energy[: lammps_natoms[0]]
             pair_energy = scatter_sum(
                 src=pair_node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
@@ -398,6 +400,8 @@ class ScaleShiftMACE(MACE):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
             )
+            if is_lammps:
+                pair_node_energy = pair_node_energy[: lammps_natoms[0]]
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
