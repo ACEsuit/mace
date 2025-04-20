@@ -675,3 +675,19 @@ def test_mace_off_cueq(model="medium", device="cpu"):
     E = atoms.get_potential_energy()
 
     assert np.allclose(E, -2081.116128586803, atol=1e-9)
+
+def test_batch_relax(fitting_configs, trained_model):
+    from mace.calculators.batch_relax import BatchRelaxer
+    from ase.optimize import LBFGS
+
+    atoms_list = [atoms.copy() for atoms in fitting_configs]
+    for config in atoms_list:
+        config.rattle(0.01)
+        config.calc = trained_model
+
+    assert np.max(np.abs(trained_model.get_forces(atoms_list[2]))) > 1e-2
+    relaxer = BatchRelaxer(trained_model, LBFGS)
+    relaxer.relax(atoms_list, inplace=True)
+    for atoms in atoms_list:
+        atoms.calc = trained_model
+        assert np.max(np.abs(atoms.get_forces())) < 1e-2
