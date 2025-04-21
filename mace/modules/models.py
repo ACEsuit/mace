@@ -64,7 +64,7 @@ class MACE(torch.nn.Module):
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,
-        embedding_specs: Optional[Dict[tuple[str, dict]]] = None,
+        embedding_specs: Optional[Dict[str, Any]] = None,
         lammps_mliap: Optional[bool] = False,
     ):
         super().__init__()
@@ -96,7 +96,7 @@ class MACE(torch.nn.Module):
             self.embedding_specs = embedding_specs
             self.joint_embedding = GenericJointEmbedding(
                 base_dim=embedding_size,
-                feature_specs=embedding_specs,
+                embedding_specs=embedding_specs,
                 out_dim=embedding_size,
             )
         self.radial_embedding = RadialEmbeddingBlock(

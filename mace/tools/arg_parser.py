@@ -482,16 +482,16 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=DefaultKeys.CHARGES.value,
     )
     parser.add_argument(
-        "--electronic_temperature_key",
+        "--elec_temp_key",
         help="Key of electronic temperature in training xyz",
         type=str,
-        default=DefaultKeys.ELECTRONIC_TEMPERATURE.value,
+        default=DefaultKeys.elec_temp.value,
     )
     parser.add_argument(
-        "--feature_specs",
+        "--embedding_specs",
         help=(
             "List of feature‐spec dictionaries. "
-            "feature_specs:\n"
+            "embedding_specs:\n"
             "  - name: total_spin\n"
             "    type: categorical\n"
             "    per: graph\n"

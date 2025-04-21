@@ -68,7 +68,12 @@ def configure_model(
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
         )
-
+    if args.embedding_specs is not None:
+        args.embedding_specs = ast.literal_eval(args.embedding_specs)
+        logging.info(
+            "Using embedding specifications from command line arguments"
+        )
+        logging.info(f"Embedding specifications: {args.embedding_specs}")
     # Build model
     if model_foundation is not None and args.model in ["MACE", "ScaleShiftMACE"]:
         logging.info("Loading FOUNDATION model")
