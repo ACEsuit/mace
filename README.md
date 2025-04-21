@@ -358,10 +358,10 @@ For example, to freeze the first 6 parameters of the model, use:
 
 **Note**
 
-- By default, MACE-Freeze assumes all layers and parameters are trainable. This is equivalent to: `--freeze=0` or `--freeze_par=0`.
+- By default, MACE-freeze assumes all layers and parameters are trainable. This is equivalent to: `--freeze=0` or `--freeze_par=0`.
 - The `--freeze` and `--freeze_par` are mutually exclusive. If both are provided, only `--freeze` will take effect.
 - If you intend to use freezing as the sole fine-tuning strategy, ensure that `--multiheads_finetuning=False`.
-- Conversely, if you are using the multiheads fine-tuning method independently, either omit the --freeze argument or explicitly set --freeze=0 in your training script.
+- Conversely, if you are using the multiheads fine-tuning method independently, either omit the --freeze argument or explicitly set `--freeze=0` in your training script.
 
 ### Soft-freezing mode
 
@@ -384,13 +384,14 @@ When combined with standard layer freezing (`--freeze`):
 - The first `--freeze` layers are fully frozen (i.e., excluded from optimization).
 - The soft-freezing begins immediately after the frozen layers. For example:
 `--freeze=5` and `--soft_freeze=1` will freeze layers 1–5, soft-freeze layer 6, and leave all subsequent layers fully trainable.
+
 When combined with parameter-level freezing (`--freeze_par`):
 - If a layer contains a mix of frozen and active parameters, the soft-freezing logic begins at the first layer with any active parameters.
 - A single layer can contain both soft-frozen and fully frozen parameters, depending on the granularity of the freeze.
 
 **Logging**
 
-During training, the structure of the model, including its layers, submodules, and parameters, is printed to the logs in a hierarchical format. Each parameter is annotated with its learning rate, showing:
+During training, the structure of the model, including its layers and parameters, is printed to the logs in a hierarchical format. Each parameter is annotated with its learning rate, showing:
 - Fully frozen parameters (either showing the baseline `--lr` or n/a, as the learning rate is irrelevant for parameters that are not updated)
 - Soft-frozen parameters (lr = `--lr` × `--soft_freeze_factor`)
 - Actively trained parameters (lr = `--lr`)
