@@ -181,7 +181,12 @@ def train(
     logging.info("Started training, reporting errors on validation set")
     logging.info("Loss metrics on validation set")
     epoch = start_epoch
-
+    if swa:
+        log_epochs_freeze = set(
+            [0, 1, 2, 3, swa.start, swa.start + 1, swa.start + 2, swa.start + 3]
+        )
+    else:
+        log_epochs_freeze = set([0, 1, 2, 3])
     # log validation loss before _any_ training
     for valid_loader_name, valid_loader in valid_loaders.items():
         valid_loss_head, eval_metrics = evaluate(
@@ -326,9 +331,37 @@ def train(
                         keep_last = False or save_all_checkpoints
         if distributed:
             torch.distributed.barrier()
+        if epoch in log_epochs_freeze:
+            log_freeze_lr_train(model, optimizer)
         epoch += 1
 
     logging.info("Training complete")
+
+
+def log_freeze_lr_train(model, optimizer):
+    # Checking gradients in the active layers
+    logging.debug("Checking gradients")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            if param.grad is None:
+                logging.warning(f"Parameter: {name}, Gradient is None")
+            else:
+                gradient_norm = torch.norm(param.grad).item()
+                logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
+        else:
+            logging.debug(f"Parameter: {name}, Gradient norm: Frozen")
+
+    # Logging lrs used in each optimizer parameter group
+    logging.debug("Checking optimizer learning rates:")
+    for i, group in enumerate(optimizer.param_groups):
+        group_name = group.get("name", f"group_{i}")
+        lr = group.get("lr", "n/a")
+        weight_decay = group.get("weight_decay", "n/a")
+        num_params = len(group.get("params", []))
+
+        logging.debug(
+            f"'{group_name}': lr={lr:.2e} | weight_decay={weight_decay} | num_params={num_params}"
+        )
 
 
 def train_one_epoch(
@@ -381,18 +414,6 @@ def train_one_epoch(
             opt_metrics["epoch"] = epoch
             if rank == 0:
                 logger.log(opt_metrics)
-
-    # Checking gradients in the active layers
-    logging.debug("Check gradients")
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            if param.grad is None:
-                logging.warning(f"Parameter: {name}, Gradient is None")
-            else:
-                gradient_norm = torch.norm(param.grad).item()
-                logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
-        else:
-            logging.debug(f"Parameter: {name}, Gradient norm: Frozen")
 
 
 def take_step(

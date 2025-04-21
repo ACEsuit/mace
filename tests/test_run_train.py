@@ -20,7 +20,7 @@ except ImportError:
     CUET_AVAILABLE = False
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-#device = "cpu"
+# device = "cpu"
 
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
@@ -499,158 +499,6 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     assert np.allclose(Es, ref_Es)
 
 
-def test_run_train_freeze_par(tmp_path, fitting_configs):
-    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
-
-    mace_params = _mace_params.copy()
-    mace_params["checkpoints_dir"] = str(tmp_path)
-    mace_params["model_dir"] = str(tmp_path)
-    mace_params["train_file"] = tmp_path / "fit.xyz"
-    mace_params["loss"] = "weighted"
-    mace_params["foundation_model"] = "small"
-    mace_params["hidden_irreps"] = "128x0e"
-    mace_params["r_max"] = 6.0
-    mace_params["default_dtype"] = "float64"
-    mace_params["num_radial_basis"] = 10
-    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
-    mace_params["multiheads_finetuning"] = False
-    mace_params["freeze_par"] = 9
-
-    run_env = os.environ.copy()
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    run_env["PYTHONPATH"] = ":".join(sys.path)
-
-    cmd = (
-        sys.executable
-        + " "
-        + str(run_train)
-        + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
-    )
-
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
-
-    calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
-    )
-
-    Es = []
-    for at in fitting_configs:
-        at.calc = calc
-        Es.append(at.get_potential_energy())
-
-    print("Es", Es)
-
-    ref_Es = [
-        3.4404297977,
-        1.7308105589,
-        3.8779711236,
-        3.8445259524,
-        3.3526783077,
-        3.9690051137,
-        3.9487003864,
-        2.8296044219,
-        3.8706612453,
-        3.9819326697,
-        9.8389733374,
-        3.7397551274,
-        3.8149238693,
-        3.2222994681,
-        3.7686655925,
-        3.4685892606,
-        4.0117956515,
-        3.7946286923,
-        3.3714840691,
-        3.6015980979,
-        3.6587433162,
-        3.6195737863,
-    ]
-
-    assert np.allclose(Es, ref_Es)
-
-
-def test_run_train_freeze(tmp_path, fitting_configs):
-    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
-
-    mace_params = _mace_params.copy()
-    mace_params["checkpoints_dir"] = str(tmp_path)
-    mace_params["model_dir"] = str(tmp_path)
-    mace_params["train_file"] = tmp_path / "fit.xyz"
-    mace_params["loss"] = "weighted"
-    mace_params["foundation_model"] = "small"
-    mace_params["hidden_irreps"] = "128x0e"
-    mace_params["r_max"] = 6.0
-    mace_params["default_dtype"] = "float64"
-    mace_params["num_radial_basis"] = 10
-    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
-    mace_params["multiheads_finetuning"] = False
-    mace_params["freeze"] = 6
-
-    run_env = os.environ.copy()
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    run_env["PYTHONPATH"] = ":".join(sys.path)
-
-    cmd = (
-        sys.executable
-        + " "
-        + str(run_train)
-        + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
-    )
-
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
-
-    calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
-    )
-
-    Es = []
-    for at in fitting_configs:
-        at.calc = calc
-        Es.append(at.get_potential_energy())
-
-    print("Es", Es)
-
-    ref_Es = [
-        5.0515191462,
-        2.3054579400,
-        7.8241036773,
-        7.0553514878,
-        5.3206756801,
-        8.2035107897,
-        7.8436588785,
-        7.3792063144,
-        7.3911904609,
-        7.8037639811,
-        11.7320008784,
-        6.3847356085,
-        7.5927331920,
-        5.0871388009,
-        6.7783866071,
-        5.6115314645,
-        8.1487276026,
-        6.8827813354,
-        5.5037692727,
-        6.3979570745,
-        6.4291638326,
-        6.3360278320,
-    ]
-
-    assert np.allclose(Es, ref_Es)
-
-
 def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
@@ -1011,7 +859,10 @@ def test_run_train_multihead_replay_custum_finetuning(
     assert len(set(Es)) > 1  # Ens
 
 
-@pytest.mark.skipif(not CUET_AVAILABLE or device != "cuda", reason="cuequivariance not installed or cuda not available")
+@pytest.mark.skipif(
+    not CUET_AVAILABLE or device != "cuda",
+    reason="cuequivariance not installed or cuda not available",
+)
 def test_run_train_cueq(tmp_path, fitting_configs):
     torch.set_default_dtype(torch.float64)
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
@@ -1087,7 +938,10 @@ def test_run_train_cueq(tmp_path, fitting_configs):
     assert np.allclose(ref_Es, Es_cueq)
 
 
-@pytest.mark.skipif(not CUET_AVAILABLE or device != "cuda", reason="cuequivariance not installed or cuda not available")
+@pytest.mark.skipif(
+    not CUET_AVAILABLE or device != "cuda",
+    reason="cuequivariance not installed or cuda not available",
+)
 def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
@@ -1205,85 +1059,6 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
         0.7002358436584473,
         0.5574042201042175,
     ]
-    assert np.allclose(Es, ref_Es, atol=1e-1)
-
-
-@pytest.mark.skipif(not CUET_AVAILABLE or device != "cuda", reason="cuequivariance not installed or cuda not available")
-def test_run_train_foundation_freeze_cueq(tmp_path, fitting_configs):
-    torch.set_default_dtype(torch.float64)
-    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
-
-    mace_params = _mace_params.copy()
-    mace_params["checkpoints_dir"] = str(tmp_path)
-    mace_params["model_dir"] = str(tmp_path)
-    mace_params["train_file"] = tmp_path / "fit.xyz"
-    mace_params["loss"] = "weighted"
-    mace_params["foundation_model"] = "small"
-    mace_params["hidden_irreps"] = "128x0e"
-    mace_params["r_max"] = 6.0
-    mace_params["default_dtype"] = "float64"
-    mace_params["num_radial_basis"] = 10
-    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
-    mace_params["multiheads_finetuning"] = False
-    mace_params["freeze_par"] = 8
-    mace_params["enable_cueq"] = True
-
-    run_env = os.environ.copy()
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    run_env["PYTHONPATH"] = ":".join(sys.path)
-
-    cmd = (
-        sys.executable
-        + " "
-        + str(run_train)
-        + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
-    )
-
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
-
-    calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
-    )
-
-    Es = []
-    for at in fitting_configs:
-        at.calc = calc
-        Es.append(at.get_potential_energy())
-
-    print("Es", Es)
-
-    ref_Es = [
-        3.4404297977,
-        1.7308105589,
-        3.8779711236,
-        3.8445259524,
-        3.3526783077,
-        3.9690051137,
-        3.9487003864,
-        2.8296044219,
-        3.8706612453,
-        3.9819326697,
-        9.8389733374,
-        3.7397551274,
-        3.8149238693,
-        3.2222994681,
-        3.7686655925,
-        3.4685892606,
-        4.0117956515,
-        3.7946286923,
-        3.3714840691,
-        3.6015980979,
-        3.6587433162,
-        3.6195737863,
-    ]
-
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
 

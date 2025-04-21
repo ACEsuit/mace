@@ -441,6 +441,26 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
     )
+    parser.add_argument(
+        "--soft_freeze",
+        help="Soft-freeze layers from 1 to N. If combined with full freezing, the count starts after freezing",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--soft_freeze_factor",
+        help="A fraction of --lr to be used for soft-freeze",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--soft_freeze_swa",
+        "--soft_freeze_stage_two",
+        help="apply soft-freezing to Stage Two as well, using the same soft_freeze_factor",
+        action="store_true",
+        default=False,
+        dest="soft_freeze_swa",
+    )
 
     # Keys
     parser.add_argument(

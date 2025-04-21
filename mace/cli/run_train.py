@@ -57,6 +57,7 @@ from mace.tools.scripts_utils import (
     get_optimizer,
     get_params_options,
     get_swa,
+    log_soft_freeze,
     print_git_commit,
     remove_pt_head,
     setup_wandb,
@@ -726,15 +727,6 @@ def run(args) -> None:
     elif args.freeze is not None:
         freeze_layers(model, args.freeze)
 
-    # Check which layers are frozen
-    logging.info("===========ACTIVE/FROZEN PARAMETERS===========")
-
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            logging.info(f"Parameter: {name}, Active")
-        else:
-            logging.info(f"Parameter: {name}, Frozen")
-
     logging.info("")
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
@@ -750,6 +742,10 @@ def run(args) -> None:
 
     # Optimizer
     param_options = get_params_options(args, model)
+    logging.info("")
+    logging.info("========== STAGE ONE PARAMETERS ==========")
+    log_soft_freeze(param_options, model)
+
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)
     if args.device == "xpu":
@@ -765,7 +761,9 @@ def run(args) -> None:
     swas = [False]
     if args.swa:
         swa, swas = get_swa(args, model, optimizer, swas, dipole_only)
-
+        logging.info("")
+        logging.info("========== STAGE TWO PARAMETERS ==========")
+        log_soft_freeze(param_options, model)
     checkpoint_handler = tools.CheckpointHandler(
         directory=args.checkpoints_dir,
         tag=tag,
