@@ -11,7 +11,7 @@ class DefaultKeys(Enum):
     DIPOLE = "dipole"
     HEAD = "head"
     CHARGES = "REF_charges"
-    ELECTRONIC_TEMPERATURE = "electronic_temperature"
+    elec_temp = "elec_temp"
 
     @staticmethod
     def keydict() -> dict[str, str]:
