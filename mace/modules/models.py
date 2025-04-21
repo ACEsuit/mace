@@ -11,6 +11,7 @@ import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
+from mace.modules.embeddings import GenericJointEmbedding
 from mace.modules.radial import ZBLBasis
 from mace.tools.scatter import scatter_sum
 
@@ -63,6 +64,7 @@ class MACE(torch.nn.Module):
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,
+        embedding_specs: Optional[Dict[tuple[str, dict]]] = None,
         lammps_mliap: Optional[bool] = False,
     ):
         super().__init__()
@@ -89,6 +91,14 @@ class MACE(torch.nn.Module):
             irreps_out=node_feats_irreps,
             cueq_config=cueq_config,
         )
+        embedding_size = node_feats_irreps.count(o3.Irrep(0, 1))
+        if embedding_specs is not None:
+            self.embedding_specs = embedding_specs
+            self.joint_embedding = GenericJointEmbedding(
+                base_dim=embedding_size,
+                feature_specs=embedding_specs,
+                out_dim=embedding_size,
+            )
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
             num_bessel=num_bessel,
@@ -254,6 +264,16 @@ class MACE(torch.nn.Module):
             pair_node_energy = torch.zeros_like(node_e0)
             pair_energy = torch.zeros_like(e0)
 
+        if hasattr(self, "joint_embedding"):
+            embedding_features: Dict[str, torch.Tensor] = {}
+            for name, _ in self.embedding_specs.items():
+                embedding_features[name] = data[name]
+            node_feats += self.joint_embedding(
+                node_feats,
+                data["batch"],
+                embedding_features,
+            )
+
         # Interactions
         energies = [e0, pair_energy]
         node_energies_list = [node_e0, pair_node_energy]
@@ -405,6 +425,15 @@ class ScaleShiftMACE(MACE):
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
+        if hasattr(self, "joint_embedding"):
+            embedding_features: Dict[str, torch.Tensor] = {}
+            for name, _ in self.embedding_specs.items():
+                embedding_features[name] = data[name]
+            node_feats += self.joint_embedding(
+                node_feats,
+                data["batch"],
+                embedding_features,
+            )
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
