@@ -68,6 +68,7 @@ class AtomicData(torch_geometric.data.Data):
         virials: Optional[torch.Tensor],  # [1,3,3]
         dipole: Optional[torch.Tensor],  # [, 3]
         charges: Optional[torch.Tensor],  # [n_nodes, ]
+        electronic_temperature: Optional[torch.Tensor], # [,]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -92,6 +93,7 @@ class AtomicData(torch_geometric.data.Data):
         assert virials is None or virials.shape == (1, 3, 3)
         assert dipole is None or dipole.shape[-1] == 3
         assert charges is None or charges.shape == (num_nodes,)
+        assert electronic_temperature is None or len(electronic_temperature.shape) == 0
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -115,6 +117,7 @@ class AtomicData(torch_geometric.data.Data):
             "virials": virials,
             "dipole": dipole,
             "charges": charges,
+            "electronic_temperature": electronic_temperature,
         }
         super().__init__(**data)
 
@@ -261,6 +264,14 @@ class AtomicData(torch_geometric.data.Data):
             if config.properties.get("charges") is not None
             else torch.zeros(num_atoms, dtype=torch.get_default_dtype())
         )
+        electronic_temperature = (
+            torch.tensor(
+                config.properties.get("electronic_temperature"),
+                dtype=torch.get_default_dtype(),
+            )
+            if config.properties.get("electronic_temperature") is not None
+            else torch.tensor(0.0, dtype=torch.get_default_dtype())
+        )
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
@@ -283,6 +294,7 @@ class AtomicData(torch_geometric.data.Data):
             virials=virials,
             dipole=dipole,
             charges=charges,
+            electronic_temperature=electronic_temperature,
         )
 
 
