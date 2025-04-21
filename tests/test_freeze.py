@@ -342,4 +342,366 @@ def test_run_train_foundation_freeze_cueq(tmp_path, fitting_configs):
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
 
-# TO DO: add soft-freeze tests
+@pytest.mark.skipif(
+    not CUET_AVAILABLE or device != "cuda",
+    reason="cuequivariance not installed or cuda not available",
+)
+def test_run_train_soft_freeze_cueq(tmp_path, fitting_configs):
+    torch.set_default_dtype(torch.float64)
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "small"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float64"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["multiheads_finetuning"] = False
+    mace_params["enable_cueq"] = True
+    mace_params["freeze_par"] = 8
+    mace_params["soft_freeze"] = 1
+    mace_params["soft_freeze_factor"] = 0.1
+    mace_params["soft_freeze_swa"] = None
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+
+    ref_Es = [
+        4.7097111585,
+        2.1657316953,
+        4.5721787830,
+        4.4974878306,
+        3.7895048208,
+        4.5641742601,
+        4.5254280041,
+        3.6814502951,
+        4.4947306918,
+        4.4938875957,
+        11.0660592534,
+        4.3791088182,
+        4.4610165341,
+        4.4047065188,
+        4.4151594051,
+        4.1548401290,
+        4.6304058745,
+        4.4546468493,
+        4.4308637268,
+        4.2262612843,
+        4.4208466570,
+        4.2547575544,
+    ]
+
+    assert np.allclose(Es, ref_Es, atol=1e-1)
+
+
+def test_run_train_soft_freeze(tmp_path, fitting_configs):
+    torch.set_default_dtype(torch.float64)
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "small"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float64"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["multiheads_finetuning"] = False
+    mace_params["enable_cueq"] = True
+    mace_params["freeze_par"] = 9
+    mace_params["soft_freeze"] = 1
+    mace_params["soft_freeze_factor"] = 0.1
+    mace_params["soft_freeze_swa"] = None
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+
+    ref_Es = [
+        4.7056201156,
+        2.1634473277,
+        4.6039631345,
+        4.5372900075,
+        3.8132339460,
+        4.5861892569,
+        4.5518163661,
+        3.7256253053,
+        4.5314156711,
+        4.5212141643,
+        11.1676722987,
+        4.4194879958,
+        4.4920202555,
+        4.4361218421,
+        4.4522570925,
+        4.1985796279,
+        4.6510174832,
+        4.4907661406,
+        4.4673765442,
+        4.2691714611,
+        4.4789074387,
+        4.2951105945,
+    ]
+
+    assert np.allclose(Es, ref_Es, atol=1e-1)
+
+
+def test_run_train_multihead_soft_freeze(tmp_path, fitting_configs):
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
+    fitting_configs_ccd = []
+    for _, c in enumerate(fitting_configs):
+        c_dft = c.copy()
+        c_dft.info["head"] = "DFT"
+        fitting_configs_dft.append(c_dft)
+
+        c_mp2 = c.copy()
+        c_mp2.info["head"] = "MP2"
+        fitting_configs_mp2.append(c_mp2)
+
+        c_ccd = c.copy()
+        c_ccd.info["head"] = "CCD"
+        fitting_configs_ccd.append(c_ccd)
+    ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
+    ase.io.write(tmp_path / "fit_multihead_ccd.xyz", fitting_configs_ccd)
+
+    heads = {
+        "DFT": {"train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz"},
+        "MP2": {"train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz"},
+        "CCD": {"train_file": f"{str(tmp_path)}/fit_multihead_ccd.xyz"},
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    filename = tmp_path / "config.yaml"
+    with open(filename, "w", encoding="utf-8") as file:
+        file.write(yaml_str)
+
+    mace_params = _mace_params.copy()
+    mace_params["valid_fraction"] = 0.1
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["loss"] = "weighted"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float64"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["config"] = tmp_path / "config.yaml"
+    mace_params["batch_size"] = 2
+    mace_params["num_samples_pt"] = 50
+    mace_params["subselect_pt"] = "random"
+    mace_params["soft_freeze"] = 5
+    mace_params["soft_freeze_factor"] = 0.1
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+
+    output_path = "/home/p/phrfkz/merge-test/energies_soft_freeze3.txt"
+    with open(output_path, "w") as f:
+        for E in Es:
+            f.write(f"{E:.10f}\n")
+
+    ref_Es = [
+        0.0000000000,
+        0.0000000000,
+        -0.0007479625,
+        -0.0019836354,
+        0.0108382566,
+        -0.0017422519,
+        -0.0037143424,
+        0.0269450834,
+        -0.0009802889,
+        -0.0057505603,
+        0.0030535554,
+        -0.0001734842,
+        0.0010523054,
+        -0.0029497718,
+        0.0005653987,
+        0.0022656569,
+        0.0057065461,
+        0.0052130129,
+        0.0040331088,
+        -0.0064291915,
+        0.0026430577,
+        0.0020012024,
+    ]
+    assert np.allclose(Es, ref_Es)
+
+
+@pytest.mark.skipif(
+    not CUET_AVAILABLE or device != "cuda",
+    reason="cuequivariance not installed or cuda not available",
+)
+def test_run_train_soft_freeze_noswa_cueq(tmp_path, fitting_configs):
+    torch.set_default_dtype(torch.float64)
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "small"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float64"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["multiheads_finetuning"] = False
+    mace_params["enable_cueq"] = True
+    mace_params["freeze_par"] = 8
+    mace_params["soft_freeze"] = 1
+    mace_params["soft_freeze_factor"] = 0.1
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+
+    ref_Es = [
+        4.7097111585,
+        2.1657316953,
+        4.5721787830,
+        4.4974878306,
+        3.7895048208,
+        4.5641742601,
+        4.5254280041,
+        3.6814502951,
+        4.4947306918,
+        4.4938875957,
+        11.0660592534,
+        4.3791088182,
+        4.4610165341,
+        4.4047065188,
+        4.4151594051,
+        4.1548401290,
+        4.6304058745,
+        4.4546468493,
+        4.4308637268,
+        4.2262612843,
+        4.4208466570,
+        4.2547575544,
+    ]
+
+    assert np.allclose(Es, ref_Es, atol=1e-1)
