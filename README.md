@@ -377,6 +377,7 @@ Soft-freezing scales down the learning rate in a subset of layers using a multip
 **Configuration**
 - `--soft_freeze=<N>`: Specifies the number of layers to soft-freeze.
 - `--soft_freeze_factor=<float>`: A scaling factor between 0 and 1 applied to the base learning rate (`--lr`) for soft-frozen parameters.
+- `--soft_freeze_swa` will also apply the soft-freeze logic to the Stage Two training by applying `--soft_freeze_factor` scaling to `--lr_swa`. Omit this flag to make the Stage Two learning rate uniform across parameters.
 
 **Behavior with freezing**
 
