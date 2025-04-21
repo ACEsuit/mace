@@ -556,7 +556,7 @@ def test_run_train_multihead_soft_freeze(tmp_path, fitting_configs):
     mace_params["batch_size"] = 2
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"
-    mace_params["soft_freeze"] = 5
+    mace_params["soft_freeze"] = 2
     mace_params["soft_freeze_factor"] = 0.1
 
     run_env = os.environ.copy()
@@ -591,34 +591,29 @@ def test_run_train_multihead_soft_freeze(tmp_path, fitting_configs):
 
     print("Es", Es)
 
-    output_path = "/home/p/phrfkz/merge-test/energies_soft_freeze3.txt"
-    with open(output_path, "w") as f:
-        for E in Es:
-            f.write(f"{E:.10f}\n")
-
     ref_Es = [
         0.0000000000,
         0.0000000000,
-        -0.0007479625,
-        -0.0019836354,
-        0.0108382566,
-        -0.0017422519,
-        -0.0037143424,
-        0.0269450834,
-        -0.0009802889,
-        -0.0057505603,
-        0.0030535554,
-        -0.0001734842,
-        0.0010523054,
-        -0.0029497718,
-        0.0005653987,
-        0.0022656569,
-        0.0057065461,
-        0.0052130129,
-        0.0040331088,
-        -0.0064291915,
-        0.0026430577,
-        0.0020012024,
+        0.0347944589,
+        -0.0056869672,
+        -0.1099380035,
+        0.1345284345,
+        -0.0786784911,
+        -0.1064854434,
+        0.0800015489,
+        -0.0523257851,
+        0.2412342945,
+        -0.0333065080,
+        -0.0648696150,
+        0.2572237230,
+        0.0701157782,
+        0.0110373787,
+        0.2518143028,
+        0.1114972901,
+        0.2267955514,
+        -0.1615110818,
+        -0.0524467197,
+        0.0989867308,
     ]
     assert np.allclose(Es, ref_Es)
 
