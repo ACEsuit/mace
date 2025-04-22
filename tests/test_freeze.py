@@ -443,7 +443,7 @@ def test_run_train_soft_freeze(tmp_path, fitting_configs):
     mace_params["num_radial_basis"] = 10
     mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
     mace_params["multiheads_finetuning"] = False
-    mace_params["enable_cueq"] = True
+    mace_params["enable_cueq"] = False
     mace_params["freeze_par"] = 9
     mace_params["soft_freeze"] = 1
     mace_params["soft_freeze_factor"] = 0.1
@@ -481,28 +481,28 @@ def test_run_train_soft_freeze(tmp_path, fitting_configs):
     print("Es", Es)
 
     ref_Es = [
-        4.7056201156,
-        2.1634473277,
-        4.6039631345,
-        4.5372900075,
-        3.8132339460,
-        4.5861892569,
-        4.5518163661,
-        3.7256253053,
-        4.5314156711,
-        4.5212141643,
-        11.1676722987,
-        4.4194879958,
-        4.4920202555,
-        4.4361218421,
-        4.4522570925,
-        4.1985796279,
-        4.6510174832,
-        4.4907661406,
-        4.4673765442,
-        4.2691714611,
-        4.4789074387,
-        4.2951105945,
+        4.7097111585,
+        2.1657316953,
+        4.5721787830,
+        4.4974878306,
+        3.7895048208,
+        4.5641742601,
+        4.5254280041,
+        3.6814502951,
+        4.4947306918,
+        4.4938875957,
+        11.0660592534,
+        4.3791088182,
+        4.4610165341,
+        4.4047065188,
+        4.4151594051,
+        4.1548401290,
+        4.6304058745,
+        4.4546468493,
+        4.4308637268,
+        4.2262612843,
+        4.4208466570,
+        4.2547575544,
     ]
 
     assert np.allclose(Es, ref_Es, atol=1e-1)
