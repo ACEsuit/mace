@@ -505,7 +505,7 @@ def test_run_train_soft_freeze(tmp_path, fitting_configs):
         4.2547575544,
     ]
 
-    assert np.allclose(Es, ref_Es, atol=1e-1)
+    assert np.allclose(Es, ref_Es)
 
 
 def test_run_train_multihead_soft_freeze(tmp_path, fitting_configs):
