@@ -52,12 +52,28 @@ class SelectionSettings:
     weight_ft: float = 1.0
     weight_pt: float = 1.0
     seed: int = 42
+    config: str | None = None
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+def build_default_finetuning_select_arg_parser() -> argparse.ArgumentParser:
+    try:
+        import configargparse
+
+        parser = configargparse.ArgumentParser(
+            config_file_parser_class=configargparse.YAMLConfigFileParser,
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        parser.add(
+            "--config",
+            type=str,
+            is_config_file=True,
+            help="config file to aggregate options",
+        )
+    except ImportError:
+        parser = argparse.ArgumentParser(
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+
     parser.add_argument(
         "--configs_pt",
         help="path to XYZ configurations for the pretraining",
@@ -136,7 +152,8 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
     )
     parser.add_argument("--seed", help="random seed", type=int, default=42)
-    return parser.parse_args()
+    parser.add_argument("--atomic_numbers", help="atomic numbers to keep for filtering", nargs="+", type=int, required=False)
+    return parser
 
 
 def calculate_descriptors(atoms: List[ase.Atoms], calc: MACECalculator) -> None:
@@ -484,10 +501,16 @@ def select_samples(
     )
 
 
-def main():
-    args = parse_args()
-    settings = SelectionSettings(**vars(args))
-    select_samples(settings)
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler()],
+    )
+    logging.info("Start: Parse command line arguments")
+    args = build_default_finetuning_select_arg_parser().parse_args()
+    select_samples(SelectionSettings(**vars(args)))
 
 
 if __name__ == "__main__":
