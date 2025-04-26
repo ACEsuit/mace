@@ -370,9 +370,6 @@ def _load_descriptors(
         if calc is None:
             raise ValueError("MACECalculator must be provided to calculate descriptors")
         calculate_descriptors(atoms, calc)
-        output_path = Path(settings.configs_pt).name
-        logging.info(f"Saving descriptors to {output_path}")
-        _maybe_save_descriptors(atoms, output_path ,False)
 
 
 def _maybe_save_descriptors(
@@ -477,7 +474,6 @@ def select_samples(
     filtered_pt_atoms, remaining_atoms, passes_filter = _filter_pretraining_data(
         atoms_list_pt, settings.filtering_type, all_species_ft
     )
-
     subsampled_atoms = _subsample_data(
         filtered_pt_atoms,
         remaining_atoms,
@@ -487,6 +483,8 @@ def select_samples(
         settings.descriptors,
         calc,
     )
+    output_path = Path(settings.configs_pt).name
+    _maybe_save_descriptors(filtered_pt_atoms, output_path ,False)
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(
