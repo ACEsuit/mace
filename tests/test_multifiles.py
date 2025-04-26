@@ -401,7 +401,7 @@ def test_multifile_training():
         assert model is not None, "Failed to load model"
 
         # Create a calculator
-        calc = MACECalculator(model_paths=model_path, device="cpu")
+        calc = MACECalculator(model_paths=model_path, device="cpu", head="head1")
 
         # Run prediction on a test atom
         test_atom = create_test_atoms(num_atoms=5, seed=99999)
@@ -592,7 +592,9 @@ def test_multiple_xyz_per_head():
         assert model is not None, "Failed to load model"
 
         # Create a calculator
-        calc = MACECalculator(model_paths=model_path, device="cpu")
+        calc = MACECalculator(
+            model_paths=model_path, device="cpu", head="multi_xyz_head"
+        )
 
         # Run prediction on a test atom
         test_atom = create_test_atoms(num_atoms=5, seed=99999)
@@ -783,7 +785,9 @@ def test_single_xyz_per_head():
         assert model is not None, "Failed to load model"
 
         # Create a calculator
-        calc = MACECalculator(model_paths=model_path, device="cpu")
+        calc = MACECalculator(
+            model_paths=model_path, device="cpu", head="multi_xyz_head"
+        )
 
         # Run prediction on a test atom
         test_atom = create_test_atoms(num_atoms=5, seed=99999)
@@ -794,6 +798,231 @@ def test_single_xyz_per_head():
         # Assert we got sensible outputs
         assert np.isfinite(energy), "Model produced non-finite energy"
         assert np.all(np.isfinite(forces)), "Model produced non-finite forces"
+
+    finally:
+        # Clean up
+        shutil.rmtree(temp_dir)
+
+
+@pytest.mark.slow
+def test_multihead_finetuning_different_formats():
+    """Test multihead finetuning with different file formats for each head."""
+    # Create temporary directory
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Set up file paths
+        xyz_file = os.path.join(temp_dir, "finetuning_xyz.xyz")
+        h5_folder = os.path.join(temp_dir, "h5_data")
+        iso_atoms_file = os.path.join(temp_dir, "isolated_atoms.xyz")
+
+        config_path = os.path.join(temp_dir, "config.yaml")
+        results_dir = os.path.join(temp_dir, "results")
+        checkpoints_dir = os.path.join(temp_dir, "checkpoints")
+        model_dir = os.path.join(temp_dir, "models")
+        e0s_file = os.path.join(temp_dir, "e0s.json")
+
+        # Create directories
+        os.makedirs(results_dir, exist_ok=True)
+        os.makedirs(checkpoints_dir, exist_ok=True)
+        os.makedirs(model_dir, exist_ok=True)
+
+        # Set atomic numbers for z_table
+        z_table_elements = [1, 6, 7, 8]  # H, C, N, O
+
+        # Create test data with different seeds
+        rng = np.random.RandomState(42)
+        seeds = rng.randint(0, 10000, size=3)
+
+        # Create isolated atoms for E0s (one of each element)
+        isolated_atoms = []
+        e0s_dict = {}
+        for z in z_table_elements:
+            atom = Atoms(
+                numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True
+            )
+            energy = float(rng.uniform(-5.0, -1.0))
+            forces = np.zeros((1, 3))
+            stress = np.zeros(6)
+            calc = SinglePointCalculator(
+                atom, energy=energy, forces=forces, stress=stress
+            )
+            atom.calc = calc
+            atom.info["config_type"] = "IsolatedAtom"
+            atom.info["REF_energy"] = energy  # Make sure energy is in the right place
+            atom.arrays["REF_forces"] = forces
+            atom.info["REF_stress"] = stress
+            isolated_atoms.append(atom)
+            e0s_dict[str(z)] = energy
+
+        # Create E0s file
+        create_e0s_file(e0s_dict, e0s_file)
+
+        # Create isolated atoms xyz file
+        create_xyz_file(isolated_atoms, iso_atoms_file)
+
+        # Create XYZ data for xyz_head
+        xyz_atoms = [
+            create_test_atoms(num_atoms=5, seed=seeds[0] + i) for i in range(30)
+        ]
+        # Add REF_ properties
+        for atom in xyz_atoms:
+            atom.info["REF_energy"] = atom.calc.results["energy"]
+            atom.arrays["REF_forces"] = atom.calc.results["forces"]
+            atom.info["REF_stress"] = atom.calc.results["stress"]
+            atom.info["head"] = "xyz_head"  # Assign head
+        create_xyz_file(xyz_atoms, xyz_file)
+
+        # Create H5 data for h5_head
+        h5_atoms = [
+            create_test_atoms(num_atoms=5, seed=seeds[1] + i) for i in range(30)
+        ]
+        # Add REF_ properties
+        for atom in h5_atoms:
+            atom.info["REF_energy"] = atom.calc.results["energy"]
+            atom.arrays["REF_forces"] = atom.calc.results["forces"]
+            atom.info["REF_stress"] = atom.calc.results["stress"]
+            atom.info["head"] = "h5_head"  # Assign head
+
+        h5_atoms_xyz = os.path.join(temp_dir, "h5_atoms.xyz")
+        create_xyz_file(h5_atoms, h5_atoms_xyz)
+        # Include isolated atoms for E0s in the h5 dataset
+        all_atoms_for_h5 = h5_atoms + isolated_atoms
+        all_atoms_h5_xyz = os.path.join(temp_dir, "all_atoms_for_h5.xyz")
+        create_xyz_file(all_atoms_for_h5, all_atoms_h5_xyz)
+        create_h5_dataset(all_atoms_h5_xyz, h5_folder)
+
+        # Create config.yaml for multihead finetuning
+        heads = {
+            "xyz_head": {
+                "train_file": xyz_file,
+                "valid_fraction": 0.2,
+                "energy_key": "REF_energy",
+                "forces_key": "REF_forces",
+                "stress_key": "REF_stress",
+                "E0s": e0s_file,
+            },
+            "h5_head": {
+                "train_file": os.path.join(h5_folder, "train"),
+                "valid_file": os.path.join(h5_folder, "val"),
+                "energy_key": "REF_energy",
+                "forces_key": "REF_forces",
+                "stress_key": "REF_stress",
+                "E0s": e0s_file,
+            },
+        }
+
+        yaml_str = "heads:\n"
+        for key, value in heads.items():
+            yaml_str += f"  {key}:\n"
+            for sub_key, sub_value in value.items():
+                yaml_str += f"    {sub_key}: {sub_value}\n"
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(yaml_str)
+
+        # Now perform multihead finetuning
+        finetuning_params = {
+            "name": "multihead_finetuned",
+            "config": config_path,
+            "foundation_model": "small",  # Use the small foundation model
+            "energy_weight": 1.0,
+            "forces_weight": 10.0,
+            "model": "MACE",
+            "hidden_irreps": "128x0e",  # Match foundation model
+            "r_max": 5.0,
+            "batch_size": 2,
+            "max_num_epochs": 2,  # Just do a quick finetuning for test
+            "device": "cpu",
+            "seed": 42,
+            "loss": "weighted",
+            "default_dtype": "float64",
+            "checkpoints_dir": checkpoints_dir,
+            "model_dir": model_dir,
+            "results_dir": results_dir,
+            "atomic_numbers": "[" + ",".join(map(str, z_table_elements)) + "]",
+            "multiheads_finetuning": True,
+            "filter_type_pt": "combinations",
+            "subselect_pt": "random",
+            "num_samples_pt": 10,  # Small number for testing
+            "force_mh_ft_lr": True,  # Force using specified learning rate
+        }
+
+        # Run finetuning
+        run_train_script = (
+            Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = (
+            str(Path(__file__).parent.parent) + ":" + env.get("PYTHONPATH", "")
+        )
+
+        cmd = [sys.executable, str(run_train_script)]
+        for k, v in finetuning_params.items():
+            if v is None:
+                cmd.append(f"--{k}")
+            else:
+                cmd.append(f"--{k}={v}")
+
+        # Run the process
+        process = subprocess.run(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        # Print output for debugging
+        print("\n" + "=" * 40 + " STDOUT " + "=" * 40)
+        print(process.stdout.decode())
+        print("\n" + "=" * 40 + " STDERR " + "=" * 40)
+        print(process.stderr.decode())
+
+        # Check that process completed successfully
+        assert (
+            process.returncode == 0
+        ), f"Finetuning failed with error: {process.stderr.decode()}"
+
+        # Check that model was created
+        model_path = os.path.join(model_dir, "multihead_finetuned.model")
+        assert os.path.exists(model_path), f"Model was not created at {model_path}"
+
+        # Load model and verify it has the expected heads
+        model = torch.load(model_path, map_location="cpu")
+        assert hasattr(model, "heads"), "Model does not have heads attribute"
+        assert set(["xyz_head", "h5_head", "pt_head"]).issubset(
+            set(model.heads)
+        ), "Expected heads not found in model"
+
+        # Try to run the model with both heads
+        # For xyz_head
+        calc_xyz = MACECalculator(
+            model_paths=model_path,
+            device="cpu",
+            head="xyz_head",
+            default_dtype="float64",
+        )
+        test_atom = create_test_atoms(num_atoms=5, seed=99999)
+        test_atom.calc = calc_xyz
+        energy_xyz = test_atom.get_potential_energy()
+        forces_xyz = test_atom.get_forces()
+
+        # For h5_head
+        calc_h5 = MACECalculator(
+            model_paths=model_path,
+            device="cpu",
+            head="h5_head",
+            default_dtype="float64",
+        )
+        test_atom.calc = calc_h5
+        energy_h5 = test_atom.get_potential_energy()
+        forces_h5 = test_atom.get_forces()
+
+        # Verify results
+        assert np.isfinite(energy_xyz), "xyz_head produced non-finite energy"
+        assert np.all(np.isfinite(forces_xyz)), "xyz_head produced non-finite forces"
+        assert np.isfinite(energy_h5), "h5_head produced non-finite energy"
+        assert np.all(np.isfinite(forces_h5)), "h5_head produced non-finite forces"
 
     finally:
         # Clean up

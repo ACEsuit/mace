@@ -1,0 +1,4 @@
+target-version = "py38"
+
+[lint]
+select = ["FA102"]
