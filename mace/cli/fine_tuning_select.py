@@ -31,7 +31,7 @@ class FilteringType(Enum):
     COMBINATIONS = "combinations"
     EXCLUSIVE = "exclusive"
     INCLUSIVE = "inclusive"
-    
+
     def __str__(self):
         return self.value
 
@@ -390,9 +390,6 @@ def _load_descriptors(
         if calc is None:
             raise ValueError("MACECalculator must be provided to calculate descriptors")
         calculate_descriptors(atoms, calc)
-        output_path = Path(settings.configs_pt).name
-        logging.info(f"Saving descriptors to {output_path}")
-        _maybe_save_descriptors(atoms, output_path ,False)
 
 
 def _maybe_save_descriptors(
@@ -412,7 +409,7 @@ def _maybe_save_descriptors(
         logging.info(f"Saving descriptors at {descriptor_save_path}")
         descriptors_list = [x.info["mace_descriptors"] for x in atoms]
         np.save(descriptor_save_path, descriptors_list, allow_pickle=True)
-        if delete: 
+        if delete:
             for x in atoms:
                 del x.info["mace_descriptors"]
 
@@ -506,7 +503,6 @@ def select_samples(
     filtered_pt_atoms, remaining_atoms, passes_filter = _filter_pretraining_data(
         atoms_list_pt, settings.filtering_type, all_species_ft
     )
-
     subsampled_atoms = _subsample_data(
         filtered_pt_atoms,
         remaining_atoms,
@@ -522,6 +518,8 @@ def select_samples(
             f"filename '{settings.output}' does no have "
             "suffix compatible with extxyz format"
         )
+    output_path = Path(settings.configs_pt).name
+    _maybe_save_descriptors(filtered_pt_atoms, output_path ,False)
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(
