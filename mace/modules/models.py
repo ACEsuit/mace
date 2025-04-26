@@ -691,7 +691,7 @@ class MACELES(MACE):
         les_energy = les_result['E_lr']
         total_energy = total_energy + les_energy
 
-        forces, virials, stress, hessian = get_outputs(
+        forces, virials, stress, hessian, edge_forces = get_outputs(
             energy=total_energy,
             positions=data["positions"],
             displacement=displacement,
