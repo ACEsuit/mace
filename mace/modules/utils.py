@@ -76,7 +76,7 @@ def compute_polarisation(
     training: bool = True,
 ) -> torch.Tensor:
     
-    volume = torch.linalg.det(cell.view(-1, 3, 3)).abs()
+    volume = torch.linalg.det(cell.view(-1, 3, 3)).abs() # [n_graphs, ]
     
     polarisation = torch.autograd.grad(
         outputs=energy,  # [n_graphs, ]            
@@ -87,7 +87,7 @@ def compute_polarisation(
         allow_unused=True,
     )[0]
 
-    return -polarisation / volume
+    return -polarisation / volume.view(-1, 1) # [n_graphs, 3]
 
 
 def compute_bec(
@@ -101,7 +101,7 @@ def compute_bec(
     
     bec_polar_list = []
     for d in range(3): # Loop over dimensions
-        polar_component = polarisation[d] 
+        polar_component = polarisation[:, d]  # [n_graphs, 1]
         gradient = torch.autograd.grad(
             outputs=polar_component, # [n_graphs, 1]
             inputs=positions, # [n_nodes, 3]
@@ -114,7 +114,7 @@ def compute_bec(
         
     bec = torch.stack(bec_polar_list, dim=1) # [n_nodes, 3, 3]
 
-    return bec * volume
+    return bec * volume.view(-1, 1, 1) # [n_nodes, 3, 3]
 
 def compute_polarisability(
     polarisation: torch.Tensor,
@@ -125,7 +125,7 @@ def compute_polarisability(
     # Second derivatives (BEC and polarisability) computed for each polarisation component.   
     polarisability_list = []
     for d in range(3):
-        polar_component = polarisation[d]
+        polar_component = polarisation[:, d] # [n_graphs, 1]
         grad_field = torch.autograd.grad(
             outputs=polar_component, # [n_graphs, 1]
             inputs=electric_field, # [3, ]
@@ -138,7 +138,7 @@ def compute_polarisability(
         
     polarisability = torch.stack(polarisability_list, dim=1)  # [n_graphs, 3, 3]
 
-    return polarisability
+    return polarisability # [n_graphs, 3, 3]
 
 def get_symmetric_displacement(
     positions: torch.Tensor,

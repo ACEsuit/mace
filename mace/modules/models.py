@@ -535,6 +535,7 @@ class ScaleShiftFieldMACE(MACE):
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
+        data["electric_field"] = data["electric_field"].reshape(-1, 3) # [num_graphs, 3]
         data["electric_field"].requires_grad_(True)
 
         num_graphs = data["ptr"].numel() - 1
@@ -611,17 +612,17 @@ class ScaleShiftFieldMACE(MACE):
             node_feats_list.append(node_feats)
 
             # Extract node features for energy, charge and electronic dipole
-            node_out = self.field_readout(node_feats, node_heads).reshape(node_feats.shape[0], -1, 5) 
-            node_energy_feats, node_charge_feats, node_electronic_dipole_feats = node_out[:,:,0],  node_out[:,:,1], node_out[:,:,2:]
+            node_out = self.field_readout(node_feats, node_heads).reshape(node_feats.shape[0], -1, 5) # [n_nodes, k, 5]
+            node_energy_feats, node_charge_feats, node_electronic_dipole_feats = node_out[:,:,0],  node_out[:,:,1], node_out[:,:,2:] # [n_nodes, k, 1], [n_nodes, k, 1], [n_nodes, k, 3]
             
             # Compute ionic dipole features as charge * atomic positions
-            node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, data["positions"])
+            node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, data["positions"]) # [n_nodes, k, 3]
             
             # Total dipole feature is sum of ionic and electronic dipole features 
-            node_dipole_feats = node_ionic_dipole_feats + node_electronic_dipole_feats
+            node_dipole_feats = node_ionic_dipole_feats + node_electronic_dipole_feats # [n_nodes, k, 3]
             
-            # New k channel node energy features E_i = E_{0,i} - p_i \cdot E_field in analogy to electric enthalpy
-            node_energies = node_energy_feats - torch.einsum('ijk,k->ij', node_dipole_feats, data["electric_field"])
+            # New k channel node energy features E_i = E_{0,i} - p_i \cdot E_field in analogy to electric enthalpy. [n_nodes, k]
+            node_energies = node_energy_feats - torch.einsum('ijk,ik->ij', node_dipole_feats, data["electric_field"].repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
             
             # Mix k channels as normal
             node_energies = readout(node_energies, node_heads)[num_atoms_arange, node_heads]
