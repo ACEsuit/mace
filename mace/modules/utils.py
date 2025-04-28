@@ -72,12 +72,9 @@ def compute_forces_virials(
 def compute_polarisation(
     energy: torch.Tensor,
     electric_field: torch.Tensor,
-    cell: torch.Tensor,
     training: bool = True,
 ) -> torch.Tensor:
-    
-    volume = torch.linalg.det(cell.view(-1, 3, 3)).abs() # [n_graphs, ]
-    
+        
     polarisation = torch.autograd.grad(
         outputs=energy,  # [n_graphs, ]            
         inputs=electric_field,  # [3, ]
@@ -87,18 +84,15 @@ def compute_polarisation(
         allow_unused=True,
     )[0]
 
-    return -polarisation / volume.view(-1, 1) # [n_graphs, 3]
+    return -polarisation # [n_graphs, 3]
 
 
 def compute_bec(
     polarisation: torch.Tensor,
     positions: torch.Tensor,
-    cell: torch.Tensor,
     training: bool = True,
 ) -> torch.Tensor:
-    
-    volume = torch.linalg.det(cell.view(-1, 3, 3)).abs()
-    
+        
     bec_polar_list = []
     for d in range(3): # Loop over dimensions
         polar_component = polarisation[:, d]  # [n_graphs, 1]
@@ -114,7 +108,7 @@ def compute_bec(
         
     bec = torch.stack(bec_polar_list, dim=1) # [n_nodes, 3, 3]
 
-    return bec * volume.view(-1, 1, 1) # [n_nodes, 3, 3]
+    return bec # [n_nodes, 3, 3]
 
 def compute_polarisability(
     polarisation: torch.Tensor,
@@ -290,13 +284,11 @@ def get_outputs(
         polarisation = compute_polarisation(
             energy=energy,
             electric_field=electric_field,
-            cell=cell,
             training=training,
         )
         bec = compute_bec(
             polarisation=polarisation,
             positions=positions,
-            cell=cell,
             training=training,
         )
         polarisability = compute_polarisability(
@@ -304,6 +296,9 @@ def get_outputs(
             electric_field=electric_field,
             training=training,
         )
+        volume = torch.linalg.det(cell.view(-1, 3, 3)).abs()
+        polarisation = polarisation / volume.view(-1, 1)
+        polarisability = polarisability / volume.view(-1, 1, 1)
     else:
         polarisation, bec, polarisability = (None, None, None)
 
