@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
         "--path", help="path to results file or directory", required=True
     )
     parser.add_argument(
-        "--min_epoch", help="minimum epoch", default=50, type=int, required=False
+        "--min_epoch", help="minimum epoch", default=0, type=int, required=False
     )
     return parser.parse_args()
 
@@ -82,7 +82,7 @@ def plot(data: pd.DataFrame, min_epoch: int, output_path: str) -> None:
     train_data = data[data["mode"] == "opt"]
 
     fig, axes = plt.subplots(
-        nrows=1, ncols=2, figsize=(2 * fig_width, fig_height), constrained_layout=True
+        nrows=1, ncols=3, figsize=(3 * fig_width, fig_height), constrained_layout=True
     )
 
     ax = axes[0]
@@ -117,44 +117,76 @@ def plot(data: pd.DataFrame, min_epoch: int, output_path: str) -> None:
         color=colors[3],
     )
 
-    ax.set_ylim(bottom=0.0)
+    ax.set_ylim(bottom=0.0)    
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss")
     ax.legend()
 
     ax = axes[1]
+    # ax.plot(
+    #     valid_data["epoch"],
+    #     valid_data["mae_e"]["mean"],
+    #     color=colors[1],
+    #     zorder=1,
+    #     label="MAE Energy [eV]",
+    # )
+    # ax.fill_between(
+    #     x=valid_data["epoch"],
+    #     y1=valid_data["mae_e"]["mean"] - valid_data["mae_e"]["std"],
+    #     y2=valid_data["mae_e"]["mean"] + valid_data["mae_e"]["std"],
+    #     alpha=0.5,
+    #     zorder=-1,
+    #     color=colors[1],
+    # )
+    # ax.plot(
+    #     valid_data["epoch"],
+    #     valid_data["mae_f"]["mean"],
+    #     color=colors[2],
+    #     zorder=1,
+    #     label="MAE Forces [eV/Å]",
+    # )
+    # ax.fill_between(
+    #     x=valid_data["epoch"],
+    #     y1=valid_data["mae_f"]["mean"] - valid_data["mae_f"]["std"],
+    #     y2=valid_data["mae_f"]["mean"] + valid_data["mae_f"]["std"],
+    #     alpha=0.5,
+    #     zorder=-1,
+    #     color=colors[2],
+    # )
     ax.plot(
         valid_data["epoch"],
-        valid_data["mae_e"]["mean"],
-        color=colors[1],
+        valid_data["mae_bec"]["mean"],
+        color=colors[0],
         zorder=1,
-        label="MAE Energy [eV]",
+        label="MAE BECs [Å]",
     )
     ax.fill_between(
         x=valid_data["epoch"],
-        y1=valid_data["mae_e"]["mean"] - valid_data["mae_e"]["std"],
-        y2=valid_data["mae_e"]["mean"] + valid_data["mae_e"]["std"],
+        y1=valid_data["mae_bec"]["mean"] - valid_data["mae_bec"]["std"],
+        y2=valid_data["mae_bec"]["mean"] + valid_data["mae_bec"]["std"],
         alpha=0.5,
         zorder=-1,
-        color=colors[1],
+        color=colors[0],
     )
-    ax.plot(
-        valid_data["epoch"],
-        valid_data["mae_f"]["mean"],
-        color=colors[2],
-        zorder=1,
-        label="MAE Forces [eV/Å]",
-    )
-    ax.fill_between(
-        x=valid_data["epoch"],
-        y1=valid_data["mae_f"]["mean"] - valid_data["mae_f"]["std"],
-        y2=valid_data["mae_f"]["mean"] + valid_data["mae_f"]["std"],
-        alpha=0.5,
-        zorder=-1,
-        color=colors[2],
-    )
+    ax.set_xlabel("Epoch")
+    ax.legend()
 
-    ax.set_ylim(bottom=0.0)
+    ax = axes[2]
+    ax.plot(
+        valid_data["epoch"],
+        valid_data["rmse_bec"]["mean"],
+        color=colors[3],
+        zorder=1,
+        label="RMSE BECs [Å]",
+    )
+    ax.fill_between(
+        x=valid_data["epoch"],
+        y1=valid_data["rmse_bec"]["mean"] - valid_data["rmse_bec"]["std"],
+        y2=valid_data["rmse_bec"]["mean"] + valid_data["rmse_bec"]["std"],
+        alpha=0.5,
+        zorder=-1,
+        color=colors[3],
+    )
     ax.set_xlabel("Epoch")
     ax.legend()
 
