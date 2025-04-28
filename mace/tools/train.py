@@ -532,8 +532,8 @@ class MACELoss(Metric):
         if output.get("polarisation") is not None and batch.polarisation is not None:
             self.polarisation_computed += 1.0
             self.polarisation.append(batch.polarisation)
-            self.delta_polarisation.append(batch.polarisation - output["polarisation"])
-            self.delta_polarisation_per_atom.append(batch.polarisation - output["polarisation"])
+            self.delta_polarisation.append(batch.polarisation.reshape(-1,3) - output["polarisation"])
+            self.delta_polarisation_per_atom.append(batch.polarisation.reshape(-1,3) - output["polarisation"])
         if output.get("bec") is not None and batch.bec is not None:
             self.becs_computed += 1.0
             self.becs.append(batch.bec)
