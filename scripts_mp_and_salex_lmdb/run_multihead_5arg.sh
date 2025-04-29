@@ -1,5 +1,4 @@
 #!/bin/bash
-DATA_DIR=/lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_dataset
 #module load arch/h100
 #module load pytorch-gpu/py3/2.3.1
 export PATH="$PATH:/linkhome/rech/genrre01/unh55hx/.local/bin"
@@ -10,7 +9,7 @@ NUM_CHANNEL=$6
 NUM_RADIAL=$7
 MLP_IRREPS=$8
 SEED=$9
-ROOT_DIR=/lustre/fsn1/projects/rech/gax/unh55hx/mace_multi_head_interface_bk
+ROOT_DIR="/lustre/fswork/projects/rech/gax/unh55hx/mace/"
 conf_str="${CONF%.yaml}"
 stress=${10}
 int_first=${11}
@@ -66,6 +65,7 @@ mace_run_train \
     --num_workers=2 \
     --agnostic_int ${agnostic_first} False False \
     --agnostic_con False False False \
+    --checkpoints_dir checkpoints/refit_omat0_e0s_4 \
     #--clean_alex \
 
 # --name="MACE_medium_agnesi_b32_origin_mponly" \

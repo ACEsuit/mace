@@ -134,10 +134,10 @@ class AtomicData(torch_geometric.data.Data):
             num_classes=len(z_table),
         )
         try:
-            head = torch.tensor(heads.index(config.head), dtype=torch.long)
+           head = torch.tensor(heads.index(config.head), dtype=torch.long)
         except Exception as e:
             head = torch.tensor(len(heads) - 1, dtype=torch.long)
-            warnings.warn("config.head not found, using last head", UserWarning)
+            warnings.warn(f"Error: {config.head} not found in {heads}, using last head", UserWarning)
         
         alex_config_id = config.alex_config_id
 

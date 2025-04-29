@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=train-mace            # job name
 #SBATCH --account=gax@h100           # account
-#SBATCH --partition=gpu_p6
+#SBATCH --partition=gpu_p6s
 #SBATCH -C h100                      # target H100 nodes
 # Here, reservation of 3x24=72 CPUs (for 3 tasks) and 3 GPUs (1 GPU per task) on one node only:
 #SBATCH --nodes=1                    # number of node
@@ -30,16 +30,11 @@ num_interactions=2
 # Cleans out modules loaded in interactive and inherited by default
 module purge
 
-module load arch/h100 
-# Loading modules
-module load pytorch-gpu/py3/2.3.1
  
-# Echo of launched commands
-set -x 
+source /lustre/fsn1/worksf/projects/rech/gax/unh55hx/miniconda3/etc/profile.d/conda.sh
 
-# set path
-export PATH="$PATH:/linkhome/rech/genrre01/unh55hx/.local/bin"
-DATA_DIR=/lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_dataset
+conda activate mace-multihead
+ 
 
 # Running code
 srun bash save_model.sh ${bs} ${lr} ${gpu} ${conf} ${r} ${num_channel} ${num_radial} ${mlp_irreps} ${seed} ${stress} ${interaction_first} ${interaction} ${num_interactions} ${agnostic_first} ${ckpt_path}

@@ -20,6 +20,7 @@ from prettytable import PrettyTable
 from mace import data, modules
 from mace.tools import evaluate
 
+from .utils import LRScheduler
 
 @dataclasses.dataclass
 class SubsetCollection:
@@ -449,45 +450,6 @@ def dict_to_array(data, heads):
     return np.squeeze(result_array)
 
 
-class LRScheduler:
-    def __init__(self, optimizer, args) -> None:
-        self.scheduler = args.scheduler
-        if args.scheduler == "ExponentialLR":
-            self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
-                optimizer=optimizer, gamma=args.lr_scheduler_gamma
-            )
-        elif args.scheduler == "ReduceLROnPlateau":
-            self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer=optimizer,
-                factor=args.lr_factor,
-                patience=args.scheduler_patience,
-            )
-        elif args.scheduler == "CosineAnnealingWarmupLR":
-            self.cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer=optimizer,
-                T_max=args.max_num_epochs - args.warmup_epochs,  # Maximum number of iterations
-                eta_min=args.cosine_min  # Minimum learning rate at the end of the schedule
-            )
-            self.warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.05, end_factor=1.0, total_iters=args.warmup_epochs)
-            self.lr_scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, [self.warmup, self.cosine], [args.warmup_epochs])
-            
-        else:
-            raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
-
-    def step(self, metrics=None, epoch=None):  # pylint: disable=E1123
-        if self.scheduler == "ExponentialLR":
-            self.lr_scheduler.step(epoch=epoch)
-        elif self.scheduler == "ReduceLROnPlateau":
-            self.lr_scheduler.step(
-                metrics=metrics, epoch=epoch
-            )  # pylint: disable=E1123
-        elif self.scheduler == "CosineAnnealingWarmupLR":
-            self.lr_scheduler.step()
-
-    def __getattr__(self, name):
-        if name == "step":
-            return self.step
-        return getattr(self.lr_scheduler, name)
 
 
 def create_error_table(

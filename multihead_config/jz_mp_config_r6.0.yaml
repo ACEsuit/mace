@@ -3,8 +3,8 @@ device: cuda
 multi_processed_test: True
 heads: 
     mp_pbe:
-        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/train/MatProj
-        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/valid/MatProj
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/MatProj/train
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/MatProj/val
         E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
         config_type_weights:
             Default: 1.0

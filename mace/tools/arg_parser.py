@@ -70,6 +70,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--just_save_model",
+        help="train in multi-GPU data parallel mode",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
     parser.add_argument(
@@ -98,6 +104,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "BOTNet",
             "MACE",
             "ScaleShiftMACE",
+            "ScaleShiftLRMACE",
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
             "EnergyDipolesMACE",
@@ -120,7 +127,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--r_max", help="distance cutoff (in Ang)", type=float_or_str, default=5.0
     )
     parser.add_argument(
+        "--fix_readout_head", help="distance cutoff (in Ang)", type=check_int_or_none, default=None
+    )
+    parser.add_argument(
         "--r_max_scale", help="scaler only for for element dependent radius", type=float, default=20.0
+    )
+    parser.add_argument(
+        "--rsmooth", help="scaler only for for element depe", type=check_float_or_none, default=None
     )
     parser.add_argument(
         "--radial_type",
@@ -166,6 +179,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityInjuctedNoScaleResidualInteractionBlock",
             "RealAgnosticDensityInjuctedNoScaleNoBiasResidualInteractionBlock",
             "RASimpleDensityResidualIntBlock",
+            "RASimpleDensityResidualNSIntBlock",
+            "RASimpleDensityResidualHeadIntBlock",
+            "RASimpleDensityAttnResidualIntBlock",
+            "RASimpleDensityMultiAttnResidualIntBlock",
+            "RASimpleDensityMultiSCAttnResidualIntBlock",
+            "RASimpleDensityCutoffMultiSCAttnResidualIntBlock",
+            "RealAgnosticDensityResidualInteractionBlock",
+            "RADensityNFResidualIntBlock",
+            "RALRResIntBlock",
         ],
     )
     parser.add_argument(
@@ -183,7 +205,31 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityInjuctedNoScaleInteractionBlock",
             "RealAgnosticDensityInjuctedNodeAttrAttendInteractionBlock",
             "RealAgnosticDensityInjuctUnnormalizedNoScaleInteractionBlock",
+            "RealAgnosticDensityInteractionBlock",
             "RASimpleDensityIntBlock",
+            "RASimpleDensityAttnIntBlock",
+            "RASimpleDensityMultiAttnIntBlock",
+            "RASimpleDensityMultiSCAttnIntBlock",
+            "RASimpleDensityCutoffMultiSCAttnIntBlock",
+            "RADensityNFIntBlock",
+
+            "RASimpleDensityNSIntBlock",
+            "RASimpleDensityHeadIntBlock",
+            "RASimpleDensityIntBlockSC",
+            "RASimpleDensityIntBlockSCv2",
+            "RALRIntBlock",
+        ],
+    )
+    parser.add_argument(
+        "--contraction",
+        help="name of interaction block",
+        type=str,
+        default="EquivariantProductBasisBlock",
+        choices=[
+            "EquivariantProductBasisBlock",
+            "EquivariantCPRingBasisBlock",
+            "EquivariantLowOrderProductBasisBlock",
+            "EquivariantProductBasisDensityAttnBlock",
         ],
     )
     parser.add_argument(
@@ -253,6 +299,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--fit_e0s_bias",
+        help="if want to fit e0s bias",
+        type=bool,
+        default=False,
+    )
+
+    parser.add_argument(
         "--compute_stress",
         help="Select True to compute stress",
         type=bool,
@@ -260,6 +313,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--compute_forces",
+        help="Select True to compute forces",
+        type=bool,
+        default=True,
+    )
+    parser.add_argument(
+        "--refit_e0",
         help="Select True to compute forces",
         type=bool,
         default=True,
@@ -273,6 +332,21 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         required=False,
         default=None
     )
+    parser.add_argument(
+        "--load_noncompatible",
+        help="load model or ckpt",
+        type=str,
+        required=False,
+        default=None,
+    )
+    parser.add_argument(
+        "--atomic_energies_block",
+        help="block_used_for atomic energy",
+        default=None,
+        type=str,
+        required=False,
+    )
+
     parser.add_argument(
         "--valid_file",
         help="Validation set .xyz or .h5 file",
@@ -457,6 +531,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "universal",
             "energy_forces_dipole",
             "omat24",
+            "ddp_mae",
+            "ddp_peratomE"
         ],
     )
     parser.add_argument(
@@ -597,8 +673,14 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warmup_epochs",
         help="Gamma of learning rate scheduler",
-        type=int,
+        type=float,
         default=1,
+    )
+    parser.add_argument(
+        "--warmup_factor",
+        help="Gamma of learning rate scheduler",
+        type=float,
+        default=0.2,
     )
     parser.add_argument(
         "--swa",
@@ -900,6 +982,16 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
 def check_float_or_none(value: str) -> Optional[float]:
     try:
         return float(value)
+    except ValueError:
+        if value != "None":
+            raise argparse.ArgumentTypeError(
+                f"{value} is an invalid value (float or None)"
+            ) from None
+        return None
+
+def check_int_or_none(value: str) -> Optional[float]:
+    try:
+        return int(value)
     except ValueError:
         if value != "None":
             raise argparse.ArgumentTypeError(

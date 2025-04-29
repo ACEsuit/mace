@@ -156,34 +156,34 @@ class PolynomialCutoff(torch.nn.Module):
             atomic_numbers: torch.Tensor = None,
             ) -> torch.Tensor:
         # yapf: disable
-        if not self.elem_dept:
-            envelope = (
-                    1.0
-                    - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / self.r_max, self.p)
-                    + self.p * (self.p + 2.0) * torch.pow(x / self.r_max, self.p + 1)
-                    - (self.p * (self.p + 1.0) / 2) * torch.pow(x / self.r_max, self.p + 2)
-            )
-            # yapf: enable
-            return envelope * (x < self.r_max)
-        else:
-            sender = edge_index[0]
-            receiver = edge_index[1]
-            node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
-                -1
-            )
+        #if not self.elem_dept:
+        envelope = (
+                1.0
+                - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / self.r_max, self.p)
+                + self.p * (self.p + 2.0) * torch.pow(x / self.r_max, self.p + 1)
+                - (self.p * (self.p + 1.0) / 2) * torch.pow(x / self.r_max, self.p + 2)
+        )
+        # yapf: enable
+        return envelope * (x < self.r_max)
+        #else:
+        #    sender = edge_index[0]
+        #    receiver = edge_index[1]
+        #    node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
+        #        -1
+        #    )
 
-            Z_u = node_atomic_numbers[sender].view(-1)
-            Z_v = node_atomic_numbers[receiver].view(-1)
+        #    Z_u = node_atomic_numbers[sender].view(-1)
+        #    Z_v = node_atomic_numbers[receiver].view(-1)
 
-            r_max = self.r_max[Z_v, Z_u].unsqueeze(-1)
+        #    r_max = self.r_max[Z_v, Z_u].unsqueeze(-1)
 
-            envelope = (
-                    1.0
-                    - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / r_max, self.p)
-                    + self.p * (self.p + 2.0) * torch.pow(x / r_max, self.p + 1)
-                    - (self.p * (self.p + 1.0) / 2) * torch.pow(x / r_max, self.p + 2)
-            )
-            return envelope * (x < r_max)
+        #    envelope = (
+        #            1.0
+        #            - ((self.p + 1.0) * (self.p + 2.0) / 2.0) * torch.pow(x / r_max, self.p)
+        #            + self.p * (self.p + 2.0) * torch.pow(x / r_max, self.p + 1)
+        #            - (self.p * (self.p + 1.0) / 2) * torch.pow(x / r_max, self.p + 2)
+        #    )
+        #    return envelope * (x < r_max)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"

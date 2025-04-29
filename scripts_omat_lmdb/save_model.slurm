@@ -11,19 +11,19 @@
 #SBATCH --cpus-per-task=2            # number of CPUs per task (here 1/4 of the node)
 # /!\ Caution, "multithread" in Slurm vocabulary refers to hyperthreading.
 #SBATCH --hint=nomultithread         # hyperthreading deactivated
-#SBATCH --time=20:00:00              # maximum execution time requested (HH:MM:SS)
+#SBATCH --time=1:00:00              # maximum execution time requested (HH:MM:SS)
 #SBATCH --output=mace-train-%A_%a.out # name of output file
 #SBATCH --error=mace-train-%A_%a.out  # name of error file (here, in common with the output file)
 #SBATCH --exclude=jzxh063
 ##SBATCH --array=0-3%1                  # Array index range
 
 # Access arguments
-bs=16
+bs=32
 lr=0.005
 gpu=32
-conf=jz_alex_config_r6.0.yaml
+conf=jz_omat_r6.0_lmdb.yaml
 r=6.0
-num_channel=128 # [[64], -128-, [256]]
+num_channel=256 # [[64], -128-, [256]]
 mlp_irreps="16x0e" # [["8x0e"], -"16x0e"-, ["32x0e"], ["64x0e"]]
 num_radial=10 # [6, [8], -10-, [12]]
 seed=123
@@ -37,10 +37,9 @@ ckpt_path=35
 # Cleans out modules loaded in interactive and inherited by default
 module purge
 
-module load arch/h100
- 
-# Loading modules
-module load pytorch-gpu/py3/2.3.1
+source /lustre/fsn1/worksf/projects/rech/gax/unh55hx/miniconda3/etc/profile.d/conda.sh
+
+conda activate mace-multihead
  
 # Echo of launched commands
 set -x 

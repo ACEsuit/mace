@@ -7,6 +7,9 @@ from .blocks import (
     AgnosticResidualNonlinearInteractionBlock,
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
+    EquivariantCPRingBasisBlock,
+    EquivariantLowOrderProductBasisBlock,
+    EquivariantProductBasisDensityAttnBlock,
     InteractionBlock,
     LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
@@ -19,7 +22,10 @@ from .blocks import (
     RealAgnosticResidualInteractionBlock,
     RealAgnosticInteractionGateBlock,
     RealAgnosticResidualInteractionGateBlock,
+    RealAgnosticSimplifiedDensityHeadInteractionBlock,
     RealAgnosticSimplifiedDensityInteractionBlock,
+    RealAgnosticSimplifiedDensityInteractionBlockSCv2,
+    RealAgnosticSimplifiedDensityResidualHeadInteractionBlock,
     RealAgnosticSimplifiedDensityResidualInteractionBlock,
     RealAgnosticDensityNormalizedInteractionGateBlock,
     RealAgnosticDensityNormalizedNoScaleInteractionGateBlock,
@@ -31,12 +37,35 @@ from .blocks import (
     RealAgnosticDensityInjuctedNoScaleNoBiasResidualInteractionGateBlock,
     RealAgnosticDensityInjuctedNoScaleResidualInteractionGateBlock,
     RealAgnosticDensityInjuctUnnormalizedNoScaleInteractionGateBlock,
-
+    RealAgnosticSimplifiedDensityInteractionBlockSC,
+    RealAgnosticSimplifiedDensityInteractionBlockSCv2,
+    RealAgnosticSimplifiedDensityHeadInteractionBlock,
+    RealAgnosticSimplifiedDensityResidualHeadInteractionBlock,
+    RealAgnosticDensityNonSymmetricInteractionBlock,
+    RealAgnosticDensityNonSymmetricResidualInteractionBlock,
+    RealAgnosticSimplifiedDensityAttentionInteractionBlock,
+    RealAgnosticSimplifiedDensityAttentionResidualInteractionBlock,
+    RealAgnosticSimplifiedDensityMultiAttentionInteractionBlock,
+    RealAgnosticSimplifiedDensityMultiAttentionResidualInteractionBlock,
+    RealAgnosticSimplifiedDensityMultiSCAttentionInteractionBlock,
+    RealAgnosticSimplifiedDensityMultiSCAttentionResidualInteractionBlock,
+    RealAgnosticSimplifiedDensityCutoffMultiSCAttentionInteractionBlock,
+    RealAgnosticSimplifiedDensityCutoffMultiSCAttentionResidualInteractionBlock,
+    RealAgnosticDensityNFInteractionBlock,
+    RealAgnosticDensityNFResidualInteractionBlock,
+    RealAgnosticDensityResidualInteractionBlock,
+    RealAgnosticDensityInteractionBlock,
         
     #RealAgnosticDensityNormalizedResidualInteractionGateBlock,
     ResidualElementDependentInteractionBlock,
     ScaleShiftBlock,
 )
+
+from .new_blocks import (
+RealAgnosticLongRangeInteractionBlock,
+RealAgnosticLongRangeResidualInteractionBlock,
+)
+
 from .loss import (
     DipoleSingleLoss,
     UniversalLoss,
@@ -47,6 +76,8 @@ from .loss import (
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
     OMat24Loss,
+    DDP_weighted_MAE_all,
+    DDP_weighted_MAE_peratomE,
 )
 from .models import (
     MACE,
@@ -55,6 +86,8 @@ from .models import (
     EnergyDipolesMACE,
     ScaleShiftBOTNet,
     ScaleShiftMACE,
+    ScaleShiftLRMACE,
+
 )
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
@@ -89,7 +122,35 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticDensityInjuctedNoScaleResidualInteractionBlock": RealAgnosticDensityInjuctedNoScaleResidualInteractionGateBlock,
     "RealAgnosticDensityInjuctUnnormalizedNoScaleInteractionBlock": RealAgnosticDensityInjuctUnnormalizedNoScaleInteractionGateBlock,
     "RASimpleDensityIntBlock": RealAgnosticSimplifiedDensityInteractionBlock,
+    "RASimpleDensityAttnIntBlock": RealAgnosticSimplifiedDensityAttentionInteractionBlock,
+    "RASimpleDensityAttnResidualIntBlock": RealAgnosticSimplifiedDensityAttentionResidualInteractionBlock,
+    "RASimpleDensityMultiAttnIntBlock": RealAgnosticSimplifiedDensityMultiAttentionInteractionBlock,
+    "RASimpleDensityMultiAttnResidualIntBlock": RealAgnosticSimplifiedDensityMultiAttentionResidualInteractionBlock,
+
+    "RASimpleDensityMultiSCAttnIntBlock": RealAgnosticSimplifiedDensityMultiSCAttentionInteractionBlock,
+    "RASimpleDensityMultiSCAttnResidualIntBlock": RealAgnosticSimplifiedDensityMultiSCAttentionResidualInteractionBlock,
+    "RASimpleDensityCutoffMultiSCAttnIntBlock": RealAgnosticSimplifiedDensityCutoffMultiSCAttentionInteractionBlock,
+    "RASimpleDensityCutoffMultiSCAttnResidualIntBlock": RealAgnosticSimplifiedDensityCutoffMultiSCAttentionResidualInteractionBlock,
     "RASimpleDensityResidualIntBlock": RealAgnosticSimplifiedDensityResidualInteractionBlock,
+    "RASimpleDensityIntBlockSC": RealAgnosticSimplifiedDensityInteractionBlockSC,
+    "RASimpleDensityIntBlockSCv2": RealAgnosticSimplifiedDensityInteractionBlockSCv2,
+    "RASimpleDensityHeadIntBlock": RealAgnosticSimplifiedDensityHeadInteractionBlock,
+    "RASimpleDensityResidualHeadIntBlock": RealAgnosticSimplifiedDensityResidualHeadInteractionBlock,
+    "RASimpleDensityNSIntBlock": RealAgnosticDensityNonSymmetricInteractionBlock,
+    "RASimpleDensityResidualNSIntBlock": RealAgnosticDensityNonSymmetricResidualInteractionBlock,
+    "RADensityNFIntBlock": RealAgnosticDensityNFInteractionBlock,
+    "RADensityNFResidualIntBlock": RealAgnosticDensityNFResidualInteractionBlock,
+    "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
+    "RealAgnosticDensityInteractionBlock": RealAgnosticDensityInteractionBlock,
+    "RALRIntBlock":RealAgnosticLongRangeInteractionBlock,
+    "RALRResIntBlock":RealAgnosticLongRangeResidualInteractionBlock,
+}
+
+contraction_classes: Dict[str, torch.nn.Module] = {
+    "EquivariantProductBasisBlock": EquivariantProductBasisBlock,
+    "EquivariantCPRingBasisBlock": EquivariantCPRingBasisBlock,
+    "EquivariantLowOrderProductBasisBlock": EquivariantLowOrderProductBasisBlock,
+    "EquivariantProductBasisDensityAttnBlock": EquivariantProductBasisDensityAttnBlock
 }
 
 scaling_classes: Dict[str, Callable] = {
@@ -115,6 +176,7 @@ __all__ = [
     "LinearNodeEmbeddingBlock",
     "LinearReadoutBlock",
     "EquivariantProductBasisBlock",
+    "EquivariantCPRingBasisBlock",
     "ScaleShiftBlock",
     "LinearDipoleReadoutBlock",
     "NonLinearDipoleReadoutBlock",
@@ -138,10 +200,14 @@ __all__ = [
     "WeightedHuberEnergyForcesStressLoss",
     "UniversalLoss",
     "OMat24Loss",
+    "DDP_weighted_MAE_all",
+    "DDP_weighted_MAE_peratomE",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
     "compute_avg_num_neighbors",
     "compute_statistics",
     "compute_fixed_charge_dipole",
+    "EquivariantLowOrderProductBasisBlock",
+    "EquivariantProductBasisDensityAttnBlock",
 ]

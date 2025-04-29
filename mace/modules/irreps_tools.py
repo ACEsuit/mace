@@ -77,14 +77,34 @@ class reshape_irreps(torch.nn.Module):
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         ix = 0
         out = []
-        batch, _ = tensor.shape
+        shape = tensor.shape
         for mul, d in zip(self.muls, self.dims):
-            field = tensor[:, ix : ix + mul * d]  # [batch, sample, mul * repr]
+            field = tensor[..., ix : ix + mul * d]  # [batch, sample, mul * repr]
             ix += mul * d
-            field = field.reshape(batch, mul, d)
+            new_shape = shape[:-1] + (mul, d)
+            field = field.reshape(new_shape)
             out.append(field)
         return torch.cat(out, dim=-1)
 
+@compile_mode("script")
+class reshape_attn(torch.nn.Module):
+    def __init__(self, irreps: o3.Irreps) -> None:
+        super().__init__()
+        self.irreps = o3.Irreps(irreps)
+        self.dims = []
+        self.muls = []
+        for mul, ir in self.irreps:
+            d = ir.dim
+            self.dims.append(d)
+            self.muls.append(mul)
+
+    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
+        out = []
+        batch, _ = tensor.shape
+        for mul, d in zip(self.muls, self.dims):
+            attn = tensor.unsqueeze(2).expand(-1, -1, d)
+            out.append(attn.reshape(batch, mul*d))
+        return torch.cat(out, dim=-1)
 
 def mask_head(x: torch.Tensor, head: torch.Tensor, num_heads: int) -> torch.Tensor:
     mask = torch.zeros(x.shape[0], x.shape[1] // num_heads, num_heads, device=x.device)

@@ -6,10 +6,10 @@ heads:
         train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/salex/train
         valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/salex/val
         additional_set:
-            train_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/train/MatProj 
-            valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/valid/MatProj
+            train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/multihead_datasets/train/MatProj 
+            valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/multihead_datasets/valid/MatProj
             additional_type: hdf5
-        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/e0s.json 
         config_type_weights:
             Default: 1.0
         avg_num_neighbors: 61.9649349317854

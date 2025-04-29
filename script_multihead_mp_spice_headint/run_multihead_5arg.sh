@@ -1,0 +1,69 @@
+#!/bin/bash
+REAL_BATCH_SIZE=$(($1 * $3))
+CONF=$4
+R=$5
+NUM_CHANNEL=$6
+NUM_RADIAL=$7
+MLP_IRREPS=$8
+SEED=$9
+ROOT_DIR=/lustre/fswork/projects/rech/gax/unh55hx/mace
+conf_str="${CONF%.yaml}"
+stress=${10}
+int_first=${11}
+int=${12}
+num_int=${13}
+agnostic_first=${14}
+max_L=${15}
+max_ell=${16}
+
+cd $ROOT_DIR
+python mace/cli/run_train.py \
+    --name="stress${stress}_nc${NUM_CHANNEL}_nr${NUM_RADIAL}_MLP${MLP_IRREPS}_b${REAL_BATCH_SIZE}_lr$2_${conf_str}_intfirst-${int_first}_int-${int}x${num_int}i_maxL${max_L}_maxell${max_ell}" \
+    --loss='universal' \
+    --energy_weight=1 \
+    --forces_weight=10 \
+    --compute_stress=True \
+    --stress_weight=${stress} \
+    --eval_interval=1 \
+    --error_table='PerAtomMAE' \
+    --model="MACE" \
+    --interaction_first=${int_first} \
+    --interaction=${int} \
+    --num_interactions=${num_int} \
+    --correlation=3 \
+    --max_ell=${max_ell} \
+    --r_max=${R} \
+    --r_max_scale=3 \
+    --max_L=${max_L} \
+    --num_channels=${NUM_CHANNEL} \
+    --num_radial_basis=${NUM_RADIAL} \
+    --MLP_irreps=${MLP_IRREPS} \
+    --scaling='rms_forces_scaling' \
+    --lr=$2 \
+    --weight_decay=1e-8 \
+    --ema \
+    --ema_decay=0.995 \
+    --scheduler_patience=5 \
+    --batch_size=$1 \
+    --valid_batch_size=32 \
+    --pair_repulsion \
+    --distance_transform="Agnesi" \
+    --max_num_epochs=400 \
+    --patience=40 \
+    --amsgrad \
+    --seed=${SEED} \
+    --clip_grad=100 \
+    --keep_checkpoints \
+    --restart_latest \
+    --save_cpu \
+    --config="multihead_config/${CONF}" \
+    --device=cuda \
+    --distributed \
+    --num_workers=2 \
+    --agnostic_int ${agnostic_first} False False \
+    --agnostic_con False False False \
+    --default_dtype float32 \
+    --checkpoints_dir checkpoints/headint_mp_spice
+    #--clean_alex \
+
+# --name="MACE_medium_agnesi_b32_origin_mponly" \

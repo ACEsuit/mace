@@ -1,0 +1,5 @@
+# symmetric contraction playground
+
+mace-train-1574168 - make correlation order in symmetric contraction to 1
+
+mace-train-1574210 - correlation order = 1 and layer of interaction = 3 [ERROR]

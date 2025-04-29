@@ -1,0 +1,31 @@
+avg_num_neighbor_head: omat_pbe_refit
+device: cuda
+multi_processed_test: True
+heads: 
+    omat_pbe_refit:
+        train_file: "/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/aimd-from-PBE-1000-npt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/aimd-from-PBE-3000-nvt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/rattled-1000-subsampled:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/rattled-300:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/aimd-from-PBE-3000-npt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/rattled-300-subsampled:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/rattled-500:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/aimd-from-PBE-1000-nvt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/rattled-1000:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/rattled-500-subsampled:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/train/rattled-relax"
+        valid_file: "/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/aimd-from-PBE-1000-npt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/aimd-from-PBE-3000-nvt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/rattled-1000-subsampled:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/rattled-300:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/aimd-from-PBE-3000-npt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/rattled-300-subsampled:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/rattled-500:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/aimd-from-PBE-1000-nvt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/rattled-1000:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/rattled-500-subsampled:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/omat/val/rattled-relax"
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        avg_num_neighbors: 61.9649349317854
+        mean: 0.1634233391135065
+        std: 0.7735790334431056
+        dataset_type: lmdb
+
+    alex_pbe:
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/salex/train
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/salex/val
+        additional_set:
+            train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/multihead_datasets/train/MatProj
+            valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/multihead_datasets/valid/MatProj
+            additional_type: hdf5
+            repeat: 10
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        avg_num_neighbors: 61.9649349317854
+        mean: 0.1634233391135065
+        std: 0.7735790334431056
+        dataset_type: lmdb
+        repeat: 2

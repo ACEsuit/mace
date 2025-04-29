@@ -5,12 +5,15 @@
 ###########################################################################################
 
 from abc import abstractmethod
+from collections import defaultdict
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch.nn.functional
 from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
+from e3nn.o3 import Norm
+from torch.nn.modules import Embedding
 
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
@@ -19,6 +22,7 @@ from .irreps_tools import (
     linear_out_irreps,
     mask_head,
     reshape_irreps,
+    reshape_attn,
     tp_out_irreps_with_instructions,
 )
 from .radial import (
@@ -30,13 +34,56 @@ from .radial import (
     SoftTransform,
     continuous_sinous_embedding,
 )
-from .symmetric_contraction import SymmetricContraction
+from .symmetric_contraction import SymmetricContraction, SymmetricMultiContraction
+from .symmetric_cpring import SymmetricCPRing
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from functools import partial
 
 AGNOSTIC = False
+
+from .plot_tools import plot_edge_data, plot_edge_data_message
+
+class HeadWeightLayer(torch.nn.Module):
+    def __init__(self, feature_dim, num_heads, head_dim=32, exp_bound=1):
+        super(HeadWeightLayer, self).__init__()
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        
+        # Multi-head projections
+        self.query_proj = torch.nn.Linear(feature_dim, num_heads * head_dim, bias=False)
+        self.key_proj = torch.nn.Linear(feature_dim, num_heads * head_dim, bias=False)
+        
+        # Scaling factor for dot products
+        self.scale = 1.0 / (head_dim ** 0.5)
+        self.exp_bound = exp_bound
+        
+    def forward(self, x1, x2):
+        batch_size = x1.size(0)
+        
+        # Project to query and key spaces
+        # [batch_size, num_heads * head_dim]
+        query = self.query_proj(x1)
+        key = self.key_proj(x2)
+        
+        # Reshape for multi-head attention
+        # [batch_size, num_heads, head_dim]
+        query = query.view(batch_size, self.num_heads, self.head_dim)
+        key = key.view(batch_size, self.num_heads, self.head_dim)
+        
+        # Compute inner product between query and key for each head
+        # Use einsum for cleaner implementation
+        # [batch_size, num_heads]
+        attention_scores = torch.einsum('bhd,bhd->bh', query, key) * self.scale
+        
+        #print("attn mean ->", attention_scores.mean())
+        #print("attn std ->", attention_scores.std())
+        
+        # Transform scores to weights in range [0.1, 10]
+        weights = torch.exp(torch.tanh(attention_scores) * self.exp_bound) # value bound in [e^-5, e^5]
+        
+        return weights
 
 @compile_mode("script")
 class LinearNodeEmbeddingBlock(torch.nn.Module):
@@ -50,10 +97,39 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
     ) -> torch.Tensor:  # [n_nodes, irreps]
         return self.linear(node_attrs)
 
+@compile_mode("script")
+class LinearReadoutBlockNew(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        #cueq_config: Optional[CuEquivarianceConfig] = None,
+        num_heads: int=1,
+    ):
+        super().__init__()
+        self.linear = o3.Linear(
+            irreps_in=irreps_in, irreps_out=irrep_out #, cueq_config=cueq_config
+        )
+        self.num_heads = num_heads
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        node_heads: Optional[
+            torch.Tensor
+        ] = None,  # pylint: disable=unused-argument
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        if node_heads is not None:
+            node_heads_feats = torch.nn.functional.one_hot(node_heads, num_classes=self.num_heads)
+            return torch.einsum(
+                "...h, ...h->...", self.linear(x), node_heads_feats
+            ).unsqueeze(-1)
+        return self.linear(x) 
+
 
 @compile_mode("script")
 class LinearReadoutBlock(torch.nn.Module):
-    def __init__(self, irreps_in: o3.Irreps, irrep_out: o3.Irreps = o3.Irreps("0e")):
+    def __init__(self, irreps_in: o3.Irreps, irrep_out: o3.Irreps = o3.Irreps("0e"), num_heads: int=1):
         super().__init__()
         self.linear = o3.Linear(irreps_in=irreps_in, irreps_out=irrep_out)
 
@@ -124,6 +200,38 @@ class NonLinearReadoutBlock(torch.nn.Module):
             x = mask_head(x, heads, self.num_heads) # decorrelate two mlps
         return self.linear_2(x)  # [n_nodes, len(heads)]
 
+@simplify_if_compile
+@compile_mode("script")
+class NonLinearReadoutBlockNew(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Optional[Callable],
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        embedding_dim: int = 1,
+        num_heads: int = 1,
+        #cueq_config: Optional[CuEquivarianceConfig] = None,
+    ):
+        super().__init__()
+        self.hidden_irreps = (embedding_dim * MLP_irreps).simplify()
+        self.num_heads = num_heads
+        self.embedding_dim = embedding_dim
+        self.num_mlp_irreps = MLP_irreps.count((0, 1))
+        self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.hidden_irreps) #, cueq_config=cueq_config)
+        self.non_linearity = nn.Activation(irreps_in=MLP_irreps, acts=[gate])
+        self.linear_2 = o3.Linear(irreps_in=MLP_irreps, irreps_out=irrep_out) #, cueq_config=cueq_config)
+
+    def forward(
+        self, x: torch.Tensor, node_heads: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        x = self.linear_1(x)
+        if node_heads is not None:
+            x = x.view(-1, self.num_mlp_irreps, self.embedding_dim)
+            node_heads_feats = torch.nn.functional.one_hot(node_heads, num_classes=self.num_heads)
+            x = torch.einsum("b...h, bh-> b...", x, node_heads_feats)
+        return self.linear_2(self.non_linearity(x)) 
+
 
 @compile_mode("script")
 class LinearDipoleReadoutBlock(torch.nn.Module):
@@ -179,6 +287,33 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         return self.linear_2(x)  # [n_nodes, 1]
 
 
+#@compile_mode("script")
+#class AtomicEnergiesBlock(torch.nn.Module):
+#    atomic_energies: torch.Tensor
+#
+#    def __init__(self, atomic_energies: Union[np.ndarray, torch.Tensor]):
+#        super().__init__()
+#        # assert len(atomic_energies.shape) == 1
+#
+#        self.register_buffer(
+#            "atomic_energies",
+#            torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
+#        )  # [n_elements, n_heads]
+#
+#    def forward(
+#        self, x: torch.Tensor  # one-hot of elements [..., n_elements]
+#    ) -> torch.Tensor:  # [..., ]
+#        return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
+#
+#    def __repr__(self):
+#        formatted_energies = ", ".join(
+#            [
+#                "[" + ", ".join([f"{x:.4f}" for x in group]) + "]"
+#                for group in torch.atleast_2d(self.atomic_energies)
+#            ]
+#        )
+#        return f"{self.__class__.__name__}(energies=[{formatted_energies}])"
+
 @compile_mode("script")
 class AtomicEnergiesBlock(torch.nn.Module):
     atomic_energies: torch.Tensor
@@ -191,11 +326,13 @@ class AtomicEnergiesBlock(torch.nn.Module):
             "atomic_energies",
             torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
         )  # [n_elements, n_heads]
+        self.bias_shape = self.atomic_energies.shape
 
     def forward(
-        self, x: torch.Tensor  # one-hot of elements [..., n_elements]
+        self, x: torch.Tensor,  # one-hot of elements [..., n_elements]
+        bias: torch.Tensor = 0.0,
     ) -> torch.Tensor:  # [..., ]
-        return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
+        return torch.matmul(x.to(self.atomic_energies.dtype), torch.atleast_2d(self.atomic_energies + bias).T)
 
     def __repr__(self):
         formatted_energies = ", ".join(
@@ -206,6 +343,58 @@ class AtomicEnergiesBlock(torch.nn.Module):
         )
         return f"{self.__class__.__name__}(energies=[{formatted_energies}])"
 
+
+@compile_mode("script")
+class AtomicEnergiesBiasBlock(torch.nn.Module):
+    atomic_energies: torch.Tensor
+    
+    def __init__(self, atomic_energies: Union[np.ndarray, torch.Tensor]):
+        super().__init__()
+        self.register_buffer(
+            "atomic_energies",
+            torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
+        )  # [n_elements, n_heads]
+        self.bias_shape = self.atomic_energies.shape
+        
+        # Create bias parameter
+        self.bias = torch.nn.Parameter(
+            torch.zeros_like(self.atomic_energies),
+            requires_grad=True
+        )
+        
+        # Register update mask (defaults to all zeros)
+        self.register_buffer("update_mask", torch.zeros_like(self.atomic_energies))
+        
+    def set_trainable_indices(self, indices):
+        """Set which indices of the bias should be trainable"""
+        with torch.no_grad():
+            self.update_mask.zero_()
+            self.update_mask[indices] = 1.0
+    
+    def forward(
+        self, x: torch.Tensor,
+        bias: torch.Tensor = None,
+    ) -> torch.Tensor:
+        # Apply mask in forward pass - this ensures gradients only flow
+        # through the elements we want to train
+        masked_bias = self.bias * self.update_mask
+        
+        # Add external bias if provided
+        total_bias = masked_bias
+        if bias is not None:
+            total_bias = total_bias + bias
+            
+        return torch.matmul(x.to(self.atomic_energies.dtype), 
+                           torch.atleast_2d(self.atomic_energies + total_bias).T)
+    
+    def __repr__(self):
+        formatted_energies = ", ".join(
+            [
+                "[" + ", ".join([f"{x:.4f}" for x in group]) + "]"
+                for group in torch.atleast_2d(self.atomic_energies)
+            ]
+        )
+        return f"{self.__class__.__name__}(energies=[{formatted_energies}])"
 
 @compile_mode("script")
 class RadialEmbeddingBlock(torch.nn.Module):
@@ -240,6 +429,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         node_attrs: torch.Tensor,
         edge_index: torch.Tensor,
         atomic_numbers: torch.Tensor,
+        return_cutoff: bool=False,
     ):
         if getattr(self, "elem_dept", False):
             cutoff = self.cutoff_fn(edge_lengths, node_attrs, edge_index, atomic_numbers)  # [n_edges, 1]
@@ -250,7 +440,12 @@ class RadialEmbeddingBlock(torch.nn.Module):
                 edge_lengths, node_attrs, edge_index, atomic_numbers
             )
         radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
-        return radial * cutoff  # [n_edges, n_basis]
+
+        if not return_cutoff:
+            return radial * cutoff  # [n_edges, n_basis]
+        else:
+            return radial, cutoff
+
 
 
 @compile_mode("script")
@@ -293,6 +488,134 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             return self.linear(node_feats) + sc
         return self.linear(node_feats)
 
+@compile_mode("script")
+class EquivariantProductBasisDensityAttnBlock(torch.nn.Module):
+    def __init__(
+        self,
+        node_feats_irreps: o3.Irreps,
+        target_irreps: o3.Irreps,
+        correlation: int,
+        use_sc: bool = True,
+        num_elements: Optional[int] = None,
+        agnostic: Optional[bool] = False
+    ) -> None:
+        super().__init__()
+
+        self.use_sc = use_sc
+        self.symmetric_contractions = SymmetricMultiContraction(
+            irreps_in=node_feats_irreps,
+            irreps_out=target_irreps,
+            correlation=correlation,
+            num_elements=num_elements,
+            agnostic=agnostic,
+        )
+        # Update linear
+        self.linear = o3.Linear(
+            target_irreps,
+            target_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        sc: Optional[torch.Tensor],
+        node_attrs: torch.Tensor,
+    ) -> torch.Tensor:
+        assert node_feats.dim() == 4, "EquivariantProductBasisDensityAttnBlock requires 4 dim node feature corr, b, c, i"
+        node_feats = self.symmetric_contractions(node_feats, node_attrs)
+        if self.use_sc and sc is not None:
+            return self.linear(node_feats) + sc
+        return self.linear(node_feats)
+
+
+@compile_mode("script")
+class EquivariantLowOrderProductBasisBlock(torch.nn.Module):
+    def __init__(
+        self,
+        node_feats_irreps: o3.Irreps,
+        target_irreps: o3.Irreps,
+        correlation: int,
+        use_sc: bool = True,
+        num_elements: Optional[int] = None,
+        agnostic: Optional[bool] = False
+    ) -> None:
+        super().__init__()
+
+        self.use_sc = use_sc
+        self.symmetric_contractions = SymmetricContraction(
+            irreps_in=node_feats_irreps,
+            irreps_out=target_irreps,
+            correlation=correlation,
+            num_elements=num_elements,
+            agnostic=agnostic,
+            contraction_type='new',
+        )
+        # Update linear
+        self.linear = o3.Linear(
+            target_irreps,
+            target_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+
+        from collections import defaultdict
+        self.save_dict = defaultdict(list)
+
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        sc: Optional[torch.Tensor],
+        node_attrs: torch.Tensor,
+    ) -> torch.Tensor:
+        self.save_dict['in_node_feats'].append(node_feats.detach().cpu())
+        self.save_dict['in_node_attrs'].append(node_attrs.detach().cpu())
+        node_feats = self.symmetric_contractions(node_feats, node_attrs)
+        self.save_dict['out_node_feats'].append(node_feats.detach().cpu())
+        if self.use_sc and sc is not None:
+            return self.linear(node_feats) + sc
+        return self.linear(node_feats)
+
+@compile_mode("script")
+class EquivariantCPRingBasisBlock(torch.nn.Module):
+    def __init__(
+        self,
+        node_feats_irreps: o3.Irreps,
+        target_irreps: o3.Irreps,
+        correlation: int,
+        use_sc: bool = True,
+        num_elements: Optional[int] = None,
+        agnostic: Optional[bool] = False
+    ) -> None:
+        super().__init__()
+
+        self.use_sc = use_sc
+        self.symmetric_contractions = SymmetricCPRing(
+            irreps_in=node_feats_irreps,
+            irreps_out=target_irreps,
+            correlation=correlation,
+            num_elements=num_elements,
+            agnostic=agnostic,
+        )
+        # Update linear
+        self.linear = o3.Linear(
+            target_irreps,
+            target_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        sc: Optional[torch.Tensor],
+        node_attrs: torch.Tensor,
+    ) -> torch.Tensor:
+        node_feats = self.symmetric_contractions(node_feats, node_attrs)
+        if self.use_sc and sc is not None:
+            return self.linear(node_feats) + sc
+        return self.linear(node_feats)
 
 @compile_mode("script")
 class InteractionBlock(torch.nn.Module):
@@ -308,6 +631,7 @@ class InteractionBlock(torch.nn.Module):
         gate: Optional[Callable] = torch.nn.functional.silu, 
         radial_MLP: Optional[List[int]] = None,
         agnostic: Optional[bool] = False,
+        num_heads: Optional[int] = 1,
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -322,6 +646,7 @@ class InteractionBlock(torch.nn.Module):
         self.radial_MLP = radial_MLP
         self.gate = gate
         self.agnostic = agnostic
+        self.num_heads = num_heads
 
         self._setup()
 
@@ -569,6 +894,1106 @@ class AgnosticResidualNonlinearInteractionBlock(InteractionBlock):
         message = message + sc
         return message  # [n_nodes, irreps]
 
+###
+@compile_mode("script")
+class RealAgnosticDensityNonSymmetricInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        self.correlation = 3
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+    
+        self.linear = torch.nn.ModuleList([])
+        self.skip_tp = torch.nn.ModuleList([])
+        self.reshape = torch.nn.ModuleList([])
+        for _ in range(self.correlation):
+            self.linear.append(o3.Linear(
+                irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+            ))
+            self.skip_tp.append(o3.FullyConnectedTensorProduct(
+                                self.irreps_out, self.node_attrs_irreps, self.irreps_out
+                                ))
+            self.reshape.append(reshape_irreps(self.irreps_out))
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        original_message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]        
+        
+        # this can be done in parallel so the cost can be the same as cp
+        message = self.linear[0](original_message) / (density + 1)
+        message = self.skip_tp[0](message, node_attrs)
+        message = self.reshape[0](message)
+        message = message.unsqueeze(-1)
+        for idx in range(1, self.correlation):
+            _message = self.linear[idx](original_message) / (density + 1)
+            _message = self.skip_tp[idx](_message, node_attrs)
+            _message = self.reshape[idx](_message).unsqueeze(-1)
+            message = torch.cat((message, _message), dim = -1)
+        return (
+            message, 
+            None,
+        )
+
+@compile_mode("script")
+class RealAgnosticDensityNonSymmetricResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        self.correlation = 3
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        
+        
+        
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+
+
+        self.linear = torch.nn.ModuleList([])
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+        self.reshape = torch.nn.ModuleList([])
+        for _ in range(self.correlation):
+            self.linear.append(o3.Linear(
+                irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+            ))
+            self.reshape.append(reshape_irreps(self.irreps_out))
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        original_message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+
+        
+        message = self.reshape[0](self.linear[0](original_message) / (density + 1))
+        message = message.unsqueeze(-1)
+        for idx in range(1, self.correlation):
+            _message = self.linear[idx](original_message) / (density + 1)
+            _message = self.reshape[idx](_message).unsqueeze(-1)
+            message = torch.cat((message, _message), dim = -1)
+        return (
+            message, 
+            sc,
+        )
+
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityInteractionBlockSCv2(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+        
+        self.scale_tp = o3.FullyConnectedTensorProduct(
+            self.irreps_out, self.node_attrs_irreps, self.irreps_out
+        )
+
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1) # TODO:  make this value learnable? density + bias
+
+        # TODO: find a way to remove the scale tp (find a better normalization)
+        message = self.scale_tp(message, node_attrs)
+
+        sc = self.skip_tp(node_feats, node_attrs)
+        return (
+            self.reshape(message),
+            sc * torch.tanh(density), # change to MLP??
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityInteractionBlockSC(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+        
+        self.scale_tp = o3.FullyConnectedTensorProduct(
+            self.irreps_out, self.node_attrs_irreps, self.irreps_out
+        )
+
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+        message = self.scale_tp(message, node_attrs)
+        sc = self.skip_tp(node_feats, node_attrs)
+        return (
+            self.reshape(message),
+            sc * torch.tanh(density),
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticDensityInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.irreps_out, self.node_attrs_irreps, self.irreps_out
+        )
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+        message = self.skip_tp(message, node_attrs)
+        return (
+            self.reshape(message),
+            None,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityCutoffMultiSCAttentionInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid_channel = [mul for mul, _ in irreps_mid][0]
+        irreps_mid = irreps_mid.simplify() # irreps of message
+
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.irreps_out, self.node_attrs_irreps, self.irreps_out
+        )
+        
+        # num_heads = irreps_mid_channel
+        corr = 3
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [ 
+                corr,
+                ],
+            torch.nn.functional.silu,
+        )
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # assume node_feats_irreps = n x 0e
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        node_attr_dim = [mul for mul, _ in self.node_attrs_irreps][0]
+
+        self.mlp_attn = False
+
+        if self.mlp_attn:
+            self.attn = nn.FullyConnectedNet(
+                [node_feats_norm_dim * 2 + node_attr_dim * 2 + input_dim]
+                + [
+                    corr,
+                ],
+                torch.nn.functional.silu,
+            )
+        else:
+            self.attn = HeadWeightLayer(node_feats_norm_dim, num_heads=corr)
+
+        #self.edge_radial = nn.FullyConnectedNet(
+        #    [input_dim] + [16, corr],
+        #    torch.nn.functional.silu,
+        #)
+        
+        #from collections import defaultdict
+        #self.save_dict = defaultdict(list)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+
+        # get conv tp weights
+        # conv_tp_weights = self.conv_tp_weights(edge_feats * 0.0 + 0.001) # dummy
+        conv_tp_weights = self.conv_tp_weights(edge_feats) # original
+        
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+
+        if self.mlp_attn:
+            attn_input = torch.cat([self.norm_node_feats(node_feats[sender]), self.norm_node_feats(node_feats[receiver]), node_attrs[sender] * 0.0, node_attrs[receiver] * 0.0, edge_feats * 0.0], dim=-1)
+            #edge_density_attn = torch.exp(torch.tanh(self.attn(attn_input)) * 5) * edge_density 
+            attention_scores = self.attn(attn_input)
+            #print("attn mean ->", attention_scores.mean())
+            #print("attn std ->", attention_scores.std())
+            edge_density_attn = torch.exp(torch.tanh(attention_scores) * 5) # original
+
+        else:
+            edge_density_attn = self.attn(self.norm_node_feats(node_feats[sender]), self.norm_node_feats(node_feats[receiver]))
+
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, conv_tp_weights
+        )  # [n_edges, irreps]
+        
+        #mji_attned = torch.einsum("bi,bc->bci", mji, edge_density_attn)
+        mji_attned = mji.unsqueeze(1) * edge_density_attn.unsqueeze(2)
+
+        message = scatter_sum(
+            src=mji_attned, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+
+        message = self.linear(message) / (density.unsqueeze(-1) + 1)
+        
+        node_attrs = node_attrs.unsqueeze(1).expand([-1, message.shape[1], -1])
+        message = self.skip_tp(message, node_attrs)
+        return (
+            self.reshape(message),
+            None,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityMultiSCAttentionInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid_channel = [mul for mul, _ in irreps_mid][0]
+        irreps_mid = irreps_mid.simplify() # irreps of message
+
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.irreps_out, self.node_attrs_irreps, self.irreps_out
+        )
+        
+        # num_heads = irreps_mid_channel
+        corr = 3
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # assume node_feats_irreps = n x 0e
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        node_attr_dim = [mul for mul, _ in self.node_attrs_irreps][0]
+
+        self.edge_scalar_idx = irreps_mid.slices()[0]
+        self.node_scalar_idx = self.node_feats_irreps.slices()[0]
+        message_norm_dim = irreps_mid[0].mul
+
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [ 
+                #16,
+                corr,
+                ],
+            torch.nn.functional.silu,
+        )
+
+        non_bias = True
+
+        if non_bias:
+            self.attn = nn.FullyConnectedNet(
+                [
+                    node_feats_norm_dim * 2 # + message_norm_dim # + input_dim # + node_attr_dim * 2 
+                ]
+                + [
+                    #16,
+                    corr,
+                ],
+                torch.nn.functional.silu,
+            )
+        else:
+            self.attn = torch.nn.Sequential(
+                torch.nn.Linear(node_feats_norm_dim * 2, 16),
+                torch.nn.LayerNorm(16),
+                torch.nn.SiLU(),
+                torch.nn.Linear(16, corr)
+            )
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_length: torch.Tensor=None,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        
+        
+        #import ipdb; ipdb.set_trace()
+        attn_input = torch.cat([
+            #self.norm_node_feats(node_feats[sender]), 
+            node_feats[sender][:, self.node_scalar_idx],
+            node_feats[receiver][:, self.node_scalar_idx],
+            #mji[:, self.edge_scalar_idx],
+            #self.norm_node_feats(node_feats[receiver]),
+            #node_attrs[sender], 
+            #node_attrs[receiver], 
+            #edge_feats,
+            ], dim=-1) 
+
+        # edge_density_attn = edge_density * self.attn(node_feats[sender], node_feats[receiver], node_attrs[sender], node_attrs[receiver], edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        # edge_density = torch.tanh(self.density_fn(attn_input) ** 2)
+        edge_density_attn = torch.exp(torch.tanh(self.attn(attn_input)) * 5)
+
+        #mji_attned = torch.einsum("bi,bc->bci", mji, edge_density_attn)
+        mji_attned = mji.unsqueeze(1) * edge_density_attn.unsqueeze(2)
+
+        message = scatter_sum(
+            src=mji_attned, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+
+        message = self.linear(message) / (density.unsqueeze(-1) + 1)
+        
+        node_attrs = node_attrs.unsqueeze(1).expand([-1, message.shape[1], -1])
+        message = self.skip_tp(message, node_attrs)
+        return (
+            self.reshape(message),
+            None,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityMultiAttentionInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid_channel = [mul for mul, _ in irreps_mid][0]
+        self.reshape_attn = reshape_attn(irreps_mid)
+
+        irreps_mid = irreps_mid.simplify() # irreps of message
+
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.irreps_out, self.node_attrs_irreps, self.irreps_out
+        )
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # assume node_feats_irreps = n x 0e
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        node_attr_dim = [mul for mul, _ in self.node_attrs_irreps][0]
+
+        #num_heads = irreps_mid_channel
+        num_heads = 8
+        #num_heads = 1
+        self.ch_per_head = int(irreps_mid_channel / num_heads)
+
+        self.attn = nn.FullyConnectedNet(
+            [node_feats_norm_dim * 2 + node_attr_dim * 2 + input_dim]
+            + [
+                16,
+                num_heads,
+            ],
+            torch.nn.functional.silu,
+        )
+        
+        #from collections import defaultdict
+        #self.save_dict = defaultdict(list)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        
+        #import ipdb; ipdb.set_trace()
+        attn_input = torch.cat([self.norm_node_feats(node_feats[sender]), self.norm_node_feats(node_feats[receiver]), node_attrs[sender], node_attrs[receiver], edge_feats], dim=-1)
+        #edge_density_attn = edge_density * self.attn(node_feats[sender], node_feats[receiver], node_attrs[sender], node_attrs[receiver], edge_feats)
+        edge_density_attn = torch.exp(torch.tanh(self.attn(attn_input)) * 5)
+
+        if self.ch_per_head > 1:
+            edge_density_attn = edge_density_attn.repeat([1, self.ch_per_head])
+
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+
+        reshape_attn = self.reshape_attn(edge_density_attn)
+        mji = mji * reshape_attn
+
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+
+        message = self.skip_tp(message, node_attrs)
+        return (
+            self.reshape(message),
+            None,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityAttentionInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.irreps_out, self.node_attrs_irreps, self.irreps_out
+        )
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # assume node_feats_irreps = n x 0e
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        node_attr_dim = [mul for mul, _ in self.node_attrs_irreps][0]
+
+        self.attn = nn.FullyConnectedNet(
+            [node_feats_norm_dim * 2 + node_attr_dim * 2 + input_dim]
+            + [
+                16,
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        
+        #from collections import defaultdict
+        #self.save_dict = defaultdict(list)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        
+        #import ipdb; ipdb.set_trace()
+        attn_input = torch.cat([self.norm_node_feats(node_feats[sender]), self.norm_node_feats(node_feats[receiver]), node_attrs[sender], node_attrs[receiver], edge_feats], dim=-1)
+        #edge_density_attn = edge_density * self.attn(node_feats[sender], node_feats[receiver], node_attrs[sender], node_attrs[receiver], edge_feats)
+        edge_density_attn = torch.exp(torch.tanh(self.attn(attn_input)) * 5)
+
+        #import ipdb; ipdb.set_trace()
+
+        # print(edge_density_attn.flatten()[:100])
+
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+
+        mji = mji * edge_density_attn
+
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+        message = self.skip_tp(message, node_attrs)
+        return (
+            self.reshape(message),
+            None,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticDensityNFInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.irreps_out, self.node_attrs_irreps, self.irreps_out
+        )
+        self.reshape = reshape_irreps(self.irreps_out)
+        
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        self.node_feats_norm_dim = node_feats_norm_dim
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [node_feats_norm_dim * 2]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+
+        node_features_cat = torch.cat([
+                        node_feats[sender][:, :self.node_feats_norm_dim],
+                        node_feats[receiver][:, :self.node_feats_norm_dim],
+                        ], dim=-1)
+
+        #edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        edge_density = torch.tanh(self.density_fn(node_features_cat) ** 2)
+
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+        message = self.skip_tp(message, node_attrs)
+        return (
+            self.reshape(message),
+            None,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
 
 @compile_mode("script")
 class RealAgnosticSimplifiedDensityInteractionBlock(InteractionBlock):
@@ -656,7 +2081,283 @@ class RealAgnosticSimplifiedDensityInteractionBlock(InteractionBlock):
             None,
         )  # [n_nodes, channels, (lmax + 1)**2]
 
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityHeadInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
 
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.irreps_out, self.node_attrs_irreps, self.irreps_out
+        )
+        self.node_heads_embedding = Embedding(num_embeddings=self.num_heads, embedding_dim=self.node_attrs_irreps[0].mul)
+
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+        node_heads: torch.Tensor,
+    ) -> Tuple[torch.Tensor, None]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+
+        node_attrs = 0.9 * node_attrs + 0.1 * self.node_heads_embedding(node_heads)
+        message = self.skip_tp(message, node_attrs)
+        return (
+            self.reshape(message),
+            None,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticDensityNFResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+
+        self.reshape = reshape_irreps(self.irreps_out)
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        self.node_feats_norm_dim = node_feats_norm_dim
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [node_feats_norm_dim * 2]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        node_features_cat = torch.cat([
+                        node_feats[sender][:, :self.node_feats_norm_dim],
+                        node_feats[receiver][:, :self.node_feats_norm_dim],
+                        ], dim=-1)
+
+        edge_density = torch.tanh(self.density_fn(node_features_cat) ** 2)
+        #edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
 @compile_mode("script")
 class RealAgnosticSimplifiedDensityResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
@@ -711,6 +2412,7 @@ class RealAgnosticSimplifiedDensityResidualInteractionBlock(InteractionBlock):
             torch.nn.functional.silu,
         )
 
+
         # Reshape
         self.reshape = reshape_irreps(self.irreps_out)
 
@@ -725,6 +2427,643 @@ class RealAgnosticSimplifiedDensityResidualInteractionBlock(InteractionBlock):
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityCutoffMultiSCAttentionResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        corr = 3
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                corr,
+            ],
+            torch.nn.functional.silu,
+        )
+
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        self.node_feats_norm_dim = node_feats_norm_dim
+        node_attr_dim = [mul for mul, _ in self.node_attrs_irreps][0]
+        
+        self.edge_scalar_idx = self.irreps_mid.slices()[0]
+        message_norm_dim = self.irreps_mid[0].mul
+
+        self.mlp_attn = False
+
+        if self.mlp_attn:
+            self.attn = nn.FullyConnectedNet(
+                [node_feats_norm_dim * 2 + node_attr_dim * 2 + input_dim]
+                + [
+                    corr,
+                ],
+                torch.nn.functional.silu,
+            )
+        else:
+            self.attn = HeadWeightLayer(node_feats_norm_dim, num_heads=corr)
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+        self.inf_time = 0
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+
+        # conv_tp_weights = self.conv_tp_weights(edge_feats * 0.0 + 0.001)
+        conv_tp_weights = self.conv_tp_weights(edge_feats) # original
+
+        if self.mlp_attn:
+            attn_input = torch.cat([node_feats[sender][:, :self.node_feats_norm_dim], node_feats[receiver][:, :self.node_feats_norm_dim], node_attrs[sender]*0.0, node_attrs[receiver]*0.0, edge_feats*0.0], dim=-1)
+            #edge_density_attn = torch.exp(torch.tanh(self.attn(attn_input)) * 5) * edge_density
+            attention_scores = self.attn(attn_input)
+            #print("attn mean ->", attention_scores.mean())
+            #print("attn std ->", attention_scores.std())
+
+            edge_density_attn = torch.exp(torch.tanh(attention_scores) * 5) # original
+        else:
+            edge_density_attn = self.attn(node_feats[sender][:, :self.node_feats_norm_dim], node_feats[receiver][:, :self.node_feats_norm_dim])
+        
+        
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, conv_tp_weights
+        )  # [n_edges, irreps]
+        
+        #mji_attned = torch.einsum("bi,bc->bci", mji, edge_density_attn)
+        mji_attned = mji.unsqueeze(1) * edge_density_attn.unsqueeze(2)
+
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji_attned, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density.unsqueeze(-1) + 1)
+
+        self.inf_time += 1
+
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityMultiSCAttentionResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        corr = 3
+
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        self.node_feats_norm_dim = node_feats_norm_dim
+        node_attr_dim = [mul for mul, _ in self.node_attrs_irreps][0]
+        
+        self.edge_scalar_idx = irreps_mid.slices()[0]
+        self.node_scalar_idx = self.node_feats_irreps.slices()[0]
+        message_norm_dim = irreps_mid[0].mul
+        
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            #[node_feats_norm_dim * 2]
+            + [
+                #16,
+                corr,
+            ],
+            torch.nn.functional.silu,
+        )
+
+        non_bias = True
+
+        if non_bias:
+            self.attn = nn.FullyConnectedNet(
+                [
+                    node_feats_norm_dim * 2 # + message_norm_dim # + input_dim # + node_attr_dim * 2 
+                ]
+                + [
+                    #16,
+                    corr,
+                ],
+                torch.nn.functional.silu,
+            )
+        else:
+            self.attn = torch.nn.Sequential(
+                torch.nn.Linear(node_feats_norm_dim * 2, 16),
+                torch.nn.LayerNorm(16),
+                torch.nn.SiLU(),
+                torch.nn.Linear(16, corr)
+            )
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+        self.inf_time = 0
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_length: torch.Tensor=None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+
+
+        node_features_cat = torch.cat([
+                        #node_feats[sender][:, :self.node_feats_norm_dim], 
+                        node_feats[sender][:, self.node_scalar_idx],
+                        node_feats[receiver][:, self.node_scalar_idx],
+                        #mji[:, self.edge_scalar_idx],
+                        #node_feats[receiver][:, :self.node_feats_norm_dim],
+                        ], dim=-1)
+
+
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        #edge_density = torch.tanh(self.density_fn(node_features_cat) ** 2)
+
+        #attn_input = torch.cat([
+        #    node_features_cat,
+        #    #node_attrs[sender], 
+        #    #node_attrs[receiver], 
+        #    #edge_feats
+        #    ], dim=-1)
+        attn_input = node_features_cat
+        attn_weights = self.attn(attn_input)
+        edge_density_attn = torch.exp(torch.tanh(attn_weights) * 3)
+
+        #import ipdb; ipdb.set_trace()
+        #print(f"\n second layer attn_weights: min {edge_density_attn.min().item()} max {edge_density_attn.max().item()}")
+        
+        
+        #mji_attned = torch.einsum("bi,bc->bci", mji, edge_density_attn)
+        mji_attned = mji.unsqueeze(1) * edge_density_attn.unsqueeze(2)
+
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji_attned, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density.unsqueeze(-1) + 1)
+
+        self.inf_time += 1
+
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityMultiAttentionResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        self.reshape_attn = reshape_attn(irreps_mid)
+        irreps_mid_channel = [mul for mul, _ in irreps_mid][0]
+        irreps_mid = irreps_mid.simplify()
+
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        self.node_feats_norm_dim = node_feats_norm_dim
+        node_attr_dim = [mul for mul, _ in self.node_attrs_irreps][0]
+
+        #num_heads = irreps_mid_channel
+        num_heads = 8
+        #num_heads = 1
+        self.ch_per_head = int(irreps_mid_channel / num_heads)
+
+        self.attn = nn.FullyConnectedNet(
+            [node_feats_norm_dim * 2 + node_attr_dim * 2 + input_dim]
+            + [
+                16,
+                num_heads,
+            ],
+            torch.nn.functional.silu,
+        )
+
+        #self.attn = torch.nn.Sequential(
+        #    torch.nn.Linear(node_feats_norm_dim * 2 + node_attr_dim * 2 + input_dim, 16),
+        #    torch.nn.LayerNorm(16),
+        #    torch.nn.SiLU(),
+        #    torch.nn.Linear(16, 1)
+        #)
+
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+        self.inf_time = 0
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+
+        attn_input = torch.cat([node_feats[sender][:, :self.node_feats_norm_dim], node_feats[receiver][:, :self.node_feats_norm_dim], node_attrs[sender], node_attrs[receiver], edge_feats], dim=-1)
+        edge_density_attn = torch.exp(torch.tanh(self.attn(attn_input)) * 5)
+        
+        if self.ch_per_head > 1:
+            edge_density_attn = edge_density_attn.repeat([1, self.ch_per_head])
+
+
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+
+
+        reshape_attn = self.reshape_attn(edge_density_attn)
+
+        mji = mji * reshape_attn
+
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+
+        self.inf_time += 1
+
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityAttentionResidualInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+
+        self.norm_node_feats = Norm(self.node_feats_irreps)
+        node_feats_norm_dim = [mul for mul, _ in self.node_feats_irreps][0]
+        self.node_feats_norm_dim = node_feats_norm_dim
+        node_attr_dim = [mul for mul, _ in self.node_attrs_irreps][0]
+
+        self.attn = nn.FullyConnectedNet(
+            [node_feats_norm_dim * 2 + node_attr_dim * 2 + input_dim]
+            + [
+                16,
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+
+
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+        self.inf_time = 0
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats, node_attrs)
+        node_feats = self.linear_up(node_feats)
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+
+        attn_input = torch.cat([node_feats[sender][:, :self.node_feats_norm_dim], node_feats[receiver][:, :self.node_feats_norm_dim], node_attrs[sender], node_attrs[receiver], edge_feats], dim=-1)
+        edge_density_attn = torch.exp(torch.tanh(self.attn(attn_input)) * 5)
+
+
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+
+        mji = mji * edge_density_attn
+
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, 1]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        message = self.linear(message) / (density + 1)
+
+        self.inf_time += 1
+
+        return (
+            self.reshape(message),
+            sc,
+        )  # [n_nodes, channels, (lmax + 1)**2]
+
+@compile_mode("script")
+class RealAgnosticSimplifiedDensityResidualHeadInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        # First linear
+        self.linear_up = o3.Linear(
+            self.node_feats_irreps,
+            self.node_feats_irreps,
+            internal_weights=True,
+            shared_weights=True,
+        )
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = o3.TensorProduct(
+            self.node_feats_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = nn.FullyConnectedNet(
+            [input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,  # gate
+        )
+
+        # Linear
+        irreps_mid = irreps_mid.simplify()
+        self.irreps_out = self.target_irreps
+        self.linear = o3.Linear(
+            irreps_mid, self.irreps_out, internal_weights=True, shared_weights=True
+        )
+
+        # Selector TensorProduct
+        self.skip_tp = o3.FullyConnectedTensorProduct(
+            self.node_feats_irreps, self.node_attrs_irreps, self.hidden_irreps
+        )
+        self.reshape = reshape_irreps(self.irreps_out)
+
+        self.node_heads_embedding = Embedding(num_embeddings=self.num_heads, embedding_dim=self.node_attrs_irreps[0].mul)
+
+        # Density normalization
+        self.density_fn = nn.FullyConnectedNet(
+            [input_dim]
+            + [
+                1,
+            ],
+            torch.nn.functional.silu,
+        )
+
+        # Reshape
+        self.reshape = reshape_irreps(self.irreps_out)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+        node_heads: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+
+        node_attrs = 0.9 * node_attrs + 0.1 * self.node_heads_embedding(node_heads)
+
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
         tp_weights = self.conv_tp_weights(edge_feats)
@@ -2283,3 +4622,60 @@ class ScaleShiftBlock(torch.nn.Module):
             else f"{self.shift.item():.4f}"
         )
         return f"{self.__class__.__name__}(scale={formatted_scale}, shift={formatted_shift})"
+
+class FastNorm(torch.nn.Module):
+    """
+    Fast norm computation for e3nn irreps using direct slicing and torch.norm
+    
+    Parameters
+    ----------
+    irreps : str or o3.Irreps
+        The irreps specification
+    """
+    def __init__(self, irreps):
+        super().__init__()
+        self.irreps = o3.Irreps(irreps)
+        
+        # Pre-compute slices for each irrep
+        self.slices = []
+        start_idx = 0
+        for mul, ir in self.irreps:
+            dim = mul * ir.dim
+            end_idx = start_idx + dim
+            
+            # For each multiplicity, further divide into individual irreps
+            if mul > 1:
+                for m in range(mul):
+                    ir_start = start_idx + m * ir.dim
+                    ir_end = ir_start + ir.dim
+                    self.slices.append((ir_start, ir_end, ir.l))
+            else:
+                self.slices.append((start_idx, end_idx, ir.l))
+            
+            start_idx = end_idx
+    
+    def forward(self, x):
+        """
+        Compute the norm of each irrep
+        
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (..., irreps.dim)
+            
+        Returns
+        -------
+        torch.Tensor
+            Tensor of shape (..., len(slices)) containing norms
+        """
+        results = []
+        for start, end, l in self.slices:
+            # For l=0, take value directly (it's already a scalar)
+            if l == 0:
+                results.append(x[..., start:end])
+            # For l>0, compute norm
+            else:
+                norm = torch.norm(x[..., start:end], dim=-1, keepdim=True)
+                results.append(norm)
+        
+        return torch.cat(results, dim=-1)

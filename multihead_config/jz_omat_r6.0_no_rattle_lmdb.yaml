@@ -1,0 +1,15 @@
+avg_num_neighbor_head: omat_pbe
+device: cuda
+multi_processed_test: True
+heads: 
+    omat_pbe:
+        train_file: "/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_cache/omat/train/aimd-from-PBE-1000-npt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_cache/omat/train/aimd-from-PBE-3000-nvt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_cache/omat/train/aimd-from-PBE-3000-npt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_cache/omat/train/aimd-from-PBE-1000-nvt"
+        valid_file: "/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_cache/omat/val/aimd-from-PBE-1000-npt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_cache/omat/val/aimd-from-PBE-3000-nvt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_cache/omat/val/aimd-from-PBE-3000-npt:/lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_cache/omat/val/aimd-from-PBE-1000-nvt"
+        E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
+        config_type_weights:
+            Default: 1.0
+        avg_num_neighbors: 61.9649349317854
+        mean: 0.1634233391135065
+        std: 0.7735790334431056
+        dataset_type: lmdb
+

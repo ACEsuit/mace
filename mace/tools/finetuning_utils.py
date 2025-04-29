@@ -5,6 +5,8 @@ from e3nn import o3
 
 from mace.tools.utils import AtomicNumberTable
 
+def load_noncompatible(ckpt_model_path: str, model: torch.nn.Module) -> torch.nn.Module:
+    pass
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
     def radial_to_name(radial_type):
@@ -86,6 +88,7 @@ def load_foundations_elements(
     indices_weights = [z_table.z_to_index(z) for z in new_z_table.zs]
     num_radial = model.radial_embedding.out_dim
     num_species = len(indices_weights)
+    max_ell = model.spherical_harmonics._lmax  # pylint: disable=protected-access
     model.node_embedding.linear.weight = torch.nn.Parameter(
         model_foundations.node_embedding.linear.weight.view(
             num_species_foundations, -1
@@ -131,10 +134,11 @@ def load_foundations_elements(
         model.interactions[i].linear.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear.weight.clone()
         )
-        if (
-            model.interactions[i].__class__.__name__
-            == "RealAgnosticResidualInteractionBlock"
-        ):
+        if model.interactions[i].__class__.__name__ in [
+            "RealAgnosticResidualInteractionBlock",
+            "RealAgnosticDensityResidualInteractionBlock",
+            "RealAgnosticSimplifiedDensityResidualInteractionBlock",
+        ]:
             model.interactions[i].skip_tp.weight = torch.nn.Parameter(
                 model_foundations.interactions[i]
                 .skip_tp.weight.reshape(
@@ -158,6 +162,21 @@ def load_foundations_elements(
                 .flatten()
                 .clone()
                 / (num_species_foundations / num_species) ** 0.5
+            )
+        if model.interactions[i].__class__.__name__ in [
+            "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticDensityResidualInteractionBlock",
+            "RealAgnosticSimplifiedDensityInteractionBlock",
+            "RealAgnosticSimplifiedDensityResidualInteractionBlock",
+        ]:
+            # Assuming only 1 layer in density_fn
+            getattr(model.interactions[i].density_fn, "layer0").weight = (
+                torch.nn.Parameter(
+                    getattr(
+                        model_foundations.interactions[i].density_fn,
+                        "layer0",
+                    ).weight.clone()
+                )
             )
 
     # Transferring products

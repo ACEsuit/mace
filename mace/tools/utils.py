@@ -139,6 +139,53 @@ class UniversalEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, o)
 
 
+class LRScheduler:
+    def __init__(self, optimizer, args, iter_per_epoch=None) -> None:
+        self.scheduler = args.scheduler
+        if args.scheduler == "ExponentialLR":
+            self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
+                optimizer=optimizer, gamma=args.lr_scheduler_gamma
+            )
+            self.step_unit = 'epoch'
+        elif args.scheduler == "ReduceLROnPlateau":
+            self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer=optimizer,
+                factor=args.lr_factor,
+                patience=args.scheduler_patience,
+            )
+            self.step_unit = 'epoch'
+        elif args.scheduler == "CosineAnnealingWarmupLR":
+            self.step_unit = 'step'
+            assert(iter_per_epoch) is not None
+            total_iters = args.max_num_epochs * iter_per_epoch
+            warmup_iters = int(args.warmup_epochs * iter_per_epoch)
+            self.cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer=optimizer,
+                T_max=total_iters - warmup_iters,  # Maximum number of iterations
+                eta_min=args.cosine_min  # Minimum learning rate at the end of the schedule
+            )
+            self.warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=args.warmup_factor, end_factor=1.0, total_iters=warmup_iters)
+            self.lr_scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, [self.warmup, self.cosine], [warmup_iters])
+            
+        else:
+            raise RuntimeError(f"Unknown scheduler: '{args.scheduler}'")
+
+    def step(self, metrics=None, epoch=None):  # pylint: disable=E1123
+        if self.scheduler == "ExponentialLR":
+            self.lr_scheduler.step(epoch=epoch)
+        elif self.scheduler == "ReduceLROnPlateau":
+            self.lr_scheduler.step(
+                metrics=metrics, epoch=epoch
+            )  # pylint: disable=E1123
+        elif self.scheduler == "CosineAnnealingWarmupLR":
+            self.lr_scheduler.step()
+
+    def __getattr__(self, name):
+        if name == "step":
+            return self.step
+        return getattr(self.lr_scheduler, name)
+
+
 class MetricsLogger:
     def __init__(self, directory: str, tag: str) -> None:
         self.directory = directory

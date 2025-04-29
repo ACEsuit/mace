@@ -3,8 +3,8 @@ device: cuda
 multi_processed_test: True
 heads: 
     spice_wB97M:
-        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/train/spice
-        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/valid/spice
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_store/multihead_datasets/train/spice
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data_store/multihead_datasets/valid/spice
         E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
         config_type_weights:
             Default: 1.0
@@ -13,8 +13,8 @@ heads:
         std: 1.0737544472166278
 
     mp_pbe:
-        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/train/MatProj
-        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_datasets/valid/MatProj
+        train_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/MatProj/train
+        valid_file: /lustre/fsn1/projects/rech/gax/unh55hx/origin_data/data/MatProj/val
         E0s: /lustre/fsn1/projects/rech/gax/unh55hx/data/e0s.json
         config_type_weights:
             Default: 1.0

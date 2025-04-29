@@ -20,6 +20,8 @@ build/
 *.log
 *.out
 
+*/omat_stats/
+
 # Distribution
 dist/
 
@@ -43,3 +45,7 @@ dist/
 
 cache_files/
 creat_links.sh
+
+data/
+*.swo
+

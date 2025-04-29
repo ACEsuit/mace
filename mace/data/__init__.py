@@ -1,6 +1,9 @@
 from .atomic_data import AtomicData
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
-from .lmdb_dataset import LMDBDataset
+try:
+    from .lmdb_dataset import LMDBDataset
+except:
+    print("lmdb loading error")
 from .neighborhood import get_neighborhood
 from .utils import (
     Configuration,

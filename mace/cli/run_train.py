@@ -294,6 +294,10 @@ def main() -> None:
             logging.info(
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
+            if args.default_dtype == 'float32':
+                model_foundation = model_foundation.float()
+            if args.default_dtype == 'float64':
+                model_foundation = model_foundation.double()
         args.r_max = model_foundation.r_max.item()
     else:
         args.multiheads_finetuning = False
@@ -345,13 +349,17 @@ def main() -> None:
                 )
         
         if 'E0s' in head_args:
-            if head_args.E0s.endswith(".json"):
-                with open(head_args.E0s, "r") as f:
-                    E0s_json = json.load(f)
-                    assert head in E0s_json, "headname should be contained in json as a key"
-                    head_args.E0s = ast.literal_eval(E0s_json[head])
+            if type(head_args.E0s) == str:
+                if head_args.E0s.endswith(".json"):
+                    with open(head_args.E0s, "r") as f:
+                        E0s_json = json.load(f)
+                        assert head in E0s_json, "headname should be contained in json as a key"
+                        head_args.E0s = ast.literal_eval(E0s_json[head])
+                else:
+                    head_args.E0s = ast.literal_eval(head_args.E0s)
             else:
-                head_args.E0s = ast.literal_eval(head_args.E0s)
+                print(type(head_args.E0s))
+                assert isinstance(head_args.E0s, dict)
         
         if 'atomic_numbers' in head_args:
             head_args.E0s = {k:v for k,v in head_args.E0s.items() if k in head_args.atomic_numbers}
@@ -416,12 +424,14 @@ def main() -> None:
 
         if head_args.train_file.endswith(".xyz"):
             # TODO: test this branch
-            if head_args.valid_file is not None:
+            if head_args.get('valid_file', None) is not None:
                 assert head_args.valid_file.endswith(
                     ".xyz"
                 ), "valid_file if given must be same format as train_file"
+            else:
+                head_args.valid_file = None
             config_type_weights = get_config_type_weights(head_args.config_type_weights)
-            collections, _ = get_dataset_from_xyz(
+            collections, _atomic_energy_dict, _head = get_dataset_from_xyz(
                 train_path=head_args.train_file,
                 valid_path=head_args.valid_file,
                 valid_fraction=head_args.get('valid_fraction', None),
@@ -468,6 +478,62 @@ def main() -> None:
             else:
                 raise NotImplementedError("dataset_type {head_args.dataset_type} not supported")
 
+        #if head == "omol" and head_args.get("filter_charge_spin", False):
+        #    train_set = head_args.train_set
+        #    valid_set = head_args.valid_set
+
+        #    train_set.get_charge_spin()
+        #    valid_set.get_charge_spin()
+
+        #    train_mask = np.logical_and(train_set.charges == 0, train_set.spins == 1)
+        #    valid_mask = np.logical_and(valid_set.charges == 0, valid_set.spins == 1)
+
+        #    head_args.train_set = torch.utils.data.Subset(train_set, train_mask)
+        #    head_args.valid_set = torch.utils.data.Subset(valid_set, val_mask)
+
+        #    logging.info(
+        #        f"After filtering charge > 0, spins > 1; remaining conifgs -> {len(head_args.train_set)} (train), {len(head_args.valid_set)} (valid)"
+        #    )
+
+        if head == "omol" and head_args.get("filter_charge_spin", False):
+            train_set = head_args.train_set
+            valid_set = head_args.valid_set
+            
+            # Define file paths for saved masks
+            train_mask_path = "omal_2M_nutual_mask_train.pt"
+            valid_mask_path = "omal_2M_nutual_mask_valid.pt"
+            
+            # Check if mask files already exist
+            if os.path.exists(train_mask_path) and os.path.exists(valid_mask_path):
+                # Load the masks if they exist
+                logging.info(f"Loading existing masks from {train_mask_path} and {valid_mask_path}")
+                train_mask = torch.load(train_mask_path)
+                valid_mask = torch.load(valid_mask_path)
+            else:
+                # Calculate masks if they don't exist
+                logging.info("Calculating charge and spin masks...")
+                train_set.get_charge_spin()
+                valid_set.get_charge_spin()
+                
+                # Create masks based on the condition (charge == 0 and spin == 1)
+                train_mask = np.logical_and(train_set.charges == 0, train_set.spins == 1)
+                valid_mask = np.logical_and(valid_set.charges == 0, valid_set.spins == 1)
+                
+                # Save the masks for future use
+                logging.info(f"Saving masks to {train_mask_path} and {valid_mask_path}")
+                torch.save(train_mask, train_mask_path)
+                torch.save(valid_mask, valid_mask_path)
+            
+            # Apply masks to create subsets
+            train_indices = np.where(train_mask)[0]  # Get indices where mask is True
+            valid_indices = np.where(valid_mask)[0]  # Get indices where mask is True
+            
+            head_args.train_set = torch.utils.data.Subset(train_set, train_indices)
+            head_args.valid_set = torch.utils.data.Subset(valid_set, valid_indices)
+            
+            logging.info(
+                f"After filtering charge == 0, spins == 1; remaining configs -> {len(head_args.train_set)} (train), {len(head_args.valid_set)} (valid)"
+            )
 
         if head == "alex_pbe" and head_args.get("only_stable", False):
             train_set = head_args.train_set
@@ -530,12 +596,20 @@ def main() -> None:
             head_args.train_set = torch.utils.data.Subset(train_set, train_mask)
             head_args.valid_set = torch.utils.data.Subset(valid_set, val_mask)
         
+        if head_args.get("repeat", None):
+            repeat = head_args.get("repeat", None)
+            logging.info(f"Dataset {head} is repeated {repeat} x")
+            repeat = int(repeat)
+            head_args.train_set = ConcatDataset([head_args.train_set, ] * repeat)
+            
+        
         if head_args.get("additional_set", None):
             additional_set = head_args.additional_set
             assert "train_file" in additional_set and "valid_file" in additional_set
             assert "additional_type" in additional_set
             train_file = head_args.additional_set.train_file
             valid_file = head_args.additional_set.valid_file
+            repeat = head_args.additional_set.get("repeat", None)
             additional_type = head_args.additional_set["additional_type"]
             if additional_type.lower() == "hdf5":
                 additional_train_set = data.dataset_from_sharded_hdf5(
@@ -549,9 +623,17 @@ def main() -> None:
                 additional_valid_set = data.LMDBDataset(valid_file, r_max=head_args.r_max, z_table=z_table, head=head, heads=list(args.heads.keys()))
             else:
                 raise NotImplementedError("additiional_type not supported")
+            
+            if repeat:
+                logging.info(f"Dataset {head} addition is repeated {repeat} x")
+                repeat = int(repeat)
+                additional_train_set = ConcatDataset([additional_train_set, ] * repeat)
+
+
             head_args.train_set = ConcatDataset([head_args.train_set, additional_train_set]) 
             head_args.valid_set = ConcatDataset([head_args.valid_set, additional_valid_set])
-            
+
+
         
         logging.info(f"Dataset {head} size --> {format_number(len(head_args.train_set))}")
 
@@ -824,9 +906,22 @@ def main() -> None:
             forces_weight=args.forces_weight,
             dipole_weight=args.dipole_weight,
         )
+    elif args.loss == "ddp_mae":
+        loss_fn = modules.DDP_weighted_MAE_all(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+        )
+    elif args.loss == "ddp_peratomE":
+        loss_fn = modules.DDP_weighted_MAE_peratomE(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+        )
     else:
         # Unweighted Energy and Forces loss by default
         loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
+
     logging.info(loss_fn)
 
     # Selecting outputs
@@ -868,6 +963,10 @@ def main() -> None:
         model_config["heads"] = heads
         logging.info("Model configuration extracted from foundation model")
         logging.info("Using universal loss function for fine-tuning")
+
+        # load bias or non bias atomic_energy_block
+        model_config["atomic_energies_block"] = args.atomic_energies_block
+
     else:
         logging.info("Building model")
         if args.num_channels is not None and args.max_L is not None:
@@ -897,9 +996,15 @@ def main() -> None:
             atomic_energies=atomic_energies, # check
             avg_num_neighbors=args.heads[args.avg_num_neighbor_head].avg_num_neighbors,   # Use MP avg_num_neighbors
             atomic_numbers=z_table.zs,
+            fix_readout_head=args.fix_readout_head,
+            atomic_energies_block=args.atomic_energies_block,
         )
 
+    if args.fix_readout_head is not None:
+        logging.info(f"fix readout head for different data head to the {args.fix_readout_head}-th head")
+
     model: torch.nn.Module
+
 
     if args.model == "MACE":
         model = modules.ScaleShiftMACE(
@@ -909,6 +1014,25 @@ def main() -> None:
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            contraction_cls=modules.contraction_classes[args.contraction],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=[v.std for v in args.heads.values()],
+            atomic_inter_shift=[0.0 for v in args.heads.values()],
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
+            heads=heads,
+            agnostic_int=args.agnostic_int,
+            agnostic_con=args.agnostic_con,
+        )
+    elif args.model == "ScaleShiftLRMACE":
+        model = modules.ScaleShiftLRMACE(
+            **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            contraction_cls=modules.contraction_classes[args.contraction],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=[v.std for v in args.heads.values()],
             atomic_inter_shift=[0.0 for v in args.heads.values()],
@@ -926,6 +1050,7 @@ def main() -> None:
             correlation=args.correlation,
             gate=modules.gate_dict[args.gate],
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            contraction_cls=modules.contraction_classes[args.contraction],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=[v.std for v in args.heads.values()],
             atomic_inter_shift=[0.0 for v in args.heads.values()],
@@ -1018,40 +1143,113 @@ def main() -> None:
         else:
             no_decay_interactions[name] = param
 
-    #import ipdb; ipdb.set_trace()
+    indice = []
+    for i, (head, head_args) in enumerate(args.heads.items()):
+        if head_args.get("fit_e0s_bias", None):
+            indice.append(i)
 
-    param_options = dict(
-        params=[
-            {
-                "name": "embedding",
-                "params": model.node_embedding.parameters(),
-                "weight_decay": 0.0,
-            },
-            {
-                "name": "interactions_decay",
-                "params": list(decay_interactions.values()),
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "name": "interactions_no_decay",
-                "params": list(no_decay_interactions.values()),
-                "weight_decay": 0.0,
-            },
-            {
-                "name": "products",
-                "params": model.products.parameters(),
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "name": "readouts",
-                "params": model.readouts.parameters(),
-                "weight_decay": 0.0,
-            },
-        ],
-        lr=args.lr,
-        amsgrad=args.amsgrad,
-        eps=args.adam_eps,
-    )
+    if len(indice) > 0 and args.atomic_energies_block is None:
+        raise NotImplementedError(f"config contains fit_e0s_bias: True while atomic bias energy block is not used - enable args.atomic_energies_block = bias, or remove fit_e0s_bias: True in config")
+
+    if len(indice) > 0:
+        model.atomic_energies_fn.set_trainable_indices(indice)
+
+        param_options = dict(
+            params=[
+                {
+                    "name": "embedding",
+                    "params": model.node_embedding.parameters(),
+                    "weight_decay": 0.0,
+                },
+                {
+                    "name": "interactions_decay",
+                    "params": list(decay_interactions.values()),
+                    "weight_decay": args.weight_decay,
+                },
+                {
+                    "name": "interactions_no_decay",
+                    "params": list(no_decay_interactions.values()),
+                    "weight_decay": 0.0,
+                },
+                {
+                    "name": "products",
+                    "params": model.products.parameters(),
+                    "weight_decay": args.weight_decay,
+                },
+                {
+                    "name": "readouts",
+                    "params": model.readouts.parameters(),
+                    "weight_decay": 0.0,
+                },
+                {
+                    "name": "atomic_bias",
+                    "params": model.atomic_energies_fn.parameters(),
+                    "weight_decay": 0.0001,
+                },
+
+            ],
+            lr=args.lr,
+            amsgrad=args.amsgrad,
+            eps=args.adam_eps,
+        )
+    else:
+
+        param_options = dict(
+            params=[
+                {
+                    "name": "embedding",
+                    "params": model.node_embedding.parameters(),
+                    "weight_decay": 0.0,
+                },
+                {
+                    "name": "interactions_decay",
+                    "params": list(decay_interactions.values()),
+                    "weight_decay": args.weight_decay,
+                },
+                {
+                    "name": "interactions_no_decay",
+                    "params": list(no_decay_interactions.values()),
+                    "weight_decay": 0.0,
+                },
+                {
+                    "name": "products",
+                    "params": model.products.parameters(),
+                    "weight_decay": args.weight_decay,
+                },
+                {
+                    "name": "readouts",
+                    "params": model.readouts.parameters(),
+                    "weight_decay": 0.0,
+                },
+
+            ],
+            lr=args.lr,
+            amsgrad=args.amsgrad,
+            eps=args.adam_eps,
+        )
+
+    #import ipdb; ipdb.set_trace()
+    #if args.optimize_e0s_bias:
+    #    bias = torch.zeros_like(model.atomic_energies_fn.atomic_energies)
+    #    bias.requires_grad = True  # Make sure bias is trainable
+    #    model.atomic_energies_fn.register_parameters(bias)
+    #    model.atomic_energies_fn.atomic_energies += bias
+    #    bias_params = {
+    #            "name": "e0_bias",
+    #            "params": model.atomic_energies_fn("bias"),
+    #            "weight_decay": 0.001,
+    #        }
+    #    if args.optimize_e0s_bias:
+    #        bias = torch.nn.Parameter(torch.zeros_like(model.atomic_energies_fn.atomic_energies))
+    #        model.atomic_energies_fn.register_parameter('bias', bias)  # Correctly register the parameter
+    #        
+    #        # Update how you access the parameter in your optimizer config
+    #        bias_params = {
+    #            "name": "e0_bias",
+    #            "params": bias,  # Direct reference to the parameter
+    #            "weight_decay": 0.001,
+    #        }
+
 
     optimizer: torch.optim.Optimizer
     if args.optimizer.lower() == "adamw":
@@ -1071,7 +1269,7 @@ def main() -> None:
         model, optimizer = ipex.optimize(model, optimizer=optimizer)
     logger = tools.MetricsLogger(directory=args.results_dir, tag=tag + "_train")
 
-    lr_scheduler = LRScheduler(optimizer, args)
+    lr_scheduler = LRScheduler(optimizer, args, iter_per_epoch=len(train_loader))
 
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
@@ -1158,6 +1356,16 @@ def main() -> None:
                 swa=False,
                 device=device,
             )
+
+        if args.just_save_model:
+            if rank == 0:
+                model_path = Path(args.checkpoints_dir) / (tag + ".model")
+                logging.info(f"Saving model to {model_path}")
+                if args.save_cpu:
+                    model = model.to("cpu")
+                torch.save(model, model_path)
+                exit()
+
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
@@ -1190,6 +1398,109 @@ def main() -> None:
             config=wandb_config,
         )
         wandb.run.summary["params"] = args_dict_json
+
+
+    # refit E0 bias on additional set (matraj) 
+    #import ipdb; ipdb.set_trace()
+    for idx, (head, head_args) in enumerate(args.heads.items()):
+
+        if not head_args.get("refit", None):
+            continue
+
+        print(f"refitting {head} - {head_args}")
+         
+        from torch_scatter import scatter
+        import torch.nn.functional as F
+        import math
+        from tqdm import tqdm
+
+        model = model.cuda()
+        additional_train_load = torch_geometric.dataloader.DataLoader(
+            dataset=head_args.train_set,
+            batch_size=32,
+            sampler=None,
+            shuffle=True,
+            drop_last=False,
+            pin_memory=args.pin_memory,
+            num_workers=args.num_workers,
+            generator=torch.Generator().manual_seed(args.seed),
+        )
+        bias = torch.zeros_like(model.atomic_energies_fn.atomic_energies)
+        bias.requires_grad = True  # Make sure bias is trainable
+        optimizer = torch.optim.Adam([bias], lr=1e-3)
+        num_epochs = 30
+
+        # First pass: pre-compute all inter_energies and prepare labels
+        print("Pre-computing interaction energies...")
+        e0_labels = []
+        node_attrs_list = []
+        batch_indices_list = []
+
+        num_iters = 512
+        curr_idx = 0
+
+        # imput investigation
+        #atom_nums = []
+        
+        with torch.no_grad():
+            for batch in tqdm(additional_train_load):
+                curr_idx += 1
+                batch = batch.cuda()
+
+                #atom_nums.append(batch.forces.shape[0])
+                
+                out_dict = model(batch, compute_force=False)
+                inter_energy = out_dict['interaction_energy']
+                e0_labels.append((batch.energy - inter_energy).detach().clone().cpu())
+                node_attrs_list.append(batch.node_attrs.detach().clone().cpu())
+                batch_indices_list.append(batch.batch.detach().clone().cpu())
+
+                torch.cuda.empty_cache()
+
+                if curr_idx > num_iters:
+                    break
+
+        for epoch in range(num_epochs):
+            epoch_loss = 0.0
+            
+            for e0_label, node_attrs, batch in tqdm(zip(e0_labels, node_attrs_list, batch_indices_list)):
+                e0_label, node_attrs, batch = e0_label.cuda(), node_attrs.cuda(), batch.cuda()
+                optimizer.zero_grad()
+
+                atomic_energy_with_bias = model.atomic_energies_fn(node_attrs, bias=bias)[:, idx] # NOTE: assume one head
+                e0_pred = scatter(atomic_energy_with_bias, batch, dim=0, reduce='sum')
+
+                loss = F.mse_loss(e0_label, e0_pred)
+                loss.backward()
+                optimizer.step()
+                
+                epoch_loss += math.sqrt(loss.item())
+            avg_epoch_loss = epoch_loss / len(additional_train_load)
+            if (epoch + 1) % 1 == 0:  # Print every 10 epochs
+                print(f"Epoch {epoch+1}/{num_epochs}, RMSE energy on {head}: {avg_epoch_loss:.6f}")
+
+
+        print(f"change from {model.atomic_energies_fn.atomic_energies[idx]}")
+        
+        model.atomic_energies_fn.atomic_energies[idx] += bias[idx].detach()
+
+        print(f"to {model.atomic_energies_fn.atomic_energies[idx]}")
+
+    
+
+    #    #bias = torch.load("bias.pt")
+
+    #    ## change buffer
+    #    #model.atomic_energies_fn.atomic_energies.add_(bias) # update buffer
+
+    #    #print("E0 refit bias loaded")
+    #    #import ipdb; ipdb.set_trace()
+
+    if args.load_noncompatible:
+        import ipdb; ipdb.set_trace()
+        assert os.path.exists(args.load_noncompatible), "load ckpt/model path not exist."
+        from mace.tools.finetuning_utils import load_noncompatible
+        model = load_noncompatible(args.load_noncompatible, model)
 
     if args.distributed:
         distributed_model = DDP(model, device_ids=[local_rank])
@@ -1224,6 +1535,7 @@ def main() -> None:
         restart=args.restart,
         log_opt=args.log_opt,
         async_update=args.async_update,
+        rsmooth=args.rsmooth,
     )
 
     logging.info("Computing metrics for training, validation, and test sets")
@@ -1338,5 +1650,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    torch.multiprocessing.set_start_method('spawn')
+    torch.multiprocessing.set_start_method('fork')
     main()

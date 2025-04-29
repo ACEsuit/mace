@@ -4,7 +4,7 @@
 #SBATCH --partition=gpu_p6
 #SBATCH --exclude=jzxh150
 #SBATCH -C h100                      # target H100 nodes
-#SBATCH --nodes=16                   # number of node
+#SBATCH --nodes=8                   # number of node
 #SBATCH --ntasks-per-node=4         # number of MPI tasks per node (here = number of GPUs per node)
 #SBATCH --gres=gpu:4                 # number of GPUs per node (max 4 for H100 nodes)
 #SBATCH --cpus-per-task=16            # number of CPUs per task (here 1/4 of the node)
@@ -17,9 +17,9 @@
 ##SBATCH --hint=nomultithread         # hyperthreading deactivated
 
 # Access arguments
-bs=16
+bs=32
 lr=0.005
-gpu=64
+gpu=32
 conf=jz_mp_and_salex_r6.0_lmdb.yaml
 #conf=jz_mp_and_salex_stableonly_r6.0_lmdb.yaml
 #conf=jz_mp_and_salex_stable-first_r6.0_lmdb.yaml
@@ -35,22 +35,15 @@ interaction_first="RASimpleDensityIntBlock"
 interaction="RASimpleDensityResidualIntBlock"
 agnostic_first=False
 num_interactions=2
-max_L=1
+max_L=0
 max_ell=3
 
 # Cleans out modules loaded in interactive and inherited by default
 module purge
  
-module load arch/h100
-# Loading modules
-module load pytorch-gpu/py3/2.3.1
- 
-# Echo of launched commands
-set -x 
+source /lustre/fsn1/worksf/projects/rech/gax/unh55hx/miniconda3/etc/profile.d/conda.sh
 
-# set path
-export PATH="$PATH:/linkhome/rech/genrre01/unh55hx/.local/bin"
-DATA_DIR=/lustre/fsn1/projects/rech/gax/unh55hx/data/multihead_dataset
+conda activate mace-multihead
 
 # Running code
 srun bash run_multihead_5arg.sh ${bs} ${lr} ${gpu} ${conf} ${r} ${num_channel} ${num_radial} ${mlp_irreps} ${seed} ${stress} ${interaction_first} ${interaction} ${num_interactions} ${agnostic_first} ${max_L} ${max_ell}

@@ -124,7 +124,7 @@ class MACECalculator(Calculator):
             self.use_compile = True
         else:
             self.models = [
-                torch.load(f=model_path, map_location=device)
+                torch.load(f=model_path, map_location=device, weights_only=False)
                 for model_path in model_paths
             ]
             self.use_compile = False
@@ -166,6 +166,12 @@ class MACECalculator(Calculator):
         for model in self.models:
             for param in model.parameters():
                 param.requires_grad = False
+
+        if 'use_head' in kwargs:
+            self.use_head = kwargs["use_head"]
+        else:
+            # using first head as default
+            self.use_head = self.heads[0]
 
     def _create_result_tensors(
         self, model_type: str, num_models: int, num_atoms: int
@@ -214,6 +220,7 @@ class MACECalculator(Calculator):
         """
         # call to base-class to set atoms attribute
         Calculator.calculate(self, atoms)
+        atoms.info['head'] = self.use_head
 
         # prepare data
         config = data.config_from_atoms(atoms, charges_key=self.charges_key)

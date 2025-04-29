@@ -34,8 +34,59 @@ from .utils import (
     compute_rel_mae,
     compute_rel_rmse,
     compute_rmse,
+    LRScheduler
 )
 
+
+def print_gpu_memory():
+    if torch.cuda.is_available():
+        # Current memory stats
+        allocated = torch.cuda.memory_allocated() / 1024**2
+        reserved = torch.cuda.memory_reserved() / 1024**2
+        
+        # Peak memory stats
+        max_allocated = torch.cuda.max_memory_allocated() / 1024**2
+        max_reserved = torch.cuda.max_memory_reserved() / 1024**2
+        
+        print(f"Current Allocated: {allocated:.2f} MB")
+        print(f"Current Reserved/Cached: {reserved:.2f} MB")
+        print(f"Peak Allocated: {max_allocated:.2f} MB")
+        print(f"Peak Reserved/Cached: {max_reserved:.2f} MB")
+
+def detect_nan_gradients(model):
+    """
+    Check all parameters in the model for NaN gradients and report the layer names.
+    
+    Args:
+        model: PyTorch model
+        
+    Returns:
+        bool: True if NaN gradients were found, False otherwise
+    """
+    found_nan = False
+    for name, param in model.named_parameters():
+        if param.grad is not None and torch.isnan(param.grad).any():
+            print(f"NaN gradient found in layer: {name}")
+            found_nan = True
+    return found_nan
+
+def detect_nan_parameters(model):
+    found_nan = False
+    for name, param in model.named_parameters():
+        if torch.isnan(param).any():
+            print(f"NaN param found in layer: {name}")
+            found_nan = True
+    return found_nan
+
+def detect_nan_output(output):
+    found_nan = False
+
+    for k, v in output.items():
+        if torch.isnan(v).any():
+            print(f"NaN param found in output: {k}")
+            found_nan = True
+    return found_nan
+    
 
 @dataclasses.dataclass
 class SWAContainer:
@@ -175,7 +226,7 @@ def train(
     train_loader: DataLoader,
     valid_loaders: Dict[str, DataLoader],
     optimizer: torch.optim.Optimizer,
-    lr_scheduler: torch.optim.lr_scheduler.ExponentialLR,
+    lr_scheduler: LRScheduler, 
     start_epoch: int,
     max_num_epochs: int,
     patience: int,
@@ -197,6 +248,8 @@ def train(
     restart: Optional[str] = None,
     log_opt: Optional[bool] = False,
     async_update: Optional[bool] = False,
+    #refit_e0s: Optional[bool] = False,
+    rsmooth: Optional[float] = None,
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
@@ -232,7 +285,7 @@ def train(
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
-            if epoch > start_epoch:
+            if epoch > start_epoch and lr_scheduler.step_unit == "epoch": # only when epoch based LRScheduler
                 lr_scheduler.step(
                     metrics=valid_loss
                 )  # Can break if exponential LR, TODO fix that!
@@ -245,7 +298,7 @@ def train(
                 keep_last = True
             loss_fn = swa.loss_fn
             swa.model.update_parameters(model)
-            if epoch > start_epoch:
+            if epoch > start_epoch and swa.scheduler.step_unit == "epoch":
                 swa.scheduler.step()
         
 
@@ -269,6 +322,8 @@ def train(
             restart=restart,
             log_opt=log_opt,
             async_update=async_update,
+            rsmooth=rsmooth,
+            lr_scheduler=lr_scheduler,
         )
 
         if distributed:
@@ -378,6 +433,8 @@ def train_one_epoch(
     restart: Optional[str] = None,
     log_opt: Optional[bool] = False,
     async_update: Optional[bool] = False,
+    rsmooth: Optional[float] = None, 
+    lr_scheduler: Optional[LRScheduler] = None,
 ) -> None:
     model_to_train = model if distributed_model is None else distributed_model
     
@@ -387,8 +444,7 @@ def train_one_epoch(
     else:
         data_iter = data_loader
 
-    
-    for batch in data_iter:
+    for idx, batch in enumerate(data_iter):
         _, opt_metrics = take_step(
             model=model_to_train,
             loss_fn=loss_fn,
@@ -401,12 +457,16 @@ def train_one_epoch(
             restart=restart,
             log_opt=log_opt,
             async_update=async_update,
+            rsmooth=rsmooth,
         )
+        if lr_scheduler and lr_scheduler.step_unit == "step":
+            lr_scheduler.step()
+            #print(lr_scheduler.lr_scheduler.get_last_lr())
+
         opt_metrics["mode"] = "opt"
         opt_metrics["epoch"] = epoch
         if rank == 0:
             logger.log(opt_metrics)
-
 
 def take_step(
     model: torch.nn.Module,
@@ -420,12 +480,26 @@ def take_step(
     restart: Optional[str] = None,
     log_opt: Optional[bool] = False,
     async_update: Optional[bool] = False,
+    rsmooth: Optional[float] = None,
 ) -> Tuple[float, Dict[str, Any]]:
+
     start_time = time.time()
     batch = batch.to(device)
     optimizer.zero_grad(set_to_none=True)
     batch_dict = batch.to_dict()
 
+       
+
+    if rsmooth is not None:
+        rsmooth = float(rsmooth)
+        batch_dict['positions'] = batch_dict['positions'] + torch.rand_like(batch_dict['positions']) * rsmooth
+    
+    if detect_nan_parameters(model):
+        print(f"NaN params detected at iteration")
+        # Optional: you can break or take other actions here
+
+
+    #with torch.autograd.detect_anomaly():
     if async_update:
         with model.no_sync():
             output = model(
@@ -445,8 +519,16 @@ def take_step(
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
         )
+
         loss = loss_fn(pred=output, ref=batch)
         loss.backward()
+
+        #unused = []
+        #for name, param in model.named_parameters():
+        #    if param.grad is None:
+        #        unused.append(name)
+
+        #import ipdb; ipdb.set_trace()
 
 
     #if restart == "batch":
@@ -467,7 +549,12 @@ def take_step(
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
+    
+    #import ipdb; ipdb.set_trace()
+
     optimizer.step()
+
+    
 
     if async_update:
         # sync optimizer
@@ -483,6 +570,9 @@ def take_step(
         "loss": to_numpy(loss),
         "time": time.time() - start_time,
     }
+
+    #print(to_numpy(loss))
+    #print_gpu_memory()
 
     if log_opt:
         elem_count = torch.count_nonzero(batch.node_attrs, dim=0)
@@ -573,6 +663,8 @@ def evaluate(
             compute_stress=output_args["stress"],
         )
         avg_loss, aux = metrics(batch, output)
+
+
 
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time

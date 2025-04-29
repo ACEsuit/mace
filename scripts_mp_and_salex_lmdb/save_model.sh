@@ -1,8 +1,4 @@
 #!/bin/bash
-module load arch/h100
-module load pytorch-gpu/py3/2.3.1
-export PATH="$PATH:/linkhome/rech/genrre01/unh55hx/.local/bin"
-export MASTER_PORT=44144
 REAL_BATCH_SIZE=$(($1 * $3))
 CONF=$4
 R=$5
@@ -10,7 +6,6 @@ NUM_CHANNEL=$6
 NUM_RADIAL=$7
 MLP_IRREPS=$8
 SEED=$9
-ROOT_DIR=/lustre/fsn1/projects/rech/gax/unh55hx/mace_multi_head_interface_bk
 conf_str="${CONF%.yaml}"
 stress=${10}
 int_first=${11}
@@ -20,12 +15,13 @@ agnostic_first=${14}
 ckpt_path=${15}
 max_L=${16}
 max_ell=${17}
+ROOT_DIR=/lustre/fswork/projects/rech/gax/unh55hx/mace
 cd $ROOT_DIR
 mace_plot_neighbor \
     --name="stress${stress}_nc${NUM_CHANNEL}_nr${NUM_RADIAL}_MLP${MLP_IRREPS}_b${REAL_BATCH_SIZE}_lr$2_${conf_str}_intfirst-${int_first}_int-${int}x${num_int}i_maxL${max_L}_maxell${max_ell}" \
     --loss='universal' \
-    --energy_weight=1 \
-    --forces_weight=10 \
+    --energy_weight=10 \
+    --forces_weight=5 \
     --compute_stress=True \
     --stress_weight=${stress} \
     --eval_interval=1 \
@@ -44,7 +40,7 @@ mace_plot_neighbor \
     --MLP_irreps=${MLP_IRREPS} \
     --scaling='rms_forces_scaling' \
     --lr=$2 \
-    --weight_decay=1e-8 \
+    --weight_decay=0.0 \
     --ema \
     --ema_decay=0.995 \
     --scheduler_patience=5 \
@@ -66,5 +62,6 @@ mace_plot_neighbor \
     --distributed \
     --agnostic_int ${agnostic_first} False False \
     --agnostic_con False False False \
+    --checkpoints_dir checkpoints/refit_omat0_e0s_ft_from149_E10F5_lr5e-6 \
 
 # --name="MACE_medium_agnesi_b32_origin_mponly" \
