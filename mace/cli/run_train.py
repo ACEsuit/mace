@@ -717,14 +717,14 @@ def run(args) -> None:
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
 
     # Freeze layers or parameter groups
-    if args.freeze is not None and args.freeze_par is not None:
+    if args.freeze not in (None, 0) and args.freeze_par not in (None, 0):
         logging.info(
             "Both --freeze and --freeze_par arguments detected, using --freeze"
         )
         freeze_layers(model, args.freeze)
-    elif args.freeze_par is not None:
+    elif args.freeze_par not in (None, 0):
         freeze_param(model, args.freeze_par)
-    elif args.freeze is not None:
+    elif args.freeze not in (None, 0):
         freeze_layers(model, args.freeze)
 
     logging.info("")
