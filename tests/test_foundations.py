@@ -25,7 +25,11 @@ MODEL_PATH = (
 )
 
 torch.set_default_dtype(torch.float64)
-config = data.Configuration(
+
+# @pytest.skip("Problem with the float type", allow_module_level=True)
+def test_foundations():
+    # Create MACE model
+    config = data.Configuration(
     atomic_numbers=molecule("H2COH").numbers,
     positions=molecule("H2COH").positions,
     properties={
@@ -40,34 +44,29 @@ config = data.Configuration(
         "charges": 1.0,
         "dipole": 1.0,
     },
-)
+    )
 
-# Created the rotated environment
-rot = R.from_euler("z", 60, degrees=True).as_matrix()
-positions_rotated = np.array(rot @ config.positions.T).T
-config_rotated = data.Configuration(
-    atomic_numbers=molecule("H2COH").numbers,
-    positions=positions_rotated,
-    properties={
-        "forces": molecule("H2COH").positions,
-        "energy": -1.5,
-        "charges": molecule("H2COH").numbers,
-        "dipole": np.array([-1.5, 1.5, 2.0]),
-    },
-    property_weights={
-        "forces": 1.0,
-        "energy": 1.0,
-        "charges": 1.0,
-        "dipole": 1.0,
-    },
-)
-table = tools.AtomicNumberTable([1, 6, 8])
-atomic_energies = np.array([0.0, 0.0, 0.0], dtype=float)
-
-
-# @pytest.skip("Problem with the float type", allow_module_level=True)
-def test_foundations():
-    # Create MACE model
+    # Created the rotated environment
+    rot = R.from_euler("z", 60, degrees=True).as_matrix()
+    positions_rotated = np.array(rot @ config.positions.T).T
+    config_rotated = data.Configuration(
+        atomic_numbers=molecule("H2COH").numbers,
+        positions=positions_rotated,
+        properties={
+            "forces": molecule("H2COH").positions,
+            "energy": -1.5,
+            "charges": molecule("H2COH").numbers,
+            "dipole": np.array([-1.5, 1.5, 2.0]),
+        },
+        property_weights={
+            "forces": 1.0,
+            "energy": 1.0,
+            "charges": 1.0,
+            "dipole": 1.0,
+        },
+    )
+    table = tools.AtomicNumberTable([1, 6, 8])
+    atomic_energies = np.array([0.0, 0.0, 0.0], dtype=float)
     model_config = dict(
         r_max=6,
         num_bessel=10,
@@ -144,6 +143,8 @@ def test_multi_reference():
     )
     table_multi = tools.AtomicNumberTable([1, 6, 8])
     atomic_energies_multi = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=float)
+    table = tools.AtomicNumberTable([1, 6, 8])
+
 
     # Create MACE model
     model_config = dict(
@@ -244,6 +245,22 @@ def test_compile_foundation(calc):
 )
 def test_extract_config(model):
     assert isinstance(model, modules.ScaleShiftMACE)
+    config = data.Configuration(
+    atomic_numbers=molecule("H2COH").numbers,
+    positions=molecule("H2COH").positions,
+    properties={
+        "forces": molecule("H2COH").positions,
+        "energy": -1.5,
+        "charges": molecule("H2COH").numbers,
+        "dipole": np.array([-1.5, 1.5, 2.0]),
+    },
+    property_weights={
+        "forces": 1.0,
+        "energy": 1.0,
+        "charges": 1.0,
+        "dipole": 1.0,
+    },
+    )
     model_copy = modules.ScaleShiftMACE(**extract_config_mace_model(model))
     model_copy.load_state_dict(model.state_dict())
     z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
