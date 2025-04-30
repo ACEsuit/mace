@@ -80,7 +80,7 @@ def test_foundations():
         ],
         num_interactions=2,
         num_elements=3,
-        hidden_irreps=o3.Irreps("128x0e"),
+        hidden_irreps=o3.Irreps("128x0e + 128x1o"),
         MLP_irreps=o3.Irreps("16x0e"),
         gate=torch.nn.functional.silu,
         atomic_energies=atomic_energies,
@@ -92,19 +92,14 @@ def test_foundations():
         atomic_inter_shift=0.0,
     )
     model = modules.ScaleShiftMACE(**model_config)
-    calc = mace_mp(
-        model="small",
-        device="cpu",
-        default_dtype="float64",
-    )
-    model_foundations = calc.models[0]
+    calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
     model_loaded = load_foundations_elements(
         model,
-        model_foundations,
+        calc_foundation.models[0],
         table=table,
         load_readout=True,
         use_shift=False,
-        max_L=0,
+        max_L=1,
     )
     atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=6.0)
     atomic_data2 = data.AtomicData.from_config(
