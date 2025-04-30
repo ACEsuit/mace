@@ -777,6 +777,8 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
+        density = self.truncate_ghosts(density, n_real)
+        sc = self.truncate_ghosts(sc, n_real)
         message = self.linear(message) / (density + 1)
         return (
             self.reshape(message),

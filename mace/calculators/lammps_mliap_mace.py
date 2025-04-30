@@ -92,9 +92,9 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
             lammps_mliap=True,
         )
 
-        node_energy = out["node_energy"][0]
+        node_energy = out["node_energy"]
         pair_forces = out["edge_forces"]
-        total_energy = out["total_energy"][0]
+        total_energy = out["energy"][0]
 
         if pair_forces is None:
             pair_forces = torch.zeros_like(data["vectors"])
