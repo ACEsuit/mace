@@ -345,24 +345,28 @@ class UniversalFieldLoss(torch.nn.Module):
             ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
         ).unsqueeze(-1)
 
-        configs_polarisation_weight = ref.polarisation_weight.view(-1, 1, 1)
+        configs_polarisation_weight = ref.polarisation_weight.view(-1, 1) # [n_graphs, 1]
         
         configs_bec_weight = torch.repeat_interleave(
             ref.bec_weight, ref.ptr[1:] - ref.ptr[:-1]
         ).view(-1, 1, 1) 
 
-        configs_polarisability_weight = ref.polarisability_weight.view(-1, 1, 1) # [n_graphs, ]z
+        configs_polarisability_weight = ref.polarisability_weight.view(-1, 1, 1) # [n_graphs, ]
 
         # Calculate the polarisation quantum
-        cell = ref["cell"].view(-1, 3, 3)
-        polarisation_quantum = cell / torch.linalg.det(cell).abs().view(-1, 1, 1)
+        cell = ref["cell"].view(-1, 3, 3) # [n_graphs, 3, 3]
+        polarisation_quantum = cell / torch.det(cell).view(-1, 1, 1) # [n_graphs, 3, 3]
 
         # modulo ignore zero components to leave pol unfolded and avoid divide by 0
-        polarisation_quantum[polarisation_quantum == 0] = torch.max(torch.cat((ref["polarisation"].reshape(-1,3), pred["polarisation"])).abs()) + 1.0 
+        polarisation_quantum = torch.where(
+            polarisation_quantum == 0, 
+            1e12, 
+            polarisation_quantum
+        )
 
-        # Expand polarisation to lattice (3x3 matrix) that is modulo the polarisation quantum. Any nan (due to divide by 0), set to zero.
-        ref_polarisation = ref["polarisation"].reshape(-1,3).repeat(3,1).view(-1,3,3)
-        pred_polarisation = pred["polarisation"].repeat(3,1).view(-1,3,3)
+        polarisation_difference = ref["polarisation"].view(-1, 3) - pred["polarisation"].view(-1, 3) # [n_graphs, 3]
+        polarisation_difference = polarisation_difference.unsqueeze(1).fmod(polarisation_quantum) # [n_graphs, 3, 3]
+        polarisation_difference = torch.diagonal(polarisation_difference, dim1=-2, dim2=-1) # [n_graphs, 3]
 
         return (
             self.energy_weight
@@ -383,8 +387,8 @@ class UniversalFieldLoss(torch.nn.Module):
             )
             + self.polarisation_weight
             * self.huber_loss(
-                configs_polarisation_weight * (ref_polarisation - pred_polarisation).fmod(polarisation_quantum).nan_to_num(nan=0),
-                configs_polarisation_weight * torch.zeros_like(ref_polarisation),
+                configs_polarisation_weight * polarisation_difference,
+                configs_polarisation_weight * torch.zeros_like(polarisation_difference),
             )
             + self.bec_weight * 
             self.huber_loss(
