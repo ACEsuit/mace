@@ -20,6 +20,7 @@ User Guide
     cuda_acceleration
     openmm
     lammps
+    lammps_mliap
     foundation_models
     finetuning
     multihead_training
