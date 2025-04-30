@@ -204,12 +204,14 @@ class MACECalculator(Calculator):
         if kwarg_head is not None:
             self.head = kwarg_head
         else:
-            self.head = self.available_heads[0]
-        if kwarg_head is None and self.head.lower() != "default":
-            raise ValueError(
-                "Head keyword was not provided, and the head in the model is not 'Default'"
-                f"Please provide a head keyword to specify the head you want to use. Available heads are: {self.available_heads}"
-            )
+            self.head = [head for head in self.available_heads if head.lower() == "default"]
+            if len(self.head) == 0:
+                raise ValueError(
+                    "Head keyword was not provided, and no head in the model is 'default'. "
+                    "Please provide a head keyword to specify the head you want to use. "
+                    f"Available heads are: {self.available_heads}"
+                )
+            self.head = self.head[0]
 
         print("Using head", self.head, "out of", self.available_heads)
 
