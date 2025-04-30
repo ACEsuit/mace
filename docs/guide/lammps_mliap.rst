@@ -12,7 +12,7 @@ MACE models can now be used in LAMMPS through two different interfaces:
 - The original interface (as described in the :ref:`lammps` documentation)
 - The new ML-IAP unified interface, which offers improved performance on GPUs
 
-This document focuses on the new ML-IAP interface, which calls the model from python, and supports both cuEquivariance acceleration and multi-GPU inference.
+This document focuses on the new ML-IAP interface, which calls the model from python, and supports both cuEquivariance acceleration and multi-GPU inference, and atomic virials.
 
 Preparing Your Model for ML-IAP
 ==============================
