@@ -90,16 +90,16 @@ class MACE(torch.nn.Module):
             cueq_config=cueq_config,
         )
         embedding_size = node_feats_irreps.count(o3.Irrep(0, 1))
-        self.spin_embedding = torch.nn.Embedding(101, embedding_size)
-        self.charges_embedding = torch.nn.Embedding(201, embedding_size)
-        self.spin_charge_mixing = LinearNodeEmbeddingBlock(
-            irreps_in=(2*node_feats_irreps).sort()[0].simplify(),
-            irreps_out=node_feats_irreps,
-            cueq_config=cueq_config,
-        )
-        self.spin_charge_readout = LinearReadoutBlock(
-            node_feats_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
-        )
+        # self.spin_embedding = torch.nn.Embedding(101, embedding_size)
+        # self.charges_embedding = torch.nn.Embedding(201, embedding_size)
+        # self.spin_charge_mixing = LinearNodeEmbeddingBlock(
+        #     irreps_in=(2*node_feats_irreps).sort()[0].simplify(),
+        #     irreps_out=node_feats_irreps,
+        #     cueq_config=cueq_config,
+        # )
+        # self.spin_charge_readout = LinearReadoutBlock(
+        #     node_feats_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+        # )
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
             num_bessel=num_bessel,
@@ -275,19 +275,19 @@ class MACE(torch.nn.Module):
             pair_node_energy = torch.zeros_like(node_e0)
             pair_energy = torch.zeros_like(e0)
 
-        if hasattr(self, "spin_embedding") and hasattr(self, "charges_embedding"):
-            spin_indices = data["total_spin"].to(torch.long)
-            charge_indices = (data["total_charge"] + 100).to(torch.long)
-            spin_feats = self.spin_embedding(spin_indices)
-            charge_feats = self.charges_embedding(charge_indices)
-            spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
-            csp_embedding = torch.nn.functional.silu(self.spin_charge_mixing(spin_charge_feats))
-            node_feats += csp_embedding[data["batch"], :]
-            csp_energy_atom = self.spin_charge_readout(node_feats).squeeze(-1)
-            csp_energy = scatter_sum(
-                src=csp_energy_atom, index=data["batch"], dim=0, dim_size=num_graphs
-            )
-            e0 += csp_energy
+        # if hasattr(self, "spin_embedding") and hasattr(self, "charges_embedding"):
+        #     spin_indices = data["total_spin"].to(torch.long)
+        #     charge_indices = (data["total_charge"] + 100).to(torch.long)
+        #     spin_feats = self.spin_embedding(spin_indices)
+        #     charge_feats = self.charges_embedding(charge_indices)
+        #     spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
+        #     csp_embedding = torch.nn.functional.silu(self.spin_charge_mixing(spin_charge_feats))
+        #     node_feats += csp_embedding[data["batch"], :]
+        #     csp_energy_atom = self.spin_charge_readout(node_feats).squeeze(-1)
+        #     csp_energy = scatter_sum(
+        #         src=csp_energy_atom, index=data["batch"], dim=0, dim_size=num_graphs
+        #     )
+        #     e0 += csp_energy
             
         # Interactions
         energies = [e0, pair_energy]
