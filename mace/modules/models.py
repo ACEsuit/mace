@@ -436,19 +436,19 @@ class ScaleShiftMACE(MACE):
         node_es_list = [pair_node_energy]
         node_feats_list = []
 
-        if hasattr(self, "spin_embedding") and hasattr(self, "charges_embedding"):
-            spin_indices = data["total_spin"].to(torch.long)
-            charge_indices = (data["total_charge"] + 100).to(torch.long)
-            spin_feats = self.spin_embedding(spin_indices)
-            charge_feats = self.charges_embedding(charge_indices)
-            spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
-            csp_embedding = torch.nn.functional.silu(self.spin_charge_mixing(spin_charge_feats))
-            node_feats += csp_embedding[data["batch"], :]
-            csp_energy_atom = self.spin_charge_readout(node_feats).squeeze(-1)
-            csp_energy = scatter_sum(
-                src=csp_energy_atom, index=data["batch"], dim=0, dim_size=num_graphs
-            )
-            e0 += csp_energy
+        # if hasattr(self, "spin_embedding") and hasattr(self, "charges_embedding"):
+        #     spin_indices = data["total_spin"].to(torch.long)
+        #     charge_indices = (data["total_charge"] + 100).to(torch.long)
+        #     spin_feats = self.spin_embedding(spin_indices)
+        #     charge_feats = self.charges_embedding(charge_indices)
+        #     spin_charge_feats = torch.cat([spin_feats, charge_feats], dim=-1)
+        #     csp_embedding = torch.nn.functional.silu(self.spin_charge_mixing(spin_charge_feats))
+        #     node_feats += csp_embedding[data["batch"], :]
+        #     csp_energy_atom = self.spin_charge_readout(node_feats).squeeze(-1)
+        #     csp_energy = scatter_sum(
+        #         src=csp_energy_atom, index=data["batch"], dim=0, dim_size=num_graphs
+        #     )
+        #     e0 += csp_energy
 
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
