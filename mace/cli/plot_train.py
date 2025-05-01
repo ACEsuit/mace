@@ -216,8 +216,6 @@ def plot(data: pd.DataFrame, min_epoch: int, output_path: str, compute_field: bo
         ax.legend()
 
     fig.savefig(output_path)
-    plt.close(fig)
-
 
 def get_paths(path: str) -> List[str]:
     if os.path.isfile(path):
