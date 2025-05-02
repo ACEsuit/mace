@@ -3,13 +3,14 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 """
 
 import dataclasses
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch
 from e3nn import o3
 
 from mace.modules.symmetric_contraction import SymmetricContraction
 from mace.tools.cg import O3_e3nn
+from mace.tools.scatter import scatter_sum
 
 try:
     import cuequivariance as cue
@@ -77,9 +78,29 @@ class Linear:
             internal_weights=internal_weights,
         )
 
+class TPScatterSumUnfused(torch.nn.Module):
+    def __init__(self, conv_tp: Union[o3.TensorProduct, cuet.ChannelWiseTensorProduct]):
+        self.conv_tp = conv_tp 
 
-class TensorProduct:
-    """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct"""
+    def forward(self, node_feats: torch.Tensor, 
+                edge_attrs: torch.Tensor, 
+                tp_weights: torch.Tensor, 
+                sender: torch.Tensor,
+                receiver: torch.Tensor
+                ):
+        num_nodes = node_feats.shape[0]
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+
+        return message
+
+
+class TensorProductScatterSum:
+    """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct followed by a scatter sum"""
 
     def __new__(
         cls,
@@ -89,7 +110,7 @@ class TensorProduct:
         instructions: Optional[List] = None,
         shared_weights: bool = False,
         internal_weights: bool = False,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
+        cueq_config: Optional[CuEquivarianceConfig] = None
     ):
         if (
             CUET_AVAILABLE
@@ -97,7 +118,7 @@ class TensorProduct:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
-            return cuet.ChannelWiseTensorProduct(
+            return TPScatterSumUnfused(cuet.ChannelWiseTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -106,16 +127,16 @@ class TensorProduct:
                 internal_weights=internal_weights,
                 dtype=torch.get_default_dtype(),
                 math_dtype=torch.get_default_dtype(),
-            )
+            ))
 
-        return o3.TensorProduct(
+        return TPScatterSumUnfused(o3.TensorProduct(
             irreps_in1,
             irreps_in2,
             irreps_out,
             instructions=instructions,
             shared_weights=shared_weights,
             internal_weights=internal_weights,
-        )
+        ))
 
 
 class FullyConnectedTensorProduct:
