@@ -20,6 +20,13 @@ try:
 except ImportError:
     CUET_AVAILABLE = False
 
+try:
+    import openequivariance as oeq 
+
+    OEQ_AVAILABLE = True
+except ImportError:
+    OEQ_AVAILABLE = False
+
 
 @dataclasses.dataclass
 class CuEquivarianceConfig:
@@ -101,6 +108,21 @@ class TPScatterSumUnfused(torch.nn.Module):
         )  # [n_nodes, irreps]
 
         return message
+    
+class OEQAtomicTPScatterSum(torch.nn.Module):
+    def __init__(self, conv_tp: oeq.TensorProductConv): 
+        super().__init__()
+        self.conv_tp = conv_tp
+        self.weight_numel = self.conv_tp.weight_numel
+
+    def forward(self, node_feats: torch.Tensor, 
+                edge_attrs: torch.Tensor, 
+                tp_weights: torch.Tensor, 
+                edge_index: torch.Tensor
+                ):
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        return self.conv_tp(node_feats, edge_attrs, tp_weights, sender, receiver)  
 
 
 class TensorProductScatterSum:
@@ -133,6 +155,18 @@ class TensorProductScatterSum:
                 dtype=torch.get_default_dtype(),
                 math_dtype=torch.get_default_dtype(),
             ))
+        elif (
+            OEQ_AVAILABLE
+            and oeq_config is not None
+            and oeq_config["enabled"]
+            and (oeq_config["optimize_all"] or oeq_config["optimize_channelwise"])
+        ):
+            dtype = oeq.torch_to_oeq_dtype(torch.get_default_dtype()) 
+            tpp = oeq.TPProblem(irreps_in1, irreps_in2, irreps_out, 
+                instructions, shared_weights=shared_weights, internal_weights=internal_weights,
+                irrep_dtype=dtype, weight_dtype=dtype)
+
+            return OEQAtomicTPScatterSum(oeq.TensorProductConv(tpp, deterministic=False))
 
         return TPScatterSumUnfused(o3.TensorProduct(
             irreps_in1,

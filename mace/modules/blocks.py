@@ -61,7 +61,8 @@ class LinearReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None
+        oeq_config: Optional[dict] = None # pylint: disable=unused-argument
+
     ):
         super().__init__()
         self.linear = Linear(
@@ -87,7 +88,8 @@ class NonLinearReadoutBlock(torch.nn.Module):
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         num_heads: int = 1,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None
+        oeq_config: Optional[dict] = None # pylint: disable=unused-argument
+
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -117,7 +119,8 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None
+        oeq_config: Optional[dict] = None # pylint: disable=unused-argument
+
     ):
         super().__init__()
         if dipole_only:
@@ -141,7 +144,7 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         gate: Callable,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None
+        oeq_config: Optional[dict] = None # pylint: disable=unused-argument
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -256,7 +259,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         use_sc: bool = True,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None
+        oeq_config: Optional[dict] = None 
     ) -> None:
         super().__init__()
 
@@ -267,6 +270,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             correlation=correlation,
             num_elements=num_elements,
             cueq_config=cueq_config,
+            oeq_config=oeq_config
         )
         # Update linear
         self.linear = Linear(
@@ -322,7 +326,7 @@ class InteractionBlock(torch.nn.Module):
         avg_num_neighbors: float,
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None
+        oeq_config: Optional[dict] = None 
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -336,6 +340,7 @@ class InteractionBlock(torch.nn.Module):
             radial_MLP = [64, 64, 64]
         self.radial_MLP = radial_MLP
         self.cueq_config = cueq_config
+        self.oeq_config = oeq_config
         self._setup()
 
     @abstractmethod
