@@ -17,7 +17,7 @@ from mace.modules.wrapper_ops import (
     FullyConnectedTensorProduct,
     Linear,
     SymmetricContractionWrapper,
-    TensorProduct,
+    TensorProductScatterSum,
 )
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
@@ -395,7 +395,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProduct(
+        self.conv_tp = TensorProductScatterSum(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -454,11 +454,8 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             first_layer=first_layer,
         )
         tp_weights = self.conv_tp_weights(edge_feats)
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        message = self.conv_tp(
+            node_feats, edge_attrs, tp_weights, sender, receiver
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -489,7 +486,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProduct(
+        self.conv_tp = TensorProductScatterSum(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -549,11 +546,8 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             first_layer=first_layer,
         )
         tp_weights = self.conv_tp_weights(edge_feats)
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        message = self.conv_tp(
+            node_feats, edge_attrs, tp_weights, sender, receiver
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -584,7 +578,7 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProduct(
+        self.conv_tp = TensorProductScatterSum(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -654,15 +648,13 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
         density = scatter_sum(
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        message = self.conv_tp(
+            node_feats, edge_attrs, tp_weights, sender, receiver
         )  # [n_nodes, irreps]
+
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
         density = self.truncate_ghosts(density, n_real)
@@ -694,7 +686,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProduct(
+        self.conv_tp = TensorProductScatterSum(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -766,14 +758,11 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
         density = scatter_sum(
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        message = self.conv_tp(
+            node_feats, edge_attrs, tp_weights, sender, receiver
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -806,7 +795,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProduct(
+        self.conv_tp = TensorProductScatterSum(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -877,12 +866,10 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             dim=-1,
         )
         tp_weights = self.conv_tp_weights(augmented_edge_feats)
-        mji = self.conv_tp(
-            node_feats_up[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        message = self.conv_tp(
+            node_feats_up, edge_attrs, tp_weights, sender, receiver
         )  # [n_nodes, irreps]
+
         message = self.linear(message) / self.avg_num_neighbors
         return (
             self.reshape(message),
