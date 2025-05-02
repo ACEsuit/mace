@@ -455,7 +455,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, sender, receiver
+            node_feats, edge_attrs, tp_weights, edge_index 
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -547,7 +547,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, sender, receiver
+            node_feats, edge_attrs, tp_weights, edge_index 
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -652,7 +652,7 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
         message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, sender, receiver
+            node_feats, edge_attrs, tp_weights, edge_index 
         )  # [n_nodes, irreps]
 
         message = self.truncate_ghosts(message, n_real)
@@ -762,7 +762,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
         message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, sender, receiver
+            node_feats, edge_attrs, tp_weights, edge_index 
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -867,7 +867,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(augmented_edge_feats)
         message = self.conv_tp(
-            node_feats_up, edge_attrs, tp_weights, sender, receiver
+            node_feats_up, edge_attrs, tp_weights, edge_index 
         )  # [n_nodes, irreps]
 
         message = self.linear(message) / self.avg_num_neighbors

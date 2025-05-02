@@ -80,15 +80,19 @@ class Linear:
 
 class TPScatterSumUnfused(torch.nn.Module):
     def __init__(self, conv_tp: Union[o3.TensorProduct, cuet.ChannelWiseTensorProduct]):
-        self.conv_tp = conv_tp 
+        super().__init__()
+        self.conv_tp = conv_tp
+        self.weight_numel = self.conv_tp.weight_numel
 
     def forward(self, node_feats: torch.Tensor, 
                 edge_attrs: torch.Tensor, 
                 tp_weights: torch.Tensor, 
-                sender: torch.Tensor,
-                receiver: torch.Tensor
+                edge_index: torch.Tensor
                 ):
+        sender = edge_index[0]
+        receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
+
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
