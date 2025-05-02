@@ -33,7 +33,6 @@ from .radial import (
     SoftTransform,
 )
 
-
 @compile_mode("script")
 class LinearNodeEmbeddingBlock(torch.nn.Module):
     def __init__(
@@ -41,6 +40,7 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[dict] = None
     ):
         super().__init__()
         self.linear = Linear(
@@ -61,6 +61,7 @@ class LinearReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[dict] = None
     ):
         super().__init__()
         self.linear = Linear(
@@ -86,6 +87,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         num_heads: int = 1,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[dict] = None
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -115,6 +117,7 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[dict] = None
     ):
         super().__init__()
         if dipole_only:
@@ -138,6 +141,7 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         gate: Callable,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[dict] = None
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -252,6 +256,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         use_sc: bool = True,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[dict] = None
     ) -> None:
         super().__init__()
 
@@ -317,6 +322,7 @@ class InteractionBlock(torch.nn.Module):
         avg_num_neighbors: float,
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[dict] = None
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -381,6 +387,9 @@ class RealAgnosticInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
+
         # First linear
         self.linear_up = Linear(
             self.node_feats_irreps,
@@ -403,6 +412,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config
         )
 
         # Convolution weights
@@ -472,6 +482,9 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
+
         # First linear
         self.linear_up = Linear(
             self.node_feats_irreps,
@@ -494,6 +507,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config
         )
 
         # Convolution weights
@@ -564,6 +578,9 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
+
         # First linear
         self.linear_up = Linear(
             self.node_feats_irreps,
@@ -586,6 +603,7 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config
         )
 
         # Convolution weights
@@ -671,6 +689,8 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
 
         # First linear
         self.linear_up = Linear(
@@ -694,6 +714,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config
         )
 
         # Convolution weights
@@ -780,6 +801,9 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
+
         self.node_feats_down_irreps = o3.Irreps("64x0e")
         # First linear
         self.linear_up = Linear(
@@ -803,6 +827,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config
         )
 
         # Convolution weights

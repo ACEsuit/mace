@@ -114,7 +114,8 @@ class TensorProductScatterSum:
         instructions: Optional[List] = None,
         shared_weights: bool = False,
         internal_weights: bool = False,
-        cueq_config: Optional[CuEquivarianceConfig] = None
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[dict] = None
     ):
         if (
             CUET_AVAILABLE
@@ -153,7 +154,7 @@ class FullyConnectedTensorProduct:
         irreps_out: o3.Irreps,
         shared_weights: bool = True,
         internal_weights: bool = True,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
+        cueq_config: Optional[CuEquivarianceConfig] = None
     ):
         if (
             CUET_AVAILABLE
@@ -190,6 +191,7 @@ class SymmetricContractionWrapper:
         correlation: int,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[dict] = None
     ):
         if (
             CUET_AVAILABLE
