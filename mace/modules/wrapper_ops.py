@@ -53,6 +53,20 @@ class CuEquivarianceConfig:
             self.enabled = False
 
 
+@dataclasses.dataclass
+class OEQConfig:
+    """Configuration for cuequivariance acceleration"""
+
+    enabled: bool = False
+    optimize_all: bool = False  
+    optimize_channelwise: bool = False
+    conv_fusion: Optional[str] = "atomic"
+
+    def __post_init__(self):
+        if not OEQ_AVAILABLE:
+            self.enabled = False
+
+
 class Linear:
     """Returns either a cuet.Linear or o3.Linear based on config"""
 
@@ -113,7 +127,7 @@ class OEQAtomicTPScatterSum(torch.nn.Module):
     def __init__(self, conv_tp: oeq.TensorProductConv): 
         super().__init__()
         self.conv_tp = conv_tp
-        self.weight_numel = self.conv_tp.weight_numel
+        self.weight_numel = self.conv_tp.config.weight_numel
 
     def forward(self, node_feats: torch.Tensor, 
                 edge_attrs: torch.Tensor, 
@@ -137,7 +151,7 @@ class TensorProductScatterSum:
         shared_weights: bool = False,
         internal_weights: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None
+        oeq_config: Optional[OEQConfig] = None
     ):
         if (
             CUET_AVAILABLE
@@ -158,8 +172,8 @@ class TensorProductScatterSum:
         elif (
             OEQ_AVAILABLE
             and oeq_config is not None
-            and oeq_config["enabled"]
-            and (oeq_config["optimize_all"] or oeq_config["optimize_channelwise"])
+            and oeq_config.enabled
+            and (oeq_config.optimize_all or oeq_config.optimize_channelwise)
         ):
             dtype = oeq.torch_to_oeq_dtype(torch.get_default_dtype()) 
             tpp = oeq.TPProblem(irreps_in1, irreps_in2, irreps_out, 
@@ -225,7 +239,7 @@ class SymmetricContractionWrapper:
         correlation: int,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None
+        oeq_config: Optional[OEQConfig] = None
     ):
         if (
             CUET_AVAILABLE

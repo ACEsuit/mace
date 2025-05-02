@@ -14,6 +14,7 @@ from e3nn.util.jit import compile_mode
 
 from mace.modules.wrapper_ops import (
     CuEquivarianceConfig,
+    OEQConfig,
     FullyConnectedTensorProduct,
     Linear,
     SymmetricContractionWrapper,
@@ -40,7 +41,7 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None
+        oeq_config: Optional[OEQConfig] = None
     ):
         super().__init__()
         self.linear = Linear(
@@ -61,7 +62,7 @@ class LinearReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None # pylint: disable=unused-argument
+        oeq_config: Optional[OEQConfig] = None # pylint: disable=unused-argument
 
     ):
         super().__init__()
@@ -88,7 +89,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         num_heads: int = 1,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None # pylint: disable=unused-argument
+        oeq_config: Optional[OEQConfig] = None # pylint: disable=unused-argument
 
     ):
         super().__init__()
@@ -119,7 +120,7 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None # pylint: disable=unused-argument
+        oeq_config: Optional[OEQConfig] = None # pylint: disable=unused-argument
 
     ):
         super().__init__()
@@ -144,7 +145,7 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         gate: Callable,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None # pylint: disable=unused-argument
+        oeq_config: Optional[OEQConfig] = None # pylint: disable=unused-argument
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -259,7 +260,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         use_sc: bool = True,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None 
+        oeq_config: Optional[OEQConfig] = None 
     ) -> None:
         super().__init__()
 
@@ -326,7 +327,7 @@ class InteractionBlock(torch.nn.Module):
         avg_num_neighbors: float,
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[dict] = None 
+        oeq_config: Optional[OEQConfig] = None 
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
