@@ -93,6 +93,7 @@ class MACECalculator(Calculator):
         self.results = {}
 
         self.model_type = model_type
+        self.compute_atomic_stresses = False
 
         if model_type == "MACE":
             self.implemented_properties = [
@@ -102,6 +103,9 @@ class MACECalculator(Calculator):
                 "forces",
                 "stress",
             ]
+            if kwargs.get("compute_atomic_stresses", False):
+                self.implemented_properties.extend(["stresses", "virials"])
+                self.compute_atomic_stresses = True
         elif model_type == "DipoleMACE":
             self.implemented_properties = ["dipole"]
         elif model_type == "EnergyDipoleMACE":
@@ -139,12 +143,6 @@ class MACECalculator(Calculator):
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
             ]
-            if enable_cueq:
-                print("Converting models to CuEq for acceleration")
-                self.models = [
-                    run_e3nn_to_cueq(model, device=device).to(device)
-                    for model in self.models
-                ]
 
         elif models is not None:
             if not isinstance(models, list):
@@ -206,12 +204,14 @@ class MACECalculator(Calculator):
         if kwarg_head is not None:
             self.head = kwarg_head
         else:
-            self.head = self.available_heads[0]
-        if kwarg_head is None and self.head.lower() != "default":
-            raise ValueError(
-                "Head keyword was not provided, and the head in the model is not 'Default'"
-                f"Please provide a head keyword to specify the head you want to use. Available heads are: {self.available_heads}"
-            )
+            self.head = [head for head in self.available_heads if head.lower() == "default"]
+            if len(self.head) == 0:
+                raise ValueError(
+                    "Head keyword was not provided, and no head in the model is 'default'. "
+                    "Please provide a head keyword to specify the head you want to use. "
+                    f"Available heads are: {self.available_heads}"
+                )
+            self.head = self.head[0]
 
         print("Using head", self.head, "out of", self.available_heads)
 
@@ -230,6 +230,12 @@ class MACECalculator(Calculator):
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
         torch_tools.set_default_dtype(default_dtype)
+        if enable_cueq:
+            print("Converting models to CuEq for acceleration")
+            self.models = [
+                run_e3nn_to_cueq(model, device=device).to(device)
+                for model in self.models
+            ]
         for model in self.models:
             for param in model.parameters():
                 param.requires_grad = False
@@ -327,6 +333,8 @@ class MACECalculator(Calculator):
                 batch.to_dict(),
                 compute_stress=compute_stress,
                 training=self.use_compile,
+                compute_edge_forces=self.compute_atomic_stresses,
+                compute_atomic_stresses=self.compute_atomic_stresses,
             )
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
@@ -336,6 +344,15 @@ class MACECalculator(Calculator):
                     ret_tensors["stress"][i] = out["stress"].detach()
             if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
                 ret_tensors["dipole"][i] = out["dipole"].detach()
+            if self.model_type in ["MACE"]:
+                if out["atomic_stresses"] is not None:
+                    ret_tensors.setdefault("atomic_stresses", []).append(
+                        out["atomic_stresses"].detach()
+                    )
+                if out["atomic_virials"] is not None:
+                    ret_tensors.setdefault("atomic_virials", []).append(
+                        out["atomic_virials"].detach()
+                    )
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
@@ -381,6 +398,21 @@ class MACECalculator(Calculator):
                         * self.energy_units_to_eV
                         / self.length_units_to_A**3
                     )
+            if "atomic_stresses" in ret_tensors:
+                self.results["stresses"] = (
+                    torch.mean(torch.stack(ret_tensors["atomic_stresses"]), dim=0)
+                    .cpu()
+                    .numpy()
+                    * self.energy_units_to_eV
+                    / self.length_units_to_A**3
+                )
+            if "atomic_virials" in ret_tensors:
+                self.results["virials"] = (
+                    torch.mean(torch.stack(ret_tensors["atomic_virials"]), dim=0)
+                    .cpu()
+                    .numpy()
+                    * self.energy_units_to_eV
+                )
         if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
             self.results["dipole"] = (
                 torch.mean(ret_tensors["dipole"], dim=0).cpu().numpy()

@@ -213,7 +213,8 @@ def get_outputs(
             positions=vectors,
             training=(training or compute_hessian),
         )
-        forces, virials, stress = (None, None, None)
+        if edge_forces is not None:
+            edge_forces = -1 * edge_forces  # Match LAMMPS sign convention
     else:
         edge_forces = None
     return forces, virials, stress, hessian, edge_forces
@@ -247,9 +248,7 @@ def get_atomic_virials_stresses(
     atom_stress = None
     cell = cell.view(-1, 3, 3)
     volume = torch.linalg.det(cell).abs().unsqueeze(-1)
-    num_graphs = cell.shape[0]
-    atoms_per_graph = torch.bincount(batch, minlength=num_graphs)
-    atom_volume = volume[batch] / atoms_per_graph[batch].view(-1, 1, 1)
+    atom_volume = volume[batch].view(-1, 1, 1)
     atom_stress = atom_virial / atom_volume
     atom_stress = torch.where(
         torch.abs(atom_stress) < 1e10, atom_stress, torch.zeros_like(atom_stress)
@@ -509,7 +508,6 @@ class GraphContext(NamedTuple):
     interaction_kwargs: InteractionKwargs
 
 
-@torch.jit.script
 def prepare_graph(
     data: Dict[str, torch.Tensor],
     compute_virials: bool = False,
@@ -533,13 +531,13 @@ def prepare_graph(
         displacement = None
         positions = torch.zeros(
             (int(n_real), 3),
-            dtype=data["positions"].dtype,
-            device=data["positions"].device,
+            dtype=data["vectors"].dtype,
+            device=data["vectors"].device,
         )
         cell = torch.zeros(
             (num_graphs, 3, 3),
-            dtype=data["positions"].dtype,
-            device=data["positions"].device,
+            dtype=data["vectors"].dtype,
+            device=data["vectors"].device,
         )
         vectors = data["vectors"].requires_grad_(True)
         lengths = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)

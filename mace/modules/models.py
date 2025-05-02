@@ -245,6 +245,8 @@ class MACE(torch.nn.Module):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
             )
+            if is_lammps:
+                pair_node_energy = pair_node_energy[: lammps_natoms[0]]
             pair_energy = scatter_sum(
                 src=pair_node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
@@ -398,6 +400,8 @@ class ScaleShiftMACE(MACE):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
             )
+            if is_lammps:
+                pair_node_energy = pair_node_energy[: lammps_natoms[0]]
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
@@ -437,7 +441,7 @@ class ScaleShiftMACE(MACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         total_energy = e0 + inter_e
-        node_energy = node_e0.double() + node_inter_es.double()
+        node_energy = node_e0.clone().double() + node_inter_es.clone().double()
 
         forces, virials, stress, hessian, edge_forces = get_outputs(
             energy=inter_e,
@@ -450,7 +454,7 @@ class ScaleShiftMACE(MACE):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
             compute_hessian=compute_hessian,
-            compute_edge_forces=compute_edge_forces,
+            compute_edge_forces=compute_edge_forces or compute_atomic_stresses,
         )
 
         atomic_virials: Optional[torch.Tensor] = None
@@ -617,6 +621,8 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        compute_edge_forces: bool = False, # pylint: disable=W0613
+        compute_atomic_stresses: bool = False, # pylint: disable=W0613
     ) -> Dict[str, Optional[torch.Tensor]]:
         assert compute_force is False
         assert compute_virials is False
@@ -817,6 +823,8 @@ class EnergyDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        compute_edge_forces: bool = False, # pylint: disable=W0613
+        compute_atomic_stresses: bool = False, # pylint: disable=W0613
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)

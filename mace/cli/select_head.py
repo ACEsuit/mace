@@ -33,7 +33,7 @@ def main():
     parser.add_argument("model_file", help="input model file path")
     args = parser.parse_args()
 
-    model = torch.load(args.model_file)
+    model = torch.load(args.model_file, map_location=args.target_device)
     torch.set_default_dtype(next(model.parameters()).dtype)
 
     if args.list_heads:

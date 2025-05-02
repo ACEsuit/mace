@@ -215,7 +215,7 @@ def run(args) -> None:
         pt_keyspec = (
             args.heads["pt_head"]["key_specification"]
             if "pt_head" in args.heads
-            else args.key_specification
+            else deepcopy(args.key_specification)
         )
         args.heads["pt_head"] = prepare_pt_head(
             args, pt_keyspec, foundation_model_avg_num_neighbors
