@@ -3,6 +3,7 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 """
 
 import dataclasses
+import types
 from typing import List, Optional, Union
 
 import torch
@@ -99,30 +100,24 @@ class Linear:
             internal_weights=internal_weights,
         )
 
-class TPScatterSumUnfused(torch.nn.Module):
-    def __init__(self, conv_tp: Union[o3.TensorProduct, cuet.ChannelWiseTensorProduct]):
-        super().__init__()
-        self.conv_tp = conv_tp
-        self.weight_numel = self.conv_tp.weight_numel
 
-    def forward(self, node_feats: torch.Tensor, 
-                edge_attrs: torch.Tensor, 
-                tp_weights: torch.Tensor, 
-                edge_index: torch.Tensor
-                ):
+def with_scatter_sum(conv_tp: torch.nn.Module):
+    conv_tp.original_forward = conv_tp.forward
+    def forward(self, node_feats: torch.Tensor,
+                        edge_attrs: torch.Tensor,
+                        tp_weights: torch.Tensor,
+                        edge_index: torch.Tensor) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
 
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
-        )  # [n_nodes, irreps]
-
+        mji = self.original_forward(node_feats[sender], edge_attrs, tp_weights)
+        message = scatter_sum(src=mji, index=receiver, dim=0, dim_size=num_nodes)
         return message
-    
+
+    conv_tp.forward = types.MethodType(forward, conv_tp)
+    return conv_tp
+
 class OEQAtomicTPScatterSum(torch.nn.Module):
     def __init__(self, conv_tp: oeq.TensorProductConv): 
         super().__init__()
@@ -133,7 +128,7 @@ class OEQAtomicTPScatterSum(torch.nn.Module):
                 edge_attrs: torch.Tensor, 
                 tp_weights: torch.Tensor, 
                 edge_index: torch.Tensor
-                ):
+                ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
         return self.conv_tp(node_feats, edge_attrs, tp_weights, sender, receiver)  
@@ -142,23 +137,22 @@ class OEQAtomicTPScatterSum(torch.nn.Module):
 class TensorProductScatterSum:
     """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
     def __new__(
-        cls,
-        irreps_in1: o3.Irreps,
-        irreps_in2: o3.Irreps,
-        irreps_out: o3.Irreps,
-        instructions: Optional[List] = None,
-        shared_weights: bool = False,
-        internal_weights: bool = False,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None
-    ):
+            cls,
+            irreps_in1: o3.Irreps,
+            irreps_in2: o3.Irreps,
+            irreps_out: o3.Irreps,
+            instructions: Optional[List] = None,
+            shared_weights: bool = False,
+            internal_weights: bool = False,
+            cueq_config: Optional[CuEquivarianceConfig] = None,
+            oeq_config: Optional[OEQConfig] = None):
         if (
             CUET_AVAILABLE
             and cueq_config is not None
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
-            return TPScatterSumUnfused(cuet.ChannelWiseTensorProduct(
+            return with_scatter_sum(cuet.ChannelWiseTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -180,13 +174,13 @@ class TensorProductScatterSum:
                 irrep_dtype=dtype, weight_dtype=dtype)
 
             if oeq_config.conv_fusion is None:
-                return TPScatterSumUnfused(oeq.TensorProduct(tpp)) 
+                return with_scatter_sum(oeq.TensorProduct(tpp)) 
             elif oeq_config.conv_fusion == "atomic":
                 return OEQAtomicTPScatterSum(oeq.TensorProductConv(tpp, deterministic=False))
             else:
                 raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
 
-        return TPScatterSumUnfused(o3.TensorProduct(
+        return with_scatter_sum(o3.TensorProduct(
             irreps_in1,
             irreps_in2,
             irreps_out,
