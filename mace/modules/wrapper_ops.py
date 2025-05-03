@@ -127,7 +127,7 @@ class OEQAtomicTPScatterSum(torch.nn.Module):
     def __init__(self, conv_tp: oeq.TensorProductConv): 
         super().__init__()
         self.conv_tp = conv_tp
-        self.weight_numel = self.conv_tp.config.weight_numel
+        self.weight_numel = self.conv_tp.weight_numel
 
     def forward(self, node_feats: torch.Tensor, 
                 edge_attrs: torch.Tensor, 
@@ -140,8 +140,7 @@ class OEQAtomicTPScatterSum(torch.nn.Module):
 
 
 class TensorProductScatterSum:
-    """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct followed by a scatter sum"""
-
+    """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
     def __new__(
         cls,
         irreps_in1: o3.Irreps,
@@ -180,7 +179,12 @@ class TensorProductScatterSum:
                 instructions, shared_weights=shared_weights, internal_weights=internal_weights,
                 irrep_dtype=dtype, weight_dtype=dtype)
 
-            return OEQAtomicTPScatterSum(oeq.TensorProductConv(tpp, deterministic=False))
+            if oeq_config.conv_fusion is None:
+                return TPScatterSumUnfused(oeq.TensorProduct(tpp)) 
+            elif oeq_config.conv_fusion == "atomic":
+                return OEQAtomicTPScatterSum(oeq.TensorProductConv(tpp, deterministic=False))
+            else:
+                raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
 
         return TPScatterSumUnfused(o3.TensorProduct(
             irreps_in1,
