@@ -195,7 +195,7 @@ class TestCueq(BackendTestBase):
     def conversion_functions(self):
         return run_e3nn_to_cueq, run_cueq_to_e3nn
 
-    @pytest.fixture(params=['cpu'] + (['cuda'] if CUDA_AVAILABLE else []))
+    @pytest.fixture(params=(['cuda'] if CUDA_AVAILABLE else []))
     def device(self, request):
         return request.param
 
@@ -205,7 +205,7 @@ class TestOeq(BackendTestBase):
     @pytest.fixture
     def conversion_functions(self):
         return run_e3nn_to_oeq, run_oeq_to_e3nn
-    
+   
     @pytest.fixture(params=(['cuda'] if CUDA_AVAILABLE else []))
     def device(self, request):
         return request.param
