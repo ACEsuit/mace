@@ -31,9 +31,7 @@ def compute_forces(
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,  # For complete dissociation turn to true
-    )[
-        0
-    ]  # [n_nodes, 3]
+    )[0]  # [n_nodes, 3]
     if gradient is None:
         return torch.zeros_like(positions)
     return -1 * gradient
@@ -69,21 +67,23 @@ def compute_forces_virials(
 
     return -1 * forces, -1 * virials, stress
 
+
 def compute_polarisation(
     energy: torch.Tensor,
     electric_field: torch.Tensor,
     training: bool = True,
 ) -> torch.Tensor:
-        
+    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
     polarisation = torch.autograd.grad(
-        outputs=energy,  # [n_graphs, ]            
-        inputs=electric_field,  # [3, ]
-        grad_outputs=torch.ones_like(energy),
+        outputs=[energy],  # [n_graphs, ]            
+        inputs=[electric_field],  # [3, ]
+        grad_outputs=grad_outputs,
         retain_graph=training,  # Make sure the graph is not destroyed during training  
         create_graph=training,  # Create graph for higher derivatives
         allow_unused=True,
     )[0]
-
+    if polarisation is None:
+        return torch.zeros_like(electric_field)
     return -polarisation # [n_graphs, 3]
 
 
@@ -96,19 +96,23 @@ def compute_bec(
     bec_polar_list = []
     for d in range(3): # Loop over dimensions
         polar_component = polarisation[:, d]  # [n_graphs, 1]
+        grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(polar_component)]
         gradient = torch.autograd.grad(
-            outputs=polar_component, # [n_graphs, 1]
-            inputs=positions, # [n_nodes, 3]
-            grad_outputs=torch.ones_like(polar_component),
+            outputs=[polar_component], # [n_graphs, 1]
+            inputs=[positions], # [n_nodes, 3]
+            grad_outputs=grad_outputs,
             retain_graph=training,  # Make sure the graph is not destroyed during training
             create_graph=training,  # Create graph for higher derivatives
             allow_unused=True,
         )[0]
+        if gradient is None:
+            return torch.zeros_like(positions)
         bec_polar_list.append(gradient) # [n_nodes, 3]
         
     bec = torch.stack(bec_polar_list, dim=1) # [n_nodes, 3, 3]
 
     return bec # [n_nodes, 3, 3]
+
 
 def compute_polarisability(
     polarisation: torch.Tensor,
@@ -120,19 +124,23 @@ def compute_polarisability(
     polarisability_list = []
     for d in range(3):
         polar_component = polarisation[:, d] # [n_graphs, 1]
+        grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(polar_component)]
         grad_field = torch.autograd.grad(
-            outputs=polar_component, # [n_graphs, 1]
-            inputs=electric_field, # [3, ]
-            grad_outputs=torch.ones_like(polar_component),
+            outputs=[polar_component], # [n_graphs, 1]
+            inputs=[electric_field], # [3, ]
+            grad_outputs=grad_outputs,
             retain_graph=training,  # Make sure the graph is not destroyed during training
             create_graph=training,  # Create graph for higher derivatives
             allow_unused=True,
         )[0]
+        if grad_field is None:
+            return torch.zeros_like(electric_field)
         polarisability_list.append(grad_field) # [n_graphs, 3]
         
     polarisability = torch.stack(polarisability_list, dim=1)  # [n_graphs, 3, 3]
 
     return polarisability # [n_graphs, 3, 3]
+
 
 def get_symmetric_displacement(
     positions: torch.Tensor,
@@ -260,16 +268,13 @@ def get_outputs(
             )
         )
     elif compute_force:
-        forces, virials, stress = (
-            compute_forces(
-                energy=energy,
-                positions=positions,
-                training=(training or compute_hessian),
-            ) + (
-            None,
-            None
-            )
+        forces = compute_forces(
+        energy=energy,
+        positions=positions,
+        training=(training or compute_hessian),
         )
+        virials = None
+        stress = None
     else:
         forces, virials, stress = (None, None, None)
     

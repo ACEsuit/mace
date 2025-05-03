@@ -32,6 +32,7 @@ class LAMMPS_MACE(torch.nn.Module):
         data: Dict[str, torch.Tensor],
         local_or_ghost: torch.Tensor,
         compute_virials: bool = False,
+        compute_field: bool = True,
     ) -> Dict[str, Optional[torch.Tensor]]:
         num_graphs = data["ptr"].numel() - 1
         compute_displacement = False
@@ -44,8 +45,10 @@ class LAMMPS_MACE(torch.nn.Module):
             compute_force=False,
             compute_virials=False,
             compute_stress=False,
+            compute_field=compute_field,
             compute_displacement=compute_displacement,
         )
+
         node_energy = out["node_energy"]
         if node_energy is None:
             return {
@@ -53,16 +56,22 @@ class LAMMPS_MACE(torch.nn.Module):
                 "node_energy": None,
                 "forces": None,
                 "virials": None,
+                "polarisation": None,
+                "bec": None,
+                "polarisability": None,
             }
+        
         positions = data["positions"]
         displacement = out["displacement"]
         forces: Optional[torch.Tensor] = torch.zeros_like(positions)
         virials: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
+
         # accumulate energies of local atoms
         node_energy_local = node_energy * local_or_ghost
         total_energy_local = scatter_sum(
             src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs
         )
+
         # compute partial forces and (possibly) partial virials
         grad_outputs: List[Optional[torch.Tensor]] = [
             torch.ones_like(total_energy_local)
