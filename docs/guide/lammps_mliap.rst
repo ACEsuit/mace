@@ -189,7 +189,7 @@ Here's a complete example LAMMPS script for using MACE with ML-IAP::
     pair_coeff    * * C H O N
 
     # Run settings
-    timestep      1.0
+    timestep      0.0001
     thermo        100
 
     # MD run
