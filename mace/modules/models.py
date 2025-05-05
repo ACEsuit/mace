@@ -510,7 +510,7 @@ class MACELES(MACE):
                 self.compute_bec = les_arguments.get('compute_bec', False)
                 self.bec_output_index = les_arguments.get('bec_output_index', None)
         else:
-            self.les = Les(les_arguments={}) # use default arguments
+            self.les = Les(les_arguments={'use_atomwise'= False}) # use default arguments
 
         self.les_readouts = torch.nn.ModuleList()
         self.les_readouts.append(
@@ -672,7 +672,10 @@ class MACELES(MACE):
             bec_output_index=self.bec_output_index,
             )
 
-        les_energy = les_result['E_lr']
+        if les_result['E_lr'] is None:
+            les_energy = torch.zeros_like(total_energy)
+        else:
+            les_energy = les_result['E_lr']
         total_energy = total_energy + les_energy
 
         forces, virials, stress, hessian = get_outputs(
