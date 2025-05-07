@@ -590,11 +590,12 @@ class MACELES(MACE):
             dtype=data["positions"].dtype,
             device=data["positions"].device,
         )
-        if compute_virials or compute_stress or compute_displacement:
+        if True: #compute_virials or compute_stress or compute_displacement:
             (
                 data["positions"],
                 data["shifts"],
                 displacement,
+                data["cell"],
             ) = get_symmetric_displacement(
                 positions=data["positions"],
                 unit_shifts=data["unit_shifts"],
@@ -690,7 +691,7 @@ class MACELES(MACE):
             )
 
         les_energy = les_result['E_lr']
-        total_energy = total_energy + les_energy
+        total_energy = total_energy  + les_energy
 
         forces, virials, stress, hessian, edge_forces = get_outputs(
             energy=total_energy,

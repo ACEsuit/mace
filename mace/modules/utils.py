@@ -76,7 +76,7 @@ def get_symmetric_displacement(
     edge_index: torch.Tensor,
     num_graphs: int,
     batch: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     if cell is None:
         cell = torch.zeros(
             num_graphs * 3,
@@ -104,7 +104,7 @@ def get_symmetric_displacement(
         unit_shifts,
         cell[batch[sender]],
     )
-    return positions, shifts, displacement
+    return positions, shifts, displacement, cell
 
 
 @torch.jit.unused
@@ -554,7 +554,7 @@ def prepare_graph(
             (num_graphs, 3, 3), dtype=positions.dtype, device=positions.device
         )
         if compute_virials or compute_stress or compute_displacement:
-            p, s, displacement = get_symmetric_displacement(
+            p, s, displacement, cell = get_symmetric_displacement(
                 positions=positions,
                 unit_shifts=data["unit_shifts"],
                 cell=cell,
