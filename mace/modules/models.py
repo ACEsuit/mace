@@ -577,6 +577,7 @@ class MACELES(MACE):
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
+        data["cell"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
         num_atoms_arange = torch.arange(data["positions"].shape[0])
         node_heads = (
