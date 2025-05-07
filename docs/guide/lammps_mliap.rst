@@ -17,11 +17,16 @@ This document focuses on the new ML-IAP interface, which calls the model from py
 Preparing Your Model for ML-IAP
 ==============================
 
+.. warning::
+
+   **Very Important NOTE:** This operation needs to be done on a GPU, and to be extra safe, on the same GPU architecture as the one that will be used for inference.
+
 To use a MACE model with the ML-IAP interface, you need to convert your trained model using the ``create_lammps_model.py`` script with the ``mliap`` format option::
 
     python mace/cli/create_lammps_model.py your_trained_model.model --format=mliap
 
 This will create a file named ``your_trained_model.model-mliap_lammps.pt`` that is compatible with the ML-IAP interface.
+
 
 Installation Requirements
 ========================
