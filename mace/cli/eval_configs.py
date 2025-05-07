@@ -126,6 +126,7 @@ def run(args: argparse.Namespace) -> None:
     stresses_list = []
     forces_collection = []
     becs_collection = []
+    qs_collection = []
 
     for batch in data_loader:
         batch = batch.to(device)
@@ -148,6 +149,12 @@ def run(args: argparse.Namespace) -> None:
             )
             becs_collection.append(becs[:-1])  # drop last as its empty
 
+            qs = np.split(
+                torch_tools.to_numpy(output["latent_charges"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            qs_collection.append(qs[:-1])  # drop last as its empty
 
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
@@ -173,7 +180,9 @@ def run(args: argparse.Namespace) -> None:
         becs_list = [
             becs for becs_list in becs_collection for becs in becs_list
         ]
-
+        qs_list = [
+            qs for qs_list in qs_collection for qs in qs_list
+        ]
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
         atoms.calc = None  # crucial
@@ -188,7 +197,7 @@ def run(args: argparse.Namespace) -> None:
 
         if args.compute_bec and model_has_les:
             atoms.arrays[args.info_prefix + "BEC"] = becs_list[i].reshape(-1, 9)
-
+            atoms.arrays[args.info_prefix + "latent_charges"] = qs_list[i]
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
 

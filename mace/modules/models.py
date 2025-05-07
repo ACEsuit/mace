@@ -551,6 +551,9 @@ class MACELES(MACE):
         compute_hessian: bool = False,
         compute_bec: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
+        self.compute_bec = False
+        self.bec_output_index = None
+
         # Setup
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
