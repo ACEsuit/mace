@@ -487,9 +487,15 @@ class MACELES(MACE):
         self.scale_shift = ScaleShiftBlock(
             scale=atomic_inter_scale, shift=atomic_inter_shift
         )
-        logging.info('######### Using ScaleShift #########')
 
-        from les import Les
+        try:
+            from les import Les
+        except:
+            raise ImportError(
+                "Cannot import 'les'. Please install the 'les' library from https://github.com/ChengUCB/les."
+                )
+
+
         logging.info('######### Using Latent Eward Summation (LES)  #########')
 
         self.compute_bec = False
@@ -551,8 +557,6 @@ class MACELES(MACE):
         compute_hessian: bool = False,
         compute_bec: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
-        self.compute_bec = False
-        self.bec_output_index = None
 
         # Setup
         data["positions"].requires_grad_(True)
@@ -664,7 +668,7 @@ class MACELES(MACE):
             cell=data['cell'].view(-1, 3, 3),
             batch=data["batch"],
             compute_energy=True,
-            compute_bec=(self.compute_bec or compute_bec),
+            compute_bec=(compute_bec or self.compute_bec),
             bec_output_index=self.bec_output_index,
             )
 
