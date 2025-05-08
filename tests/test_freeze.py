@@ -558,7 +558,7 @@ def test_run_train_multihead_soft_freeze(tmp_path, fitting_configs):
     mace_params["subselect_pt"] = "random"
     mace_params["soft_freeze"] = 2
     mace_params["soft_freeze_factor"] = 0.1
-
+    # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
@@ -581,7 +581,10 @@ def test_run_train_multihead_soft_freeze(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
+        model_paths=tmp_path / "MACE.model",
+        device="cpu",
+        default_dtype="float64",
+        head="CCD",
     )
 
     Es = []

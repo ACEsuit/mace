@@ -104,6 +104,8 @@ class TensorProduct:
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
+                dtype=torch.get_default_dtype(),
+                math_dtype=torch.get_default_dtype(),
             )
 
         return o3.TensorProduct(
