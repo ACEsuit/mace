@@ -323,6 +323,10 @@ If you want to finetune another model, the model will be loaded from the path pr
 <a id="mace-freeze"></a>
 ## MACE-freeze
 
+> [!Note]
+> If using MACE 0.3.13 with freezing and cuEquivariance acceleration, please update all cuEquivariance dependencies to 0.4.0.
+
+
 **Installation**
 
 To install the MACE-freeze version of MACE, clone the mace-freeze branch into your work folder:
