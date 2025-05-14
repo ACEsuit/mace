@@ -44,7 +44,7 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
     """
     if model in (None, "medium-mpa-0") and os.path.isfile(local_model_path):
         return local_model_path
-
+      
     checkpoint_url = (
         mace_mp_urls.get(model, mace_mp_urls["medium-mpa-0"])
         if model in mace_mp_names
@@ -97,7 +97,7 @@ def mace_mp(
 ) -> MACECalculator:
     """
     Constructs a MACECalculator with a pretrained model based on the Materials Project (89 elements).
-    The model is released under the MIT license. See https://github.com/ACEsuit/mace-mp for all models.
+    The model is released under the MIT license. See https://github.com/ACEsuit/mace-foundations for all models.
     Note:
         If you are using this function, please cite the relevant paper for the Materials Project,
         any paper associated with the MACE model, and also the following:
