@@ -5,6 +5,9 @@
 ###########################################################################################
 
 import argparse
+import os 
+
+os.environ['TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD'] = '1'
 
 import ase.data
 import ase.io
@@ -56,8 +59,20 @@ def parse_args() -> argparse.Namespace:
         default=False,
     )
     parser.add_argument(
-        "--compute_field",
-        help="compute field",
+        "--compute_polarisation",
+        help="compute polarisation",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_bec",
+        help="compute bec",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_polarisability",
+        help="compute polarisability",
         action="store_true",
         default=False,
     )
@@ -138,7 +153,7 @@ def run(args: argparse.Namespace) -> None:
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch.to_dict(), compute_force=args.compute_force, compute_stress=args.compute_stress, compute_field=args.compute_field)
+        output = model(batch.to_dict(), compute_force=args.compute_force, compute_stress=args.compute_stress, compute_field=True)
 
         if args.compute_energy:
             energies_list.append(torch_tools.to_numpy(output["energy"]))
@@ -149,10 +164,13 @@ def run(args: argparse.Namespace) -> None:
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
 
-        if args.compute_field:
+        if args.compute_polarisation:
             polarisations_list.append(torch_tools.to_numpy(output["polarisation"]).reshape(3))
+        
+        if args.compute_polarisability:
             polarisabilities_list.append(torch_tools.to_numpy(output["polarisability"]).reshape(9))
 
+        if args.compute_bec:
             becs = np.split(
                 torch_tools.to_numpy(output["bec"]),
                 indices_or_sections=batch.ptr[1:],
@@ -186,10 +204,13 @@ def run(args: argparse.Namespace) -> None:
         contributions = np.concatenate(contributions_list, axis=0)
         assert len(atoms_list) == contributions.shape[0]
 
-    if args.compute_field:
+    if args.compute_polarisation:
         polarisations = np.stack(polarisations_list, axis=0)
+
+    if args.compute_polarisability:
         polarisabilities = np.stack(polarisabilities_list, axis=0)
 
+    if args.compute_bec:
         becs_list = [
             becs for becs_list in becs_collection for becs in becs_list
         ]
@@ -197,27 +218,31 @@ def run(args: argparse.Namespace) -> None:
     # Store data in atoms objects
 
     if args.compute_energy:
-        for i, (atoms, energy) in enumerate(zip(atoms_list, energies)):
+        for (atoms, energy) in zip(atoms_list, energies):
             atoms.calc = None  # crucial
             atoms.info[args.info_prefix + "energy"] = energy
 
-            if args.compute_stress:
-                atoms.info[args.info_prefix + "stress"] = stresses[i]
-
-            if args.return_contributions:
-                atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
-
     if args.compute_force:
-        for i, (atoms, forces) in enumerate(zip(atoms_list, forces_list)):
+        for (atoms, forces) in zip(atoms_list, forces_list):
             atoms.calc = None  # crucial
             atoms.arrays[args.info_prefix + "forces"] = forces
 
-    if args.compute_field:
-        for i, (atoms, bec) in enumerate(zip(atoms_list, becs_list)):
+    if args.compute_bec:
+        for (atoms, bec) in zip(atoms_list, becs_list):
             atoms.calc = None  # crucial
-
-            atoms.info[args.info_prefix + "polarisation"] = polarisations[i,:]
             atoms.arrays[args.info_prefix + "bec"] = bec
+
+
+    for i, atoms in enumerate(atoms_list):
+        atoms.calc = None  # crucial
+
+        if args.compute_stress:
+            atoms.info[args.info_prefix + "stress"] = stresses[i]
+        if args.return_contributions:
+            atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
+        if args.compute_polarisation:
+            atoms.info[args.info_prefix + "polarisation"] = polarisations[i,:]
+        if args.compute_polarisability:
             atoms.info[args.info_prefix + "polarisability"] = polarisabilities[i,:]
 
     # Write atoms to output path

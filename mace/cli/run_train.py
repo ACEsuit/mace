@@ -10,6 +10,9 @@ import glob
 import json
 import logging
 import os
+
+os.environ['TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD'] = '1'
+
 import socket
 from copy import deepcopy
 from pathlib import Path
@@ -57,6 +60,7 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
+from mace.tools.slurm_distributed import DistributedEnvironment
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -72,16 +76,9 @@ def main() -> None:
     This script runs the training/fine tuning for mace
     """
     args = tools.build_default_arg_parser().parse_args()
-    if args.distributed:
-        world_size = torch.cuda.device_count()
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.bind(('127.0.0.1', 0))
-        port = s.getsockname()[1]
-        mp.spawn(run, args=(args, world_size, port), nprocs=world_size)
-    else:
-        run(0, args, 1, 1)
+    run(args)
 
-def run(rank: int, args: argparse.Namespace, world_size: int, port: int) -> None:
+def run(args) -> None:
     """
     This script runs the training/fine tuning for mace
     """
@@ -96,18 +93,17 @@ def run(rank: int, args: argparse.Namespace, world_size: int, port: int) -> None
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"
             ) from e
     if args.distributed:
-        local_rank = rank
-        os.environ["MASTER_ADDR"] = "localhost"
-        os.environ["MASTER_PORT"] = str(port)
-            
-        torch.cuda.set_device(rank)
-        torch.distributed.init_process_group(
-            backend='nccl',
-            rank=rank,
-            world_size=world_size,
-        )
-    else:
-        rank = int(0)        
+        try:
+            distr_env = DistributedEnvironment()
+        except Exception as e:  # pylint: disable=W0703
+            logging.error(f"Failed to initialize distributed environment: {e}")
+            return
+        world_size = distr_env.world_size
+        local_rank = distr_env.local_rank
+        rank = distr_env.rank
+        if rank == 0:
+            print(distr_env)
+        torch.distributed.init_process_group(backend="nccl")        
 
     # Setup
     tools.set_seeds(args.seed)
