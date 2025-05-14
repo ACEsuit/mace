@@ -357,6 +357,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
 
     # Fine-tuning
     parser.add_argument(
+        "--pseudolabel_replay",
+        help="Use pseudolabels from foundation model for replay data in multihead finetuning",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--foundation_filter_elements",
         help="Filter element during fine-tuning",
         type=str2bool,
