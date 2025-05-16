@@ -235,6 +235,11 @@ class Contraction(torch.nn.Module):
             self.weights_max = weights[-1]
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
+        # print the dtype of all tensors
+        print(f"x dtype: {x.dtype}, y dtype: {y.dtype}")
+        print(f"weights dtype: {[w.dtype for w in self.weights]}")
+        print(f"weights_max dtype: {self.weights_max.dtype}")
+        print(f"U_tensors dtype: {[self.U_tensors(i).dtype for i in range(1, self.correlation + 1)]}")
         out = self.graph_opt_main(
             self.U_tensors(self.correlation),
             self.weights_max,

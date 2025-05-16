@@ -53,6 +53,7 @@ def transfer_symmetric_contractions(
     num_product_irreps: int,
     correlation: int,
     num_layers: int,
+    use_reduced_cg: bool,
 ):
     """Transfer symmetric contraction weights"""
     kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
@@ -62,10 +63,13 @@ def transfer_symmetric_contractions(
                 print("Weights for",
                       f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}")
                 print(source_dict.get(
-                    f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}_zeroed",
+                    f"products.{i}.symmetric_contractions.contractions.{k}.weights{j.replace('.', '_')}_zeroed",
                     False,
                 ))
-
+    if use_reduced_cg:
+        suffixes = [".1", ".0", "_max"]
+    else:
+        suffixes = ["_max", ".0", ".1"]
     for i, kmax in kmax_pairs:
         wm = torch.concatenate(
             [
@@ -73,9 +77,9 @@ def transfer_symmetric_contractions(
                     f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}"
                 ]
                 for k in range(kmax + 1)
-                for j in ["_max", ".0", ".1"]
+                for j in suffixes
                 if not source_dict.get(
-                    f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}_zeroed", False
+                    f"products.{i}.symmetric_contractions.contractions.{k}.weights{j.replace('.', '_')}_zeroed", False
                 )
             ],
             dim=1,
@@ -89,6 +93,7 @@ def transfer_weights(
     num_product_irreps: int,
     correlation: int,
     num_layers: int,
+    use_reduced_cg: bool,
 ):
     """Transfer weights with proper remapping"""
     # Get source state dict
@@ -106,7 +111,7 @@ def transfer_weights(
 
     # Transfer symmetric contractions
     transfer_symmetric_contractions(
-        source_dict, target_dict, num_product_irreps, correlation, num_layers
+        source_dict, target_dict, num_product_irreps, correlation, num_layers, use_reduced_cg
     )
 
     # Unsqueeze linear and skip_tp layers
@@ -162,7 +167,7 @@ def run(
     # Get max_L and correlation from config
     num_product_irreps = len(config["hidden_irreps"].slices()) - 1
     correlation = config["correlation"]
-
+    use_reduced_cg = config.get("use_reduced_cg", True)
     # Add cuequivariance config
     config["cueq_config"] = CuEquivarianceConfig(
         enabled=True,
@@ -177,7 +182,7 @@ def run(
 
     # Transfer weights with proper remapping
     num_layers = config["num_interactions"]
-    transfer_weights(source_model, target_model, num_product_irreps, correlation, num_layers)
+    transfer_weights(source_model, target_model, num_product_irreps, correlation, num_layers, use_reduced_cg)
 
     if return_model:
         return target_model

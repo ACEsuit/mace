@@ -121,14 +121,14 @@ def U_matrix_real(
     if use_cueq_cg is None:
         use_cueq_cg = USE_CUEQ_CG
     if use_cueq_cg and CUET_AVAILABLE:
-        return compute_U_cueq(irreps_in, irreps_out=irreps_out, correlation=correlation)
+        return compute_U_cueq(irreps_in, irreps_out=irreps_out, correlation=correlation, dtype=dtype)
 
     try:
         wigners = _wigner_nj(irrepss, normalization, filter_ir_mid, dtype)
     except NotImplementedError as e:
         if CUET_AVAILABLE:
             return compute_U_cueq(
-                irreps_in, irreps_out=irreps_out, correlation=correlation
+                irreps_in, irreps_out=irreps_out, correlation=correlation, dtype=dtype
             )
         raise NotImplementedError(
             "The requested Clebsch-Gordan coefficients are not implemented, please install cuequivariance; pip install cuequivariance"
@@ -163,7 +163,9 @@ def U_matrix_real(
 
 if CUET_AVAILABLE:
 
-    def compute_U_cueq(irreps_in, irreps_out, correlation=2):
+    def compute_U_cueq(irreps_in, irreps_out, correlation=2, dtype=None):
+        if dtype is None:
+            dtype = torch.get_default_dtype()
         U = []
         irreps_in = cue.Irreps(O3_e3nn, str(irreps_in))
         irreps_out = cue.Irreps(O3_e3nn, str(irreps_out))
@@ -193,7 +195,7 @@ if CUET_AVAILABLE:
                 )]
             ir_str = str(ir)
             U.append(ir_str)
-            U_matrix = torch.tensor(U_matrix.reshape(*([irreps_in.dim] * correlation), ir.dim, -1))
+            U_matrix = torch.tensor(U_matrix.reshape(*([irreps_in.dim] * correlation), ir.dim, -1), dtype=dtype)
             U_matrix = torch.moveaxis(U_matrix, -2, 0)
             if ir.dim == 1:
                 U_matrix = U_matrix[0]

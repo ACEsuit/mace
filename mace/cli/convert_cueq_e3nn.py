@@ -52,10 +52,15 @@ def transfer_symmetric_contractions(
     num_product_irreps: int,
     correlation: int,
     num_layers: int,
+    use_reduced_cg: bool,
 ):
     """Transfer symmetric contraction weights from CuEq to E3nn format"""
     kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
 
+    if use_reduced_cg:
+        suffixes = [".1", ".0", "_max"]
+    else:
+        suffixes = ["_max", ".0", ".1"]
     for i, kmax in kmax_pairs:
         # Get the combined weight tensor from source
         wm = source_dict[f"products.{i}.symmetric_contractions.weight"]
@@ -63,14 +68,11 @@ def transfer_symmetric_contractions(
         # Get split sizes based on target dimensions
         splits = []
         for k in range(kmax + 1):
-            for suffix in ["_max", ".0", ".1"]:
+            for suffix in suffixes:
                 key = f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix}"
                 target_shape = target_dict[key].shape
                 splits.append(target_shape[1])
-                if target_dict.get(key + "_zeroed", False):
-                    logging.warning(
-                        f"Weight {key} is all zeros, skipping transfer for this key."
-                    )
+                if target_dict.get(f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix.replace('.', '_')}" + "_zeroed", False):
                     splits[-1] = 0
 
         # Split the weights using the calculated sizes
@@ -79,24 +81,12 @@ def transfer_symmetric_contractions(
         # Assign back to target dictionary
         idx = 0
         for k in range(kmax + 1):
-            # checj if it was skipped
-            target_dict[
-                f"products.{i}.symmetric_contractions.contractions.{k}.weights_max"
-            ] = weights_split[idx] if splits[idx] > 0 else target_dict[
-                f"products.{i}.symmetric_contractions.contractions.{k}.weights_max"
-            ]
-            target_dict[
-                f"products.{i}.symmetric_contractions.contractions.{k}.weights.0"
-            ] = weights_split[idx + 1] if splits[idx + 1] > 0 else target_dict[
-                f"products.{i}.symmetric_contractions.contractions.{k}.weights.0"
-            ]
-            target_dict[
-                f"products.{i}.symmetric_contractions.contractions.{k}.weights.1"
-            ] = weights_split[idx + 2] if splits[idx + 2] > 0 else target_dict[
-                f"products.{i}.symmetric_contractions.contractions.{k}.weights.1"
-            ]
-            idx += 3
-
+            for suffix in suffixes:
+                key = f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix}"
+                if target_dict.get(f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix.replace('.', '_')}_zeroed", False):
+                    continue
+                target_dict[key] = weights_split[idx] if splits[idx] > 0 else target_dict[key]
+                idx += 1
 
 def transfer_weights(
     source_model: torch.nn.Module,
@@ -104,6 +94,7 @@ def transfer_weights(
     num_product_irreps: int,
     correlation: int,
     num_layers: int,
+    use_reduced_cg: bool,
 ):
     """Transfer weights from CuEq to E3nn format"""
     # Get state dicts
@@ -120,7 +111,7 @@ def transfer_weights(
 
     # Transfer symmetric contractions
     transfer_symmetric_contractions(
-        source_dict, target_dict, num_product_irreps, correlation, num_layers
+        source_dict, target_dict, num_product_irreps, correlation, num_layers, use_reduced_cg
     )
 
     # Unsqueeze linear and skip_tp layers
@@ -171,6 +162,7 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
     # Get max_L and correlation from config
     num_product_irreps = len(config["hidden_irreps"].slices()) - 1
     correlation = config["correlation"]
+    use_reduced_cg = config.get("use_reduced_cg", True)
 
     # Remove CuEq config
     config.pop("cueq_config", None)
@@ -181,7 +173,7 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
 
     # Transfer weights with proper remapping
     num_layers = config["num_interactions"]
-    transfer_weights(source_model, target_model, num_product_irreps, correlation, num_layers)
+    transfer_weights(source_model, target_model, num_product_irreps, correlation, num_layers, use_reduced_cg)
 
     if return_model:
         return target_model
