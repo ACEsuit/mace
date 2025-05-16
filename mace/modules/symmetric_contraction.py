@@ -113,8 +113,7 @@ class Contraction(torch.nn.Module):
                 use_cueq_cg=use_reduced_cg,
                 dtype=dtype,
             )[-1]
-            if torch.equal(U_matrix, torch.zeros_like(U_matrix)):
-                path_weight.append(False)
+            path_weight.append(not torch.equal(U_matrix, torch.zeros_like(U_matrix)))
             self.register_buffer(f"U_matrix_{nu}", U_matrix)
 
         # Tensor contraction equations

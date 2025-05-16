@@ -57,6 +57,16 @@ def transfer_symmetric_contractions(
     """Transfer symmetric contraction weights"""
     kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
     for i, kmax in kmax_pairs:
+        for k in range(kmax + 1):
+            for j in ["_max", ".0", ".1"]:
+                print("Weights for",
+                      f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}")
+                print(source_dict.get(
+                    f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}_zeroed",
+                    False,
+                ))
+
+    for i, kmax in kmax_pairs:
         wm = torch.concatenate(
             [
                 source_dict[
