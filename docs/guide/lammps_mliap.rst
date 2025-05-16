@@ -46,7 +46,7 @@ In addition to the standard MACE dependencies, you'll need:
 LAMMPS Compilation
 ----------------
 
-The ML-IAP interface requires the ``develop`` branch of LAMMPS. You need to compile LAMMPS with specific options for Kokkos, Python, and ML-IAP packages.
+The ML-IAP interface requires the ``develop`` branch of LAMMPS., you can download here: https://github.com/lammps/lammps. You need to compile LAMMPS with specific options for Kokkos, Python, and ML-IAP packages.
 
 Required CMake Options
 ^^^^^^^^^^^^^^^^^^^^^
