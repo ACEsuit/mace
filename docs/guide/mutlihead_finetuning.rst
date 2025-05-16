@@ -9,7 +9,7 @@ Introduction
 
 Multihead finetuning is a technique in MACE that allows you to simultaneously finetune a foundation model on both your target dataset and a “replay” dataset from the foundation model. This approach helps prevent catastrophic forgetting and maintains the model’s generalization capabilities while adapting to your specific use case.
 
-This document explains how to perform multihead finetuning in MACE using two different approaches for selecting the replay dataset, and describes the available replay datasets.
+This document explains how to perform multihead finetuning in MACE using three different approaches for selecting the replay dataset, and describes the available replay datasets.
 
 Replay Dataset Options
 ======================
