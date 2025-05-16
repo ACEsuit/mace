@@ -23,6 +23,7 @@ User Guide
     lammps_mliap
     foundation_models
     finetuning
+    multihead_finetuning
     multihead_training
     multipreprocessing
     multigpu

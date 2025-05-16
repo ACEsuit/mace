@@ -60,43 +60,4 @@ Multihead Replay Fine-tuning
 The multihead replay fine-tuning protocol prevents catastrophic forgetting that occurs sometimes during the naive fine-tuning.
 It usually leads to a more robust and stable model. It is the **recommended** way to fine-tune any materials project foundation model.
 
-For this fine-tuning a materials project model, you need to select the `--pt_train_file="mp"` option.
-For this fine-tuning a materials project model, it is important to use one of the MACE-mp-0b models that you can download here: https://github.com/ACEsuit/mace-mp/releases/tag/mace_mp_0b.
-You can also use the newest MACE-MPA-0 trained on the MPTrj dataset + Alexandria dataset available here: https://github.com/ACEsuit/mace-mp/releases/tag/mace_mpa_0.
-It is also very important that you compute your own E0s and not use "average" option. When computing your E0s, please use spin polarized calculations.
-If you are using MP compatible DFT, you can use the option --E0s="foundation" to use the same E0s as the foundation model.
-
-For fine-tuning any other foundation model, you will need to provide a path your fondation model training set (or a subset of it), in order to create a replay dataset, with `--pt_train_file=$path_to_your_foundation_data.xyz`.
-
-To fine-tune a small mp0b model, you can use:
-
-.. code-block:: bash
-
-    mace_run_train \
-        --name="MACE" \
-        --foundation_model="mace_agnesi_small.model" \
-        --multiheads_finetuning=True \
-        --train_file="train.xyz" \
-        --valid_fraction=0.05 \
-        --test_file="test.xyz" \
-        --energy_weight=1.0 \
-        --forces_weight=1.0 \
-        --E0s="{"1": 130.0 }" \
-        --scaling="rms_forces_scaling" \
-        --batch_size=2 \
-        --max_num_epochs=6 \
-        --ema \
-        --ema_decay=0.9999 \
-        --lr=0.0001 \
-        --amsgrad \
-        --pt_train_file="mp" \
-        --num_samples_pt=100000 \
-        --default_dtype="float64" \
-        --device=cuda \
-        --seed=3 
-
-.. note::
-
-    The recommended setting for the `--num_samples_pt` is between 100000 and 10000. 
-    As your input data will be repeatedly sampled, you can use a smaller number of epochs.
-    The number of epochs for convergence is between 10 and 30 epochs.
+For more information on the multihead replay fine-tuning protocol, please refer to the `MACE-MP documentation <multihead_finetuning>`_.
