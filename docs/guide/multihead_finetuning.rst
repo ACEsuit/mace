@@ -1,7 +1,7 @@
 .. _multihead_finetuning:
 
 *******************************
-MACE Multihead Finetuning Documentation
+Multihead Finetuning
 *******************************
 
 Introduction

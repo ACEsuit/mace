@@ -60,4 +60,4 @@ Multihead Replay Fine-tuning
 The multihead replay fine-tuning protocol prevents catastrophic forgetting that occurs sometimes during the naive fine-tuning.
 It usually leads to a more robust and stable model. It is the **recommended** way to fine-tune any materials project foundation model.
 
-For more information on the multihead replay fine-tuning protocol, please refer to the `MACE-MP documentation <multihead_finetuning>`_.
+For more information on the multihead replay fine-tuning protocol, please refer to the `multihead fine-tuning <multihead_finetuning>`_.
