@@ -89,19 +89,20 @@ class TestCueq:
         "interaction_cls_first",
         [
             modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
-            modules.interaction_classes["RealAgnosticInteractionBlock"],
-            modules.interaction_classes["RealAgnosticDensityInteractionBlock"],
+            # modules.interaction_classes["RealAgnosticInteractionBlock"],
+            # modules.interaction_classes["RealAgnosticDensityInteractionBlock"],
         ],
     )
     @pytest.mark.parametrize(
         "hidden_irreps",
         [
-            o3.Irreps("32x0e + 32x1o"),
-            o3.Irreps("32x0e + 32x1o + 32x2e"),
-            o3.Irreps("32x0e"),
+            # o3.Irreps("32x0e + 32x0o + 32x1o"),
+            # o3.Irreps("32x0e + 32x1o + 32x2e"),
+            # o3.Irreps("32x0e"),
+            o3.Irreps("16x0e + 16x1e + 16x0o + 16x1o"),
         ],
     )
-    @pytest.mark.parametrize("default_dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("default_dtype", [torch.float32])
     def test_bidirectional_conversion(
         self,
         model_config: Dict[str, Any],

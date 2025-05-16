@@ -100,6 +100,8 @@ class Contraction(torch.nn.Module):
         self.coupling_irreps = o3.Irreps([irrep.ir for irrep in irreps_in])
         self.correlation = correlation
         dtype = torch.get_default_dtype()
+        
+        path_weight = []
         for nu in range(1, correlation + 1):
             U_matrix = U_matrix_real(
                 irreps_in=self.coupling_irreps,
@@ -107,6 +109,8 @@ class Contraction(torch.nn.Module):
                 correlation=nu,
                 dtype=dtype,
             )[-1]
+            if torch.equal(U_matrix, torch.zeros_like(U_matrix)):
+                path_weight.append(False)
             self.register_buffer(f"U_matrix_{nu}", U_matrix)
 
         # Tensor contraction equations
@@ -205,6 +209,10 @@ class Contraction(torch.nn.Module):
                     / num_params
                 )
                 self.weights.append(w)
+        for i, is_path_zeros in enumerate(path_weight):
+            if not is_path_zeros:
+                self.weights[i] = torch.zeros_like(self.weights[i]).requires_grad_(False)
+                
         if not internal_weights:
             self.weights = weights[:-1]
             self.weights_max = weights[-1]

@@ -110,7 +110,7 @@ def U_matrix_real(
     normalization: str = "component",
     filter_ir_mid=None,
     dtype=None,
-    use_cueq_cg=None,
+    use_cueq_cg=True,
 ):
     irreps_out = o3.Irreps(irreps_out)
     irrepss = [o3.Irreps(irreps_in)] * correlation
@@ -149,7 +149,15 @@ def U_matrix_real(
             current_ir, last_ir = ir, ir
         else:
             current_ir = ir
-    out += [last_ir, stack]
+    try:
+        out += [last_ir, stack]
+    except:
+        first_dim = irreps_out.dim
+        if first_dim != 1:
+            size = [first_dim] + [o3.Irreps(irreps_in).dim] * correlation + [1]
+        else:
+            size = [o3.Irreps(irreps_in).dim] * correlation + [1]
+        out = [str(irreps_out)[:-2], torch.zeros(size, dtype=dtype)]
     return out
 
 
@@ -160,11 +168,36 @@ if CUET_AVAILABLE:
         irreps_in = cue.Irreps(O3_e3nn, str(irreps_in))
         irreps_out = cue.Irreps(O3_e3nn, str(irreps_out))
         for _, ir in irreps_out:
+            try:
+                U_matrix = cue.reduced_symmetric_tensor_product_basis(
+                    irreps_in, correlation, keep_ir=ir, layout=cue.ir_mul
+                ).array     
+            except ValueError:
+                print(
+                    f"Warning: {ir} is not in the irreps_in {irreps_in} for correlation {correlation}. Skipping this irrep."
+                )
+                if ir.dim == 1:
+                    out_shape = (*([irreps_in.dim] * correlation), 1)
+                else:
+                    out_shape = (ir.dim, *([irreps_in.dim] * correlation), 1)
+                return [torch.zeros(
+                    out_shape,
+                    dtype=torch.get_default_dtype(),
+                )]
+            if U_matrix.shape[-1] == 0:
+                print(
+                    f"Warning: {ir} has no valid U_matrix, for correlation {correlation}. Skipping this irrep."
+                )
+                if ir.dim == 1:
+                    out_shape = (*([irreps_in.dim] * correlation), 1)
+                else:
+                    out_shape = (ir.dim, *([irreps_in.dim] * correlation), 1)
+                return [torch.zeros(
+                    out_shape,
+                    dtype=torch.get_default_dtype(),
+                )]
             ir_str = str(ir)
             U.append(ir_str)
-            U_matrix = cue.reduced_symmetric_tensor_product_basis(
-                irreps_in, correlation, keep_ir=ir, layout=cue.ir_mul
-            ).array
             U_matrix = U_matrix.reshape(ir.dim, *([irreps_in.dim] * correlation), -1)
             if ir.dim == 1:
                 U_matrix = U_matrix[0]

@@ -267,6 +267,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "num_elements": len(model.atomic_numbers),
         "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
         "MLP_irreps": (mlp_irreps if model.num_interactions.item() > 1 else 1),
+        "edge_irreps": model.edge_irreps if hasattr(model, "edge_irreps") else None,
         "gate": (
             model.readouts[-1]  # pylint: disable=protected-access
             .non_linearity._modules["acts"][0]

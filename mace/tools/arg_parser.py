@@ -164,6 +164,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=["None", "Agnesi", "Soft"],
     )
     parser.add_argument(
+        "--apply_cutoff",
+        help="apply cutoff to the radial basis functions before MLP",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--interaction",
         help="name of interaction block",
         type=str,
@@ -174,6 +180,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
+            "RealAgnosticResidualNonLinearInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -212,6 +219,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hidden_irreps",
         help="irreps for hidden node states",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--edge_irreps",
+        help="irreps for edge states",
         type=str,
         default=None,
     )

@@ -33,6 +33,7 @@ class CuEquivarianceConfig:
     optimize_channelwise: bool = False
     optimize_symmetric: bool = False
     optimize_fctp: bool = False
+    original_mace: bool = True  # Use original mace layout for symmetric contraction
 
     def __post_init__(self):
         if self.enabled and CUET_AVAILABLE:
@@ -179,7 +180,7 @@ class SymmetricContractionWrapper:
                 layout_out=cueq_config.layout,
                 contraction_degree=correlation,
                 num_elements=num_elements,
-                original_mace=True,
+                original_mace=cueq_config.original_mace,
                 dtype=torch.get_default_dtype(),
                 math_dtype=torch.get_default_dtype(),
             )

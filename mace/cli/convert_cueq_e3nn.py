@@ -33,13 +33,13 @@ def get_transfer_keys(num_layers: int) -> List[str]:
 
 
 def get_kmax_pairs(
-    max_L: int, correlation: int, num_layers: int
+    num_product_irreps: int, correlation: int, num_layers: int
 ) -> List[Tuple[int, int]]:
-    """Determine kmax pairs based on max_L and correlation"""
+    """Determine kmax pairs based on num_product_irreps and correlation"""
     if correlation == 2:
         raise NotImplementedError("Correlation 2 not supported yet")
     if correlation == 3:
-        kmax_pairs = [[i, max_L] for i in range(num_layers - 1)]
+        kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
         kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
         return kmax_pairs
     raise NotImplementedError(f"Correlation {correlation} not supported")
@@ -48,12 +48,12 @@ def get_kmax_pairs(
 def transfer_symmetric_contractions(
     source_dict: Dict[str, torch.Tensor],
     target_dict: Dict[str, torch.Tensor],
-    max_L: int,
+    num_product_irreps: int,
     correlation: int,
     num_layers: int,
 ):
     """Transfer symmetric contraction weights from CuEq to E3nn format"""
-    kmax_pairs = get_kmax_pairs(max_L, correlation, num_layers)
+    kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
 
     for i, kmax in kmax_pairs:
         # Get the combined weight tensor from source
@@ -66,6 +66,13 @@ def transfer_symmetric_contractions(
                 key = f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix}"
                 target_shape = target_dict[key].shape
                 splits.append(target_shape[1])
+                if torch.equal(
+                    target_dict[key], torch.zeros_like(target_dict[key])
+                ):
+                    logging.warning(
+                        f"Weight {key} is all zeros, skipping transfer for this key."
+                    )
+                    splits[-1] = 0
 
         # Split the weights using the calculated sizes
         weights_split = torch.split(wm, splits, dim=1)
@@ -73,22 +80,29 @@ def transfer_symmetric_contractions(
         # Assign back to target dictionary
         idx = 0
         for k in range(kmax + 1):
+            # checj if it was skipped
             target_dict[
                 f"products.{i}.symmetric_contractions.contractions.{k}.weights_max"
-            ] = weights_split[idx]
+            ] = weights_split[idx] if splits[idx] > 0 else target_dict[
+                f"products.{i}.symmetric_contractions.contractions.{k}.weights_max"
+            ]
             target_dict[
                 f"products.{i}.symmetric_contractions.contractions.{k}.weights.0"
-            ] = weights_split[idx + 1]
+            ] = weights_split[idx + 1] if splits[idx + 1] > 0 else target_dict[
+                f"products.{i}.symmetric_contractions.contractions.{k}.weights.0"
+            ]
             target_dict[
                 f"products.{i}.symmetric_contractions.contractions.{k}.weights.1"
-            ] = weights_split[idx + 2]
+            ] = weights_split[idx + 2] if splits[idx + 2] > 0 else target_dict[
+                f"products.{i}.symmetric_contractions.contractions.{k}.weights.1"
+            ]
             idx += 3
 
 
 def transfer_weights(
     source_model: torch.nn.Module,
     target_model: torch.nn.Module,
-    max_L: int,
+    num_product_irreps: int,
     correlation: int,
     num_layers: int,
 ):
@@ -107,7 +121,7 @@ def transfer_weights(
 
     # Transfer symmetric contractions
     transfer_symmetric_contractions(
-        source_dict, target_dict, max_L, correlation, num_layers
+        source_dict, target_dict, num_product_irreps, correlation, num_layers
     )
 
     # Unsqueeze linear and skip_tp layers
@@ -156,7 +170,7 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
     config = extract_config_mace_model(source_model)
 
     # Get max_L and correlation from config
-    max_L = config["hidden_irreps"].lmax
+    num_product_irreps = len(config["hidden_irreps"].slices()) - 1
     correlation = config["correlation"]
 
     # Remove CuEq config
@@ -168,7 +182,7 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
 
     # Transfer weights with proper remapping
     num_layers = config["num_interactions"]
-    transfer_weights(source_model, target_model, max_L, correlation, num_layers)
+    transfer_weights(source_model, target_model, num_product_irreps, correlation, num_layers)
 
     if return_model:
         return target_model
@@ -206,3 +220,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
