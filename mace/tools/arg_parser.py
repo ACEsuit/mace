@@ -726,6 +726,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--restart_model",
+        help="Path to the model to restart from",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
         "--save_cpu",
         help="Save a model to be loaded on cpu",
         action="store_true",
