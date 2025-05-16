@@ -256,6 +256,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         use_sc: bool = True,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        use_reduced_cg: Optional[bool] = None,
     ) -> None:
         super().__init__()
 
@@ -266,6 +267,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             correlation=correlation,
             num_elements=num_elements,
             cueq_config=cueq_config,
+            use_reduced_cg=use_reduced_cg,
         )
         # Update linear
         self.linear = Linear(

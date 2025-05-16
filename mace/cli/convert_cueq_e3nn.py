@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 
 import torch
 
+from mace.modules.symmetric_contraction import EmptyParam
 from mace.tools.scripts_utils import extract_config_mace_model
 
 
@@ -66,9 +67,7 @@ def transfer_symmetric_contractions(
                 key = f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix}"
                 target_shape = target_dict[key].shape
                 splits.append(target_shape[1])
-                if torch.equal(
-                    target_dict[key], torch.zeros_like(target_dict[key])
-                ):
+                if target_dict.get(key + "_zeroed", False):
                     logging.warning(
                         f"Weight {key} is all zeros, skipping transfer for this key."
                     )

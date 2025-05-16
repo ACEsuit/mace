@@ -169,13 +169,11 @@ if CUET_AVAILABLE:
         irreps_out = cue.Irreps(O3_e3nn, str(irreps_out))
         for _, ir in irreps_out:
             try:
-                U_matrix = cue.reduced_symmetric_tensor_product_basis(
-                    irreps_in, correlation, keep_ir=ir, layout=cue.ir_mul
-                ).array     
-            except ValueError:
-                print(
-                    f"Warning: {ir} is not in the irreps_in {irreps_in} for correlation {correlation}. Skipping this irrep."
+                U_matrix_full = cue.reduced_symmetric_tensor_product_basis(
+                    irreps_in, correlation, keep_ir=ir, layout=cue.ir_mul,
                 )
+                U_matrix = U_matrix_full.array
+            except ValueError:
                 if ir.dim == 1:
                     out_shape = (*([irreps_in.dim] * correlation), 1)
                 else:
@@ -185,9 +183,6 @@ if CUET_AVAILABLE:
                     dtype=torch.get_default_dtype(),
                 )]
             if U_matrix.shape[-1] == 0:
-                print(
-                    f"Warning: {ir} has no valid U_matrix, for correlation {correlation}. Skipping this irrep."
-                )
                 if ir.dim == 1:
                     out_shape = (*([irreps_in.dim] * correlation), 1)
                 else:
@@ -198,10 +193,11 @@ if CUET_AVAILABLE:
                 )]
             ir_str = str(ir)
             U.append(ir_str)
-            U_matrix = U_matrix.reshape(ir.dim, *([irreps_in.dim] * correlation), -1)
+            U_matrix = torch.tensor(U_matrix.reshape(*([irreps_in.dim] * correlation), ir.dim, -1))
+            U_matrix = torch.moveaxis(U_matrix, -2, 0)
             if ir.dim == 1:
                 U_matrix = U_matrix[0]
-            U.append(torch.tensor(U_matrix))
+            U.append(U_matrix)
         return U
 
     class O3_e3nn(cue.O3):

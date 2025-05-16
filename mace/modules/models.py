@@ -59,6 +59,7 @@ class MACE(torch.nn.Module):
         gate: Optional[Callable],
         pair_repulsion: bool = False,
         apply_cutoff: bool = True,
+        use_reduced_cg: bool = True,
         distance_transform: str = "None",
         edge_irreps: Optional[o3.Irreps] = None,
         radial_MLP: Optional[List[int]] = None,
@@ -85,6 +86,7 @@ class MACE(torch.nn.Module):
         self.lammps_mliap = lammps_mliap
         self.apply_cutoff = apply_cutoff
         self.edge_irreps = edge_irreps
+        self.use_reduced_cg = use_reduced_cg
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -153,6 +155,7 @@ class MACE(torch.nn.Module):
             num_elements=num_elements,
             use_sc=use_sc_first,
             cueq_config=cueq_config,
+            use_reduced_cg=use_reduced_cg,
         )
         self.products = torch.nn.ModuleList([prod])
 
@@ -190,6 +193,7 @@ class MACE(torch.nn.Module):
                 num_elements=num_elements,
                 use_sc=True,
                 cueq_config=cueq_config,
+                use_reduced_cg=use_reduced_cg,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
@@ -523,6 +527,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         atomic_energies: Optional[
             None
         ],  # Just here to make it compatible with energy models, MUST be None
+        use_reduced_cg: bool = True,
         radial_type: Optional[str] = "bessel",
         radial_MLP: Optional[List[int]] = None,
         edge_irreps: Optional[o3.Irreps] = None,
@@ -586,6 +591,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             correlation=correlation,
             num_elements=num_elements,
             use_sc=use_sc_first,
+            use_reduced_cg=use_reduced_cg,
         )
         self.products = torch.nn.ModuleList([prod])
 
@@ -619,6 +625,7 @@ class AtomicDipolesMACE(torch.nn.Module):
                 correlation=correlation,
                 num_elements=num_elements,
                 use_sc=True,
+                use_reduced_cg=use_reduced_cg,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
@@ -729,6 +736,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         correlation: int,
         gate: Optional[Callable],
         atomic_energies: Optional[np.ndarray],
+        use_reduced_cg: bool = True,
         radial_MLP: Optional[List[int]] = None,
         edge_irreps: Optional[o3.Irreps] = None,
         cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
@@ -789,6 +797,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             correlation=correlation,
             num_elements=num_elements,
             use_sc=use_sc_first,
+            use_reduced_cg=use_reduced_cg,
         )
         self.products = torch.nn.ModuleList([prod])
 
@@ -822,6 +831,7 @@ class EnergyDipolesMACE(torch.nn.Module):
                 correlation=correlation,
                 num_elements=num_elements,
                 use_sc=True,
+                use_reduced_cg=use_reduced_cg,
             )
             self.products.append(prod)
             if i == num_interactions - 2:

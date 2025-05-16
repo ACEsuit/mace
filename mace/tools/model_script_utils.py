@@ -155,6 +155,7 @@ def configure_model(
             atomic_energies=atomic_energies,
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
+            use_reduced_cg=args.use_reduced_cg,
         )
         model_config_foundation = None
 

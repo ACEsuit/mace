@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 
 import torch
 
+from mace.modules.symmetric_contraction import EmptyParam
 from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.scripts_utils import extract_config_mace_model
 
@@ -55,25 +56,6 @@ def transfer_symmetric_contractions(
 ):
     """Transfer symmetric contraction weights"""
     kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
-
-    for i, kmax in kmax_pairs:
-        for k in range(kmax + 1):
-            for j in ["_max", ".0", ".1"]:
-                is_weight_zeros = (
-                    torch.equal(
-                        source_dict[
-                            f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}"
-                        ],
-                        torch.zeros_like(
-                            source_dict[
-                                f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}"
-                            ]
-                        ),
-                    )
-                )
-                print(
-                    f"Checking weights for products.{i}.symmetric_contractions.contractions.{k}.weights{j}: {is_weight_zeros}"
-                )
     for i, kmax in kmax_pairs:
         wm = torch.concatenate(
             [
@@ -82,16 +64,8 @@ def transfer_symmetric_contractions(
                 ]
                 for k in range(kmax + 1)
                 for j in ["_max", ".0", ".1"]
-                # only use the weights that are not all zeros
-                if not torch.equal(
-                    source_dict[
-                        f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}"
-                    ],
-                    torch.zeros_like(
-                        source_dict[
-                            f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}"
-                        ]
-                    ),
+                if not source_dict.get(
+                    f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}_zeroed", False
                 )
             ],
             dim=1,

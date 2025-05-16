@@ -29,6 +29,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         correlation: Union[int, Dict[str, int]],
         irrep_normalization: str = "component",
         path_normalization: str = "element",
+        use_reduced_cg: bool = False,
         internal_weights: Optional[bool] = None,
         shared_weights: Optional[bool] = None,
         num_elements: Optional[int] = None,
@@ -75,6 +76,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
                     internal_weights=self.internal_weights,
                     num_elements=num_elements,
                     weights=self.shared_weights,
+                    use_reduced_cg=use_reduced_cg,
                 )
             )
 
@@ -91,6 +93,7 @@ class Contraction(torch.nn.Module):
         irrep_out: o3.Irreps,
         correlation: int,
         internal_weights: bool = True,
+        use_reduced_cg: bool = False,
         num_elements: Optional[int] = None,
         weights: Optional[torch.Tensor] = None,
     ) -> None:
@@ -107,6 +110,7 @@ class Contraction(torch.nn.Module):
                 irreps_in=self.coupling_irreps,
                 irreps_out=irrep_out,
                 correlation=nu,
+                use_cueq_cg=use_reduced_cg,
                 dtype=dtype,
             )[-1]
             if torch.equal(U_matrix, torch.zeros_like(U_matrix)):
@@ -209,10 +213,24 @@ class Contraction(torch.nn.Module):
                     / num_params
                 )
                 self.weights.append(w)
-        for i, is_path_zeros in enumerate(path_weight):
-            if not is_path_zeros:
-                self.weights[i] = torch.zeros_like(self.weights[i]).requires_grad_(False)
                 
+        for idx, keep in enumerate(path_weight):
+            zero_flag = not keep
+            if idx < correlation - 1:
+                if zero_flag:
+                    self.weights[idx] = EmptyParam(self.weights[idx])
+                self.register_buffer(
+                    f"weights_{idx}_zeroed",
+                    torch.tensor(zero_flag, dtype=torch.bool),
+                )
+            else:
+                if zero_flag:
+                    self.weights_max = EmptyParam(self.weights_max)
+                self.register_buffer(
+                    "weights_max_zeroed",
+                    torch.tensor(zero_flag, dtype=torch.bool),
+                )
+        
         if not internal_weights:
             self.weights = weights[:-1]
             self.weights_max = weights[-1]
@@ -239,3 +257,11 @@ class Contraction(torch.nn.Module):
 
     def U_tensors(self, nu: int):
         return dict(self.named_buffers())[f"U_matrix_{nu}"]
+
+class EmptyParam(torch.nn.Parameter):
+    def __new__(cls, data):
+        zero = torch.zeros_like(data)
+        return super().__new__(cls, zero, requires_grad=False)
+
+    def requires_grad_(self, flag: bool=True):
+        return self
