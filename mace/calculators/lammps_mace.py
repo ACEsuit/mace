@@ -8,12 +8,22 @@ from mace.tools.scatter import scatter_sum
 
 @compile_mode("script")
 class LAMMPS_MACE(torch.nn.Module):
-    def __init__(self, model):
+    def __init__(self, model, **kwargs):
         super().__init__()
         self.model = model
         self.register_buffer("atomic_numbers", model.atomic_numbers)
         self.register_buffer("r_max", model.r_max)
         self.register_buffer("num_interactions", model.num_interactions)
+        if not hasattr(model, "heads"):
+            model.heads = [None]
+        self.register_buffer(
+            "head",
+            torch.tensor(
+                self.model.heads.index(kwargs.get("head", self.model.heads[-1])),
+                dtype=torch.long,
+            ).unsqueeze(0),
+        )
+
         for param in self.model.parameters():
             param.requires_grad = False
 
@@ -27,6 +37,7 @@ class LAMMPS_MACE(torch.nn.Module):
         compute_displacement = False
         if compute_virials:
             compute_displacement = True
+        data["head"] = self.head
         out = self.model(
             data,
             training=False,

@@ -64,7 +64,7 @@ class CheckpointIO:
         self._filename_extension = "pt"
 
     def _get_checkpoint_filename(self, epochs: int, swa_start=None) -> str:
-        if swa_start is not None and epochs > swa_start:
+        if swa_start is not None and epochs >= swa_start:
             return (
                 self.tag
                 + self._epochs_string

@@ -18,10 +18,13 @@ disable = [
     "missing-class-docstring",
     "missing-function-docstring",
     "too-many-arguments",
+    "too-many-positional-arguments",
     "too-many-locals",
+    "too-many-return-statements",
     "not-callable",
     "logging-fstring-interpolation",
     "logging-not-lazy",
+    "logging-too-many-args",
     "invalid-name",
     "too-few-public-methods",
     "too-many-instance-attributes",
@@ -30,6 +33,7 @@ disable = [
     "import-outside-toplevel",
     "cell-var-from-loop",
     "duplicate-code",
+    "use-dict-literal",
 ]
 
 [tool.pylint.MASTER]
@@ -37,3 +41,6 @@ ignore-paths = [
     "^mace/tools/torch_geometric/.*$",
     "^mace/tools/scatter.py$",
 ]
+
+[tool.pylint.FORMAT]
+max-module-lines = 1500

@@ -3,8 +3,6 @@ from typing import Callable, Dict, Optional, Type
 import torch
 
 from .blocks import (
-    AgnosticNonlinearInteractionBlock,
-    AgnosticResidualNonlinearInteractionBlock,
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
     InteractionBlock,
@@ -15,29 +13,25 @@ from .blocks import (
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     RealAgnosticAttResidualInteractionBlock,
+    RealAgnosticDensityInteractionBlock,
+    RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
-    ResidualElementDependentInteractionBlock,
     ScaleShiftBlock,
 )
 from .loss import (
     DipoleSingleLoss,
+    UniversalLoss,
     WeightedEnergyForcesDipoleLoss,
+    WeightedEnergyForcesL1L2Loss,
     WeightedEnergyForcesLoss,
     WeightedEnergyForcesStressLoss,
     WeightedEnergyForcesVirialsLoss,
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
 )
-from .models import (
-    MACE,
-    AtomicDipolesMACE,
-    BOTNet,
-    EnergyDipolesMACE,
-    ScaleShiftBOTNet,
-    ScaleShiftMACE,
-)
-from .radial import BesselBasis, GaussianBasis, PolynomialCutoff
+from .models import MACE, AtomicDipolesMACE, EnergyDipolesMACE, ScaleShiftMACE
+from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
     compute_avg_num_neighbors,
@@ -45,15 +39,15 @@ from .utils import (
     compute_mean_rms_energy_forces,
     compute_mean_std_atomic_inter_energy,
     compute_rms_dipoles,
+    compute_statistics,
 )
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {
-    "AgnosticNonlinearInteractionBlock": AgnosticNonlinearInteractionBlock,
-    "ResidualElementDependentInteractionBlock": ResidualElementDependentInteractionBlock,
-    "AgnosticResidualNonlinearInteractionBlock": AgnosticResidualNonlinearInteractionBlock,
     "RealAgnosticResidualInteractionBlock": RealAgnosticResidualInteractionBlock,
     "RealAgnosticAttResidualInteractionBlock": RealAgnosticAttResidualInteractionBlock,
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
+    "RealAgnosticDensityInteractionBlock": RealAgnosticDensityInteractionBlock,
+    "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
 }
 
 scaling_classes: Dict[str, Callable] = {
@@ -72,6 +66,7 @@ gate_dict: Dict[str, Optional[Callable]] = {
 __all__ = [
     "AtomicEnergiesBlock",
     "RadialEmbeddingBlock",
+    "ZBLBasis",
     "LinearNodeEmbeddingBlock",
     "LinearReadoutBlock",
     "EquivariantProductBasisBlock",
@@ -85,8 +80,6 @@ __all__ = [
     "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
-    "BOTNet",
-    "ScaleShiftBOTNet",
     "AtomicDipolesMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
@@ -96,9 +89,12 @@ __all__ = [
     "DipoleSingleLoss",
     "WeightedEnergyForcesDipoleLoss",
     "WeightedHuberEnergyForcesStressLoss",
+    "UniversalLoss",
+    "WeightedEnergyForcesL1L2Loss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",
     "compute_avg_num_neighbors",
+    "compute_statistics",
     "compute_fixed_charge_dipole",
 ]

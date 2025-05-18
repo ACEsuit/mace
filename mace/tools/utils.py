@@ -50,26 +50,44 @@ def setup_logger(
     level: Union[int, str] = logging.INFO,
     tag: Optional[str] = None,
     directory: Optional[str] = None,
+    rank: Optional[int] = 0,
 ):
+    # Create a logger
     logger = logging.getLogger()
-    logger.setLevel(level)
+    logger.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels
 
+    # Create formatters
     formatter = logging.Formatter(
         "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+    # Add filter for rank
+    logger.addFilter(lambda _: rank == 0)
+
+    # Create console handler
     ch = logging.StreamHandler(stream=sys.stdout)
+    ch.setLevel(level)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    if (directory is not None) and (tag is not None):
+    if directory is not None and tag is not None:
         os.makedirs(name=directory, exist_ok=True)
-        path = os.path.join(directory, tag + ".log")
-        fh = logging.FileHandler(path)
-        fh.setFormatter(formatter)
 
-        logger.addHandler(fh)
+        # Create file handler for non-debug logs
+        main_log_path = os.path.join(directory, f"{tag}.log")
+        fh_main = logging.FileHandler(main_log_path)
+        fh_main.setLevel(level)
+        fh_main.setFormatter(formatter)
+        logger.addHandler(fh_main)
+
+        # Create file handler for debug logs
+        debug_log_path = os.path.join(directory, f"{tag}_debug.log")
+        fh_debug = logging.FileHandler(debug_log_path)
+        fh_debug.setLevel(logging.DEBUG)
+        fh_debug.setFormatter(formatter)
+        fh_debug.addFilter(lambda record: record.levelno >= logging.DEBUG)
+        logger.addHandler(fh_debug)
 
 
 class AtomicNumberTable:
@@ -103,26 +121,6 @@ def atomic_numbers_to_indices(
     return to_index_fn(atomic_numbers)
 
 
-def get_optimizer(
-    name: str,
-    amsgrad: bool,
-    learning_rate: float,
-    weight_decay: float,
-    parameters: Iterable[torch.Tensor],
-) -> torch.optim.Optimizer:
-    if name == "adam":
-        return torch.optim.Adam(
-            parameters, lr=learning_rate, amsgrad=amsgrad, weight_decay=weight_decay
-        )
-
-    if name == "adamw":
-        return torch.optim.AdamW(
-            parameters, lr=learning_rate, amsgrad=amsgrad, weight_decay=weight_decay
-        )
-
-    raise RuntimeError(f"Unknown optimizer '{name}'")
-
-
 class UniversalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, np.integer):
@@ -143,8 +141,26 @@ class MetricsLogger:
         self.path = os.path.join(self.directory, self.filename)
 
     def log(self, d: Dict[str, Any]) -> None:
-        logging.debug(f"Saving info: {self.path}")
         os.makedirs(name=self.directory, exist_ok=True)
         with open(self.path, mode="a", encoding="utf-8") as f:
             f.write(json.dumps(d, cls=UniversalEncoder))
             f.write("\n")
+
+
+# pylint: disable=abstract-method, arguments-differ
+class LAMMPS_MP(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, *args):
+        feats, data = args  # unpack
+        ctx.vec_len = feats.shape[-1]
+        ctx.data = data
+        out = torch.empty_like(feats)
+        data.forward_exchange(feats, out, ctx.vec_len)
+        return out
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        (grad,) = grad_outputs  # unpack
+        gout = torch.empty_like(grad)
+        ctx.data.reverse_exchange(grad, gout, ctx.vec_len)
+        return gout, None

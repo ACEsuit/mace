@@ -21,3 +21,20 @@ build/
 
 # Distribution
 dist/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# DS_Store
+.DS_Store
+*.models
+*.pt
+/wandb
+*.xyz
+/checkpoints
+*.model
+/results
+*.db
+
+.benchmarks
+*.png
