@@ -5,12 +5,30 @@
 ###########################################################################################
 
 import argparse
-import ast
-from typing import List, Optional, Union
+import os
+from typing import Optional
+
+from .default_keys import DefaultKeys
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
+    try:
+        import configargparse
+
+        parser = configargparse.ArgumentParser(
+            config_file_parser_class=configargparse.YAMLConfigFileParser,
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        parser.add(
+            "--config",
+            type=str,
+            is_config_file=True,
+            help="config file to aggregate options",
+        )
+    except ImportError:
+        parser = argparse.ArgumentParser(
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
 
     # Name and seed
     parser.add_argument("--name", help="experiment name", required=True)
@@ -18,22 +36,28 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
 
     # Directories
     parser.add_argument(
-        "--log_dir", help="directory for log files", type=str, default="logs"
+        "--work_dir",
+        help="set directory for all files and folders",
+        type=str,
+        default=".",
     )
     parser.add_argument(
-        "--model_dir", help="directory for final model", type=str, default="."
+        "--log_dir", help="directory for log files", type=str, default=None
+    )
+    parser.add_argument(
+        "--model_dir", help="directory for final model", type=str, default=None
     )
     parser.add_argument(
         "--checkpoints_dir",
         help="directory for checkpoint files",
         type=str,
-        default="checkpoints",
+        default=None,
     )
     parser.add_argument(
-        "--results_dir", help="directory for results", type=str, default="results"
+        "--results_dir", help="directory for results", type=str, default=None
     )
     parser.add_argument(
-        "--downloads_dir", help="directory for downloads", type=str, default="downloads"
+        "--downloads_dir", help="directory for downloads", type=str, default=None
     )
 
     # Device and logging
@@ -41,7 +65,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--device",
         help="select device",
         type=str,
-        choices=["cpu", "cuda", "mps"],
+        choices=["cpu", "cuda", "mps", "xpu"],
         default="cpu",
     )
     parser.add_argument(
@@ -51,7 +75,27 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=["float32", "float64"],
         default="float64",
     )
+    parser.add_argument(
+        "--distributed",
+        help="train in multi-GPU data parallel mode",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
+
+    parser.add_argument(
+        "--plot",
+        help="Plot results of training",
+        type=str2bool,
+        default=True,
+    )
+
+    parser.add_argument(
+        "--plot_frequency",
+        help="Set plotting frequency: '0' for only at the end or an integer N to plot every N epochs.",
+        type=int,
+        default="0",
+    )
 
     parser.add_argument(
         "--error_table",
@@ -61,6 +105,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "PerAtomRMSE",
             "TotalRMSE",
             "PerAtomRMSEstressvirials",
+            "PerAtomMAEstressvirials",
             "PerAtomMAE",
             "TotalMAE",
             "DipoleRMSE",
@@ -92,7 +137,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="type of radial basis functions",
         type=str,
         default="bessel",
-        choices=["bessel", "gaussian"],
+        choices=["bessel", "gaussian", "chebyshev"],
     )
     parser.add_argument(
         "--num_radial_basis",
@@ -107,6 +152,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=5,
     )
     parser.add_argument(
+        "--pair_repulsion",
+        help="use pair repulsion term with ZBL potential",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--distance_transform",
+        help="use distance transform for radial basis functions",
+        default="None",
+        choices=["None", "Agnesi", "Soft"],
+    )
+    parser.add_argument(
         "--interaction",
         help="name of interaction block",
         type=str,
@@ -115,6 +172,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticResidualInteractionBlock",
             "RealAgnosticAttResidualInteractionBlock",
             "RealAgnosticInteractionBlock",
+            "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticDensityResidualInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -125,16 +184,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=[
             "RealAgnosticResidualInteractionBlock",
             "RealAgnosticInteractionBlock",
+            "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticDensityResidualInteractionBlock",
         ],
     )
     parser.add_argument(
         "--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3
     )
     parser.add_argument(
-        "--correlation",
-        help="correlation order at each layer",
-        type=listint_or_int,
-        default=3,
+        "--correlation", help="correlation order at each layer", type=int, default=3
     )
     parser.add_argument(
         "--num_interactions", help="number of interactions", type=int, default=2
@@ -155,7 +213,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--hidden_irreps",
         help="irreps for hidden node states",
         type=str,
-        default="128x0e + 128x1o",
+        default=None,
     )
     # add option to specify irreps by channel number and max L
     parser.add_argument(
@@ -193,29 +251,32 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compute_avg_num_neighbors",
         help="normalization factor for the message",
-        type=bool,
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
         "--compute_stress",
         help="Select True to compute stress",
-        type=bool,
+        type=str2bool,
         default=False,
     )
     parser.add_argument(
         "--compute_forces",
         help="Select True to compute forces",
-        type=bool,
+        type=str2bool,
         default=True,
     )
 
     # Dataset
     parser.add_argument(
-        "--train_file", help="Training set xyz file", type=str, required=True
+        "--train_file",
+        help="Training set file, format is .xyz or .h5",
+        type=str,
+        required=False,
     )
     parser.add_argument(
         "--valid_file",
-        help="Validation set xyz file",
+        help="Validation set .xyz or .h5 file",
         default=None,
         type=str,
         required=False,
@@ -229,8 +290,62 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--test_file",
-        help="Test set xyz file",
+        help="Test set .xyz pt .h5 file",
         type=str,
+    )
+    parser.add_argument(
+        "--test_dir",
+        help="Path to directory with test files named as test_*.h5",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--multi_processed_test",
+        help="Boolean value for whether the test data was multiprocessed",
+        type=str2bool,
+        default=False,
+        required=False,
+    )
+    parser.add_argument(
+        "--num_workers",
+        help="Number of workers for data loading",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--pin_memory",
+        help="Pin memory for data loading",
+        default=True,
+        type=str2bool,
+    )
+    parser.add_argument(
+        "--atomic_numbers",
+        help="List of atomic numbers",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--mean",
+        help="Mean energy per atom of training set",
+        type=float,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--std",
+        help="Standard deviation of force components in the training set",
+        type=float,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--statistics_file",
+        help="json file containing statistics of training set",
+        type=str,
+        default=None,
+        required=False,
     )
     parser.add_argument(
         "--E0s",
@@ -239,41 +354,138 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=None,
         required=False,
     )
+
+    # Fine-tuning
+    parser.add_argument(
+        "--foundation_filter_elements",
+        help="Filter element during fine-tuning",
+        type=str2bool,
+        default=True,
+        required=False,
+    )
+    parser.add_argument(
+        "--heads",
+        help="Dict of heads: containing individual files and E0s",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--multiheads_finetuning",
+        help="Boolean value for whether the model is multiheaded",
+        type=str2bool,
+        default=True,
+    )
+    parser.add_argument(
+        "--foundation_head",
+        help="Name of the head to use for fine-tuning",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--weight_pt_head",
+        help="Weight of the pretrained head in the loss function",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--num_samples_pt",
+        help="Number of samples in the pretrained head",
+        type=int,
+        default=10000,
+    )
+    parser.add_argument(
+        "--force_mh_ft_lr",
+        help="Force the multiheaded fine-tuning to use arg_parser lr",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--subselect_pt",
+        help="Method to subselect the configurations of the pretraining set",
+        choices=["fps", "random"],
+        default="random",
+    )
+    parser.add_argument(
+        "--filter_type_pt",
+        help="Filtering method for collecting the pretraining set",
+        choices=["none", "combinations", "inclusive", "exclusive"],
+        default="none",
+    )
+    parser.add_argument(
+        "--pt_train_file",
+        help="Training set file for the pretrained head",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--pt_valid_file",
+        help="Validation set file for the pretrained head",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--foundation_model_elements",
+        help="Keep all elements of the foundation model during fine-tuning",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--keep_isolated_atoms",
+        help="Keep isolated atoms in the dataset, useful for transfer learning",
+        type=str2bool,
+        default=False,
+    )
+
+    # Keys
     parser.add_argument(
         "--energy_key",
         help="Key of reference energies in training xyz",
         type=str,
-        default="energy",
+        default=DefaultKeys.ENERGY.value,
     )
     parser.add_argument(
         "--forces_key",
         help="Key of reference forces in training xyz",
         type=str,
-        default="forces",
+        default=DefaultKeys.FORCES.value,
     )
     parser.add_argument(
         "--virials_key",
         help="Key of reference virials in training xyz",
         type=str,
-        default="virials",
+        default=DefaultKeys.VIRIALS.value,
     )
     parser.add_argument(
         "--stress_key",
         help="Key of reference stress in training xyz",
         type=str,
-        default="stress",
+        default=DefaultKeys.STRESS.value,
     )
     parser.add_argument(
         "--dipole_key",
         help="Key of reference dipoles in training xyz",
         type=str,
-        default="dipole",
+        default=DefaultKeys.DIPOLE.value,
+    )
+    parser.add_argument(
+        "--head_key",
+        help="Key of head in training xyz",
+        type=str,
+        default=DefaultKeys.HEAD.value,
     )
     parser.add_argument(
         "--charges_key",
         help="Key of atomic charges in training xyz",
         type=str,
-        default="charges",
+        default=DefaultKeys.CHARGES.value,
+    )
+    parser.add_argument(
+        "--skip_evaluate_heads",
+        help="Comma-separated list of heads to skip during final evaluation",
+        type=str,
+        default="pt_head",
     )
 
     # Loss and optimization
@@ -289,7 +501,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "stress",
             "dipole",
             "huber",
+            "universal",
             "energy_forces_dipole",
+            "l1l2energyforces",
         ],
     )
     parser.add_argument(
@@ -297,45 +511,55 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--swa_forces_weight",
-        help="weight of forces loss after starting swa",
+        "--stage_two_forces_weight",
+        help="weight of forces loss after starting Stage Two (previously called swa)",
         type=float,
         default=100.0,
+        dest="swa_forces_weight",
     )
     parser.add_argument(
         "--energy_weight", help="weight of energy loss", type=float, default=1.0
     )
     parser.add_argument(
         "--swa_energy_weight",
-        help="weight of energy loss after starting swa",
+        "--stage_two_energy_weight",
+        help="weight of energy loss after starting Stage Two (previously called swa)",
         type=float,
         default=1000.0,
+        dest="swa_energy_weight",
     )
     parser.add_argument(
         "--virials_weight", help="weight of virials loss", type=float, default=1.0
     )
     parser.add_argument(
         "--swa_virials_weight",
-        help="weight of virials loss after starting swa",
+        "--stage_two_virials_weight",
+        help="weight of virials loss after starting Stage Two (previously called swa)",
         type=float,
         default=10.0,
+        dest="swa_virials_weight",
     )
     parser.add_argument(
-        "--stress_weight", help="weight of virials loss", type=float, default=1.0
+        "--stress_weight", help="weight of stress loss", type=float, default=1.0
     )
     parser.add_argument(
         "--swa_stress_weight",
-        help="weight of stress loss after starting swa",
+        "--stage_two_stress_weight",
+        help="weight of stress loss after starting Stage Two (previously called swa)",
         type=float,
         default=10.0,
+        dest="swa_stress_weight",
     )
     parser.add_argument(
         "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0
     )
     parser.add_argument(
         "--swa_dipole_weight",
-        help="weight of dipoles after starting swa",
+        "--stage_two_dipole_weight",
+        help="weight of dipoles after starting Stage Two (previously called swa)",
         type=float,
         default=1.0,
+        dest="swa_dipole_weight",
     )
     parser.add_argument(
         "--config_type_weights",
@@ -354,7 +578,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Optimizer for parameter optimization",
         type=str,
         default="adam",
-        choices=["adam", "adamw"],
+        choices=["adam", "adamw", "schedulefree"],
+    )
+    parser.add_argument(
+        "--beta",
+        help="Beta parameter for the optimizer",
+        type=float,
+        default=0.9,
     )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
@@ -364,7 +594,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--lr", help="Learning rate of optimizer", type=float, default=0.01
     )
     parser.add_argument(
-        "--swa_lr", help="Learning rate of optimizer in swa", type=float, default=1e-3
+        "--swa_lr",
+        "--stage_two_lr",
+        help="Learning rate of optimizer in Stage Two (previously called swa)",
+        type=float,
+        default=1e-3,
+        dest="swa_lr",
     )
     parser.add_argument(
         "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
@@ -392,15 +627,25 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--swa",
-        help="use Stochastic Weight Averaging, which decreases the learning rate and increases the energy weight at the end of the training to help converge them",
+        "--stage_two",
+        help="use Stage Two loss weight, which decreases the learning rate and increases the energy weight at the end of the training to help converge them",
         action="store_true",
         default=False,
+        dest="swa",
     )
     parser.add_argument(
         "--start_swa",
-        help="Number of epochs before switching to swa",
+        "--start_stage_two",
+        help="Number of epochs before changing to Stage Two loss weights",
         type=int,
         default=None,
+        dest="start_swa",
+    )
+    parser.add_argument(
+        "--lbfgs",
+        help="Switch to L-BFGS optimizer",
+        action="store_true",
+        default=False,
     )
     parser.add_argument(
         "--ema",
@@ -424,11 +669,29 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=2048,
     )
     parser.add_argument(
-        "--eval_interval", help="evaluate model every <n> epochs", type=int, default=2
+        "--foundation_model",
+        help="Path to the foundation model for transfer learning",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--foundation_model_readout",
+        help="Use readout of foundation model for transfer learning",
+        action="store_false",
+        default=True,
+    )
+    parser.add_argument(
+        "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
     )
     parser.add_argument(
         "--keep_checkpoints",
         help="keep all checkpoints",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--save_all_checkpoints",
+        help="save all checkpoints",
         action="store_true",
         default=False,
     )
@@ -450,6 +713,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=check_float_or_none,
         default=10.0,
     )
+    parser.add_argument(
+        "--dry_run",
+        help="Run all steps upto training to test settings.",
+        action="store_true",
+        default=False,
+    )
+    # option for cuequivariance acceleration
+    parser.add_argument(
+        "--enable_cueq",
+        help="Enable cuequivariance acceleration",
+        type=str2bool,
+        default=False,
+    )
     # options for using Weights and Biases for experiment tracking
     # to install see https://wandb.ai
     parser.add_argument(
@@ -457,6 +733,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Use Weights and Biases for experiment tracking",
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "--wandb_dir",
+        help="An absolute path to a directory where Weights and Biases metadata will be stored",
+        type=str,
+        default=None,
     )
     parser.add_argument(
         "--wandb_project",
@@ -497,6 +779,177 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_preprocess_arg_parser() -> argparse.ArgumentParser:
+    try:
+        import configargparse
+
+        parser = configargparse.ArgumentParser(
+            config_file_parser_class=configargparse.YAMLConfigFileParser,
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        parser.add(
+            "--config",
+            type=str,
+            is_config_file=True,
+            help="config file to aggregate options",
+        )
+    except ImportError:
+        parser = argparse.ArgumentParser(
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+    parser.add_argument(
+        "--train_file",
+        help="Training set h5 file",
+        type=str,
+        default=None,
+        required=True,
+    )
+    parser.add_argument(
+        "--valid_file",
+        help="Training set xyz file",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--num_process",
+        help="The user defined number of processes to use, as well as the number of files created.",
+        type=int,
+        default=int(os.cpu_count() / 4),
+    )
+    parser.add_argument(
+        "--valid_fraction",
+        help="Fraction of training set used for validation",
+        type=float,
+        default=0.1,
+        required=False,
+    )
+    parser.add_argument(
+        "--test_file",
+        help="Test set xyz file",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--work_dir",
+        help="set directory for all files and folders",
+        type=str,
+        default=".",
+    )
+    parser.add_argument(
+        "--h5_prefix",
+        help="Prefix for h5 files when saving",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
+    )
+    parser.add_argument(
+        "--config_type_weights",
+        help="String of dictionary containing the weights for each config type",
+        type=str,
+        default='{"Default":1.0}',
+    )
+    parser.add_argument(
+        "--energy_key",
+        help="Key of reference energies in training xyz",
+        type=str,
+        default=DefaultKeys.ENERGY.value,
+    )
+    parser.add_argument(
+        "--forces_key",
+        help="Key of reference forces in training xyz",
+        type=str,
+        default=DefaultKeys.FORCES.value,
+    )
+    parser.add_argument(
+        "--virials_key",
+        help="Key of reference virials in training xyz",
+        type=str,
+        default=DefaultKeys.VIRIALS.value,
+    )
+    parser.add_argument(
+        "--stress_key",
+        help="Key of reference stress in training xyz",
+        type=str,
+        default=DefaultKeys.STRESS.value,
+    )
+    parser.add_argument(
+        "--dipole_key",
+        help="Key of reference dipoles in training xyz",
+        type=str,
+        default=DefaultKeys.DIPOLE.value,
+    )
+    parser.add_argument(
+        "--charges_key",
+        help="Key of atomic charges in training xyz",
+        type=str,
+        default=DefaultKeys.CHARGES.value,
+    )
+    parser.add_argument(
+        "--atomic_numbers",
+        help="List of atomic numbers",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--compute_statistics",
+        help="Compute statistics for the dataset",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--batch_size",
+        help="batch size to compute average number of neighbours",
+        type=int,
+        default=16,
+    )
+
+    parser.add_argument(
+        "--scaling",
+        help="type of scaling to the output",
+        type=str,
+        default="rms_forces_scaling",
+        choices=["std_scaling", "rms_forces_scaling", "no_scaling"],
+    )
+    parser.add_argument(
+        "--E0s",
+        help="Dictionary of isolated atom energies",
+        type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--shuffle",
+        help="Shuffle the training dataset",
+        type=str2bool,
+        default=True,
+    )
+    parser.add_argument(
+        "--seed",
+        help="Random seed for splitting training and validation sets",
+        type=int,
+        default=123,
+    )
+    parser.add_argument(
+        "--head_key",
+        help="Key of head in training xyz",
+        type=str,
+        default=DefaultKeys.HEAD.value,
+    )
+    parser.add_argument(
+        "--heads",
+        help="Dict of heads: containing individual files and E0s",
+        type=str,
+        default=None,
+        required=False,
+    )
+    return parser
+
+
 def check_float_or_none(value: str) -> Optional[float]:
     try:
         return float(value)
@@ -508,7 +961,11 @@ def check_float_or_none(value: str) -> Optional[float]:
         return None
 
 
-def listint_or_int(value: Union[str, int]) -> Union[List[int], int]:
-    if isinstance(value, str):
-        return ast.literal_eval(value)
-    return int(value)
+def str2bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    if value.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    raise argparse.ArgumentTypeError("Boolean value expected.")

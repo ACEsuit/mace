@@ -5,7 +5,8 @@
 ###########################################################################################
 
 import logging
-from typing import Dict
+from contextlib import contextmanager
+from typing import Dict, Union
 
 import numpy as np
 import torch
@@ -63,6 +64,9 @@ def init_device(device_str: str) -> torch.device:
         assert torch.backends.mps.is_available(), "No MPS backend is available!"
         logging.info("Using MPS GPU acceleration")
         return torch.device("mps")
+    if device_str == "xpu":
+        torch.xpu.is_available()
+        return torch.device("xpu")
 
     logging.info("Using CPU")
     return torch.device("cpu")
@@ -73,17 +77,6 @@ dtype_dict = {"float32": torch.float32, "float64": torch.float64}
 
 def set_default_dtype(dtype: str) -> None:
     torch.set_default_dtype(dtype_dict[dtype])
-
-
-def get_complex_default_dtype():
-    default_dtype = torch.get_default_dtype()
-    if default_dtype == torch.float64:
-        return torch.complex128
-
-    if default_dtype == torch.float32:
-        return torch.complex64
-
-    raise NotImplementedError
 
 
 def spherical_to_cartesian(t: torch.Tensor):
@@ -129,7 +122,32 @@ def voigt_to_matrix(t: torch.Tensor):
     )
 
 
-def init_wandb(project: str, entity: str, name: str, config: dict):
+def init_wandb(project: str, entity: str, name: str, config: dict, directory: str):
     import wandb
 
-    wandb.init(project=project, entity=entity, name=name, config=config)
+    wandb.init(
+        project=project,
+        entity=entity,
+        name=name,
+        config=config,
+        dir=directory,
+        resume="allow",
+    )
+
+
+@contextmanager
+def default_dtype(dtype: Union[torch.dtype, str]):
+    """Context manager for configuring the default_dtype used by torch
+
+    Args:
+        dtype (torch.dtype|str): the default dtype to use within this context manager
+    """
+    init = torch.get_default_dtype()
+    if isinstance(dtype, str):
+        set_default_dtype(dtype)
+    else:
+        torch.set_default_dtype(dtype)
+
+    yield
+
+    torch.set_default_dtype(init)

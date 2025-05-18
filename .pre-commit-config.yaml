@@ -1,0 +1,60 @@
+exclude: &exclude_files >
+    (?x)^(
+        docs/.*|
+        tests/.*|
+        .github/.*|
+        LICENSE.md|
+        README.md|
+    )$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.5.0
+    hooks:
+    -   id: mixed-line-ending
+    -   id: trailing-whitespace
+        exclude: *exclude_files
+
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 24.4.0
+    hooks:
+      - id: black
+        name: Black Formating
+        exclude: *exclude_files
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: Sort imports
+        exclude: *exclude_files
+
+  - repo: https://github.com/PyCQA/pylint
+    rev: pylint-2.5.2
+    hooks:
+    -   id: pylint
+        language: system
+        args: [
+          '--disable=line-too-long',
+          '--disable=no-member',
+          '--disable=missing-module-docstring',
+          '--disable=missing-class-docstring',
+          '--disable=missing-function-docstring',
+          '--disable=too-many-arguments',
+          '--disable=too-many-positional-arguments',
+          '--disable=too-many-locals',
+          '--disable=not-callable',
+          '--disable=logging-fstring-interpolation',
+          '--disable=logging-not-lazy',
+          '--disable=invalid-name',
+          '--disable=too-few-public-methods',
+          '--disable=too-many-instance-attributes',
+          '--disable=too-many-statements',
+          '--disable=too-many-branches',
+          '--disable=import-outside-toplevel',
+          '--disable=cell-var-from-loop',
+          '--disable=duplicate-code',
+          '--disable=use-dict-literal',
+          '--max-module-lines=1500',
+        ]
+        exclude: *exclude_files

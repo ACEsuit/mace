@@ -1,4 +1,5 @@
 """Demonstrates active learning molecular dynamics with constant temperature."""
+
 import argparse
 import os
 import time
@@ -13,7 +14,9 @@ from mace.calculators.mace import MACECalculator
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--config", help="path to XYZ configurations", required=True)
     parser.add_argument(
         "--config_index", help="index of configuration", type=int, default=-1
@@ -137,16 +140,19 @@ def stop_error(dyn, threshold, reg=0.2):
         dyn.max_steps = 0
 
 
-def main():
+def main() -> None:
     args = parse_args()
+    run(args)
 
+
+def run(args: argparse.Namespace) -> None:
     mace_fname = args.model
     atoms_fname = args.config
     atoms_index = args.config_index
 
     mace_calc = MACECalculator(
-        mace_fname,
-        args.device,
+        model_paths=mace_fname,
+        device=args.device,
         default_dtype=args.default_dtype,
     )
 
