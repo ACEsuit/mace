@@ -111,15 +111,15 @@ def U_matrix_real(
     filter_ir_mid=None,
     dtype=None,
     use_cueq_cg=True,
+    use_nonsymmetric_product=False,
 ):
     irreps_out = o3.Irreps(irreps_out)
     irrepss = [o3.Irreps(irreps_in)] * correlation
 
-    if correlation == 4:
-        filter_ir_mid = [(i, 1 if i % 2 == 0 else -1) for i in range(12)]
-
     if use_cueq_cg is None:
         use_cueq_cg = USE_CUEQ_CG
+    if correlation == 4 and not use_cueq_cg:
+        filter_ir_mid = [(i, 1 if i % 2 == 0 else -1) for i in range(12)]
     if use_cueq_cg and CUET_AVAILABLE:
         return compute_U_cueq(irreps_in, irreps_out=irreps_out, correlation=correlation, dtype=dtype)
 
@@ -128,7 +128,7 @@ def U_matrix_real(
     except NotImplementedError as e:
         if CUET_AVAILABLE:
             return compute_U_cueq(
-                irreps_in, irreps_out=irreps_out, correlation=correlation, dtype=dtype
+                irreps_in, irreps_out=irreps_out, correlation=correlation, use_nonsymmetric_product=use_nonsymmetric_product, dtype=dtype
             )
         raise NotImplementedError(
             "The requested Clebsch-Gordan coefficients are not implemented, please install cuequivariance; pip install cuequivariance"
@@ -163,7 +163,7 @@ def U_matrix_real(
 
 if CUET_AVAILABLE:
 
-    def compute_U_cueq(irreps_in, irreps_out, correlation=2, dtype=None):
+    def compute_U_cueq(irreps_in, irreps_out, correlation=2, use_nonsymmetric_product=False, dtype=None):
         if dtype is None:
             dtype = torch.get_default_dtype()
         U = []
@@ -171,10 +171,23 @@ if CUET_AVAILABLE:
         irreps_out = cue.Irreps(O3_e3nn, str(irreps_out))
         for _, ir in irreps_out:
             try:
-                U_matrix_full = cue.reduced_symmetric_tensor_product_basis(
+                U_matrix_full_symm = cue.reduced_symmetric_tensor_product_basis(
                     irreps_in, correlation, keep_ir=ir, layout=cue.ir_mul,
                 )
-                U_matrix = U_matrix_full.array
+                U_matrix_full_symm = U_matrix_full_symm.array
+                if use_nonsymmetric_product:
+                    try:
+                        U_matrix_full_antisymmetric = cue.reduced_antisymmetric_tensor_product_basis(
+                            irreps_in, correlation, keep_ir=ir, layout=cue.ir_mul,
+                        ).array
+                        U_matrix_full = torch.cat(
+                            (U_matrix_full_symm, U_matrix_full_antisymmetric), dim=-1
+                        )
+                    except ValueError:
+                        continue
+                else:
+                    U_matrix_full = U_matrix_full_symm
+                        
             except ValueError:
                 if ir.dim == 1:
                     out_shape = (*([irreps_in.dim] * correlation), 1)
@@ -184,7 +197,7 @@ if CUET_AVAILABLE:
                     out_shape,
                     dtype=torch.get_default_dtype(),
                 )]
-            if U_matrix.shape[-1] == 0:
+            if U_matrix_full.shape[-1] == 0:
                 if ir.dim == 1:
                     out_shape = (*([irreps_in.dim] * correlation), 1)
                 else:
@@ -195,11 +208,11 @@ if CUET_AVAILABLE:
                 )]
             ir_str = str(ir)
             U.append(ir_str)
-            U_matrix = torch.tensor(U_matrix.reshape(*([irreps_in.dim] * correlation), ir.dim, -1), dtype=dtype)
-            U_matrix = torch.moveaxis(U_matrix, -2, 0)
+            U_matrix_full = torch.tensor(U_matrix_full.reshape(*([irreps_in.dim] * correlation), ir.dim, -1), dtype=dtype)
+            U_matrix_full = torch.moveaxis(U_matrix_full, -2, 0)
             if ir.dim == 1:
-                U_matrix = U_matrix[0]
-            U.append(U_matrix)
+                U_matrix_full = U_matrix_full[0]
+            U.append(U_matrix_full)
         return U
 
     class O3_e3nn(cue.O3):

@@ -202,6 +202,9 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--correlation", help="correlation order at each layer", type=int, default=3
     )
     parser.add_argument(
+        "--use_nonsymmetric_product", help="use non-symmetric product", type=str2bool, default=False
+    )
+    parser.add_argument(
         "--use_reduced_cg", help="use reduced generalized Clebsch-Gordan coefficients", type=str2bool, default=True
     )
     parser.add_argument(

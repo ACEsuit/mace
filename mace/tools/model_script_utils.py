@@ -156,6 +156,7 @@ def configure_model(
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
             use_reduced_cg=args.use_reduced_cg,
+            use_nonsymmetric_product=args.use_nonsymmetric_product,
         )
         model_config_foundation = None
 

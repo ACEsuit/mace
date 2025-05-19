@@ -96,10 +96,10 @@ class TestCueq:
     @pytest.mark.parametrize(
         "hidden_irreps",
         [
-            # o3.Irreps("32x0e + 32x0o + 32x1o"),
+            o3.Irreps("32x0e + 32x1o + 32x1e"),
             # o3.Irreps("32x0e + 32x1o + 32x2e"),
             # o3.Irreps("32x0e"),
-            o3.Irreps("16x0e + 16x1o"),
+            # o3.Irreps("2x0e + 2x1o"),
         ],
     )
     @pytest.mark.parametrize("default_dtype", [torch.float32])
@@ -131,9 +131,6 @@ class TestCueq:
         )
 
         # Check outputs match for both conversions
-        print(out_e3nn["energy"])
-        print(out_cueq["energy"])
-        print(out_e3nn_back["energy"])
         torch.testing.assert_close(out_e3nn["energy"], out_cueq["energy"])
         torch.testing.assert_close(out_cueq["energy"], out_e3nn_back["energy"])
         torch.testing.assert_close(out_e3nn["forces"], out_cueq["forces"])

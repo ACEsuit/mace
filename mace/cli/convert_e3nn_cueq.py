@@ -5,9 +5,13 @@ from typing import Dict, List, Tuple
 
 import torch
 
-from mace.modules.symmetric_contraction import EmptyParam
 from mace.modules.wrapper_ops import CuEquivarianceConfig
+from mace.tools.cg import O3_e3nn
+from mace.tools.cg_cueq_tools import symmetric_contraction_proj
 from mace.tools.scripts_utils import extract_config_mace_model
+import cuequivariance as cue
+from e3nn import o3
+
 
 
 def get_transfer_keys(num_layers: int) -> List[str]:
@@ -51,41 +55,54 @@ def transfer_symmetric_contractions(
     source_dict: Dict[str, torch.Tensor],
     target_dict: Dict[str, torch.Tensor],
     num_product_irreps: int,
+    products: torch.nn.Module,
     correlation: int,
     num_layers: int,
     use_reduced_cg: bool,
 ):
     """Transfer symmetric contraction weights"""
     kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
+    suffixes = ["_max", ".0", ".1"]
     for i, kmax in kmax_pairs:
-        for k in range(kmax + 1):
-            for j in ["_max", ".0", ".1"]:
-                print("Weights for",
-                      f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}")
-                print(source_dict.get(
-                    f"products.{i}.symmetric_contractions.contractions.{k}.weights{j.replace('.', '_')}_zeroed",
-                    False,
-                ))
-    if use_reduced_cg:
-        suffixes = [".1", ".0", "_max"]
-    else:
-        suffixes = ["_max", ".0", ".1"]
-    for i, kmax in kmax_pairs:
-        wm = torch.concatenate(
-            [
-                source_dict[
-                    f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}"
-                ]
-                for k in range(kmax + 1)
-                for j in suffixes
-                if not source_dict.get(
-                    f"products.{i}.symmetric_contractions.contractions.{k}.weights{j.replace('.', '_')}_zeroed", False
-                )
-            ],
-            dim=1,
-        )
+        irreps_in = o3.Irreps(irrep.ir for irrep in products[i].symmetric_contractions.irreps_in)
+        irreps_out = o3.Irreps(irrep.ir for irrep in products[i].symmetric_contractions.irreps_out)
+        if use_reduced_cg:
+            wm = torch.concatenate(
+                [
+                    source_dict[
+                        f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}"
+                    ]
+                    for k in range(kmax + 1)
+                    for j in suffixes
+                ],
+                dim=1,
+            )
+        else:
+            wm = torch.concatenate(
+                [
+                    source_dict[
+                        f"products.{i}.symmetric_contractions.contractions.{k}.weights{j}"
+                    ]
+                    for k in range(kmax + 1)
+                    for j in suffixes
+                    if not source_dict.get(
+                        f"products.{i}.symmetric_contractions.contractions.{k}.weights{j.replace('.', '_')}_zeroed", False
+                    )
+                ],
+                dim=1,
+            )
+        if use_reduced_cg:
+            _, proj = symmetric_contraction_proj(
+                cue.Irreps(O3_e3nn, str(irreps_in)),
+                cue.Irreps(O3_e3nn, str(irreps_out)),
+                list(range(1, correlation + 1)),
+            )
+            print(proj.shape)
+            proj = torch.tensor(
+                proj, dtype=wm.dtype, device=wm.device
+            )
+            wm = torch.einsum("zau,ab->zbu", wm, proj)
         target_dict[f"products.{i}.symmetric_contractions.weight"] = wm
-
 
 def transfer_weights(
     source_model: torch.nn.Module,
@@ -109,9 +126,11 @@ def transfer_weights(
         else:
             logging.warning(f"Key {key} not found in source model")
 
+    print("source model products:", source_model.products)
+    products = source_model.products
     # Transfer symmetric contractions
     transfer_symmetric_contractions(
-        source_dict, target_dict, num_product_irreps, correlation, num_layers, use_reduced_cg
+        source_dict, target_dict, num_product_irreps, products, correlation, num_layers, use_reduced_cg
     )
 
     # Unsqueeze linear and skip_tp layers

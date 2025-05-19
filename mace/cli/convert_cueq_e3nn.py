@@ -3,10 +3,15 @@ import logging
 import os
 from typing import Dict, List, Tuple
 
+import numpy as np
 import torch
 
 from mace.modules.symmetric_contraction import EmptyParam
+from mace.tools.cg import O3_e3nn
+from mace.tools.cg_cueq_tools import symmetric_contraction_proj
 from mace.tools.scripts_utils import extract_config_mace_model
+from e3nn import o3
+import cuequivariance as cue
 
 
 def get_transfer_keys(num_layers: int) -> List[str]:
@@ -50,6 +55,7 @@ def transfer_symmetric_contractions(
     source_dict: Dict[str, torch.Tensor],
     target_dict: Dict[str, torch.Tensor],
     num_product_irreps: int,
+    products: torch.nn.Module,
     correlation: int,
     num_layers: int,
     use_reduced_cg: bool,
@@ -57,14 +63,23 @@ def transfer_symmetric_contractions(
     """Transfer symmetric contraction weights from CuEq to E3nn format"""
     kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
 
-    if use_reduced_cg:
-        suffixes = [".1", ".0", "_max"]
-    else:
-        suffixes = ["_max", ".0", ".1"]
+    suffixes = ["_max", ".0", ".1"]
     for i, kmax in kmax_pairs:
         # Get the combined weight tensor from source
+        irreps_in = o3.Irreps(irrep.ir for irrep in products[i].symmetric_contractions.irreps_in)
+        irreps_out = o3.Irreps(irrep.ir for irrep in products[i].symmetric_contractions.irreps_out)
         wm = source_dict[f"products.{i}.symmetric_contractions.weight"]
-
+        if use_reduced_cg:
+            _, proj = symmetric_contraction_proj(
+                cue.Irreps(O3_e3nn, str(irreps_in)),
+                cue.Irreps(O3_e3nn, str(irreps_out)),
+                list(range(1, correlation + 1)),
+            )
+            proj = np.linalg.pinv(proj)
+            proj = torch.tensor(
+                proj, dtype=wm.dtype, device=wm.device
+            )
+            wm = torch.einsum("zau,ab->zbu", wm, proj)
         # Get split sizes based on target dimensions
         splits = []
         for k in range(kmax + 1):
@@ -72,7 +87,7 @@ def transfer_symmetric_contractions(
                 key = f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix}"
                 target_shape = target_dict[key].shape
                 splits.append(target_shape[1])
-                if target_dict.get(f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix.replace('.', '_')}" + "_zeroed", False):
+                if target_dict.get(f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix.replace('.', '_')}" + "_zeroed", False) and not use_reduced_cg:
                     splits[-1] = 0
 
         # Split the weights using the calculated sizes
@@ -83,7 +98,7 @@ def transfer_symmetric_contractions(
         for k in range(kmax + 1):
             for suffix in suffixes:
                 key = f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix}"
-                if target_dict.get(f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix.replace('.', '_')}_zeroed", False):
+                if target_dict.get(f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix.replace('.', '_')}_zeroed", False) and not use_reduced_cg:
                     continue
                 target_dict[key] = weights_split[idx] if splits[idx] > 0 else target_dict[key]
                 idx += 1
@@ -108,10 +123,11 @@ def transfer_weights(
             target_dict[key] = source_dict[key]
         else:
             logging.warning(f"Key {key} not found in source model")
-
+    
     # Transfer symmetric contractions
+    products = target_model.products
     transfer_symmetric_contractions(
-        source_dict, target_dict, num_product_irreps, correlation, num_layers, use_reduced_cg
+        source_dict, target_dict, num_product_irreps, products, correlation, num_layers, use_reduced_cg
     )
 
     # Unsqueeze linear and skip_tp layers

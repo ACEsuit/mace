@@ -12,6 +12,7 @@ import torch.nn.functional
 from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
 
+from mace.modules.nonsymmetric_contraction import NonSymmetricContraction
 from mace.modules.wrapper_ops import (
     CuEquivarianceConfig,
     FullyConnectedTensorProduct,
@@ -257,18 +258,30 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
         use_reduced_cg: Optional[bool] = None,
+        use_nonsymmetric_product: Optional[bool] = False,
     ) -> None:
         super().__init__()
 
         self.use_sc = use_sc
-        self.symmetric_contractions = SymmetricContractionWrapper(
-            irreps_in=node_feats_irreps,
-            irreps_out=target_irreps,
-            correlation=correlation,
-            num_elements=num_elements,
-            cueq_config=cueq_config,
-            use_reduced_cg=use_reduced_cg,
-        )
+        if not use_nonsymmetric_product or cueq_config is None:
+            self.symmetric_contractions = SymmetricContractionWrapper(
+                irreps_in=node_feats_irreps,
+                irreps_out=target_irreps,
+                correlation=correlation,
+                num_elements=num_elements,
+                cueq_config=cueq_config,
+                use_reduced_cg=use_reduced_cg,
+            )
+        else:
+            print("cueq config", cueq_config)
+            self.symmetric_contractions = NonSymmetricContraction(
+                irreps_in=node_feats_irreps,
+                irreps_out=target_irreps,
+                correlation=correlation,
+                cueq_config=cueq_config,
+                dtype=torch.get_default_dtype(),
+                math_dtype=torch.get_default_dtype(),
+            )
         # Update linear
         self.linear = Linear(
             target_irreps,
