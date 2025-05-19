@@ -761,7 +761,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--wandb_log_hypers",
         help="The hyperparameters to log in Weights and Biases",
-        type=list,
+        nargs='+',
         default=[
             "num_channels",
             "max_L",
