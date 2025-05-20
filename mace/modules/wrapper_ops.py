@@ -1,8 +1,9 @@
 """
-Wrapper class for o3.Linear that optionally uses cuet.Linear
+Wrapper class for cuet and o3 modules.
 """
 
 import dataclasses
+import types
 from typing import List, Optional
 
 import torch
@@ -10,6 +11,7 @@ from e3nn import o3
 
 from mace.modules.symmetric_contraction import SymmetricContraction
 from mace.tools.cg import O3_e3nn
+from mace.tools.scatter import scatter_sum
 
 try:
     import cuequivariance as cue
@@ -34,6 +36,7 @@ class CuEquivarianceConfig:
     optimize_symmetric: bool = False
     optimize_fctp: bool = False
     original_mace: bool = True  # Use original mace layout for symmetric contraction
+    conv_fusion: bool = False  # Use cuet.SegmentedPolynomial for convolution fusion
 
     def __post_init__(self):
         if self.enabled and CUET_AVAILABLE:
@@ -117,6 +120,95 @@ class TensorProduct:
             shared_weights=shared_weights,
             internal_weights=internal_weights,
         )
+
+
+def with_scatter_sum(conv_tp: torch.nn.Module):
+    conv_tp.original_forward = conv_tp.forward
+    def forward(self, node_feats: torch.Tensor,
+                        edge_attrs: torch.Tensor,
+                        tp_weights: torch.Tensor,
+                        edge_index: torch.Tensor) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+
+        mji = self.original_forward(node_feats[sender], edge_attrs, tp_weights)
+        message = scatter_sum(src=mji, index=receiver, dim=0, dim_size=num_nodes)
+        return message
+
+    conv_tp.forward = types.MethodType(forward, conv_tp)
+    return conv_tp
+
+def with_fuse_cueq(conv_tp: torch.nn.Module):
+    conv_tp.original_forward = conv_tp.forward
+    def forward(self, node_feats: torch.Tensor,
+                        edge_attrs: torch.Tensor,
+                        tp_weights: torch.Tensor,
+                        edge_index: torch.Tensor) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        message = self.original_forward(
+                        [tp_weights, node_feats, edge_attrs],
+                        {1: sender},
+                        {0: node_feats},
+                        {0: receiver},
+                    )
+        return message
+
+    conv_tp.forward = types.MethodType(forward, conv_tp)
+    return conv_tp
+
+class TensorProductScatterSum:
+    """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
+    def __new__(
+            cls,
+            irreps_in1: o3.Irreps,
+            irreps_in2: o3.Irreps,
+            irreps_out: o3.Irreps,
+            instructions: Optional[List] = None,
+            shared_weights: bool = False,
+            internal_weights: bool = False,
+            cueq_config: Optional[CuEquivarianceConfig] = None,
+    ):
+        if (
+            CUET_AVAILABLE
+            and cueq_config is not None
+            and cueq_config.enabled
+            and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
+        ):
+            if not cueq_config.conv_fusion:
+                return with_scatter_sum(cuet.ChannelWiseTensorProduct(
+                    cue.Irreps(cueq_config.group, irreps_in1),
+                    cue.Irreps(cueq_config.group, irreps_in2),
+                    cue.Irreps(cueq_config.group, irreps_out),
+                    layout=cueq_config.layout,
+                    shared_weights=shared_weights,
+                    internal_weights=internal_weights,
+                    dtype=torch.get_default_dtype(),
+                    math_dtype=torch.get_default_dtype(),
+                ))
+            else:
+                return with_fuse_cueq(cuet.SegmentedPolynomial(
+                    cue.descriptors.channelwise_tensor_product(
+                    cue.Irreps(cueq_config.group, irreps_in1),
+                    cue.Irreps(cueq_config.group, irreps_in2),
+                    cue.Irreps(cueq_config.group, irreps_out),
+                    )
+                    .flatten_coefficient_modes()
+                    .squeeze_modes()
+                    .polynomial,
+                    math_dtype=torch.get_default_dtype(),
+                ))
+
+
+        return with_scatter_sum(o3.TensorProduct(
+            irreps_in1,
+            irreps_in2,
+            irreps_out,
+            instructions=instructions,
+            shared_weights=shared_weights,
+            internal_weights=internal_weights,
+        ))
 
 class FullyConnectedTensorProduct:
     """Wrapper around o3.FullyConnectedTensorProduct/cuet.FullyConnectedTensorProduct"""
