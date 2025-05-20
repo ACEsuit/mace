@@ -89,7 +89,7 @@ class MACE(torch.nn.Module):
             irreps_in=node_attr_irreps,
             irreps_out=node_feats_irreps,
             cueq_config=cueq_config,
-            oeq_config=oeq_config
+            oeq_config=oeq_config,
         )
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
@@ -124,7 +124,7 @@ class MACE(torch.nn.Module):
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
             cueq_config=cueq_config,
-            oeq_config=oeq_config
+            oeq_config=oeq_config,
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -141,7 +141,7 @@ class MACE(torch.nn.Module):
             num_elements=num_elements,
             use_sc=use_sc_first,
             cueq_config=cueq_config,
-            oeq_config=oeq_config
+            oeq_config=oeq_config,
         )
         self.products = torch.nn.ModuleList([prod])
 
@@ -179,7 +179,7 @@ class MACE(torch.nn.Module):
                 num_elements=num_elements,
                 use_sc=True,
                 cueq_config=cueq_config,
-                oeq_config=oeq_config
+                oeq_config=oeq_config,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
@@ -191,13 +191,16 @@ class MACE(torch.nn.Module):
                         o3.Irreps(f"{len(heads)}x0e"),
                         len(heads),
                         cueq_config,
-                        oeq_config
+                        oeq_config,
                     )
                 )
             else:
                 self.readouts.append(
                     LinearReadoutBlock(
-                        hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config, oeq_config
+                        hidden_irreps,
+                        o3.Irreps(f"{len(heads)}x0e"),
+                        cueq_config,
+                        oeq_config,
                     )
                 )
 
@@ -629,8 +632,8 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
-        compute_edge_forces: bool = False, # pylint: disable=W0613
-        compute_atomic_stresses: bool = False, # pylint: disable=W0613
+        compute_edge_forces: bool = False,  # pylint: disable=W0613
+        compute_atomic_stresses: bool = False,  # pylint: disable=W0613
     ) -> Dict[str, Optional[torch.Tensor]]:
         assert compute_force is False
         assert compute_virials is False
@@ -832,8 +835,8 @@ class EnergyDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
-        compute_edge_forces: bool = False, # pylint: disable=W0613
-        compute_atomic_stresses: bool = False, # pylint: disable=W0613
+        compute_edge_forces: bool = False,  # pylint: disable=W0613
+        compute_atomic_stresses: bool = False,  # pylint: disable=W0613
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)

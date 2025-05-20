@@ -22,7 +22,7 @@ except ImportError:
     CUET_AVAILABLE = False
 
 try:
-    import openequivariance as oeq 
+    import openequivariance as oeq
 
     OEQ_AVAILABLE = True
 except ImportError:
@@ -59,7 +59,7 @@ class OEQConfig:
     """Configuration for cuequivariance acceleration"""
 
     enabled: bool = False
-    optimize_all: bool = False  
+    optimize_all: bool = False
     optimize_channelwise: bool = False
     conv_fusion: Optional[str] = "atomic"
 
@@ -103,10 +103,14 @@ class Linear:
 
 def with_scatter_sum(conv_tp: torch.nn.Module):
     conv_tp.original_forward = conv_tp.forward
-    def forward(self, node_feats: torch.Tensor,
-                        edge_attrs: torch.Tensor,
-                        tp_weights: torch.Tensor,
-                        edge_index: torch.Tensor) -> torch.Tensor:
+
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        tp_weights: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
@@ -118,76 +122,96 @@ def with_scatter_sum(conv_tp: torch.nn.Module):
     conv_tp.forward = types.MethodType(forward, conv_tp)
     return conv_tp
 
+
 class OEQAtomicTPScatterSum(torch.nn.Module):
-    def __init__(self, conv_tp: oeq.TensorProductConv): 
+    def __init__(self, conv_tp: oeq.TensorProductConv):
         super().__init__()
         self.conv_tp = conv_tp
         self.weight_numel = self.conv_tp.weight_numel
 
-    def forward(self, node_feats: torch.Tensor, 
-                edge_attrs: torch.Tensor, 
-                tp_weights: torch.Tensor, 
-                edge_index: torch.Tensor
-                ) -> torch.Tensor:
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        tp_weights: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        return self.conv_tp(node_feats, edge_attrs, tp_weights, sender, receiver)  
+        return self.conv_tp(node_feats, edge_attrs, tp_weights, sender, receiver)
 
 
 class TensorProductScatterSum:
     """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
+
     def __new__(
-            cls,
-            irreps_in1: o3.Irreps,
-            irreps_in2: o3.Irreps,
-            irreps_out: o3.Irreps,
-            instructions: Optional[List] = None,
-            shared_weights: bool = False,
-            internal_weights: bool = False,
-            cueq_config: Optional[CuEquivarianceConfig] = None,
-            oeq_config: Optional[OEQConfig] = None):
+        cls,
+        irreps_in1: o3.Irreps,
+        irreps_in2: o3.Irreps,
+        irreps_out: o3.Irreps,
+        instructions: Optional[List] = None,
+        shared_weights: bool = False,
+        internal_weights: bool = False,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,
+    ):
         if (
             CUET_AVAILABLE
             and cueq_config is not None
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
-            return with_scatter_sum(cuet.ChannelWiseTensorProduct(
-                cue.Irreps(cueq_config.group, irreps_in1),
-                cue.Irreps(cueq_config.group, irreps_in2),
-                cue.Irreps(cueq_config.group, irreps_out),
-                layout=cueq_config.layout,
-                shared_weights=shared_weights,
-                internal_weights=internal_weights,
-                dtype=torch.get_default_dtype(),
-                math_dtype=torch.get_default_dtype(),
-            ))
+            return with_scatter_sum(
+                cuet.ChannelWiseTensorProduct(
+                    cue.Irreps(cueq_config.group, irreps_in1),
+                    cue.Irreps(cueq_config.group, irreps_in2),
+                    cue.Irreps(cueq_config.group, irreps_out),
+                    layout=cueq_config.layout,
+                    shared_weights=shared_weights,
+                    internal_weights=internal_weights,
+                    dtype=torch.get_default_dtype(),
+                    math_dtype=torch.get_default_dtype(),
+                )
+            )
         elif (
             OEQ_AVAILABLE
             and oeq_config is not None
             and oeq_config.enabled
             and (oeq_config.optimize_all or oeq_config.optimize_channelwise)
         ):
-            dtype = oeq.torch_to_oeq_dtype(torch.get_default_dtype()) 
-            tpp = oeq.TPProblem(irreps_in1, irreps_in2, irreps_out, 
-                instructions, shared_weights=shared_weights, internal_weights=internal_weights,
-                irrep_dtype=dtype, weight_dtype=dtype)
+            dtype = oeq.torch_to_oeq_dtype(torch.get_default_dtype())
+            tpp = oeq.TPProblem(
+                irreps_in1,
+                irreps_in2,
+                irreps_out,
+                instructions,
+                shared_weights=shared_weights,
+                internal_weights=internal_weights,
+                irrep_dtype=dtype,
+                weight_dtype=dtype,
+            )
 
             if oeq_config.conv_fusion is None:
-                return with_scatter_sum(oeq.TensorProduct(tpp)) 
+                return with_scatter_sum(oeq.TensorProduct(tpp))
             elif oeq_config.conv_fusion == "atomic":
-                return OEQAtomicTPScatterSum(oeq.TensorProductConv(tpp, deterministic=False))
+                return OEQAtomicTPScatterSum(
+                    oeq.TensorProductConv(tpp, deterministic=False)
+                )
             else:
-                raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
+                raise ValueError(
+                    f"Unknown conv_fusion option: {oeq_config.conv_fusion}"
+                )
 
-        return with_scatter_sum(o3.TensorProduct(
-            irreps_in1,
-            irreps_in2,
-            irreps_out,
-            instructions=instructions,
-            shared_weights=shared_weights,
-            internal_weights=internal_weights,
-        ))
+        return with_scatter_sum(
+            o3.TensorProduct(
+                irreps_in1,
+                irreps_in2,
+                irreps_out,
+                instructions=instructions,
+                shared_weights=shared_weights,
+                internal_weights=internal_weights,
+            )
+        )
 
 
 class FullyConnectedTensorProduct:
@@ -200,7 +224,7 @@ class FullyConnectedTensorProduct:
         irreps_out: o3.Irreps,
         shared_weights: bool = True,
         internal_weights: bool = True,
-        cueq_config: Optional[CuEquivarianceConfig] = None
+        cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         if (
             CUET_AVAILABLE
@@ -237,7 +261,7 @@ class SymmetricContractionWrapper:
         correlation: int,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None
+        oeq_config: Optional[OEQConfig] = None,
     ):
         if (
             CUET_AVAILABLE

@@ -5,8 +5,9 @@ from typing import Dict, List, Tuple
 
 import torch
 
-from mace.modules.wrapper_ops import OEQConfig 
+from mace.modules.wrapper_ops import OEQConfig
 from mace.tools.scripts_utils import extract_config_mace_model
+
 
 def run(
     input_model,
@@ -30,9 +31,7 @@ def run(
 
     # Add OEQ config
     config["oeq_config"] = OEQConfig(
-        enabled=False,
-        optimize_all=True,
-        conv_fusion="atomic"
+        enabled=False, optimize_all=True, conv_fusion="atomic"
     )
 
     # Create new model with oeq config
@@ -42,13 +41,15 @@ def run(
     target_dict = target_model.state_dict()
 
     for key in target_dict:
-        if '.conv_tp.' not in key:
+        if ".conv_tp." not in key:
             target_dict[key] = source_dict[key]
 
     target_model.load_state_dict(target_dict)
 
     for i in range(2):
-        target_model.interactions[i].avg_num_neighbors = source_model.interactions[i].avg_num_neighbors
+        target_model.interactions[i].avg_num_neighbors = source_model.interactions[
+            i
+        ].avg_num_neighbors
 
     if return_model:
         return target_model

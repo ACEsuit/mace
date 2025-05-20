@@ -14,9 +14,9 @@ from e3nn.util.jit import compile_mode
 
 from mace.modules.wrapper_ops import (
     CuEquivarianceConfig,
-    OEQConfig,
     FullyConnectedTensorProduct,
     Linear,
+    OEQConfig,
     SymmetricContractionWrapper,
     TensorProductScatterSum,
 )
@@ -34,6 +34,7 @@ from .radial import (
     SoftTransform,
 )
 
+
 @compile_mode("script")
 class LinearNodeEmbeddingBlock(torch.nn.Module):
     def __init__(
@@ -41,7 +42,7 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None
+        oeq_config: Optional[OEQConfig] = None,
     ):
         super().__init__()
         self.linear = Linear(
@@ -62,8 +63,7 @@ class LinearReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None # pylint: disable=unused-argument
-
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.linear = Linear(
@@ -89,8 +89,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         num_heads: int = 1,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None # pylint: disable=unused-argument
-
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -120,8 +119,7 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None # pylint: disable=unused-argument
-
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         if dipole_only:
@@ -145,7 +143,7 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         gate: Callable,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None # pylint: disable=unused-argument
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -260,7 +258,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         use_sc: bool = True,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None 
+        oeq_config: Optional[OEQConfig] = None,
     ) -> None:
         super().__init__()
 
@@ -271,7 +269,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             correlation=correlation,
             num_elements=num_elements,
             cueq_config=cueq_config,
-            oeq_config=oeq_config
+            oeq_config=oeq_config,
         )
         # Update linear
         self.linear = Linear(
@@ -327,7 +325,7 @@ class InteractionBlock(torch.nn.Module):
         avg_num_neighbors: float,
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None 
+        oeq_config: Optional[OEQConfig] = None,
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -418,7 +416,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
-            oeq_config=self.oeq_config
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
@@ -471,7 +469,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, edge_index 
+            node_feats, edge_attrs, tp_weights, edge_index
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -513,7 +511,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
-            oeq_config=self.oeq_config
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
@@ -567,7 +565,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, edge_index 
+            node_feats, edge_attrs, tp_weights, edge_index
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -609,7 +607,7 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
-            oeq_config=self.oeq_config
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
@@ -676,7 +674,7 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
         message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, edge_index 
+            node_feats, edge_attrs, tp_weights, edge_index
         )  # [n_nodes, irreps]
 
         message = self.truncate_ghosts(message, n_real)
@@ -720,7 +718,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
-            oeq_config=self.oeq_config
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
@@ -789,7 +787,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
         message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, edge_index 
+            node_feats, edge_attrs, tp_weights, edge_index
         )  # [n_nodes, irreps]
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -833,7 +831,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
-            oeq_config=self.oeq_config
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
@@ -898,7 +896,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(augmented_edge_feats)
         message = self.conv_tp(
-            node_feats_up, edge_attrs, tp_weights, edge_index 
+            node_feats_up, edge_attrs, tp_weights, edge_index
         )  # [n_nodes, irreps]
 
         message = self.linear(message) / self.avg_num_neighbors
