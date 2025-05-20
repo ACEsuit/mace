@@ -42,7 +42,6 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None,
     ):
         super().__init__()
         self.linear = Linear(
@@ -456,9 +455,6 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         lammps_class: Optional[Any] = None,
         first_layer: bool = False,
     ) -> Tuple[torch.Tensor, None]:
-        sender = edge_index[0]
-        receiver = edge_index[1]
-        num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
         node_feats = self.linear_up(node_feats)
         node_feats = self.handle_lammps(
@@ -551,9 +547,6 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         lammps_natoms: Tuple[int, int] = (0, 0),
         first_layer: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        sender = edge_index[0]
-        receiver = edge_index[1]
-        num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
@@ -657,7 +650,6 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         lammps_natoms: Tuple[int, int] = (0, 0),
         first_layer: bool = False,
     ) -> Tuple[torch.Tensor, None]:
-        sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
@@ -769,7 +761,6 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         lammps_natoms: Tuple[int, int] = (0, 0),
         first_layer: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
@@ -882,7 +873,6 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
-        num_nodes = node_feats.shape[0]
         sc = self.skip_linear(node_feats)
         node_feats_up = self.linear_up(node_feats)
         node_feats_down = self.linear_down(node_feats)
