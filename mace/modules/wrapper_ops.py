@@ -197,10 +197,7 @@ class TensorProductScatterSum:
                 return OEQAtomicTPScatterSum(
                     oeq.TensorProductConv(tpp, deterministic=False)
                 )
-            else:
-                raise ValueError(
-                    f"Unknown conv_fusion option: {oeq_config.conv_fusion}"
-                )
+            raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
 
         return with_scatter_sum(
             o3.TensorProduct(
@@ -261,7 +258,7 @@ class SymmetricContractionWrapper:
         correlation: int,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         if (
             CUET_AVAILABLE
