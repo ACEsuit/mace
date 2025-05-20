@@ -111,9 +111,9 @@ class NonSymmetricContraction(torch.nn.Module):
         out = torch.empty(
             x.shape[0], self.irreps_out.dim, device=x.device, dtype=x.dtype
         )
-        all_inputs = [x] * self.correlation
-        # for linear in self.linears_list:
-        #     all_inputs.append(linear(x))
+        all_inputs = []
+        for linear in self.linears_list:
+            all_inputs.append(linear(x))
         for i, tp in enumerate(self.tp_module_list):
             tp_out = tp(
                 self.weights_param_list[i],  # Select weights based on indices

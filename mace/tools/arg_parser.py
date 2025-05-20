@@ -745,6 +745,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
+    parser.add_argument(
+        "--only_cueq",
+        help="Only use cuequivariance acceleration",
+        type=str2bool,
+        default=False,
+    )
     # options for using Weights and Biases for experiment tracking
     # to install see https://wandb.ai
     parser.add_argument(

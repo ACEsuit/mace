@@ -89,6 +89,7 @@ class MACE(torch.nn.Module):
         self.apply_cutoff = apply_cutoff
         self.edge_irreps = edge_irreps
         self.use_reduced_cg = use_reduced_cg
+        self.cueq_config = cueq_config
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -536,6 +537,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         ],  # Just here to make it compatible with energy models, MUST be None
         use_reduced_cg: bool = True,
         use_nonsymmetric_product: bool = False,
+        use_so3: bool = False,
         radial_type: Optional[str] = "bessel",
         radial_MLP: Optional[List[int]] = None,
         edge_irreps: Optional[o3.Irreps] = None,
@@ -564,8 +566,10 @@ class AtomicDipolesMACE(torch.nn.Module):
             radial_type=radial_type,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
-
-        sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        if not use_so3:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        else:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell, p=1)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
         self.spherical_harmonics = o3.SphericalHarmonics(
@@ -748,6 +752,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         atomic_energies: Optional[np.ndarray],
         use_reduced_cg: bool = True,
         use_nonsymmetric_product: bool = False,
+        use_so3: bool = False,
         radial_MLP: Optional[List[int]] = None,
         edge_irreps: Optional[o3.Irreps] = None,
         cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
@@ -773,7 +778,10 @@ class EnergyDipolesMACE(torch.nn.Module):
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
-        sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        if not use_so3:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        else:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell, p=1)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
         self.spherical_harmonics = o3.SphericalHarmonics(

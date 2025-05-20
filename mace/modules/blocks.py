@@ -273,7 +273,6 @@ class EquivariantProductBasisBlock(torch.nn.Module):
                 use_reduced_cg=use_reduced_cg,
             )
         else:
-            print("cueq config", cueq_config)
             self.symmetric_contractions = NonSymmetricContraction(
                 irreps_in=node_feats_irreps,
                 irreps_out=target_irreps,

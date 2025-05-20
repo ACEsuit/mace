@@ -118,7 +118,6 @@ class TensorProduct:
             internal_weights=internal_weights,
         )
 
-
 class FullyConnectedTensorProduct:
     """Wrapper around o3.FullyConnectedTensorProduct/cuet.FullyConnectedTensorProduct"""
 
