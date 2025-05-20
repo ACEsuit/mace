@@ -4,7 +4,7 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 
 import dataclasses
 import types
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import torch
 from e3nn import o3
@@ -173,7 +173,7 @@ class TensorProductScatterSum:
                     math_dtype=torch.get_default_dtype(),
                 )
             )
-        elif (
+        if (
             OEQ_AVAILABLE
             and oeq_config is not None
             and oeq_config.enabled
@@ -193,7 +193,7 @@ class TensorProductScatterSum:
 
             if oeq_config.conv_fusion is None:
                 return with_scatter_sum(oeq.TensorProduct(tpp))
-            elif oeq_config.conv_fusion == "atomic":
+            if oeq_config.conv_fusion == "atomic":
                 return OEQAtomicTPScatterSum(
                     oeq.TensorProductConv(tpp, deterministic=False)
                 )
