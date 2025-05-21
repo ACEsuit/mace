@@ -191,14 +191,14 @@ def load_foundations_elements(
             ).clone()
 
     # Make field related weights small to start as to not shock the foundation model
-    if model.__class__.__name__ == "ScaleShiftFieldMACE":
-        for i in range(len(model.field_readouts)-1):
-            model.field_feats[i].linear.weight = torch.nn.Parameter(torch.zeros_like(model.field_feats[i].linear.weight) + 0.01)
-            model.field_readouts[i].linear.weight = torch.nn.Parameter(torch.zeros_like(model.field_readouts[i].linear.weight) + 0.01)
+    # if model.__class__.__name__ == "ScaleShiftFieldMACE":
+    #     for i in range(len(model.field_readouts)-1):
+    #         model.field_feats[i].linear.weight = torch.nn.Parameter(torch.zeros_like(model.field_feats[i].linear.weight) + 0.01)
+    #         model.field_readouts[i].linear.weight = torch.nn.Parameter(torch.zeros_like(model.field_readouts[i].linear.weight) + 0.01)
         
-        model.field_feats[-1].linear.weight = torch.nn.Parameter(torch.zeros_like(model.field_feats[-1].linear.weight) + 0.01)
-        model.field_readouts[-1].linear_1.weight = torch.nn.Parameter(torch.zeros_like(model.field_readouts[-1].linear_1.weight) + 0.01)
-        model.field_readouts[-1].linear_2.weight = torch.nn.Parameter(torch.zeros_like(model.field_readouts[-1].linear_2.weight) + 0.01)
+    #     model.field_feats[-1].linear.weight = torch.nn.Parameter(torch.zeros_like(model.field_feats[-1].linear.weight) + 0.01)
+    #     model.field_readouts[-1].linear_1.weight = torch.nn.Parameter(torch.zeros_like(model.field_readouts[-1].linear_1.weight) + 0.01)
+    #     model.field_readouts[-1].linear_2.weight = torch.nn.Parameter(torch.zeros_like(model.field_readouts[-1].linear_2.weight) + 0.01)
 
     return model
 
