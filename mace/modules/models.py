@@ -492,33 +492,38 @@ class ScaleShiftFieldMACE(MACE):
         hidden_irreps = kwargs["hidden_irreps"]
         num_channels = hidden_irreps.count(o3.Irrep(0, 1))
 
-        # Linearly map node features to 2x0e + 1x1o (energy, charge & electronic dipole) features
-        # Channels are maintained and not mixed yet!
-        field_irreps = o3.Irreps("0e") + o3.Irreps.spherical_harmonics(1)
-        field_irreps_out = o3.Irreps(f"{num_channels * field_irreps}").sort()[0].simplify()
-
-        self.field_readout = LinearReadoutBlock(
-            hidden_irreps,
-            field_irreps_out,
-        )
-    
-        # Want to maintain l>0 features in last layer.
-        # Redefine last layer interaction block's skip_tp .
-        self.interactions[-1].skip_tp = o3.FullyConnectedTensorProduct(
-            hidden_irreps,
-            self.interactions[-1].node_attrs_irreps,
-            hidden_irreps,
-            self.interactions[-1].cueq_config,
-        )
-
-        # Easiest to copy penultimate layer's product block.
-        self.products[-1] = self.products[-2]
-
-        # Update energy readout irreps_in
-        for i in range(len(self.readouts)-1):
-            self.readouts[i].linear = o3.Linear(f"{num_channels}x0e", f"{len(self.heads)}x0e")
-
-        self.readouts[-1].linear_1 = o3.Linear(f"{num_channels}x0e", f"{len(self.heads) * kwargs['MLP_irreps']}")
+        self.field_feats = torch.nn.ModuleList()
+        self.field_readouts = torch.nn.ModuleList()
+        for i in range(kwargs["num_interactions"]-1):
+            self.field_feats.append(
+                LinearReadoutBlock(
+                    hidden_irreps,
+                    (num_channels * o3.Irreps("1x0e+1x1o")).sort()[0].simplify(),
+                )
+            )
+            self.field_readouts.append(
+                LinearReadoutBlock(
+                o3.Irreps(f"{num_channels}x0e"), 
+                o3.Irreps(f"{len(self.heads)}x0e"), 
+                self.interactions[-1].cueq_config
+                )
+            )
+        self.field_feats.append(
+            LinearReadoutBlock(
+                str(hidden_irreps[0]),
+                (num_channels * o3.Irreps("4x0e")).sort()[0].simplify(),
+            )  
+        ) 
+        self.field_readouts.append(
+            NonLinearReadoutBlock(
+                o3.Irreps(f"{num_channels}x0e"),
+                (len(self.heads) * kwargs['MLP_irreps']).simplify(),
+                kwargs['gate'],
+                o3.Irreps(f"{len(self.heads)}x0e"),
+                len(self.heads),
+                self.interactions[-1].cueq_config,
+            )
+        )           
                 
     def forward(
         self,
@@ -596,8 +601,8 @@ class ScaleShiftFieldMACE(MACE):
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list = []
-        for interaction, product, readout in zip(
-            self.interactions, self.products, self.readouts
+        for interaction, product, readout, field_feat, field_readout in zip(
+            self.interactions, self.products, self.readouts, self.field_feats, self.field_readouts
         ):
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
@@ -611,9 +616,9 @@ class ScaleShiftFieldMACE(MACE):
             )
             node_feats_list.append(node_feats)
 
-            # Extract node features for energy, charge and electronic dipole
-            node_out = self.field_readout(node_feats, node_heads).reshape(node_feats.shape[0], -1, 5) # [n_nodes, k, 5]
-            node_energy_feats, node_charge_feats, node_electronic_dipole_feats = node_out[:,:,0],  node_out[:,:,1], node_out[:,:,2:] # [n_nodes, k, 1], [n_nodes, k, 1], [n_nodes, k, 3]
+            # Extract node features for charge and electronic dipole
+            node_field_feats = field_feat(node_feats, node_heads).reshape(node_feats.shape[0], -1, 4) # [n_nodes, k, 4]
+            node_charge_feats, node_electronic_dipole_feats = node_field_feats[:,:,0],  node_field_feats[:,:,1:] # [n_nodes, k, 1], [n_nodes, k, 3]
             
             # Compute ionic dipole features as charge * atomic positions
             node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, data["positions"]) # [n_nodes, k, 3]
@@ -621,11 +626,12 @@ class ScaleShiftFieldMACE(MACE):
             # Total dipole feature is sum of ionic and electronic dipole features 
             node_dipole_feats = node_ionic_dipole_feats + node_electronic_dipole_feats # [n_nodes, k, 3]
             
-            # New k channel node energy features E_i = E_{0,i} - p_i \cdot E_field in analogy to electric enthalpy. [n_nodes, k]
-            node_energies = node_energy_feats - torch.einsum('ijk,ik->ij', node_dipole_feats, data["electric_field"].repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
-            
-            # Mix k channels as normal
-            node_energies = readout(node_energies, node_heads)[num_atoms_arange, node_heads]
+            # New k channel node preturbed energy features p_i \cdot E_field in analogy to electric enthalpy. [n_nodes, k]
+            node_field_energies = torch.einsum('ijk,ik->ij', node_dipole_feats, data["electric_field"].repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
+            node_field_energies = field_readout(node_field_energies, node_heads)
+        
+            # Readout for energy E_i = E_{0,i} - p_i \cdot E_field
+            node_energies = (readout(node_feats, node_heads) - node_field_energies)[num_atoms_arange, node_heads]
             node_es_list.append(node_energies)  # {[n_nodes, ], }
 
         # Concatenate node features

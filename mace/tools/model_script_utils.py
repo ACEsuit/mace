@@ -74,7 +74,7 @@ def configure_model(
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
         
-        args.model = "FoundationMACE" if args.model == "ShiftScaleMACE" else "FoundationFieldMACE" if args.model == "ShiftScaleFieldMACE" else args.model
+        args.model = "FoundationMACE" if args.model == "ScaleShiftMACE" else "FoundationFieldMACE" if args.model == "ScaleShiftFieldMACE" else args.model
 
         model_config_foundation["heads"] = heads
         model_config = model_config_foundation
