@@ -265,6 +265,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "num_interactions": model.num_interactions.item(),
         "num_elements": len(model.atomic_numbers),
         "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
+        "edge_irreps": model.edge_irreps if hasattr(model, "edge_irreps") else None,
         "MLP_irreps": (o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e") if model.num_interactions.item() > 1 else 1),
         "gate": (
             model.readouts[-1]  # pylint: disable=protected-access
@@ -280,9 +281,13 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "radial_type": radial_to_name(
             model.radial_embedding.bessel_fn.__class__.__name__
         ),
+        "use_reduced_cg": model.use_reduced_cg if hasattr(model, "use_reduced_cg") else False,
+        "use_nonsymmetric_product": model.use_nonsymmetric_product if hasattr(model, "use_nonsymmetric_product") else False,
+        "use_so3": model.use_so3 if hasattr(model, "use_so3") else False,
         "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
         "distance_transform": radial_to_transform(model.radial_embedding),
+        "cueq_config": model.cueq_config if hasattr(model, "cueq_config") else None,
         "atomic_inter_scale": scale.cpu().numpy(),
         "atomic_inter_shift": shift.cpu().numpy(),
         "heads": heads,

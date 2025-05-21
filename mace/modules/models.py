@@ -58,7 +58,12 @@ class MACE(torch.nn.Module):
         correlation: Union[int, List[int]],
         gate: Optional[Callable],
         pair_repulsion: bool = False,
+        apply_cutoff: bool = True,
+        use_reduced_cg: bool = True,
+        use_nonsymmetric_product: bool = False,
+        use_so3: bool = False,
         distance_transform: str = "None",
+        edge_irreps: Optional[o3.Irreps] = None,
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
@@ -81,6 +86,10 @@ class MACE(torch.nn.Module):
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
         self.lammps_mliap = lammps_mliap
+        self.apply_cutoff = apply_cutoff
+        self.edge_irreps = edge_irreps
+        self.use_reduced_cg = use_reduced_cg
+        self.cueq_config = cueq_config
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -95,15 +104,29 @@ class MACE(torch.nn.Module):
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
             distance_transform=distance_transform,
+            apply_cutoff=apply_cutoff,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
             self.pair_repulsion_fn = ZBLBasis(p=num_polynomial_cutoff)
             self.pair_repulsion = True
 
-        sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        if not use_so3:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        else:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell, p=1)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
-        interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
+
+        def generate_irreps(l):
+            str_irrep = "+".join([f"1x{i}e+1x{i}o" for i in range(l + 1)])
+            return o3.Irreps(str_irrep)
+
+        sh_irreps_inter = sh_irreps
+        if hidden_irreps.count(o3.Irrep(0, -1)) > 0:
+            sh_irreps_inter = generate_irreps(max_ell)
+        interaction_irreps = (sh_irreps_inter * num_features).sort()[0].simplify()
+        interaction_irreps_first = (sh_irreps * num_features).sort()[0].simplify()
+
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
@@ -117,7 +140,7 @@ class MACE(torch.nn.Module):
             node_feats_irreps=node_feats_irreps,
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
-            target_irreps=interaction_irreps,
+            target_irreps=interaction_irreps_first,
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
@@ -138,6 +161,8 @@ class MACE(torch.nn.Module):
             num_elements=num_elements,
             use_sc=use_sc_first,
             cueq_config=cueq_config,
+            use_reduced_cg=use_reduced_cg,
+            use_nonsymmetric_product=use_nonsymmetric_product,
         )
         self.products = torch.nn.ModuleList([prod])
 
@@ -160,6 +185,7 @@ class MACE(torch.nn.Module):
                 node_feats_irreps=hidden_irreps,
                 edge_attrs_irreps=sh_irreps,
                 edge_feats_irreps=edge_feats_irreps,
+                edge_irreps=edge_irreps,
                 target_irreps=interaction_irreps,
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
@@ -174,6 +200,8 @@ class MACE(torch.nn.Module):
                 num_elements=num_elements,
                 use_sc=True,
                 cueq_config=cueq_config,
+                use_reduced_cg=use_reduced_cg,
+                use_nonsymmetric_product=use_nonsymmetric_product,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
@@ -238,7 +266,7 @@ class MACE(torch.nn.Module):
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
         if hasattr(self, "pair_repulsion"):
@@ -271,6 +299,7 @@ class MACE(torch.nn.Module):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                cutoff=cutoff,
                 first_layer=(i == 0),
                 lammps_class=lammps_class,
                 lammps_natoms=lammps_natoms,
@@ -392,7 +421,7 @@ class ScaleShiftMACE(MACE):
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
 
@@ -421,6 +450,7 @@ class ScaleShiftMACE(MACE):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                cutoff=cutoff,
                 first_layer=(i == 0),
                 lammps_class=lammps_class,
                 lammps_natoms=lammps_natoms,
@@ -505,8 +535,12 @@ class AtomicDipolesMACE(torch.nn.Module):
         atomic_energies: Optional[
             None
         ],  # Just here to make it compatible with energy models, MUST be None
+        use_reduced_cg: bool = True,
+        use_nonsymmetric_product: bool = False,
+        use_so3: bool = False,
         radial_type: Optional[str] = "bessel",
         radial_MLP: Optional[List[int]] = None,
+        edge_irreps: Optional[o3.Irreps] = None,
         cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
@@ -532,8 +566,10 @@ class AtomicDipolesMACE(torch.nn.Module):
             radial_type=radial_type,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
-
-        sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        if not use_so3:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        else:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell, p=1)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
         self.spherical_harmonics = o3.SphericalHarmonics(
@@ -567,6 +603,8 @@ class AtomicDipolesMACE(torch.nn.Module):
             correlation=correlation,
             num_elements=num_elements,
             use_sc=use_sc_first,
+            use_reduced_cg=use_reduced_cg,
+            use_nonsymmetric_product=use_nonsymmetric_product,
         )
         self.products = torch.nn.ModuleList([prod])
 
@@ -600,6 +638,8 @@ class AtomicDipolesMACE(torch.nn.Module):
                 correlation=correlation,
                 num_elements=num_elements,
                 use_sc=True,
+                use_reduced_cg=use_reduced_cg,
+                use_nonsymmetric_product=use_nonsymmetric_product,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
@@ -641,7 +681,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
 
@@ -710,7 +750,11 @@ class EnergyDipolesMACE(torch.nn.Module):
         correlation: int,
         gate: Optional[Callable],
         atomic_energies: Optional[np.ndarray],
+        use_reduced_cg: bool = True,
+        use_nonsymmetric_product: bool = False,
+        use_so3: bool = False,
         radial_MLP: Optional[List[int]] = None,
+        edge_irreps: Optional[o3.Irreps] = None,
         cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
@@ -734,7 +778,10 @@ class EnergyDipolesMACE(torch.nn.Module):
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
-        sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        if not use_so3:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        else:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell, p=1)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
         self.spherical_harmonics = o3.SphericalHarmonics(
@@ -769,6 +816,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             correlation=correlation,
             num_elements=num_elements,
             use_sc=use_sc_first,
+            use_reduced_cg=use_reduced_cg,
         )
         self.products = torch.nn.ModuleList([prod])
 
@@ -802,6 +850,7 @@ class EnergyDipolesMACE(torch.nn.Module):
                 correlation=correlation,
                 num_elements=num_elements,
                 use_sc=True,
+                use_reduced_cg=use_reduced_cg,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
@@ -866,7 +915,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
 
