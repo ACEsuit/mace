@@ -183,7 +183,7 @@ def run(args: argparse.Namespace):
         test_path=args.test_file,
         seed=args.seed,
         key_specification=args.key_specification,
-        head_name=None,
+        head_name="",
     )
 
     # Atomic number table
