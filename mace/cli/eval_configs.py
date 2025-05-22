@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         default=False,
     )
     parser.add_argument(
-        "--compute_forces",
+        "--compute_force",
         help="compute forces",
         action="store_true",
         default=False,
@@ -153,7 +153,14 @@ def run(args: argparse.Namespace) -> None:
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch.to_dict(), compute_forces=args.compute_forces, compute_stress=args.compute_stress, compute_field=True)
+        output = model(
+            batch.to_dict(), 
+            compute_force=args.compute_force, 
+            compute_stress=args.compute_stress, 
+            compute_polarisation=args.compute_polarisation,
+            compute_becs=args.compute_becs,
+            compute_polarisability=args.compute_polarisability
+        )
 
         if args.compute_energy:
             energies_list.append(torch_tools.to_numpy(output["energy"]))
@@ -179,7 +186,7 @@ def run(args: argparse.Namespace) -> None:
             becs = [becs.reshape(-1, 9) for becs in becs[:-1]]  # drop last as its empty
             becs_collection.append(becs)
 
-        if args.compute_forces:
+        if args.compute_force:
             forces = np.split(
                 torch_tools.to_numpy(output["forces"]),
                 indices_or_sections=batch.ptr[1:],
@@ -190,7 +197,7 @@ def run(args: argparse.Namespace) -> None:
     if args.compute_energy:
         energies = np.concatenate(energies_list, axis=0)
 
-    if args.compute_forces:
+    if args.compute_force:
         forces_list = [
             forces for forces_list in forces_collection for forces in forces_list
         ]
@@ -222,7 +229,7 @@ def run(args: argparse.Namespace) -> None:
             atoms.calc = None  # crucial
             atoms.info[args.info_prefix + "energy"] = energy
 
-    if args.compute_forces:
+    if args.compute_force:
         for (atoms, forces) in zip(atoms_list, forces_list):
             atoms.calc = None  # crucial
             atoms.arrays[args.info_prefix + "forces"] = forces

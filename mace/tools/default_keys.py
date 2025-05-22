@@ -11,6 +11,10 @@ class DefaultKeys(Enum):
     DIPOLE = "dipole"
     HEAD = "head"
     CHARGES = "REF_charges"
+    FIELD = "REF_electric_field"
+    POLARISATION = "REF_polarisation"
+    BECS = "REF_bec"
+    POLARISABILITY = "REF_polarisability"
 
     @staticmethod
     def keydict() -> dict[str, str]:

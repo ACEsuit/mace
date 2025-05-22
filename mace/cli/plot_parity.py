@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
         "--plot_energy", help="plot energies", action="store_true", default=False, required=False
     )
     parser.add_argument(
-        "--plot_force", help="plot forces", action="store_true", default=False, required=False
+        "--plot_forces", help="plot forces", action="store_true", default=False, required=False
     )
     parser.add_argument(
         "--plot_stress", help="plot stresses", action="store_true", default=False, required=False
@@ -74,7 +74,7 @@ def plot(
         format: str = "pdf",
         labels: List[str] = ["REF", "MACE"],
         plot_energy: bool = True,
-        plot_force: bool = False,
+        plot_forces: bool = False,
         plot_stress: bool = False,
         plot_polarisation: bool = False,
         plot_bec: bool = False,
@@ -89,22 +89,22 @@ def plot(
         plt.tight_layout()
         plt.savefig(output_path + "_energy." + format, bbox_inches='tight')
 
-    if plot_force == True:
+    if plot_forces == True:
         plt.figure(figsize=(9,6), dpi=100)
         plt.subplot(1,3,1)
-        pp.plot_prop(np.concatenate([force[:,0] for force in get_prop(data, 'arrays', 'REF_forces', False)]), \
-                    np.concatenate([force[:,0] for force in get_prop(data, 'arrays', 'MACE_forces', False)]), \
+        pp.plot_prop(np.concatenate([forces[:,0] for forces in get_prop(data, 'arrays', 'REF_forces', False)]), \
+                    np.concatenate([forces[:,0] for forces in get_prop(data, 'arrays', 'MACE_forces', False)]), \
                     title=r'Force-x $(\rm eV/A)$ ', labs=labels, rel=False)
         plt.subplot(1,3,2)
-        pp.plot_prop(np.concatenate([force[:,1] for force in get_prop(data, 'arrays', 'REF_forces', False)]), \
-                    np.concatenate([force[:,1] for force in get_prop(data, 'arrays', 'MACE_forces', False)]), \
+        pp.plot_prop(np.concatenate([forces[:,1] for forces in get_prop(data, 'arrays', 'REF_forces', False)]), \
+                    np.concatenate([forces[:,1] for forces in get_prop(data, 'arrays', 'MACE_forces', False)]), \
                     title=r'Force-y $(\rm eV/A)$ ', labs=labels, rel=False)
         plt.subplot(1,3,3)
-        pp.plot_prop(np.concatenate([force[:,2] for force in get_prop(data, 'arrays', 'REF_forces', False)]), \
-                    np.concatenate([force[:,2] for force in get_prop(data, 'arrays', 'MACE_forces', False)]), \
+        pp.plot_prop(np.concatenate([forces[:,2] for forces in get_prop(data, 'arrays', 'REF_forces', False)]), \
+                    np.concatenate([forces[:,2] for forces in get_prop(data, 'arrays', 'MACE_forces', False)]), \
                     title=r'Force-z $(\rm eV/A)$ ', labs=labels, rel=False)
         plt.tight_layout()
-        plt.savefig(output_path + "_force." + format, bbox_inches='tight')
+        plt.savefig(output_path + "_forces." + format, bbox_inches='tight')
 
     if plot_polarisation == True:
 
@@ -149,39 +149,39 @@ def plot(
         plt.figure(figsize=(9,9), dpi=100)
         plt.subplot(3,3,1)
         pp.plot_prop(np.concatenate([bec.reshape(-1,9)[:,0] for bec in get_prop(data, 'arrays', 'REF_bec', False)]), \
-                    np.concatenate([bec.reshape(-1,9)[:,0] for bec in get_prop(data, 'arrays', 'MACE_bec', False)]), \
+                    np.concatenate([bec.reshape(-1,9)[:,0] for bec in get_prop(data, 'arrays', 'MACE_becs', False)]), \
                     title=r'BECS-xx $(\rm |e|)$ ', labs=labels, rel=False)
         plt.subplot(3,3,2)
         pp.plot_prop(np.concatenate([bec.reshape(-1,9)[:,1] for bec in get_prop(data, 'arrays', 'REF_bec', False)]), \
-                    np.concatenate([bec.reshape(-1,9)[:,1] for bec in get_prop(data, 'arrays', 'MACE_bec', False)]), \
+                    np.concatenate([bec.reshape(-1,9)[:,1] for bec in get_prop(data, 'arrays', 'MACE_becs', False)]), \
                     title=r'BECS-xy $(\rm |e|)$ ', labs=labels, rel=False)
         plt.subplot(3,3,3)
         pp.plot_prop(np.concatenate([bec.reshape(-1,9)[:,2] for bec in get_prop(data, 'arrays', 'REF_bec', False)]), \
-                    np.concatenate([bec.reshape(-1,9)[:,2] for bec in get_prop(data, 'arrays', 'MACE_bec', False)]), \
+                    np.concatenate([bec.reshape(-1,9)[:,2] for bec in get_prop(data, 'arrays', 'MACE_becs', False)]), \
                     title=r'BECS-xz $(\rm |e|)$ ', labs=labels, rel=False)
         plt.subplot(3,3,4)
         pp.plot_prop(np.concatenate([bec.reshape(-1,9)[:,3] for bec in get_prop(data, 'arrays', 'REF_bec', False)]), \
-                    np.concatenate([bec.reshape(-1,9)[:,3] for bec in get_prop(data, 'arrays', 'MACE_bec', False)]), \
+                    np.concatenate([bec.reshape(-1,9)[:,3] for bec in get_prop(data, 'arrays', 'MACE_becs', False)]), \
                     title=r'BECS-yx $(\rm |e|)$ ', labs=labels, rel=False)
         plt.subplot(3,3,5)
         pp.plot_prop(np.concatenate([bec.reshape(-1,9)[:,4] for bec in get_prop(data, 'arrays', 'REF_bec', False)]), \
-                    np.concatenate([bec.reshape(-1,9)[:,4] for bec in get_prop(data, 'arrays', 'MACE_bec', False)]), \
+                    np.concatenate([bec.reshape(-1,9)[:,4] for bec in get_prop(data, 'arrays', 'MACE_becs', False)]), \
                     title=r'BECS-yy $(\rm |e|)$ ', labs=labels, rel=False)
         plt.subplot(3,3,6)
         pp.plot_prop(np.concatenate([bec.reshape(-1,9)[:,5] for bec in get_prop(data, 'arrays', 'REF_bec', False)]), \
-                    np.concatenate([bec.reshape(-1,9)[:,5] for bec in get_prop(data, 'arrays', 'MACE_bec', False)]), \
+                    np.concatenate([bec.reshape(-1,9)[:,5] for bec in get_prop(data, 'arrays', 'MACE_becs', False)]), \
                     title=r'BECS-yz $(\rm |e|)$ ', labs=labels, rel=False)
         plt.subplot(3,3,7)
         pp.plot_prop(np.concatenate([bec.reshape(-1,9)[:,6] for bec in get_prop(data, 'arrays', 'REF_bec', False)]), \
-                    np.concatenate([bec.reshape(-1,9)[:,6] for bec in get_prop(data, 'arrays', 'MACE_bec', False)]), \
+                    np.concatenate([bec.reshape(-1,9)[:,6] for bec in get_prop(data, 'arrays', 'MACE_becs', False)]), \
                     title=r'BECS-zx $(\rm |e|)$ ', labs=labels, rel=False)
         plt.subplot(3,3,8)
         pp.plot_prop(np.concatenate([bec.reshape(-1,9)[:,7] for bec in get_prop(data, 'arrays', 'REF_bec', False)]), \
-                    np.concatenate([bec.reshape(-1,9)[:,7] for bec in get_prop(data, 'arrays', 'MACE_bec', False)]), \
+                    np.concatenate([bec.reshape(-1,9)[:,7] for bec in get_prop(data, 'arrays', 'MACE_becs', False)]), \
                     title=r'BECS-zy $(\rm |e|)$ ', labs=labels, rel=False)
         plt.subplot(3,3,9)
         pp.plot_prop(np.concatenate([bec.reshape(-1,9)[:,8] for bec in get_prop(data, 'arrays', 'REF_bec', False)]), \
-                    np.concatenate([bec.reshape(-1,9)[:,8] for bec in get_prop(data, 'arrays', 'MACE_bec', False)]), \
+                    np.concatenate([bec.reshape(-1,9)[:,8] for bec in get_prop(data, 'arrays', 'MACE_becs', False)]), \
                     title=r'BECS-zz $(\rm |e|)$ ', labs=labels, rel=False)
         plt.tight_layout()
         plt.savefig(output_path + "_bec." + format, bbox_inches='tight')
@@ -238,7 +238,7 @@ def run(args: argparse.Namespace) -> None:
         format=args.format,
         labels=args.labels,
         plot_energy=args.plot_energy,
-        plot_force=args.plot_force,
+        plot_forces=args.plot_forces,
         plot_stress=args.plot_stress,
         plot_polarisation=args.plot_polarisation,
         plot_bec=args.plot_bec,

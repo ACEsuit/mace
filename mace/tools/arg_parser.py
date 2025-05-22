@@ -511,25 +511,25 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--polarisation_key",
         help="Key of polarisation in training xyz",
         type=str,
-        default="REF_polarisation",
+        default=DefaultKeys.POLARISATION.value,
     )
     parser.add_argument(
-        "--bec_key",
+        "--becs_key",
         help="Key of born effective charges in training xyz",
         type=str,
-        default="REF_bec",
+        default=DefaultKeys.BECS.value,
     )
     parser.add_argument(
         "--polarisability_key",
         help="Key of polarisability in training xyz",
         type=str,
-        default="REF_polarisability",
+        default=DefaultKeys.POLARISABILITY.value,
     )
     parser.add_argument(
         "--electric_field_key",
         help="Key of electric field in training xyz",
         type=str,
-        default="REF_electric_field",
+        default=DefaultKeys.FIELD.value,
     )
 
     # Loss and optimization
@@ -970,25 +970,25 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         "--polarisation_key",
         help="Key of polarisation in training xyz",
         type=str,
-        default="REF_polarisation",
+        default=DefaultKeys.POLARISATION.value,
     )
     parser.add_argument(
-        "--bec_key",
-        help="Key of BEC in training xyz",
+        "--becs_key",
+        help="Key of BECs in training xyz",
         type=str,
-        default="REF_bec",
+        default=DefaultKeys.BECS.value,
     )
     parser.add_argument(
         "--polarisability_key",
         help="Key of polarisability in training xyz",
         type=str,
-        default="REF_polarisability",
+        default=DefaultKeys.POLARISABILITY.value,
     )
     parser.add_argument(
         "--electric_field_key",
         help="Key of electric field in training xyz",
         type=str,
-        default="REF_electric_field",
+        default=DefaultKeys.FIELD.value,
     )
     parser.add_argument(
         "--atomic_numbers",

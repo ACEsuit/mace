@@ -535,8 +535,8 @@ class UniversalFieldLoss(torch.nn.Module):
             )
             loss_polarisation = reduce_loss(loss_polarisation, ddp)
             loss_becs = torch.nn.functional.huber_loss(
-                configs_becs_weight * ref["becs"],
-                configs_becs_weight * pred["becs"],
+                configs_becs_weight * ref["becs"].view(-1,3,3),
+                configs_becs_weight * pred["becs"].view(-1,3,3),
                 reduction="none",
                 delta=self.huber_delta,
             )
@@ -574,8 +574,8 @@ class UniversalFieldLoss(torch.nn.Module):
                 delta=self.huber_delta,
             )
             loss_becs = torch.nn.functional.huber_loss(
-                configs_becs_weight * ref["becs"],
-                configs_becs_weight * pred["becs"],
+                configs_becs_weight * ref["becs"].view(-1,3,3),
+                configs_becs_weight * pred["becs"].view(-1,3,3),
                 reduction="mean",
                 delta=self.huber_delta,
             )

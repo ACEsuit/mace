@@ -666,19 +666,19 @@ class MACELoss(Metric):
             )
         if output.get("polarisation") is not None and batch.polarisation is not None:
             self.polarisation_computed += 1.0
-            self.polarisation.append(batch.polarisation)
-            self.delta_polarisation.append(batch.polarisation.reshape(-1,3) - output["polarisation"])
-            self.delta_polarisation_per_atom.append(batch.polarisation.reshape(-1,3) - output["polarisation"])
+            self.polarisation.append(batch.polarisation.view(-1,3))
+            self.delta_polarisation.append(batch.polarisation.reshape(-1,3) - output["polarisation"].view(-1,3))
+            self.delta_polarisation_per_atom.append(batch.polarisation.reshape(-1,3) - output["polarisation"].view(-1,3))
         if output.get("becs") is not None and batch.becs is not None:
             self.becs_computed += 1.0
-            self.becs.append(batch.becs)
-            self.delta_becs.append(batch.becs - output["becs"])
-            self.delta_becs_per_atom.append(batch.becs - output["becs"])
+            self.becs.append(batch.becs.view(-1,3,3))
+            self.delta_becs.append(batch.becs.view(-1,3,3) - output["becs"].view(-1,3,3))
+            self.delta_becs_per_atom.append(batch.becs.view(-1,3,3) - output["becs"].view(-1,3,3))
         if output.get("polarisability") is not None and batch.polarisability is not None:    
             self.polarisability_computed += 1.0
-            self.polarisability.append(batch.polarisability)
-            self.delta_polarisability.append(batch.polarisability.view(-1,3,3) - output["polarisability"])
-            self.delta_polarisability_per_atom.append(batch.polarisability.view(-1,3,3) - output["polarisability"])
+            self.polarisability.append(batch.polarisability.view(-1,3,3))
+            self.delta_polarisability.append(batch.polarisability.view(-1,3,3) - output["polarisability"].view(-1,3,3))
+            self.delta_polarisability_per_atom.append(batch.polarisability.view(-1,3,3) - output["polarisability"].view(-1,3,3))
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):
