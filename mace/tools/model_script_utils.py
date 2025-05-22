@@ -36,9 +36,9 @@ def configure_model(
         "virials": compute_virials,
         "stress": compute_stress,
         "dipoles": args.compute_dipole,
-        "polarisation": args.compute_field,
-        "bec": args.compute_field,
-        "polarisability": args.compute_field,
+        "polarisation": args.compute_polarisation,
+        "becs": args.compute_becs,
+        "polarisability": args.compute_polarisability,
     }
     logging.info(
         f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"

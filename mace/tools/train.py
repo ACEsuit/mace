@@ -434,7 +434,9 @@ def take_step(
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
-            compute_field=output_args["bec"],
+            compute_polarisation=output_args["polarisation"],
+            compute_becs=output_args["becs"],
+            compute_polarisability=output_args["polarisability"],
     )
         loss = loss_fn(pred=output, ref=batch)
         loss.backward()
@@ -575,7 +577,9 @@ def evaluate(
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
-            compute_field=output_args["bec"],
+            compute_polarisation=output_args["polarisation"],
+            compute_becs=output_args["becs"],
+            compute_polarisability=output_args["polarisability"],
         )
         avg_loss, aux = metrics(batch, output)
 
@@ -665,16 +669,16 @@ class MACELoss(Metric):
             self.polarisation.append(batch.polarisation)
             self.delta_polarisation.append(batch.polarisation.reshape(-1,3) - output["polarisation"])
             self.delta_polarisation_per_atom.append(batch.polarisation.reshape(-1,3) - output["polarisation"])
-        if output.get("bec") is not None and batch.bec is not None:
+        if output.get("becs") is not None and batch.becs is not None:
             self.becs_computed += 1.0
-            self.becs.append(batch.bec)
-            self.delta_becs.append(batch.bec - output["bec"])
-            self.delta_becs_per_atom.append(batch.bec - output["bec"])
+            self.becs.append(batch.becs)
+            self.delta_becs.append(batch.becs - output["becs"])
+            self.delta_becs_per_atom.append(batch.becs - output["becs"])
         if output.get("polarisability") is not None and batch.polarisability is not None:    
             self.polarisability_computed += 1.0
             self.polarisability.append(batch.polarisability)
-            self.delta_polarisability.append(batch.polarisability - output["polarisability"])
-            self.delta_polarisability_per_atom.append(batch.polarisability - output["polarisability"])
+            self.delta_polarisability.append(batch.polarisability.view(-1,3,3) - output["polarisability"])
+            self.delta_polarisability_per_atom.append(batch.polarisability.view(-1,3,3) - output["polarisability"])
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):

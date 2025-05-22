@@ -269,8 +269,20 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
-        "--compute_field",
-        help="Select True to compute polarisation, BECs and polarisability",
+        "--compute_polarisation",
+        help="Select True to compute polarisation",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_becs",
+        help="Select True to compute becs",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_polarisability",
+        help="Select True to compute polarisability",
         type=str2bool,
         default=False,
     )
@@ -606,15 +618,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_polarisation_weight",
     )
     parser.add_argument(
-        "--bec_weight", help="weight of bec loss", type=float, default=10.0
+        "--becs_weight", help="weight of bec loss", type=float, default=10.0
     )
     parser.add_argument(
-        "--swa_bec_weight",
-        "--stage_two_bec_weight",
+        "--swa_becs_weight",
+        "--stage_two_becs_weight",
         help="weight of bec after starting Stage Two (previously called swa)",
         type=float,
         default=10.0,
-        dest="swa_bec_weight",
+        dest="swa_becs_weight",
     )
     parser.add_argument(
         "--polarisability_weight", help="weight of polarisability loss", type=float, default=100.0

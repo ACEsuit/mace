@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         default=False,
     )
     parser.add_argument(
-        "--compute_force",
+        "--compute_forces",
         help="compute forces",
         action="store_true",
         default=False,
@@ -65,8 +65,8 @@ def parse_args() -> argparse.Namespace:
         default=False,
     )
     parser.add_argument(
-        "--compute_bec",
-        help="compute bec",
+        "--compute_becs",
+        help="compute becs",
         action="store_true",
         default=False,
     )
@@ -153,7 +153,7 @@ def run(args: argparse.Namespace) -> None:
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch.to_dict(), compute_force=args.compute_force, compute_stress=args.compute_stress, compute_field=True)
+        output = model(batch.to_dict(), compute_forces=args.compute_forces, compute_stress=args.compute_stress, compute_field=True)
 
         if args.compute_energy:
             energies_list.append(torch_tools.to_numpy(output["energy"]))
@@ -170,16 +170,16 @@ def run(args: argparse.Namespace) -> None:
         if args.compute_polarisability:
             polarisabilities_list.append(torch_tools.to_numpy(output["polarisability"]).reshape(9))
 
-        if args.compute_bec:
+        if args.compute_becs:
             becs = np.split(
-                torch_tools.to_numpy(output["bec"]),
+                torch_tools.to_numpy(output["becs"]),
                 indices_or_sections=batch.ptr[1:],
                 axis=0,
             )
-            becs = [bec.reshape(-1, 9) for bec in becs[:-1]]  # drop last as its empty
+            becs = [becs.reshape(-1, 9) for becs in becs[:-1]]  # drop last as its empty
             becs_collection.append(becs)
 
-        if args.compute_force:
+        if args.compute_forces:
             forces = np.split(
                 torch_tools.to_numpy(output["forces"]),
                 indices_or_sections=batch.ptr[1:],
@@ -190,7 +190,7 @@ def run(args: argparse.Namespace) -> None:
     if args.compute_energy:
         energies = np.concatenate(energies_list, axis=0)
 
-    if args.compute_force:
+    if args.compute_forces:
         forces_list = [
             forces for forces_list in forces_collection for forces in forces_list
         ]
@@ -210,7 +210,7 @@ def run(args: argparse.Namespace) -> None:
     if args.compute_polarisability:
         polarisabilities = np.stack(polarisabilities_list, axis=0)
 
-    if args.compute_bec:
+    if args.compute_becs:
         becs_list = [
             becs for becs_list in becs_collection for becs in becs_list
         ]
@@ -222,15 +222,15 @@ def run(args: argparse.Namespace) -> None:
             atoms.calc = None  # crucial
             atoms.info[args.info_prefix + "energy"] = energy
 
-    if args.compute_force:
+    if args.compute_forces:
         for (atoms, forces) in zip(atoms_list, forces_list):
             atoms.calc = None  # crucial
             atoms.arrays[args.info_prefix + "forces"] = forces
 
-    if args.compute_bec:
-        for (atoms, bec) in zip(atoms_list, becs_list):
+    if args.compute_becs:
+        for (atoms, becs) in zip(atoms_list, becs_list):
             atoms.calc = None  # crucial
-            atoms.arrays[args.info_prefix + "bec"] = bec
+            atoms.arrays[args.info_prefix + "becs"] = becs
 
 
     for i, atoms in enumerate(atoms_list):

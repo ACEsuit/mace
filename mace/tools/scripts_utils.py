@@ -598,7 +598,7 @@ def get_loss_fn(
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
             polarisation_weight=args.polarisation_weight,
-            bec_weight=args.bec_weight,
+            becs_weight=args.becs_weight,
             polarisability_weight=args.polarisability_weight,
         )
     elif args.loss == "dipole":

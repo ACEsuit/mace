@@ -67,7 +67,7 @@ def compute_forces_virials(
     return -1 * forces, -1 * virials, stress
 
 
-def compute_polarisation(
+def get_polarisation(
     energy: torch.Tensor,
     electric_field: torch.Tensor,
     training: bool = True,
@@ -86,13 +86,12 @@ def compute_polarisation(
     return -polarisation # [n_graphs, 3]
 
 
-def compute_bec(
+def get_becs(
     polarisation: torch.Tensor,
     positions: torch.Tensor,
     training: bool = True,
 ) -> torch.Tensor:
-        
-    bec_polar_list = []
+    becs_polar_list = []
     for d in range(3): # Loop over dimensions
         polar_component = polarisation[:, d]  # [n_graphs, 1]
         grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(polar_component)]
@@ -106,19 +105,16 @@ def compute_bec(
         )[0]
         if gradient is None:
             return torch.zeros_like(positions)
-        bec_polar_list.append(gradient) # [n_nodes, 3]
-        
-    bec = torch.stack(bec_polar_list, dim=1) # [n_nodes, 3, 3]
-
-    return bec # [n_nodes, 3, 3]
+        becs_polar_list.append(gradient) # [n_nodes, 3]
+    becs = torch.stack(becs_polar_list, dim=1) # [n_nodes, 3, 3]
+    return becs # [n_nodes, 3, 3]
 
 
-def compute_polarisability(
+def get_polarisability(
     polarisation: torch.Tensor,
     electric_field: torch.Tensor,
     training: bool = True,
 ) -> torch.Tensor:
-    
     # Second derivatives (BEC and polarisability) computed for each polarisation component.   
     polarisability_list = []
     for d in range(3):
@@ -135,9 +131,7 @@ def compute_polarisability(
         if grad_field is None:
             return torch.zeros_like(electric_field)
         polarisability_list.append(grad_field) # [n_graphs, 3]
-        
     polarisability = torch.stack(polarisability_list, dim=1)  # [n_graphs, 3, 3]
-
     return polarisability # [n_graphs, 3, 3]
 
 
@@ -240,18 +234,13 @@ def get_outputs(
     cell: torch.Tensor,
     displacement: Optional[torch.Tensor],
     vectors: Optional[torch.Tensor] = None,
-    electric_field: Optional[torch.Tensor] = None,
     training: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
     compute_hessian: bool = False,
     compute_edge_forces: bool = False,
-    compute_field: bool = False,
 ) -> Tuple[
-    Optional[torch.Tensor],
-    Optional[torch.Tensor],
-    Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],

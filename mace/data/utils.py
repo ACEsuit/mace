@@ -18,9 +18,6 @@ from mace.tools import AtomicNumberTable, DefaultKeys
 Positions = np.ndarray  # [..., 3]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
-Electric_field = np.ndarray  # [,3]
-Bec = np.ndarray
-Polarisability = np.ndarray
 
 DEFAULT_CONFIG_TYPE = "Default"
 DEFAULT_CONFIG_TYPE_WEIGHTS = {DEFAULT_CONFIG_TYPE: 1.0}
@@ -52,8 +49,8 @@ def update_keyspec_from_kwargs(
     keyspec: KeySpecification, keydict: Dict[str, str]
 ) -> KeySpecification:
     # convert command line style property_key arguments into a keyspec
-    infos = ["energy_key", "stress_key", "virials_key", "dipole_key", "head_key"]
-    arrays = ["forces_key", "charges_key"]
+    infos = ["energy_key", "stress_key", "virials_key", "dipole_key", "polarisation_key", "polarisability_key", "head_key"]
+    arrays = ["forces_key", "charges_key", "becs_key"]
     info_keys = {}
     arrays_keys = {}
     for key in infos:
@@ -74,11 +71,6 @@ class Configuration:
     property_weights: Dict[str, float]
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
-    electric_field: Optional[Electric_field] = None # eV/Angstrom
-    polarisation: Optional[Vector] = None # eV/Angstrom^2
-    bec: Optional[Bec] = None # |e|
-    polarisability: Optional[Polarisability] = None # tbc
-
     weight: float = 1.0  # weight of config in loss
     config_type: str = DEFAULT_CONFIG_TYPE  # config_type of config
     head: str = "Default"  # head used to compute the config

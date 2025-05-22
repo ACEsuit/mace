@@ -449,12 +449,17 @@ class UniversalLoss(torch.nn.Module):
     
 class UniversalFieldLoss(torch.nn.Module):
     def __init__(
-        self, energy_weight=0.0, forces_weight=0.0, stress_weight=0.0, huber_delta=0.01, polarisation_weight=0.0, bec_weight=0.0, polarisability_weight=0.0) -> None:
+        self, 
+        energy_weight=1.0, 
+        forces_weight=1.0, 
+        stress_weight=1.0, 
+        polarisation_weight=1.0,
+        becs_weight=1.0,
+        polarisability_weight=1.0,
+        huber_delta=0.01
+    ) -> None:
         super().__init__()
         self.huber_delta = huber_delta
-        self.huber_loss = torch.nn.HuberLoss(reduction="mean", delta=self.huber_delta)
-        self.mse_loss = torch.nn.MSELoss()
-
         self.register_buffer(
             "energy_weight",
             torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
@@ -472,86 +477,132 @@ class UniversalFieldLoss(torch.nn.Module):
             torch.tensor(polarisation_weight, dtype=torch.get_default_dtype()),
         )
         self.register_buffer(
-            "bec_weight",
-            torch.tensor(bec_weight, dtype=torch.get_default_dtype()),
+            "becs_weight",
+            torch.tensor(becs_weight, dtype=torch.get_default_dtype()),
         )
         self.register_buffer(
             "polarisability_weight",
             torch.tensor(polarisability_weight, dtype=torch.get_default_dtype()),
         )
 
-    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+    def forward(
+        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ) -> torch.Tensor:
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
-        configs_stress_weight = ref.stress_weight.view(-1, 1, 1)  # [n_graphs, ]
-        configs_energy_weight = ref.energy_weight  # [n_graphs, ]
-
+        configs_stress_weight = ref.stress_weight.view(-1, 1, 1)
+        configs_energy_weight = ref.energy_weight
         configs_forces_weight = torch.repeat_interleave(
             ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
         ).unsqueeze(-1)
-
-        configs_polarisation_weight = ref.polarisation_weight.view(-1, 1) # [n_graphs, 1]
-        
-        configs_bec_weight = torch.repeat_interleave(
-            ref.bec_weight, ref.ptr[1:] - ref.ptr[:-1]
+        configs_polarisation_weight = ref.polarisation_weight.view(-1, 1)
+        configs_becs_weight = torch.repeat_interleave(
+            ref.becs_weight, ref.ptr[1:] - ref.ptr[:-1]
         ).view(-1, 1, 1) 
-
-        configs_polarisability_weight = ref.polarisability_weight.view(-1, 1, 1) # [n_graphs, ]
-
-        # Calculate the polarisation quantum
-        cell = ref["cell"].view(-1, 3, 3) # [n_graphs, 3, 3]
+        configs_polarisability_weight = ref.polarisability_weight.view(-1, 1, 1) 
+        cell = ref["cell"].view(-1,3,3) # [n_graphs, 3, 3]
         volume = torch.det(cell)
-        polarisation_quantum = cell # [n_graphs, 3, 3]
-
-        # modulo ignore zero components to leave pol unfolded and avoid divide by 0
-        polarisation_quantum = torch.where(
-            polarisation_quantum == 0, 
-            1e12, 
-            polarisation_quantum
-        )
-
+        polarisation_quantum = torch.where(cell == 0, 1e12, cell)
         polarisation_difference = ref["polarisation"].view(-1, 3) - pred["polarisation"].view(-1, 3) # [n_graphs, 3]
         polarisation_difference = polarisation_difference * volume.view(-1, 1) # [n_graphs, 3]
         polarisation_difference = polarisation_difference.unsqueeze(1).fmod(polarisation_quantum) # [n_graphs, 3, 3]
         polarisation_difference = torch.diagonal(polarisation_difference, dim1=-2, dim2=-1) # [n_graphs, 3]
-
-        return (
-            self.energy_weight
-            * self.huber_loss(
+        if ddp:
+            loss_energy = torch.nn.functional.huber_loss(
                 configs_energy_weight * ref["energy"] / num_atoms,
                 configs_energy_weight * pred["energy"] / num_atoms,
+                reduction="none",
+                delta=self.huber_delta,
             )
-            + self.forces_weight
-            * conditional_huber_forces(
+            loss_energy = reduce_loss(loss_energy, ddp)
+            loss_forces = conditional_huber_forces(
                 configs_forces_weight * ref["forces"],
                 configs_forces_weight * pred["forces"],
                 huber_delta=self.huber_delta,
+                ddp=ddp,
             )
-            + self.stress_weight
-            * self.huber_loss(
+            loss_stress = torch.nn.functional.huber_loss(
                 configs_stress_weight * ref["stress"],
                 configs_stress_weight * pred["stress"],
+                reduction="none",
+                delta=self.huber_delta,
             )
-            + self.polarisation_weight
-            * self.huber_loss(
-                configs_polarisation_weight * polarisation_difference / num_atoms.view(-1, 1),
+            loss_stress = reduce_loss(loss_stress, ddp)
+            loss_polarisation = torch.nn.functional.huber_loss(
+                configs_polarisation_weight * polarisation_difference / num_atoms.view(-1,1),
                 configs_polarisation_weight * torch.zeros_like(polarisation_difference),
+                reduction="none",
+                delta=self.huber_delta,
             )
-            + self.bec_weight * 
-            self.huber_loss(
-                configs_bec_weight * ref["bec"],
-                configs_bec_weight * pred["bec"],
+            loss_polarisation = reduce_loss(loss_polarisation, ddp)
+            loss_becs = torch.nn.functional.huber_loss(
+                configs_becs_weight * ref["becs"],
+                configs_becs_weight * pred["becs"],
+                reduction="none",
+                delta=self.huber_delta,
             )
-            + self.polarisability_weight
-            * self.huber_loss(
-                configs_polarisability_weight * ref["polarisability"] * volume.view(-1, 1, 1) / num_atoms.view(-1, 1, 1),
-                configs_polarisability_weight * pred["polarisability"] * volume.view(-1, 1, 1) / num_atoms.view(-1, 1, 1),
+            loss_becs = reduce_loss(loss_becs, ddp)
+            loss_polarisability = torch.nn.functional.huber_loss(
+                configs_polarisability_weight * ref["polarisability"].view(-1,3,3) / num_atoms.view(-1,1,1),
+                configs_polarisability_weight * pred["polarisability"].view(-1,3,3) / num_atoms.view(-1,1,1),
+                reduction="none",
+                delta=self.huber_delta,
             )
+            loss_polarisability = reduce_loss(loss_polarisability)
+        else:
+            loss_energy = torch.nn.functional.huber_loss(
+                configs_energy_weight * ref["energy"] / num_atoms,
+                configs_energy_weight * pred["energy"] / num_atoms,
+                reduction="mean",
+                delta=self.huber_delta,
+            )
+            loss_forces = conditional_huber_forces(
+                configs_forces_weight * ref["forces"],
+                configs_forces_weight * pred["forces"],
+                huber_delta=self.huber_delta,
+                ddp=ddp,
+            )
+            loss_stress = torch.nn.functional.huber_loss(
+                configs_stress_weight * ref["stress"],
+                configs_stress_weight * pred["stress"],
+                reduction="mean",
+                delta=self.huber_delta,
+            )
+            loss_polarisation = torch.nn.functional.huber_loss(
+                configs_polarisation_weight * polarisation_difference / num_atoms.view(-1,1),
+                configs_polarisation_weight * torch.zeros_like(polarisation_difference),
+                reduction="mean",
+                delta=self.huber_delta,
+            )
+            loss_becs = torch.nn.functional.huber_loss(
+                configs_becs_weight * ref["becs"],
+                configs_becs_weight * pred["becs"],
+                reduction="mean",
+                delta=self.huber_delta,
+            )
+            loss_polarisability = torch.nn.functional.huber_loss(
+                configs_polarisability_weight * ref["polarisability"].view(-1,3,3) / num_atoms.view(-1,1,1),
+                configs_polarisability_weight * pred["polarisability"].view(-1,3,3) / num_atoms.view(-1,1,1),
+                reduction="mean",
+                delta=self.huber_delta,
+            )
+        return (
+            self.energy_weight * loss_energy
+            + self.forces_weight * loss_forces
+            + self.stress_weight * loss_stress
+            + self.polarisation_weight * loss_polarisation
+            + self.becs_weight * loss_becs
+            + self.polarisability_weight * loss_polarisability
         )
 
     def __repr__(self):
         return (
-            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
-            f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f}, polarisation_weight={self.polarisation_weight:.3f}, bec_weight={self.bec_weight:.3f}, polarisability_weight={self.polarisability_weight:.3f})"
+            f"{self.__class__.__name__}"
+            f"(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}, "
+            f"stress_weight={self.stress_weight:.3f}, "
+            f"polarisation_weight={self.polarisation_weight:.3f}, "
+            f"becs_weight={self.becs_weight:.3f}, "
+            f"polarisability_weight={self.polarisability_weight:.3f})"
         )
 
 
