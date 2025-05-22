@@ -124,6 +124,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "BOTNet",
             "MACE",
             "ScaleShiftMACE",
+            "MACELES",
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
             "EnergyDipolesMACE",
@@ -700,6 +701,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="restart optimizer from latest checkpoint",
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "--restart_model",
+        help="Path to the model to restart from",
+        type=str,
+        default=None,
+        required=False,
     )
     parser.add_argument(
         "--save_cpu",
