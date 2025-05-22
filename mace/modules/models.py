@@ -84,11 +84,13 @@ class MACE(torch.nn.Module):
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
+
         self.node_embedding = LinearNodeEmbeddingBlock(
             irreps_in=node_attr_irreps,
             irreps_out=node_feats_irreps,
             cueq_config=cueq_config,
         )
+
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
             num_bessel=num_bessel,
@@ -97,18 +99,22 @@ class MACE(torch.nn.Module):
             distance_transform=distance_transform,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
+
         if pair_repulsion:
             self.pair_repulsion_fn = ZBLBasis(p=num_polynomial_cutoff)
             self.pair_repulsion = True
 
         sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
         interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
+
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
+
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
@@ -207,6 +213,7 @@ class MACE(torch.nn.Module):
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
+        
         # Setup
         ctx = prepare_graph(
             data,
@@ -358,6 +365,7 @@ class ScaleShiftMACE(MACE):
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
+        compute_field: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         ctx = prepare_graph(
@@ -405,6 +413,7 @@ class ScaleShiftMACE(MACE):
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
+
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
@@ -443,7 +452,7 @@ class ScaleShiftMACE(MACE):
         total_energy = e0 + inter_e
         node_energy = node_e0.clone().double() + node_inter_es.clone().double()
 
-        forces, virials, stress, hessian, edge_forces = get_outputs(
+        forces, virials, stress, hessian, edge_forces, polarisation, becs, polarisabilities = get_outputs(
             energy=inter_e,
             positions=positions,
             displacement=displacement,
@@ -482,6 +491,416 @@ class ScaleShiftMACE(MACE):
             "displacement": displacement,
             "node_feats": node_feats_out,
         }
+
+        return output
+
+@compile_mode("script")
+class ScaleShiftFieldMACE(MACE):
+    def __init__(
+        self,
+        atomic_inter_scale: float,
+        atomic_inter_shift: float,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.scale_shift = ScaleShiftBlock(
+            scale=atomic_inter_scale, shift=atomic_inter_shift
+        )
+
+        hidden_irreps = kwargs["hidden_irreps"]
+        num_channels = hidden_irreps.count(o3.Irrep(0, 1))
+
+        self.field_feats = torch.nn.ModuleList()
+        self.field_readouts = torch.nn.ModuleList()
+        for i in range(kwargs["num_interactions"]-1):
+            self.field_feats.append(
+                LinearReadoutBlock(
+                    hidden_irreps,
+                    (num_channels * o3.Irreps("1x0e+1x1o")).sort()[0].simplify(),
+                )
+            )
+            self.field_readouts.append(
+                LinearReadoutBlock(
+                o3.Irreps(f"{num_channels}x0e"), 
+                o3.Irreps(f"{len(self.heads)}x0e"), 
+                self.interactions[-1].cueq_config
+                )
+            )
+        self.field_feats.append(
+            LinearReadoutBlock(
+                str(hidden_irreps[0]),
+                (num_channels * o3.Irreps("4x0e")).sort()[0].simplify(),
+            )  
+        ) 
+        self.field_readouts.append(
+            NonLinearReadoutBlock(
+                o3.Irreps(f"{num_channels}x0e"),
+                (len(self.heads) * kwargs['MLP_irreps']).simplify(),
+                kwargs['gate'],
+                o3.Irreps(f"{len(self.heads)}x0e"),
+                len(self.heads),
+                self.interactions[-1].cueq_config,
+            )
+        )           
+                
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
+        compute_force: bool = False,
+        compute_virials: bool = False,
+        compute_stress: bool = False,
+        compute_displacement: bool = False,
+        compute_hessian: bool = False,
+        compute_field: bool = True,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        
+        # Setup
+        data["positions"].requires_grad_(True)
+        data["node_attrs"].requires_grad_(True)
+        data["electric_field"] = data["electric_field"].reshape(-1, 3) # [num_graphs, 3]
+        data["electric_field"].requires_grad_(True)
+
+        num_graphs = data["ptr"].numel() - 1
+        num_atoms_arange = torch.arange(data["positions"].shape[0])
+        node_heads = (
+            data["head"][data["batch"]]
+            if "head" in data
+            else torch.zeros_like(data["batch"])
+        )
+
+        displacement = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=data["positions"].dtype,
+            device=data["positions"].device,
+        )
+
+        if compute_virials or compute_stress or compute_displacement:
+            (
+                data["positions"],
+                data["shifts"],
+                displacement,
+            ) = get_symmetric_displacement(
+                positions=data["positions"],
+                unit_shifts=data["unit_shifts"],
+                cell=data["cell"],
+                edge_index=data["edge_index"],
+                num_graphs=num_graphs,
+                batch=data["batch"],
+            )
+
+        # Atomic energies
+        node_e0 = self.atomic_energies_fn(data["node_attrs"])[
+            num_atoms_arange, node_heads
+        ]
+
+        e0 = scatter_sum(
+            src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+        )  # [n_graphs, num_heads]
+
+        # Embeddings
+        node_feats = self.node_embedding(data["node_attrs"])
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
+        )
+        edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
+        if hasattr(self, "pair_repulsion"):
+            pair_node_energy = self.pair_repulsion_fn(
+                lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+            )
+        else:
+            pair_node_energy = torch.zeros_like(node_e0)
+
+        # Interactions
+        node_es_list = [pair_node_energy]
+        node_feats_list = []
+        for interaction, product, readout, field_feat, field_readout in zip(
+            self.interactions, self.products, self.readouts, self.field_feats, self.field_readouts
+        ):
+            node_feats, sc = interaction(
+                node_attrs=data["node_attrs"],
+                node_feats=node_feats,
+                edge_attrs=edge_attrs,
+                edge_feats=edge_feats,
+                edge_index=data["edge_index"],
+            )
+            node_feats = product(
+                node_feats=node_feats, sc=sc, node_attrs=data["node_attrs"]
+            )
+            node_feats_list.append(node_feats)
+
+            # Extract node features for charge and electronic dipole
+            node_field_feats = field_feat(node_feats, node_heads).reshape(node_feats.shape[0], -1, 4) # [n_nodes, k, 4]
+            node_charge_feats, node_electronic_dipole_feats = node_field_feats[:,:,0],  node_field_feats[:,:,1:] # [n_nodes, k, 1], [n_nodes, k, 3]
+            
+            # Compute ionic dipole features as charge * atomic positions
+            node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, data["positions"]) # [n_nodes, k, 3]
+            
+            # Total dipole feature is sum of ionic and electronic dipole features 
+            node_dipole_feats = node_ionic_dipole_feats + node_electronic_dipole_feats # [n_nodes, k, 3]
+            
+            # New k channel node preturbed energy features p_i \cdot E_field in analogy to electric enthalpy. [n_nodes, k]
+            node_field_energies = torch.einsum('ijk,ik->ij', node_dipole_feats, data["electric_field"].repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
+            node_field_energies = field_readout(node_field_energies, node_heads)
+        
+            # Readout for energy E_i = E_{0,i} - p_i \cdot E_field
+            node_energies = (readout(node_feats, node_heads) - node_field_energies)[num_atoms_arange, node_heads]
+            node_es_list.append(node_energies)  # {[n_nodes, ], }
+
+        # Concatenate node features
+        node_feats_out = torch.cat(node_feats_list, dim=-1)
+
+        # Sum over interactions
+        node_inter_es = torch.sum(
+            torch.stack(node_es_list, dim=0), dim=0
+        )  # [n_nodes, ]
+
+        node_inter_es = self.scale_shift(node_inter_es, node_heads)
+
+        # Sum over nodes in graph
+        inter_e = scatter_sum(
+            src=node_inter_es, index=data["batch"], dim=-1, dim_size=num_graphs
+        )  # [n_graphs,]
+
+        # Add E_0 and (scaled) interaction energy
+        total_energy = e0 + inter_e
+        node_energy = node_e0 + node_inter_es
+
+        # Compute macroscopic derivative properties
+        forces, virials, stress, hessian, polarisations, becs, polarisabilities = get_outputs(
+            energy=inter_e,
+            positions=data["positions"],
+            electric_field=data["electric_field"],
+            displacement=displacement,
+            cell=data["cell"],
+            training=True,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+            compute_hessian=compute_hessian,
+            compute_field=compute_field,
+        )
+
+        output = {
+            "energy": total_energy,
+            "node_energy": node_energy,
+            "interaction_energy": inter_e,
+            "forces": forces,
+            "virials": virials,
+            "stress": stress,
+            "hessian": hessian,
+            "displacement": displacement,
+            "polarisation": polarisations,
+            "bec": becs,
+            "polarisability": polarisabilities,
+            "node_feats": node_feats_out,
+        }
+
+        return output
+
+
+class BOTNet(torch.nn.Module):
+    def __init__(
+        self,
+        r_max: float,
+        num_bessel: int,
+        num_polynomial_cutoff: int,
+        max_ell: int,
+        interaction_cls: Type[InteractionBlock],
+        interaction_cls_first: Type[InteractionBlock],
+        num_interactions: int,
+        num_elements: int,
+        hidden_irreps: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        atomic_energies: np.ndarray,
+        gate: Optional[Callable],
+        avg_num_neighbors: float,
+        atomic_numbers: List[int],
+        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
+    ):
+        super().__init__()
+        self.r_max = r_max
+        self.atomic_numbers = atomic_numbers
+        # Embedding
+        node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
+        node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
+        self.node_embedding = LinearNodeEmbeddingBlock(
+            irreps_in=node_attr_irreps, irreps_out=node_feats_irreps
+        )
+        self.radial_embedding = RadialEmbeddingBlock(
+            r_max=r_max,
+            num_bessel=num_bessel,
+            num_polynomial_cutoff=num_polynomial_cutoff,
+        )
+        edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
+
+        sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        self.spherical_harmonics = o3.SphericalHarmonics(
+            sh_irreps, normalize=True, normalization="component"
+        )
+
+        # Interactions and readouts
+        self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
+
+        self.interactions = torch.nn.ModuleList()
+        self.readouts = torch.nn.ModuleList()
+
+        inter = interaction_cls_first(
+            node_attrs_irreps=node_attr_irreps,
+            node_feats_irreps=node_feats_irreps,
+            edge_attrs_irreps=sh_irreps,
+            edge_feats_irreps=edge_feats_irreps,
+            target_irreps=hidden_irreps,
+            avg_num_neighbors=avg_num_neighbors,
+        )
+        self.interactions.append(inter)
+        self.readouts.append(LinearReadoutBlock(inter.irreps_out))
+
+        for i in range(num_interactions - 1):
+            inter = interaction_cls(
+                node_attrs_irreps=node_attr_irreps,
+                node_feats_irreps=inter.irreps_out,
+                edge_attrs_irreps=sh_irreps,
+                edge_feats_irreps=edge_feats_irreps,
+                target_irreps=hidden_irreps,
+                avg_num_neighbors=avg_num_neighbors,
+            )
+            self.interactions.append(inter)
+            if i == num_interactions - 2:
+                self.readouts.append(
+                    NonLinearReadoutBlock(inter.irreps_out, MLP_irreps, gate)
+                )
+            else:
+                self.readouts.append(LinearReadoutBlock(inter.irreps_out))
+
+    def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
+        # Setup
+        data.positions.requires_grad = True
+        num_atoms_arange = torch.arange(data.positions.shape[0])
+
+        # Atomic energies
+        node_e0 = self.atomic_energies_fn(data["node_attrs"])[
+            num_atoms_arange, data["head"][data["batch"]]
+        ]
+        e0 = scatter_sum(
+            src=node_e0, index=data.batch, dim=-1, dim_size=data.num_graphs
+        )  # [n_graphs, n_heads]
+
+        # Embeddings
+        node_feats = self.node_embedding(data.node_attrs)
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
+        )
+        edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
+
+        # Interactions
+        energies = [e0]
+        for interaction, readout in zip(self.interactions, self.readouts):
+            node_feats = interaction(
+                node_attrs=data.node_attrs,
+                node_feats=node_feats,
+                edge_attrs=edge_attrs,
+                edge_feats=edge_feats,
+                edge_index=data.edge_index,
+            )
+            node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
+            energy = scatter_sum(
+                src=node_energies, index=data.batch, dim=-1, dim_size=data.num_graphs
+            )  # [n_graphs,]
+            energies.append(energy)
+
+        # Sum over energy contributions
+        contributions = torch.stack(energies, dim=-1)
+        total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
+
+        output = {
+            "energy": total_energy,
+            "contributions": contributions,
+            "forces": compute_forces(
+                energy=total_energy, positions=data.positions, training=training
+            ),
+        }
+
+        return output
+
+
+class ScaleShiftBOTNet(BOTNet):
+    def __init__(
+        self,
+        atomic_inter_scale: float,
+        atomic_inter_shift: float,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.scale_shift = ScaleShiftBlock(
+            scale=atomic_inter_scale, shift=atomic_inter_shift
+        )
+
+    def forward(self, data: AtomicData, training=False) -> Dict[str, Any]:
+        # Setup
+        data.positions.requires_grad = True
+        num_atoms_arange = torch.arange(data.positions.shape[0])
+        # Atomic energies
+        node_e0 = self.atomic_energies_fn(data["node_attrs"])[
+            num_atoms_arange, data["head"][data["batch"]]
+        ]
+        e0 = scatter_sum(
+            src=node_e0, index=data.batch, dim=-1, dim_size=data.num_graphs
+        )  # [n_graphs,]
+
+        # Embeddings
+        node_feats = self.node_embedding(data.node_attrs)
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data.positions, edge_index=data.edge_index, shifts=data.shifts
+        )
+        edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
+
+        # Interactions
+        node_es_list = []
+        for interaction, readout in zip(self.interactions, self.readouts):
+            node_feats = interaction(
+                node_attrs=data.node_attrs,
+                node_feats=node_feats,
+                edge_attrs=edge_attrs,
+                edge_feats=edge_feats,
+                edge_index=data.edge_index,
+            )
+
+            node_es_list.append(readout(node_feats).squeeze(-1))  # {[n_nodes, ], }
+
+        # Sum over interactions
+        node_inter_es = torch.sum(
+            torch.stack(node_es_list, dim=0), dim=0
+        )  # [n_nodes, ]
+        node_inter_es = self.scale_shift(node_inter_es, data["head"][data["batch"]])
+
+        # Sum over nodes in graph
+        inter_e = scatter_sum(
+            src=node_inter_es, index=data.batch, dim=-1, dim_size=data.num_graphs
+        )  # [n_graphs,]
+
+        # Add E_0 and (scaled) interaction energy
+        total_e = e0 + inter_e
+
+        output = {
+            "energy": total_e,
+            "forces": compute_forces(
+                energy=inter_e, positions=data.positions, training=training
+            ),
+        }
+
+        return output
 
 
 @compile_mode("script")

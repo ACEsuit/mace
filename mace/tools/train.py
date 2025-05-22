@@ -56,15 +56,17 @@ def valid_err_log(
     eval_metrics["epoch"] = epoch
     eval_metrics["head"] = valid_loader_name
     logger.log(eval_metrics)
+
     if epoch is None:
-        inintial_phrase = "Initial"
+        initial_phrase = "Initial"
     else:
-        inintial_phrase = f"Epoch {epoch}"
+        initial_phrase = f"Epoch {epoch}"
+    
     if log_errors == "PerAtomRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A"
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A"
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -74,7 +76,7 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         error_stress = eval_metrics["rmse_stress"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3",
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -84,7 +86,7 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         error_virials = eval_metrics["rmse_virials_per_atom"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_virials_per_atom={error_virials:8.2f} meV",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_virials_per_atom={error_virials:8.2f} meV",
         )
     elif (
         log_errors == "PerAtomMAEstressvirials"
@@ -94,7 +96,7 @@ def valid_err_log(
         error_f = eval_metrics["mae_f"] * 1e3
         error_stress = eval_metrics["mae_stress"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_stress={error_stress:8.2f} meV / A^3"
+            f"{initial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_stress={error_stress:8.2f} meV / A^3"
         )
     elif (
         log_errors == "PerAtomMAEstressvirials"
@@ -104,37 +106,62 @@ def valid_err_log(
         error_f = eval_metrics["mae_f"] * 1e3
         error_virials = eval_metrics["mae_virials"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_virials={error_virials:8.2f} meV"
+            f"{initial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_virials={error_virials:8.2f} meV"
         )
     elif log_errors == "TotalRMSE":
         error_e = eval_metrics["rmse_e"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A",
         )
     elif log_errors == "PerAtomMAE":
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A",
         )
     elif log_errors == "TotalMAE":
         error_e = eval_metrics["mae_e"] * 1e3
         error_f = eval_metrics["mae_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A",
         )
     elif log_errors == "DipoleRMSE":
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_MU_per_atom={error_mu:8.2f} mDebye",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_MU_per_atom={error_mu:8.2f} mDebye",
         )
     elif log_errors == "EnergyDipoleRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_Mu_per_atom={error_mu:8.2f} mDebye",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_Mu_per_atom={error_mu:8.2f} mDebye",
+        )
+    elif (
+        log_errors == "PerAtomMAEstressvirialsfield"
+    ):
+        error_e = eval_metrics["mae_e_per_atom"] * 1e3
+        error_f = eval_metrics["mae_f"] * 1e3
+        error_stress = eval_metrics["mae_stress"] * 1e3
+        error_polarisation = eval_metrics["mae_polarisation"] * 1e3
+        error_bec = eval_metrics["mae_bec"] 
+        error_polarisability= eval_metrics["mae_polarisability"] 
+        logging.info(
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f} MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_polarisation={error_polarisation:8.2f} meV / A^2, MAE_BEC={error_bec:8.2f} |e|, MAE_polarisability={error_polarisability:8.2f} A^3",
+        )
+    elif (
+        log_errors == "PerAtomRMSEstressvirialsfield"
+        and eval_metrics["rmse_stress"] is not None and eval_metrics["rmse_bec"] is not None and eval_metrics["rmse_polarisation"] is not None and eval_metrics["rmse_polarisability"] is not None
+    ):
+        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+        error_f = eval_metrics["rmse_f"] * 1e3
+        error_stress = eval_metrics["rmse_stress"] * 1e3
+        error_polarisation = eval_metrics["rmse_polarisation"] * 1e3
+        error_bec = eval_metrics["rmse_bec"] 
+        error_polarisability= eval_metrics["rmse_polarisability"] 
+        logging.info(
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3, RMSE_polarisation={error_polarisation:8.2f} meV / A^2, RMSE_BEC={error_bec:8.2f} |e|, RMSE_polarisability={error_polarisability:8.2f} A",
         )
 
 
@@ -170,6 +197,7 @@ def train(
     patience_counter = 0
     swa_start = True
     keep_last = False
+
     if log_wandb:
         import wandb
 
@@ -393,6 +421,7 @@ def take_step(
     max_grad_norm: Optional[float],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
+
     start_time = time.time()
     batch = batch.to(device)
     batch_dict = batch.to_dict()
@@ -405,7 +434,8 @@ def take_step(
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
-        )
+            compute_field=output_args["bec"],
+    )
         loss = loss_fn(pred=output, ref=batch)
         loss.backward()
         if max_grad_norm is not None:
@@ -545,6 +575,7 @@ def evaluate(
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
+            compute_field=output_args["bec"],
         )
         avg_loss, aux = metrics(batch, output)
 
@@ -583,6 +614,18 @@ class MACELoss(Metric):
         self.add_state("mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("polarisation_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("polarisation", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_polarisation", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_polarisation_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("becs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("becs", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_becs", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_becs_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("polarisability_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("polarisability", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_polarisability", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_polarisability_per_atom", default=[], dist_reduce_fx="cat")
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
@@ -617,6 +660,21 @@ class MACELoss(Metric):
                 (batch.dipole - output["dipole"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
+        if output.get("polarisation") is not None and batch.polarisation is not None:
+            self.polarisation_computed += 1.0
+            self.polarisation.append(batch.polarisation)
+            self.delta_polarisation.append(batch.polarisation.reshape(-1,3) - output["polarisation"])
+            self.delta_polarisation_per_atom.append(batch.polarisation.reshape(-1,3) - output["polarisation"])
+        if output.get("bec") is not None and batch.bec is not None:
+            self.becs_computed += 1.0
+            self.becs.append(batch.bec)
+            self.delta_becs.append(batch.bec - output["bec"])
+            self.delta_becs_per_atom.append(batch.bec - output["bec"])
+        if output.get("polarisability") is not None and batch.polarisability is not None:    
+            self.polarisability_computed += 1.0
+            self.polarisability.append(batch.polarisability)
+            self.delta_polarisability.append(batch.polarisability - output["polarisability"])
+            self.delta_polarisability_per_atom.append(batch.polarisability - output["polarisability"])
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):
@@ -665,5 +723,32 @@ class MACELoss(Metric):
             aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
             aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
             aux["q95_mu"] = compute_q95(delta_mus)
+        if self.polarisation_computed:
+            polarisation = self.convert(self.polarisation)
+            delta_polarisation = self.convert(self.delta_polarisation)
+            delta_polarisation_per_atom = self.convert(self.delta_polarisation_per_atom)
+            aux["mae_polarisation"] = compute_mae(delta_polarisation)
+            aux["mae_polarisation_per_atom"] = compute_mae(delta_polarisation_per_atom)
+            aux["rmse_polarisation"] = compute_rmse(delta_polarisation)
+            aux["rmse_polarisation_per_atom"] = compute_rmse(delta_polarisation_per_atom)
+            aux["q95_polarisation"] = compute_q95(delta_polarisation)
+        if self.becs_computed:
+            becs = self.convert(self.becs)
+            delta_becs = self.convert(self.delta_becs)
+            delta_becs_per_atom = self.convert(self.delta_becs_per_atom)
+            aux["mae_bec"] = compute_mae(delta_becs)
+            aux["mae_bec_per_atom"] = compute_mae(delta_becs_per_atom)
+            aux["rmse_bec"] = compute_rmse(delta_becs)
+            aux["rmse_bec_per_atom"] = compute_rmse(delta_becs_per_atom)
+            aux["q95_bec"] = compute_q95(delta_becs)
+        if self.polarisability_computed:
+            polarisability = self.convert(self.polarisability)
+            delta_polarisability = self.convert(self.delta_polarisability)
+            delta_polarisability_per_atom = self.convert(self.delta_polarisability_per_atom)
+            aux["mae_polarisability"] = compute_mae(delta_polarisability)
+            aux["mae_polarisability_per_atom"] = compute_mae(delta_polarisability_per_atom)
+            aux["rmse_polarisability"] = compute_rmse(delta_polarisability)
+            aux["rmse_polarisability_per_atom"] = compute_rmse(delta_polarisability_per_atom)
+            aux["q95_polarisability"] = compute_q95(delta_polarisability)
 
         return aux["loss"], aux

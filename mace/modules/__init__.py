@@ -22,6 +22,7 @@ from .blocks import (
 from .loss import (
     DipoleSingleLoss,
     UniversalLoss,
+    UniversalFieldLoss,
     WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesL1L2Loss,
     WeightedEnergyForcesLoss,
@@ -30,7 +31,7 @@ from .loss import (
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
 )
-from .models import MACE, AtomicDipolesMACE, EnergyDipolesMACE, ScaleShiftMACE
+from .models import MACE, AtomicDipolesMACE, EnergyDipolesMACE, ScaleShiftMACE, ScaleShiftFieldMACE
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
@@ -80,6 +81,7 @@ __all__ = [
     "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
+    "ScaleShiftFieldMACE",
     "AtomicDipolesMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
@@ -91,6 +93,7 @@ __all__ = [
     "WeightedHuberEnergyForcesStressLoss",
     "UniversalLoss",
     "WeightedEnergyForcesL1L2Loss",
+    "UniversalFieldLoss",
     "SymmetricContraction",
     "interaction_classes",
     "compute_mean_std_atomic_inter_energy",

@@ -18,6 +18,9 @@ from mace.tools import AtomicNumberTable, DefaultKeys
 Positions = np.ndarray  # [..., 3]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
+Electric_field = np.ndarray  # [,3]
+Bec = np.ndarray
+Polarisability = np.ndarray
 
 DEFAULT_CONFIG_TYPE = "Default"
 DEFAULT_CONFIG_TYPE_WEIGHTS = {DEFAULT_CONFIG_TYPE: 1.0}
@@ -71,6 +74,10 @@ class Configuration:
     property_weights: Dict[str, float]
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
+    electric_field: Optional[Electric_field] = None # eV/Angstrom
+    polarisation: Optional[Vector] = None # eV/Angstrom^2
+    bec: Optional[Bec] = None # |e|
+    polarisability: Optional[Polarisability] = None # tbc
 
     weight: float = 1.0  # weight of config in loss
     config_type: str = DEFAULT_CONFIG_TYPE  # config_type of config
@@ -78,7 +85,6 @@ class Configuration:
 
 
 Configurations = List[Configuration]
-
 
 def random_train_valid_split(
     items: Sequence, valid_fraction: float, seed: int, work_dir: str
@@ -343,6 +349,12 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["dipole"] = data.dipole
     grp["charges"] = data.charges
     grp["head"] = data.head
+    grp["polarisation"] = data.polarisation
+    grp["bec"] = data.bec
+    grp["polarisability"] = data.polarisability
+    grp["electric_field"] = data.electric_field
+    grp["bec_weight"] = data.bec_weight
+    grp["polarisability_weight"] = data.polarisability_weight
 
 
 def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> None:
@@ -362,6 +374,13 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         for key, value in config.property_weights.items():
             weights_subgrp[key] = write_value(value)
         subgroup["config_type"] = write_value(config.config_type)
+        subgroup["polarisation"] = write_value(config.polarisation)
+        subgroup["bec"] = write_value(config.bec)
+        subgroup["polarisability"] = write_value(config.polarisability)
+        subgroup["electric_field"] = write_value(config.electric_field)
+        subgroup["polarisation_weight"] = write_value(config.polarisation_weight)
+        subgroup["bec_weight"] = write_value(config.bec_weight)
+        subgroup["polarisability_weight"] = write_value(config.polarisability_weight)
 
 
 def write_value(value):

@@ -9,6 +9,10 @@ import glob
 import json
 import logging
 import os
+
+os.environ['TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD'] = '1'
+
+import socket
 from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional
@@ -20,6 +24,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import LBFGS
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
+import torch.multiprocessing as mp
 
 import mace
 from mace import data, tools
@@ -62,10 +67,18 @@ from mace.tools.scripts_utils import (
     remove_pt_head,
     setup_wandb,
 )
-from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
+from mace.tools.slurm_distributed import DistributedEnvironment
 
+import warnings
+warnings.filterwarnings("ignore")
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
+def is_port_in_use(port: int) -> bool:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
 
 def main() -> None:
     """
@@ -104,9 +117,7 @@ def run(args) -> None:
         rank = distr_env.rank
         if rank == 0:
             print(distr_env)
-        torch.distributed.init_process_group(backend="nccl")
-    else:
-        rank = int(0)
+        torch.distributed.init_process_group(backend="nccl")        
 
     # Setup
     tools.set_seeds(args.seed)
@@ -338,7 +349,7 @@ def run(args) -> None:
         logging.info(
             "==================Using multiheads finetuning mode=================="
         )
-        args.loss = "universal"
+        args.loss = "universal_field" if args.compute_field else "universal"
 
         all_ase_readable = all(
             all(check_path_ase_read(f) for f in head_config.train_file)
@@ -664,7 +675,7 @@ def run(args) -> None:
     # Cueq
     if args.enable_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "ScaleShiftFieldMACE"]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     # Optimizer
     param_options = get_params_options(args, model)

@@ -5,6 +5,9 @@
 ###########################################################################################
 
 import argparse
+import os 
+
+os.environ['TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD'] = '1'
 
 import ase.data
 import ase.io
@@ -38,8 +41,38 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch_size", help="batch size", type=int, default=64)
     parser.add_argument(
+        "--compute_energy",
+        help="compute energy",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_force",
+        help="compute forces",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--compute_stress",
         help="compute stress",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_polarisation",
+        help="compute polarisation",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_bec",
+        help="compute bec",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_polarisability",
+        help="compute polarisability",
         action="store_true",
         default=False,
     )
@@ -104,7 +137,7 @@ def run(args: argparse.Namespace) -> None:
             )
             for config in configs
         ],
-        batch_size=args.batch_size,
+        batch_size=1,
         shuffle=False,
         drop_last=False,
     )
@@ -114,29 +147,55 @@ def run(args: argparse.Namespace) -> None:
     contributions_list = []
     stresses_list = []
     forces_collection = []
+    polarisations_list = []
+    becs_collection = []
+    polarisabilities_list = []
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch.to_dict(), compute_stress=args.compute_stress)
-        energies_list.append(torch_tools.to_numpy(output["energy"]))
+        output = model(batch.to_dict(), compute_force=args.compute_force, compute_stress=args.compute_stress, compute_field=True)
+
+        if args.compute_energy:
+            energies_list.append(torch_tools.to_numpy(output["energy"]))
+
         if args.compute_stress:
             stresses_list.append(torch_tools.to_numpy(output["stress"]))
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
 
-        forces = np.split(
-            torch_tools.to_numpy(output["forces"]),
-            indices_or_sections=batch.ptr[1:],
-            axis=0,
-        )
-        forces_collection.append(forces[:-1])  # drop last as its empty
+        if args.compute_polarisation:
+            polarisations_list.append(torch_tools.to_numpy(output["polarisation"]).reshape(3))
+        
+        if args.compute_polarisability:
+            polarisabilities_list.append(torch_tools.to_numpy(output["polarisability"]).reshape(9))
 
-    energies = np.concatenate(energies_list, axis=0)
-    forces_list = [
-        forces for forces_list in forces_collection for forces in forces_list
-    ]
-    assert len(atoms_list) == len(energies) == len(forces_list)
+        if args.compute_bec:
+            becs = np.split(
+                torch_tools.to_numpy(output["bec"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            becs = [bec.reshape(-1, 9) for bec in becs[:-1]]  # drop last as its empty
+            becs_collection.append(becs)
+
+        if args.compute_force:
+            forces = np.split(
+                torch_tools.to_numpy(output["forces"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            forces_collection.append(forces[:-1])  # drop last as its empty
+
+    if args.compute_energy:
+        energies = np.concatenate(energies_list, axis=0)
+
+    if args.compute_force:
+        forces_list = [
+            forces for forces_list in forces_collection for forces in forces_list
+        ]
+        assert len(atoms_list) == len(energies) == len(forces_list)
+
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)
         assert len(atoms_list) == stresses.shape[0]
@@ -145,17 +204,46 @@ def run(args: argparse.Namespace) -> None:
         contributions = np.concatenate(contributions_list, axis=0)
         assert len(atoms_list) == contributions.shape[0]
 
+    if args.compute_polarisation:
+        polarisations = np.stack(polarisations_list, axis=0)
+
+    if args.compute_polarisability:
+        polarisabilities = np.stack(polarisabilities_list, axis=0)
+
+    if args.compute_bec:
+        becs_list = [
+            becs for becs_list in becs_collection for becs in becs_list
+        ]
+
     # Store data in atoms objects
-    for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
+
+    if args.compute_energy:
+        for (atoms, energy) in zip(atoms_list, energies):
+            atoms.calc = None  # crucial
+            atoms.info[args.info_prefix + "energy"] = energy
+
+    if args.compute_force:
+        for (atoms, forces) in zip(atoms_list, forces_list):
+            atoms.calc = None  # crucial
+            atoms.arrays[args.info_prefix + "forces"] = forces
+
+    if args.compute_bec:
+        for (atoms, bec) in zip(atoms_list, becs_list):
+            atoms.calc = None  # crucial
+            atoms.arrays[args.info_prefix + "bec"] = bec
+
+
+    for i, atoms in enumerate(atoms_list):
         atoms.calc = None  # crucial
-        atoms.info[args.info_prefix + "energy"] = energy
-        atoms.arrays[args.info_prefix + "forces"] = forces
 
         if args.compute_stress:
             atoms.info[args.info_prefix + "stress"] = stresses[i]
-
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
+        if args.compute_polarisation:
+            atoms.info[args.info_prefix + "polarisation"] = polarisations[i,:]
+        if args.compute_polarisability:
+            atoms.info[args.info_prefix + "polarisability"] = polarisabilities[i,:]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
