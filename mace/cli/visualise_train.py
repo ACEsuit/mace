@@ -160,7 +160,7 @@ class TrainingPlotter:
         labels, quantities = error_type[self.table_type]
 
         for head in self.heads:
-            fig = plt.figure(layout="constrained", figsize=(10, 6))
+            fig = plt.figure(layout="constrained", figsize=(len(quantities) * 3, 6))
             fig.suptitle(
                 f"Model loaded from epoch {model_epoch} ({head} head)", fontsize=16
             )
@@ -529,6 +529,9 @@ def model_inference(
                 compute_force=output_args.get("forces", False),
                 compute_virials=output_args.get("virials", False),
                 compute_stress=output_args.get("stress", False),
+                compute_polarisation=output_args.get("polarisation", False),
+                compute_becs=output_args.get("becs", False),
+                compute_polarisability=output_args.get("polarisability", False)
             )
 
             results = scatter_metric(batch, output)

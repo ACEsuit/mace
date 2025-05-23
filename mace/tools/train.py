@@ -145,23 +145,23 @@ def valid_err_log(
         error_f = eval_metrics["mae_f"] * 1e3
         error_stress = eval_metrics["mae_stress"] * 1e3
         error_polarisation = eval_metrics["mae_polarisation"] * 1e3
-        error_bec = eval_metrics["mae_bec"] 
+        error_bec = eval_metrics["mae_becs"] 
         error_polarisability= eval_metrics["mae_polarisability"] 
         logging.info(
             f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f} MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_polarisation={error_polarisation:8.2f} meV / A^2, MAE_BEC={error_bec:8.2f} |e|, MAE_polarisability={error_polarisability:8.2f} A^3",
         )
     elif (
         log_errors == "PerAtomRMSEstressvirialsfield"
-        and eval_metrics["rmse_stress"] is not None and eval_metrics["rmse_bec"] is not None and eval_metrics["rmse_polarisation"] is not None and eval_metrics["rmse_polarisability"] is not None
+        and eval_metrics["rmse_stress"] is not None and eval_metrics["rmse_becs"] is not None and eval_metrics["rmse_polarisation"] is not None and eval_metrics["rmse_polarisability"] is not None
     ):
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         error_stress = eval_metrics["rmse_stress"] * 1e3
         error_polarisation = eval_metrics["rmse_polarisation"] * 1e3
-        error_bec = eval_metrics["rmse_bec"] 
+        error_becs = eval_metrics["rmse_becs"] 
         error_polarisability= eval_metrics["rmse_polarisability"] 
         logging.info(
-            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3, RMSE_polarisation={error_polarisation:8.2f} meV / A^2, RMSE_BEC={error_bec:8.2f} |e|, RMSE_polarisability={error_polarisability:8.2f} A",
+            f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.8f} meV, RMSE_F={error_f:8.8f} meV / A, RMSE_stress={error_stress:8.8f} meV / A^3, RMSE_polarisation={error_polarisation:8.8f} meV / A^2, RMSE_becs={error_becs:8.8f} |e|, RMSE_polarisability={error_polarisability:8.8f} A",
         )
 
 
@@ -437,7 +437,7 @@ def take_step(
             compute_polarisation=output_args["polarisation"],
             compute_becs=output_args["becs"],
             compute_polarisability=output_args["polarisability"],
-    )
+        )
         loss = loss_fn(pred=output, ref=batch)
         loss.backward()
         if max_grad_norm is not None:
@@ -511,6 +511,9 @@ def take_step_lbfgs(
                 compute_force=output_args["forces"],
                 compute_virials=output_args["virials"],
                 compute_stress=output_args["stress"],
+                compute_polarisation=output_args["polarisation"],
+                compute_becs=output_args["becs"],
+                compute_polarisability=output_args["polarisability"],
             )
             batch_loss = loss_fn(pred=output, ref=batch)
             batch_loss = batch_loss * (batch.num_graphs / total_sample_count)
@@ -739,11 +742,8 @@ class MACELoss(Metric):
         if self.becs_computed:
             becs = self.convert(self.becs)
             delta_becs = self.convert(self.delta_becs)
-            delta_becs_per_atom = self.convert(self.delta_becs_per_atom)
-            aux["mae_bec"] = compute_mae(delta_becs)
-            aux["mae_bec_per_atom"] = compute_mae(delta_becs_per_atom)
-            aux["rmse_bec"] = compute_rmse(delta_becs)
-            aux["rmse_bec_per_atom"] = compute_rmse(delta_becs_per_atom)
+            aux["mae_becs"] = compute_mae(delta_becs)
+            aux["rmse_becs"] = compute_rmse(delta_becs)
             aux["q95_bec"] = compute_q95(delta_becs)
         if self.polarisability_computed:
             polarisability = self.convert(self.polarisability)

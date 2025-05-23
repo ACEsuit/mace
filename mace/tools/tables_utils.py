@@ -263,7 +263,7 @@ def create_error_table(
                     f"{metrics['rel_rmse_f']:8.2f}",
                     f"{metrics['rmse_stress'] * 1000:8.1f}",
                     f"{metrics['rmse_polarisation'] * 1000:8.1f}",
-                    f"{metrics['rmse_bec']:8.1f}",
+                    f"{metrics['rmse_becs']:8.1f}",
                     f"{metrics['rmse_polarisability']:8.1f}",
                 ]
             )

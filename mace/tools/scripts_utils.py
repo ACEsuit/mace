@@ -749,6 +749,16 @@ def get_params_options(
                 "params": model.readouts.parameters(),
                 "weight_decay": 0.0,
             },
+            {
+                "name": "field_readouts",
+                "params": model.field_readouts.parameters(),
+                "weight_decay": 0.0,
+            },
+            {
+                "name": "field_feats",
+                "params": model.field_feats.parameters(),
+                "weight_decay": args.weight_decay,
+            },
         ],
         lr=args.lr,
         amsgrad=args.amsgrad,
