@@ -90,6 +90,24 @@ error_type = {
             ("dipole", "Dipole per atom [Debye]"),
         ],
     ),
+    "PerAtomRMSEstressvirialsfield": (
+        [
+            ("rmse_e_per_atom", "RMSE E/atom [meV]"),
+            ("rmse_f", "RMSE F [meV / A]"),
+            ("rmse_stress", "RMSE Stress [meV / A^3]"),
+            ("rmse_polarisation", "RMSE P [meV / A^2]"),
+            ("rmse_becs", "RMSE Z* [e]"),
+            ("rmse_polarisability", "RMSE a [A^3]"),
+        ],
+        [
+            ("energy", "Energy per atom [eV]"),
+            ("force", "Force [eV / A]"),
+            ("stress", "Stress [eV / A^3]"),
+            ("polarisation", "Polarisation [eV / A^2]"),
+            ("becs", "Born Effective Charges [e]"),
+            ("polarisability", "Polarisability [A^3]"),
+        ],
+    )
 }
 
 
@@ -349,6 +367,33 @@ def plot_inference_from_results(
                     label=name,
                 )
 
+            elif key == "polarisation" and "polarisation" in result:
+                scatter = ax.scatter(
+                    result["polarisation"]["reference"],
+                    result["polarisation"]["predicted"],
+                    marker=marker,
+                    color=fixed_color_train_valid,
+                    label=name,
+                )
+
+            elif key == "becs" and "becs" in result:
+                scatter = ax.scatter(
+                    result["becs"]["reference"],
+                    result["becs"]["predicted"],
+                    marker=marker,
+                    color=fixed_color_train_valid,
+                    label=name,
+                )
+
+            elif key == "polarisability" and "polarisability" in result:
+                scatter = ax.scatter(
+                    result["polarisability"]["reference"],
+                    result["polarisability"]["predicted"],
+                    marker=marker,
+                    color=fixed_color_train_valid,
+                    label=name,
+                )
+
             # Add each train/valid dataset's name to the legend if scatter was assigned
             if scatter is not None:
                 legend_labels[name] = scatter
@@ -402,6 +447,33 @@ def plot_inference_from_results(
                     result["dipole"]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
+                    label="Test",
+                )
+
+            elif key == "polarisation" and "polarisation" in result:
+                scatter = ax.scatter(
+                    result["polarisation"]["reference"],
+                    result["polarisation"]["predicted"],
+                    marker="o",
+                    color=fixed_color_train_valid,
+                    label="Test",
+                )
+
+            elif key == "becs" and "becs" in result:
+                scatter = ax.scatter(
+                    result["becs"]["reference"],
+                    result["becs"]["predicted"],
+                    marker="o",
+                    color=fixed_color_train_valid,
+                    label="Test",
+                )
+
+            elif key == "polarisability" and "polarisability" in result:
+                scatter = ax.scatter(
+                    result["polarisability"]["reference"],
+                    result["polarisability"]["predicted"],
+                    marker="o",
+                    color=fixed_color_train_valid,
                     label="Test",
                 )
 
@@ -496,6 +568,12 @@ class InferenceMetric(Metric):
         self.add_state("pred_virials", default=[], dist_reduce_fx="cat")
         self.add_state("ref_dipole", default=[], dist_reduce_fx="cat")
         self.add_state("pred_dipole", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_polarisation", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_polarisation", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_becs", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_becs", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_polarisability", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_polarisability", default=[], dist_reduce_fx="cat")
 
         # Per-atom normalized values
         self.add_state("ref_energies_per_atom", default=[], dist_reduce_fx="cat")
@@ -504,6 +582,10 @@ class InferenceMetric(Metric):
         self.add_state("pred_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("ref_dipole_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("pred_dipole_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_polarisation_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_polarisation_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_polarisability_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_polarisability_per_atom", default=[], dist_reduce_fx="cat")
 
         # Store atom counts for each configuration
         self.add_state("atom_counts", default=[], dist_reduce_fx="cat")
@@ -514,6 +596,9 @@ class InferenceMetric(Metric):
         self.add_state("n_stress", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_virials", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_dipole", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("n_polarisation", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("n_becs", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("n_polarisability", default=torch.tensor(0.0), dist_reduce_fx="sum")
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         """Update metric states with new batch data."""
@@ -560,6 +645,32 @@ class InferenceMetric(Metric):
             atoms_per_config_3d = atoms_per_config.view(-1, 1)
             self.ref_dipole_per_atom.append(batch.dipole / atoms_per_config_3d)
             self.pred_dipole_per_atom.append(output["dipole"] / atoms_per_config_3d)
+
+        # Polarisation
+        if output.get("polarisation") is not None and batch.polarisation is not None:
+            self.n_polarisation += 1.0
+            self.ref_polarisation.append(batch.polarisation)
+            self.pred_polarisation.append(output["polarisation"])
+            # Per-atom normalization
+            atoms_per_config_3d = atoms_per_config.view(-1, 1)
+            self.ref_polarisation_per_atom.append(batch.polarisation / atoms_per_config_3d)
+            self.pred_polarisation_per_atom.append(output["polarisation"] / atoms_per_config_3d)
+        
+        # Born effective charges
+        if output.get("becs") is not None and batch.becs is not None:
+            self.n_becs += 1.0
+            self.ref_becs.append(batch.becs)
+            self.pred_becs.append(output["becs"])
+
+        # Polarisability
+        if output.get("polarisability") is not None and batch.polarisability is not None:
+            self.n_polarisability += 1.0
+            self.ref_polarisability.append(batch.polarisability)
+            self.pred_polarisability.append(output["polarisability"])
+            # Per-atom normalization
+            atoms_per_config_3d = atoms_per_config.view(-1, 1)
+            self.ref_polarisability_per_atom.append(batch.polarisability / atoms_per_config_3d)
+            self.pred_polarisability_per_atom.append(output["polarisability"] / atoms_per_config_3d)
 
     def _process_data(self, ref_list, pred_list):
         # Handle different possible states of ref_list and pred_list in distributed mode
@@ -637,4 +748,39 @@ class InferenceMetric(Metric):
                 "reference_per_atom": ref_d_pa,
                 "predicted_per_atom": pred_d_pa,
             }
+
+        # Process polarisation
+        if self.n_polarisation:
+            ref_p, pred_p = self._process_data(self.ref_polarisation, self.pred_polarisation)
+            ref_p_pa, pred_p_pa = self._process_data(
+                self.ref_polarisation_per_atom, self.pred_polarisation_per_atom
+            )
+            results["polarisation"] = {
+                "reference": ref_p,
+                "predicted": pred_p,
+                "reference_per_atom": ref_p_pa,
+                "predicted_per_atom": pred_p_pa,
+            }
+
+        # Process born effective charges
+        if self.n_becs:
+            ref_b, pred_b = self._process_data(self.ref_becs, self.pred_becs)
+            results["becs"] = {
+                "reference": ref_b,
+                "predicted": pred_b,
+            }
+
+        # Process polarisability
+        if self.n_polarisability:
+            ref_a, pred_a = self._process_data(self.ref_polarisability, self.pred_polarisability)
+            ref_a_pa, pred_a_pa = self._process_data(
+                self.ref_polarisability_per_atom, self.pred_polarisability_per_atom
+            )
+            results["polarisability"] = {
+                "reference": ref_a,
+                "predicted": pred_a,
+                "reference_per_atom": ref_a_pa,
+                "predicted_per_atom": pred_a_pa,
+            }
+
         return results
