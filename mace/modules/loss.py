@@ -542,8 +542,8 @@ class UniversalFieldLoss(torch.nn.Module):
             )
             loss_becs = reduce_loss(loss_becs, ddp)
             loss_polarisability = torch.nn.functional.huber_loss(
-                configs_polarisability_weight * ref["polarisability"].view(-1,3,3) / num_atoms.view(-1,1,1),
-                configs_polarisability_weight * pred["polarisability"].view(-1,3,3) / num_atoms.view(-1,1,1),
+                configs_polarisability_weight * ref["polarisability"].view(-1,3,3) * volume.view(-1,1,1) / num_atoms.view(-1,1,1),
+                configs_polarisability_weight * pred["polarisability"].view(-1,3,3) * volume.view(-1,1,1) / num_atoms.view(-1,1,1),
                 reduction="none",
                 delta=self.huber_delta,
             )
@@ -580,8 +580,8 @@ class UniversalFieldLoss(torch.nn.Module):
                 delta=self.huber_delta,
             )
             loss_polarisability = torch.nn.functional.huber_loss(
-                configs_polarisability_weight * ref["polarisability"].view(-1,3,3) / num_atoms.view(-1,1,1),
-                configs_polarisability_weight * pred["polarisability"].view(-1,3,3) / num_atoms.view(-1,1,1),
+                configs_polarisability_weight * ref["polarisability"].view(-1,3,3) * volume.view(-1,1,1) / num_atoms.view(-1,1,1),
+                configs_polarisability_weight * pred["polarisability"].view(-1,3,3) * volume.view(-1,1,1) / num_atoms.view(-1,1,1),
                 reduction="mean",
                 delta=self.huber_delta,
             )

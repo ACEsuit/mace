@@ -49,7 +49,7 @@ def update_keyspec_from_kwargs(
     keyspec: KeySpecification, keydict: Dict[str, str]
 ) -> KeySpecification:
     # convert command line style property_key arguments into a keyspec
-    infos = ["energy_key", "stress_key", "virials_key", "dipole_key", "polarisation_key", "polarisability_key", "head_key"]
+    infos = ["energy_key", "stress_key", "virials_key", "dipole_key", "polarisation_key", "polarisability_key", "electric_field_key", "head_key"]
     arrays = ["forces_key", "charges_key", "becs_key"]
     info_keys = {}
     arrays_keys = {}
@@ -342,10 +342,10 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["charges"] = data.charges
     grp["head"] = data.head
     grp["polarisation"] = data.polarisation
-    grp["bec"] = data.bec
+    grp["becs"] = data.becs
     grp["polarisability"] = data.polarisability
     grp["electric_field"] = data.electric_field
-    grp["bec_weight"] = data.bec_weight
+    grp["becs_weight"] = data.becs_weight
     grp["polarisability_weight"] = data.polarisability_weight
 
 
@@ -366,13 +366,6 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         for key, value in config.property_weights.items():
             weights_subgrp[key] = write_value(value)
         subgroup["config_type"] = write_value(config.config_type)
-        subgroup["polarisation"] = write_value(config.polarisation)
-        subgroup["bec"] = write_value(config.bec)
-        subgroup["polarisability"] = write_value(config.polarisability)
-        subgroup["electric_field"] = write_value(config.electric_field)
-        subgroup["polarisation_weight"] = write_value(config.polarisation_weight)
-        subgroup["bec_weight"] = write_value(config.bec_weight)
-        subgroup["polarisability_weight"] = write_value(config.polarisability_weight)
 
 
 def write_value(value):
