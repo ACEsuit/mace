@@ -101,7 +101,7 @@ class Linear:
         )
 
 
-def with_scatter_sum(conv_tp: torch.nn.Module):
+def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
     conv_tp.original_forward = conv_tp.forward
 
     def forward(
@@ -121,24 +121,6 @@ def with_scatter_sum(conv_tp: torch.nn.Module):
 
     conv_tp.forward = types.MethodType(forward, conv_tp)
     return conv_tp
-
-
-class OEQAtomicTPScatterSum(torch.nn.Module):
-    def __init__(self, conv_tp: oeq.TensorProductConv):
-        super().__init__()
-        self.conv_tp = conv_tp
-        self.weight_numel = self.conv_tp.weight_numel
-
-    def forward(
-        self,
-        node_feats: torch.Tensor,
-        edge_attrs: torch.Tensor,
-        tp_weights: torch.Tensor,
-        edge_index: torch.Tensor,
-    ) -> torch.Tensor:
-        sender = edge_index[0]
-        receiver = edge_index[1]
-        return self.conv_tp(node_feats, edge_attrs, tp_weights, sender, receiver)
 
 
 class TensorProductScatterSum:
@@ -194,9 +176,25 @@ class TensorProductScatterSum:
             if oeq_config.conv_fusion is None:
                 return with_scatter_sum(oeq.TensorProduct(tpp))
             if oeq_config.conv_fusion == "atomic":
-                return OEQAtomicTPScatterSum(
-                    oeq.TensorProductConv(tpp, deterministic=False)
-                )
+
+                def forward(
+                    self,
+                    node_feats: torch.Tensor,
+                    edge_attrs: torch.Tensor,
+                    tp_weights: torch.Tensor,
+                    edge_index: torch.Tensor,
+                ) -> torch.Tensor:
+                    sender = edge_index[0]
+                    receiver = edge_index[1]
+                    return self.original_forward(
+                        node_feats, edge_attrs, tp_weights, sender, receiver
+                    )
+
+                tp_conv = oeq.TensorProductConv(tpp, deterministic=False)
+                tp_conv.original_forward = tp_conv.forward
+                tp_conv.forward = types.MethodType(forward, tp_conv)
+                return tp_conv
+
             raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
 
         return with_scatter_sum(
