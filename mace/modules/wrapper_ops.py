@@ -123,9 +123,8 @@ def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
     return conv_tp
 
 
-class TensorProductScatterSum:
+class TensorProduct:
     """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
-
     def __new__(
         cls,
         irreps_in1: o3.Irreps,
@@ -143,8 +142,7 @@ class TensorProductScatterSum:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
-            return with_scatter_sum(
-                cuet.ChannelWiseTensorProduct(
+            return cuet.ChannelWiseTensorProduct(
                     cue.Irreps(cueq_config.group, irreps_in1),
                     cue.Irreps(cueq_config.group, irreps_in2),
                     cue.Irreps(cueq_config.group, irreps_out),
@@ -154,7 +152,6 @@ class TensorProductScatterSum:
                     dtype=torch.get_default_dtype(),
                     math_dtype=torch.get_default_dtype(),
                 )
-            )
         if (
             OEQ_AVAILABLE
             and oeq_config is not None
@@ -174,39 +171,20 @@ class TensorProductScatterSum:
             )
 
             if oeq_config.conv_fusion is None:
-                return with_scatter_sum(oeq.TensorProduct(tpp))
+                return oeq.TensorProduct(tpp)
             if oeq_config.conv_fusion == "atomic":
-
-                def forward(
-                    self,
-                    node_feats: torch.Tensor,
-                    edge_attrs: torch.Tensor,
-                    tp_weights: torch.Tensor,
-                    edge_index: torch.Tensor,
-                ) -> torch.Tensor:
-                    sender = edge_index[0]
-                    receiver = edge_index[1]
-                    return self.original_forward(
-                        node_feats, edge_attrs, tp_weights, sender, receiver
-                    )
-
-                tp_conv = oeq.TensorProductConv(tpp, deterministic=False)
-                tp_conv.original_forward = tp_conv.forward
-                tp_conv.forward = types.MethodType(forward, tp_conv)
-                return tp_conv
+                return oeq.TensorProductConv(tpp, deterministic=False)
 
             raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
 
-        return with_scatter_sum(
-            o3.TensorProduct(
+        return o3.TensorProduct(
                 irreps_in1,
                 irreps_in2,
                 irreps_out,
                 instructions=instructions,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
-            )
-        )
+            ) 
 
 
 class FullyConnectedTensorProduct:
