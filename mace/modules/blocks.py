@@ -18,7 +18,7 @@ from mace.modules.wrapper_ops import (
     Linear,
     OEQConfig,
     SymmetricContractionWrapper,
-    TensorProductScatterSum,
+    TensorProduct,
 )
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
@@ -407,7 +407,7 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProductScatterSum(
+        self.conv_tp = TensorProduct(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -417,6 +417,9 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             cueq_config=self.cueq_config,
             oeq_config=self.oeq_config,
         )
+
+        if self.oeq_config and self.oeq_config.conv_fusion:
+            self.conv_fusion = self.oeq_config.conv_fusion
 
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
@@ -464,9 +467,15 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             first_layer=first_layer,
         )
         tp_weights = self.conv_tp_weights(edge_feats)
-        message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, edge_index
-        )  # [n_nodes, irreps]
+
+        message = None        
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
         message = self.linear(message) / self.avg_num_neighbors
@@ -499,7 +508,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProductScatterSum(
+        self.conv_tp = TensorProduct(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -557,9 +566,14 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             first_layer=first_layer,
         )
         tp_weights = self.conv_tp_weights(edge_feats)
-        message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, edge_index
-        )  # [n_nodes, irreps]
+        message = None
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
         sc = self.truncate_ghosts(sc, n_real)
@@ -592,7 +606,7 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProductScatterSum(
+        self.conv_tp = TensorProduct(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -665,9 +679,14 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         density = scatter_sum(
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
-        message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, edge_index
-        )  # [n_nodes, irreps]
+        message = None
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
 
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -702,7 +721,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProductScatterSum(
+        self.conv_tp = TensorProduct(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -777,9 +796,16 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         density = scatter_sum(
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
-        message = self.conv_tp(
-            node_feats, edge_attrs, tp_weights, edge_index
-        )  # [n_nodes, irreps]
+         
+        message = None
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
+        
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
         density = self.truncate_ghosts(density, n_real)
@@ -814,7 +840,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             self.edge_attrs_irreps,
             self.target_irreps,
         )
-        self.conv_tp = TensorProductScatterSum(
+        self.conv_tp = TensorProduct(
             self.node_feats_irreps,
             self.edge_attrs_irreps,
             irreps_mid,
@@ -885,10 +911,14 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             dim=-1,
         )
         tp_weights = self.conv_tp_weights(augmented_edge_feats)
-        message = self.conv_tp(
-            node_feats_up, edge_attrs, tp_weights, edge_index
-        )  # [n_nodes, irreps]
-
+        message = None
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
         message = self.linear(message) / self.avg_num_neighbors
         return (
             self.reshape(message),
