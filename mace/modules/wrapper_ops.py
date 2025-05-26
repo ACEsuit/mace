@@ -125,6 +125,7 @@ def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
 
 class TensorProduct:
     """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
+
     def __new__(
         cls,
         irreps_in1: o3.Irreps,
@@ -143,15 +144,15 @@ class TensorProduct:
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
             return cuet.ChannelWiseTensorProduct(
-                    cue.Irreps(cueq_config.group, irreps_in1),
-                    cue.Irreps(cueq_config.group, irreps_in2),
-                    cue.Irreps(cueq_config.group, irreps_out),
-                    layout=cueq_config.layout,
-                    shared_weights=shared_weights,
-                    internal_weights=internal_weights,
-                    dtype=torch.get_default_dtype(),
-                    math_dtype=torch.get_default_dtype(),
-                )
+                cue.Irreps(cueq_config.group, irreps_in1),
+                cue.Irreps(cueq_config.group, irreps_in2),
+                cue.Irreps(cueq_config.group, irreps_out),
+                layout=cueq_config.layout,
+                shared_weights=shared_weights,
+                internal_weights=internal_weights,
+                dtype=torch.get_default_dtype(),
+                math_dtype=torch.get_default_dtype(),
+            )
         if (
             OEQ_AVAILABLE
             and oeq_config is not None
@@ -178,13 +179,13 @@ class TensorProduct:
             raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
 
         return o3.TensorProduct(
-                irreps_in1,
-                irreps_in2,
-                irreps_out,
-                instructions=instructions,
-                shared_weights=shared_weights,
-                internal_weights=internal_weights,
-            ) 
+            irreps_in1,
+            irreps_in2,
+            irreps_out,
+            instructions=instructions,
+            shared_weights=shared_weights,
+            internal_weights=internal_weights,
+        )
 
 
 class FullyConnectedTensorProduct:

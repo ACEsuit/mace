@@ -468,11 +468,13 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
 
-        message = None        
+        message = None
         if hasattr(self, "conv_fusion"):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
-            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
             message = scatter_sum(
                 src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
             )
@@ -570,7 +572,9 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         if hasattr(self, "conv_fusion"):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
-            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
             message = scatter_sum(
                 src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
             )
@@ -683,7 +687,9 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         if hasattr(self, "conv_fusion"):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
-            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
             message = scatter_sum(
                 src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
             )
@@ -796,16 +802,18 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         density = scatter_sum(
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
-         
+
         message = None
         if hasattr(self, "conv_fusion"):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
-            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
             message = scatter_sum(
                 src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
             )
-        
+
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
         density = self.truncate_ghosts(density, n_real)
@@ -915,7 +923,9 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         if hasattr(self, "conv_fusion"):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
-            mji = self.conv_tp(node_feats[edge_index[0]], edge_attrs, tp_weights)  # [n_nodes, irreps]
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
             message = scatter_sum(
                 src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
             )
