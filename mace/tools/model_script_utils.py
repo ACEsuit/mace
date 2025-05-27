@@ -149,6 +149,7 @@ def configure_model(
             atomic_energies=atomic_energies,
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
+            edge_irreps=o3.Irreps(args.edge_irreps),
         )
         model_config_foundation = None
 
@@ -203,7 +204,11 @@ def _build_model(
             atomic_inter_shift=[0.0] * len(heads),
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
-            attention_irreps=o3.Irreps(args.attention_irreps) if args.attention_irreps is not None else None,
+            attention_irreps=(
+                o3.Irreps(args.attention_irreps)
+                if args.attention_irreps is not None
+                else None
+            ),
             heads=heads,
         )
     if args.model == "ScaleShiftMACE":
@@ -219,7 +224,11 @@ def _build_model(
             atomic_inter_shift=args.mean,
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
-            attention_irreps=o3.Irreps(args.attention_irreps) if args.attention_irreps is not None else None,
+            attention_irreps=(
+                o3.Irreps(args.attention_irreps)
+                if args.attention_irreps is not None
+                else None
+            ),
             heads=heads,
         )
     if args.model == "FoundationMACE":

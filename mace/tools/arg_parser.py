@@ -174,6 +174,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityResidualInteractionBlock",
             "RealAgnosticAttentionResidualInteractionBlock",
             "RealAgnosticNonLinearDensityResidualInteractionBlock",
+            "RealAgnosticResidualNonLinearInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -188,6 +189,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityResidualInteractionBlock",
             "RealAgnosticAttentionResidualInteractionBlock",
             "RealAgnosticNonLinearDensityResidualInteractionBlock",
+            "RealAgnosticResidualNonLinearInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -214,6 +216,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hidden_irreps",
         help="irreps for hidden node states",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--edge_irreps",
+        help="irreps for edge states",
         type=str,
         default=None,
     )
@@ -668,10 +676,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
     )
     parser.add_argument(
-        "--eval_interval_steps", 
-        help="evaluate model every <n> steps (batches); if set, overrides eval_interval", 
-        type=int, 
-        default=None
+        "--eval_interval_steps",
+        help="evaluate model every <n> steps (batches); if set, overrides eval_interval",
+        type=int,
+        default=None,
     )
     parser.add_argument(
         "--keep_checkpoints",

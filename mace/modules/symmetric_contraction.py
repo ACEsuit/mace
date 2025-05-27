@@ -32,6 +32,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         internal_weights: Optional[bool] = None,
         shared_weights: Optional[bool] = None,
         num_elements: Optional[int] = None,
+        element_dependent: Optional[bool] = False,
     ) -> None:
         super().__init__()
 
@@ -75,6 +76,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
                     internal_weights=self.internal_weights,
                     num_elements=num_elements,
                     weights=self.shared_weights,
+                    element_dependent=element_dependent,
                 )
             )
 
@@ -93,12 +95,14 @@ class Contraction(torch.nn.Module):
         internal_weights: bool = True,
         num_elements: Optional[int] = None,
         weights: Optional[torch.Tensor] = None,
+        element_dependent: Optional[bool] = False,
     ) -> None:
         super().__init__()
 
         self.num_features = irreps_in.count((0, 1))
         self.coupling_irreps = o3.Irreps([irrep.ir for irrep in irreps_in])
         self.correlation = correlation
+        self.element_dependent = element_dependent
         dtype = torch.get_default_dtype()
         for nu in range(1, correlation + 1):
             U_matrix = U_matrix_real(
@@ -115,6 +119,8 @@ class Contraction(torch.nn.Module):
 
         # Create weight for product basis
         self.weights = torch.nn.ParameterList([])
+        if not element_dependent:
+            num_elements = 1
 
         for i in range(correlation, 0, -1):
             # Shapes definying
@@ -210,6 +216,12 @@ class Contraction(torch.nn.Module):
             self.weights_max = weights[-1]
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
+        if not self.element_dependent:
+            y = torch.ones(
+                (x.shape[0], 1),
+                device=x.device,
+                dtype=x.dtype,
+            )
         out = self.graph_opt_main(
             self.U_tensors(self.correlation),
             self.weights_max,
