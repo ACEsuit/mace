@@ -246,7 +246,9 @@ class MACE(torch.nn.Module):
             num_atoms_arange, node_heads
         ]
         e0 = scatter_sum(
-            src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+            src=node_e0.double(), index=data["batch"], dim=0, dim_size=num_graphs
+        ).to(
+            data["node_attrs"].dtype
         )  # [n_graphs, n_heads]
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -410,7 +412,9 @@ class ScaleShiftMACE(MACE):
             num_atoms_arange, node_heads
         ]
         e0 = scatter_sum(
-            src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+            src=node_e0.double(), index=data["batch"], dim=0, dim_size=num_graphs
+        ).to(
+            data["node_attrs"].dtype
         )  # [n_graphs, num_heads]
 
         # Embeddings
