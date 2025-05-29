@@ -16,6 +16,7 @@ from mace.modules.wrapper_ops import (
     CuEquivarianceConfig,
     FullyConnectedTensorProduct,
     Linear,
+    OEQConfig,
     SymmetricContractionWrapper,
     TensorProduct,
 )
@@ -61,6 +62,7 @@ class LinearReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.linear = Linear(
@@ -86,6 +88,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         num_heads: int = 1,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -115,6 +118,7 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         if dipole_only:
@@ -138,6 +142,7 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         gate: Callable,
         dipole_only: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -252,6 +257,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         use_sc: bool = True,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,
     ) -> None:
         super().__init__()
 
@@ -262,6 +268,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             correlation=correlation,
             num_elements=num_elements,
             cueq_config=cueq_config,
+            oeq_config=oeq_config,
         )
         # Update linear
         self.linear = Linear(
@@ -317,6 +324,7 @@ class InteractionBlock(torch.nn.Module):
         avg_num_neighbors: float,
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,
     ) -> None:
         super().__init__()
         self.node_attrs_irreps = node_attrs_irreps
@@ -330,6 +338,7 @@ class InteractionBlock(torch.nn.Module):
             radial_MLP = [64, 64, 64]
         self.radial_MLP = radial_MLP
         self.cueq_config = cueq_config
+        self.oeq_config = oeq_config
         self._setup()
 
     @abstractmethod
@@ -381,6 +390,9 @@ class RealAgnosticInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
+
         # First linear
         self.linear_up = Linear(
             self.node_feats_irreps,
@@ -403,7 +415,11 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config,
         )
+
+        if self.oeq_config and self.oeq_config.conv_fusion:
+            self.conv_fusion = self.oeq_config.conv_fusion
 
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
@@ -442,9 +458,6 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         lammps_class: Optional[Any] = None,
         first_layer: bool = False,
     ) -> Tuple[torch.Tensor, None]:
-        sender = edge_index[0]
-        receiver = edge_index[1]
-        num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
         node_feats = self.linear_up(node_feats)
         node_feats = self.handle_lammps(
@@ -454,12 +467,17 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             first_layer=first_layer,
         )
         tp_weights = self.conv_tp_weights(edge_feats)
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
-        )  # [n_nodes, irreps]
+
+        message = None
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
         message = self.linear(message) / self.avg_num_neighbors
@@ -475,6 +493,9 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
+
         # First linear
         self.linear_up = Linear(
             self.node_feats_irreps,
@@ -497,6 +518,7 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
@@ -536,9 +558,6 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         lammps_natoms: Tuple[int, int] = (0, 0),
         first_layer: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        sender = edge_index[0]
-        receiver = edge_index[1]
-        num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
@@ -549,12 +568,16 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             first_layer=first_layer,
         )
         tp_weights = self.conv_tp_weights(edge_feats)
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
-        )  # [n_nodes, irreps]
+        message = None
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
         sc = self.truncate_ghosts(sc, n_real)
@@ -570,6 +593,9 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
+
         # First linear
         self.linear_up = Linear(
             self.node_feats_irreps,
@@ -592,6 +618,7 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
@@ -641,7 +668,6 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         lammps_natoms: Tuple[int, int] = (0, 0),
         first_layer: bool = False,
     ) -> Tuple[torch.Tensor, None]:
-        sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
@@ -654,15 +680,20 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
         density = scatter_sum(
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
-        )  # [n_nodes, irreps]
+        message = None
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
+
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
         density = self.truncate_ghosts(density, n_real)
@@ -679,6 +710,8 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
 
         # First linear
         self.linear_up = Linear(
@@ -702,6 +735,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
@@ -752,7 +786,6 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         lammps_natoms: Tuple[int, int] = (0, 0),
         first_layer: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        sender = edge_index[0]
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
@@ -766,15 +799,21 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         )
         tp_weights = self.conv_tp_weights(edge_feats)
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
         density = scatter_sum(
             src=edge_density, index=receiver, dim=0, dim_size=num_nodes
         )  # [n_nodes, 1]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
-        )  # [n_nodes, irreps]
+
+        message = None
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
+
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
         density = self.truncate_ghosts(density, n_real)
@@ -791,6 +830,9 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
+        if not hasattr(self, "oeq_config"):
+            self.oeq_config = None
+
         self.node_feats_down_irreps = o3.Irreps("64x0e")
         # First linear
         self.linear_up = Linear(
@@ -814,6 +856,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
@@ -864,7 +907,6 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
-        num_nodes = node_feats.shape[0]
         sc = self.skip_linear(node_feats)
         node_feats_up = self.linear_up(node_feats)
         node_feats_down = self.linear_down(node_feats)
@@ -877,12 +919,16 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             dim=-1,
         )
         tp_weights = self.conv_tp_weights(augmented_edge_feats)
-        mji = self.conv_tp(
-            node_feats_up[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
-        )  # [n_nodes, irreps]
+        message = None
+        if hasattr(self, "conv_fusion"):
+            message = self.conv_tp(node_feats_up, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(
+                node_feats_up[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_nodes, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+            )
         message = self.linear(message) / self.avg_num_neighbors
         return (
             self.reshape(message),
