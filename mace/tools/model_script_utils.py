@@ -105,7 +105,7 @@ def configure_model(
         model_config = model_config_foundation
 
         logging.info("Model configuration extracted from foundation model")
-        logging.info("Using universal loss function for fine-tuning")
+        logging.info(f"Using {args.loss} loss function for fine-tuning")
         logging.info(
             f"Message passing with hidden irreps {model_config_foundation['hidden_irreps']})"
         )
