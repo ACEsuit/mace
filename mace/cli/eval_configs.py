@@ -206,10 +206,12 @@ def run(args: argparse.Namespace) -> None:
         if args.return_node_energies:
             node_energies_list.append(
                 np.split(
-                    torch_tools.to_numpy(output['node_energy']),
+                    torch_tools.to_numpy(output["node_energy"]),
                     indices_or_sections=batch.ptr[1:],
                     axis=0,
-                    )[:-1] # drop last as its empty
+                )[
+                    :-1
+                ]  # drop last as its empty
             )
 
         forces = np.split(
