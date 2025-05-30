@@ -236,7 +236,10 @@ class SymmetricContractionWrapper:
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
         oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
+        use_reduced_cg: bool = True,
     ):
+        use_reduced_cg = use_reduced_cg and CUET_AVAILABLE
+        print("Using reduced CG:", use_reduced_cg)
         if (
             CUET_AVAILABLE
             and cueq_config is not None
@@ -250,7 +253,7 @@ class SymmetricContractionWrapper:
                 layout_out=cueq_config.layout,
                 contraction_degree=correlation,
                 num_elements=num_elements,
-                original_mace=True,
+                original_mace=(not use_reduced_cg),
                 dtype=torch.get_default_dtype(),
                 math_dtype=torch.get_default_dtype(),
             )
@@ -260,4 +263,5 @@ class SymmetricContractionWrapper:
             irreps_out=irreps_out,
             correlation=correlation,
             num_elements=num_elements,
+            use_reduced_cg=use_reduced_cg,
         )

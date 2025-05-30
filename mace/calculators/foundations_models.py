@@ -31,6 +31,7 @@ mace_mp_urls = {
 }
 mace_mp_names = [None] + list(mace_mp_urls.keys())
 
+
 def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
     """
     Downloads or locates the MACE-MP checkpoint file.
@@ -44,7 +45,7 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
     """
     if model in (None, "medium-mpa-0") and os.path.isfile(local_model_path):
         return local_model_path
-      
+
     checkpoint_url = (
         mace_mp_urls.get(model, mace_mp_urls["medium-mpa-0"])
         if model in mace_mp_names

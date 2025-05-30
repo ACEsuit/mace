@@ -13,10 +13,8 @@ from e3nn import o3
 from mace import data, modules, tools
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
-
-from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
-
+from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.tools import torch_geometric
 
 try:
@@ -34,6 +32,7 @@ except ImportError:
     OEQ_AVAILABLE = False
 
 CUDA_AVAILABLE = torch.cuda.is_available()
+
 
 class BackendTestBase:
     @pytest.fixture
@@ -113,7 +112,7 @@ class BackendTestBase:
         batch: Dict[str, torch.Tensor],
         device: str,
         default_dtype: torch.dtype,
-        conversion_functions: tuple 
+        conversion_functions: tuple,
     ):
         run_e3nn_to_backend, run_backend_to_e3nn = conversion_functions
 
@@ -171,7 +170,9 @@ class BackendTestBase:
         for (name_e3nn, p_e3nn), (name_backend, p_backend) in zip(
             model_e3nn.named_parameters(), model_backend.named_parameters()
         ):
-            print_gradient_diff(name_e3nn, p_e3nn, name_backend, p_backend, "E3nn->CuEq")
+            print_gradient_diff(
+                name_e3nn, p_e3nn, name_backend, p_backend, "E3nn->CuEq"
+            )
 
         # CuEq to E3nn gradients
         for (name_backend, p_backend), (name_e3nn_back, p_e3nn_back) in zip(
@@ -189,23 +190,24 @@ class BackendTestBase:
                 name_e3nn, p_e3nn, name_e3nn_back, p_e3nn_back, "Full circle"
             )
 
+
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
 class TestCueq(BackendTestBase):
     @pytest.fixture
     def conversion_functions(self):
         return run_e3nn_to_cueq, run_cueq_to_e3nn
 
-    @pytest.fixture(params=(['cuda'] if CUDA_AVAILABLE else ['cpu']))
+    @pytest.fixture(params=(["cuda"] if CUDA_AVAILABLE else ["cpu"]))
     def device(self, request):
         return request.param
 
 
-@pytest.mark.skipif(not OEQ_AVAILABLE, reason="openequivariance not installed") 
+@pytest.mark.skipif(not OEQ_AVAILABLE, reason="openequivariance not installed")
 class TestOeq(BackendTestBase):
     @pytest.fixture
     def conversion_functions(self):
         return run_e3nn_to_oeq, run_oeq_to_e3nn
-   
-    @pytest.fixture(params=(['cuda'] if CUDA_AVAILABLE else []))
+
+    @pytest.fixture(params=(["cuda"] if CUDA_AVAILABLE else []))
     def device(self, request):
         return request.param
