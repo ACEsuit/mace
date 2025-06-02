@@ -108,8 +108,8 @@ class AtomicData(torch_geometric.data.Data):
         assert charges is None or charges.shape == (num_nodes,)
         assert electric_field is None or electric_field.shape[-1] == 3
         assert polarisation is None or polarisation.shape[-1] == 3
-        assert becs is None or becs.view(-1,3,3).shape == (num_nodes, 3, 3)
-        assert polarisability is None or polarisability.view(-1, 3, 3).shape == (1, 3, 3)
+        assert becs is None or becs.shape == (num_nodes, 3, 3)
+        assert polarisability is None or polarisability.shape == (1, 3, 3)
         assert polarisation_weight is None or len(polarisation_weight.shape) == 0
         assert becs_weight is None or len(becs_weight.shape) == 0
         assert polarisability_weight is None or len(polarisability_weight.shape) == 0
@@ -338,7 +338,7 @@ class AtomicData(torch_geometric.data.Data):
         becs = (
             torch.tensor(
                 config.properties.get("becs"), dtype=torch.get_default_dtype()
-            )
+            ).view(-1,3,3)
             if config.properties.get("becs") is not None
             else torch.zeros(num_atoms, 3, 3, dtype=torch.get_default_dtype())
         )
@@ -346,7 +346,7 @@ class AtomicData(torch_geometric.data.Data):
         polarisability = (
             torch.tensor(
                 config.properties.get("polarisability"), dtype=torch.get_default_dtype()
-            )
+            ).view(-1,3,3)
             if config.properties.get("polarisability") is not None
             else torch.zeros(1, 3, 3, dtype=torch.get_default_dtype())
         )

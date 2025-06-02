@@ -129,7 +129,7 @@ def get_polarisability(
             allow_unused=True,
         )[0]
         if grad_field is None:
-            return torch.zeros_like(electric_field)
+            grad_field = torch.zeros_like(electric_field)
         polarisability_list.append(grad_field) # [n_graphs, 3]
     polarisability = torch.stack(polarisability_list, dim=1)  # [n_graphs, 3, 3]
     return polarisability # [n_graphs, 3, 3]

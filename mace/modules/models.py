@@ -35,7 +35,8 @@ from .utils import (
     prepare_graph,
     get_polarisation,
     get_becs,
-    get_polarisability
+    get_polarisability,
+    fold_polarisation,
 )
 
 # pylint: disable=C0302
@@ -512,7 +513,6 @@ class ScaleShiftFieldMACE(MACE):
         num_channels = hidden_irreps.count(o3.Irrep(0, 1))
 
         self.field_feats = torch.nn.ModuleList()
-        self.field_readouts = torch.nn.ModuleList()
         for i in range(kwargs["num_interactions"]-1):
             self.field_feats.append(
                 LinearReadoutBlock(
@@ -520,29 +520,12 @@ class ScaleShiftFieldMACE(MACE):
                     (num_channels * o3.Irreps("1x0e+1x1o")).sort()[0].simplify(),
                 )
             )
-            self.field_readouts.append(
-                LinearReadoutBlock(
-                o3.Irreps(f"{num_channels}x0e"), 
-                o3.Irreps(f"{len(self.heads)}x0e"), 
-                self.interactions[-1].cueq_config
-                )
-            )
         self.field_feats.append(
             LinearReadoutBlock(
                 str(hidden_irreps[0]),
                 (num_channels * o3.Irreps("4x0e")).sort()[0].simplify(),
             )  
-        ) 
-        self.field_readouts.append(
-            NonLinearReadoutBlock(
-                o3.Irreps(f"{num_channels}x0e"),
-                (len(self.heads) * kwargs['MLP_irreps']).simplify(),
-                kwargs['gate'],
-                o3.Irreps(f"{len(self.heads)}x0e"),
-                len(self.heads),
-                self.interactions[-1].cueq_config,
-            )
-        )           
+        )  
 
     def forward(
         self,
@@ -581,9 +564,7 @@ class ScaleShiftFieldMACE(MACE):
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
-        data["electric_field"] = data["electric_field"].reshape(-1, 3) # [num_graphs, 3]
-        data["electric_field"].requires_grad_(True)
-
+        electric_field = data["electric_field"].reshape(-1, 3).requires_grad_(True) # [num_graphs, 3]
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
@@ -614,8 +595,8 @@ class ScaleShiftFieldMACE(MACE):
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
 
-        for i, (interaction, product, readout, field_feat, field_readout) in enumerate(
-            zip(self.interactions, self.products, self.readouts, self.field_feats, self.field_readouts)
+        for i, (interaction, product, readout, field_feat) in enumerate(
+            zip(self.interactions, self.products, self.readouts, self.field_feats)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -635,14 +616,15 @@ class ScaleShiftFieldMACE(MACE):
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
-            node_feats_list.append(node_feats)
             node_field_feats = field_feat(node_feats, node_heads).reshape(node_feats.shape[0], -1, 4) # [n_nodes, k, 4]
             node_charge_feats, node_electronic_dipole_feats = node_field_feats[:,:,0],  node_field_feats[:,:,1:] # [n_nodes, k, 1], [n_nodes, k, 3]
-            node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, data["positions"]) # [n_nodes, k, 3]
+            node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, positions) # [n_nodes, k, 3]
             node_dipole_feats = node_ionic_dipole_feats - node_electronic_dipole_feats # [n_nodes, k, 3]
-            node_field_energies = torch.einsum('ijk,ik->ij', node_dipole_feats, data["electric_field"].repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
+            node_field_energies = torch.einsum('ijk,ik->ij', node_dipole_feats, electric_field.repeat_interleave(num_graphs, dim=0))
+            node_feats = (node_feats.view(node_field_energies.shape[0], node_field_energies.shape[1], -1) - node_field_energies.unsqueeze(-1)).view(node_field_energies.shape[0], -1)
+            node_feats_list.append(node_feats)
             node_es_list.append(
-                (readout(node_feats, node_heads) - field_readout(node_field_energies, node_heads))[num_atoms_arange, node_heads]
+                readout(node_feats, node_heads)[num_atoms_arange, node_heads]
             )
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -680,10 +662,10 @@ class ScaleShiftFieldMACE(MACE):
             )
 
         if compute_polarisation:
-            volume = torch.linalg.det(cell.view(-1,3,3)).abs()
+            volume = torch.det(cell.view(-1,3,3)).abs()
             polarisation = get_polarisation(
                 energy=inter_e,
-                electric_field=data["electric_field"],
+                electric_field=electric_field,
                 training=(training or compute_becs or compute_polarisability),
             )
             if compute_becs:
@@ -697,7 +679,7 @@ class ScaleShiftFieldMACE(MACE):
             if compute_polarisability:
                 polarisability = get_polarisability(
                     polarisation=polarisation,
-                    electric_field=data["electric_field"],
+                    electric_field=electric_field,
                     training=(training or compute_polarisability),
                 ) / volume.view(-1, 1, 1)
             else:

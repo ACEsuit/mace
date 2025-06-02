@@ -750,11 +750,6 @@ def get_params_options(
                 "weight_decay": 0.0,
             },
             {
-                "name": "field_readouts",
-                "params": model.field_readouts.parameters(),
-                "weight_decay": 0.0,
-            },
-            {
                 "name": "field_feats",
                 "params": model.field_feats.parameters(),
                 "weight_decay": args.weight_decay,
