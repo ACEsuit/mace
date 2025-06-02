@@ -36,7 +36,6 @@ from .utils import (
     get_polarisation,
     get_becs,
     get_polarisability,
-    fold_polarisation,
 )
 
 # pylint: disable=C0302
