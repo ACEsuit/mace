@@ -349,7 +349,7 @@ def run(args) -> None:
         logging.info(
             "==================Using multiheads finetuning mode=================="
         )
-        args.loss = "universal_field" if args.compute_field else "universal"
+        args.loss = "universal_field" if args.compute_polarisation or args.compute_becs or args.compute_polarisability else "universal"
 
         all_ase_readable = all(
             all(check_path_ase_read(f) for f in head_config.train_file)
