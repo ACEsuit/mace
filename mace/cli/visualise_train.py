@@ -671,7 +671,7 @@ class InferenceMetric(Metric):
             self.ref_polarisability.append(batch.polarisability)
             self.pred_polarisability.append(output["polarisability"])
             # Per-atom normalization
-            atoms_per_config_3d = atoms_per_config.view(-1, 1)
+            atoms_per_config_3d = atoms_per_config.view(-1, 1, 1)
             self.ref_polarisability_per_atom.append(batch.polarisability / atoms_per_config_3d)
             self.pred_polarisability_per_atom.append(output["polarisability"] / atoms_per_config_3d)
 
