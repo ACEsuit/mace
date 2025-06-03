@@ -348,7 +348,6 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         ),
         "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
-        "attention_irreps": o3.Irreps(model.attention_irreps),
         "distance_transform": radial_to_transform(model.radial_embedding),
         "atomic_inter_scale": scale.cpu().numpy(),
         "atomic_inter_shift": shift.cpu().numpy(),
