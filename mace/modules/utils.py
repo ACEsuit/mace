@@ -88,21 +88,34 @@ def get_polarisation(
 
 def get_becs(
     polarisation: torch.Tensor,
+    forces: torch.Tensor,
     positions: torch.Tensor,
+    electric_field: torch.Tensor,
     training: bool = True,
 ) -> torch.Tensor:
     becs_polar_list = []
     for d in range(3): # Loop over dimensions
         polar_component = polarisation[:, d]  # [n_graphs, 1]
-        grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(polar_component)]
-        gradient = torch.autograd.grad(
+        polar_grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(polar_component)]
+        polar_gradient = torch.autograd.grad(
             outputs=[polar_component], # [n_graphs, 1]
             inputs=[positions], # [n_nodes, 3]
-            grad_outputs=grad_outputs,
+            grad_outputs=polar_grad_outputs,
             retain_graph=training,  # Make sure the graph is not destroyed during training
             create_graph=training,  # Create graph for higher derivatives
             allow_unused=True,
         )[0]
+        force_component = forces[:, d]  # [n_graphs, 1]
+        force_grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(force_component)]
+        force_gradient = torch.autograd.grad(
+            outputs=[force_component], # [n_nodes, 1]
+            inputs=[electric_field], # [n_graphs, 3]
+            grad_outputs=force_grad_outputs,
+            retain_graph=training,  # Make sure the graph is not destroyed during training
+            create_graph=training,  # Create graph for higher derivatives
+            allow_unused=True,
+        )[0]
+        gradient = 0.5 * polar_gradient + 0.5 * force_gradient
         if gradient is None:
             return torch.zeros_like(positions)
         becs_polar_list.append(gradient) # [n_nodes, 3]

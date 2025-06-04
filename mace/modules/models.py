@@ -619,11 +619,12 @@ class ScaleShiftFieldMACE(MACE):
             node_charge_feats, node_electronic_dipole_feats = node_field_feats[:,:,0],  node_field_feats[:,:,1:] # [n_nodes, k, 1], [n_nodes, k, 3]
             node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, positions) # [n_nodes, k, 3]
             node_dipole_feats = node_ionic_dipole_feats - node_electronic_dipole_feats # [n_nodes, k, 3]
-            node_field_energies = torch.einsum('ijk,ik->ij', node_dipole_feats, electric_field.repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
-            node_feats = (node_feats.view(node_field_energies.shape[0], node_field_energies.shape[1], -1) - node_field_energies.unsqueeze(-1)).view(node_field_energies.shape[0], -1)
+            node_field_feats = torch.einsum('ijk,ik->ij', node_dipole_feats, electric_field.repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
+            node_field_feats = node_field_feats.repeat_interleave(node_feats.view(node_field_feats.shape[0], node_field_feats.shape[1], -1).shape[-1], dim=1)
             node_feats_list.append(node_feats)
             node_es_list.append(
-                readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+                readout(node_feats, node_heads)[num_atoms_arange, node_heads] -
+                readout(node_field_feats, node_heads)[num_atoms_arange, node_heads]
             )
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -670,7 +671,9 @@ class ScaleShiftFieldMACE(MACE):
             if compute_becs:
                 becs = get_becs(
                     polarisation=polarisation,
+                    forces=forces,
                     positions=positions,
+                    electric_field=electric_field,
                     training=(training or compute_becs),
                 )
             else:
