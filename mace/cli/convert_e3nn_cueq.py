@@ -3,7 +3,10 @@ import logging
 import os
 from typing import Dict, List, Tuple
 
-import cuequivariance as cue
+try:
+    import cuequivariance as cue
+except ImportError:  # pragma: no cover - optional dependency
+    cue = None  # type: ignore
 import torch
 from e3nn import o3
 

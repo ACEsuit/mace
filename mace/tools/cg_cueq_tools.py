@@ -13,19 +13,40 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional
-
-import cuequivariance as cue
+from typing import Optional, TYPE_CHECKING, Any
 import numpy as np
-from cuequivariance.etc.linalg import round_to_sqrt_rational, triu_array
 from e3nn import o3
-
 from mace.tools.cg import U_matrix_real
+
+try:
+    import cuequivariance as cue
+    from cuequivariance.etc.linalg import round_to_sqrt_rational, triu_array
+except ImportError:  # pragma: no cover - optional dependency
+    cue = None  # type: ignore
+    round_to_sqrt_rational = None  # type: ignore
+    triu_array = None  # type: ignore
+
+if TYPE_CHECKING:
+    from cuequivariance import (
+        Irreps,
+        EquivariantPolynomial,
+        SegmentedTensorProduct,
+        IrrepsAndLayout,
+        SegmentedPolynomial,
+        Operation,
+    )
+else:  # pragma: no cover - make type checker happy without dependency
+    Irreps = Any  # type: ignore
+    EquivariantPolynomial = Any  # type: ignore
+    SegmentedTensorProduct = Any  # type: ignore
+    IrrepsAndLayout = Any  # type: ignore
+    SegmentedPolynomial = Any  # type: ignore
+    Operation = Any  # type: ignore
 
 
 def symmetric_contraction_proj(
-    irreps_in: cue.Irreps, irreps_out: cue.Irreps, degrees: tuple[int, ...]
-) -> tuple[cue.EquivariantPolynomial, np.ndarray]:
+    irreps_in: Irreps, irreps_out: Irreps, degrees: tuple[int, ...]
+) -> tuple[EquivariantPolynomial, np.ndarray]:
     r"""
     subscripts: ``weights[u],input[u],output[u]``
 
@@ -49,8 +70,8 @@ def symmetric_contraction_proj(
 
 
 def symmetric_contraction_cached(
-    irreps_in: cue.Irreps, irreps_out: cue.Irreps, degrees: tuple[int, ...]
-) -> tuple[cue.EquivariantPolynomial, np.ndarray]:
+    irreps_in: Irreps, irreps_out: Irreps, degrees: tuple[int, ...]
+) -> tuple[EquivariantPolynomial, np.ndarray]:
     assert min(degrees) > 0
 
     # poly1 replicates the behavior of the original MACE implementation
@@ -111,7 +132,7 @@ def _flatten(
 
 
 def _stp_to_matrix(
-    d: cue.SegmentedTensorProduct,
+    d: SegmentedTensorProduct,
 ) -> np.ndarray:
     m = np.zeros([ope.num_segments for ope in d.operands])
     for path in d.paths:
@@ -121,8 +142,8 @@ def _stp_to_matrix(
 
 # This function is an adaptation of https://github.com/ACEsuit/mace/blob/bd412319b11c5f56c37cec6c4cfae74b2a49ff43/mace/modules/symmetric_contraction.py
 def _symmetric_contraction(
-    irreps_in: cue.Irreps, irreps_out: cue.Irreps, degree: int
-) -> cue.EquivariantPolynomial:
+    irreps_in: Irreps, irreps_out: Irreps, degree: int
+) -> EquivariantPolynomial:
     mul = irreps_in.muls[0]
     assert all(mul == m for m in irreps_in.muls)
     assert all(mul == m for m in irreps_out.muls)
