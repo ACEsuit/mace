@@ -10,11 +10,11 @@ Currently available pretrained MACE models:
    :header: "Model Name", "Elements Covered", "Training Dataset", "Level of Theory", "Target System", "Model Size", "GitHub Release", "Notes", "License"
    :widths: 10, 10, 10, 15, 15, 15, 10, 20, 10
 
-   "MACE-MP-0", "89", "MPTrj", "DFT (PBE+U)", "Materials", "small_, medium_, large_", ">=v0.3.6", "Initial release of foundation model.", "MIT"
-   "MACE-MPA-0", "89", "MPTrj + sAlex", "DFT (PBE+U)", "Materials", "medium-mpa-0_", ">=v0.3.10", "Improved accuracy for materials, improved high pressure stability.", "MIT"
-   "MACE-OMAT-0", "89", "OMAT", "DFT (PBE+U) VASP 54", "Materials", "medium-omat-0_", ">=v0.3.10", "Most accurate for phonons", "ASL"
-   "MACE-MATPES-0", "89", "MATPES", "PBE/R2SCAN", "Materials", "matpes-pbe_", "matpes-r2scan_", ">=v0.3.10", "PBE and R2SCAN models for MATPES dataset. Latest recommended ones.", "ASL"
-   "MACE-OFF23", "10", "SPICE v1", "DFT (wB97M+D3)", "Organic Chemistry", "small-off_, medium-off_, large-off_", ">=v0.3.6", "Initial release covering neutral organic chemistry.", "ASL"
+   "MACE-MP-0",      "89",  "MPTrj",           "DFT (PBE+U)",           "Materials",  "small_, medium_, large_",           ">=v0.3.6",  "Initial release of foundation model.",                                     "MIT"
+   "MACE-MPA-0",     "89",  "MPTrj + sAlex",   "DFT (PBE+U)",           "Materials",  "medium-mpa-0_",                      ">=v0.3.10", "Improved accuracy for materials, improved high pressure stability.",        "MIT"
+   "MACE-OMAT-0",    "89",  "OMAT",            "DFT (PBE+U) VASP 54",    "Materials",  "medium-omat-0_",                     ">=v0.3.10", "Most accurate for phonons",                                                "ASL"
+   "MACE-MATPES-0",  "89",  "MATPES",          "PBE/R2SCAN",            "Materials",  "matpes-pbe_, matpes-r2scan_",        ">=v0.3.10", "PBE and R2SCAN models for MATPES dataset. Latest recommended ones.",      "ASL"
+   "MACE-OFF23",     "10",  "SPICE v1",        "DFT (wB97M+D3)",        "Organic Chemistry",  "small-off_, medium-off_, large-off_", ">=v0.3.6",  "Initial release covering neutral organic chemistry.",                      "ASL"
 
 .. _small: https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model
 .. _medium: https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model
