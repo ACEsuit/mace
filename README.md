@@ -326,6 +326,9 @@ If you want to finetune another model, the model will be loaded from the path pr
 > [!Note]
 > If using MACE 0.3.13 with freezing and cuEquivariance acceleration, please update all cuEquivariance dependencies to 0.4.0.
 
+> [!Note]
+> When using the latest foundation models: MPA, OMAT, MATPES — the recommended starting point is --freeze=6
+
 
 **Installation**
 
