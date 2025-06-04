@@ -564,6 +564,7 @@ class ScaleShiftFieldMACE(MACE):
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
         electric_field = data["electric_field"].reshape(-1, 3).requires_grad_(True) # [num_graphs, 3]
+        volume = torch.det(cell.view(-1,3,3)).abs()
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
@@ -620,10 +621,13 @@ class ScaleShiftFieldMACE(MACE):
             node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, positions) # [n_nodes, k, 3]
             node_dipole_feats = node_ionic_dipole_feats - node_electronic_dipole_feats # [n_nodes, k, 3]
             node_field_feats = torch.einsum('ijk,ik->ij', node_dipole_feats, electric_field.repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
-            node_field_feats = node_field_feats.repeat_interleave(node_feats.view(node_field_feats.shape[0], node_field_feats.shape[1], -1).shape[-1], dim=1)
+            node_field_feats = node_field_feats.repeat(1, node_feats.view(node_field_feats.shape[0], node_field_feats.shape[1], -1).shape[-1])
             node_feats_list.append(node_feats)
             node_es_list.append(
-                readout(node_feats - node_field_feats, node_heads)[num_atoms_arange, node_heads]
+                readout(
+                    node_feats - node_field_feats / volume.view(-1,1).repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0), 
+                    node_heads
+                )[num_atoms_arange, node_heads]
             )
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -661,7 +665,6 @@ class ScaleShiftFieldMACE(MACE):
             )
 
         if compute_polarisation:
-            volume = torch.det(cell.view(-1,3,3)).abs()
             polarisation = get_polarisation(
                 energy=inter_e,
                 electric_field=electric_field,
@@ -672,7 +675,7 @@ class ScaleShiftFieldMACE(MACE):
                     polarisation=polarisation,
                     positions=positions,
                     training=(training or compute_becs),
-                )
+                ) * volume.view(-1,1,1).repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0)
             else:
                 becs = None
             if compute_polarisability:
@@ -680,10 +683,9 @@ class ScaleShiftFieldMACE(MACE):
                     polarisation=polarisation,
                     electric_field=electric_field,
                     training=(training or compute_polarisability),
-                ) / volume.view(-1, 1, 1)
+                ) 
             else:
                 polarisability = None
-            polarisation = polarisation / volume.view(-1, 1)
         else:
             polarisation = None
 
