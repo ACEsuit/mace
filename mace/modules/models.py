@@ -623,8 +623,7 @@ class ScaleShiftFieldMACE(MACE):
             node_field_feats = node_field_feats.repeat_interleave(node_feats.view(node_field_feats.shape[0], node_field_feats.shape[1], -1).shape[-1], dim=1)
             node_feats_list.append(node_feats)
             node_es_list.append(
-                readout(node_feats, node_heads)[num_atoms_arange, node_heads] -
-                readout(node_field_feats, node_heads)[num_atoms_arange, node_heads]
+                readout(node_feats - node_field_feats, node_heads)[num_atoms_arange, node_heads]
             )
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -671,9 +670,7 @@ class ScaleShiftFieldMACE(MACE):
             if compute_becs:
                 becs = get_becs(
                     polarisation=polarisation,
-                    forces=forces,
                     positions=positions,
-                    electric_field=electric_field,
                     training=(training or compute_becs),
                 )
             else:
