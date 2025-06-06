@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import bisect
 import logging
+import numbers
 import os
 import zlib
 from abc import ABC, abstractmethod
@@ -293,6 +294,46 @@ class LMDBDatabase(ase.db.core.Database):
         data: dict | None,
         id: int | None = None,  # pylint: disable=redefined-builtin
     ) -> None:
+
+        # 1) dump the entire atoms.info dict into key_value_pairs
+        key_value_pairs = dict(key_value_pairs or {}, **atoms.info)
+        scalar_types = (numbers.Real, str, bool, np.bool_)
+        key_value_pairs = {
+            k: v
+            for k, v in (key_value_pairs or {}).items()
+            if isinstance(v, scalar_types)
+        }
+
+        if data is None:
+            data = {}
+        for k, v in atoms.info.items():
+            if isinstance(v, scalar_types):
+                key_value_pairs[k] = v
+            else:
+                # If the value is not serializable, we store it in data
+                data.setdefault("__info__", {})[k] = v
+        arrays_to_dump = {}
+        for name, arr in atoms.arrays.items():
+            if name not in (
+                "numbers",
+                "positions",
+                "tags",
+                "momenta",
+                "masses",
+                "charges",
+                "magmoms",
+                "velocities",
+            ):
+                arrays_to_dump[name] = arr
+        if arrays_to_dump:
+            data.setdefault("__arrays__", {}).update(arrays_to_dump)
+
+        # 3) also save all extra calculator results (if any)
+        if hasattr(atoms, "calc") and getattr(atoms.calc, "results", None):
+            for k, v in atoms.calc.results.items():
+                if k in ("energy", "forces", "stress", "free_energy"):
+                    continue  # ASE already stores these
+            data.setdefault(k, v)
         # Call parent method with the original parameter name
         super()._write(atoms, key_value_pairs, data)
 
@@ -905,6 +946,16 @@ class AseDBDataset(AseAtomsDataset):
 
             calc = SinglePointCalculator(atoms, **calc_kwargs)
             atoms.calc = calc
+
+        extra_arrays = atoms_row.data.pop("__arrays__", {})
+        for name, arr in extra_arrays.items():
+            atoms.new_array(name, np.asarray(arr))
+            # print(f"Adding array {name} with shape {arr.shape} to atoms")
+
+        extra_info = atoms_row.data.pop("__info__", {})
+        # if extra_info:
+        #     print(f"Adding info {extra_info} to atoms")
+        atoms.info.update(extra_info)
 
         return atoms
 
