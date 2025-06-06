@@ -7,8 +7,8 @@ import argparse
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple, Union
 from pathlib import Path
+from typing import List, Tuple, Union
 
 import ase.data
 import ase.io
@@ -358,8 +358,9 @@ def _maybe_save_descriptors(
     """
     if all("mace_descriptors" in x.info for x in atoms):
         output_path = Path(output_path)
-        descriptor_save_path = output_path.parent / (output_path.stem +
-                                                     "_descriptors.npy")
+        descriptor_save_path = output_path.parent / (
+            output_path.stem + "_descriptors.npy"
+        )
         logging.info(f"Saving descriptors at {descriptor_save_path}")
         descriptors_list = [x.info["mace_descriptors"] for x in atoms]
         np.save(descriptor_save_path, descriptors_list, allow_pickle=True)
@@ -460,8 +461,10 @@ def select_samples(
         calc,
     )
     if ase.io.formats.filetype(settings.output, read=False) != "extxyz":
-        raise ValueError(f"filename '{settings.output}' does no have "
-                          "suffix compatible with extxyz format")
+        raise ValueError(
+            f"filename '{settings.output}' does no have "
+            "suffix compatible with extxyz format"
+        )
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(

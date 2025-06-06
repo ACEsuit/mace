@@ -621,8 +621,8 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
-        compute_edge_forces: bool = False, # pylint: disable=W0613
-        compute_atomic_stresses: bool = False, # pylint: disable=W0613
+        compute_edge_forces: bool = False,  # pylint: disable=W0613
+        compute_atomic_stresses: bool = False,  # pylint: disable=W0613
     ) -> Dict[str, Optional[torch.Tensor]]:
         assert compute_force is False
         assert compute_virials is False
@@ -823,8 +823,8 @@ class EnergyDipolesMACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
-        compute_edge_forces: bool = False, # pylint: disable=W0613
-        compute_atomic_stresses: bool = False, # pylint: disable=W0613
+        compute_edge_forces: bool = False,  # pylint: disable=W0613
+        compute_atomic_stresses: bool = False,  # pylint: disable=W0613
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)

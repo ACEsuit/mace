@@ -455,6 +455,7 @@ def test_multihead_finetuning_does_not_modify_default_keyspec(tmp_path):
     run_mace_train(args)
     assert args.key_specification == default_key_spec
 
+
 # for creating values
 def make_output():
     outputs = {}
