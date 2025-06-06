@@ -29,6 +29,7 @@ from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
+from mace.tools.freeze import freeze_layers, freeze_param
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -58,6 +59,7 @@ from mace.tools.scripts_utils import (
     get_optimizer,
     get_params_options,
     get_swa,
+    log_soft_freeze,
     print_git_commit,
     remove_pt_head,
     setup_wandb,
@@ -650,6 +652,25 @@ def run(args) -> None:
     logging.debug(model)
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
     logging.info("")
+
+    # Cueq
+    if args.enable_cueq:
+        logging.info("Converting model to CUEQ for accelerated training")
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        model = run_e3nn_to_cueq(deepcopy(model), device=device)
+
+    # Freeze layers or parameter groups
+    if args.freeze not in (None, 0) and args.freeze_par not in (None, 0):
+        logging.info(
+            "Both --freeze and --freeze_par arguments detected, using --freeze"
+        )
+        freeze_layers(model, args.freeze)
+    elif args.freeze_par not in (None, 0):
+        freeze_param(model, args.freeze_par)
+    elif args.freeze not in (None, 0):
+        freeze_layers(model, args.freeze)
+
+    logging.info("")
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
     logging.info(f"Batch size: {args.batch_size}")
@@ -661,13 +682,13 @@ def run(args) -> None:
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
 
-    # Cueq
-    if args.enable_cueq:
-        logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
-        model = run_e3nn_to_cueq(deepcopy(model), device=device)
+
     # Optimizer
     param_options = get_params_options(args, model)
+    logging.info("")
+    logging.info("========== STAGE ONE PARAMETERS ==========")
+    log_soft_freeze(param_options, model)
+
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)
     if args.device == "xpu":
@@ -683,7 +704,9 @@ def run(args) -> None:
     swas = [False]
     if args.swa:
         swa, swas = get_swa(args, model, optimizer, swas, dipole_only)
-
+        logging.info("")
+        logging.info("========== STAGE TWO PARAMETERS ==========")
+        log_soft_freeze(param_options, model)
     checkpoint_handler = tools.CheckpointHandler(
         directory=args.checkpoints_dir,
         tag=tag,

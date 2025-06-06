@@ -437,6 +437,38 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
+    parser.add_argument(
+        "--freeze",
+        help="Freeze layers from 1 to N. Can be positive or negative, e.g. -1 means the last layer is frozen. 0 or None means all layers are active and is a default setting",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--freeze_par",
+        help="Freeze named parameters from 1 to N. Can be positive or negative, e.g. -1 means the last layer is frozen. 0 means all layers are active and is a default setting",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--soft_freeze",
+        help="Soft-freeze layers from 1 to N. If combined with full freezing, the count starts after freezing",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--soft_freeze_factor",
+        help="A fraction of --lr to be used for soft-freeze",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--soft_freeze_swa",
+        "--soft_freeze_stage_two",
+        help="apply soft-freezing to Stage Two as well, using the same soft_freeze_factor",
+        action="store_true",
+        default=False,
+        dest="soft_freeze_swa",
+    )
 
     # Keys
     parser.add_argument(
