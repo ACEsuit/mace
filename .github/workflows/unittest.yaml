@@ -53,4 +53,5 @@ jobs:
 
       - name: Run cueq-specific tests
         run: |
-          pytest tests/test_cueq.py tests/test_calculator.py
+          pytest tests/test_cueq_oeq.py -k TestCueq
+          pytest tests/test_calculator.py
