@@ -79,7 +79,15 @@ class MACECalculator(Calculator):
         Calculator.__init__(self, **kwargs)
         if enable_cueq:
             assert model_type == "MACE", "CuEq only supports MACE models"
-            compile_mode = None
+            if compile_mode is not None:
+                logging.warning(
+                    "CuEq does not support torch.compile, setting compile_mode to None"
+                )
+                compile_mode = None
+        if enable_cueq and not CUEQQ_AVAILABLE:
+            raise ImportError(
+                "cuequivariance is not installed so CuEq acceleration cannot be used"
+            )
         if "model_path" in kwargs:
             deprecation_message = (
                 "'model_path' argument is deprecated, please use 'model_paths'"
@@ -239,7 +247,7 @@ class MACECalculator(Calculator):
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
         torch_tools.set_default_dtype(default_dtype)
-        if enable_cueq and CUEQQ_AVAILABLE:
+        if enable_cueq:
             print("Converting models to CuEq for acceleration")
             self.models = [
                 run_e3nn_to_cueq(model, device=device).to(device)
