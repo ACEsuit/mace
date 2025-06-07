@@ -28,7 +28,7 @@ try:
     import openequivariance as oeq  # pylint: disable=unused-import
 
     OEQ_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
     OEQ_AVAILABLE = False
 
 CUDA_AVAILABLE = torch.cuda.is_available()
