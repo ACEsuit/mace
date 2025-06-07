@@ -25,7 +25,7 @@ try:
     import openequivariance as oeq
 
     OEQ_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
     OEQ_AVAILABLE = False
 
 
