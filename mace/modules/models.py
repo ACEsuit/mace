@@ -61,7 +61,7 @@ class MACE(torch.nn.Module):
         apply_cutoff: bool = True,
         use_reduced_cg: bool = True,
         use_so3: bool = False,
-        use_agnostic_product: bool = False,
+        use_agnostic_product: bool = False,  # pylint: disable=W0613
         distance_transform: str = "None",
         edge_irreps: Optional[o3.Irreps] = None,
         radial_MLP: Optional[List[int]] = None,
