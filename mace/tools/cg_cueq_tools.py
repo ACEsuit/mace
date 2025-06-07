@@ -13,14 +13,33 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
+
 from typing import Optional
 
-import cuequivariance as cue
 import numpy as np
-from cuequivariance.etc.linalg import round_to_sqrt_rational, triu_array
 from e3nn import o3
 
 from mace.tools.cg import U_matrix_real
+
+try:
+    import cuequivariance as cue
+    from cuequivariance.etc.linalg import round_to_sqrt_rational, triu_array
+
+    CUEQQ_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    CUEQQ_AVAILABLE = False
+
+    class DummyCueq:
+        class EquivariantPolynomial:
+            pass
+
+        class Irreps:
+            pass
+
+    cue = DummyCueq()
+    round_to_sqrt_rational = None
+    triu_array = None
 
 
 def symmetric_contraction_proj(

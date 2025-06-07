@@ -21,11 +21,18 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from e3nn import o3
 
 from mace import data
-from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import prepare
 from mace.tools.scripts_utils import extract_model
+
+try:
+    from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+
+    CUEQQ_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    CUEQQ_AVAILABLE = False
+    run_e3nn_to_cueq = None
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
@@ -232,7 +239,7 @@ class MACECalculator(Calculator):
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
         torch_tools.set_default_dtype(default_dtype)
-        if enable_cueq:
+        if enable_cueq and CUEQQ_AVAILABLE:
             print("Converting models to CuEq for acceleration")
             self.models = [
                 run_e3nn_to_cueq(model, device=device).to(device)

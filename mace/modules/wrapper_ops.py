@@ -18,7 +18,7 @@ try:
     import cuequivariance_torch as cuet
 
     CUET_AVAILABLE = True
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     CUET_AVAILABLE = False
 
 try:
