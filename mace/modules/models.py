@@ -216,14 +216,14 @@ class MACE(torch.nn.Module):
             lammps_mliap=lammps_mliap,
         )
         is_lammps = ctx.is_lammps
-        num_atoms_arange = ctx.num_atoms_arange
+        num_atoms_arange = ctx.num_atoms_arange.to(torch.int64)
         num_graphs = ctx.num_graphs
         displacement = ctx.displacement
         positions = ctx.positions
         vectors = ctx.vectors
         lengths = ctx.lengths
         cell = ctx.cell
-        node_heads = ctx.node_heads
+        node_heads = ctx.node_heads.to(torch.int64)
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
