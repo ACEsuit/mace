@@ -41,6 +41,21 @@ import torch
 T_co = TypeVar("T_co", covariant=True)
 
 
+def _decode_ndarrays(obj):
+    """Recursively turn {"__ndarray__": [...] } blobs back into NumPy arrays."""
+    if isinstance(obj, dict):
+        if "__ndarray__" in obj:
+            shape, dtype, flat = obj["__ndarray__"]
+            return np.asarray(flat, dtype=dtype).reshape(shape)
+        # recurse into dict values
+        return {k: _decode_ndarrays(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_decode_ndarrays(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_decode_ndarrays(v) for v in obj)
+    return obj  # everything else is left untouched
+
+
 def rename_data_object_keys(data_object, key_mapping: dict[str, str | list[str]]):
     """Rename data object keys
 
@@ -889,73 +904,86 @@ class AseDBDataset(AseAtomsDataset):
         return list(range(sum(idlens)))
 
     def get_atoms(self, idx: int) -> ase.Atoms:
-        """Get atoms object corresponding to datapoint idx.
-        Args:
-            idx (int): index in dataset
-
-        Returns:
-            atoms: ASE atoms corresponding to datapoint idx
         """
-        # Figure out which db this should be indexed from
+        Return an `ase.Atoms` object for the dataset entry `idx`, decoding any
+        JSON‐encoded ndarrays encountered anywhere in the row.
+        """
+        # ------------------------------------------------------------------ #
+        # 1.  Locate the correct database and row                            #
+        # ------------------------------------------------------------------ #
         db_idx = bisect.bisect(self._idlen_cumulative, idx)
+        local_idx = idx - self._idlen_cumulative[db_idx - 1] if db_idx else idx
+        row = self.get_row_from_db(db_idx, local_idx)
 
-        # Extract index of element within that db
-        el_idx = idx
-        if db_idx != 0:
-            el_idx = idx - self._idlen_cumulative[db_idx - 1]
-        assert el_idx >= 0
+        # ------------------------------------------------------------------ #
+        # 2.  Fast path if ASE can already parse the row natively            #
+        # ------------------------------------------------------------------ #
+        if not (isinstance(row.numbers, dict) and "__ndarray__" in row.numbers):
+            atoms = row.toatoms()
+        else:
+            # -------------------------------------------------------------- #
+            # 3.  Decode *everything* that might hide __ndarray__ blobs      #
+            # -------------------------------------------------------------- #
+            numbers = _decode_ndarrays(row.numbers)
+            positions = _decode_ndarrays(row.positions)
+            cell = _decode_ndarrays(getattr(row, "cell", None))
+            pbc = _decode_ndarrays(getattr(row, "pbc", None))
 
-        # Use a wrapper method to avoid protected access warning
-        atoms_row = self.get_row_from_db(db_idx, el_idx)
+            atoms = ase.Atoms(
+                numbers=numbers,
+                positions=positions,
+                cell=cell if cell is not None else None,
+                pbc=pbc if pbc is not None else None,
+            )
 
-        # Convert to atoms object
-        atoms = atoms_row.toatoms()
+        # ------------------------------------------------------------------ #
+        # 4.  Row-level dictionaries (data / key_value_pairs) – deep decode  #
+        # ------------------------------------------------------------------ #
+        data_dict = _decode_ndarrays(row.data) if isinstance(row.data, dict) else {}
+        kvp_dict = (
+            _decode_ndarrays(row.key_value_pairs)
+            if getattr(row, "key_value_pairs", None)
+            else {}
+        )
 
-        # Put data back into atoms info
-        if isinstance(atoms_row.data, dict):
-            atoms.info.update(atoms_row.data)
+        atoms.info.update(data_dict)
+        atoms.info.update(kvp_dict)
 
-        # Add key-value pairs directly to atoms.info
-        if hasattr(atoms_row, "key_value_pairs") and atoms_row.key_value_pairs:
-            atoms.info.update(atoms_row.key_value_pairs)
-
-        # Create a SinglePointCalculator to attach energy, forces and stress to atoms
+        # ------------------------------------------------------------------ #
+        # 5.  Energy, forces, stress → atoms.calc (decode if needed)         #
+        # ------------------------------------------------------------------ #
         calc_kwargs = {}
+        for prop in ("energy", "forces", "stress", "free_energy"):
+            val = getattr(row, prop, None)
+            if val is not None:
+                calc_kwargs[prop] = _decode_ndarrays(val)
+                atoms.info[prop] = calc_kwargs[prop]
 
-        # Check for energy, forces, stress in atoms_row and store in info & calc_kwargs
-        for prop in ["energy", "forces", "stress", "free_energy"]:
-            if hasattr(atoms_row, prop) and getattr(atoms_row, prop) is not None:
-                value = getattr(atoms_row, prop)
-                calc_kwargs[prop] = value
-                atoms.info[prop] = value
-
-        # If we have custom data mappings, copy the standard properties to the custom names
-        a2g_args = self.config.get("a2g_args", {}) or {}
-        r_data_keys = a2g_args.get("r_data_keys", {})
-        if r_data_keys:
-            # Map from standard names to custom names (in reverse of how they'll be used)
-            for custom_key, standard_key in r_data_keys.items():
-                if standard_key in atoms.info:
-                    atoms.info[custom_key] = atoms.info[standard_key]
-                elif standard_key in atoms.arrays:
-                    atoms.arrays[custom_key] = atoms.arrays[standard_key]
-
-        # Create calculator if we have any properties
         if calc_kwargs:
             from ase.calculators.singlepoint import SinglePointCalculator
 
-            calc = SinglePointCalculator(atoms, **calc_kwargs)
-            atoms.calc = calc
+            atoms.calc = SinglePointCalculator(atoms, **calc_kwargs)
 
-        extra_arrays = atoms_row.data.pop("__arrays__", {})
+        # ------------------------------------------------------------------ #
+        # 6.  Extra arrays & info stored under __arrays__ / __info__         #
+        # ------------------------------------------------------------------ #
+        extra_arrays = data_dict.pop("__arrays__", {})
         for name, arr in extra_arrays.items():
-            atoms.new_array(name, np.asarray(arr))
-            # print(f"Adding array {name} with shape {arr.shape} to atoms")
+            atoms.new_array(name, np.asarray(arr))  # already decoded above
 
-        extra_info = atoms_row.data.pop("__info__", {})
-        # if extra_info:
-        #     print(f"Adding info {extra_info} to atoms")
+        extra_info = data_dict.pop("__info__", {})
         atoms.info.update(extra_info)
+
+        # ------------------------------------------------------------------ #
+        # 7.  Respect any user-defined r_data_keys renamings                 #
+        # ------------------------------------------------------------------ #
+        a2g_args = self.config.get("a2g_args", {}) or {}
+        r_data_keys = a2g_args.get("r_data_keys", {})
+        for custom, standard in r_data_keys.items():
+            if standard in atoms.info:
+                atoms.info[custom] = atoms.info[standard]
+            elif standard in atoms.arrays:
+                atoms.arrays[custom] = atoms.arrays[standard]
 
         return atoms
 
