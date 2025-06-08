@@ -3,14 +3,21 @@ import logging
 import os
 from typing import Dict, List, Tuple
 
-import cuequivariance as cue
 import torch
 from e3nn import o3
 
 from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.cg import O3_e3nn
-from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.cg_cueq_tools import symmetric_contraction_proj
+from mace.tools.scripts_utils import extract_config_mace_model
+
+try:
+    import cuequivariance as cue
+
+    CUEQQ_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    CUEQQ_AVAILABLE = False
+    cue = None
 
 
 def get_transfer_keys(num_layers: int) -> List[str]:
