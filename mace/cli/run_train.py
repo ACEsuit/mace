@@ -93,6 +93,7 @@ def run(args) -> None:
             raise ImportError(
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"
             ) from e
+
     if args.distributed:
         try:
             distr_env = DistributedEnvironment()
@@ -645,6 +646,11 @@ def run(args) -> None:
 
     # Model
     model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
+    if args.restart_model is not None:
+        try:
+            model = torch.load(args.restart_model, map_location=device)
+        except Exception as e:
+            raise logging.error(f"Failed to load model from {args.restart_model}: {e}")
     model.to(device)
 
     logging.debug(model)

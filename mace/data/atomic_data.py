@@ -135,6 +135,7 @@ class AtomicData(torch_geometric.data.Data):
             pbc=deepcopy(config.pbc),
             cell=deepcopy(config.cell),
         )
+        cell = config.cell
         indices = atomic_numbers_to_indices(config.atomic_numbers, z_table=z_table)
         one_hot = to_one_hot(
             torch.tensor(indices, dtype=torch.long).unsqueeze(-1),
