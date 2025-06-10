@@ -183,7 +183,7 @@ def run(args: argparse.Namespace):
         test_path=args.test_file,
         seed=args.seed,
         key_specification=args.key_specification,
-        head_name=None,
+        head_name="",
     )
 
     # Atomic number table
@@ -223,7 +223,7 @@ def run(args: argparse.Namespace):
 
     if args.compute_statistics:
         logging.info("Computing statistics")
-        if len(atomic_energies_dict) == 0:
+        if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
             atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
 
         # Remove atomic energies if element not in z_table
