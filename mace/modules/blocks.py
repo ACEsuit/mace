@@ -246,9 +246,10 @@ class RadialEmbeddingBlock(torch.nn.Module):
                 edge_lengths, node_attrs, edge_index, atomic_numbers
             )
         radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
-        if hasattr(self, "apply_cutoff") and self.apply_cutoff:
-            return radial * cutoff, None
-        return radial, cutoff  # [n_edges, n_basis], [n_edges, 1]
+        if hasattr(self, "apply_cutoff"):
+            if not self.apply_cutoff:
+                return radial, cutoff
+        return radial * cutoff, None  # [n_edges, n_basis], [n_edges, 1]
 
 
 @compile_mode("script")
