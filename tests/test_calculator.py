@@ -244,6 +244,8 @@ def trained_model_equivariant_fixture_cueq(tmp_path_factory, fitting_configs):
 
     assert p.returncode == 0
 
+    model = torch.load(tmp_path / "MACE.model", map_location="cpu")
+    print("DEBUG model", model)
     return MACECalculator(
         model_paths=tmp_path / "MACE.model", device="cpu", enable_cueq=True
     )
@@ -592,6 +594,7 @@ def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_c
     at_rotated = fitting_configs[2].copy()
     at_rotated.rotate(90, "x")
     calc = trained_equivariant_model_cueq
+    print("model", calc.models[0])
 
     desc_invariant = calc.get_descriptors(at, invariants_only=True)
     desc_invariant_rotated = calc.get_descriptors(at_rotated, invariants_only=True)

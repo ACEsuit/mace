@@ -103,6 +103,7 @@ _mace_params = {
     "forces_key": "REF_forces",
     "stress_key": "REF_stress",
     "eval_interval": 2,
+    "use_reduced_cg": False,
 }
 
 
@@ -944,7 +945,7 @@ def test_run_train_cueq(tmp_path, fitting_configs):
         raise e
     assert completed_process.returncode == 0
 
-    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cuda")
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
     Es = []
     for at in fitting_configs[2:]:
         at.calc = calc
@@ -1050,8 +1051,9 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     mace_params["enable_cueq"] = True
     mace_params["atomic_numbers"] = "[" + ",".join(map(str, atomic_numbers)) + "]"
     mace_params["filter_type_pt"] = "combinations"
-    mace_params["device"] = "cuda"
+    mace_params["device"] = "cpu"
     mace_params["force_mh_ft_lr"] = True
+    mace_params["use_reduced_cg"] = False
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -1087,7 +1089,7 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
 
     calc = MACECalculator(
         model_paths=tmp_path / "MACE.model",
-        device="cuda",
+        device="cpu",
         default_dtype="float64",
         head="DFT",
     )
