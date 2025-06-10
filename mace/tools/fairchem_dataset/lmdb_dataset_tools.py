@@ -924,13 +924,13 @@ class AseDBDataset(AseAtomsDataset):
             # -------------------------------------------------------------- #
             # 3.  Decode *everything* that might hide __ndarray__ blobs      #
             # -------------------------------------------------------------- #
-            numbers = _decode_ndarrays(row.numbers)
+            atom_numbers = _decode_ndarrays(row.numbers)
             positions = _decode_ndarrays(row.positions)
             cell = _decode_ndarrays(getattr(row, "cell", None))
             pbc = _decode_ndarrays(getattr(row, "pbc", None))
 
             atoms = ase.Atoms(
-                numbers=numbers,
+                numbers=atom_numbers,
                 positions=positions,
                 cell=cell if cell is not None else None,
                 pbc=pbc if pbc is not None else None,
