@@ -245,11 +245,12 @@ class MACE(torch.nn.Module):
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
         ]
-        e0 = scatter_sum(
-            src=node_e0.double(), index=data["batch"], dim=0, dim_size=num_graphs
-        ).to(
-            data["node_attrs"].dtype
-        )  # [n_graphs, n_heads]
+        # e0 = scatter_sum(
+        #     src=node_e0.double(), index=data["batch"], dim=0, dim_size=num_graphs
+        # ).to(
+        #     data["node_attrs"].dtype
+        # )  # [n_graphs, n_heads]
+        e0 = scatter_sum(src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs)
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
         vectors, lengths = get_edge_vectors_and_lengths(
@@ -411,10 +412,13 @@ class ScaleShiftMACE(MACE):
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
         ]
+        # e0 = scatter_sum(
+        #     src=node_e0.double(), index=data["batch"], dim=0, dim_size=num_graphs
+        # ).to(
+        #     data["node_attrs"].dtype
+        # )  # [n_graphs, num_heads]
         e0 = scatter_sum(
-            src=node_e0.double(), index=data["batch"], dim=0, dim_size=num_graphs
-        ).to(
-            data["node_attrs"].dtype
+            src=node_e0, index=data["batch"], dim=-1, dim_size=num_graphs
         )  # [n_graphs, num_heads]
 
         # Embeddings
