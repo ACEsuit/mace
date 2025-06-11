@@ -1458,3 +1458,133 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
 
     assert np.isfinite(e1)
     assert np.isfinite(e2)
+
+
+def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs):
+    """Test multihead foundation finetuning with pseudolabeling enabled."""
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
+    for i, c in enumerate(fitting_configs):
+        if i in (0, 1):
+            c_dft = c.copy()
+            c_dft.info["head"] = "DFT"
+            fitting_configs_dft.append(c_dft)
+            fitting_configs_dft.append(c)
+            c_mp2 = c.copy()
+            c_mp2.info["head"] = "MP2"
+            fitting_configs_mp2.append(c_mp2)
+        elif i % 2 == 0:
+            c.info["head"] = "DFT"
+            fitting_configs_dft.append(c)
+        else:
+            c.info["head"] = "MP2"
+            fitting_configs_mp2.append(c)
+    ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
+    heads = {
+        "DFT": {"train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz"},
+        "MP2": {"train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz"},
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    filename = tmp_path / "config.yaml"
+    with open(filename, "w", encoding="utf-8") as file:
+        file.write(yaml_str)
+    mace_params = _mace_params.copy()
+    mace_params["valid_fraction"] = 0.1
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["config"] = tmp_path / "config.yaml"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "small"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float64"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["batch_size"] = 2
+    mace_params["valid_batch_size"] = 1
+    mace_params["num_samples_pt"] = 50
+    mace_params["subselect_pt"] = "random"
+    mace_params["atomic_numbers"] = "[" + ",".join(map(str, atomic_numbers)) + "]"
+    mace_params["filter_type_pt"] = "combinations"
+    mace_params["force_mh_ft_lr"] = True
+    mace_params["pseudolabel_replay"] = True
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    try:
+        completed_process = subprocess.run(
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
+        )
+        # Process executed successfully
+        print(completed_process.stdout)
+    except subprocess.CalledProcessError as e:
+        # Process failed with non-zero exit code
+        print(f"Command failed with exit code {e.returncode}")
+        print(f"STDOUT: {e.stdout}")
+        print(f"STDERR: {e.stderr}")
+        raise e
+    assert completed_process.returncode == 0
+
+    Es = []
+    for at in fitting_configs:
+        config_head = at.info.get("head", "MP2")
+        calc = MACECalculator(
+            model_paths=tmp_path / "MACE.model",
+            device="cpu",
+            default_dtype="float64",
+            head=config_head,
+        )
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+    # Placeholder reference values - to be updated after first successful run
+    ref_Es = [
+        1.733670868926674,
+        0.3503205769480672,
+        1.1063898890973298,
+        0.8729299295124868,
+        0.8659647927914408,
+        1.2055872171939568,
+        1.0692213958943206,
+        0.8462353744801087,
+        1.032807515403141,
+        1.020364286693989,
+        0.7909197025613658,
+        0.8318386759173623,
+        1.0407572443331499,
+        0.8463884897043394,
+        1.0809739472058826,
+        0.6669607792294759,
+        1.3825620247612367,
+        1.0146534339101825,
+        0.9917190804182996,
+        0.6952642758709486,
+        0.8193046105321836,
+        0.8927566093599664,
+    ]
+    assert np.allclose(Es, ref_Es, atol=1e-1)
