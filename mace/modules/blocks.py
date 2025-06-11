@@ -205,13 +205,6 @@ class AtomicEnergiesBlock(torch.nn.Module):
             torch.tensor(atomic_energies),
         )
 
-    def to(self, *args, **kwargs):
-        """Override to method to ensure atomic energies buffer is properly moved"""
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.atomic_energies = self.atomic_energies.to(*args, **kwargs)
-        return self
-
     def forward(
         self,
         x: torch.Tensor,  # one-hot of elements [..., n_elements]
@@ -996,14 +989,6 @@ class ScaleShiftBlock(torch.nn.Module):
             "shift",
             torch.tensor(shift),
         )
-
-    def to(self, *args, **kwargs):
-        """Override to method to ensure buffers are properly moved"""
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.scale = self.scale.to(*args, **kwargs)  # noqa: W0201
-        self.shift = self.shift.to(*args, **kwargs)  # noqa: W0201
-        return self
 
     def forward(self, x: torch.Tensor, head: torch.Tensor) -> torch.Tensor:
         return (

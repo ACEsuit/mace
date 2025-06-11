@@ -57,15 +57,6 @@ class BesselBasis(torch.nn.Module):
             f"trainable={self.bessel_weights.requires_grad})"
         )
 
-    def to(self, *args, **kwargs):
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        if not isinstance(self.bessel_weights, torch.nn.Parameter):
-            self.bessel_weights = self.bessel_weights.to(*args, **kwargs)
-        self.r_max = self.r_max.to(*args, **kwargs)
-        self.prefactor = self.prefactor.to(*args, **kwargs)
-        return self
-
 
 @compile_mode("script")
 class ChebychevBasis(torch.nn.Module):
@@ -91,12 +82,6 @@ class ChebychevBasis(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(r_max={self.r_max}, num_basis={self.num_basis},"
         )
-
-    def to(self, *args, **kwargs):
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.n = self.n.to(*args, **kwargs)
-        return self
 
 
 @compile_mode("script")
@@ -124,13 +109,6 @@ class GaussianBasis(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [..., 1]
         x = x - self.gaussian_weights
         return torch.exp(self.coeff * torch.pow(x, 2))
-
-    def to(self, *args, **kwargs):
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        if not isinstance(self.gaussian_weights, torch.nn.Parameter):
-            self.gaussian_weights = self.gaussian_weights.to(*args, **kwargs)
-        return self
 
 
 @compile_mode("script")
@@ -165,13 +143,6 @@ class PolynomialCutoff(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
-
-    def to(self, *args, **kwargs):
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.p = self.p.to(*args, **kwargs)
-        self.r_max = self.r_max.to(*args, **kwargs)
-        return self
 
 
 @compile_mode("script")
@@ -247,18 +218,6 @@ class ZBLBasis(torch.nn.Module):
     def __repr__(self):
         return f"{self.__class__.__name__}(c={self.c})"
 
-    def to(self, *args, **kwargs):
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.c = self.c.to(*args, **kwargs)
-        self.p = self.p.to(*args, **kwargs)
-        self.covalent_radii = self.covalent_radii.to(*args, **kwargs)
-        if not isinstance(self.a_exp, torch.nn.Parameter):
-            self.a_exp = self.a_exp.to(*args, **kwargs)
-        if not isinstance(self.a_prefactor, torch.nn.Parameter):
-            self.a_prefactor = self.a_prefactor.to(*args, **kwargs)
-        return self
-
 
 @compile_mode("script")
 class AgnesiTransform(torch.nn.Module):
@@ -320,18 +279,6 @@ class AgnesiTransform(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(a={self.a:.4f}, q={self.q:.4f}, p={self.p:.4f})"
         )
-
-    def to(self, *args, **kwargs):
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.covalent_radii = self.covalent_radii.to(*args, **kwargs)
-        if not isinstance(self.q, torch.nn.Parameter):
-            self.q = self.q.to(*args, **kwargs)
-        if not isinstance(self.p, torch.nn.Parameter):
-            self.p = self.p.to(*args, **kwargs)
-        if not isinstance(self.a, torch.nn.Parameter):
-            self.a = self.a.to(*args, **kwargs)
-        return self
 
 
 @compile_mode("script")
@@ -408,11 +355,3 @@ class SoftTransform(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(alpha={self.alpha.item():.4f})"
-
-    def to(self, *args, **kwargs):
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.covalent_radii = self.covalent_radii.to(*args, **kwargs)
-        if not isinstance(self.alpha, torch.nn.Parameter):
-            self.alpha = self.alpha.to(*args, **kwargs)
-        return self

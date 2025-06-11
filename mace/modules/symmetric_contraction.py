@@ -256,15 +256,6 @@ class Contraction(torch.nn.Module):
     def U_tensors(self, nu: int):
         return dict(self.named_buffers())[f"U_matrix_{nu}"]
 
-    def to(self, *args, **kwargs):
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        for nu in range(1, self.correlation + 1):
-            self.register_buffer(
-                f"U_matrix_{nu}", self.U_tensors(nu).to(*args, **kwargs)
-            )
-        return self
-
 
 class EmptyParam(torch.nn.Parameter):
     def __new__(cls, data):  # pylint: disable=signature-differs

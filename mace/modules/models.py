@@ -365,14 +365,6 @@ class MACE(torch.nn.Module):
             "node_feats": node_feats_out,
         }
 
-    def to(self, *args, **kwargs):
-        """Override to method to ensure atomic energies and scale shift blocks are properly moved"""
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.r_max = self.r_max.to(*args, **kwargs)
-        self.atomic_energies_fn = self.atomic_energies_fn.to(*args, **kwargs)
-        return self
-
 
 @compile_mode("script")
 class ScaleShiftMACE(MACE):
@@ -524,13 +516,6 @@ class ScaleShiftMACE(MACE):
             "displacement": displacement,
             "node_feats": node_feats_out,
         }
-
-    def to(self, *args, **kwargs):
-        """Override to method to ensure scale shift block is properly moved"""
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.scale_shift = self.scale_shift.to(*args, **kwargs)
-        return self
 
 
 @compile_mode("script")
@@ -745,13 +730,6 @@ class AtomicDipolesMACE(torch.nn.Module):
             "atomic_dipoles": atomic_dipoles,
         }
         return output
-
-    def to(self, *args, **kwargs):
-        """Override to method to ensure r_max is properly moved"""
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.r_max = self.r_max.to(*args, **kwargs)
-        return self
 
 
 @compile_mode("script")
@@ -1015,11 +993,3 @@ class EnergyDipolesMACE(torch.nn.Module):
             "atomic_dipoles": atomic_dipoles,
         }
         return output
-
-    def to(self, *args, **kwargs):
-        """Override to method to ensure r_max is properly moved"""
-        # pylint: disable=self-cls-assignment
-        self = super().to(*args, **kwargs)
-        self.r_max = self.r_max.to(*args, **kwargs)
-        self.atomic_energies_fn = self.atomic_energies_fn.to(*args, **kwargs)
-        return self
