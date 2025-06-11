@@ -8,6 +8,7 @@ from mace import modules
 from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import dtype_dict
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -19,7 +20,10 @@ def configure_model(
     heads=None,
     z_table=None,
     head_configs=None,
+    dtype=None,
 ):
+    dtype = dtype_dict[args.default_dtype]
+
     # Selecting outputs
     compute_virials = args.loss == "virials"
     compute_stress = args.loss in ("stress", "huber", "universal")
@@ -67,7 +71,7 @@ def configure_model(
 
     elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
         args.mean, args.std = modules.scaling_classes[args.scaling](
-            train_loader, atomic_energies
+            train_loader, atomic_energies, dtype=dtype
         )
 
     # Build model
@@ -183,6 +187,8 @@ def configure_model(
             load_readout=args.foundation_filter_elements,
             max_L=args.max_L,
         )
+
+    model.to(dtype)
 
     return model, output_args
 

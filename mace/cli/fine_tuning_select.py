@@ -164,10 +164,14 @@ def filter_atoms(
     element_subset (list): The list of elements to consider during filtering.
     filtering_type (FilteringType): The type of filtering to apply.
         Can be one of the following `FilteringType` enum members:
-          - `FilteringType.NONE`: No filtering is applied.
-          - `FilteringType.COMBINATIONS`: Return true if `atoms` is composed of combinations of elements in the subset, false otherwise. I.e. does not require all of the specified elements to be present.
-          - `FilteringType.EXCLUSIVE`: Return true if `atoms` contains *only* elements in the subset, false otherwise.
-          - `FilteringType.INCLUSIVE`: Return true if `atoms` contains all elements in the subset, false otherwise. I.e. allows additional elements.
+        - `FilteringType.NONE`: No filtering is applied.
+        - `FilteringType.COMBINATIONS`: Return true if `atoms` is composed of
+            combinations of elements in the subset, false otherwise.
+            i.e. does not require all of the specified elements to be present.
+        - `FilteringType.EXCLUSIVE`: Return true if `atoms` contains *only*
+            elements in the subset, false otherwise.
+        - `FilteringType.INCLUSIVE`: Return true if `atoms` contains all elements
+            in the subset, false otherwise. i.e. allows additional elements.
 
     Returns:
     bool: True if the atoms pass the filter, False otherwise.
@@ -456,6 +460,7 @@ def select_samples(
         settings.descriptors,
         calc,
     )
+
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(

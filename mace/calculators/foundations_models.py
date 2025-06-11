@@ -164,11 +164,10 @@ def mace_mp(
         ) from exc
 
     print("Using TorchDFTD3Calculator for D3 dispersion corrections")
-    dtype = torch.float32 if default_dtype == "float32" else torch.float64
     d3_calc = TorchDFTD3Calculator(
         device=device,
         damping=damping,
-        dtype=dtype,
+        dtype=mace_calc.dtype,
         xc=dispersion_xc,
         cutoff=dispersion_cutoff,
         **kwargs,

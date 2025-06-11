@@ -9,12 +9,14 @@ import numpy as np
 import pytest
 from ase.atoms import Atoms
 
+import numpy.testing as npt
+
 from mace.calculators.mace import MACECalculator
 from mace.cli.run_train import run as run_mace_train
 from mace.data.utils import KeySpecification
 from mace.tools import build_default_arg_parser
 
-run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
+run_train = "mace_run_train"
 
 
 _mace_params = {
@@ -367,8 +369,8 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
 
     mace_params = _mace_params.copy()
     mace_params["valid_fraction"] = 0.1
-    mace_params["checkpoints_dir"] = str(tmp_path)
-    mace_params["model_dir"] = str(tmp_path)
+    mace_params["checkpoints_dir"] = (tmp_path).as_posix()
+    mace_params["model_dir"] = (tmp_path).as_posix()
     mace_params["train_file"] = "fit_multihead_dft.xyz"
     mace_params["E0s"] = "{1:0.0,8:1.0}"
     mace_params["valid_file"] = "duplicated_fit_multihead_dft.xyz"
@@ -384,17 +386,10 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
     with open(filename, "w", encoding="utf-8") as file:
         file.write(dict_to_yaml_str(yaml_contents))
     if len(yaml_contents) > 0:
-        mace_params["config"] = str(tmp_path / "config.yaml")
-
-    run_env = os.environ.copy()
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    run_env["PYTHONPATH"] = ":".join(sys.path)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+        mace_params["config"] = (tmp_path / "config.yaml").as_posix()
 
     cmd = (
-        sys.executable
-        + " "
-        + str(run_train)
+        run_train
         + " "
         + " ".join(
             [
@@ -404,7 +399,7 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
         )
     )
 
-    p = subprocess.run(cmd.split(), env=run_env, cwd=tmp_path, check=True)
+    p = subprocess.run(cmd.split(), cwd=tmp_path, check=True)
     assert p.returncode == 0
 
     if "heads" in yaml_contents:
@@ -424,9 +419,7 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
     print(name)
     print("Es", Es)
 
-    assert np.allclose(
-        np.asarray(Es), expected_value, rtol=1e-8, atol=1e-8
-    ), f"Expected {expected_value} but got {Es} with error {np.max(np.abs(Es - expected_value))}"
+    npt.assert_allclose(np.asarray(Es), expected_value, rtol=1e-8, atol=1e-8)
 
 
 def test_multihead_finetuning_does_not_modify_default_keyspec(tmp_path):
@@ -438,7 +431,7 @@ def test_multihead_finetuning_does_not_modify_default_keyspec(tmp_path):
             "--name",
             "_MACE_",
             "--train_file",
-            str(tmp_path / "fit_multihead_dft.xyz"),
+            (tmp_path / "fit_multihead_dft.xyz").as_posix(),
             "--foundation_model",
             "small",
             "--device",
