@@ -29,6 +29,7 @@ def get_transfer_keys(num_layers: int) -> List[str]:
             f"interactions.{j}.linear.weight",
             f"interactions.{j}.skip_tp.weight",
             f"products.{j}.linear.weight",
+            f"field_feats.{j}.linear.weight",
         ]
     ]
 

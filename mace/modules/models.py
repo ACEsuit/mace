@@ -367,6 +367,9 @@ class ScaleShiftMACE(MACE):
         compute_hessian: bool = False,
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
+        compute_polarisation: bool = False,
+        compute_becs: bool = False,
+        compute_polarisability: bool = False,
         lammps_mliap: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
@@ -507,7 +510,7 @@ class ScaleShiftFieldMACE(MACE):
         self.scale_shift = ScaleShiftBlock(
             scale=atomic_inter_scale, shift=atomic_inter_shift
         )
-
+        
         hidden_irreps = kwargs["hidden_irreps"]
         num_channels = hidden_irreps.count(o3.Irrep(0, 1))
 
@@ -517,12 +520,14 @@ class ScaleShiftFieldMACE(MACE):
                 LinearReadoutBlock(
                     hidden_irreps,
                     (num_channels * o3.Irreps("1x0e+1x1o")).sort()[0].simplify(),
+                    self.interactions[i].cueq_config
                 )
             )
         self.field_feats.append(
             LinearReadoutBlock(
                 str(hidden_irreps[0]),
                 (num_channels * o3.Irreps("4x0e")).sort()[0].simplify(),
+                self.interactions[-1].cueq_config
             )  
         )  
 
@@ -624,10 +629,8 @@ class ScaleShiftFieldMACE(MACE):
             node_field_feats = node_field_feats.repeat(1, node_feats.view(node_field_feats.shape[0], node_field_feats.shape[1], -1).shape[-1])
             node_feats_list.append(node_feats)
             node_es_list.append(
-                readout(
-                    node_feats - node_field_feats / volume.view(-1,1).repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0), 
-                    node_heads
-                )[num_atoms_arange, node_heads]
+                readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+                - readout(node_field_feats / volume.view(-1,1).repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0), node_heads)[num_atoms_arange, node_heads]
             )
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -664,7 +667,7 @@ class ScaleShiftFieldMACE(MACE):
                 cell=cell,
             )
 
-        if compute_polarisation:
+        if compute_polarisation or compute_becs or compute_polarisability:
             polarisation = get_polarisation(
                 energy=inter_e,
                 electric_field=electric_field,
