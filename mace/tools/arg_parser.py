@@ -81,6 +81,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--launcher",
+        default="slurm",
+        choices=["slurm", "torchrun", "mpi", "none"],
+        help="How the job was launched",
+    )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
     parser.add_argument(
