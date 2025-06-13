@@ -31,6 +31,7 @@ from .radial import (
     ChebychevBasis,
     GaussianBasis,
     PolynomialCutoff,
+    RadialMLP,
     SoftTransform,
 )
 
@@ -962,6 +963,170 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             self.reshape(message),
             sc,
         )  # [n_nodes, channels, (lmax + 1)**2]
+
+
+@compile_mode("script")
+class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
+    def _setup(self) -> None:
+        if not hasattr(self, "cueq_config"):
+            self.cueq_config = None
+        # First linear
+        node_scalar_irreps = o3.Irreps(
+            [(self.node_feats_irreps.count(o3.Irrep(0, 1)), (0, 1))]
+        )
+        self.source_embedding = Linear(
+            self.node_attrs_irreps,
+            node_scalar_irreps,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+        self.target_embedding = Linear(
+            self.node_attrs_irreps,
+            node_scalar_irreps,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+        self.linear_up = Linear(
+            self.node_feats_irreps,
+            self.edge_irreps,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+        torch.nn.init.uniform_(self.source_embedding.weight, a=-0.001, b=0.001)
+        torch.nn.init.uniform_(self.target_embedding.weight, a=-0.001, b=0.001)
+
+        # TensorProduct
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            self.edge_irreps,
+            self.edge_attrs_irreps,
+            self.target_irreps,
+        )
+        self.conv_tp = TensorProduct(
+            self.edge_irreps,
+            self.edge_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+            cueq_config=self.cueq_config,
+        )
+
+        # Convolution weights
+        input_dim = self.edge_feats_irreps.num_irreps
+        self.conv_tp_weights = RadialMLP(
+            [input_dim + 2 * node_scalar_irreps.dim]
+            + self.radial_MLP
+            + [self.conv_tp.weight_numel]
+        )
+        self.irreps_out = self.target_irreps
+
+        # Selector TensorProduct
+        self.skip_tp = Linear(
+            self.node_feats_irreps,
+            self.hidden_irreps,
+            cueq_config=self.cueq_config,
+        )
+        self.reshape = reshape_irreps(self.irreps_out, cueq_config=self.cueq_config)
+
+        # Non-linearity
+        irreps_scalars = o3.Irreps(
+            [(mul, ir) for mul, ir in self.irreps_out if ir.l == 0]
+        )
+        irreps_gated = o3.Irreps([(mul, ir) for mul, ir in self.irreps_out if ir.l > 0])
+        irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
+        activation_fn = torch.nn.functional.silu
+        act_gates_fn = torch.nn.functional.sigmoid
+        self.equivariant_nonlin = nn.Gate(
+            irreps_scalars=irreps_scalars,
+            act_scalars=[activation_fn for _ in irreps_scalars],
+            irreps_gates=irreps_gates,
+            act_gates=[act_gates_fn] * len(irreps_gates),
+            irreps_gated=irreps_gated,
+        )
+        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
+
+        # Linear residual
+        self.linear_res = Linear(
+            self.edge_irreps,
+            self.irreps_nonlin,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+
+        # Linear
+        self.linear_1 = Linear(
+            irreps_mid,
+            self.irreps_nonlin,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+        self.linear_2 = Linear(
+            irreps_in=self.irreps_out,
+            irreps_out=self.irreps_out,
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=self.cueq_config,
+        )
+
+        # Normalizations
+        self.density_fn = RadialMLP(
+            [input_dim + 2 * node_scalar_irreps.dim] + [64] + [1],
+        )
+        self.alpha = torch.nn.Parameter(torch.tensor(20.0), requires_grad=True)
+        self.beta = torch.nn.Parameter(torch.tensor(0.0), requires_grad=True)
+
+    def forward(
+        self,
+        node_attrs: torch.Tensor,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        edge_feats: torch.Tensor,
+        edge_index: torch.Tensor,
+        cutoff: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        sc = self.skip_tp(node_feats)
+        node_feats = self.linear_up(node_feats)
+        node_feats_res = self.linear_res(node_feats)
+        source_embedding = self.source_embedding(node_attrs)
+        target_embedding = self.target_embedding(node_attrs)
+
+        edge_feats = torch.cat(
+            [
+                edge_feats,
+                source_embedding[sender],
+                target_embedding[receiver],
+            ],
+            dim=-1,
+        )
+        tp_weights = self.conv_tp_weights(edge_feats)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        if cutoff is not None:
+            tp_weights = tp_weights * cutoff
+            edge_density = edge_density * cutoff
+        mji = self.conv_tp(
+            node_feats[sender], edge_attrs, tp_weights
+        )  # [n_edges, irreps]
+        message = scatter_sum(
+            src=mji, index=receiver, dim=0, dim_size=num_nodes
+        )  # [n_nodes, irreps]
+        density = scatter_sum(
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+        )
+        message = self.linear_1(message) / (density * self.beta + self.alpha)
+        message = message + node_feats_res
+        message = self.linear_2(self.equivariant_nonlin(message))
+        return (
+            self.reshape(message),
+            sc,
+        )
 
 
 @compile_mode("script")
