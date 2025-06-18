@@ -249,7 +249,6 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         if model.num_interactions.item() > 1
         else 1
     )
-    mlp_irreps = o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e")
     try:
         correlation = (
             len(model.products[0].symmetric_contractions.contractions[0].weights) + 1
@@ -266,7 +265,12 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "num_interactions": model.num_interactions.item(),
         "num_elements": len(model.atomic_numbers),
         "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
-        "MLP_irreps": (mlp_irreps if model.num_interactions.item() > 1 else 1),
+        "edge_irreps": model.edge_irreps if hasattr(model, "edge_irreps") else None,
+        "MLP_irreps": (
+            o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e")
+            if model.num_interactions.item() > 1
+            else 1
+        ),
         "gate": (
             model.readouts[-1]  # pylint: disable=protected-access
             .non_linearity._modules["acts"][0]
@@ -274,6 +278,11 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             if model.num_interactions.item() > 1
             else None
         ),
+        "use_reduced_cg": (
+            model.use_reduced_cg if hasattr(model, "use_reduced_cg") else False
+        ),
+        "use_so3": model.use_so3 if hasattr(model, "use_so3") else False,
+        "cueq_config": model.cueq_config if hasattr(model, "cueq_config") else None,
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
         "atomic_numbers": model.atomic_numbers,

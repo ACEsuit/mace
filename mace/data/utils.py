@@ -189,6 +189,8 @@ def test_config_types(
     test_by_ct = []
     all_cts = []
     for conf in test_configs:
+        if conf.head is None:
+            conf.head = ""
         config_type_name = conf.config_type + "_" + conf.head
         if config_type_name not in all_cts:
             all_cts.append(config_type_name)
