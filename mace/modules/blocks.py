@@ -262,6 +262,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         correlation: int,
         use_sc: bool = True,
         num_elements: Optional[int] = None,
+        element_dependent: bool = True,
         use_reduced_cg: Optional[bool] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
         oeq_config: Optional[OEQConfig] = None,
@@ -269,6 +270,9 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         super().__init__()
 
         self.use_sc = use_sc
+        self.element_dependent = element_dependent
+        if not self.element_dependent:
+            num_elements = 1
         self.symmetric_contractions = SymmetricContractionWrapper(
             irreps_in=node_feats_irreps,
             irreps_out=target_irreps,
@@ -296,6 +300,13 @@ class EquivariantProductBasisBlock(torch.nn.Module):
     ) -> torch.Tensor:
         use_cueq = False
         use_cueq_mul_ir = False
+        if hasattr(self, "element_dependent"):
+            if self.element_dependent:
+                node_attrs = torch.ones(
+                    (node_feats.shape[0], 1),
+                    dtype=node_feats.dtype,
+                    device=node_feats.device,
+                )
         if hasattr(self, "cueq_config"):
             if self.cueq_config is not None:
                 if self.cueq_config.enabled and (
@@ -351,6 +362,10 @@ class InteractionBlock(torch.nn.Module):
         self.edge_irreps = edge_irreps
         self.cueq_config = cueq_config
         self.oeq_config = oeq_config
+        if self.oeq_config and self.oeq_config.conv_fusion:
+            self.conv_fusion = self.oeq_config.conv_fusion
+        if self.cueq_config and self.cueq_config.conv_fusion:
+            self.conv_fusion = self.cueq_config.conv_fusion
         self._setup()
 
     @abstractmethod
@@ -429,9 +444,6 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             cueq_config=self.cueq_config,
             oeq_config=self.oeq_config,
         )
-
-        if self.oeq_config and self.oeq_config.conv_fusion:
-            self.conv_fusion = self.oeq_config.conv_fusion
 
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
