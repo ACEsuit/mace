@@ -141,7 +141,7 @@ def assemble_mp_data(
 ) -> SubsetCollection:
     """Assemble Materials Project data for fine-tuning."""
     try:
-        checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mp_traj_combined.xyz"
+        checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
         cache_dir = (
             Path(os.environ.get("XDG_CACHE_HOME", "~/")).expanduser() / ".cache/mace"
         )

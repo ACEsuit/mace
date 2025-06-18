@@ -10,6 +10,9 @@ import pytest
 from ase.atoms import Atoms
 
 from mace.calculators.mace import MACECalculator
+from mace.cli.run_train import run as run_mace_train
+from mace.data.utils import KeySpecification
+from mace.tools import build_default_arg_parser
 
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
@@ -424,6 +427,33 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
     assert np.allclose(
         np.asarray(Es), expected_value, rtol=1e-8, atol=1e-8
     ), f"Expected {expected_value} but got {Es} with error {np.max(np.abs(Es - expected_value))}"
+
+
+def test_multihead_finetuning_does_not_modify_default_keyspec(tmp_path):
+    fitting_configs = configs_numbered_keys()
+    ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs)
+
+    args = build_default_arg_parser().parse_args(
+        [
+            "--name",
+            "_MACE_",
+            "--train_file",
+            str(tmp_path / "fit_multihead_dft.xyz"),
+            "--foundation_model",
+            "small",
+            "--device",
+            "cpu",
+            "--E0s",
+            "{1:0.0,8:1.0}",
+            "--energy_key",
+            "2_energy",
+            "--dry_run",
+        ]
+    )
+    default_key_spec = KeySpecification.from_defaults()
+    default_key_spec.info_keys["energy"] = "2_energy"
+    run_mace_train(args)
+    assert args.key_specification == default_key_spec
 
 
 # for creating values

@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import List, Optional
 
 import torch.distributed
-import torch.nn.functional
 from e3nn.util import jit
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import LBFGS
@@ -29,6 +28,7 @@ from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
+from mace.tools.distributed_tools import init_distributed
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -62,7 +62,6 @@ from mace.tools.scripts_utils import (
     remove_pt_head,
     setup_wandb,
 )
-from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
 
@@ -93,20 +92,7 @@ def run(args) -> None:
             raise ImportError(
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"
             ) from e
-    if args.distributed:
-        try:
-            distr_env = DistributedEnvironment()
-        except Exception as e:  # pylint: disable=W0703
-            logging.error(f"Failed to initialize distributed environment: {e}")
-            return
-        world_size = distr_env.world_size
-        local_rank = distr_env.local_rank
-        rank = distr_env.rank
-        if rank == 0:
-            print(distr_env)
-        torch.distributed.init_process_group(backend="nccl")
-    else:
-        rank = int(0)
+    rank, local_rank, world_size = init_distributed(args)
 
     # Setup
     tools.set_seeds(args.seed)
@@ -215,7 +201,7 @@ def run(args) -> None:
         pt_keyspec = (
             args.heads["pt_head"]["key_specification"]
             if "pt_head" in args.heads
-            else args.key_specification
+            else deepcopy(args.key_specification)
         )
         args.heads["pt_head"] = prepare_pt_head(
             args, pt_keyspec, foundation_model_avg_num_neighbors
@@ -662,7 +648,7 @@ def run(args) -> None:
     logging.info(loss_fn)
 
     # Cueq
-    if args.enable_cueq:
+    if args.enable_cueq and not args.only_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
         assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
@@ -900,7 +886,7 @@ def run(args) -> None:
                 model_path = Path(args.checkpoints_dir) / (tag + ".model")
             logging.info(f"Saving model to {model_path}")
             model_to_save = deepcopy(model)
-            if args.enable_cueq:
+            if args.enable_cueq and not args.only_cueq:
                 print("RUNING CUEQ TO E3NN")
                 print("swa_eval", swa_eval)
                 model_to_save = run_cueq_to_e3nn(deepcopy(model), device=device)

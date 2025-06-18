@@ -13,6 +13,8 @@ from e3nn import o3
 from mace import data, modules, tools
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
+from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.tools import torch_geometric
 
 try:
@@ -22,11 +24,17 @@ try:
 except ImportError:
     CUET_AVAILABLE = False
 
+try:
+    import openequivariance as oeq  # pylint: disable=unused-import
+
+    OEQ_AVAILABLE = True
+except ImportError:
+    OEQ_AVAILABLE = False
+
 CUDA_AVAILABLE = torch.cuda.is_available()
 
 
-@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-class TestCueq:
+class BackendTestBase:
     @pytest.fixture
     def model_config(self, interaction_cls_first, hidden_irreps) -> Dict[str, Any]:
         table = tools.AtomicNumberTable([6])
@@ -82,10 +90,6 @@ class TestCueq:
         return batch.to(device).to_dict()
 
     @pytest.mark.parametrize(
-        "device",
-        ["cpu"] + (["cuda"] if CUDA_AVAILABLE else []),
-    )
-    @pytest.mark.parametrize(
         "interaction_cls_first",
         [
             modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
@@ -108,7 +112,10 @@ class TestCueq:
         batch: Dict[str, torch.Tensor],
         device: str,
         default_dtype: torch.dtype,
+        conversion_functions: tuple,
     ):
+        run_e3nn_to_backend, run_backend_to_e3nn = conversion_functions
+
         if device == "cuda" and not CUDA_AVAILABLE:
             pytest.skip("CUDA not available")
         torch.manual_seed(42)
@@ -117,33 +124,34 @@ class TestCueq:
         model_e3nn = modules.ScaleShiftMACE(**model_config).to(device)
 
         # Convert E3nn to CuEq
-        model_cueq = run_e3nn_to_cueq(model_e3nn).to(device)
+        model_backend = run_e3nn_to_backend(model_e3nn).to(device)
 
         # Convert CuEq back to E3nn
-        model_e3nn_back = run_cueq_to_e3nn(model_cueq).to(device)
+        model_e3nn_back = run_backend_to_e3nn(model_backend).to(device)
 
         # Test forward pass equivalence
         out_e3nn = model_e3nn(deepcopy(batch), training=True, compute_stress=True)
-        out_cueq = model_cueq(deepcopy(batch), training=True, compute_stress=True)
+        out_backend = model_backend(deepcopy(batch), training=True, compute_stress=True)
+
         out_e3nn_back = model_e3nn_back(
             deepcopy(batch), training=True, compute_stress=True
         )
 
         # Check outputs match for both conversions
-        torch.testing.assert_close(out_e3nn["energy"], out_cueq["energy"])
-        torch.testing.assert_close(out_cueq["energy"], out_e3nn_back["energy"])
-        torch.testing.assert_close(out_e3nn["forces"], out_cueq["forces"])
-        torch.testing.assert_close(out_cueq["forces"], out_e3nn_back["forces"])
-        torch.testing.assert_close(out_e3nn["stress"], out_cueq["stress"])
-        torch.testing.assert_close(out_cueq["stress"], out_e3nn_back["stress"])
+        torch.testing.assert_close(out_e3nn["energy"], out_backend["energy"])
+        torch.testing.assert_close(out_backend["energy"], out_e3nn_back["energy"])
+        torch.testing.assert_close(out_e3nn["forces"], out_backend["forces"])
+        torch.testing.assert_close(out_backend["forces"], out_e3nn_back["forces"])
+        torch.testing.assert_close(out_e3nn["stress"], out_backend["stress"])
+        torch.testing.assert_close(out_backend["stress"], out_e3nn_back["stress"])
 
         # Test backward pass equivalence
         loss_e3nn = out_e3nn["energy"].sum()
-        loss_cueq = out_cueq["energy"].sum()
+        loss_backend = out_backend["energy"].sum()
         loss_e3nn_back = out_e3nn_back["energy"].sum()
 
         loss_e3nn.backward()
-        loss_cueq.backward()
+        loss_backend.backward()
         loss_e3nn_back.backward()
 
         # Compare gradients for all conversions
@@ -159,17 +167,19 @@ class TestCueq:
                     torch.testing.assert_close(p1.grad, p2.grad, atol=tol, rtol=tol)
 
         # E3nn to CuEq gradients
-        for (name_e3nn, p_e3nn), (name_cueq, p_cueq) in zip(
-            model_e3nn.named_parameters(), model_cueq.named_parameters()
-        ):
-            print_gradient_diff(name_e3nn, p_e3nn, name_cueq, p_cueq, "E3nn->CuEq")
-
-        # CuEq to E3nn gradients
-        for (name_cueq, p_cueq), (name_e3nn_back, p_e3nn_back) in zip(
-            model_cueq.named_parameters(), model_e3nn_back.named_parameters()
+        for (name_e3nn, p_e3nn), (name_backend, p_backend) in zip(
+            model_e3nn.named_parameters(), model_backend.named_parameters()
         ):
             print_gradient_diff(
-                name_cueq, p_cueq, name_e3nn_back, p_e3nn_back, "CuEq->E3nn"
+                name_e3nn, p_e3nn, name_backend, p_backend, "E3nn->CuEq"
+            )
+
+        # CuEq to E3nn gradients
+        for (name_backend, p_backend), (name_e3nn_back, p_e3nn_back) in zip(
+            model_backend.named_parameters(), model_e3nn_back.named_parameters()
+        ):
+            print_gradient_diff(
+                name_backend, p_backend, name_e3nn_back, p_e3nn_back, "CuEq->E3nn"
             )
 
         # Full circle comparison (E3nn -> E3nn)
@@ -179,3 +189,25 @@ class TestCueq:
             print_gradient_diff(
                 name_e3nn, p_e3nn, name_e3nn_back, p_e3nn_back, "Full circle"
             )
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+class TestCueq(BackendTestBase):
+    @pytest.fixture
+    def conversion_functions(self):
+        return run_e3nn_to_cueq, run_cueq_to_e3nn
+
+    @pytest.fixture(params=(["cuda"] if CUDA_AVAILABLE else ["cpu"]))
+    def device(self, request):
+        return request.param
+
+
+@pytest.mark.skipif(not OEQ_AVAILABLE, reason="openequivariance not installed")
+class TestOeq(BackendTestBase):
+    @pytest.fixture
+    def conversion_functions(self):
+        return run_e3nn_to_oeq, run_oeq_to_e3nn
+
+    @pytest.fixture(params=(["cuda"] if CUDA_AVAILABLE else []))
+    def device(self, request):
+        return request.param
