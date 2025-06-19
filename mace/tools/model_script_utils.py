@@ -69,7 +69,12 @@ def configure_model(
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
         )
-
+    if args.embedding_specs is not None:
+        args.embedding_specs = ast.literal_eval(args.embedding_specs)
+        logging.info(
+            "Using embedding specifications from command line arguments"
+        )
+        logging.info(f"Embedding specifications: {args.embedding_specs}")
     # Build model
     if model_foundation is not None and args.model in ["MACE", "ScaleShiftMACE"]:
         logging.info("Loading FOUNDATION model")
@@ -226,6 +231,7 @@ def _build_model(
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             heads=heads,
+            embedding_specs=args.embedding_specs,
         )
     if args.model == "ScaleShiftMACE":
         return modules.ScaleShiftMACE(
@@ -241,6 +247,7 @@ def _build_model(
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             heads=heads,
+            embedding_specs=args.embedding_specs,
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)
