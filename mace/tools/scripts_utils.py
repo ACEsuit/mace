@@ -292,9 +292,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             if hasattr(model, "use_last_readout_only")
             else False
         ),
-        "use_embedding_readout": (
-            True if hasattr(model, "embedding_readout") else False
-        ),
+        "use_embedding_readout": (hasattr(model, "embedding_readout")),
         "readout_cls": model.readouts[-1].__class__,
         "cueq_config": model.cueq_config if hasattr(model, "cueq_config") else None,
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),

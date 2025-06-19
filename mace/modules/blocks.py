@@ -1176,7 +1176,7 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         )
 
         if hasattr(self, "conv_fusion"):
-            mji = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+            message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
             mji = self.conv_tp(
                 node_feats[edge_index[0]], edge_attrs, tp_weights
