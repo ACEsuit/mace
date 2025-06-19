@@ -523,7 +523,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--elec_temp_key",
         help="Key of electronic temperature in training xyz",
         type=str,
-        default=DefaultKeys.elec_temp.value,
+        default=DefaultKeys.ELEC_TEMP.value,
+    )
+    parser.add_argument(
+        "--total_spin_key",
+        help="Key of total spin in training xyz",
+        type=str,
+        default=DefaultKeys.TOTAL_SPIN.value,
+    )
+    parser.add_argument(
+        "--total_charge_key",
+        help="Key of total charge in training xyz",
+        type=str,
+        default=DefaultKeys.TOTAL_CHARGE.value,
     )
     parser.add_argument(
         "--embedding_specs",

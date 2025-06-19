@@ -92,6 +92,7 @@ class MACE(torch.nn.Module):
         self.apply_cutoff = apply_cutoff
         self.edge_irreps = edge_irreps
         self.use_reduced_cg = use_reduced_cg
+        self.use_agnostic_product = use_agnostic_product
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
