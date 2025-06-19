@@ -109,7 +109,7 @@ class MACECalculator(Calculator):
 
         self.results = {}
         if info_keys is None:
-            info_keys = {}
+            info_keys = {"total_spin": "spin", "total_charge": "charge"}
         if arrays_keys is None:
             arrays_keys = {}
         self.info_keys = info_keys

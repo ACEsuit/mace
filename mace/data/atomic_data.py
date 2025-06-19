@@ -293,7 +293,7 @@ class AtomicData(torch_geometric.data.Data):
                 config.properties.get("total_spin"), dtype=torch.get_default_dtype()
             )
             if config.properties.get("total_spin") is not None
-            else torch.tensor(0.0, dtype=torch.get_default_dtype())
+            else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
 
         return cls(

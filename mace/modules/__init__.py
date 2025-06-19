@@ -9,6 +9,7 @@ from .blocks import (
     LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
     LinearReadoutBlock,
+    NonLinearBiasReadoutBlock,
     NonLinearDipoleReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
@@ -50,6 +51,14 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticDensityInteractionBlock": RealAgnosticDensityInteractionBlock,
     "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
     "RealAgnosticResidualNonLinearInteractionBlock": RealAgnosticResidualNonLinearInteractionBlock,
+}
+
+readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
+    "LinearReadoutBlock": LinearReadoutBlock,
+    "LinearDipoleReadoutBlock": LinearDipoleReadoutBlock,
+    "NonLinearDipoleReadoutBlock": NonLinearDipoleReadoutBlock,
+    "NonLinearReadoutBlock": NonLinearReadoutBlock,
+    "NonLinearBiasReadoutBlock": NonLinearBiasReadoutBlock,
 }
 
 scaling_classes: Dict[str, Callable] = {

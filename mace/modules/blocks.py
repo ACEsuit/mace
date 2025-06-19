@@ -112,6 +112,44 @@ class NonLinearReadoutBlock(torch.nn.Module):
         return self.linear_2(x)  # [n_nodes, len(heads)]
 
 
+@simplify_if_compile
+@compile_mode("script")
+class NonLinearBiasReadoutBlock(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Optional[Callable],
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        num_heads: int = 1,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
+    ):
+        super().__init__()
+        self.hidden_irreps = MLP_irreps
+        self.num_heads = num_heads
+        self.linear_1 = Linear(
+            irreps_in=irreps_in, irreps_out=self.hidden_irreps, cueq_config=cueq_config
+        )
+        self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
+        self.linear_mid = o3.Linear(
+            irreps_in=self.hidden_irreps, irreps_out=self.hidden_irreps, biases=True
+        )
+        self.linear_2 = o3.Linear(
+            irreps_in=self.hidden_irreps, irreps_out=irrep_out, biases=True
+        )
+
+    def forward(
+        self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        x = self.non_linearity(self.linear_1(x))
+        x = self.non_linearity(self.linear_mid(x))
+        if hasattr(self, "num_heads"):
+            if self.num_heads > 1 and heads is not None:
+                x = mask_head(x, heads, self.num_heads)
+        return self.linear_2(x)  # [n_nodes, len(heads)]
+
+
 @compile_mode("script")
 class LinearDipoleReadoutBlock(torch.nn.Module):
     def __init__(
@@ -243,12 +281,15 @@ class RadialEmbeddingBlock(torch.nn.Module):
     ):
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
         if hasattr(self, "distance_transform"):
+            print("apply distance transform", self.distance_transform)
             edge_lengths = self.distance_transform(
                 edge_lengths, node_attrs, edge_index, atomic_numbers
             )
+        print("appy cutoff", self.apply_cutoff)
         radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         if hasattr(self, "apply_cutoff"):
             if not self.apply_cutoff:
+                print("not applying cutoff")
                 return radial, cutoff
         return radial * cutoff, None  # [n_edges, n_basis], [n_edges, 1]
 
@@ -272,6 +313,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         self.use_sc = use_sc
         self.use_agnostic_product = use_agnostic_product
         if self.use_agnostic_product:
+            print("Using agnostic product in EquivariantProductBasisBlock")
             num_elements = 1
         self.symmetric_contractions = SymmetricContractionWrapper(
             irreps_in=node_feats_irreps,
@@ -1100,38 +1142,56 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
         cutoff: Optional[torch.Tensor] = None,
+        lammps_class: Optional[Any] = None,
+        lammps_natoms: Tuple[int, int] = (0, 0),
+        first_layer: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        sender = edge_index[0]
-        receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
+        n_real = lammps_natoms[0] if lammps_class is not None else None
         sc = self.skip_tp(node_feats)
         node_feats = self.linear_up(node_feats)
         node_feats_res = self.linear_res(node_feats)
+        node_feats = self.handle_lammps(
+            node_feats,
+            lammps_class=lammps_class,
+            lammps_natoms=lammps_natoms,
+            first_layer=first_layer,
+        )
+
         source_embedding = self.source_embedding(node_attrs)
         target_embedding = self.target_embedding(node_attrs)
-
         edge_feats = torch.cat(
             [
                 edge_feats,
-                source_embedding[sender],
-                target_embedding[receiver],
+                source_embedding[edge_index[0]],
+                target_embedding[edge_index[1]],
             ],
             dim=-1,
         )
         tp_weights = self.conv_tp_weights(edge_feats)
+
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
         if cutoff is not None:
             tp_weights = tp_weights * cutoff
             edge_density = edge_density * cutoff
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        message = scatter_sum(
-            src=mji, index=receiver, dim=0, dim_size=num_nodes
-        )  # [n_nodes, irreps]
         density = scatter_sum(
-            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+            src=edge_density, index=edge_index[1], dim=0, dim_size=num_nodes
         )
+
+        if hasattr(self, "conv_fusion"):
+            mji = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
+        else:
+            mji = self.conv_tp(
+                node_feats[edge_index[0]], edge_attrs, tp_weights
+            )  # [n_edges, irreps]
+            message = scatter_sum(
+                src=mji, index=edge_index[1], dim=0, dim_size=num_nodes
+            )  # [n_nodes, irreps]
+
+        message = self.truncate_ghosts(message, n_real)
+        density = self.truncate_ghosts(density, n_real)
+        sc = self.truncate_ghosts(sc, n_real)
+        node_feats_res = self.truncate_ghosts(node_feats_res, n_real)
         message = self.linear_1(message) / (density * self.beta + self.alpha)
         message = message + node_feats_res
         message = self.linear_2(self.equivariant_nonlin(message))
