@@ -71,9 +71,7 @@ def configure_model(
         )
     if args.embedding_specs is not None:
         args.embedding_specs = ast.literal_eval(args.embedding_specs)
-        logging.info(
-            "Using embedding specifications from command line arguments"
-        )
+        logging.info("Using embedding specifications from command line arguments")
         logging.info(f"Embedding specifications: {args.embedding_specs}")
     # Build model
     if model_foundation is not None and args.model in ["MACE", "ScaleShiftMACE"]:

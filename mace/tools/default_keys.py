@@ -11,7 +11,9 @@ class DefaultKeys(Enum):
     DIPOLE = "dipole"
     HEAD = "head"
     CHARGES = "REF_charges"
-    elec_temp = "elec_temp"
+    TOTAL_CHARGE = "total_charge"
+    TOTAL_SPIN = "total_spin"
+    ELEC_TEMP = "elec_temp"
 
     @staticmethod
     def keydict() -> dict[str, str]:

@@ -70,8 +70,8 @@ class MACECalculator(Calculator):
         length_units_to_A: float = 1.0,
         default_dtype="",
         charges_key="Qs",
-        info_keys={},
-        arrays_keys={},
+        info_keys=None,
+        arrays_keys=None,
         model_type="MACE",
         compile_mode=None,
         fullgraph=True,
@@ -108,6 +108,10 @@ class MACECalculator(Calculator):
             )
 
         self.results = {}
+        if info_keys is None:
+            info_keys = {}
+        if arrays_keys is None:
+            arrays_keys = {}
         self.info_keys = info_keys
         self.arrays_keys = arrays_keys
 

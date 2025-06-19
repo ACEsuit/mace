@@ -1,8 +1,10 @@
 # joint_embedding.py
 
+from typing import Dict, Optional, Sequence
+
 import torch
 from torch import nn
-from typing import Dict, Sequence, Optional
+
 
 class GenericJointEmbedding(nn.Module):
     """
@@ -10,6 +12,7 @@ class GenericJointEmbedding(nn.Module):
     with a base embedding.  All features are embedded (via Embedding or small MLP),
     then concatenated onto `species_emb`, passed through SiLU+Linear.
     """
+
     def __init__(
         self,
         *,
@@ -19,7 +22,7 @@ class GenericJointEmbedding(nn.Module):
     ):
         super().__init__()
         self.base_dim = base_dim
-        self.specs = {name: spec for name, spec in embedding_specs.items()}
+        self.specs = dict(embedding_specs.items())
         self.out_dim = out_dim or base_dim
 
         # build one embedder per feature
@@ -41,16 +44,15 @@ class GenericJointEmbedding(nn.Module):
         # build the single concat→SiLU→Linear head
         total_dim = base_dim + sum(spec["emb_dim"] for spec in self.specs.values())
         self.project = nn.Sequential(
-            nn.Linear(total_dim, self.out_dim, bias=False),
             nn.SiLU(),
-            nn.Linear(self.out_dim, self.out_dim, bias=False),
+            nn.Linear(total_dim, self.out_dim, bias=False),
         )
 
     def forward(
         self,
-        species_emb: torch.Tensor,   # [N_nodes, base_dim]
-        batch: torch.Tensor,         # [N_nodes,] graph indices
-        features: Dict[str, torch.Tensor]
+        species_emb: torch.Tensor,  # [N_nodes, base_dim]
+        batch: torch.Tensor,  # [N_nodes,] graph indices
+        features: Dict[str, torch.Tensor],
     ) -> torch.Tensor:
         """
         features[name] is either [N_graphs, …] or [N_nodes, …]
@@ -61,7 +63,9 @@ class GenericJointEmbedding(nn.Module):
         for name, spec in self.specs.items():
             feat = features[name]
             if spec["per"] == "graph":
-                feat = feat[batch].unsqueeze(-1)   # now [N_nodes, …]
+                feat = feat[batch].unsqueeze(-1)  # now [N_nodes, …]
+            if spec["type"] == "categorical":
+                feat = (feat + spec.get("offset", 0)).long().squeeze(-1)  # [N_nodes, 1]
             emb = self.embedders[name](feat)
             embs.append(emb)
         x = torch.cat(embs, dim=-1)

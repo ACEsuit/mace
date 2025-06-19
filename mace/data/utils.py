@@ -49,7 +49,16 @@ def update_keyspec_from_kwargs(
     keyspec: KeySpecification, keydict: Dict[str, str]
 ) -> KeySpecification:
     # convert command line style property_key arguments into a keyspec
-    infos = ["energy_key", "stress_key", "virials_key", "dipole_key", "head_key", 'elec_temp_key']
+    infos = [
+        "energy_key",
+        "stress_key",
+        "virials_key",
+        "dipole_key",
+        "head_key",
+        "elec_temp_key",
+        "total_charge_key",
+        "total_spin_key",
+    ]
     arrays = ["forces_key", "charges_key"]
     info_keys = {}
     arrays_keys = {}
