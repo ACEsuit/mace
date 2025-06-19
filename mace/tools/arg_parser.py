@@ -221,6 +221,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--use_agnostic_product",
+        help="use element agnostic product",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--num_interactions", help="number of interactions", type=int, default=2
     )
     parser.add_argument(
