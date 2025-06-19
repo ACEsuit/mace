@@ -42,15 +42,14 @@ class GenericJointEmbedding(nn.Module):
                 raise ValueError(f"Unknown type {spec['type']} for feature {name}")
 
         # build the single concat→SiLU→Linear head
-        total_dim = base_dim + sum(spec["emb_dim"] for spec in self.specs.values())
+        total_dim = sum(spec["emb_dim"] for spec in self.specs.values())
         self.project = nn.Sequential(
-            nn.SiLU(),
             nn.Linear(total_dim, self.out_dim, bias=False),
+            nn.SiLU(),
         )
 
     def forward(
         self,
-        species_emb: torch.Tensor,  # [N_nodes, base_dim]
         batch: torch.Tensor,  # [N_nodes,] graph indices
         features: Dict[str, torch.Tensor],
     ) -> torch.Tensor:
@@ -59,7 +58,7 @@ class GenericJointEmbedding(nn.Module):
         and we upsample any per‐graph ones via feat[batch].
         Returns: [N_nodes, out_dim]
         """
-        embs = [species_emb]
+        embs = []
         for name, spec in self.specs.items():
             feat = features[name]
             if spec["per"] == "graph":
