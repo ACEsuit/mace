@@ -520,6 +520,35 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=DefaultKeys.CHARGES.value,
     )
     parser.add_argument(
+        "--elec_temp_key",
+        help="Key of electronic temperature in training xyz",
+        type=str,
+        default=DefaultKeys.elec_temp.value,
+    )
+    parser.add_argument(
+        "--embedding_specs",
+        help=(
+            "List of feature‐spec dictionaries. "
+            "embedding_specs:\n"
+            "  - name: total_spin\n"
+            "    type: categorical\n"
+            "    per: graph\n"
+            "    num_classes: 101\n"
+            "    emb_dim: 64\n"
+            "  - name: total_charge\n"
+            "    type: categorical\n"
+            "    per: graph\n"
+            "    num_classes: 201\n"
+            "    emb_dim: 64\n"
+            "  - name: temperature\n"
+            "    type: continuous\n"
+            "    per: graph\n"
+            "    in_dim: 1\n"
+            "    emb_dim: 32\n"
+        ),
+        default=None,
+    )
+    parser.add_argument(
         "--skip_evaluate_heads",
         help="Comma-separated list of heads to skip during final evaluation",
         type=str,
