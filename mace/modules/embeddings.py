@@ -1,6 +1,4 @@
-# joint_embedding.py
-
-from typing import Dict, Optional, Sequence
+from typing import Any, Dict, Optional
 
 import torch
 from torch import nn
@@ -17,7 +15,7 @@ class GenericJointEmbedding(nn.Module):
         self,
         *,
         base_dim: int,
-        embedding_specs: Sequence[tuple[str, Dict]],
+        embedding_specs: Optional[Dict[str, Any]],
         out_dim: Optional[int] = None,
     ):
         super().__init__()
