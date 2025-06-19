@@ -61,7 +61,7 @@ class MACE(torch.nn.Module):
         apply_cutoff: bool = True,
         use_reduced_cg: bool = True,
         use_so3: bool = False,
-        use_agnostic_product: bool = False,  # pylint: disable=W0613
+        use_agnostic_product: bool = False,
         distance_transform: str = "None",
         edge_irreps: Optional[o3.Irreps] = None,
         radial_MLP: Optional[List[int]] = None,
@@ -164,6 +164,7 @@ class MACE(torch.nn.Module):
             cueq_config=cueq_config,
             oeq_config=oeq_config,
             use_reduced_cg=use_reduced_cg,
+            use_agnostic_product=use_agnostic_product,
         )
         self.products = torch.nn.ModuleList([prod])
 
@@ -204,6 +205,7 @@ class MACE(torch.nn.Module):
                 cueq_config=cueq_config,
                 oeq_config=oeq_config,
                 use_reduced_cg=use_reduced_cg,
+                use_agnostic_product=use_agnostic_product,
             )
             self.products.append(prod)
             if i == num_interactions - 2:

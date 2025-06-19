@@ -282,6 +282,11 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             model.use_reduced_cg if hasattr(model, "use_reduced_cg") else False
         ),
         "use_so3": model.use_so3 if hasattr(model, "use_so3") else False,
+        "use_agnostic_product": (
+            model.use_agnostic_product
+            if hasattr(model, "use_agnostic_product")
+            else False
+        ),
         "cueq_config": model.cueq_config if hasattr(model, "cueq_config") else None,
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,

@@ -262,7 +262,7 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         correlation: int,
         use_sc: bool = True,
         num_elements: Optional[int] = None,
-        element_dependent: bool = True,
+        use_agnostic_product: bool = False,
         use_reduced_cg: Optional[bool] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
         oeq_config: Optional[OEQConfig] = None,
@@ -270,8 +270,8 @@ class EquivariantProductBasisBlock(torch.nn.Module):
         super().__init__()
 
         self.use_sc = use_sc
-        self.element_dependent = element_dependent
-        if not self.element_dependent:
+        self.use_agnostic_product = use_agnostic_product
+        if self.use_agnostic_product:
             num_elements = 1
         self.symmetric_contractions = SymmetricContractionWrapper(
             irreps_in=node_feats_irreps,
@@ -300,8 +300,8 @@ class EquivariantProductBasisBlock(torch.nn.Module):
     ) -> torch.Tensor:
         use_cueq = False
         use_cueq_mul_ir = False
-        if hasattr(self, "element_dependent"):
-            if self.element_dependent:
+        if hasattr(self, "use_agnostic_product"):
+            if self.use_agnostic_product:
                 node_attrs = torch.ones(
                     (node_feats.shape[0], 1),
                     dtype=node_feats.dtype,
