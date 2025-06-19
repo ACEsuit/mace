@@ -281,15 +281,12 @@ class RadialEmbeddingBlock(torch.nn.Module):
     ):
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
         if hasattr(self, "distance_transform"):
-            print("apply distance transform", self.distance_transform)
             edge_lengths = self.distance_transform(
                 edge_lengths, node_attrs, edge_index, atomic_numbers
             )
-        print("appy cutoff", self.apply_cutoff)
         radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         if hasattr(self, "apply_cutoff"):
             if not self.apply_cutoff:
-                print("not applying cutoff")
                 return radial, cutoff
         return radial * cutoff, None  # [n_edges, n_basis], [n_edges, 1]
 
