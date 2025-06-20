@@ -11,6 +11,7 @@ import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
+from mace.modules.embeddings import GenericJointEmbedding
 from mace.modules.radial import ZBLBasis
 from mace.tools.scatter import scatter_sum
 
@@ -61,15 +62,19 @@ class MACE(torch.nn.Module):
         apply_cutoff: bool = True,
         use_reduced_cg: bool = True,
         use_so3: bool = False,
-        use_agnostic_product: bool = False,  # pylint: disable=W0613
+        use_agnostic_product: bool = False,
+        use_last_readout_only: bool = False,
+        use_embedding_readout: bool = False,
         distance_transform: str = "None",
         edge_irreps: Optional[o3.Irreps] = None,
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,
+        embedding_specs: Optional[Dict[str, Any]] = None,
         oeq_config: Optional[Dict[str, Any]] = None,
         lammps_mliap: Optional[bool] = False,
+        readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
     ):
         super().__init__()
         self.register_buffer(
@@ -90,6 +95,10 @@ class MACE(torch.nn.Module):
         self.apply_cutoff = apply_cutoff
         self.edge_irreps = edge_irreps
         self.use_reduced_cg = use_reduced_cg
+        self.use_agnostic_product = use_agnostic_product
+        self.use_so3 = use_so3
+        self.use_last_readout_only = use_last_readout_only
+
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -98,12 +107,29 @@ class MACE(torch.nn.Module):
             irreps_out=node_feats_irreps,
             cueq_config=cueq_config,
         )
+        embedding_size = node_feats_irreps.count(o3.Irrep(0, 1))
+        if embedding_specs is not None:
+            self.embedding_specs = embedding_specs
+            self.joint_embedding = GenericJointEmbedding(
+                base_dim=embedding_size,
+                embedding_specs=embedding_specs,
+                out_dim=embedding_size,
+            )
+            if use_embedding_readout:
+                self.embedding_readout = LinearReadoutBlock(
+                    node_feats_irreps,
+                    o3.Irreps(f"{len(heads)}x0e"),
+                    cueq_config,
+                    oeq_config,
+                )
+
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
             distance_transform=distance_transform,
+            apply_cutoff=apply_cutoff,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
@@ -164,15 +190,20 @@ class MACE(torch.nn.Module):
             cueq_config=cueq_config,
             oeq_config=oeq_config,
             use_reduced_cg=use_reduced_cg,
+            use_agnostic_product=use_agnostic_product,
         )
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        self.readouts.append(
-            LinearReadoutBlock(
-                hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config, oeq_config
+        if not use_last_readout_only:
+            self.readouts.append(
+                LinearReadoutBlock(
+                    hidden_irreps,
+                    o3.Irreps(f"{len(heads)}x0e"),
+                    cueq_config,
+                    oeq_config,
+                )
             )
-        )
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
@@ -204,11 +235,12 @@ class MACE(torch.nn.Module):
                 cueq_config=cueq_config,
                 oeq_config=oeq_config,
                 use_reduced_cg=use_reduced_cg,
+                use_agnostic_product=use_agnostic_product,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
                 self.readouts.append(
-                    NonLinearReadoutBlock(
+                    readout_cls(
                         hidden_irreps_out,
                         (len(heads) * MLP_irreps).simplify(),
                         gate,
@@ -218,7 +250,7 @@ class MACE(torch.nn.Module):
                         oeq_config,
                     )
                 )
-            else:
+            elif not use_last_readout_only:
                 self.readouts.append(
                     LinearReadoutBlock(
                         hidden_irreps,
@@ -288,13 +320,33 @@ class MACE(torch.nn.Module):
             pair_node_energy = torch.zeros_like(node_e0)
             pair_energy = torch.zeros_like(e0)
 
+        if hasattr(self, "joint_embedding"):
+            embedding_features: Dict[str, torch.Tensor] = {}
+            for name, _ in self.embedding_specs.items():
+                embedding_features[name] = data[name]
+            node_feats += self.joint_embedding(
+                data["batch"],
+                embedding_features,
+            )
+            if hasattr(self, "embedding_readout"):
+                embedding_node_energy = self.embedding_readout(
+                    node_feats, node_heads
+                ).squeeze()
+                embedding_energy = scatter_sum(
+                    src=embedding_node_energy,
+                    index=data["batch"],
+                    dim=0,
+                    dim_size=num_graphs,
+                )
+                e0 += embedding_energy
+
         # Interactions
         energies = [e0, pair_energy]
         node_energies_list = [node_e0, pair_node_energy]
         node_feats_concat: List[torch.Tensor] = []
 
-        for i, (interaction, product, readout) in enumerate(
-            zip(self.interactions, self.products, self.readouts)
+        for i, (interaction, product) in enumerate(
+            zip(self.interactions, self.products)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -316,7 +368,12 @@ class MACE(torch.nn.Module):
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
             node_feats_concat.append(node_feats)
-            node_es = readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+
+        for i, readout in enumerate(self.readouts):
+            feat_idx = -1 if len(self.readouts) == 1 else i
+            node_es = readout(node_feats_concat[feat_idx], node_heads)[
+                num_atoms_arange, node_heads
+            ]
             energy = scatter_sum(node_es, data["batch"], dim=0, dim_size=num_graphs)
             energies.append(energy)
             node_energies_list.append(node_es)
@@ -440,12 +497,33 @@ class ScaleShiftMACE(MACE):
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
+        # Embeddings of additional features
+        if hasattr(self, "joint_embedding"):
+            embedding_features: Dict[str, torch.Tensor] = {}
+            for name, _ in self.embedding_specs.items():
+                embedding_features[name] = data[name]
+            node_feats += self.joint_embedding(
+                data["batch"],
+                embedding_features,
+            )
+            if hasattr(self, "embedding_readout"):
+                embedding_node_energy = self.embedding_readout(
+                    node_feats, node_heads
+                ).squeeze()
+                embedding_energy = scatter_sum(
+                    src=embedding_node_energy,
+                    index=data["batch"],
+                    dim=0,
+                    dim_size=num_graphs,
+                )
+                e0 += embedding_energy
+
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
 
-        for i, (interaction, product, readout) in enumerate(
-            zip(self.interactions, self.products, self.readouts)
+        for i, (interaction, product) in enumerate(
+            zip(self.interactions, self.products)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -467,8 +545,13 @@ class ScaleShiftMACE(MACE):
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
             node_feats_list.append(node_feats)
+
+        for i, readout in enumerate(self.readouts):
+            feat_idx = -1 if len(self.readouts) == 1 else i
             node_es_list.append(
-                readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+                readout(node_feats_list[feat_idx], node_heads)[
+                    num_atoms_arange, node_heads
+                ]
             )
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)

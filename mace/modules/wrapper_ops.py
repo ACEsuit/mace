@@ -42,6 +42,7 @@ class CuEquivarianceConfig:
     optimize_channelwise: bool = False
     optimize_symmetric: bool = False
     optimize_fctp: bool = False
+    conv_fusion: bool = False  # Set to True to enable conv fusion
 
     def __post_init__(self):
         if self.enabled and CUET_AVAILABLE:
@@ -123,6 +124,30 @@ def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
     return conv_tp
 
 
+def with_cueq_conv_fusion(conv_tp: torch.nn.Module) -> torch.nn.Module:
+    """Wraps a cuet.ConvTensorProduct to use conv fusion"""
+    conv_tp.original_forward = conv_tp.forward
+
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        tp_weights: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        return self.original_forward(
+            [tp_weights, node_feats, edge_attrs],
+            {1: sender},
+            {0: node_feats},
+            {0: receiver},
+        )
+
+    conv_tp.forward = types.MethodType(forward, conv_tp)
+    return conv_tp
+
+
 class TensorProduct:
     """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
 
@@ -143,6 +168,20 @@ class TensorProduct:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
+            if cueq_config.conv_fusion:
+                return with_cueq_conv_fusion(
+                    cuet.SegmentedPolynomial(
+                        cue.descriptors.channelwise_tensor_product(
+                            cue.Irreps(cueq_config.group, irreps_in1),
+                            cue.Irreps(cueq_config.group, irreps_in2),
+                            cue.Irreps(cueq_config.group, irreps_out),
+                        )
+                        .flatten_coefficient_modes()
+                        .squeeze_modes()
+                        .polynomial,
+                        math_dtype=torch.get_default_dtype(),
+                    )
+                )
             return cuet.ChannelWiseTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
