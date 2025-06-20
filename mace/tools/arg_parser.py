@@ -172,8 +172,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--apply_cutoff",
         help="apply cutoff to the radial basis functions before MLP",
-        action="store_true",
-        default=False,
+        type=str2bool,
+        default=True,
     )
     parser.add_argument(
         "--interaction",
