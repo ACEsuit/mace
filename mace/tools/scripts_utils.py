@@ -282,6 +282,18 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             model.use_reduced_cg if hasattr(model, "use_reduced_cg") else False
         ),
         "use_so3": model.use_so3 if hasattr(model, "use_so3") else False,
+        "use_agnostic_product": (
+            model.use_agnostic_product
+            if hasattr(model, "use_agnostic_product")
+            else False
+        ),
+        "use_last_readout_only": (
+            model.use_last_readout_only
+            if hasattr(model, "use_last_readout_only")
+            else False
+        ),
+        "use_embedding_readout": (hasattr(model, "embedding_readout")),
+        "readout_cls": model.readouts[-1].__class__,
         "cueq_config": model.cueq_config if hasattr(model, "cueq_config") else None,
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
@@ -740,6 +752,22 @@ def get_params_options(
         amsgrad=args.amsgrad,
         betas=(args.beta, 0.999),
     )
+    if hasattr(model, "joint_embedding") and model.joint_embedding is not None:
+        param_options["params"].append(
+            {
+                "name": "joint_embedding",
+                "params": model.joint_embedding.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+    if hasattr(model, "embedding_readout") and model.embedding_readout is not None:
+        param_options["params"].append(
+            {
+                "name": "embedding_readout",
+                "params": model.embedding_readout.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
     return param_options
 
 
