@@ -721,7 +721,6 @@ def get_params_options(
             decay_interactions[name] = param
         else:
             no_decay_interactions[name] = param
-
     param_options = dict(
         params=[
             {

@@ -8,6 +8,7 @@ import pandas as pd
 import torch
 import torch.distributed
 from torchmetrics import Metric
+from mace.modules.loss import fold_polarisation
 
 plt.rcParams.update({"font.size": 8})
 mpl_logger = logging.getLogger("matplotlib")
@@ -652,12 +653,13 @@ class InferenceMetric(Metric):
         # Polarisation
         if output.get("polarisation") is not None and batch.polarisation is not None:
             self.n_polarisation += 1.0
+            polarisation_difference = fold_polarisation(output["polarisation"], batch.polarisation, batch.cell)
             self.ref_polarisation.append(batch.polarisation)
-            self.pred_polarisation.append(output["polarisation"])
+            self.pred_polarisation.append(polarisation_difference + batch.polarisation)
             # Per-atom normalization
             atoms_per_config_3d = atoms_per_config.view(-1, 1)
             self.ref_polarisation_per_atom.append(batch.polarisation / atoms_per_config_3d)
-            self.pred_polarisation_per_atom.append(output["polarisation"] / atoms_per_config_3d)
+            self.pred_polarisation_per_atom.append((polarisation_difference + batch.polarisation) / atoms_per_config_3d)
         
         # Born effective charges
         if output.get("becs") is not None and batch.becs is not None:

@@ -330,7 +330,7 @@ class AtomicData(torch_geometric.data.Data):
         polarisation = (
             torch.tensor(
                 config.properties.get("polarisation"), dtype=torch.get_default_dtype()
-            )
+            ).view(-1, 3)
             if config.properties.get("polarisation") is not None
             else torch.zeros(1, 3, dtype=torch.get_default_dtype())
         )
@@ -338,7 +338,7 @@ class AtomicData(torch_geometric.data.Data):
         becs = (
             torch.tensor(
                 config.properties.get("becs"), dtype=torch.get_default_dtype()
-            ).view(-1,3,3)
+            ).view(-1, 3, 3)
             if config.properties.get("becs") is not None
             else torch.zeros(num_atoms, 3, 3, dtype=torch.get_default_dtype())
         )
@@ -346,7 +346,7 @@ class AtomicData(torch_geometric.data.Data):
         polarisability = (
             torch.tensor(
                 config.properties.get("polarisability"), dtype=torch.get_default_dtype()
-            ).view(-1,3,3)
+            ).view(-1, 3, 3)
             if config.properties.get("polarisability") is not None
             else torch.zeros(1, 3, 3, dtype=torch.get_default_dtype())
         )

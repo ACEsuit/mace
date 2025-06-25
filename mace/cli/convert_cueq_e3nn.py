@@ -19,6 +19,7 @@ def get_transfer_keys(num_layers: int) -> List[str]:
         "scale_shift.scale",
         "scale_shift.shift",
         *[f"readouts.{num_layers-1}.linear_{i}.weight" for i in range(1, 3)],
+        *[f"field_feats.{j}.linear.weight" for j in range(num_layers - 1)],
     ] + [
         s
         for j in range(num_layers)

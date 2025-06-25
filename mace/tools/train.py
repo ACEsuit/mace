@@ -22,6 +22,7 @@ from torch_ema import ExponentialMovingAverage
 from torchmetrics import Metric
 
 from mace.cli.visualise_train import TrainingPlotter
+from mace.modules.loss import fold_polarisation
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
@@ -670,8 +671,9 @@ class MACELoss(Metric):
         if output.get("polarisation") is not None and batch.polarisation is not None:
             self.polarisation_computed += 1.0
             self.polarisation.append(batch.polarisation.view(-1,3))
-            self.delta_polarisation.append(batch.polarisation.reshape(-1,3) - output["polarisation"].view(-1,3))
-            self.delta_polarisation_per_atom.append(batch.polarisation.reshape(-1,3) - output["polarisation"].view(-1,3))
+            polarisation_difference = fold_polarisation(output["polarisation"], batch.polarisation, batch.cell)
+            self.delta_polarisation.append(polarisation_difference)
+            self.delta_polarisation_per_atom.append(polarisation_difference / (batch.ptr[1:] - batch.ptr[:-1]).view(-1,1))
         if output.get("becs") is not None and batch.becs is not None:
             self.becs_computed += 1.0
             self.becs.append(batch.becs.view(-1,3,3))
@@ -681,7 +683,10 @@ class MACELoss(Metric):
             self.polarisability_computed += 1.0
             self.polarisability.append(batch.polarisability.view(-1,3,3))
             self.delta_polarisability.append(batch.polarisability.view(-1,3,3) - output["polarisability"].view(-1,3,3))
-            self.delta_polarisability_per_atom.append(batch.polarisability.view(-1,3,3) - output["polarisability"].view(-1,3,3))
+            self.delta_polarisability_per_atom.append(
+                (batch.polarisability.view(-1,3,3) - output["polarisability"].view(-1,3,3))
+                / (batch.ptr[1:] - batch.ptr[:-1]).view(-1,1,1)
+                )
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):

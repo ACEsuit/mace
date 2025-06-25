@@ -523,13 +523,6 @@ class ScaleShiftFieldMACE(MACE):
                     self.interactions[i].cueq_config
                 )
             )
-        self.field_feats.append(
-            LinearReadoutBlock(
-                str(hidden_irreps[0]),
-                (num_channels * o3.Irreps("4x0e")).sort()[0].simplify(),
-                self.interactions[-1].cueq_config
-            )  
-        )  
 
     def forward(
         self,
@@ -600,8 +593,8 @@ class ScaleShiftFieldMACE(MACE):
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
 
-        for i, (interaction, product, readout, field_feat) in enumerate(
-            zip(self.interactions, self.products, self.readouts, self.field_feats)
+        for i, (interaction, product, readout) in enumerate(
+            zip(self.interactions, self.products, self.readouts)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -621,16 +614,16 @@ class ScaleShiftFieldMACE(MACE):
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
-            node_field_feats = field_feat(node_feats, node_heads).reshape(node_feats.shape[0], -1, 4) # [n_nodes, k, 4]
-            node_charge_feats, node_electronic_dipole_feats = node_field_feats[:,:,0],  node_field_feats[:,:,1:] # [n_nodes, k, 1], [n_nodes, k, 3]
-            node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, positions) # [n_nodes, k, 3]
-            node_dipole_feats = node_ionic_dipole_feats - node_electronic_dipole_feats # [n_nodes, k, 3]
-            node_field_feats = torch.einsum('ijk,ik->ij', node_dipole_feats, electric_field.repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
-            node_field_feats = node_field_feats.repeat(1, node_feats.view(node_field_feats.shape[0], node_field_feats.shape[1], -1).shape[-1])
+            if i < len(self.interactions) - 1:
+                node_field_feats = self.field_feats[i](node_feats, node_heads).reshape(node_feats.shape[0], -1, 4) # [n_nodes, k, 4]
+                node_charge_feats, node_electronic_dipole_feats = node_field_feats[:,:,0],  node_field_feats[:,:,1:] # [n_nodes, k, 1], [n_nodes, k, 3]
+                node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, positions) # [n_nodes, k, 3]
+                node_dipole_feats = node_ionic_dipole_feats - node_electronic_dipole_feats # [n_nodes, k, 3]
+                node_field_feats = torch.einsum('ijk,ik->ij', node_dipole_feats, electric_field.repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
+                node_feats = node_feats - node_field_feats.repeat(1, node_feats.view(node_field_feats.shape[0], node_field_feats.shape[1], -1).shape[-1]).view(node_feats.shape[0], node_feats.shape[1])
             node_feats_list.append(node_feats)
             node_es_list.append(
                 readout(node_feats, node_heads)[num_atoms_arange, node_heads]
-                - readout(node_field_feats / volume.view(-1,1).repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0), node_heads)[num_atoms_arange, node_heads]
             )
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -678,7 +671,7 @@ class ScaleShiftFieldMACE(MACE):
                     polarisation=polarisation,
                     positions=positions,
                     training=(training or compute_becs),
-                ) * volume.view(-1,1,1).repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0)
+                ) 
             else:
                 becs = None
             if compute_polarisability:
@@ -686,9 +679,10 @@ class ScaleShiftFieldMACE(MACE):
                     polarisation=polarisation,
                     electric_field=electric_field,
                     training=(training or compute_polarisability),
-                ) 
+                ) / volume.view(-1, 1, 1)
             else:
                 polarisability = None
+            polarisation = polarisation / volume.view(-1, 1)
         else:
             polarisation = None
 
