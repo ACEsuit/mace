@@ -512,7 +512,7 @@ class MACELES(MACE):
                 )
 
 
-        logging.info('######### Using Latent Eward Summation (LES)  #########')
+        logging.info('######### Using Latent Ewald Summation (LES)  #########')
 
         self.compute_bec = False
         self.bec_output_index = None
