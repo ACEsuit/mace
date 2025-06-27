@@ -1131,6 +1131,30 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         self.alpha = torch.nn.Parameter(torch.tensor(20.0), requires_grad=True)
         self.beta = torch.nn.Parameter(torch.tensor(0.0), requires_grad=True)
 
+        if self.cueq_config is not None:
+            if self.cueq_config.layout_str == "ir_mul":
+                import cuequivariance_torch as cuet
+                import cuequivariance as cue
+
+                self.transpose_mul_ir = cuet.TransposeIrrepsLayout(
+                    irreps=cue.Irreps(self.cueq_config.group, self.irreps_nonlin),
+                    source=getattr(cue, "ir_mul"),
+                    target=getattr(cue, "mul_ir"),
+                    use_fallback=True,
+                )
+                self.transpose_ir_mul = cuet.TransposeIrrepsLayout(
+                    irreps=cue.Irreps(self.cueq_config.group, self.irreps_out),
+                    source=getattr(cue, "mul_ir"),
+                    target=getattr(cue, "ir_mul"),
+                    use_fallback=True,
+                )
+            else:
+                self.transpose_mul_ir = None
+                self.transpose_ir_mul = None
+        else:
+            self.transpose_mul_ir = None
+            self.transpose_ir_mul = None
+
     def forward(
         self,
         node_attrs: torch.Tensor,
@@ -1191,7 +1215,12 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         node_feats_res = self.truncate_ghosts(node_feats_res, n_real)
         message = self.linear_1(message) / (density * self.beta + self.alpha)
         message = message + node_feats_res
-        message = self.linear_2(self.equivariant_nonlin(message))
+        if self.transpose_mul_ir is not None:
+            message = self.transpose_mul_ir(message)
+        message = self.equivariant_nonlin(message)
+        if self.transpose_ir_mul is not None:
+            message = self.transpose_ir_mul(message)
+        message = self.linear_2(message)
         return (
             self.reshape(message),
             sc,

@@ -176,6 +176,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--use_last_readout_only",
+        help="use only the last readout for the final output",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--use_embedding_readout",
+        help="use embedding readout for the final output",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--interaction",
         help="name of interaction block",
         type=str,
