@@ -4,6 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import os
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import numpy as np
@@ -37,6 +38,7 @@ from .utils import (
 )
 
 # pylint: disable=C0302
+USE_FLOAT64_E0 = os.environ.get("MACE_USE_FLOAT64_E0", "false").lower() == "true"
 
 
 @compile_mode("script")
@@ -298,8 +300,12 @@ class MACE(torch.nn.Module):
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
         ]
+        if USE_FLOAT64_E0:
+            node_e0 = node_e0.double()  # Ensure e0 is in float64
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+        ).to(
+            vectors.dtype
         )  # [n_graphs, n_heads]
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -477,8 +483,12 @@ class ScaleShiftMACE(MACE):
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
         ]
+        if USE_FLOAT64_E0:
+            node_e0 = node_e0.double()
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+        ).to(
+            vectors.dtype
         )  # [n_graphs, num_heads]
 
         # Embeddings

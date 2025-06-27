@@ -230,6 +230,9 @@ def _build_model(
             radial_type=args.radial_type,
             heads=heads,
             embedding_specs=args.embedding_specs,
+            use_embedding_readout=args.use_embedding_readout,
+            use_last_readout_only=args.use_last_readout_only,
+            use_agnostic_product=args.use_agnostic_product,
         )
     if args.model == "ScaleShiftMACE":
         return modules.ScaleShiftMACE(
@@ -246,6 +249,9 @@ def _build_model(
             radial_type=args.radial_type,
             heads=heads,
             embedding_specs=args.embedding_specs,
+            use_embedding_readout=args.use_embedding_readout,
+            use_last_readout_only=args.use_last_readout_only,
+            use_agnostic_product=args.use_agnostic_product,
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)
