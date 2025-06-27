@@ -263,6 +263,11 @@ class MACECalculator(Calculator):
     def dtype(self):
         return self._dtype
 
+    def to(self, **kwargs):
+        self._dtype = kwargs.get("dtype", self._dtype)
+        self.models = [model.to(**kwargs) for model in self.models]
+        return self
+
     def _create_result_tensors(
         self, model_type: str, num_models: int, num_atoms: int
     ) -> dict:

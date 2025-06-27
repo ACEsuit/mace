@@ -25,9 +25,6 @@ run_train = "mace_run_train"
 
 @pytest.fixture
 def default_dtype_str():
-    # NOTE: if we use float32, the tests will fail. I (CompRhys) don't understand why.
-    # The failures are not small numerical errors but actually fairly substantially
-    # different results.
     return "float64"
 
 
@@ -62,7 +59,7 @@ def fitting_configs():
     return fit_configs
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def core_mace_params(default_dtype_str):
     return {
         "valid_fraction": 0.05,
@@ -90,7 +87,7 @@ def core_mace_params(default_dtype_str):
     }
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def trained_model(tmp_path_factory, fitting_configs, core_mace_params):
     _mace_params = {
         **core_mace_params,
@@ -129,7 +126,7 @@ def trained_model(tmp_path_factory, fitting_configs, core_mace_params):
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def trained_equivariant_model(tmp_path_factory, fitting_configs, core_mace_params):
     _mace_params = {
         **core_mace_params,
@@ -168,7 +165,7 @@ def trained_equivariant_model(tmp_path_factory, fitting_configs, core_mace_param
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def trained_equivariant_model_cueq(tmp_path_factory, fitting_configs, core_mace_params):
     _mace_params = {
         **core_mace_params,
@@ -210,7 +207,7 @@ def trained_equivariant_model_cueq(tmp_path_factory, fitting_configs, core_mace_
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def trained_dipole_model(tmp_path_factory, fitting_configs, default_dtype_str):
     _mace_params = {
         "name": "MACE",
@@ -272,7 +269,7 @@ def trained_dipole_model(tmp_path_factory, fitting_configs, default_dtype_str):
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def trained_energy_dipole_model(tmp_path_factory, fitting_configs, default_dtype_str):
     _mace_params = {
         "name": "MACE",
@@ -334,7 +331,7 @@ def trained_energy_dipole_model(tmp_path_factory, fitting_configs, default_dtype
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def trained_committee(tmp_path_factory, fitting_configs, core_mace_params):
     _seeds = [5, 6, 7]
     _model_paths = []
@@ -378,7 +375,9 @@ def trained_committee(tmp_path_factory, fitting_configs, core_mace_params):
     )
 
 
-def test_calculator_node_energy(fitting_configs, trained_model):
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+def test_calculator_node_energy(fitting_configs, trained_model, test_dtype):
+    trained_model.to(dtype=test_dtype)
     for at in fitting_configs:
         trained_model.calculate(at)
         node_energies = trained_model.results["node_energy"]
@@ -394,9 +393,10 @@ def test_calculator_node_energy(fitting_configs, trained_model):
         np.testing.assert_allclose(energy, energy_via_nodes, atol=1e-7)
 
 
-def test_calculator_forces(fitting_configs, trained_model):
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+def test_calculator_forces(fitting_configs, trained_model, test_dtype):
     at = fitting_configs[2].copy()
-    at.calc = trained_model
+    at.calc = trained_model.to(dtype=test_dtype)
 
     # test just forces
     grads = gradient_test(at)
@@ -404,9 +404,10 @@ def test_calculator_forces(fitting_configs, trained_model):
     np.testing.assert_allclose(grads[0], grads[1], atol=1e-7)
 
 
-def test_calculator_stress(fitting_configs, trained_model):
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+def test_calculator_stress(fitting_configs, trained_model, test_dtype):
     at = fitting_configs[2].copy()
-    at.calc = trained_model
+    at.calc = trained_model.to(dtype=test_dtype)
 
     # test forces and stress
     at_wrapped = ExpCellFilter(at)
@@ -415,9 +416,10 @@ def test_calculator_stress(fitting_configs, trained_model):
     np.testing.assert_allclose(grads[0], grads[1], atol=1e-7)
 
 
-def test_calculator_committee(fitting_configs, trained_committee):
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+def test_calculator_committee(fitting_configs, trained_committee, test_dtype):
     at = fitting_configs[2].copy()
-    at.calc = trained_committee
+    at.calc = trained_committee.to(dtype=test_dtype)
 
     # test just forces
     grads = gradient_test(at)
@@ -433,32 +435,35 @@ def test_calculator_committee(fitting_configs, trained_committee):
     assert forces_var.shape == at.calc.results["forces"].shape
 
 
-def test_calculator_from_model(fitting_configs, trained_committee):
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+def test_calculator_from_model(fitting_configs, trained_committee, test_dtype):
     # test single model
     test_calculator_forces(
         fitting_configs,
-        trained_model=MACECalculator(models=trained_committee.models[0], device="cpu"),
+        trained_model=MACECalculator(models=trained_committee.models[0], device="cpu").to(dtype=test_dtype),
     )
 
     # test committee model
     test_calculator_committee(
         fitting_configs,
-        trained_committee=MACECalculator(models=trained_committee.models, device="cpu"),
+        trained_committee=MACECalculator(models=trained_committee.models, device="cpu").to(dtype=test_dtype),
     )
 
 
-def test_calculator_dipole(fitting_configs, trained_dipole_model):
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+def test_calculator_dipole(fitting_configs, trained_dipole_model, test_dtype):
     at = fitting_configs[2].copy()
-    at.calc = trained_dipole_model
+    at.calc = trained_dipole_model.to(dtype=test_dtype)
 
     dip = at.get_dipole_moment()
 
     assert len(dip) == 3
 
 
-def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model):
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model, test_dtype):
     at = fitting_configs[2].copy()
-    at.calc = trained_energy_dipole_model
+    at.calc = trained_energy_dipole_model.to(dtype=test_dtype)
 
     grads = gradient_test(at)
     dip = at.get_dipole_moment()
@@ -467,7 +472,8 @@ def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model):
     assert len(dip) == 3
 
 
-def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+def test_calculator_descriptor(fitting_configs, trained_equivariant_model, test_dtype):
     at = fitting_configs[2].copy()
     at_rotated = fitting_configs[2].copy()
     at_rotated.rotate(90, "x")
@@ -516,11 +522,12 @@ def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_cueq):
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_cueq, test_dtype):
     at = fitting_configs[2].copy()
     at_rotated = fitting_configs[2].copy()
     at_rotated.rotate(90, "x")
-    calc = trained_equivariant_model_cueq
+    calc = trained_equivariant_model_cueq.to(dtype=test_dtype)
     print("model", calc.models[0])
 
     desc_invariant = calc.get_descriptors(at, invariants_only=True)
