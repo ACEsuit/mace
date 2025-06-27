@@ -388,7 +388,6 @@ class MACE(torch.nn.Module):
         total_energy = torch.sum(contributions, dim=-1)
         node_energy = torch.sum(torch.stack(node_energies_list, dim=-1), dim=-1)
         node_feats_out = torch.cat(node_feats_concat, dim=-1)
-        node_energy = node_e0.double() + pair_node_energy.double()
 
         forces, virials, stress, hessian, edge_forces = get_outputs(
             energy=total_energy,
