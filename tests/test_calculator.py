@@ -23,12 +23,12 @@ except ImportError:
 run_train = "mace_run_train"
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def default_dtype_str():
     return "float64"
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def fitting_configs():
     water = Atoms(
         numbers=[8, 1, 1],
@@ -197,8 +197,6 @@ def trained_equivariant_model_cueq(tmp_path_factory, fitting_configs, core_mace_
 
     assert p.returncode == 0
 
-    model = torch.load(tmp_path / "MACE.model", map_location="cpu")
-    print("DEBUG model", model)
     return MACECalculator(
         model_paths=tmp_path / "MACE.model",
         device="cpu",
@@ -440,13 +438,15 @@ def test_calculator_from_model(fitting_configs, trained_committee, test_dtype):
     # test single model
     test_calculator_forces(
         fitting_configs,
-        trained_model=MACECalculator(models=trained_committee.models[0], device="cpu").to(dtype=test_dtype),
+        trained_model=MACECalculator(models=trained_committee.models[0], device="cpu"),
+        test_dtype=test_dtype,
     )
 
     # test committee model
     test_calculator_committee(
         fitting_configs,
-        trained_committee=MACECalculator(models=trained_committee.models, device="cpu").to(dtype=test_dtype),
+        trained_committee=MACECalculator(models=trained_committee.models, device="cpu"),
+        test_dtype=test_dtype,
     )
 
 
@@ -473,62 +473,12 @@ def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model, 
 
 
 @pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
-def test_calculator_descriptor(fitting_configs, trained_equivariant_model, test_dtype):
+@pytest.mark.parametrize("test_model", ["trained_equivariant_model"] + (["trained_equivariant_model_cueq"] if CUET_AVAILABLE else []))
+def test_calculator_descriptor(fitting_configs, test_model, test_dtype, request):
     at = fitting_configs[2].copy()
     at_rotated = fitting_configs[2].copy()
     at_rotated.rotate(90, "x")
-    calc = trained_equivariant_model
-
-    desc_invariant = calc.get_descriptors(at, invariants_only=True)
-    desc_invariant_rotated = calc.get_descriptors(at_rotated, invariants_only=True)
-    desc_invariant_single_layer = calc.get_descriptors(
-        at, invariants_only=True, num_layers=1
-    )
-    desc_invariant_single_layer_rotated = calc.get_descriptors(
-        at_rotated, invariants_only=True, num_layers=1
-    )
-    desc = calc.get_descriptors(at, invariants_only=False)
-    desc_single_layer = calc.get_descriptors(at, invariants_only=False, num_layers=1)
-    desc_rotated = calc.get_descriptors(at_rotated, invariants_only=False)
-    desc_rotated_single_layer = calc.get_descriptors(
-        at_rotated, invariants_only=False, num_layers=1
-    )
-
-    assert desc_invariant.shape[0] == 3
-    assert desc_invariant.shape[1] == 32
-    assert desc_invariant_single_layer.shape[0] == 3
-    assert desc_invariant_single_layer.shape[1] == 16
-    assert desc.shape[0] == 3
-    assert desc.shape[1] == 80
-    assert desc_single_layer.shape[0] == 3
-    assert desc_single_layer.shape[1] == 16 * 4
-    assert desc_rotated_single_layer.shape[0] == 3
-    assert desc_rotated_single_layer.shape[1] == 16 * 4
-
-    np.testing.assert_allclose(desc_invariant, desc_invariant_rotated, atol=1e-6)
-    np.testing.assert_allclose(
-        desc_invariant_single_layer, desc_invariant[:, :16], atol=1e-6
-    )
-    np.testing.assert_allclose(
-        desc_invariant_single_layer_rotated, desc_invariant[:, :16], atol=1e-6
-    )
-    np.testing.assert_allclose(
-        desc_single_layer[:, :16], desc_rotated_single_layer[:, :16], atol=1e-6
-    )
-    assert not np.allclose(
-        desc_single_layer[:, 16:], desc_rotated_single_layer[:, 16:], atol=1e-6
-    )
-    assert not np.allclose(desc, desc_rotated, atol=1e-6)
-
-
-@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
-def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_cueq, test_dtype):
-    at = fitting_configs[2].copy()
-    at_rotated = fitting_configs[2].copy()
-    at_rotated.rotate(90, "x")
-    calc = trained_equivariant_model_cueq.to(dtype=test_dtype)
-    print("model", calc.models[0])
+    calc = request.getfixturevalue(test_model).to(dtype=test_dtype)
 
     desc_invariant = calc.get_descriptors(at, invariants_only=True)
     desc_invariant_rotated = calc.get_descriptors(at_rotated, invariants_only=True)
