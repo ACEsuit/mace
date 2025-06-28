@@ -23,7 +23,7 @@ repos:
         exclude: *exclude_files
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 6.0.1
     hooks:
       - id: isort
         name: Sort imports
