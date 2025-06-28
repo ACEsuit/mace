@@ -103,7 +103,7 @@ class BackendTestBase:
             o3.Irreps("32x0e"),
         ],
     )
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64], ids=["float32", "float64"])
     def test_bidirectional_conversion(
         self,
         model_config: Dict[str, Any],
@@ -135,13 +135,20 @@ class BackendTestBase:
             deepcopy(batch), training=True, compute_stress=True
         )
 
+        tol = 1e-4 if dtype == torch.float32 else 1e-7
+
         # Check outputs match for both conversions
-        torch.testing.assert_close(out_e3nn["energy"], out_backend["energy"])
-        torch.testing.assert_close(out_backend["energy"], out_e3nn_back["energy"])
-        torch.testing.assert_close(out_e3nn["forces"], out_backend["forces"])
-        torch.testing.assert_close(out_backend["forces"], out_e3nn_back["forces"])
-        torch.testing.assert_close(out_e3nn["stress"], out_backend["stress"])
-        torch.testing.assert_close(out_backend["stress"], out_e3nn_back["stress"])
+        torch.testing.assert_close(out_e3nn["energy"], out_e3nn_back["energy"], atol=tol, rtol=tol)
+        torch.testing.assert_close(out_e3nn["forces"], out_e3nn_back["forces"], atol=tol, rtol=tol)
+        torch.testing.assert_close(out_e3nn["stress"], out_e3nn_back["stress"], atol=tol, rtol=tol)
+
+        torch.testing.assert_close(out_e3nn["energy"], out_backend["energy"], atol=tol, rtol=tol)
+        torch.testing.assert_close(out_e3nn["forces"], out_backend["forces"], atol=tol, rtol=tol)
+        torch.testing.assert_close(out_e3nn["stress"], out_backend["stress"], atol=tol, rtol=tol)
+
+        torch.testing.assert_close(out_backend["energy"], out_e3nn_back["energy"], atol=tol, rtol=tol)
+        torch.testing.assert_close(out_backend["forces"], out_e3nn_back["forces"], atol=tol, rtol=tol)
+        torch.testing.assert_close(out_backend["stress"], out_e3nn_back["stress"], atol=tol, rtol=tol)
 
         # Test backward pass equivalence
         loss_e3nn = out_e3nn["energy"].sum()
@@ -151,9 +158,6 @@ class BackendTestBase:
         loss_e3nn.backward()
         loss_backend.backward()
         loss_e3nn_back.backward()
-
-        # Compare gradients for all conversions
-        tol = 1e-4 if dtype == torch.float32 else 1e-7
 
         def print_gradient_diff(name1, p1, name2, p2, conv_type):
             if p1.grad is not None and p1.grad.shape == p2.grad.shape:

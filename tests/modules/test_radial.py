@@ -39,7 +39,7 @@ def test_trainable_zbl_basis_initialization(zbl_basis):
     assert zbl_basis.a_prefactor.requires_grad
 
 
-@pytest.mark.parametrize("dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_zbl_basis_forward(zbl_basis, dtype):
     zbl_basis = zbl_basis.to(dtype)
     x = torch.tensor([1.0, 1.0, 2.0], dtype=dtype).unsqueeze(-1)
@@ -82,7 +82,7 @@ def test_trainable_agnesi_transform_initialization():
     assert agnesi.p.requires_grad
 
 
-@pytest.mark.parametrize("dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_agnesi_transform_forward(agnesi, dtype):
     agnesi = agnesi.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)
@@ -117,7 +117,7 @@ def test_trainable_bessel_basis_initialization():
     assert basis.bessel_weights.requires_grad
 
 
-@pytest.mark.parametrize("dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_bessel_basis_forward(bessel_basis, dtype):
     bessel_basis = bessel_basis.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)
@@ -138,7 +138,7 @@ def test_chebychev_basis_initialization(chebychev_basis):
     assert chebychev_basis.n.shape == (1, 8)
 
 
-@pytest.mark.parametrize("dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_chebychev_basis_forward(chebychev_basis, dtype):
     chebychev_basis = chebychev_basis.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)
@@ -163,7 +163,7 @@ def test_trainable_gaussian_basis_initialization():
     assert basis.gaussian_weights.requires_grad
 
 
-@pytest.mark.parametrize("dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_gaussian_basis_forward(gaussian_basis, dtype):
     gaussian_basis = gaussian_basis.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)
@@ -183,7 +183,7 @@ def test_polynomial_cutoff_initialization(polynomial_cutoff):
     assert polynomial_cutoff.p == torch.tensor(6)
 
 
-@pytest.mark.parametrize("dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_polynomial_cutoff_forward(polynomial_cutoff, dtype):
     polynomial_cutoff = polynomial_cutoff.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0, 6.0], dtype=dtype)
@@ -209,7 +209,7 @@ def test_trainable_soft_transform_initialization():
     assert transform.alpha.requires_grad
 
 
-@pytest.mark.parametrize("dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_soft_transform_forward(soft_transform, dtype):
     soft_transform = soft_transform.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)

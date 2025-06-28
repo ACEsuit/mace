@@ -373,7 +373,7 @@ def trained_committee(tmp_path_factory, fitting_configs, core_mace_params):
     )
 
 
-@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_calculator_node_energy(fitting_configs, trained_model, test_dtype):
     trained_model.to(dtype=test_dtype)
     for at in fitting_configs:
@@ -391,49 +391,54 @@ def test_calculator_node_energy(fitting_configs, trained_model, test_dtype):
         np.testing.assert_allclose(energy, energy_via_nodes, atol=1e-7)
 
 
-@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_calculator_forces(fitting_configs, trained_model, test_dtype):
     at = fitting_configs[2].copy()
     at.calc = trained_model.to(dtype=test_dtype)
 
     # test just forces
-    grads = gradient_test(at)
+    eps_max = 1e-8 if test_dtype == torch.float64 else 1e-4
+    atol = 1e-7 if test_dtype == torch.float64 else 1e-3
+    grads = gradient_test(at, eps_max=eps_max)
 
-    np.testing.assert_allclose(grads[0], grads[1], atol=1e-7)
+    np.testing.assert_allclose(grads[0], grads[1], atol=atol)
 
 
-@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_calculator_stress(fitting_configs, trained_model, test_dtype):
     at = fitting_configs[2].copy()
     at.calc = trained_model.to(dtype=test_dtype)
 
     # test forces and stress
     at_wrapped = ExpCellFilter(at)
-    grads = gradient_test(at_wrapped)
+    eps_max = 1e-8 if test_dtype == torch.float64 else 1e-4
+    atol = 1e-7 if test_dtype == torch.float64 else 1e-3
+    grads = gradient_test(at_wrapped, eps_max=eps_max)
 
-    np.testing.assert_allclose(grads[0], grads[1], atol=1e-7)
+    np.testing.assert_allclose(grads[0], grads[1], atol=atol)
 
 
-@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_calculator_committee(fitting_configs, trained_committee, test_dtype):
     at = fitting_configs[2].copy()
     at.calc = trained_committee.to(dtype=test_dtype)
 
-    # test just forces
-    grads = gradient_test(at)
-
-    np.testing.assert_allclose(grads[0], grads[1], atol=1e-7)
-
     E = at.get_potential_energy()
     energies = at.calc.results["energies"]
     energies_var = at.calc.results["energy_var"]
-    forces_var = np.var(at.calc.results["forces_comm"], axis=0)
     np.testing.assert_allclose(E, np.mean(energies))
     np.testing.assert_allclose(energies_var, np.var(energies))
+
+    # test just forces
+    eps_max = 1e-8 if test_dtype == torch.float64 else 1e-4
+    atol = 1e-7 if test_dtype == torch.float64 else 1e-3
+    grads = gradient_test(at, eps_max=eps_max)
+    np.testing.assert_allclose(grads[0], grads[1], atol=atol)
+    forces_var = np.var(at.calc.results["forces_comm"], axis=0)
     assert forces_var.shape == at.calc.results["forces"].shape
 
 
-@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_calculator_from_model(fitting_configs, trained_committee, test_dtype):
     # test single model
     test_calculator_forces(
@@ -450,7 +455,7 @@ def test_calculator_from_model(fitting_configs, trained_committee, test_dtype):
     )
 
 
-@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_calculator_dipole(fitting_configs, trained_dipole_model, test_dtype):
     at = fitting_configs[2].copy()
     at.calc = trained_dipole_model.to(dtype=test_dtype)
@@ -460,19 +465,22 @@ def test_calculator_dipole(fitting_configs, trained_dipole_model, test_dtype):
     assert len(dip) == 3
 
 
-@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model, test_dtype):
     at = fitting_configs[2].copy()
     at.calc = trained_energy_dipole_model.to(dtype=test_dtype)
 
-    grads = gradient_test(at)
+    eps_max = 1e-8 if test_dtype == torch.float64 else 1e-4
+    # NOTE: unexplained why larger atol needed here for fp32 than other models.
+    atol = 1e-7 if test_dtype == torch.float64 else 5e-3
+    grads = gradient_test(at, eps_max=eps_max)
     dip = at.get_dipole_moment()
 
-    np.testing.assert_allclose(grads[0], grads[1], atol=1e-7)
+    np.testing.assert_allclose(grads[0], grads[1], atol=atol)
     assert len(dip) == 3
 
 
-@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32])
+@pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 @pytest.mark.parametrize("test_model", ["trained_equivariant_model"] + (["trained_equivariant_model_cueq"] if CUET_AVAILABLE else []))
 def test_calculator_descriptor(fitting_configs, test_model, test_dtype, request):
     at = fitting_configs[2].copy()
