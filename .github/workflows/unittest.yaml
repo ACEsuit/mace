@@ -35,8 +35,9 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v2
 
-      - name: Install mace-torch
-        run: uv pip install -e .[dev,cueq] --system
+      - name: Install mace-torch (Python < 3.10)
+        if: matrix.version.python < '3.10'
+        run: uv pip install -e .[dev] --system
 
       - name: Run general unit tests
         run: |
