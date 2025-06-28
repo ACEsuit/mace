@@ -9,7 +9,7 @@ exclude: &exclude_files >
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v2.5.0
+    rev: v5.0.0
     hooks:
     -   id: mixed-line-ending
     -   id: trailing-whitespace
