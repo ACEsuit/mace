@@ -22,7 +22,7 @@ from torch_ema import ExponentialMovingAverage
 
 import mace
 from mace import data, tools
-from mace.calculators.foundations_models import mace_mp, mace_off
+from mace.calculators.foundations_models import mace_mp, mace_off, mace_mp_names
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.visualise_train import TrainingPlotter
@@ -117,8 +117,10 @@ def run(args) -> None:
     commit = print_git_commit()
     model_foundation: Optional[torch.nn.Module] = None
     foundation_model_avg_num_neighbors = 0
+    # Filter out None from mace_mp_names to get valid model names
+    valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
     if args.foundation_model is not None:
-        if args.foundation_model in ["small", "medium", "large"]:
+        if args.foundation_model in valid_mace_mp_models:
             logging.info(
                 f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
             )
@@ -151,7 +153,7 @@ def run(args) -> None:
             0
         ].avg_num_neighbors
         if (
-            args.foundation_model not in ["small", "medium", "large"]
+            args.foundation_model not in ["smal", "medium", "large"]
             and args.pt_train_file is None
         ):
             logging.warning(

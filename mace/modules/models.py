@@ -37,9 +37,6 @@ from .utils import (
     prepare_graph,
 )
 
-# pylint: disable=C0302
-USE_FLOAT64_E0 = os.environ.get("MACE_USE_FLOAT64_E0", "false").lower() == "true"
-
 
 @compile_mode("script")
 class MACE(torch.nn.Module):
@@ -300,8 +297,6 @@ class MACE(torch.nn.Module):
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
         ]
-        if USE_FLOAT64_E0:
-            node_e0 = node_e0.double()  # Ensure e0 is in float64
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
         ).to(
@@ -482,8 +477,6 @@ class ScaleShiftMACE(MACE):
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
         ]
-        if USE_FLOAT64_E0:
-            node_e0 = node_e0.double()
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
         ).to(
