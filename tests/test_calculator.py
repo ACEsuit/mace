@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch
 from ase.atoms import Atoms
-from ase.calculators.test import gradient_test
+from ase.calculators.test import calculate_numerical_forces
 from ase.constraints import ExpCellFilter
 
 from mace.calculators.mace import MACECalculator
@@ -21,6 +21,22 @@ except ImportError:
     CUET_AVAILABLE = False
 
 run_train = "mace_run_train"
+
+
+def gradient_test(atoms, indices=None, eps_min=1e-1, eps_max=1e-8):
+    """
+    Use numeric_force to compare analytical and numerical forces on atoms
+
+    If indices is None, test is done on all atoms.
+    """
+    if indices is None:
+        indices = range(len(atoms))
+    f = atoms.get_forces()[indices]
+    print('{:>16} {:>20}'.format('eps', 'max(abs(df))'))
+    for eps in np.geomspace(eps_min, eps_max, int(np.log10(eps_min / eps_max) + 1)):
+        fn = calculate_numerical_forces(atoms, eps, indices)
+        print(f'{eps:16.12f} {abs(fn - f).max():20.12f}')
+    return f, fn
 
 
 @pytest.fixture(scope="module")
