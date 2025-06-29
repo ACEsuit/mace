@@ -13,8 +13,7 @@ from mace.tools.fairchem_dataset.lmdb_dataset_tools import LMDBDatabase
 
 def test_lmdb_dataset():
     """Test the LMDBDataset by creating a fake database and verifying batch creation."""
-    # Set default dtype to match typical MACE usage
-    torch.set_default_dtype(torch.float64)
+    test_dtype = torch.float64
 
     # Set random seed for reproducibility
     np.random.seed(42)
@@ -71,7 +70,7 @@ def test_lmdb_dataset():
         # Create the dataset using paths joined with colons
         paths_str = ":".join(db_paths)
         z_table = AtomicNumberTable([1, 8])  # H and O
-        dataset = LMDBDataset(file_path=paths_str, r_max=5.0, z_table=z_table)
+        dataset = LMDBDataset(file_path=paths_str, r_max=5.0, z_table=z_table, dtype=test_dtype)
 
         # Check dataset size (3 folders * 2 files * 2 configs = 12 entries)
         assert len(dataset) == 12

@@ -12,13 +12,15 @@ from mace.tools import (
     atomic_numbers_to_indices,
 )
 
+import numpy.testing as npt
+
 
 def test_atomic_number_table():
     table = AtomicNumberTable(zs=[1, 8])
     array = np.array([8, 8, 1])
     indices = atomic_numbers_to_indices(array, z_table=table)
     expected = np.array([1, 1, 0], dtype=int)
-    assert np.allclose(expected, indices)
+    npt.assert_allclose(expected, indices)
 
 
 class MyModel(nn.Module):

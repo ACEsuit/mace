@@ -24,7 +24,6 @@ def run(
     else:
         source_model = input_model
     default_dtype = next(source_model.parameters()).dtype
-    torch.set_default_dtype(default_dtype)
 
     config = extract_config_mace_model(source_model)
 
@@ -35,7 +34,7 @@ def run(
 
     # Create new model with oeq config
     logging.info("Creating new model with openequivariance settings")
-    target_model = source_model.__class__(**config).to(device)
+    target_model = source_model.__class__(**config).to(device, dtype=default_dtype)
     source_dict = source_model.state_dict()
     target_dict = target_model.state_dict()
 

@@ -574,24 +574,33 @@ def get_loss_fn(
     args: argparse.Namespace,
     dipole_only: bool,
     compute_dipole: bool,
+    dtype: Optional[torch.dtype] = None,
 ) -> torch.nn.Module:
+    dtype = dtype or torch.get_default_dtype()
+
     if args.loss == "weighted":
         loss_fn = modules.WeightedEnergyForcesLoss(
-            energy_weight=args.energy_weight, forces_weight=args.forces_weight
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            dtype=dtype,
         )
     elif args.loss == "forces_only":
-        loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
+        loss_fn = modules.WeightedForcesLoss(
+            forces_weight=args.forces_weight, dtype=dtype
+        )
     elif args.loss == "virials":
         loss_fn = modules.WeightedEnergyForcesVirialsLoss(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             virials_weight=args.virials_weight,
+            dtype=dtype,
         )
     elif args.loss == "stress":
         loss_fn = modules.WeightedEnergyForcesStressLoss(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
+            dtype=dtype,
         )
     elif args.loss == "huber":
         loss_fn = modules.WeightedHuberEnergyForcesStressLoss(
@@ -599,6 +608,7 @@ def get_loss_fn(
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
+            dtype=dtype,
         )
     elif args.loss == "universal":
         loss_fn = modules.UniversalLoss(
@@ -606,18 +616,20 @@ def get_loss_fn(
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
+            dtype=dtype,
         )
     elif args.loss == "l1l2energyforces":
         loss_fn = modules.WeightedEnergyForcesL1L2Loss(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
+            dtype=dtype,
         )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
         ), "dipole loss can only be used with AtomicDipolesMACE model"
         loss_fn = modules.DipoleSingleLoss(
-            dipole_weight=args.dipole_weight,
+            dipole_weight=args.dipole_weight, dtype=dtype
         )
     elif args.loss == "energy_forces_dipole":
         assert dipole_only is False and compute_dipole is True
@@ -625,9 +637,12 @@ def get_loss_fn(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             dipole_weight=args.dipole_weight,
+            dtype=dtype,
         )
     else:
-        loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
+        loss_fn = modules.WeightedEnergyForcesLoss(
+            energy_weight=1.0, forces_weight=1.0, dtype=dtype
+        )
     return loss_fn
 
 
@@ -637,7 +652,9 @@ def get_swa(
     optimizer: torch.optim.Optimizer,
     swas: List[bool],
     dipole_only: bool = False,
+    dtype: Optional[torch.dtype] = None,
 ):
+    dtype = dtype or torch.get_default_dtype()
     assert dipole_only is False, "Stage Two for dipole fitting not implemented"
     swas.append(True)
     if args.start_swa is None:
@@ -655,6 +672,7 @@ def get_swa(
             energy_weight=args.swa_energy_weight,
             forces_weight=args.swa_forces_weight,
             virials_weight=args.swa_virials_weight,
+            dtype=dtype,
         )
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight},  virials_weight: {args.swa_virials_weight} and learning rate : {args.swa_lr}"
@@ -664,6 +682,7 @@ def get_swa(
             energy_weight=args.swa_energy_weight,
             forces_weight=args.swa_forces_weight,
             stress_weight=args.swa_stress_weight,
+            dtype=dtype,
         )
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
@@ -673,6 +692,7 @@ def get_swa(
             args.swa_energy_weight,
             forces_weight=args.swa_forces_weight,
             dipole_weight=args.swa_dipole_weight,
+            dtype=dtype,
         )
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, dipole weight : {args.swa_dipole_weight} and learning rate : {args.swa_lr}"
@@ -683,6 +703,7 @@ def get_swa(
             forces_weight=args.swa_forces_weight,
             stress_weight=args.swa_stress_weight,
             huber_delta=args.huber_delta,
+            dtype=dtype,
         )
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
@@ -691,6 +712,7 @@ def get_swa(
         loss_fn_energy = modules.WeightedEnergyForcesLoss(
             energy_weight=args.swa_energy_weight,
             forces_weight=args.swa_forces_weight,
+            dtype=dtype,
         )
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
