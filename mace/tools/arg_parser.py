@@ -224,7 +224,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--use_reduced_cg",
         help="use reduced generalized Clebsch-Gordan coefficients",
         type=str2bool,
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--use_so3",
