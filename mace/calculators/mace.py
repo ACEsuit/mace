@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+import inspect
 
 import numpy as np
 import torch
@@ -355,13 +356,20 @@ class MACECalculator(Calculator):
         )
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
-            out = model(
-                batch.to_dict(),
-                compute_stress=compute_stress,
-                training=self.use_compile,
-                compute_edge_forces=self.compute_atomic_stresses,
-                compute_atomic_stresses=self.compute_atomic_stresses,
-            )
+            kwargs = {
+                "compute_stress": compute_stress,
+                "training": self.use_compile,
+            }
+            try:
+                sig = inspect.signature(model.forward)
+                if "compute_edge_forces" in sig.parameters:
+                    kwargs["compute_edge_forces"] = self.compute_atomic_stresses
+                if "compute_atomic_stresses" in sig.parameters:
+                    kwargs["compute_atomic_stresses"] = self.compute_atomic_stresses
+            except (ValueError, TypeError):
+                pass
+
+            out = model(batch.to_dict(), **kwargs)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
@@ -371,15 +379,16 @@ class MACECalculator(Calculator):
             if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
                 ret_tensors["dipole"][i] = out["dipole"].detach()
             if self.model_type in ["MACE"]:
-                if out["atomic_stresses"] is not None:
+                atomic_stresses = out.get("atomic_stresses")
+                if atomic_stresses is not None:
                     ret_tensors.setdefault("atomic_stresses", []).append(
-                        out["atomic_stresses"].detach()
+                        atomic_stresses.detach()
                     )
-                if out["atomic_virials"] is not None:
+                atomic_virials = out.get("atomic_virials")
+                if atomic_virials is not None:
                     ret_tensors.setdefault("atomic_virials", []).append(
-                        out["atomic_virials"].detach()
+                        atomic_virials.detach()
                     )
-
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
             self.results["energy"] = (
@@ -424,19 +433,18 @@ class MACECalculator(Calculator):
                         * self.energy_units_to_eV
                         / self.length_units_to_A**3
                     )
-            if "atomic_stresses" in ret_tensors:
+            atomic_stresses_list = ret_tensors.get("atomic_stresses", [])
+            if len(atomic_stresses_list) > 0:
                 self.results["stresses"] = (
-                    torch.mean(torch.stack(ret_tensors["atomic_stresses"]), dim=0)
-                    .cpu()
-                    .numpy()
+                    torch.mean(torch.stack(atomic_stresses_list), dim=0).cpu().numpy()
                     * self.energy_units_to_eV
                     / self.length_units_to_A**3
                 )
-            if "atomic_virials" in ret_tensors:
+
+            atomic_virials_list = ret_tensors.get("atomic_virials", [])
+            if len(atomic_virials_list) > 0:
                 self.results["virials"] = (
-                    torch.mean(torch.stack(ret_tensors["atomic_virials"]), dim=0)
-                    .cpu()
-                    .numpy()
+                    torch.mean(torch.stack(atomic_virials_list), dim=0).cpu().numpy()
                     * self.energy_units_to_eV
                 )
         if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
