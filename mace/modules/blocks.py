@@ -1133,8 +1133,8 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
 
         if self.cueq_config is not None:
             if self.cueq_config.layout_str == "ir_mul":
-                import cuequivariance_torch as cuet
                 import cuequivariance as cue
+                import cuequivariance_torch as cuet
 
                 self.transpose_mul_ir = cuet.TransposeIrrepsLayout(
                     irreps=cue.Irreps(self.cueq_config.group, self.irreps_nonlin),
