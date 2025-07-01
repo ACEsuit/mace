@@ -311,3 +311,87 @@ def mace_anicc(
     return MACECalculator(
         model_paths=model_path, device=device, default_dtype="float64"
     )
+
+
+def mace_omol(
+    model: Union[str, Path] = None,
+    device: str = "",
+    default_dtype: str = "float64",
+    return_raw_model: bool = False,
+    **kwargs,
+) -> MACECalculator:
+    """
+    Constructs a MACECalculator with a pretrained model based on the MACE-OMOL models.
+    The model is released under the ASL license.
+    Note:
+        If you are using this function, please cite the relevant OMOL paper.
+
+    Args:
+        model (str or Path, optional): Either a path to a local model file or a string specifier.
+            Use "extra_large" or None to download the default OMOL model.
+        device (str, optional): Device to use for the model. Defaults to "cuda" if available.
+        default_dtype (str, optional): Default dtype for the model. Defaults to "float64".
+        return_raw_model (bool, optional): Whether to return the raw model or an ASE calculator. Defaults to False.
+        **kwargs: Passed to MACECalculator.
+
+    Returns:
+        MACECalculator: trained on the OMOL dataset.
+    """
+    urls = {
+        "extra_large": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_omol_0/MACE-omol-0-extra-large-1024.model"
+    }
+
+    try:
+        if model is None or model == "extra_large":
+            checkpoint_url = urls["extra_large"]
+        elif isinstance(model, str) and model.startswith("https:"):
+            checkpoint_url = model
+        elif isinstance(model, (str, Path)) and Path(model).exists():
+            checkpoint_url = str(model)
+        else:
+            raise ValueError(
+                f"Invalid model specification: {model}. "
+                f"Supported options: {list(urls.keys())}, a local file path, or a direct URL."
+            )
+
+        if checkpoint_url.startswith("http"):
+            cache_dir = os.path.expanduser("~/.cache/mace")
+            os.makedirs(cache_dir, exist_ok=True)
+            checkpoint_url_name = os.path.basename(checkpoint_url).split("?")[0]
+            cached_model_path = os.path.join(cache_dir, checkpoint_url_name)
+
+            if not os.path.isfile(cached_model_path):
+                print(f"Downloading MACE model from {checkpoint_url!r}")
+                print(
+                    "The model is distributed under the Academic Software License (ASL), see https://github.com/gabor1/ASL\n"
+                    "To use the model, you accept the terms of the license.\n"
+                    "ASL is based on the GNU Public License, but does not permit commercial use."
+                )
+                urllib.request.urlretrieve(checkpoint_url, cached_model_path)
+                print(f"Cached MACE model to {cached_model_path}")
+            model = cached_model_path
+        else:
+            model = checkpoint_url
+
+    except Exception as exc:
+        raise RuntimeError("Model download failed and no local model found") from exc
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+
+    if return_raw_model:
+        return torch.load(model, map_location=device)
+
+    if default_dtype == "float64":
+        print(
+            "Using float64 for MACECalculator, recommended for geometry optimization."
+        )
+    elif default_dtype == "float32":
+        print("Using float32 for MACECalculator, recommended for MD.")
+
+    return MACECalculator(
+        model_paths=model,
+        device=device,
+        default_dtype=default_dtype,
+        **kwargs,
+        head="omol",
+    )
