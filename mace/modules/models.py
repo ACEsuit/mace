@@ -4,7 +4,6 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-import os
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import numpy as np
