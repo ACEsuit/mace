@@ -19,6 +19,7 @@ from mace.modules.wrapper_ops import (
     OEQConfig,
     SymmetricContractionWrapper,
     TensorProduct,
+    TransposeIrrepsLayoutWrapper,
 )
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
@@ -1131,29 +1132,18 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         self.alpha = torch.nn.Parameter(torch.tensor(20.0), requires_grad=True)
         self.beta = torch.nn.Parameter(torch.tensor(0.0), requires_grad=True)
 
-        if self.cueq_config is not None:
-            if self.cueq_config.layout_str == "ir_mul":
-                import cuequivariance as cue
-                import cuequivariance_torch as cuet
-
-                self.transpose_mul_ir = cuet.TransposeIrrepsLayout(
-                    irreps=cue.Irreps(self.cueq_config.group, self.irreps_nonlin),
-                    source=getattr(cue, "ir_mul"),
-                    target=getattr(cue, "mul_ir"),
-                    use_fallback=True,
-                )
-                self.transpose_ir_mul = cuet.TransposeIrrepsLayout(
-                    irreps=cue.Irreps(self.cueq_config.group, self.irreps_out),
-                    source=getattr(cue, "mul_ir"),
-                    target=getattr(cue, "ir_mul"),
-                    use_fallback=True,
-                )
-            else:
-                self.transpose_mul_ir = None
-                self.transpose_ir_mul = None
-        else:
-            self.transpose_mul_ir = None
-            self.transpose_ir_mul = None
+        self.transpose_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_nonlin,
+            source="ir_mul",
+            target="mul_ir",
+            cueq_config=self.cueq_config,
+        )
+        self.transpose_ir_mul = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_out,
+            source="mul_ir",
+            target="ir_mul",
+            cueq_config=self.cueq_config,
+        )
 
     def forward(
         self,
