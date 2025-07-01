@@ -278,7 +278,6 @@ class SymmetricContractionWrapper:
         use_reduced_cg: bool = True,
     ):
         use_reduced_cg = use_reduced_cg and CUET_AVAILABLE
-        print("Using reduced CG:", use_reduced_cg)
         if (
             CUET_AVAILABLE
             and cueq_config is not None
@@ -304,3 +303,24 @@ class SymmetricContractionWrapper:
             num_elements=num_elements,
             use_reduced_cg=use_reduced_cg,
         )
+
+
+class TransposeIrrepsLayoutWrapper:
+    """Wrapper around cuet.TransposeIrrepsLayout"""
+
+    def __new__(
+        cls,
+        irreps: o3.Irreps,
+        source: str,
+        target: str,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+    ):
+        if CUET_AVAILABLE and cueq_config is not None and cueq_config.enabled:
+            return cuet.TransposeIrrepsLayout(
+                cue.Irreps(cueq_config.group, irreps),
+                source=getattr(cue, source),
+                target=getattr(cue, target),
+                use_fallback=True,
+            )
+
+        return None
