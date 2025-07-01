@@ -27,7 +27,10 @@ def shapes_match_up_to_unsqueeze(a: SizeLike, b: SizeLike) -> bool:
         a = a.shape
     if isinstance(b, torch.Tensor):
         b = b.shape
-    drop = lambda s: tuple(d for d in s if d != 1)
+
+    def drop(s):
+        return tuple(d for d in s if d != 1)
+
     return drop(a) == drop(b)
 
 
