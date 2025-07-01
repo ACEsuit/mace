@@ -153,7 +153,7 @@ def run(args) -> None:
             0
         ].avg_num_neighbors
         if (
-            args.foundation_model not in ["smal", "medium", "large"]
+            args.foundation_model not in ["small", "medium", "large"]
             and args.pt_train_file is None
         ):
             logging.warning(
