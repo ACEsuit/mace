@@ -127,6 +127,9 @@ def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
 def with_cueq_conv_fusion(conv_tp: torch.nn.Module) -> torch.nn.Module:
     """Wraps a cuet.ConvTensorProduct to use conv fusion"""
     conv_tp.original_forward = conv_tp.forward
+    num_segment = conv_tp.m.buffer_num_segments[0]
+    num_operands = conv_tp.m.operand_extent
+    conv_tp.weight_numel = num_segment * num_operands
 
     def forward(
         self,
