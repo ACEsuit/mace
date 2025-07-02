@@ -145,7 +145,7 @@ def with_cueq_conv_fusion(conv_tp: torch.nn.Module) -> torch.nn.Module:
             {1: sender},
             {0: node_feats},
             {0: receiver},
-        )
+        )[0]
 
     conv_tp.forward = types.MethodType(forward, conv_tp)
     return conv_tp
