@@ -305,7 +305,7 @@ def generate_pseudolabels_for_configs(
 
                 updated_configs.append(config_copy)
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-except
             logging.error(
                 f"Error generating pseudolabels for batch {i//batch_size + 1}: {str(e)}"
             )
@@ -411,6 +411,6 @@ def apply_pseudolabels_to_pt_head_configs(
 
         return True
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         logging.error(f"Error applying pseudolabels: {str(e)}")
         return False
