@@ -88,7 +88,7 @@ def run(args) -> None:
     if args.device == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
-            import oneccl_bindings_for_pytorch as oneccl
+            import oneccl_bindings_for_pytorch as oneccl  # pylint: disable=unused-import
         except ImportError as e:
             raise ImportError(
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"

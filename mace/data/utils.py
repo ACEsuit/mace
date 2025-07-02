@@ -223,6 +223,9 @@ def load_from_xyz(
     forces_key = key_specification.arrays_keys["forces"]
     stress_key = key_specification.info_keys["stress"]
     head_key = key_specification.info_keys["head"]
+    original_energy_key = energy_key
+    original_forces_key = forces_key
+    original_stress_key = stress_key
     if energy_key == "energy":
         logging.warning(
             "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'energy' to 'REF_energy'. You need to use --energy_key='REF_energy' to specify the chosen key name."
@@ -230,7 +233,9 @@ def load_from_xyz(
         key_specification.info_keys["energy"] = "REF_energy"
         for atoms in atoms_list:
             try:
+                print("OK")
                 atoms.info["REF_energy"] = atoms.get_potential_energy()
+                print("atoms.info['REF_energy']:", atoms.info["REF_energy"])
             except Exception as e:  # pylint: disable=W0703
                 logging.error(f"Failed to extract energy: {e}")
                 atoms.info["REF_energy"] = None
@@ -267,11 +272,11 @@ def load_from_xyz(
         )
     if not has_energy:
         logging.warning(
-            f"No energies found with key '{final_energy_key}' in '{file_path}'. Please change the key name in the command line arguments or ensure that the file contains the required data."
+            f"No energies found with key '{final_energy_key}' in '{file_path}'. If this is unexpected, please change the key name in the command line arguments or ensure that the file contains the required data."
         )
     if not has_forces:
         logging.warning(
-            f"No forces found with key '{final_forces_key}' in '{file_path}'."
+            f"No forces found with key '{final_forces_key}' in '{file_path}'. If this is unexpected, Please change the key name in the command line arguments or ensure that the file contains the required data."
         )
 
     if not isinstance(atoms_list, list):
@@ -313,6 +318,9 @@ def load_from_xyz(
         key_specification=key_specification,
         head_name=head_name,
     )
+    key_specification.info_keys["energy"] = original_energy_key
+    key_specification.arrays_keys["forces"] = original_forces_key
+    key_specification.info_keys["stress"] = original_stress_key
     return atomic_energies_dict, configs
 
 
