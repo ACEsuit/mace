@@ -255,6 +255,25 @@ def load_from_xyz(
                 atoms.info["REF_stress"] = atoms.get_stress()
             except Exception as e:  # pylint: disable=W0703
                 atoms.info["REF_stress"] = None
+
+    final_energy_key = key_specification.info_keys["energy"]
+    final_forces_key = key_specification.arrays_keys["forces"]
+    has_energy = any(final_energy_key in atoms.info for atoms in atoms_list)
+    has_forces = any(final_forces_key in atoms.arrays for atoms in atoms_list)
+
+    if not has_energy and not has_forces:
+        raise ValueError(
+            f"Neither '{final_energy_key}' nor '{final_forces_key}' found in '{file_path}'. Please change the key names in the command line arguments or ensure that the file contains the required data."
+        )
+    if not has_energy:
+        logging.warning(
+            f"No energies found with key '{final_energy_key}' in '{file_path}'. Please change the key name in the command line arguments or ensure that the file contains the required data."
+        )
+    if not has_forces:
+        logging.warning(
+            f"No forces found with key '{final_forces_key}' in '{file_path}'."
+        )
+
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
 
