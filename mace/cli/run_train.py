@@ -32,6 +32,7 @@ from mace.tools.distributed_tools import init_distributed
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
+    apply_pseudolabels_to_pt_head_configs,
     assemble_mp_data,
     dict_head_to_dataclass,
     prepare_default_head,
@@ -491,6 +492,21 @@ def run(args) -> None:
         train_datasets = []
 
         logging.info(f"Processing datasets for head '{head_config.head_name}'")
+
+        # Apply pseudolabels if this is the pt_head and pseudolabeling is enabled
+        if args.pseudolabel_replay and args.multiheads_finetuning and head_config.head_name == "pt_head":
+            logging.info("=============    Pseudolabeling for pt_head    ===========")
+            if apply_pseudolabels_to_pt_head_configs(
+                foundation_model=model_foundation,
+                pt_head_config=head_config,
+                r_max=args.r_max,
+                device=device,
+                batch_size=args.batch_size
+            ):
+                logging.info("Successfully applied pseudolabels to pt_head configurations")
+            else:
+                logging.warning("Pseudolabeling was not successful, continuing with original configurations")
+
         ase_files = [f for f in head_config.train_file if check_path_ase_read(f)]
         non_ase_files = [f for f in head_config.train_file if not check_path_ase_read(f)]
 
@@ -607,6 +623,7 @@ def run(args) -> None:
                 seed=args.seed,
             )
             valid_samplers[head] = valid_sampler
+
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
         batch_size=args.batch_size,
@@ -617,6 +634,7 @@ def run(args) -> None:
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
     )
+
     valid_loaders = {heads[i]: None for i in range(len(heads))}
     if not isinstance(valid_sets, dict):
         valid_sets = {"Default": valid_sets}
