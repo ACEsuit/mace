@@ -46,8 +46,14 @@ def init_distributed(args):
         return 0, 0, 1
 
     if not torch.distributed.is_initialized():
-        torch.distributed.init_process_group(
-            backend="nccl",
-            init_method="env://",
-        )
+        if args.device == "cuda":
+            torch.distributed.init_process_group(
+                backend="nccl",
+                init_method="env://",
+            )
+        elif args.device == "xpu":
+            torch.distributed.init_process_group(
+                backend="ccl",
+                init_method="env://",
+            )
     return rank, local_rank, world_size
