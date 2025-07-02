@@ -88,6 +88,7 @@ def run(args) -> None:
     if args.device == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
+            import oneccl_bindings_for_pytorch as oneccl
         except ImportError as e:
             raise ImportError(
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"
@@ -102,7 +103,10 @@ def run(args) -> None:
         logging.log(level=loglevel, msg=message)
 
     if args.distributed:
-        torch.cuda.set_device(local_rank)
+        if args.device == "cuda":
+            torch.cuda.set_device(local_rank)
+        elif args.device == "xpu":
+            torch.xpu.set_device(local_rank)
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
         logging.info(f"Processes: {world_size}")
 
