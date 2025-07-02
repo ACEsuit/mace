@@ -784,6 +784,14 @@ def run(args) -> None:
         logging.info("DRY RUN mode enabled. Stopping now.")
         return
 
+    if args.device == "xpu":
+        try:
+            model, optimizer = ipex.optimize(model, optimizer=optimizer)
+        except ImportError as e:
+            logging.error(
+                "Intel Extension for PyTorch not found, but XPU device was specified. "
+                "Please install it to use XPU device."
+            )
 
     tools.train(
         model=model,

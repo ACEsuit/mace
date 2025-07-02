@@ -66,6 +66,11 @@ def init_device(device_str: str) -> torch.device:
         return torch.device("mps")
     if device_str == "xpu":
         torch.xpu.is_available()
+        devices = torch.xpu.device_count()
+        is_available = devices > 0
+        assert is_available, logging.info("No XPU backend is available")
+        torch.xpu.memory_stats()
+        logging.info("Using XPU GPU acceleration")
         return torch.device("xpu")
 
     logging.info("Using CPU")
