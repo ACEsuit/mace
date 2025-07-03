@@ -1,7 +1,7 @@
 import os
 import socket
 
-from mpi4py import MPI
+from mpi4py import MPI  # pylint: disable=import-error,no-name-in-module
 
 
 class MPIDistributedEnvironment:
