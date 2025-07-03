@@ -3,60 +3,30 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 """
 
 import dataclasses
-import itertools
 import types
-from typing import Iterator, List, Optional
+from typing import List, Optional
 
-import numpy as np
 import torch
 from e3nn import o3
 
 from mace.modules.symmetric_contraction import SymmetricContraction
+from mace.tools.cg import O3_e3nn
+from mace.tools.scatter import scatter_sum
 
 try:
     import cuequivariance as cue
     import cuequivariance_torch as cuet
 
     CUET_AVAILABLE = True
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     CUET_AVAILABLE = False
 
-if CUET_AVAILABLE:
+try:
+    import openequivariance as oeq
 
-    class O3_e3nn(cue.O3):
-        def __mul__(  # pylint: disable=no-self-argument
-            rep1: "O3_e3nn", rep2: "O3_e3nn"
-        ) -> Iterator["O3_e3nn"]:
-            return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
-
-        @classmethod
-        def clebsch_gordan(
-            cls, rep1: "O3_e3nn", rep2: "O3_e3nn", rep3: "O3_e3nn"
-        ) -> np.ndarray:
-            rep1, rep2, rep3 = cls._from(rep1), cls._from(rep2), cls._from(rep3)
-
-            if rep1.p * rep2.p == rep3.p:
-                return o3.wigner_3j(rep1.l, rep2.l, rep3.l).numpy()[None] * np.sqrt(
-                    rep3.dim
-                )
-            return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
-
-        def __lt__(  # pylint: disable=no-self-argument
-            rep1: "O3_e3nn", rep2: "O3_e3nn"
-        ) -> bool:
-            rep2 = rep1._from(rep2)
-            return (rep1.l, rep1.p) < (rep2.l, rep2.p)
-
-        @classmethod
-        def iterator(cls) -> Iterator["O3_e3nn"]:
-            for l in itertools.count(0):
-                yield O3_e3nn(l=l, p=1 * (-1) ** l)
-                yield O3_e3nn(l=l, p=-1 * (-1) ** l)
-
-else:
-    print(
-        "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
-    )
+    OEQ_AVAILABLE = True
+except ImportError:
+    OEQ_AVAILABLE = False
 
 
 @dataclasses.dataclass
@@ -72,6 +42,7 @@ class CuEquivarianceConfig:
     optimize_channelwise: bool = False
     optimize_symmetric: bool = False
     optimize_fctp: bool = False
+    conv_fusion: bool = False  # Set to True to enable conv fusion
 
     def __post_init__(self):
         if self.enabled and CUET_AVAILABLE:
@@ -80,6 +51,22 @@ class CuEquivarianceConfig:
             self.group = (
                 O3_e3nn if self.group == "O3_e3nn" else getattr(cue, self.group)
             )
+        if not CUET_AVAILABLE:
+            self.enabled = False
+
+
+@dataclasses.dataclass
+class OEQConfig:
+    """Configuration for cuequivariance acceleration"""
+
+    enabled: bool = False
+    optimize_all: bool = False
+    optimize_channelwise: bool = False
+    conv_fusion: Optional[str] = "atomic"
+
+    def __post_init__(self):
+        if not OEQ_AVAILABLE:
+            self.enabled = False
 
 
 class Linear:
@@ -99,20 +86,13 @@ class Linear:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_linear)
         ):
-            instance = cuet.Linear(
+            return cuet.Linear(
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
-                optimize_fallback=True,
+                use_fallback=True,
             )
-            instance.original_forward = instance.forward
-
-            def cuet_forward(self, x: torch.Tensor) -> torch.Tensor:
-                return self.original_forward(x, use_fallback=True)
-
-            instance.forward = types.MethodType(cuet_forward, instance)
-            return instance
 
         return o3.Linear(
             irreps_in,
@@ -122,8 +102,54 @@ class Linear:
         )
 
 
+def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
+    conv_tp.original_forward = conv_tp.forward
+
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        tp_weights: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+
+        mji = self.original_forward(node_feats[sender], edge_attrs, tp_weights)
+        message = scatter_sum(src=mji, index=receiver, dim=0, dim_size=num_nodes)
+        return message
+
+    conv_tp.forward = types.MethodType(forward, conv_tp)
+    return conv_tp
+
+
+def with_cueq_conv_fusion(conv_tp: torch.nn.Module) -> torch.nn.Module:
+    """Wraps a cuet.ConvTensorProduct to use conv fusion"""
+    conv_tp.original_forward = conv_tp.forward
+
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        tp_weights: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        return self.original_forward(
+            [tp_weights, node_feats, edge_attrs],
+            {1: sender},
+            {0: node_feats},
+            {0: receiver},
+        )
+
+    conv_tp.forward = types.MethodType(forward, conv_tp)
+    return conv_tp
+
+
 class TensorProduct:
-    """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct"""
+    """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
 
     def __new__(
         cls,
@@ -134,6 +160,7 @@ class TensorProduct:
         shared_weights: bool = False,
         internal_weights: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,
     ):
         if (
             CUET_AVAILABLE
@@ -141,23 +168,54 @@ class TensorProduct:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
-            instance = cuet.ChannelWiseTensorProduct(
+            if cueq_config.conv_fusion:
+                return with_cueq_conv_fusion(
+                    cuet.SegmentedPolynomial(
+                        cue.descriptors.channelwise_tensor_product(
+                            cue.Irreps(cueq_config.group, irreps_in1),
+                            cue.Irreps(cueq_config.group, irreps_in2),
+                            cue.Irreps(cueq_config.group, irreps_out),
+                        )
+                        .flatten_coefficient_modes()
+                        .squeeze_modes()
+                        .polynomial,
+                        math_dtype=torch.get_default_dtype(),
+                    )
+                )
+            return cuet.ChannelWiseTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
+                dtype=torch.get_default_dtype(),
+                math_dtype=torch.get_default_dtype(),
             )
-            instance.original_forward = instance.forward
+        if (
+            OEQ_AVAILABLE
+            and oeq_config is not None
+            and oeq_config.enabled
+            and (oeq_config.optimize_all or oeq_config.optimize_channelwise)
+        ):
+            dtype = oeq.torch_to_oeq_dtype(torch.get_default_dtype())
+            tpp = oeq.TPProblem(
+                irreps_in1,
+                irreps_in2,
+                irreps_out,
+                instructions,
+                shared_weights=shared_weights,
+                internal_weights=internal_weights,
+                irrep_dtype=dtype,
+                weight_dtype=dtype,
+            )
 
-            def cuet_forward(
-                self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor
-            ) -> torch.Tensor:
-                return self.original_forward(x, y, z, use_fallback=None)
+            if oeq_config.conv_fusion is None:
+                return oeq.TensorProduct(tpp)
+            if oeq_config.conv_fusion == "atomic":
+                return oeq.TensorProductConv(tpp, deterministic=False)
 
-            instance.forward = types.MethodType(cuet_forward, instance)
-            return instance
+            raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
 
         return o3.TensorProduct(
             irreps_in1,
@@ -187,24 +245,15 @@ class FullyConnectedTensorProduct:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_fctp)
         ):
-            instance = cuet.FullyConnectedTensorProduct(
+            return cuet.FullyConnectedTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
-                optimize_fallback=True,
+                use_fallback=True,
             )
-            instance.original_forward = instance.forward
-
-            def cuet_forward(
-                self, x: torch.Tensor, attrs: torch.Tensor
-            ) -> torch.Tensor:
-                return self.original_forward(x, attrs, use_fallback=True)
-
-            instance.forward = types.MethodType(cuet_forward, instance)
-            return instance
 
         return o3.FullyConnectedTensorProduct(
             irreps_in1,
@@ -225,45 +274,33 @@ class SymmetricContractionWrapper:
         correlation: int,
         num_elements: Optional[int] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
+        use_reduced_cg: bool = True,
     ):
+        use_reduced_cg = use_reduced_cg and CUET_AVAILABLE
+        print("Using reduced CG:", use_reduced_cg)
         if (
             CUET_AVAILABLE
             and cueq_config is not None
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_symmetric)
         ):
-            instance = cuet.SymmetricContraction(
+            return cuet.SymmetricContraction(
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout_in=cue.ir_mul,
                 layout_out=cueq_config.layout,
                 contraction_degree=correlation,
                 num_elements=num_elements,
-                original_mace=True,
+                original_mace=(not use_reduced_cg),
                 dtype=torch.get_default_dtype(),
                 math_dtype=torch.get_default_dtype(),
             )
-            instance.original_forward = instance.forward
-            instance.layout = cueq_config.layout
-
-            def cuet_forward(
-                self, x: torch.Tensor, attrs: torch.Tensor
-            ) -> torch.Tensor:
-                if self.layout == cue.mul_ir:
-                    x = torch.transpose(x, 1, 2)
-                index_attrs = torch.nonzero(attrs)[:, 1].int()
-                return self.original_forward(
-                    x.flatten(1),
-                    index_attrs,
-                    use_fallback=None,
-                )
-
-            instance.forward = types.MethodType(cuet_forward, instance)
-            return instance
 
         return SymmetricContraction(
             irreps_in=irreps_in,
             irreps_out=irreps_out,
             correlation=correlation,
             num_elements=num_elements,
+            use_reduced_cg=use_reduced_cg,
         )

@@ -244,6 +244,8 @@ def trained_model_equivariant_fixture_cueq(tmp_path_factory, fitting_configs):
 
     assert p.returncode == 0
 
+    model = torch.load(tmp_path / "MACE.model", map_location="cpu")
+    print("DEBUG model", model)
     return MACECalculator(
         model_paths=tmp_path / "MACE.model", device="cpu", enable_cueq=True
     )
@@ -592,6 +594,7 @@ def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_c
     at_rotated = fitting_configs[2].copy()
     at_rotated.rotate(90, "x")
     calc = trained_equivariant_model_cueq
+    print("model", calc.models[0])
 
     desc_invariant = calc.get_descriptors(at, invariants_only=True)
     desc_invariant_rotated = calc.get_descriptors(at_rotated, invariants_only=True)
@@ -675,3 +678,15 @@ def test_mace_off_cueq(model="medium", device="cpu"):
     E = atoms.get_potential_energy()
 
     assert np.allclose(E, -2081.116128586803, atol=1e-9)
+
+
+def test_mace_mp_stresses(model="medium", device="cpu"):
+    atoms = build.bulk("Al", "fcc", a=4.05, cubic=True)
+    atoms = atoms.repeat((2, 2, 2))
+    mace_mp_model = mace_mp(model=model, device=device, compute_atomic_stresses=True)
+    atoms.set_calculator(mace_mp_model)
+    stress = atoms.get_stress()
+    stresses = atoms.get_stresses()
+    assert stress.shape == (6,)
+    assert stresses.shape == (32, 6)
+    assert np.allclose(stress, stresses.sum(axis=0), atol=1e-6)

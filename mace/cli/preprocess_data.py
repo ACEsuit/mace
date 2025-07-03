@@ -17,6 +17,7 @@ import numpy as np
 import tqdm
 
 from mace import data, tools
+from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.data.utils import save_configurations_as_HDF5
 from mace.modules import compute_statistics
 from mace.tools import torch_geometric
@@ -144,6 +145,10 @@ def run(args: argparse.Namespace):
     new hdf5 file that is ready for training with on-the-fly dataloading
     """
 
+    # currently support only command line property_key syntax
+    args.key_specification = KeySpecification()
+    update_keyspec_from_kwargs(args.key_specification, vars(args))
+
     # Setup
     tools.set_seeds(args.seed)
     random.seed(args.seed)
@@ -177,12 +182,8 @@ def run(args: argparse.Namespace):
         config_type_weights=config_type_weights,
         test_path=args.test_file,
         seed=args.seed,
-        energy_key=args.energy_key,
-        forces_key=args.forces_key,
-        stress_key=args.stress_key,
-        virials_key=args.virials_key,
-        dipole_key=args.dipole_key,
-        charges_key=args.charges_key,
+        key_specification=args.key_specification,
+        head_name="",
     )
 
     # Atomic number table
@@ -222,8 +223,19 @@ def run(args: argparse.Namespace):
 
     if args.compute_statistics:
         logging.info("Computing statistics")
-        if len(atomic_energies_dict) == 0:
+        if atomic_energies_dict is None or len(atomic_energies_dict) == 0:
             atomic_energies_dict = get_atomic_energies(args.E0s, collections.train, z_table)
+
+        # Remove atomic energies if element not in z_table
+        removed_atomic_energies = {}
+        for z in list(atomic_energies_dict):
+            if z not in z_table.zs:
+                removed_atomic_energies[z] = atomic_energies_dict.pop(z)
+        if len(removed_atomic_energies) > 0:
+            logging.warning("Atomic energies for elements not present in the atomic number table have been removed.")
+            logging.warning(f"Removed atomic energies (eV): {str(removed_atomic_energies)}")
+            logging.warning("To include these elements in the model, specify all atomic numbers explicitly using the --atomic_numbers argument.")
+
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
@@ -240,7 +252,7 @@ def run(args: argparse.Namespace):
             "avg_num_neighbors": avg_num_neighbors,
             "mean": mean,
             "std": std,
-            "atomic_numbers": str(z_table.zs),
+            "atomic_numbers": str([int(z) for z in z_table.zs]),
             "r_max": args.r_max,
         }
 

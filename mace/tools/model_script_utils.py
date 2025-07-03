@@ -5,17 +5,29 @@ import numpy as np
 from e3nn import o3
 
 from mace import modules
+from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.utils import AtomicNumberTable
 
 
 def configure_model(
-    args, train_loader, atomic_energies, model_foundation=None, heads=None, z_table=None
+    args,
+    train_loader,
+    atomic_energies,
+    model_foundation=None,
+    heads=None,
+    z_table=None,
+    head_configs=None,
 ):
     # Selecting outputs
-    compute_virials = args.loss in ("stress", "virials", "huber", "universal")
+    compute_virials = args.loss == "virials"
+    compute_stress = args.loss in ("stress", "huber", "universal")
+
     if compute_virials:
+        args.compute_virials = True
+        args.error_table = "PerAtomRMSEstressvirials"
+    elif compute_stress:
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
 
@@ -23,7 +35,7 @@ def configure_model(
         "energy": args.compute_energy,
         "forces": args.compute_forces,
         "virials": compute_virials,
-        "stress": args.compute_stress,
+        "stress": compute_stress,
         "dipoles": args.compute_dipole,
     }
     logging.info(
@@ -33,12 +45,34 @@ def configure_model(
 
     if args.scaling == "no_scaling":
         args.std = 1.0
+        if head_configs is not None:
+            for head_config in head_configs:
+                head_config.std = 1.0
         logging.info("No scaling selected")
+
+    if (
+        head_configs is not None
+        and args.std is not None
+        and not isinstance(args.std, list)
+    ):
+        atomic_inter_scale = []
+        for head_config in head_configs:
+            if hasattr(head_config, "std") and head_config.std is not None:
+                atomic_inter_scale.append(head_config.std)
+            elif args.std is not None:
+                atomic_inter_scale.append(
+                    args.std if isinstance(args.std, float) else 1.0
+                )
+        args.std = atomic_inter_scale
+
     elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
         )
-
+    if args.embedding_specs is not None:
+        args.embedding_specs = ast.literal_eval(args.embedding_specs)
+        logging.info("Using embedding specifications from command line arguments")
+        logging.info(f"Embedding specifications: {args.embedding_specs}")
     # Build model
     if model_foundation is not None and args.model in ["MACE", "ScaleShiftMACE"]:
         logging.info("Loading FOUNDATION model")
@@ -75,7 +109,7 @@ def configure_model(
         model_config = model_config_foundation
 
         logging.info("Model configuration extracted from foundation model")
-        logging.info("Using universal loss function for fine-tuning")
+        logging.info(f"Using {args.loss} loss function for fine-tuning")
         logging.info(
             f"Message passing with hidden irreps {model_config_foundation['hidden_irreps']})"
         )
@@ -112,6 +146,17 @@ def configure_model(
 
         logging.info(f"Hidden irreps: {args.hidden_irreps}")
 
+        cueq_config = None
+        if args.only_cueq:
+            logging.info("Using only the backend of the model")
+            cueq_config = CuEquivarianceConfig(
+                enabled=True,
+                layout="ir_mul",
+                group="O3_e3nn",
+                optimize_all=True,
+                conv_fusion=(args.device == "cuda"),
+            )
+
         model_config = dict(
             r_max=args.r_max,
             num_bessel=args.num_radial_basis,
@@ -121,9 +166,14 @@ def configure_model(
             num_interactions=args.num_interactions,
             num_elements=len(z_table),
             hidden_irreps=o3.Irreps(args.hidden_irreps),
+            edge_irreps=o3.Irreps(args.edge_irreps) if args.edge_irreps else None,
             atomic_energies=atomic_energies,
+            apply_cutoff=args.apply_cutoff,
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
+            use_reduced_cg=args.use_reduced_cg,
+            use_so3=args.use_so3,
+            cueq_config=cueq_config,
         )
         model_config_foundation = None
 
@@ -179,6 +229,7 @@ def _build_model(
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             heads=heads,
+            embedding_specs=args.embedding_specs,
         )
     if args.model == "ScaleShiftMACE":
         return modules.ScaleShiftMACE(
@@ -194,25 +245,15 @@ def _build_model(
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             heads=heads,
+            embedding_specs=args.embedding_specs,
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)
     if args.model == "ScaleShiftBOTNet":
-        return modules.ScaleShiftBOTNet(
-            **model_config,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[args.interaction_first],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=args.std,
-            atomic_inter_shift=args.mean,
-        )
+        # say it is deprecated
+        raise RuntimeError("ScaleShiftBOTNet is deprecated, use MACE instead")
     if args.model == "BOTNet":
-        return modules.BOTNet(
-            **model_config,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[args.interaction_first],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-        )
+        raise RuntimeError("BOTNet is deprecated, use MACE instead")
     if args.model == "AtomicDipolesMACE":
         assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
         assert (

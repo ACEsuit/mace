@@ -103,6 +103,7 @@ _mace_params = {
     "forces_key": "REF_forces",
     "stress_key": "REF_stress",
     "eval_interval": 2,
+    "use_reduced_cg": False,
 }
 
 
@@ -385,7 +386,10 @@ def test_run_train_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model",
+        device="cpu",
+        default_dtype="float64",
+        head="CCD",
     )
 
     Es = []
@@ -499,6 +503,9 @@ def test_run_train_foundation(tmp_path, fitting_configs):
 def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
     for i, c in enumerate(fitting_configs):
         if i in (0, 1):
             c_dft = c.copy()
@@ -516,7 +523,6 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
             fitting_configs_mp2.append(c)
     ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
     ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
-
     heads = {
         "DFT": {"train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz"},
         "MP2": {"train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz"},
@@ -545,6 +551,8 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     mace_params["valid_batch_size"] = 1
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"
+    mace_params["atomic_numbers"] = "[" + ",".join(map(str, atomic_numbers)) + "]"
+    mace_params["filter_type_pt"] = "combinations"
     mace_params["force_mh_ft_lr"] = True
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
@@ -565,15 +573,29 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
         )
     )
 
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
-
-    calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
-    )
+    try:
+        completed_process = subprocess.run(
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
+        )
+        # Process executed successfully
+        print(completed_process.stdout)
+    except subprocess.CalledProcessError as e:
+        # Process failed with non-zero exit code
+        print(f"Command failed with exit code {e.returncode}")
+        print(f"STDOUT: {e.stdout}")
+        print(f"STDERR: {e.stderr}")
+        raise e
+    assert completed_process.returncode == 0
 
     Es = []
     for at in fitting_configs:
+        config_head = at.info.get("head", "MP2")
+        calc = MACECalculator(
+            model_paths=tmp_path / "MACE.model",
+            device="cpu",
+            default_dtype="float64",
+            head=config_head,
+        )
         at.calc = calc
         Es.append(at.get_potential_energy())
 
@@ -609,6 +631,9 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
 def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
     for i, c in enumerate(fitting_configs):
 
         if i in (0, 1):
@@ -663,6 +688,8 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
     mace_params["valid_batch_size"] = 1
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"
+    mace_params["atomic_numbers"] = "[" + ",".join(map(str, atomic_numbers)) + "]"
+    mace_params["filter_type_pt"] = "combinations"
     mace_params["force_mh_ft_lr"] = True
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
@@ -683,15 +710,29 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
         )
     )
 
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
-
-    calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
-    )
+    try:
+        completed_process = subprocess.run(
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
+        )
+        # Process executed successfully
+        print(completed_process.stdout)
+    except subprocess.CalledProcessError as e:
+        # Process failed with non-zero exit code
+        print(f"Command failed with exit code {e.returncode}")
+        print(f"STDOUT: {e.stdout}")
+        print(f"STDERR: {e.stderr}")
+        raise e
+    assert completed_process.returncode == 0
 
     Es = []
     for at in fitting_configs:
+        config_head = at.info.get("head", "MP2")
+        calc = MACECalculator(
+            model_paths=tmp_path / "MACE.model",
+            device="cpu",
+            default_dtype="float64",
+            head=config_head,
+        )
         at.calc = calc
         Es.append(at.get_potential_energy())
 
@@ -840,7 +881,10 @@ def test_run_train_multihead_replay_custum_finetuning(
 
     # Load and test the finetuned model
     calc = MACECalculator(
-        model_paths=tmp_path / "finetuned.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "finetuned.model",
+        device="cpu",
+        default_dtype="float64",
+        head="pt_head",
     )
 
     Es = []
@@ -866,7 +910,6 @@ def test_run_train_cueq(tmp_path, fitting_configs):
     mace_params["model_dir"] = str(tmp_path)
     mace_params["train_file"] = tmp_path / "fit.xyz"
     mace_params["enable_cueq"] = True
-    mace_params["device"] = "cpu"
     mace_params["default_dtype"] = "float64"
 
     # make sure run_train.py is using the mace that is currently being tested
@@ -888,8 +931,19 @@ def test_run_train_cueq(tmp_path, fitting_configs):
         )
     )
 
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
+    try:
+        completed_process = subprocess.run(
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
+        )
+        # Process executed successfully
+        print(completed_process.stdout)
+    except subprocess.CalledProcessError as e:
+        # Process failed with non-zero exit code
+        print(f"Command failed with exit code {e.returncode}")
+        print(f"STDOUT: {e.stdout}")
+        print(f"STDERR: {e.stderr}")
+        raise e
+    assert completed_process.returncode == 0
 
     calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
     Es = []
@@ -937,6 +991,9 @@ def test_run_train_cueq(tmp_path, fitting_configs):
 def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     fitting_configs_dft = []
     fitting_configs_mp2 = []
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
     for i, c in enumerate(fitting_configs):
 
         if i in (0, 1):
@@ -992,7 +1049,11 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     mace_params["num_samples_pt"] = 50
     mace_params["subselect_pt"] = "random"
     mace_params["enable_cueq"] = True
+    mace_params["atomic_numbers"] = "[" + ",".join(map(str, atomic_numbers)) + "]"
+    mace_params["filter_type_pt"] = "combinations"
+    mace_params["device"] = "cpu"
     mace_params["force_mh_ft_lr"] = True
+    mace_params["use_reduced_cg"] = False
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -1012,11 +1073,25 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
         )
     )
 
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
+    try:
+        completed_process = subprocess.run(
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
+        )
+        # Process executed successfully
+        print(completed_process.stdout)
+    except subprocess.CalledProcessError as e:
+        # Process failed with non-zero exit code
+        print(f"Command failed with exit code {e.returncode}")
+        print(f"STDOUT: {e.stdout}")
+        print(f"STDERR: {e.stderr}")
+        raise e
+    assert completed_process.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model",
+        device="cpu",
+        default_dtype="float64",
+        head="DFT",
     )
 
     Es = []
@@ -1051,6 +1126,74 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
         0.5574042201042175,
     ]
     assert np.allclose(Es, ref_Es, atol=1e-1)
+
+
+def test_run_train_lbfgs(tmp_path, fitting_configs):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["lbfgs"] = None
+    mace_params["max_num_epochs"] = 2
+
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+    # from a run on 14/03/2025
+    ref_Es = [
+        0.0,
+        0.0,
+        -0.1874197850340979,
+        -0.25991775038059006,
+        0.18263492399322268,
+        -0.15026829765490662,
+        -0.2403061362015996,
+        0.1689257170630718,
+        -0.2095568077455055,
+        -0.2957758160829075,
+        -0.0035370913684985364,
+        -0.2195416610745775,
+        -0.25405549447739517,
+        -0.06201390990366806,
+        -0.13332219494388334,
+        -0.19633181702040337,
+        0.013014932630445699,
+        -0.08808335967147174,
+        -0.06664444189210728,
+        -0.4230467426992034,
+        -0.2348250569553676,
+        -0.17593904833220647,
+    ]
+    assert np.allclose(Es, ref_Es, atol=1e-2)
 
 
 def test_run_train_foundation_elements(tmp_path, fitting_configs):
@@ -1157,9 +1300,11 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
 
 
 def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
-
     fitting_configs_dft = []
     fitting_configs_mp2 = []
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
     for i, c in enumerate(fitting_configs):
         if i in (0, 1):
             c_dft = c.copy()
@@ -1211,6 +1356,8 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
         "batch_size": 1,
         "num_samples_pt": 50,
         "subselect_pt": "random",
+        "atomic_numbers": "[" + ",".join(map(str, atomic_numbers)) + "]",
+        "filter_type_pt": "combinations",
         "valid_fraction": 0.1,
         "valid_batch_size": 1,
     }
@@ -1234,8 +1381,19 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
             ]
         )
     )
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
+    try:
+        completed_process = subprocess.run(
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
+        )
+        # Process executed successfully
+        print(completed_process.stdout)
+    except subprocess.CalledProcessError as e:
+        # Process failed with non-zero exit code
+        print(f"Command failed with exit code {e.returncode}")
+        print(f"STDOUT: {e.stdout}")
+        print(f"STDERR: {e.stderr}")
+        raise e
+    assert completed_process.returncode == 0
 
     # Load model and check elements
     model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu")
@@ -1280,7 +1438,10 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
 
     # Test filtered model
     calc_filtered = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model",
+        device="cpu",
+        default_dtype="float64",
+        head="DFT",
     )
     at.calc = calc_filtered
     e1 = at.get_potential_energy()
@@ -1290,6 +1451,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
         model_paths=tmp_path / "MACE_all_elements.model",
         device="cpu",
         default_dtype="float64",
+        head="DFT",
     )
     at.calc = calc_all
     e2 = at.get_potential_energy()

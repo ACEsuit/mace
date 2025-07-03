@@ -5,11 +5,10 @@
 ###########################################################################################
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 import torch
-import torch.nn
 import torch.utils.data
 from scipy.constants import c, e
 
@@ -166,14 +165,17 @@ def compute_hessians_loop(
 def get_outputs(
     energy: torch.Tensor,
     positions: torch.Tensor,
-    displacement: Optional[torch.Tensor],
     cell: torch.Tensor,
+    displacement: Optional[torch.Tensor],
+    vectors: Optional[torch.Tensor] = None,
     training: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
     compute_hessian: bool = False,
+    compute_edge_forces: bool = False,
 ) -> Tuple[
+    Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
@@ -186,14 +188,14 @@ def get_outputs(
             displacement=displacement,
             cell=cell,
             compute_stress=compute_stress,
-            training=(training or compute_hessian),
+            training=(training or compute_hessian or compute_edge_forces),
         )
     elif compute_force:
         forces, virials, stress = (
             compute_forces(
                 energy=energy,
                 positions=positions,
-                training=(training or compute_hessian),
+                training=(training or compute_hessian or compute_edge_forces),
             ),
             None,
             None,
@@ -205,7 +207,53 @@ def get_outputs(
         hessian = compute_hessians_vmap(forces, positions)
     else:
         hessian = None
-    return forces, virials, stress, hessian
+    if compute_edge_forces and vectors is not None:
+        edge_forces = compute_forces(
+            energy=energy,
+            positions=vectors,
+            training=(training or compute_hessian),
+        )
+        if edge_forces is not None:
+            edge_forces = -1 * edge_forces  # Match LAMMPS sign convention
+    else:
+        edge_forces = None
+    return forces, virials, stress, hessian, edge_forces
+
+
+def get_atomic_virials_stresses(
+    edge_forces: torch.Tensor,  # [n_edges, 3]
+    edge_index: torch.Tensor,  # [2, n_edges]
+    vectors: torch.Tensor,  # [n_edges, 3]
+    num_atoms: int,
+    batch: torch.Tensor,
+    cell: torch.Tensor,  # [n_graphs, 3, 3]
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """
+    Compute atomic virials and optionally atomic stresses from edge forces and vectors.
+    From pobo95 PR #528.
+    Returns:
+        Tuple of:
+            - Atomic virials [num_atoms, 3, 3]
+            - Atomic stresses [num_atoms, 3, 3] (None if not computed)
+    """
+    edge_virial = torch.einsum("zi,zj->zij", edge_forces, vectors)
+    atom_virial_sender = scatter_sum(
+        src=edge_virial, index=edge_index[0], dim=0, dim_size=num_atoms
+    )
+    atom_virial_receiver = scatter_sum(
+        src=edge_virial, index=edge_index[1], dim=0, dim_size=num_atoms
+    )
+    atom_virial = (atom_virial_sender + atom_virial_receiver) / 2
+    atom_virial = (atom_virial + atom_virial.transpose(-1, -2)) / 2
+    atom_stress = None
+    cell = cell.view(-1, 3, 3)
+    volume = torch.linalg.det(cell).abs().unsqueeze(-1)
+    atom_volume = volume[batch].view(-1, 1, 1)
+    atom_stress = atom_virial / atom_volume
+    atom_stress = torch.where(
+        torch.abs(atom_stress) < 1e10, atom_stress, torch.zeros_like(atom_stress)
+    )
+    return -1 * atom_virial, atom_stress
 
 
 def get_edge_vectors_and_lengths(
@@ -440,3 +488,95 @@ def compute_fixed_charge_dipole(
     return scatter_sum(
         src=mu, index=batch.unsqueeze(-1), dim=0, dim_size=num_graphs
     )  # [N_graphs,3]
+
+
+class InteractionKwargs(NamedTuple):
+    lammps_class: Optional[torch.Tensor]
+    lammps_natoms: Tuple[int, int] = (0, 0)
+
+
+class GraphContext(NamedTuple):
+    is_lammps: bool
+    num_graphs: int
+    num_atoms_arange: torch.Tensor
+    displacement: Optional[torch.Tensor]
+    positions: torch.Tensor
+    vectors: torch.Tensor
+    lengths: torch.Tensor
+    cell: torch.Tensor
+    node_heads: torch.Tensor
+    interaction_kwargs: InteractionKwargs
+
+
+def prepare_graph(
+    data: Dict[str, torch.Tensor],
+    compute_virials: bool = False,
+    compute_stress: bool = False,
+    compute_displacement: bool = False,
+    lammps_mliap: bool = False,
+) -> GraphContext:
+    if torch.jit.is_scripting():
+        lammps_mliap = False
+
+    node_heads = (
+        data["head"][data["batch"]]
+        if "head" in data
+        else torch.zeros_like(data["batch"])
+    )
+
+    if lammps_mliap:
+        n_real, n_total = data["natoms"][0], data["natoms"][1]
+        num_graphs = 2
+        num_atoms_arange = torch.arange(n_real, device=data["node_attrs"].device)
+        displacement = None
+        positions = torch.zeros(
+            (int(n_real), 3),
+            dtype=data["vectors"].dtype,
+            device=data["vectors"].device,
+        )
+        cell = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=data["vectors"].dtype,
+            device=data["vectors"].device,
+        )
+        vectors = data["vectors"].requires_grad_(True)
+        lengths = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
+        ikw = InteractionKwargs(data["lammps_class"], (n_real, n_total))
+    else:
+        data["positions"].requires_grad_(True)
+        positions = data["positions"]
+        cell = data["cell"]
+        num_atoms_arange = torch.arange(positions.shape[0], device=positions.device)
+        num_graphs = int(data["ptr"].numel() - 1)
+        displacement = torch.zeros(
+            (num_graphs, 3, 3), dtype=positions.dtype, device=positions.device
+        )
+        if compute_virials or compute_stress or compute_displacement:
+            p, s, displacement = get_symmetric_displacement(
+                positions=positions,
+                unit_shifts=data["unit_shifts"],
+                cell=cell,
+                edge_index=data["edge_index"],
+                num_graphs=num_graphs,
+                batch=data["batch"],
+            )
+            data["positions"], data["shifts"] = p, s
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
+        )
+        ikw = InteractionKwargs(None, (0, 0))
+
+    return GraphContext(
+        is_lammps=lammps_mliap,
+        num_graphs=num_graphs,
+        num_atoms_arange=num_atoms_arange,
+        displacement=displacement,
+        positions=positions,
+        vectors=vectors,
+        lengths=lengths,
+        cell=cell,
+        node_heads=node_heads,
+        interaction_kwargs=ikw,
+    )
