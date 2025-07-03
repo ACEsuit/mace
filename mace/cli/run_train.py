@@ -843,7 +843,7 @@ def run(args) -> None:
                     )
         for test_name, test_set in test_sets.items():
             test_sampler = None
-            if args.distributed or args.mpi_distributed:
+            if args.distributed or args.launcher == "mpi":
                 test_sampler = torch.utils.data.distributed.DistributedSampler(
                     test_set,
                     num_replicas=world_size,
