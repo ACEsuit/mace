@@ -3,8 +3,6 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
-from mpi4py import MPI
-
 import ast
 import glob
 import json
@@ -65,7 +63,6 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
-import datetime
 
 
 def main() -> None:
