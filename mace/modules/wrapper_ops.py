@@ -127,6 +127,9 @@ def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
 def with_cueq_conv_fusion(conv_tp: torch.nn.Module) -> torch.nn.Module:
     """Wraps a cuet.ConvTensorProduct to use conv fusion"""
     conv_tp.original_forward = conv_tp.forward
+    num_segment = conv_tp.m.buffer_num_segments[0]
+    num_operands = conv_tp.m.operand_extent
+    conv_tp.weight_numel = num_segment * num_operands
 
     def forward(
         self,
@@ -142,7 +145,7 @@ def with_cueq_conv_fusion(conv_tp: torch.nn.Module) -> torch.nn.Module:
             {1: sender},
             {0: node_feats},
             {0: receiver},
-        )
+        )[0]
 
     conv_tp.forward = types.MethodType(forward, conv_tp)
     return conv_tp
@@ -278,7 +281,6 @@ class SymmetricContractionWrapper:
         use_reduced_cg: bool = True,
     ):
         use_reduced_cg = use_reduced_cg and CUET_AVAILABLE
-        print("Using reduced CG:", use_reduced_cg)
         if (
             CUET_AVAILABLE
             and cueq_config is not None
@@ -304,3 +306,24 @@ class SymmetricContractionWrapper:
             num_elements=num_elements,
             use_reduced_cg=use_reduced_cg,
         )
+
+
+class TransposeIrrepsLayoutWrapper:
+    """Wrapper around cuet.TransposeIrrepsLayout"""
+
+    def __new__(
+        cls,
+        irreps: o3.Irreps,
+        source: str,
+        target: str,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+    ):
+        if CUET_AVAILABLE and cueq_config is not None and cueq_config.enabled:
+            return cuet.TransposeIrrepsLayout(
+                cue.Irreps(cueq_config.group, irreps),
+                source=getattr(cue, source),
+                target=getattr(cue, target),
+                use_fallback=True,
+            )
+
+        return None

@@ -36,8 +36,6 @@ from .utils import (
     prepare_graph,
 )
 
-# pylint: disable=C0302
-
 
 @compile_mode("script")
 class MACE(torch.nn.Module):
@@ -300,6 +298,8 @@ class MACE(torch.nn.Module):
         ]
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+        ).to(
+            vectors.dtype
         )  # [n_graphs, n_heads]
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -382,7 +382,6 @@ class MACE(torch.nn.Module):
         total_energy = torch.sum(contributions, dim=-1)
         node_energy = torch.sum(torch.stack(node_energies_list, dim=-1), dim=-1)
         node_feats_out = torch.cat(node_feats_concat, dim=-1)
-        node_energy = node_e0.double() + pair_node_energy.double()
 
         forces, virials, stress, hessian, edge_forces = get_outputs(
             energy=total_energy,
@@ -479,6 +478,8 @@ class ScaleShiftMACE(MACE):
         ]
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+        ).to(
+            vectors.dtype
         )  # [n_graphs, num_heads]
 
         # Embeddings

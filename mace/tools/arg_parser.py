@@ -176,6 +176,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--use_last_readout_only",
+        help="use only the last readout for the final output",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--use_embedding_readout",
+        help="use embedding readout for the final output",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--interaction",
         help="name of interaction block",
         type=str,
@@ -212,7 +224,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--use_reduced_cg",
         help="use reduced generalized Clebsch-Gordan coefficients",
         type=str2bool,
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--use_so3",
@@ -394,6 +406,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
 
     # Fine-tuning
+    parser.add_argument(
+        "--pseudolabel_replay",
+        help="Use pseudolabels from foundation model for replay data in multihead finetuning",
+        type=str2bool,
+        default=False,
+    )
     parser.add_argument(
         "--foundation_filter_elements",
         help="Filter element during fine-tuning",
