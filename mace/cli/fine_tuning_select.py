@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -53,6 +54,11 @@ class SelectionSettings:
     weight_ft: float = 1.0
     weight_pt: float = 1.0
     seed: int = 42
+
+
+def str_to_list(s: str) -> List[int]:
+    assert isinstance(s, str), "Input must be a string"
+    return ast.literal_eval(s)
 
 
 def parse_args() -> argparse.Namespace:
@@ -135,6 +141,12 @@ def parse_args() -> argparse.Namespace:
         help="weight for the pretraining set",
         type=float,
         default=1.0,
+    )
+    parser.add_argument(
+        "--atomic_numbers",
+        help="list of atomic numbers to filter the configurations",
+        type=str_to_list,
+        default=None,
     )
     parser.add_argument("--seed", help="random seed", type=int, default=42)
     return parser.parse_args()
