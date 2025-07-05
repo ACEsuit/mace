@@ -263,10 +263,12 @@ def load_from_xyz(
 
     final_energy_key = key_specification.info_keys["energy"]
     final_forces_key = key_specification.arrays_keys["forces"]
+    final_dipole_key = key_specification.info_keys.get("dipole", "REF_dipole")
     has_energy = any(final_energy_key in atoms.info for atoms in atoms_list)
     has_forces = any(final_forces_key in atoms.arrays for atoms in atoms_list)
+    has_dipole = any(final_dipole_key in atoms.info for atoms in atoms_list)
 
-    if not has_energy and not has_forces:
+    if not has_energy and not has_forces and not has_dipole:
         raise ValueError(
             f"Neither '{final_energy_key}' nor '{final_forces_key}' found in '{file_path}'. Please change the key names in the command line arguments or ensure that the file contains the required data."
         )
