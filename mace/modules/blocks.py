@@ -19,6 +19,7 @@ from mace.modules.wrapper_ops import (
     OEQConfig,
     SymmetricContractionWrapper,
     TensorProduct,
+    TransposeIrrepsLayoutWrapper,
 )
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
@@ -1131,6 +1132,19 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         self.alpha = torch.nn.Parameter(torch.tensor(20.0), requires_grad=True)
         self.beta = torch.nn.Parameter(torch.tensor(0.0), requires_grad=True)
 
+        self.transpose_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_nonlin,
+            source="ir_mul",
+            target="mul_ir",
+            cueq_config=self.cueq_config,
+        )
+        self.transpose_ir_mul = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_out,
+            source="mul_ir",
+            target="ir_mul",
+            cueq_config=self.cueq_config,
+        )
+
     def forward(
         self,
         node_attrs: torch.Tensor,
@@ -1191,7 +1205,12 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         node_feats_res = self.truncate_ghosts(node_feats_res, n_real)
         message = self.linear_1(message) / (density * self.beta + self.alpha)
         message = message + node_feats_res
-        message = self.linear_2(self.equivariant_nonlin(message))
+        if self.transpose_mul_ir is not None:
+            message = self.transpose_mul_ir(message)
+        message = self.equivariant_nonlin(message)
+        if self.transpose_ir_mul is not None:
+            message = self.transpose_ir_mul(message)
+        message = self.linear_2(message)
         return (
             self.reshape(message),
             sc,

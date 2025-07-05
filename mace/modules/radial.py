@@ -378,6 +378,7 @@ class RadialMLP(torch.nn.Module):
                 modules.append(torch.nn.SiLU())
 
         self.net = torch.nn.Sequential(*modules)
+        self.hs = channels_list
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.net(inputs)
