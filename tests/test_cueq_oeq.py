@@ -152,7 +152,6 @@ class BackendTestBase:
 
         # Check outputs match for both conversions
 
-        tol = 1e-4 if default_dtype == torch.float32 else 1e-8
         torch.testing.assert_close(
             out_e3nn["energy"], out_backend["energy"], atol=tol, rtol=tol
         )
@@ -180,6 +179,8 @@ class BackendTestBase:
         loss_e3nn.backward()
         loss_backend.backward()
         loss_e3nn_back.backward()
+
+        tol = 1e-4 if default_dtype == torch.float32 else 1e-8
 
         def print_gradient_diff(name1, p1, name2, p2, conv_type):
             if p1.grad is not None and p1.grad.shape == p2.grad.shape:
