@@ -152,24 +152,12 @@ class BackendTestBase:
 
         # Check outputs match for both conversions
 
-        torch.testing.assert_close(
-            out_e3nn["energy"], out_backend["energy"], atol=tol, rtol=tol
-        )
-        torch.testing.assert_close(
-            out_backend["energy"], out_e3nn_back["energy"], atol=tol, rtol=tol
-        )
-        torch.testing.assert_close(
-            out_e3nn["forces"], out_backend["forces"], atol=tol, rtol=tol
-        )
-        torch.testing.assert_close(
-            out_backend["forces"], out_e3nn_back["forces"], atol=tol, rtol=tol
-        )
-        torch.testing.assert_close(
-            out_e3nn["stress"], out_backend["stress"], atol=tol, rtol=tol
-        )
-        torch.testing.assert_close(
-            out_backend["stress"], out_e3nn_back["stress"], atol=tol, rtol=tol
-        )
+        torch.testing.assert_close(out_e3nn["energy"], out_backend["energy"])
+        torch.testing.assert_close(out_backend["energy"], out_e3nn_back["energy"])
+        torch.testing.assert_close(out_e3nn["forces"], out_backend["forces"])
+        torch.testing.assert_close(out_backend["forces"], out_e3nn_back["forces"])
+        torch.testing.assert_close(out_e3nn["stress"], out_backend["stress"])
+        torch.testing.assert_close(out_backend["stress"], out_e3nn_back["stress"])
 
         # Test backward pass equivalence
         loss_e3nn = out_e3nn["energy"].sum()
