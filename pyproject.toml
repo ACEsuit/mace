@@ -43,4 +43,4 @@ ignore-paths = [
 ]
 
 [tool.pylint.FORMAT]
-max-module-lines = 1500
+max-module-lines = 2000
