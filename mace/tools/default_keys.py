@@ -13,7 +13,7 @@ class DefaultKeys(Enum):
     CHARGES = "REF_charges"
     FIELD = "REF_electric_field"
     POLARISATION = "REF_polarisation"
-    BECS = "REF_bec"
+    BECS = "REF_becs"
     POLARISABILITY = "REF_polarisability"
 
     @staticmethod

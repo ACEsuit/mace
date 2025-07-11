@@ -72,7 +72,7 @@ class MACECalculator(Calculator):
     ):
         Calculator.__init__(self, **kwargs)
         if enable_cueq:
-            assert model_type == "MACE", "CuEq only supports MACE models"
+            # assert model_type == "MACE", "CuEq only supports MACE models"
             compile_mode = None
         if "model_path" in kwargs:
             deprecation_message = (
@@ -367,7 +367,10 @@ class MACECalculator(Calculator):
                 self.electric_field, 
                 dtype=next(self.models[0].parameters()).dtype
             )
-
+        else:
+            compute_polarisation = False
+            compute_becs = False
+            compute_polarisability = False
 
         ret_tensors = self._create_result_tensors(
             self.model_type, self.num_models, len(atoms)

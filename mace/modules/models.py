@@ -8,7 +8,8 @@ from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import numpy as np
 import torch
-from e3nn import o3
+from torch import nn
+from e3nn import o3, io
 from e3nn.util.jit import compile_mode
 
 from mace.modules.radial import ZBLBasis
@@ -38,6 +39,10 @@ from .utils import (
     get_polarisability,
 )
 
+from .wrapper_ops import (
+    FullyConnectedTensorProduct,
+    Linear
+)
 # pylint: disable=C0302
 
 
@@ -211,6 +216,9 @@ class MACE(torch.nn.Module):
         compute_virials: bool = False,
         compute_stress: bool = False,
         compute_displacement: bool = False,
+        compute_polarisation: bool = False,
+        compute_becs: bool = False,
+        compute_polarisability: bool = False,
         compute_hessian: bool = False,
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
@@ -512,15 +520,23 @@ class ScaleShiftFieldMACE(MACE):
         )
         
         hidden_irreps = kwargs["hidden_irreps"]
-        num_channels = hidden_irreps.count(o3.Irrep(0, 1))
-
         self.field_feats = torch.nn.ModuleList()
+        self.field_linear = torch.nn.ModuleList()
         for i in range(kwargs["num_interactions"]-1):
             self.field_feats.append(
-                LinearReadoutBlock(
-                    hidden_irreps,
-                    (num_channels * o3.Irreps("1x0e+1x1o")).sort()[0].simplify(),
-                    self.interactions[i].cueq_config
+                FullyConnectedTensorProduct(
+                    irreps_in1=hidden_irreps,
+                    irreps_in2=o3.Irreps("1o"),
+                    irreps_out=hidden_irreps,
+                    internal_weights=True,
+                    shared_weights=True
+                )
+            )
+            self.field_linear.append(
+                Linear(
+                    irreps_in=hidden_irreps,
+                    irreps_out=hidden_irreps,
+                    cueq_config=self.interactions[i].cueq_config
                 )
             )
 
@@ -615,12 +631,8 @@ class ScaleShiftFieldMACE(MACE):
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
             if i < len(self.interactions) - 1:
-                node_field_feats = self.field_feats[i](node_feats, node_heads).reshape(node_feats.shape[0], -1, 4) # [n_nodes, k, 4]
-                node_charge_feats, node_electronic_dipole_feats = node_field_feats[:,:,0],  node_field_feats[:,:,1:] # [n_nodes, k, 1], [n_nodes, k, 3]
-                node_ionic_dipole_feats = torch.einsum('ij,ik->ijk', node_charge_feats, positions) # [n_nodes, k, 3]
-                node_dipole_feats = node_ionic_dipole_feats - node_electronic_dipole_feats # [n_nodes, k, 3]
-                node_field_feats = torch.einsum('ijk,ik->ij', node_dipole_feats, electric_field.repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
-                node_feats = node_feats - node_field_feats.repeat(1, node_feats.view(node_field_feats.shape[0], node_field_feats.shape[1], -1).shape[-1]).view(node_feats.shape[0], node_feats.shape[1])
+                delta_node_feats = self.field_feats[i](node_feats, electric_field.repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
+                node_feats = node_feats - self.field_linear[i](delta_node_feats)
             node_feats_list.append(node_feats)
             node_es_list.append(
                 readout(node_feats, node_heads)[num_atoms_arange, node_heads]

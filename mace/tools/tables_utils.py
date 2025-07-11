@@ -107,9 +107,9 @@ def create_error_table(
             "RMSE F / meV / A",
             "relative F RMSE %",
             "RMSE Stress (Virials) / meV / A (A^3)",
-            "RMSE Polarisation meV / A^2",
-            "RMSE BEC |e|",
-            "RMSE Polarisability A^3"
+            "RMSE Polarisation / m|e| / A^2",
+            "RMSE BECs / |e|",
+            "RMSE Polarisability / |e| / V / A"
         ]
 
     for name in sorted(all_data_loaders, key=custom_key):

@@ -753,6 +753,11 @@ def get_params_options(
                 "params": model.field_feats.parameters(),
                 "weight_decay": args.weight_decay,
             },
+            {
+                "name": "field_linear",
+                "params": model.field_linear.parameters(),
+                "weight_decay": args.weight_decay,
+            },
         ],
         lr=args.lr,
         amsgrad=args.amsgrad,
