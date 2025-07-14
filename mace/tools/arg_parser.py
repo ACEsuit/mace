@@ -102,6 +102,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default="0",
     )
+    
+    parser.add_argument(
+        "--plot_interaction_e",
+        help="Whether to plot energy without E0s",
+        type=str2bool,
+        default=False,
+    )
 
     parser.add_argument(
         "--error_table",
