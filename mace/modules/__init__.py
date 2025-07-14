@@ -9,6 +9,7 @@ from .blocks import (
     LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
     LinearReadoutBlock,
+    NonLinearBiasReadoutBlock,
     NonLinearDipoleReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
@@ -17,6 +18,7 @@ from .blocks import (
     RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
+    RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
 )
 from .loss import (
@@ -48,6 +50,15 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
     "RealAgnosticDensityInteractionBlock": RealAgnosticDensityInteractionBlock,
     "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
+    "RealAgnosticResidualNonLinearInteractionBlock": RealAgnosticResidualNonLinearInteractionBlock,
+}
+
+readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
+    "LinearReadoutBlock": LinearReadoutBlock,
+    "LinearDipoleReadoutBlock": LinearDipoleReadoutBlock,
+    "NonLinearDipoleReadoutBlock": NonLinearDipoleReadoutBlock,
+    "NonLinearReadoutBlock": NonLinearReadoutBlock,
+    "NonLinearBiasReadoutBlock": NonLinearBiasReadoutBlock,
 }
 
 scaling_classes: Dict[str, Callable] = {

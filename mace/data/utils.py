@@ -49,7 +49,16 @@ def update_keyspec_from_kwargs(
     keyspec: KeySpecification, keydict: Dict[str, str]
 ) -> KeySpecification:
     # convert command line style property_key arguments into a keyspec
-    infos = ["energy_key", "stress_key", "virials_key", "dipole_key", "head_key"]
+    infos = [
+        "energy_key",
+        "stress_key",
+        "virials_key",
+        "dipole_key",
+        "head_key",
+        "elec_temp_key",
+        "total_charge_key",
+        "total_spin_key",
+    ]
     arrays = ["forces_key", "charges_key"]
     info_keys = {}
     arrays_keys = {}
@@ -189,6 +198,8 @@ def test_config_types(
     test_by_ct = []
     all_cts = []
     for conf in test_configs:
+        if conf.head is None:
+            conf.head = ""
         config_type_name = conf.config_type + "_" + conf.head
         if config_type_name not in all_cts:
             all_cts.append(config_type_name)

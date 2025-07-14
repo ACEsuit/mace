@@ -10,8 +10,11 @@ import ase.data
 import ase.io
 import numpy as np
 import torch
+from e3nn import o3
 
 from mace import data
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 
 
@@ -30,6 +33,12 @@ def parse_args() -> argparse.Namespace:
         default="cpu",
     )
     parser.add_argument(
+        "--enable_cueq",
+        help="enable cuequivariance acceleration",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--default_dtype",
         help="set default dtype",
         type=str,
@@ -46,6 +55,36 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--return_contributions",
         help="model outputs energy contributions for each body order, only supported for MACE, not ScaleShiftMACE",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--return_descriptors",
+        help="model outputs MACE descriptors",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--descriptor_num_layers",
+        help="number of layers to take descriptors from",
+        type=int,
+        default=-1,
+    )
+    parser.add_argument(
+        "--descriptor_aggregation_method",
+        help="method for aggregating node features. None saves descriptors for each atom.",
+        choices=["mean", "per_element_mean", None],
+        default=None,
+    )
+    parser.add_argument(
+        "--descriptor_invariants_only",
+        help="save invariant (l=0) descriptors only",
+        type=bool,
+        default=True,
+    )
+    parser.add_argument(
+        "--return_node_energies",
+        help="model outputs MACE node energies",
         action="store_true",
         default=False,
     )
@@ -76,6 +115,9 @@ def run(args: argparse.Namespace) -> None:
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+    if args.enable_cueq:
+        print("Converting models to CuEq for acceleration")
+        model = run_e3nn_to_cueq(model, device=device)
     model = model.to(
         args.device
     )  # shouldn't be necessary but seems to help with CUDA problems
@@ -112,6 +154,8 @@ def run(args: argparse.Namespace) -> None:
     # Collect data
     energies_list = []
     contributions_list = []
+    descriptors_list = []
+    node_energies_list = []
     stresses_list = []
     forces_collection = []
 
@@ -124,6 +168,51 @@ def run(args: argparse.Namespace) -> None:
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
+
+        if args.return_descriptors:
+            num_layers = args.descriptor_num_layers
+            if num_layers == -1:
+                num_layers = int(model.num_interactions)
+            irreps_out = o3.Irreps(str(model.products[0].linear.irreps_out))
+            l_max = irreps_out.lmax
+            num_invariant_features = irreps_out.dim // (l_max + 1) ** 2
+            per_layer_features = [
+                irreps_out.dim for _ in range(int(model.num_interactions))
+            ]
+            per_layer_features[-1] = (
+                num_invariant_features  # Equivariant features not created for the last layer
+            )
+
+            descriptors = output["node_feats"]
+
+            if args.descriptor_invariants_only:
+                descriptors = extract_invariant(
+                    descriptors,
+                    num_layers=num_layers,
+                    num_features=num_invariant_features,
+                    l_max=l_max,
+                )
+
+            to_keep = np.sum(per_layer_features[:num_layers])
+            descriptors = descriptors[:, :to_keep].detach().cpu().numpy()
+
+            descriptors = np.split(
+                descriptors,
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            descriptors_list.extend(descriptors[:-1])  # drop last as its empty
+
+        if args.return_node_energies:
+            node_energies_list.append(
+                np.split(
+                    torch_tools.to_numpy(output["node_energy"]),
+                    indices_or_sections=batch.ptr[1:],
+                    axis=0,
+                )[
+                    :-1
+                ]  # drop last as its empty
+            )
 
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
@@ -145,6 +234,14 @@ def run(args: argparse.Namespace) -> None:
         contributions = np.concatenate(contributions_list, axis=0)
         assert len(atoms_list) == contributions.shape[0]
 
+    if args.return_descriptors:
+        # no concatentation  - elements of descriptors_list have non-uniform shapes
+        assert len(atoms_list) == len(descriptors_list)
+
+    if args.return_node_energies:
+        node_energies = np.concatenate(node_energies_list, axis=0)
+        assert len(atoms_list) == node_energies.shape[0]
+
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
         atoms.calc = None  # crucial
@@ -156,6 +253,26 @@ def run(args: argparse.Namespace) -> None:
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
+
+        if args.return_descriptors:
+            descriptors = descriptors_list[i]
+            if args.descriptor_aggregation_method:
+                if args.descriptor_aggregation_method == "mean":
+                    descriptors = np.mean(descriptors, axis=0)
+                elif args.descriptor_aggregation_method == "per_element_mean":
+                    descriptors = {
+                        element: np.mean(
+                            descriptors[atoms.symbols == element], axis=0
+                        ).tolist()
+                        for element in np.unique(atoms.symbols)
+                    }
+                atoms.info[args.info_prefix + "descriptors"] = descriptors
+            else:  # args.descriptor_aggregation_method is None
+                # Save descriptors for each atom (default behavior)
+                atoms.arrays[args.info_prefix + "descriptors"] = np.array(descriptors)
+
+        if args.return_node_energies:
+            atoms.arrays[args.info_prefix + "node_energies"] = node_energies[i]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
