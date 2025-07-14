@@ -356,3 +356,28 @@ class SoftTransform(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(alpha={self.alpha.item():.4f})"
+
+
+class RadialMLP(torch.nn.Module):
+    """
+    Construct a radial MLP (Linear → LayerNorm → SiLU) stack
+    given a list of channel sizes, following ESEN / FairChem.
+    """
+
+    def __init__(self, channels_list) -> None:
+        super().__init__()
+
+        modules = []
+        in_channels = channels_list[0]
+
+        for idx, out_channels in enumerate(channels_list[1:], start=1):
+            modules.append(torch.nn.Linear(in_channels, out_channels, bias=True))
+            in_channels = out_channels
+            if idx < len(channels_list) - 1:
+                modules.append(torch.nn.LayerNorm(out_channels))
+                modules.append(torch.nn.SiLU())
+
+        self.net = torch.nn.Sequential(*modules)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return self.net(inputs)

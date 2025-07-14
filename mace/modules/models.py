@@ -11,6 +11,7 @@ import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
+from mace.modules.embeddings import GenericJointEmbedding
 from mace.modules.radial import ZBLBasis
 from mace.tools.scatter import scatter_sum
 
@@ -58,12 +59,22 @@ class MACE(torch.nn.Module):
         correlation: Union[int, List[int]],
         gate: Optional[Callable],
         pair_repulsion: bool = False,
+        apply_cutoff: bool = True,
+        use_reduced_cg: bool = True,
+        use_so3: bool = False,
+        use_agnostic_product: bool = False,
+        use_last_readout_only: bool = False,
+        use_embedding_readout: bool = False,
         distance_transform: str = "None",
+        edge_irreps: Optional[o3.Irreps] = None,
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,
+        embedding_specs: Optional[Dict[str, Any]] = None,
+        oeq_config: Optional[Dict[str, Any]] = None,
         lammps_mliap: Optional[bool] = False,
+        readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
     ):
         super().__init__()
         self.register_buffer(
@@ -81,6 +92,13 @@ class MACE(torch.nn.Module):
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
         self.lammps_mliap = lammps_mliap
+        self.apply_cutoff = apply_cutoff
+        self.edge_irreps = edge_irreps
+        self.use_reduced_cg = use_reduced_cg
+        self.use_agnostic_product = use_agnostic_product
+        self.use_so3 = use_so3
+        self.use_last_readout_only = use_last_readout_only
+
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -89,21 +107,52 @@ class MACE(torch.nn.Module):
             irreps_out=node_feats_irreps,
             cueq_config=cueq_config,
         )
+        embedding_size = node_feats_irreps.count(o3.Irrep(0, 1))
+        if embedding_specs is not None:
+            self.embedding_specs = embedding_specs
+            self.joint_embedding = GenericJointEmbedding(
+                base_dim=embedding_size,
+                embedding_specs=embedding_specs,
+                out_dim=embedding_size,
+            )
+            if use_embedding_readout:
+                self.embedding_readout = LinearReadoutBlock(
+                    node_feats_irreps,
+                    o3.Irreps(f"{len(heads)}x0e"),
+                    cueq_config,
+                    oeq_config,
+                )
+
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
             distance_transform=distance_transform,
+            apply_cutoff=apply_cutoff,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
             self.pair_repulsion_fn = ZBLBasis(p=num_polynomial_cutoff)
             self.pair_repulsion = True
 
-        sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        if not use_so3:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        else:
+            sh_irreps = o3.Irreps.spherical_harmonics(max_ell, p=1)
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
-        interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
+
+        # interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
+        def generate_irreps(l):
+            str_irrep = "+".join([f"1x{i}e+1x{i}o" for i in range(l + 1)])
+            return o3.Irreps(str_irrep)
+
+        sh_irreps_inter = sh_irreps
+        if hidden_irreps.count(o3.Irrep(0, -1)) > 0:
+            sh_irreps_inter = generate_irreps(max_ell)
+        interaction_irreps = (sh_irreps_inter * num_features).sort()[0].simplify()
+        interaction_irreps_first = (sh_irreps * num_features).sort()[0].simplify()
+
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
@@ -117,11 +166,12 @@ class MACE(torch.nn.Module):
             node_feats_irreps=node_feats_irreps,
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
-            target_irreps=interaction_irreps,
+            target_irreps=interaction_irreps_first,
             hidden_irreps=hidden_irreps,
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
             cueq_config=cueq_config,
+            oeq_config=oeq_config,
         )
         self.interactions = torch.nn.ModuleList([inter])
 
@@ -138,15 +188,22 @@ class MACE(torch.nn.Module):
             num_elements=num_elements,
             use_sc=use_sc_first,
             cueq_config=cueq_config,
+            oeq_config=oeq_config,
+            use_reduced_cg=use_reduced_cg,
+            use_agnostic_product=use_agnostic_product,
         )
         self.products = torch.nn.ModuleList([prod])
 
         self.readouts = torch.nn.ModuleList()
-        self.readouts.append(
-            LinearReadoutBlock(
-                hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+        if not use_last_readout_only:
+            self.readouts.append(
+                LinearReadoutBlock(
+                    hidden_irreps,
+                    o3.Irreps(f"{len(heads)}x0e"),
+                    cueq_config,
+                    oeq_config,
+                )
             )
-        )
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
@@ -163,8 +220,10 @@ class MACE(torch.nn.Module):
                 target_irreps=interaction_irreps,
                 hidden_irreps=hidden_irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
+                edge_irreps=edge_irreps,
                 radial_MLP=radial_MLP,
                 cueq_config=cueq_config,
+                oeq_config=oeq_config,
             )
             self.interactions.append(inter)
             prod = EquivariantProductBasisBlock(
@@ -174,23 +233,30 @@ class MACE(torch.nn.Module):
                 num_elements=num_elements,
                 use_sc=True,
                 cueq_config=cueq_config,
+                oeq_config=oeq_config,
+                use_reduced_cg=use_reduced_cg,
+                use_agnostic_product=use_agnostic_product,
             )
             self.products.append(prod)
             if i == num_interactions - 2:
                 self.readouts.append(
-                    NonLinearReadoutBlock(
+                    readout_cls(
                         hidden_irreps_out,
                         (len(heads) * MLP_irreps).simplify(),
                         gate,
                         o3.Irreps(f"{len(heads)}x0e"),
                         len(heads),
                         cueq_config,
+                        oeq_config,
                     )
                 )
-            else:
+            elif not use_last_readout_only:
                 self.readouts.append(
                     LinearReadoutBlock(
-                        hidden_irreps, o3.Irreps(f"{len(heads)}x0e"), cueq_config
+                        hidden_irreps,
+                        o3.Irreps(f"{len(heads)}x0e"),
+                        cueq_config,
+                        oeq_config,
                     )
                 )
 
@@ -238,7 +304,7 @@ class MACE(torch.nn.Module):
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
         if hasattr(self, "pair_repulsion"):
@@ -254,13 +320,33 @@ class MACE(torch.nn.Module):
             pair_node_energy = torch.zeros_like(node_e0)
             pair_energy = torch.zeros_like(e0)
 
+        if hasattr(self, "joint_embedding"):
+            embedding_features: Dict[str, torch.Tensor] = {}
+            for name, _ in self.embedding_specs.items():
+                embedding_features[name] = data[name]
+            node_feats += self.joint_embedding(
+                data["batch"],
+                embedding_features,
+            )
+            if hasattr(self, "embedding_readout"):
+                embedding_node_energy = self.embedding_readout(
+                    node_feats, node_heads
+                ).squeeze()
+                embedding_energy = scatter_sum(
+                    src=embedding_node_energy,
+                    index=data["batch"],
+                    dim=0,
+                    dim_size=num_graphs,
+                )
+                e0 += embedding_energy
+
         # Interactions
         energies = [e0, pair_energy]
         node_energies_list = [node_e0, pair_node_energy]
         node_feats_concat: List[torch.Tensor] = []
 
-        for i, (interaction, product, readout) in enumerate(
-            zip(self.interactions, self.products, self.readouts)
+        for i, (interaction, product) in enumerate(
+            zip(self.interactions, self.products)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -271,6 +357,7 @@ class MACE(torch.nn.Module):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                cutoff=cutoff,
                 first_layer=(i == 0),
                 lammps_class=lammps_class,
                 lammps_natoms=lammps_natoms,
@@ -281,7 +368,12 @@ class MACE(torch.nn.Module):
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
             node_feats_concat.append(node_feats)
-            node_es = readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+
+        for i, readout in enumerate(self.readouts):
+            feat_idx = -1 if len(self.readouts) == 1 else i
+            node_es = readout(node_feats_concat[feat_idx], node_heads)[
+                num_atoms_arange, node_heads
+            ]
             energy = scatter_sum(node_es, data["batch"], dim=0, dim_size=num_graphs)
             energies.append(energy)
             node_energies_list.append(node_es)
@@ -392,7 +484,7 @@ class ScaleShiftMACE(MACE):
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
 
@@ -405,12 +497,33 @@ class ScaleShiftMACE(MACE):
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
+        # Embeddings of additional features
+        if hasattr(self, "joint_embedding"):
+            embedding_features: Dict[str, torch.Tensor] = {}
+            for name, _ in self.embedding_specs.items():
+                embedding_features[name] = data[name]
+            node_feats += self.joint_embedding(
+                data["batch"],
+                embedding_features,
+            )
+            if hasattr(self, "embedding_readout"):
+                embedding_node_energy = self.embedding_readout(
+                    node_feats, node_heads
+                ).squeeze()
+                embedding_energy = scatter_sum(
+                    src=embedding_node_energy,
+                    index=data["batch"],
+                    dim=0,
+                    dim_size=num_graphs,
+                )
+                e0 += embedding_energy
+
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
 
-        for i, (interaction, product, readout) in enumerate(
-            zip(self.interactions, self.products, self.readouts)
+        for i, (interaction, product) in enumerate(
+            zip(self.interactions, self.products)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -421,6 +534,7 @@ class ScaleShiftMACE(MACE):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                cutoff=cutoff,
                 first_layer=(i == 0),
                 lammps_class=lammps_class,
                 lammps_natoms=lammps_natoms,
@@ -431,8 +545,13 @@ class ScaleShiftMACE(MACE):
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
             node_feats_list.append(node_feats)
+
+        for i, readout in enumerate(self.readouts):
+            feat_idx = -1 if len(self.readouts) == 1 else i
             node_es_list.append(
-                readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+                readout(node_feats_list[feat_idx], node_heads)[
+                    num_atoms_arange, node_heads
+                ]
             )
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -505,9 +624,15 @@ class AtomicDipolesMACE(torch.nn.Module):
         atomic_energies: Optional[
             None
         ],  # Just here to make it compatible with energy models, MUST be None
+        apply_cutoff: bool = True,  # pylint: disable=unused-argument
+        use_reduced_cg: bool = True,  # pylint: disable=unused-argument
+        use_so3: bool = False,  # pylint: disable=unused-argument
+        distance_transform: str = "None",  # pylint: disable=unused-argument
         radial_type: Optional[str] = "bessel",
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
+        oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
+        edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
@@ -641,7 +766,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
 
@@ -656,6 +781,7 @@ class AtomicDipolesMACE(torch.nn.Module):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                cutoff=cutoff,
             )
             node_feats = product(
                 node_feats=node_feats,
@@ -710,8 +836,14 @@ class EnergyDipolesMACE(torch.nn.Module):
         correlation: int,
         gate: Optional[Callable],
         atomic_energies: Optional[np.ndarray],
+        apply_cutoff: bool = True,  # pylint: disable=unused-argument
+        use_reduced_cg: bool = True,  # pylint: disable=unused-argument
+        use_so3: bool = False,  # pylint: disable=unused-argument
+        distance_transform: str = "None",  # pylint: disable=unused-argument
         radial_MLP: Optional[List[int]] = None,
         cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
+        oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
+        edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
@@ -866,7 +998,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
 
@@ -883,6 +1015,7 @@ class EnergyDipolesMACE(torch.nn.Module):
                 edge_attrs=edge_attrs,
                 edge_feats=edge_feats,
                 edge_index=data["edge_index"],
+                cutoff=cutoff,
             )
             node_feats = product(
                 node_feats=node_feats,

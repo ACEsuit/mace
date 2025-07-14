@@ -81,6 +81,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--launcher",
+        default="slurm",
+        choices=["slurm", "torchrun", "mpi", "none"],
+        help="How the job was launched",
+    )
     parser.add_argument("--log_level", help="log level", type=str, default="INFO")
 
     parser.add_argument(
@@ -164,6 +170,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=["None", "Agnesi", "Soft"],
     )
     parser.add_argument(
+        "--apply_cutoff",
+        help="apply cutoff to the radial basis functions before MLP",
+        type=str2bool,
+        default=True,
+    )
+    parser.add_argument(
         "--interaction",
         help="name of interaction block",
         type=str,
@@ -174,6 +186,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
+            "RealAgnosticResidualNonLinearInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -186,6 +199,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
+            "RealAgnosticResidualNonLinearInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -193,6 +207,24 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--correlation", help="correlation order at each layer", type=int, default=3
+    )
+    parser.add_argument(
+        "--use_reduced_cg",
+        help="use reduced generalized Clebsch-Gordan coefficients",
+        type=str2bool,
+        default=True,
+    )
+    parser.add_argument(
+        "--use_so3",
+        help="use SO(3) irreps instead of O(3) irreps",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--use_agnostic_product",
+        help="use element agnostic product",
+        type=str2bool,
+        default=False,
     )
     parser.add_argument(
         "--num_interactions", help="number of interactions", type=int, default=2
@@ -212,6 +244,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hidden_irreps",
         help="irreps for hidden node states",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--edge_irreps",
+        help="irreps for edge states",
         type=str,
         default=None,
     )
@@ -482,6 +520,47 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=DefaultKeys.CHARGES.value,
     )
     parser.add_argument(
+        "--elec_temp_key",
+        help="Key of electronic temperature in training xyz",
+        type=str,
+        default=DefaultKeys.ELEC_TEMP.value,
+    )
+    parser.add_argument(
+        "--total_spin_key",
+        help="Key of total spin in training xyz",
+        type=str,
+        default=DefaultKeys.TOTAL_SPIN.value,
+    )
+    parser.add_argument(
+        "--total_charge_key",
+        help="Key of total charge in training xyz",
+        type=str,
+        default=DefaultKeys.TOTAL_CHARGE.value,
+    )
+    parser.add_argument(
+        "--embedding_specs",
+        help=(
+            "List of feature‐spec dictionaries. "
+            "embedding_specs:\n"
+            "  - name: total_spin\n"
+            "    type: categorical\n"
+            "    per: graph\n"
+            "    num_classes: 101\n"
+            "    emb_dim: 64\n"
+            "  - name: total_charge\n"
+            "    type: categorical\n"
+            "    per: graph\n"
+            "    num_classes: 201\n"
+            "    emb_dim: 64\n"
+            "  - name: temperature\n"
+            "    type: continuous\n"
+            "    per: graph\n"
+            "    in_dim: 1\n"
+            "    emb_dim: 32\n"
+        ),
+        default=None,
+    )
+    parser.add_argument(
         "--skip_evaluate_heads",
         help="Comma-separated list of heads to skip during final evaluation",
         type=str,
@@ -726,6 +805,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
+    parser.add_argument(
+        "--only_cueq",
+        help="Only use cuequivariance acceleration",
+        type=str2bool,
+        default=False,
+    )
     # options for using Weights and Biases for experiment tracking
     # to install see https://wandb.ai
     parser.add_argument(
@@ -761,7 +846,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--wandb_log_hypers",
         help="The hyperparameters to log in Weights and Biases",
-        type=list,
+        nargs="+",
         default=[
             "num_channels",
             "max_L",
