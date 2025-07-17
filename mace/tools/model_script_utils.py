@@ -37,6 +37,7 @@ def configure_model(
         "virials": compute_virials,
         "stress": compute_stress,
         "dipoles": args.compute_dipole,
+        "polarizabilities": args.compute_polarizability,
     }
     logging.info(
         f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
@@ -65,7 +66,9 @@ def configure_model(
                 )
         args.std = atomic_inter_scale
 
-    elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
+    elif (args.mean is None or args.std is None) and (
+        args.model not in ("AtomicDipolesMACE", "AtomicDielectricMACE")
+    ):
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
         )
@@ -268,6 +271,28 @@ def _build_model(
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
         )
+
+    if args.model == "AtomicDielectricMACE":
+        args.error_table = "DipolePolarRMSE"
+        # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
+        assert (
+            args.loss == "dipole_polar"
+        ), "Use dipole_polar loss with AtomicDielectricMACE model"
+        assert args.error_table in (
+            "DipoleRMSE",
+            "DipolePolarRMSE",
+        ), "Use error_table DipoleRMSE with AtomicDielectricMACE model"
+        return modules.AtomicDielectricMACE(
+            **model_config,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[
+                "RealAgnosticInteractionBlock"
+            ],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            use_polarizability=True,
+        )
+
     if args.model == "EnergyDipolesMACE":
         assert (
             args.loss == "energy_forces_dipole"
