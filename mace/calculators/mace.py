@@ -386,7 +386,11 @@ class MACECalculator(Calculator):
                 ret_tensors["forces"][i] = out["forces"].detach()
                 if out["stress"] is not None:
                     ret_tensors["stress"][i] = out["stress"].detach()
-            if self.model_type in ["DipoleMACE", "EnergyDipoleMACE", "DipolePolarizabilityMACE"]:
+            if self.model_type in [
+                "DipoleMACE",
+                "EnergyDipoleMACE",
+                "DipolePolarizabilityMACE",
+            ]:
                 ret_tensors["dipole"][i] = out["dipole"].detach()
             if self.model_type == "DipolePolarizabilityMACE":
                 ret_tensors["charges"][i] = out["charges"].detach()
@@ -461,7 +465,11 @@ class MACECalculator(Calculator):
                     .numpy()
                     * self.energy_units_to_eV
                 )
-        if self.model_type in ["DipoleMACE", "EnergyDipoleMACE","DipolePolarizabilityMACE"]:
+        if self.model_type in [
+            "DipoleMACE",
+            "EnergyDipoleMACE",
+            "DipolePolarizabilityMACE",
+        ]:
             self.results["dipole"] = (
                 torch.mean(ret_tensors["dipole"], dim=0).cpu().numpy()
             )
@@ -483,6 +491,7 @@ class MACECalculator(Calculator):
             self.results["polarizability_sh"] = (
                 torch.mean(ret_tensors["polarizability_sh"], dim=0).cpu().numpy()
             )
+
     def get_dielectric_derivatives(self, atoms=None):
         if atoms is None and self.atoms is None:
             raise ValueError("atoms not set")
@@ -517,7 +526,7 @@ class MACECalculator(Calculator):
             return dipole_derivatives[0]
         del outputs, batch, atoms
         return dipole_derivatives
-    
+
     def get_hessian(self, atoms=None):
         if atoms is None and self.atoms is None:
             raise ValueError("atoms not set")
