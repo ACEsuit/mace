@@ -116,6 +116,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "TotalMAE",
             "DipoleRMSE",
             "DipoleMAE",
+            "DipolePolarRMSE",
             "EnergyDipoleRMSE",
         ],
         default="PerAtomRMSE",
@@ -132,6 +133,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "ScaleShiftMACE",
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
+            "AtomicDielectricMACE",
             "EnergyDipolesMACE",
         ],
     )
@@ -303,6 +305,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Select True to compute forces",
         type=str2bool,
         default=True,
+    )
+    parser.add_argument(
+        "--compute_polarizability",
+        help="Select True to compute polarizability",
+        action="store_true",
+        default=str2bool,
+    )
+    parser.add_argument(
+        "--compute_atomic_dipole",
+        help="Select True to compute dipoles",
+        action="store_true",
+        default=str2bool,
     )
 
     # Dataset
@@ -508,6 +522,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=DefaultKeys.DIPOLE.value,
     )
     parser.add_argument(
+        "--polarizability_key",
+        help="Key of polarizability in training xyz",
+        type=str,
+        default=DefaultKeys.POLARIZABILITY.value,
+    )
+    parser.add_argument(
         "--head_key",
         help="Key of head in training xyz",
         type=str,
@@ -579,6 +599,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "virials",
             "stress",
             "dipole",
+            "dipole_polar",
             "huber",
             "universal",
             "energy_forces_dipole",
@@ -639,6 +660,20 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         dest="swa_dipole_weight",
+    )
+    parser.add_argument(
+        "--swa_polarizability_weight",
+        "--stage_two_polarizability_weight",
+        help="weight of polarizability after starting Stage Two (previously called swa)",
+        type=float,
+        default=1.0,
+        dest="swa_polarizability_weight",
+    )
+    parser.add_argument(
+        "--polarizability_weight",
+        help="weight of polarizability loss",
+        type=float,
+        default=1.0,
     )
     parser.add_argument(
         "--config_type_weights",
@@ -966,6 +1001,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="Key of reference dipoles in training xyz",
         type=str,
         default=DefaultKeys.DIPOLE.value,
+    )
+    parser.add_argument(
+        "--polarizability_key",
+        help="Key of polarizability in training xyz",
+        type=str,
+        default=DefaultKeys.POLARIZABILITY.value,
     )
     parser.add_argument(
         "--charges_key",

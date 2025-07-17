@@ -38,7 +38,7 @@ class AtomicData(torch_geometric.data.Data):
     virials: torch.Tensor
     dipole: torch.Tensor
     charges: torch.Tensor
-    polarizability:torch.Tensor
+    polarizability: torch.Tensor
     total_charge: torch.Tensor
     total_spin: torch.Tensor
     weight: torch.Tensor
@@ -234,10 +234,13 @@ class AtomicData(torch_geometric.data.Data):
         )
         polarizability_weight = (
             torch.tensor(
-                config.property_weights.get("polarizability"), dtype=torch.get_default_dtype(),
+                config.property_weights.get("polarizability"),
+                dtype=torch.get_default_dtype(),
             )
             if config.property_weights.get("polarizability") is not None
-            else torch.tensor(1.0, dtype=torch.get_default_dtype()) ### Might need to be updated
+            else torch.tensor(
+                1.0, dtype=torch.get_default_dtype()
+            )  ### Might need to be updated
         )
         forces = (
             torch.tensor(
@@ -301,7 +304,7 @@ class AtomicData(torch_geometric.data.Data):
             if config.properties.get("total_charge") is not None
             else torch.tensor(0.0, dtype=torch.get_default_dtype())
         )
-        
+
         polarizability = (
             torch.tensor(
                 config.properties.get("polarizability"), dtype=torch.get_default_dtype()
@@ -309,7 +312,7 @@ class AtomicData(torch_geometric.data.Data):
             if config.properties.get("polarizability") is not None
             else torch.zeros(1, 3, 3, dtype=torch.get_default_dtype())
         )
-                
+
         total_spin = (
             torch.tensor(
                 config.properties.get("total_spin"), dtype=torch.get_default_dtype()
