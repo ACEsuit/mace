@@ -7,7 +7,10 @@
 
 import os
 
-import hostlist
+try:
+    import hostlist
+except ImportError:
+    hostlist = None  # Only needed on SLURM systems
 
 
 class DistributedEnvironment:
@@ -20,18 +23,26 @@ class DistributedEnvironment:
         self.rank = int(os.environ["RANK"])
 
     def _setup_distr_env(self):
-        hostname = hostlist.expand_hostlist(os.environ["SLURM_JOB_NODELIST"])[0]
-        os.environ["MASTER_ADDR"] = hostname
-        os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "33333")
-        os.environ["WORLD_SIZE"] = os.environ.get(
-            "SLURM_NTASKS",
-            str(
-                int(os.environ["SLURM_NTASKS_PER_NODE"])
-                * int(os.environ["SLURM_NNODES"])
-            ),
-        )
-        os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
-        os.environ["RANK"] = os.environ["SLURM_PROCID"]
+        if "SLURM_JOB_NODELIST" in os.environ:
+            hostname = hostlist.expand_hostlist(os.environ["SLURM_JOB_NODELIST"])[0]
+            os.environ["MASTER_ADDR"] = hostname
+            os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "33333")
+            os.environ["WORLD_SIZE"] = os.environ.get(
+                "SLURM_NTASKS",
+                str(
+                    int(os.environ["SLURM_NTASKS_PER_NODE"])
+                    * int(os.environ["SLURM_NNODES"])
+                ),
+            )
+            os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
+            os.environ["RANK"] = os.environ["SLURM_PROCID"]
+        else:
+            # Assume local manual run with torchrun
+            os.environ.setdefault("MASTER_ADDR", "localhost")
+            os.environ.setdefault("MASTER_PORT", "33333")
+            os.environ.setdefault("WORLD_SIZE", "1")
+            os.environ.setdefault("LOCAL_RANK", "0")
+            os.environ.setdefault("RANK", "0")
 
     def __repr__(self):
         return (
