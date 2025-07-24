@@ -108,7 +108,7 @@ def configure_model(
             model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
-        args.model = "FoundationMACE"
+        args.model = "FoundationMACELES" if args.model == "MACELES" else "FoundationMACE"
         model_config_foundation["heads"] = heads
         model_config = model_config_foundation
 
@@ -259,6 +259,12 @@ def _build_model(
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)
+    if args.model == "FoundationMACELES":
+        from mace.modules.extensions import MACELES
+        return MACELES(
+            les_arguments=args.les_arguments,
+            **model_config_foundation,
+        )
     if args.model == "ScaleShiftBOTNet":
         # say it is deprecated
         raise RuntimeError("ScaleShiftBOTNet is deprecated, use MACE instead")
