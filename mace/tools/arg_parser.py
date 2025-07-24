@@ -6,7 +6,7 @@
 
 import argparse
 import os
-from typing import Optional
+from typing import Optional, Dict
 
 from .default_keys import DefaultKeys
 
@@ -130,6 +130,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "BOTNet",
             "MACE",
             "ScaleShiftMACE",
+            "MACELES",
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
             "EnergyDipolesMACE",
@@ -394,6 +395,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--statistics_file",
         help="json file containing statistics of training set",
         type=str,
+        default=None,
+        required=False,
+    )
+    parser.add_argument(
+        "--les_arguments",
+        help="Path to the LES arguments file",
+        type=read_yaml,
         default=None,
         required=False,
     )
@@ -1072,3 +1080,18 @@ def str2bool(value):
     if value.lower() in ("no", "false", "f", "n", "0"):
         return False
     raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
+def read_yaml(value: str) -> Dict:
+    from pathlib import Path
+    import yaml
+
+    if not Path(value).is_file():
+        raise argparse.ArgumentTypeError(f"File {value} does not exist.")
+    with open(value, "r") as file:
+        try:
+            return yaml.safe_load(file)
+        except yaml.YAMLError as exc:
+            raise argparse.ArgumentTypeError(
+                f"Error parsing YAML file {value}: {exc}"
+            ) from exc
