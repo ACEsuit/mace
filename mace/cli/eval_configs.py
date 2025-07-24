@@ -53,6 +53,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
     )
     parser.add_argument(
+        "--compute_bec",
+        help="compute BEC",,
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--return_contributions",
         help="model outputs energy contributions for each body order, only supported for MACE, not ScaleShiftMACE",
         action="store_true",
@@ -115,6 +121,10 @@ def run(args: argparse.Namespace) -> None:
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+    if model.__class__.__name__ != 'MACELES' and args.compute_bec:
+        raise ValueError(
+            "BEC can only be computed with MACELES model. "
+        )
     if args.enable_cueq:
         print("Converting models to CuEq for acceleration")
         model = run_e3nn_to_cueq(model, device=device)
@@ -157,14 +167,30 @@ def run(args: argparse.Namespace) -> None:
     descriptors_list = []
     node_energies_list = []
     stresses_list = []
+    bec_list = []
+    qs_list = []
     forces_collection = []
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(batch.to_dict(), compute_stress=args.compute_stress)
+        output = model(batch.to_dict(), compute_stress=args.compute_stress, compute_bec=args.compute_bec)
         energies_list.append(torch_tools.to_numpy(output["energy"]))
         if args.compute_stress:
             stresses_list.append(torch_tools.to_numpy(output["stress"]))
+        if args.compute_bec:
+            becs = np.split(
+                torch_tools.to_numpy(output["BEC"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            bec_list.append(becs[:-1])  # drop last as its empty
+
+            qs = np.split(
+                torch_tools.to_numpy(output["latent_charges"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            qs_list.append(qs[:-1])  # drop last as its empty
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
@@ -230,6 +256,14 @@ def run(args: argparse.Namespace) -> None:
         stresses = np.concatenate(stresses_list, axis=0)
         assert len(atoms_list) == stresses.shape[0]
 
+    if args.compute_bec:
+        bec_list = [
+            becs for sublist in bec_list for becs in sublist
+        ]
+        qs_list = [
+            qs for sublist in qs_list for qs in sublist
+        ]
+
     if args.return_contributions:
         contributions = np.concatenate(contributions_list, axis=0)
         assert len(atoms_list) == contributions.shape[0]
@@ -250,6 +284,10 @@ def run(args: argparse.Namespace) -> None:
 
         if args.compute_stress:
             atoms.info[args.info_prefix + "stress"] = stresses[i]
+
+        if args.compute_bec:
+            atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(-1, 9)
+            atoms.arrays[args.info_prefix + "latent_charges"] = qs_list[i]
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
