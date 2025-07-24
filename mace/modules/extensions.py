@@ -1,36 +1,13 @@
-from mace.modules.models import ScaleShiftMACE
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Dict, List, Optional
 
-import numpy as np
 import torch
-from e3nn import o3
 from e3nn.util.jit import compile_mode
 
-from mace.modules.embeddings import GenericJointEmbedding
-from mace.modules.radial import ZBLBasis
-from mace.tools.scatter import scatter_sum
-
-from mace.modules.blocks import (
-    AtomicEnergiesBlock,
-    EquivariantProductBasisBlock,
-    InteractionBlock,
-    LinearDipoleReadoutBlock,
-    LinearNodeEmbeddingBlock,
-    LinearReadoutBlock,
-    NonLinearDipoleReadoutBlock,
-    NonLinearReadoutBlock,
-    RadialEmbeddingBlock,
-    ScaleShiftBlock,
-)
-from mace.modules.utils import (
-    compute_fixed_charge_dipole,
-    get_atomic_virials_stresses,
-    get_edge_vectors_and_lengths,
-    get_outputs,
-    get_symmetric_displacement,
-    prepare_graph,
-)
+from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock
+from mace.modules.models import ScaleShiftMACE
+from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
 from mace.modules.wrapper_ops import CuEquivarianceConfig
+from mace.tools.scatter import scatter_sum
 
 
 def _copy_mace_readout(
@@ -45,26 +22,26 @@ def _copy_mace_readout(
             irrep_out=mace_readout.linear.irreps_out,  # type:ignore
             cueq_config=cueq_config,
         )
-    elif isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
+    if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
         return NonLinearReadoutBlock(
             irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
             MLP_irreps=mace_readout.hidden_irreps,
-            gate=mace_readout.non_linearity._modules["acts"][0].f,  # type:ignore
+            gate=mace_readout.non_linearity._modules["acts"][  # pylint: disable=W0212
+                0
+            ].f,
             irrep_out=mace_readout.linear_2.irreps_out,  # type:ignore
             num_heads=mace_readout.num_heads,
             cueq_config=cueq_config,
         )
-    else:
-        raise TypeError("Unsupported readout type.")
+    raise TypeError("Unsupported readout type.")
 
 
 def _get_readout_input_dim(block: torch.nn.Module) -> int:
     if isinstance(block, LinearReadoutBlock):
         return block.linear.irreps_in.dim  # type:ignore
-    elif isinstance(block, NonLinearReadoutBlock):  # type:ignore
+    if isinstance(block, NonLinearReadoutBlock):  # type:ignore
         return block.linear_1.irreps_in.dim  # type:ignore
-    else:
-        raise TypeError("Unsupported readout type for input dimension retrieval.")
+    raise TypeError("Unsupported readout type for input dimension retrieval.")
 
 
 @compile_mode("script")
@@ -73,10 +50,10 @@ class MACELES(ScaleShiftMACE):
         super().__init__(**kwargs)
         try:
             from les import Les
-        except:
+        except ImportError as exc:
             raise ImportError(
                 "Cannot import 'les'. Please install the 'les' library from https://github.com/ChengUCB/les."
-            )
+            ) from exc
         if les_arguments is None:
             les_arguments = {"use_atomwise": False}
         self.compute_bec = les_arguments.get("compute_bec", False)
@@ -103,8 +80,8 @@ class MACELES(ScaleShiftMACE):
         compute_hessian: bool = False,
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
-        compute_bec: bool = False,
         lammps_mliap: bool = False,
+        compute_bec: bool = False,
         **kwargs,
     ) -> Dict[str, Optional[torch.Tensor]]:
         ctx = prepare_graph(

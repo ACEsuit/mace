@@ -1,26 +1,18 @@
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
 
 import ase.io
 import numpy as np
 import pytest
-import torch
 from ase.atoms import Atoms
 from mace.tools.arg_parser import build_default_arg_parser
 from mace.cli.run_train import run as mace_run
-from mace.calculators import MACECalculator, mace_mp
+from mace.calculators import MACECalculator
 
 try:
-    import cuequivariance as cue  # pylint: disable=unused-import
-
-    CUET_AVAILABLE = True
+    from les import Les
+    LES_AVAILABLE = True
 except ImportError:
-    CUET_AVAILABLE = False
+    LES_AVAILABLE = False
 
-run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
 
 @pytest.fixture(name="fitting_configs")
@@ -80,7 +72,7 @@ _mace_params = {
     "use_reduced_cg": False,
 }
 
-
+@pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
 def test_run_train(tmp_path, fitting_configs):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
@@ -129,7 +121,7 @@ def test_run_train(tmp_path, fitting_configs):
 
     assert np.allclose(Es, ref_Es)
 
-
+@pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
 def test_run_train_with_mp(tmp_path, fitting_configs):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
