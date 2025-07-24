@@ -6,7 +6,7 @@
 
 import argparse
 import os
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 from .default_keys import DefaultKeys
 
@@ -1084,11 +1084,12 @@ def str2bool(value):
 
 def read_yaml(value: str) -> Dict:
     from pathlib import Path
+
     import yaml
 
     if not Path(value).is_file():
         raise argparse.ArgumentTypeError(f"File {value} does not exist.")
-    with open(value, "r") as file:
+    with open(value, "r", encoding="utf-8") as file:
         try:
             return yaml.safe_load(file)
         except yaml.YAMLError as exc:

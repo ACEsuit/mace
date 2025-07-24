@@ -100,7 +100,10 @@ def configure_model(
 
         args.max_L = model_config_foundation["hidden_irreps"].lmax
 
-        if args.model == "ScaleShiftMACE" or model_foundation.__class__.__name__ == "ScaleShiftMACE":
+        if (
+            args.model == "ScaleShiftMACE"
+            or model_foundation.__class__.__name__ == "ScaleShiftMACE"
+        ):
             model_config_foundation["atomic_inter_shift"] = (
                 _determine_atomic_inter_shift(args.mean, heads)
             )
@@ -108,7 +111,9 @@ def configure_model(
             model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
-        args.model = "FoundationMACELES" if args.model == "MACELES" else "FoundationMACE"
+        args.model = (
+            "FoundationMACELES" if args.model == "MACELES" else "FoundationMACE"
+        )
         model_config_foundation["heads"] = heads
         model_config = model_config_foundation
 
@@ -261,6 +266,7 @@ def _build_model(
         return modules.ScaleShiftMACE(**model_config_foundation)
     if args.model == "FoundationMACELES":
         from mace.modules.extensions import MACELES
+
         return MACELES(
             les_arguments=args.les_arguments,
             **model_config_foundation,
