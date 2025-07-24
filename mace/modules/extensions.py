@@ -41,8 +41,8 @@ def _copy_mace_readout(
     """
     if isinstance(mace_readout, LinearReadoutBlock):
         return LinearReadoutBlock(
-            irreps_in=mace_readout.linear.irreps_in, # type:ignore
-            irrep_out=mace_readout.linear.irreps_out, # type:ignore
+            irreps_in=mace_readout.linear.irreps_in,  # type:ignore
+            irrep_out=mace_readout.linear.irreps_out,  # type:ignore
             cueq_config=cueq_config,
         )
     elif isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
@@ -65,6 +65,7 @@ def _get_readout_input_dim(block: torch.nn.Module) -> int:
         return block.linear_1.irreps_in.dim  # type:ignore
     else:
         raise TypeError("Unsupported readout type for input dimension retrieval.")
+
 
 @compile_mode("script")
 class MACELES(ScaleShiftMACE):
@@ -92,7 +93,8 @@ class MACELES(ScaleShiftMACE):
             )
 
     def forward(
-        self, data: Dict[str, torch.Tensor],
+        self,
+        data: Dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -105,7 +107,6 @@ class MACELES(ScaleShiftMACE):
         lammps_mliap: bool = False,
         **kwargs,
     ) -> Dict[str, Optional[torch.Tensor]]:
-        # Setup
         ctx = prepare_graph(
             data,
             compute_virials=compute_virials,
@@ -113,6 +114,7 @@ class MACELES(ScaleShiftMACE):
             compute_displacement=compute_displacement,
             lammps_mliap=lammps_mliap,
         )
+
         is_lammps = ctx.is_lammps
         num_atoms_arange = ctx.num_atoms_arange
         num_graphs = ctx.num_graphs
@@ -134,26 +136,25 @@ class MACELES(ScaleShiftMACE):
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
         ).to(
             vectors.dtype
-        )  # [n_graphs, n_heads]
+        )  # [n_graphs, num_heads]
+
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
             )
             if is_lammps:
                 pair_node_energy = pair_node_energy[: lammps_natoms[0]]
-            pair_energy = scatter_sum(
-                src=pair_node_energy, index=data["batch"], dim=-1, dim_size=num_graphs
-            )  # [n_graphs,]
         else:
             pair_node_energy = torch.zeros_like(node_e0)
-            pair_energy = torch.zeros_like(e0)
 
+        # Embeddings of additional features
         if hasattr(self, "joint_embedding"):
             embedding_features: Dict[str, torch.Tensor] = {}
             for name, _ in self.embedding_specs.items():
@@ -175,10 +176,9 @@ class MACELES(ScaleShiftMACE):
                 e0 += embedding_energy
 
         # Interactions
-        energies = [e0, pair_energy]
-        node_energies_list = [node_e0, pair_node_energy]
-        node_qs_list = []
-        node_feats_concat: List[torch.Tensor] = []
+        node_es_list = [pair_node_energy]
+        node_feats_list: List[torch.Tensor] = []
+        node_qs_list: List[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)
@@ -202,39 +202,40 @@ class MACELES(ScaleShiftMACE):
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
-            node_feats_concat.append(node_feats)
+            node_feats_list.append(node_feats)
 
         for i, (readout, les_readout) in enumerate(
             zip(self.readouts, self.les_readouts)
         ):
             feat_idx = -1 if len(self.readouts) == 1 else i
-            node_es = readout(node_feats_concat[feat_idx], node_heads)[
+            node_es = readout(node_feats_list[feat_idx], node_heads)[
                 num_atoms_arange, node_heads
             ]
-            node_qs = les_readout(node_feats_concat[feat_idx], node_heads)[
+            node_qs = les_readout(node_feats_list[feat_idx], node_heads)[
                 num_atoms_arange, node_heads
             ]  # type:ignore
             node_qs_list.append(node_qs)
-            energy = scatter_sum(node_es, data["batch"], dim=0, dim_size=num_graphs)
-            energies.append(energy)
-            node_energies_list.append(node_es)
+            node_es_list.append(node_es)
 
-        contributions = torch.stack(energies, dim=-1)
-        total_energy = torch.sum(contributions, dim=-1)
-        node_energy = torch.sum(torch.stack(node_energies_list, dim=-1), dim=-1)
-        node_feats_out = torch.cat(node_feats_concat, dim=-1)
+        node_feats_out = torch.cat(node_feats_list, dim=-1)
+        node_inter_es = torch.sum(torch.stack(node_es_list, dim=0), dim=0)
+        node_inter_es = self.scale_shift(node_inter_es, node_heads)
+        inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
+
+        total_energy = e0 + inter_e
+        node_energy = node_e0.clone().double() + node_inter_es.clone().double()
 
         les_q = torch.sum(torch.stack(node_qs_list, dim=1), dim=1)
         les_result = self.les(
             latent_charges=les_q,
-            positions=data['positions'],
-            cell=data['cell'].view(-1, 3, 3),
+            positions=positions,
+            cell=cell.view(-1, 3, 3),
             batch=data["batch"],
             compute_energy=True,
             compute_bec=(compute_bec or self.compute_bec),
             bec_output_index=self.bec_output_index,
-            )
-        les_energy_opt = les_result['E_lr']   
+        )
+        les_energy_opt = les_result["E_lr"]
         if les_energy_opt is None:
             les_energy = torch.zeros_like(total_energy)
         else:
@@ -242,7 +243,7 @@ class MACELES(ScaleShiftMACE):
         total_energy += les_energy
 
         forces, virials, stress, hessian, edge_forces = get_outputs(
-            energy=total_energy,
+            energy=inter_e + les_energy,
             positions=positions,
             displacement=displacement,
             vectors=vectors,
@@ -269,7 +270,6 @@ class MACELES(ScaleShiftMACE):
         return {
             "energy": total_energy,
             "node_energy": node_energy,
-            "contributions": contributions,
             "forces": forces,
             "edge_forces": edge_forces,
             "virials": virials,
@@ -281,5 +281,5 @@ class MACELES(ScaleShiftMACE):
             "node_feats": node_feats_out,
             "les_energy": les_energy,
             "latent_charges": les_q,
-            "BEC": les_result['BEC'],
+            "BEC": les_result["BEC"],
         }

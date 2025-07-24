@@ -53,33 +53,6 @@ def fixture_fitting_configs():
     return fit_configs
 
 
-@pytest.fixture(name="pretraining_configs")
-def fixture_pretraining_configs():
-    configs = []
-    for _ in range(10):
-        atoms = Atoms(
-            numbers=[8, 1, 1],
-            positions=np.random.rand(3, 3) * 3,
-            cell=[5, 5, 5],
-            pbc=[True] * 3,
-        )
-        atoms.info["REF_energy"] = np.random.normal(0, 1)
-        atoms.arrays["REF_forces"] = np.random.normal(0, 1, size=(3, 3))
-        atoms.info["REF_stress"] = np.random.normal(0, 1, size=6)
-        configs.append(atoms)
-    configs.append(
-        Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3),
-    )
-    configs.append(
-        Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3)
-    )
-    configs[-2].info["REF_energy"] = -2.0
-    configs[-2].info["config_type"] = "IsolatedAtom"
-    configs[-1].info["REF_energy"] = -4.0
-    configs[-1].info["config_type"] = "IsolatedAtom"
-    return configs
-
-
 _mace_params = {
     "name": "MACE",
     "valid_fraction": 0.05,
@@ -115,7 +88,6 @@ def test_run_train(tmp_path, fitting_configs):
     mace_params["checkpoints_dir"] = str(tmp_path)
     mace_params["model_dir"] = str(tmp_path)
     mace_params["train_file"] = tmp_path / "fit.xyz"
-
     args = build_default_arg_parser().parse_args(
         [f"--{k}={v}" if v is not None else f"--{k}" for k, v in mace_params.items()]
     )
@@ -130,30 +102,85 @@ def test_run_train(tmp_path, fitting_configs):
         Es.append(at.get_potential_energy())
 
     print("Es", Es)
-    # from a run on 04/06/2024 on stress_bugfix 967f0bfb6490086599da247874b24595d149caa7
     ref_Es = [
-        0.0,
-        0.0,
-        -0.039181344585828524,
-        -0.0915223395136733,
-        -0.14953484236456582,
-        -0.06662480820063998,
-        -0.09983737353050133,
-        0.12477442296789745,
-        -0.06486086271762856,
-        -0.1460607988519944,
-        0.12886334908465508,
-        -0.14000990081920373,
-        -0.05319886578958313,
-        0.07780520158391,
-        -0.08895480281886901,
-        -0.15474719614734422,
-        0.007756765146527644,
-        -0.044879267197498685,
-        -0.036065736712447574,
-        -0.24413743841886623,
-        -0.0838104612106429,
-        -0.14751978636626545,
+        0.004919160731848143,
+        0.5906680240792959,
+        0.47887544882572264,
+        0.4176002467254094,
+        0.5606673227439406,
+        0.40181714730443363,
+        0.3367534132795259,
+        0.27118917957971056,
+        0.47967529915910134,
+        0.32077479180773283,
+        1.2865402405977537,
+        0.3472478715875782,
+        0.427734507004752,
+        0.8092185237225293,
+        0.38348242384362774,
+        0.14448973657513398,
+        0.5650118900854595,
+        0.429029669763921,
+        0.4837945154901776,
+        0.2244894146891574,
+        0.3667896493444026,
+        0.23811703879534651,
+    ]
+
+    assert np.allclose(Es, ref_Es)
+
+
+def test_run_train_with_mp(tmp_path, fitting_configs):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["foundation_model"] = "small"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float64"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["multiheads_finetuning"] = False
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    args = build_default_arg_parser().parse_args(
+        [f"--{k}={v}" if v is not None else f"--{k}" for k, v in mace_params.items()]
+    )
+
+    mace_run(args)
+
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+    ref_Es = [
+        1.9041867483100463,
+        0.9795927664122093,
+        0.6143645372728241,
+        0.540857367104403,
+        0.2175412746398953,
+        0.5204824602823621,
+        0.42691720944924566,
+        0.47462694450178505,
+        0.5809854217525379,
+        0.3586733195403562,
+        3.755376867799749,
+        0.6308930408544482,
+        0.5298001079484215,
+        0.7923006837586871,
+        0.7015445400430391,
+        0.5558430181089493,
+        0.6546531810601435,
+        0.7309926712585781,
+        0.6821026693847355,
+        0.30473441126045364,
+        0.5945371974398417,
+        0.6601282822585335,
     ]
 
     assert np.allclose(Es, ref_Es)
