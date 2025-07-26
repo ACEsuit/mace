@@ -1,18 +1,27 @@
+import argparse
+import importlib.util
+from pathlib import Path
 
 import ase.io
 import numpy as np
 import pytest
+import torch
 from ase.atoms import Atoms
-from mace.tools.arg_parser import build_default_arg_parser
-from mace.cli.run_train import run as mace_run
+from e3nn import o3
+
 from mace.calculators import MACECalculator
+from mace.cli.eval_configs import run as mace_eval_configs_run
+from mace.cli.run_train import run as mace_run
+from mace.modules import interaction_classes
+from mace.modules.extensions import MACELES
+from mace.modules.models import ScaleShiftMACE
+from mace.tools.arg_parser import build_default_arg_parser
+from mace.tools.torch_tools import default_dtype
 
-try:
-    from les import Les
+if (spec := importlib.util.find_spec("les")) is not None:
     LES_AVAILABLE = True
-except ImportError:
+else:
     LES_AVAILABLE = False
-
 
 
 @pytest.fixture(name="fitting_configs")
@@ -72,6 +81,7 @@ _mace_params = {
     "use_reduced_cg": False,
 }
 
+
 @pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
 def test_run_train(tmp_path, fitting_configs):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
@@ -120,6 +130,7 @@ def test_run_train(tmp_path, fitting_configs):
     ]
 
     assert np.allclose(Es, ref_Es)
+
 
 @pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
 def test_run_train_with_mp(tmp_path, fitting_configs):
@@ -176,3 +187,147 @@ def test_run_train_with_mp(tmp_path, fitting_configs):
     ]
 
     assert np.allclose(Es, ref_Es)
+
+
+MODEL_CONFIG = dict(
+    r_max=5,
+    num_bessel=8,
+    num_polynomial_cutoff=6,
+    max_ell=2,
+    interaction_cls=interaction_classes["RealAgnosticResidualInteractionBlock"],
+    interaction_cls_first=interaction_classes["RealAgnosticResidualInteractionBlock"],
+    num_interactions=5,
+    num_elements=2,
+    hidden_irreps=o3.Irreps("32x0e + 32x1o"),
+    MLP_irreps=o3.Irreps("16x0e"),
+    gate=torch.nn.functional.silu,
+    atomic_energies=np.zeros(2),
+    avg_num_neighbors=8,
+    atomic_numbers=[1, 8],
+    correlation=3,
+    radial_type="bessel",
+    atomic_inter_shift=0.0,
+    atomic_inter_scale=1.0,
+)
+
+
+@pytest.fixture
+def mace_model_path(tmp_path: Path) -> Path:
+    """Create and save a standard ScaleShiftMACE model."""
+    with default_dtype(torch.float32):
+        model = ScaleShiftMACE(**MODEL_CONFIG)
+        path = tmp_path / "mace.model"
+        torch.save(model, path)
+    return path
+
+
+@pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
+@pytest.fixture
+def maceles_model_path(tmp_path: Path) -> Path:
+    """Create and save a MACELES model."""
+    with default_dtype(torch.float32):
+        model = MACELES(**MODEL_CONFIG)
+        path = tmp_path / "maceles.model"
+        torch.save(model, path)
+    return path
+
+
+@pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
+def test_run_eval_with_bec(tmp_path: Path, maceles_model_path: Path, fitting_configs):
+    """Tests running evaluation with BEC computation enabled."""
+    output_path = tmp_path / "output.xyz"
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+    args = argparse.Namespace(
+        model=str(maceles_model_path),
+        configs=str(tmp_path / "fit.xyz"),
+        output=str(output_path),
+        device="cpu",
+        default_dtype="float32",
+        batch_size=1,
+        compute_stress=False,
+        compute_bec=True,
+        enable_cueq=False,
+        return_contributions=False,
+        return_descriptors=False,
+        return_node_energies=False,
+        info_prefix="MACE_",
+        head=None,
+    )
+    mace_eval_configs_run(args)
+
+    assert output_path.exists()
+    output_atoms = ase.io.read(str(output_path), index=":")
+    assert len(output_atoms) == len(fitting_configs)
+
+    for at in output_atoms:
+        assert isinstance(at, Atoms)
+        assert "MACE_BEC" in at.arrays
+        assert "MACE_latent_charges" in at.arrays
+        assert at.arrays["MACE_BEC"].shape == (len(at), 9)
+        assert at.arrays["MACE_latent_charges"].shape == ((len(at),))
+
+
+def test_run_eval_fail_with_wrong_model(
+    tmp_path: Path, mace_model_path: Path, fitting_configs
+):
+    # Test script fails if BEC is requested with a non-MACELES model
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+    args = argparse.Namespace(
+        model=str(mace_model_path),
+        configs=str(tmp_path / "fit.xyz"),
+        output=str(tmp_path / "output.xyz"),
+        device="cpu",
+        default_dtype="float32",
+        batch_size=1,
+        compute_stress=False,
+        compute_bec=True,  # Request BEC with wrong model
+        enable_cueq=False,
+        return_contributions=False,
+        return_descriptors=False,
+        return_node_energies=False,
+        info_prefix="MACE_",
+        head=None,
+    )
+
+    with pytest.raises(
+        ValueError, match="BEC can only be computed with MACELES model."
+    ):
+        mace_eval_configs_run(args)
+
+
+@pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
+def test_run_eval_no_bec(tmp_path: Path, maceles_model_path: Path, fitting_configs):
+    """Tests running evaluation without requesting BEC."""
+    output_path = tmp_path / "output.xyz"
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+    args = argparse.Namespace(
+        model=str(maceles_model_path),
+        configs=str(tmp_path / "fit.xyz"),
+        output=str(output_path),
+        device="cpu",
+        default_dtype="float32",
+        batch_size=1,
+        compute_stress=True,
+        compute_bec=False,  # BEC computation is off
+        enable_cueq=False,
+        return_contributions=False,
+        return_descriptors=False,
+        return_node_energies=False,
+        info_prefix="MACE_",
+        head=None,
+    )
+    mace_eval_configs_run(args)
+
+    # Check that the output file exists
+    assert output_path.exists()
+    output_atoms = ase.io.read(str(output_path), index=":")
+    assert len(output_atoms) == len(fitting_configs)
+    for at in output_atoms:
+        assert isinstance(at, Atoms)
+        # Ensure BEC and latent charges are not present
+        assert "MACE_BEC" not in at.arrays
+        assert "MACE_latent_charges" not in at.arrays
+        # Check that other expected arrays are present
+        assert "MACE_energy" in at.info
+        assert "MACE_stress" in at.info
+        assert "MACE_forces" in at.arrays

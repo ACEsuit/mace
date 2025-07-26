@@ -82,7 +82,6 @@ class MACELES(ScaleShiftMACE):
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
         compute_bec: bool = False,
-        **kwargs,
     ) -> Dict[str, Optional[torch.Tensor]]:
         ctx = prepare_graph(
             data,
