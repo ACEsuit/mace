@@ -768,6 +768,14 @@ def get_params_options(
                 "weight_decay": 0.0,
             }
         )
+    if hasattr(model, "les_readouts") and model.les_readouts is not None:
+        param_options["params"].append(
+            {
+                "name": "les_readouts",
+                "params": model.les_readouts.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
     return param_options
 
 
