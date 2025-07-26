@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import argparse
+from typing import Dict
 
 import ase.data
 import ase.io
@@ -110,6 +111,22 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def get_model_output(
+    model: torch.nn.Module,
+    batch: Dict[str, torch.Tensor],
+    compute_stress: bool,
+    compute_bec: bool,
+) -> Dict[str, torch.Tensor]:
+    forward_args = {
+        "compute_stress": compute_stress,
+    }
+    if compute_bec:
+        # Only add `compute_bec` if it is requested
+        # We check if the model is MACELES at the start of the run function
+        forward_args["compute_bec"] = compute_bec
+    return model(batch, **forward_args)
+
+
 def main() -> None:
     args = parse_args()
     run(args)
@@ -171,10 +188,8 @@ def run(args: argparse.Namespace) -> None:
 
     for batch in data_loader:
         batch = batch.to(device)
-        output = model(
-            batch.to_dict(),
-            compute_stress=args.compute_stress,
-            compute_bec=args.compute_bec,
+        output = get_model_output(
+            model, batch.to_dict(), args.compute_stress, args.compute_bec
         )
         energies_list.append(torch_tools.to_numpy(output["energy"]))
         if args.compute_stress:
