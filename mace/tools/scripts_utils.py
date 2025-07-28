@@ -53,6 +53,7 @@ def get_dataset_from_xyz(
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
+    no_data_ok: bool = False,
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """
     Load training, validation, and test datasets from xyz files.
@@ -68,6 +69,7 @@ def get_dataset_from_xyz(
         seed: Random seed for train/validation split
         keep_isolated_atoms: Whether to keep isolated atoms in the dataset
         head_name: Name of the head for multi-head models
+        no_data_ok: accept files that have no energy/force/stress data
 
     Returns:
         Tuple containing:
@@ -106,6 +108,7 @@ def get_dataset_from_xyz(
             extract_atomic_energies=True,  # Extract from all files to average
             keep_isolated_atoms=keep_isolated_atoms,
             head_name=head_name,
+            no_data_ok=no_data_ok,
         )
         all_train_configs.extend(train_configs)
 

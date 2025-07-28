@@ -53,7 +53,7 @@ class SelectionSettings:
     filtering_type: FilteringType = FilteringType.COMBINATIONS
     weight_ft: float = 1.0
     weight_pt: float = 1.0
-    allow_random_padding: bool = False
+    allow_random_padding: bool = True
     seed: int = 42
 
 
@@ -150,10 +150,10 @@ def parse_args() -> argparse.Namespace:
         default=None,
     )
     parser.add_argument(
-        "--allow_random_padding",
-        help="allow random padding of the configurations to match the number of samples",
+        "--disallow_random_padding",
+        help="do not allow random padding of the configurations to match the number of samples",
         action="store_false",
-        default=True,
+        dest="allow_random_padding",
     )
     parser.add_argument("--seed", help="random seed", type=int, default=42)
     return parser.parse_args()
