@@ -74,7 +74,11 @@ def configure_model(
         logging.info("Using embedding specifications from command line arguments")
         logging.info(f"Embedding specifications: {args.embedding_specs}")
     # Build model
-    if model_foundation is not None and args.model in ["MACE", "ScaleShiftMACE"]:
+    if model_foundation is not None and args.model in [
+        "MACE",
+        "ScaleShiftMACE",
+        "MACELES",
+    ]:
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
@@ -96,15 +100,20 @@ def configure_model(
 
         args.max_L = model_config_foundation["hidden_irreps"].lmax
 
-        if args.model == "MACE" and model_foundation.__class__.__name__ == "MACE":
-            model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
-        else:
+        if (
+            args.model == "ScaleShiftMACE"
+            or model_foundation.__class__.__name__ == "ScaleShiftMACE"
+        ):
             model_config_foundation["atomic_inter_shift"] = (
                 _determine_atomic_inter_shift(args.mean, heads)
             )
+        else:
+            model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
-        args.model = "FoundationMACE"
+        args.model = (
+            "FoundationMACELES" if args.model == "MACELES" else "FoundationMACE"
+        )
         model_config_foundation["heads"] = heads
         model_config = model_config_foundation
 
@@ -255,6 +264,13 @@ def _build_model(
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)
+    if args.model == "FoundationMACELES":
+        from mace.modules.extensions import MACELES
+
+        return MACELES(
+            les_arguments=args.les_arguments,
+            **model_config_foundation,
+        )
     if args.model == "ScaleShiftBOTNet":
         # say it is deprecated
         raise RuntimeError("ScaleShiftBOTNet is deprecated, use MACE instead")
@@ -289,5 +305,27 @@ def _build_model(
                 "RealAgnosticInteractionBlock"
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
+        )
+    if args.model == "MACELES":
+        from mace.modules.extensions import MACELES
+
+        return MACELES(
+            les_arguments=args.les_arguments,
+            **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=args.std,
+            atomic_inter_shift=[0.0] * len(heads),
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
+            heads=heads,
+            embedding_specs=args.embedding_specs,
+            use_embedding_readout=args.use_embedding_readout,
+            use_last_readout_only=args.use_last_readout_only,
+            use_agnostic_product=args.use_agnostic_product,
         )
     raise RuntimeError(f"Unknown model: '{args.model}'")
