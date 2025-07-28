@@ -226,6 +226,10 @@ def run(args) -> None:
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
+        # don't apply user's --atomic_numbers to pt_head, that info needs to come
+        # from the actual pt data
+        if args.multiheads_finetuning and head_config.head_name == "pt_head":
+            head_config.atomic_numbers = None
 
         # Handle train_file and valid_file - normalize to lists
         if hasattr(head_config, "train_file") and head_config.train_file is not None:
