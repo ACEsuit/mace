@@ -478,6 +478,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default="none",
     )
     parser.add_argument(
+        "--disallow_random_padding_pt",
+        help="do not allow random padding of the configurations to match the number of samples",
+        action="store_false",
+        dest="allow_random_padding_pt",
+    )
+    parser.add_argument(
         "--pt_train_file",
         help="Training set file for the pretrained head",
         type=str,

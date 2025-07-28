@@ -217,6 +217,7 @@ def load_from_xyz(
     config_type_weights: Optional[Dict] = None,
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
+    no_data_ok: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
     energy_key = key_specification.info_keys["energy"]
@@ -269,9 +270,11 @@ def load_from_xyz(
     has_dipole = any(final_dipole_key in atoms.info for atoms in atoms_list)
 
     if not has_energy and not has_forces and not has_dipole:
-        raise ValueError(
-            f"Neither '{final_energy_key}' nor '{final_forces_key}' found in '{file_path}'. Please change the key names in the command line arguments or ensure that the file contains the required data."
-        )
+        msg = f"Neither '{final_energy_key}' nor '{final_forces_key}' nor '{final_dipole_key}' found in '{file_path}'."
+        if no_data_ok:
+            logging.warning(msg + " Continuing because no_data_ok=True was passed in.")
+        else:
+            raise ValueError(msg + " Please change the key names in the command line arguments or ensure that the file contains the required data.")
     if not has_energy:
         logging.warning(
             f"No energies found with key '{final_energy_key}' in '{file_path}'. If this is unexpected, please change the key name in the command line arguments or ensure that the file contains the required data."
