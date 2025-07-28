@@ -182,7 +182,7 @@ def assemble_mp_data(
             filtering_type=FilteringType(args.filter_type_pt),
             subselect=SubselectType(args.subselect_pt),
             default_dtype=args.default_dtype,
-            allow_random_padding=args.allow_random_padding,
+            allow_random_padding=args.allow_random_padding_pt,
         )
         select_samples(settings)
         head_config_pt.train_file = [output]
