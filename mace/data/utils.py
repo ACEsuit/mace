@@ -270,7 +270,7 @@ def load_from_xyz(
     has_dipole = any(final_dipole_key in atoms.info for atoms in atoms_list)
 
     if not has_energy and not has_forces and not has_dipole:
-        msg = f"Neither '{final_energy_key}' nor '{final_forces_key}' nor '{final_dipole_key}' found in '{file_path}'."
+        msg = f"None of '{final_energy_key}', '{final_forces_key}', and '{final_dipole_key}' found in '{file_path}'."
         if no_data_ok:
             logging.warning(msg + " Continuing because no_data_ok=True was passed in.")
         else:
