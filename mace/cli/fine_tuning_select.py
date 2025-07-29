@@ -15,7 +15,6 @@ import ase.data
 import ase.io
 import numpy as np
 import torch
-from pathlib import Path
 from tqdm import tqdm
 
 from mace.calculators import MACECalculator, mace_mp
@@ -39,6 +38,7 @@ class FilteringType(Enum):
 class SubselectType(Enum):
     FPS = "fps"
     RANDOM = "random"
+
     def __str__(self):
         return self.value
 
@@ -179,13 +179,19 @@ def build_default_finetuning_select_arg_parser() -> argparse.ArgumentParser:
         dest="allow_random_padding",
     )
     parser.add_argument("--seed", help="random seed", type=int, default=42)
-    parser.add_argument("--atomic_numbers", help="atomic numbers to keep for filtering", nargs="+", type=int, required=False)
+    parser.add_argument(
+        "--atomic_numbers",
+        help="atomic numbers to keep for filtering",
+        nargs="+",
+        type=int,
+        required=False,
+    )
     return parser
 
 
 def calculate_descriptors(atoms: List[ase.Atoms], calc: MACECalculator) -> None:
     logging.info("Calculating descriptors")
-    for mol in tqdm(atoms,total=len(atoms), desc="Calculate descriptors"):
+    for mol in tqdm(atoms, total=len(atoms), desc="Calculate descriptors"):
         descriptors = calc.get_descriptors(mol.copy(), invariants_only=True)
         # average descriptors over atoms for each element
         descriptors_dict = {
@@ -279,7 +285,11 @@ class FPS:
             dtype=np.float32,
         ).astype(np.float32)
 
-        for i, atoms in tqdm(enumerate(self.atoms_list), total=len(self.atoms_list), desc="Assembling descriptors"):
+        for i, atoms in tqdm(
+            enumerate(self.atoms_list),
+            total=len(self.atoms_list),
+            desc="Assembling descriptors",
+        ):
             descriptors = atoms.info["mace_descriptors"]
             for z in descriptors:
                 self.descriptors_dataset[i, self.species_dict[z]] = np.array(
@@ -519,7 +529,7 @@ def select_samples(
             "suffix compatible with extxyz format"
         )
     output_path = Path(settings.configs_pt).name
-    _maybe_save_descriptors(filtered_pt_atoms, output_path ,False)
+    _maybe_save_descriptors(filtered_pt_atoms, output_path, False)
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(
