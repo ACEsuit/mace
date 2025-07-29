@@ -212,7 +212,7 @@ def assemble_replay_data(
         return collections_mp
     except Exception as exc:
         raise RuntimeError(
-            "Model or descriptors download failed and no local model found"
+            "Foundation model replay data or descriptors cached data not found and download failed"
         ) from exc
 
 
