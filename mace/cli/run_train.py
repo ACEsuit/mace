@@ -33,7 +33,7 @@ from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
     apply_pseudolabels_to_pt_head_configs,
-    assemble_mp_data,
+    assemble_replay_data,
     dict_head_to_dataclass,
     prepare_default_head,
     prepare_pt_head,
@@ -263,14 +263,15 @@ def run(args) -> None:
                 head_config.atomic_energies_dict = ast.literal_eval(
                     statistics["atomic_energies"]
                 )
-        if head_config.train_file == ["mp"]:
+        if head_config.train_file in (["mp"], ["matpes_pbe"], ["matpes_r2scan"]):
             assert (
                 head_config.head_name == "pt_head"
             ), "Only pt_head should use mp as train_file"
             logging.info(
-                "Using the full Materials Project data for replay. You can construct a different subset using `fine_tuning_select.py` script."
+                f"Using filtered Materials Project data for replay ({args.num_samples_pt}, {args.filter_type_pt}, {args.subselect_pt}). "
+                "You can also construct a different subset using `fine_tuning_select.py` script."
             )
-            collections = assemble_mp_data(args, head_config, tag)
+            collections = assemble_replay_data(head_config.train_file[0], args, head_config, tag)
             head_config.collections = collections
         elif any(check_path_ase_read(f) for f in head_config.train_file):
             train_files_ase_list = [
