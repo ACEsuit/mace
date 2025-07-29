@@ -137,14 +137,23 @@ def prepare_pt_head(
     return pt_head
 
 
-def assemble_mp_data(
+def assemble_replay_data(
+    name: str,
     args: argparse.Namespace,
     head_config_pt: HeadConfig,
     tag: str,
 ) -> SubsetCollection:
-    """Assemble Materials Project data for fine-tuning."""
+    """Assemble data for replay fine-tuning."""
     try:
-        checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
+        if name == "mp":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
+        elif name == "matpes_pbe":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-pbe-replay-data.xyz"
+        elif name == "matpes_r2scan":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-r2scan-replay-data.extxyz"
+        else:
+            raise ValueError(f"Unknown replay dataset name {name}")
+
         cache_dir = get_cache_dir()
         checkpoint_url_name = "".join(
             c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
