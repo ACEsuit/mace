@@ -8,8 +8,8 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, Iterable, Optional, Sequence, Union
 from pathlib import Path
+from typing import Any, Dict, Iterable, Optional, Sequence, Union
 
 import numpy as np
 import torch

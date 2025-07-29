@@ -300,7 +300,11 @@ def run(args) -> None:
                 key_specification=head_config.key_specification,
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
-                no_data_ok=(args.pseudolabel_replay and args.multiheads_finetuning and head_config.head_name == "pt_head"),
+                no_data_ok=(
+                    args.pseudolabel_replay and 
+                    args.multiheads_finetuning and 
+                    head_config.head_name == "pt_head"
+                ),
             )
             head_config.collections = SubsetCollection(
                 train=collections.train,
