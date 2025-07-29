@@ -20,7 +20,7 @@ from mace.data import AtomicData, KeySpecification
 from mace.data.utils import Configuration
 from mace.tools import torch_geometric
 from mace.tools.scripts_utils import SubsetCollection, get_dataset_from_xyz
-from mace.tools.utils import AtomicNumberTable
+from mace.tools.utils import AtomicNumberTable, get_cache_dir
 
 
 @dataclasses.dataclass
@@ -146,9 +146,7 @@ def assemble_mp_data(
     """Assemble Materials Project data for fine-tuning."""
     try:
         checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
-        cache_dir = (
-            Path(os.environ.get("XDG_CACHE_HOME", "~/")).expanduser() / ".cache/mace"
-        )
+        cache_dir = get_cache_dir()
         checkpoint_url_name = "".join(
             c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
         )

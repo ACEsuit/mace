@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 from typing import Any, Dict, Iterable, Optional, Sequence, Union
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -164,3 +165,8 @@ class LAMMPS_MP(torch.autograd.Function):
         gout = torch.empty_like(grad)
         ctx.data.reverse_exchange(grad, gout, ctx.vec_len)
         return gout, None
+
+
+def get_cache_dir() -> Path:
+    # get cache dir from XDG_CACHE_HOME if set, otherwise appropriate default
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "mace"
