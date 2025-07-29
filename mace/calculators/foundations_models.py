@@ -7,8 +7,9 @@ import torch
 from ase import units
 from ase.calculators.mixing import SumCalculator
 
-from .mace import MACECalculator
 from mace.tools.utils import get_cache_dir
+
+from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
 local_model_path = os.path.join(

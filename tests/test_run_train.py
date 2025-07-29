@@ -1654,11 +1654,15 @@ def test_run_train_multihead_replay_filtered_pt_data(
     # create fake cached MP data
     run_env["XDG_CACHE_HOME"] = str(tmp_path / "cache")
     (tmp_path / "cache" / "mace").mkdir(parents=True)
-    with open (tmp_path / "cache" / "mace" / "mp_traj_combinedxyz", "w") as fout:
+    with open(tmp_path / "cache" / "mace" / "mp_traj_combinedxyz", "w") as fout:
         for atoms in pretraining_configs_3:
             if atoms.info.get("config_type") == "IsolatedAtom":
                 continue
-            atoms.calc = SinglePointCalculator(atoms, energy=atoms.info["REF_energy"], forces=atoms.arrays.get("REF_forces"))
+            atoms.calc = SinglePointCalculator(
+                atoms,
+                energy=atoms.info["REF_energy"],
+                forces=atoms.arrays.get("REF_forces")
+            )
             ase.io.write(fout, atoms, format="extxyz")
             atoms.calc = None
 
