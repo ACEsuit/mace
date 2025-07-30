@@ -33,6 +33,7 @@ from .utils import (
     compute_rel_mae,
     compute_rel_rmse,
     compute_rmse,
+    filter_nonzero_weight,
 )
 
 
@@ -590,33 +591,35 @@ class MACELoss(Metric):
         self.num_data += batch.num_graphs
 
         if output.get("energy") is not None and batch.energy is not None:
-            self.E_computed += 1.0
             self.delta_es.append(batch.energy - output["energy"])
             self.delta_es_per_atom.append(
                 (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
             )
+            self.E_computed += filter_nonzero_weight(batch, self.delta_es, batch.weight, batch.energy_weight, "config")
+            filter_nonzero_weight(batch, self.delta_es_per_atom, batch.weight, batch.energy_weight, "config")
         if output.get("forces") is not None and batch.forces is not None:
-            self.Fs_computed += 1.0
             self.fs.append(batch.forces)
             self.delta_fs.append(batch.forces - output["forces"])
+            self.Fs_computed += filter_nonzero_weight(batch, self.delta_fs, batch.weight, batch.forces_weight, "atom")
         if output.get("stress") is not None and batch.stress is not None:
-            self.stress_computed += 1.0
             self.delta_stress.append(batch.stress - output["stress"])
+            self.stress_computed += filter_nonzero_weight(batch, self.delta_stress, batch.weight, batch.stress_weight, "config")
         if output.get("virials") is not None and batch.virials is not None:
-            self.virials_computed += 1.0
             self.delta_virials.append(batch.virials - output["virials"])
             self.delta_virials_per_atom.append(
                 (batch.virials - output["virials"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
             )
+            self.virials_computed += filter_nonzero_weight(batch, self.delta_virials, batch.weight, batch.virials_weight, "config")
+            filter_nonzero_weight(batch, self.delta_virials_per_atom, batch.weight, batch.virials_weight, "config")
         if output.get("dipole") is not None and batch.dipole is not None:
-            self.Mus_computed += 1.0
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
             self.delta_mus_per_atom.append(
                 (batch.dipole - output["dipole"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
+            self.Mus_computed += filter_nonzero_weight(batch, self.delta_mus, batch.weight, batch.dipole_weight, "config")
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):

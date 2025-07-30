@@ -9,6 +9,8 @@ import torch
 import torch.distributed
 from torchmetrics import Metric
 
+from mace.tools.utils import filter_nonzero_weight
+
 plt.rcParams.update({"font.size": 8})
 mpl_logger = logging.getLogger("matplotlib")
 mpl_logger.setLevel(logging.WARNING)  # Only show WARNING and above
@@ -537,15 +539,18 @@ class InferenceMetric(Metric):
 
         # Energy
         if output.get("energy") is not None and batch.energy is not None:
-            self.n_energy += 1.0
             self.ref_energies.append(batch.energy)
             self.pred_energies.append(output["energy"])
             # Per-atom normalization
             self.ref_energies_per_atom.append(batch.energy / atoms_per_config)
             self.pred_energies_per_atom.append(output["energy"] / atoms_per_config)
+
+            self.n_energy += filter_nonzero_weight(batch, self.ref_energies, batch.weight, batch.energy_weight, "config")
+            filter_nonzero_weight(batch, self.pred_energies, batch.weight, batch.energy_weight, "config")
+            filter_nonzero_weight(batch, self.ref_energies_per_atom, batch.weight, batch.energy_weight, "config")
+            filter_nonzero_weight(batch, self.pred_energies_per_atom, batch.weight, batch.energy_weight, "config")
         
         if output.get("interaction_energy") is not None and batch.energy is not None:
-            self.n_interaction_energy += 1.0
             E0s = output['energy'].to(torch.float64) - output['interaction_energy'].to(torch.float64)
             self.ref_interaction_energies.append(batch.energy - E0s)
             self.pred_interaction_energies.append(output["interaction_energy"])
@@ -553,21 +558,29 @@ class InferenceMetric(Metric):
             self.ref_interaction_energies_per_atom.append((batch.energy - E0s) / atoms_per_config)
             self.pred_interaction_energies_per_atom.append(output["interaction_energy"] / atoms_per_config)
 
+            self.n_interaction_energy += filter_nonzero_weight(batch, self.ref_interaction_energies, batch.weight, batch.energy_weight, "config")
+            filter_nonzero_weight(batch, self.pred_interaction_energies, batch.weight, batch.energy_weight, "config")
+            filter_nonzero_weight(batch, self.ref_interaction_energies_per_atom, batch.weight, batch.energy_weight, "config")
+            filter_nonzero_weight(batch, self.pred_interaction_energies_per_atom, batch.weight, batch.energy_weight, "config")
+
         # Forces
         if output.get("forces") is not None and batch.forces is not None:
-            self.n_forces += 1.0
             self.ref_forces.append(batch.forces)
             self.pred_forces.append(output["forces"])
 
+            self.n_forces += filter_nonzero_weight(batch, self.ref_forces, batch.weight, batch.forces_weight, "atom")
+            filter_nonzero_weight(batch, self.pred_forces, batch.weight, batch.forces_weight, "atom")
+
         # Stress
         if output.get("stress") is not None and batch.stress is not None:
-            self.n_stress += 1.0
             self.ref_stress.append(batch.stress)
             self.pred_stress.append(output["stress"])
 
+            self.n_stress += filter_nonzero_weight(batch, self.ref_stress, batch.weight, batch.stress_weight, "config")
+            filter_nonzero_weight(batch, self.pred_stress, batch.weight, batch.stress_weight, "config")
+
         # Virials
         if output.get("virials") is not None and batch.virials is not None:
-            self.n_virials += 1.0
             self.ref_virials.append(batch.virials)
             self.pred_virials.append(output["virials"])
             # Per-atom normalization
@@ -575,14 +588,23 @@ class InferenceMetric(Metric):
             self.ref_virials_per_atom.append(batch.virials / atoms_per_config_3d)
             self.pred_virials_per_atom.append(output["virials"] / atoms_per_config_3d)
 
+            self.n_virials += filter_nonzero_weight(batch, self.ref_virials, batch.weight, batch.virials_weight, "config")
+            filter_nonzero_weight(batch, self.pred_virials, batch.weight, batch.virials_weight, "config")
+            filter_nonzero_weight(batch, self.ref_virials_per_atom, batch.weight, batch.virials_weight, "config")
+            filter_nonzero_weight(batch, self.pred_virials_per_atom, batch.weight, batch.virials_weight, "config")
+
         # Dipole
         if output.get("dipole") is not None and batch.dipole is not None:
-            self.n_dipole += 1.0
             self.ref_dipole.append(batch.dipole)
             self.pred_dipole.append(output["dipole"])
             atoms_per_config_3d = atoms_per_config.view(-1, 1)
             self.ref_dipole_per_atom.append(batch.dipole / atoms_per_config_3d)
             self.pred_dipole_per_atom.append(output["dipole"] / atoms_per_config_3d)
+
+            self.n_dipole += filter_nonzero_weight(batch, self.ref_dipole, batch.weight, batch.dipole_weight, "config")
+            filter_nonzero_weight(batch, self.pred_dipole, batch.weight, batch.dipole_weight, "config")
+            filter_nonzero_weight(batch, self.ref_dipole_per_atom, batch.weight, batch.dipole_weight, "config")
+            filter_nonzero_weight(batch, self.pred_dipole_per_atom, batch.weight, batch.dipole_weight, "config")
 
     def _process_data(self, ref_list, pred_list):
         # Handle different possible states of ref_list and pred_list in distributed mode

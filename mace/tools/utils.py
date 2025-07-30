@@ -170,3 +170,30 @@ class LAMMPS_MP(torch.autograd.Function):
 def get_cache_dir() -> Path:
     # get cache dir from XDG_CACHE_HOME if set, otherwise appropriate default
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "mace"
+
+
+def filter_nonzero_weight(batch, quantity_l, weight, quantity_weight, per_what) -> float:
+    # repeat with interleaving for per-atom quantities
+    if per_what == "atom":
+        weight = torch.repeat_interleave(
+            weight, batch.ptr[1:] - batch.ptr[:-1]
+        ).unsqueeze(-1)
+        quantity_weight = torch.repeat_interleave(
+            quantity_weight, batch.ptr[1:] - batch.ptr[:-1]
+        ).unsqueeze(-1)
+
+    # repeat for additional dimensions
+    quantity = quantity_l[-1]
+    if len(quantity.shape) > 1:
+        repeats = [1] + list(quantity.shape[1:])
+        view = [-1] + [1] * (len(quantity.shape) - 1)
+        weight = weight.view(*view).repeat(*repeats)
+        quantity_weight = quantity_weight.view(*view).repeat(*repeats)
+
+    filtered_q = quantity[weight * quantity_weight > 0]
+    if len(filtered_q) == 0:
+        quantity_l.pop()
+        return 0.0
+    else:
+        quantity_l[-1] = filtered_q
+        return 1.0
