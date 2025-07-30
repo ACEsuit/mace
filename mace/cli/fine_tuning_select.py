@@ -18,6 +18,7 @@ import torch
 from tqdm import tqdm
 
 from mace.calculators import MACECalculator, mace_mp
+from mace.calculators.foundations_models import mace_mp_constants
 
 try:
     import fpsample  # type: ignore
@@ -291,16 +292,17 @@ class FPS:
 
 
 def _load_calc(
-    model: str, device: str, default_dtype: str, subselect: SubselectType
+    model: str, device: str, default_dtype: str, head: str, subselect: SubselectType
 ) -> Union[MACECalculator, None]:
     if subselect == SubselectType.RANDOM:
         return None
-    if model in ["small", "medium", "large"]:
-        calc = mace_mp(model, device=device, default_dtype=default_dtype)
+    if model in mace_mp_constants:
+        calc = mace_mp(model, device=device, head=head, default_dtype=default_dtype)
     else:
         calc = MACECalculator(
             model_paths=model,
             device=device,
+            head=head,
             default_dtype=default_dtype,
         )
     return calc
@@ -492,10 +494,16 @@ def select_samples(
     np.random.seed(settings.seed)
     torch.manual_seed(settings.seed)
     calc = _load_calc(
-        settings.model, settings.device, settings.default_dtype, settings.subselect
+        settings.model,
+        settings.device,
+        settings.default_dtype,
+        settings.head_pt,
+        settings.subselect,
     )
     atoms_list_ft = _read_finetuning_configs(settings.configs_ft)
-    all_species_ft = _get_finetuning_elements(atoms_list_ft, settings.pt_filter_atomic_numbers)
+    all_species_ft = _get_finetuning_elements(
+        atoms_list_ft, settings.pt_filter_atomic_numbers
+    )
 
     if settings.filtering_type is not FilteringType.NONE and not all_species_ft:
         raise ValueError(
