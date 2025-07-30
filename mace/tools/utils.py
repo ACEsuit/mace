@@ -172,7 +172,9 @@ def get_cache_dir() -> Path:
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "mace"
 
 
-def filter_nonzero_weight(batch, quantity_l, weight, quantity_weight, per_what) -> float:
+def filter_nonzero_weight(
+    batch, quantity_l, weight, quantity_weight, per_what
+) -> float:
     # repeat with interleaving for per-atom quantities
     if per_what == "atom":
         weight = torch.repeat_interleave(
@@ -194,6 +196,6 @@ def filter_nonzero_weight(batch, quantity_l, weight, quantity_weight, per_what) 
     if len(filtered_q) == 0:
         quantity_l.pop()
         return 0.0
-    else:
-        quantity_l[-1] = filtered_q
-        return 1.0
+
+    quantity_l[-1] = filtered_q
+    return 1.0
