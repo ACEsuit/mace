@@ -433,9 +433,14 @@ def _subsample_data(
             calc,
             full_data_length=len(filtered_atoms) + len(remaining_atoms),
         )
-        logging.info("Selecting configurations using Farthest Point Sampling")
+        logging.info(
+            f"Selecting {num_samples} configurations out of {len(filtered_atoms)} using Farthest Point Sampling"
+        )
         return _maybe_fps(filtered_atoms, num_samples)
     if subselect == SubselectType.RANDOM:
+        logging.info(
+            f"Subselecting {num_samples} from filtered {len(filtered_atoms)} using random sampling"
+        )
         return _get_random_configs(num_samples, filtered_atoms)
     raise ValueError(f"Invalid subselect type: {subselect}")
 

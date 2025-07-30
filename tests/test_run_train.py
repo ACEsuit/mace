@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import torch
 from ase.atoms import Atoms
+from ase.calculators.singlepoint import SinglePointCalculator
 
 from mace.calculators import MACECalculator, mace_mp
 
@@ -76,6 +77,29 @@ def fixture_pretraining_configs():
     configs[-2].info["config_type"] = "IsolatedAtom"
     configs[-1].info["REF_energy"] = -4.0
     configs[-1].info["config_type"] = "IsolatedAtom"
+    return configs
+
+
+@pytest.fixture(name="pretraining_configs_3")
+def fixture_pretraining_configs_3():
+    configs = []
+    for _ in range(20):
+        atoms = Atoms(
+            numbers=[8, 1, 3],
+            positions=np.random.rand(3, 3) * 3,
+            cell=[5, 5, 5],
+            pbc=[True] * 3,
+        )
+        atoms.info["REF_energy"] = np.random.normal(0, 1)
+        atoms.arrays["REF_forces"] = np.random.normal(0, 1, size=(3, 3))
+        atoms.info["REF_stress"] = np.random.normal(0, 1, size=6)
+        configs.append(atoms)
+    for Z_i, Z in enumerate([8, 1, 3]):
+        configs.append(
+            Atoms(numbers=[Z], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3),
+        )
+        configs[-1].info["REF_energy"] = -4.0 + Z_i
+        configs[-1].info["config_type"] = "IsolatedAtom"
     return configs
 
 
@@ -765,7 +789,7 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
 
-def test_run_train_multihead_replay_custum_finetuning(
+def test_run_train_multihead_replay_custom_finetuning(
     tmp_path, fitting_configs, pretraining_configs
 ):
     ase.io.write(tmp_path / "pretrain.xyz", pretraining_configs)
@@ -1588,3 +1612,166 @@ def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs
         0.8927566093599664,
     ]
     assert np.allclose(Es, ref_Es, atol=1e-1)
+
+
+# test multihead replay fine-tuning when fine-tuning data
+# has only a subset of the species present in the filtered replay data
+def test_run_train_multihead_replay_filtered_pt_data(
+    tmp_path, monkeypatch, fitting_configs, pretraining_configs_3
+):
+    # generate pretraining data
+    ase.io.write(tmp_path / "pretrain.xyz", pretraining_configs_3)
+
+    foundation_params = {
+        "name": "foundation",
+        "train_file": os.path.join(tmp_path, "pretrain.xyz"),
+        "valid_fraction": 0.2,
+        "energy_weight": 1.0,
+        "forces_weight": 10.0,
+        "stress_weight": 1.0,
+        "model": "MACE",
+        "hidden_irreps": "32x0e",
+        "r_max": 5.0,
+        "batch_size": 2,
+        "max_num_epochs": 5,
+        "swa": None,
+        "start_swa": 3,
+        "device": "cpu",
+        "seed": 42,
+        "loss": "weighted",
+        "energy_key": "REF_energy",
+        "forces_key": "REF_forces",
+        "stress_key": "REF_stress",
+        "default_dtype": "float64",
+        "checkpoints_dir": str(tmp_path),
+        "model_dir": str(tmp_path),
+    }
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    # create fake cached MP data
+    run_env["XDG_CACHE_HOME"] = str(tmp_path / "cache")
+    (tmp_path / "cache" / "mace").mkdir(parents=True)
+    with open(tmp_path / "cache" / "mace" / "mp_traj_combinedxyz", "w") as fout:
+        for atoms in pretraining_configs_3:
+            if atoms.info.get("config_type") == "IsolatedAtom":
+                continue
+            atoms.calc = SinglePointCalculator(
+                atoms,
+                energy=atoms.info["REF_energy"],
+                forces=atoms.arrays.get("REF_forces")
+            )
+            ase.io.write(fout, atoms, format="extxyz")
+            atoms.calc = None
+
+    cmd = [sys.executable, str(run_train)]
+    for k, v in foundation_params.items():
+        if v is None:
+            cmd.append(f"--{k}")
+        else:
+            cmd.append(f"--{k}={v}")
+
+    print("pretraining fit cmd", cmd)
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        p = subprocess.run(cmd, env=run_env, check=True)
+    assert p.returncode == 0
+
+    # Step 3: Create finetuning set
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
+    atomic_numbers = set()
+    for i, c in enumerate(fitting_configs):
+        atomic_numbers |= set(c.numbers)
+        if i in (0, 1):
+            c_dft = c.copy()
+            c_dft.info["head"] = "DFT"
+            fitting_configs_dft.append(c_dft)
+            fitting_configs_dft.append(c)
+            c_mp2 = c.copy()
+            c_mp2.info["head"] = "MP2"
+            fitting_configs_mp2.append(c_mp2)
+        elif i % 2 == 0:
+            c.info["head"] = "DFT"
+            fitting_configs_dft.append(c)
+        else:
+            c.info["head"] = "MP2"
+            fitting_configs_mp2.append(c)
+    ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
+
+    # Step 4: Finetune the pretrained model with multihead replay
+    heads = {
+        "DFT": {"train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz"},
+        "MP2": {"train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz"},
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    filename = tmp_path / "config.yaml"
+    with open(filename, "w", encoding="utf-8") as file:
+        file.write(yaml_str)
+
+    finetuning_params = {
+        "name": "finetuned",
+        "valid_fraction": 0.1,
+        "energy_weight": 1.0,
+        "forces_weight": 10.0,
+        "stress_weight": 1.0,
+        "model": "MACE",
+        "hidden_irreps": "32x0e",
+        "r_max": 5.0,
+        "batch_size": 2,
+        "max_num_epochs": 5,
+        "device": "cpu",
+        "seed": 42,
+        "loss": "weighted",
+        "default_dtype": "float64",
+        "checkpoints_dir": str(tmp_path),
+        "model_dir": str(tmp_path),
+        "foundation_model": os.path.join(tmp_path, "foundation.model"),
+        "config": os.path.join(tmp_path, "config.yaml"),
+        "pt_train_file": "mp",
+        "num_samples_pt": 10,
+        "subselect_pt": "random",
+        "filter_type_pt": "exclusive",
+        "force_mh_ft_lr": True,
+        "atomic_numbers": str(sorted(atomic_numbers)),
+    }
+
+    cmd = [sys.executable, str(run_train)]
+    for k, v in finetuning_params.items():
+        if v is None:
+            cmd.append(f"--{k}")
+        else:
+            cmd.append(f"--{k}={v}")
+
+    print("fine-tuning fit cmd", cmd)
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        p = subprocess.run(cmd, env=run_env, check=True)
+    assert p.returncode == 0
+
+    # Load and test the finetuned model
+    calc = MACECalculator(
+        model_paths=tmp_path / "finetuned.model",
+        device="cpu",
+        default_dtype="float64",
+        head="pt_head",
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Energies:", Es)
+
+    # Add some basic checks
+    assert len(Es) == len(fitting_configs)
+    assert all(isinstance(E, float) for E in Es)
+    assert len(set(Es)) > 1  # Ens

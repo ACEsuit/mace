@@ -5,7 +5,6 @@ import logging
 import os
 import urllib.request
 from copy import deepcopy
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -20,7 +19,7 @@ from mace.data import AtomicData, KeySpecification
 from mace.data.utils import Configuration
 from mace.tools import torch_geometric
 from mace.tools.scripts_utils import SubsetCollection, get_dataset_from_xyz
-from mace.tools.utils import AtomicNumberTable
+from mace.tools.utils import AtomicNumberTable, get_cache_dir
 
 
 @dataclasses.dataclass
@@ -138,17 +137,24 @@ def prepare_pt_head(
     return pt_head
 
 
-def assemble_mp_data(
+def assemble_replay_data(
+    name: str,
     args: argparse.Namespace,
     head_config_pt: HeadConfig,
     tag: str,
 ) -> SubsetCollection:
-    """Assemble Materials Project data for fine-tuning."""
+    """Assemble data for replay fine-tuning."""
     try:
-        checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
-        cache_dir = (
-            Path(os.environ.get("XDG_CACHE_HOME", "~/")).expanduser() / ".cache/mace"
-        )
+        if name == "mp":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
+        elif name == "matpes_pbe":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-pbe-replay-data.xyz"
+        elif name == "matpes_r2scan":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-r2scan-replay-data.extxyz"
+        else:
+            raise ValueError(f"Unknown replay dataset name {name}")
+
+        cache_dir = get_cache_dir()
         checkpoint_url_name = "".join(
             c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
         )
@@ -197,12 +203,16 @@ def assemble_mp_data(
             key_specification=head_config_pt.key_specification,
             head_name="pt_head",
             keep_isolated_atoms=args.keep_isolated_atoms,
-            no_data_ok=(args.pseudolabel_replay and args.multiheads_finetuning and head_config_pt.head_name == "pt_head"),
+            no_data_ok=(
+                args.pseudolabel_replay and
+                args.multiheads_finetuning and
+                head_config_pt.head_name == "pt_head"
+            ),
         )
         return collections_mp
     except Exception as exc:
         raise RuntimeError(
-            "Model or descriptors download failed and no local model found"
+            "Foundation model replay data or descriptors cached data not found and download failed"
         ) from exc
 
 
