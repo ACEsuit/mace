@@ -7,6 +7,8 @@ import torch
 from ase import units
 from ase.calculators.mixing import SumCalculator
 
+from mace.tools.utils import get_cache_dir
+
 from .mace import MACECalculator
 
 module_dir = os.path.dirname(__file__)
@@ -68,7 +70,7 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
             "Using model under Academic Software License (ASL) license, see https://github.com/gabor1/ASL \n To use this model you accept the terms of the license."
         )
 
-    cache_dir = os.path.expanduser("~/.cache/mace")
+    cache_dir = get_cache_dir()
     checkpoint_url_name = "".join(
         c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
     )
@@ -218,7 +220,7 @@ def mace_off(
                 if model in (None, "small", "medium", "large")
                 else model
             )
-            cache_dir = os.path.expanduser("~/.cache/mace")
+            cache_dir = get_cache_dir()
             checkpoint_url_name = os.path.basename(checkpoint_url).split("?")[0]
             cached_model_path = f"{cache_dir}/{checkpoint_url_name}"
             if not os.path.isfile(cached_model_path):
@@ -357,7 +359,7 @@ def mace_omol(
             )
 
         if checkpoint_url.startswith("http"):
-            cache_dir = os.path.expanduser("~/.cache/mace")
+            cache_dir = get_cache_dir()
             os.makedirs(cache_dir, exist_ok=True)
             checkpoint_url_name = os.path.basename(checkpoint_url).split("?")[0]
             cached_model_path = os.path.join(cache_dir, checkpoint_url_name)

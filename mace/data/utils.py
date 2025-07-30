@@ -270,11 +270,14 @@ def load_from_xyz(
     has_dipole = any(final_dipole_key in atoms.info for atoms in atoms_list)
 
     if not has_energy and not has_forces and not has_dipole:
-        msg = f"Neither '{final_energy_key}' nor '{final_forces_key}' nor '{final_dipole_key}' found in '{file_path}'."
+        msg = f"None of '{final_energy_key}', '{final_forces_key}', and '{final_dipole_key}' found in '{file_path}'."
         if no_data_ok:
             logging.warning(msg + " Continuing because no_data_ok=True was passed in.")
         else:
-            raise ValueError(msg + " Please change the key names in the command line arguments or ensure that the file contains the required data.")
+            raise ValueError(
+                msg +
+                " Please change the key names in the command line arguments or ensure that the file contains the required data."
+            )
     if not has_energy:
         logging.warning(
             f"No energies found with key '{final_energy_key}' in '{file_path}'. If this is unexpected, please change the key name in the command line arguments or ensure that the file contains the required data."
