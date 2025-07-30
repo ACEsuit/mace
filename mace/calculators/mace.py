@@ -237,6 +237,8 @@ class MACECalculator(Calculator):
         kwarg_head = kwargs.get("head", None)
         if kwarg_head is not None:
             self.head = kwarg_head
+        elif len(self.available_heads) == 1:
+            self.head = self.available_heads[0]
         else:
             self.head = [
                 head for head in self.available_heads if head.lower() == "default"
