@@ -1661,7 +1661,7 @@ def test_run_train_multihead_replay_filtered_pt_data(
             atoms.calc = SinglePointCalculator(
                 atoms,
                 energy=atoms.info["REF_energy"],
-                forces=atoms.arrays.get("REF_forces")
+                forces=atoms.arrays.get("REF_forces"),
             )
             ase.io.write(fout, atoms, format="extxyz")
             atoms.calc = None

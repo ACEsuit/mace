@@ -204,9 +204,9 @@ def assemble_replay_data(
             head_name="pt_head",
             keep_isolated_atoms=args.keep_isolated_atoms,
             no_data_ok=(
-                args.pseudolabel_replay and
-                args.multiheads_finetuning and
-                head_config_pt.head_name == "pt_head"
+                args.pseudolabel_replay
+                and args.multiheads_finetuning
+                and head_config_pt.head_name == "pt_head"
             ),
         )
         return collections_mp

@@ -159,7 +159,12 @@ class TrainingPlotter:
 
             # Use the pre-computed results for plotting
             plot_inference_from_results(
-                axsBottom, train_valid_dict, test_dict, head, quantities, plot_interaction_e=self.plot_interaction_e
+                axsBottom,
+                train_valid_dict,
+                test_dict,
+                head,
+                quantities,
+                plot_interaction_e=self.plot_interaction_e,
             )
 
             if self.swa_start is not None:
@@ -512,9 +517,13 @@ class InferenceMetric(Metric):
 
         # Per-atom normalized values
         self.add_state("ref_energies_per_atom", default=[], dist_reduce_fx="cat")
-        self.add_state("ref_interaction_energies_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state(
+            "ref_interaction_energies_per_atom", default=[], dist_reduce_fx="cat"
+        )
         self.add_state("pred_energies_per_atom", default=[], dist_reduce_fx="cat")
-        self.add_state("pred_interaction_energies_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state(
+            "pred_interaction_energies_per_atom", default=[], dist_reduce_fx="cat"
+        )
         self.add_state("ref_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("pred_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("ref_dipole_per_atom", default=[], dist_reduce_fx="cat")
@@ -525,7 +534,9 @@ class InferenceMetric(Metric):
 
         # Counters
         self.add_state("n_energy", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("n_interaction_energy", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "n_interaction_energy", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
         self.add_state("n_forces", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_stress", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_virials", default=torch.tensor(0.0), dist_reduce_fx="sum")
@@ -545,39 +556,93 @@ class InferenceMetric(Metric):
             self.ref_energies_per_atom.append(batch.energy / atoms_per_config)
             self.pred_energies_per_atom.append(output["energy"] / atoms_per_config)
 
-            self.n_energy += filter_nonzero_weight(batch, self.ref_energies, batch.weight, batch.energy_weight, "config")
-            filter_nonzero_weight(batch, self.pred_energies, batch.weight, batch.energy_weight, "config")
-            filter_nonzero_weight(batch, self.ref_energies_per_atom, batch.weight, batch.energy_weight, "config")
-            filter_nonzero_weight(batch, self.pred_energies_per_atom, batch.weight, batch.energy_weight, "config")
-        
+            self.n_energy += filter_nonzero_weight(
+                batch, self.ref_energies, batch.weight, batch.energy_weight, "config"
+            )
+            filter_nonzero_weight(
+                batch, self.pred_energies, batch.weight, batch.energy_weight, "config"
+            )
+            filter_nonzero_weight(
+                batch,
+                self.ref_energies_per_atom,
+                batch.weight,
+                batch.energy_weight,
+                "config",
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_energies_per_atom,
+                batch.weight,
+                batch.energy_weight,
+                "config",
+            )
+
         if output.get("interaction_energy") is not None and batch.energy is not None:
-            E0s = output['energy'].to(torch.float64) - output['interaction_energy'].to(torch.float64)
+            E0s = output["energy"].to(torch.float64) - output["interaction_energy"].to(
+                torch.float64
+            )
             self.ref_interaction_energies.append(batch.energy - E0s)
             self.pred_interaction_energies.append(output["interaction_energy"])
             # Per-atom normalization
-            self.ref_interaction_energies_per_atom.append((batch.energy - E0s) / atoms_per_config)
-            self.pred_interaction_energies_per_atom.append(output["interaction_energy"] / atoms_per_config)
+            self.ref_interaction_energies_per_atom.append(
+                (batch.energy - E0s) / atoms_per_config
+            )
+            self.pred_interaction_energies_per_atom.append(
+                output["interaction_energy"] / atoms_per_config
+            )
 
-            self.n_interaction_energy += filter_nonzero_weight(batch, self.ref_interaction_energies, batch.weight, batch.energy_weight, "config")
-            filter_nonzero_weight(batch, self.pred_interaction_energies, batch.weight, batch.energy_weight, "config")
-            filter_nonzero_weight(batch, self.ref_interaction_energies_per_atom, batch.weight, batch.energy_weight, "config")
-            filter_nonzero_weight(batch, self.pred_interaction_energies_per_atom, batch.weight, batch.energy_weight, "config")
+            self.n_interaction_energy += filter_nonzero_weight(
+                batch,
+                self.ref_interaction_energies,
+                batch.weight,
+                batch.energy_weight,
+                "config",
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_interaction_energies,
+                batch.weight,
+                batch.energy_weight,
+                "config",
+            )
+            filter_nonzero_weight(
+                batch,
+                self.ref_interaction_energies_per_atom,
+                batch.weight,
+                batch.energy_weight,
+                "config",
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_interaction_energies_per_atom,
+                batch.weight,
+                batch.energy_weight,
+                "config",
+            )
 
         # Forces
         if output.get("forces") is not None and batch.forces is not None:
             self.ref_forces.append(batch.forces)
             self.pred_forces.append(output["forces"])
 
-            self.n_forces += filter_nonzero_weight(batch, self.ref_forces, batch.weight, batch.forces_weight, "atom")
-            filter_nonzero_weight(batch, self.pred_forces, batch.weight, batch.forces_weight, "atom")
+            self.n_forces += filter_nonzero_weight(
+                batch, self.ref_forces, batch.weight, batch.forces_weight, "atom"
+            )
+            filter_nonzero_weight(
+                batch, self.pred_forces, batch.weight, batch.forces_weight, "atom"
+            )
 
         # Stress
         if output.get("stress") is not None and batch.stress is not None:
             self.ref_stress.append(batch.stress)
             self.pred_stress.append(output["stress"])
 
-            self.n_stress += filter_nonzero_weight(batch, self.ref_stress, batch.weight, batch.stress_weight, "config")
-            filter_nonzero_weight(batch, self.pred_stress, batch.weight, batch.stress_weight, "config")
+            self.n_stress += filter_nonzero_weight(
+                batch, self.ref_stress, batch.weight, batch.stress_weight, "config"
+            )
+            filter_nonzero_weight(
+                batch, self.pred_stress, batch.weight, batch.stress_weight, "config"
+            )
 
         # Virials
         if output.get("virials") is not None and batch.virials is not None:
@@ -588,10 +653,26 @@ class InferenceMetric(Metric):
             self.ref_virials_per_atom.append(batch.virials / atoms_per_config_3d)
             self.pred_virials_per_atom.append(output["virials"] / atoms_per_config_3d)
 
-            self.n_virials += filter_nonzero_weight(batch, self.ref_virials, batch.weight, batch.virials_weight, "config")
-            filter_nonzero_weight(batch, self.pred_virials, batch.weight, batch.virials_weight, "config")
-            filter_nonzero_weight(batch, self.ref_virials_per_atom, batch.weight, batch.virials_weight, "config")
-            filter_nonzero_weight(batch, self.pred_virials_per_atom, batch.weight, batch.virials_weight, "config")
+            self.n_virials += filter_nonzero_weight(
+                batch, self.ref_virials, batch.weight, batch.virials_weight, "config"
+            )
+            filter_nonzero_weight(
+                batch, self.pred_virials, batch.weight, batch.virials_weight, "config"
+            )
+            filter_nonzero_weight(
+                batch,
+                self.ref_virials_per_atom,
+                batch.weight,
+                batch.virials_weight,
+                "config",
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_virials_per_atom,
+                batch.weight,
+                batch.virials_weight,
+                "config",
+            )
 
         # Dipole
         if output.get("dipole") is not None and batch.dipole is not None:
@@ -601,10 +682,26 @@ class InferenceMetric(Metric):
             self.ref_dipole_per_atom.append(batch.dipole / atoms_per_config_3d)
             self.pred_dipole_per_atom.append(output["dipole"] / atoms_per_config_3d)
 
-            self.n_dipole += filter_nonzero_weight(batch, self.ref_dipole, batch.weight, batch.dipole_weight, "config")
-            filter_nonzero_weight(batch, self.pred_dipole, batch.weight, batch.dipole_weight, "config")
-            filter_nonzero_weight(batch, self.ref_dipole_per_atom, batch.weight, batch.dipole_weight, "config")
-            filter_nonzero_weight(batch, self.pred_dipole_per_atom, batch.weight, batch.dipole_weight, "config")
+            self.n_dipole += filter_nonzero_weight(
+                batch, self.ref_dipole, batch.weight, batch.dipole_weight, "config"
+            )
+            filter_nonzero_weight(
+                batch, self.pred_dipole, batch.weight, batch.dipole_weight, "config"
+            )
+            filter_nonzero_weight(
+                batch,
+                self.ref_dipole_per_atom,
+                batch.weight,
+                batch.dipole_weight,
+                "config",
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_dipole_per_atom,
+                batch.weight,
+                batch.dipole_weight,
+                "config",
+            )
 
     def _process_data(self, ref_list, pred_list):
         # Handle different possible states of ref_list and pred_list in distributed mode
@@ -642,9 +739,12 @@ class InferenceMetric(Metric):
             }
 
         if self.n_interaction_energy:
-            ref_interaction_e, pred_interaction_e = self._process_data(self.ref_interaction_energies, self.pred_interaction_energies)
+            ref_interaction_e, pred_interaction_e = self._process_data(
+                self.ref_interaction_energies, self.pred_interaction_energies
+            )
             ref_interaction_e_pa, pred_interaction_e_pa = self._process_data(
-                self.ref_interaction_energies_per_atom, self.pred_interaction_energies_per_atom
+                self.ref_interaction_energies_per_atom,
+                self.pred_interaction_energies_per_atom,
             )
             results["interaction_energy"] = {
                 "reference": ref_interaction_e,
@@ -652,7 +752,7 @@ class InferenceMetric(Metric):
                 "reference_per_atom": ref_interaction_e_pa,
                 "predicted_per_atom": pred_interaction_e_pa,
             }
-            
+
         # Process forces
         if self.n_forces:
             ref_f, pred_f = self._process_data(self.ref_forces, self.pred_forces)

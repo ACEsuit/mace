@@ -173,7 +173,12 @@ def get_cache_dir() -> Path:
 
 
 def filter_nonzero_weight(
-    batch, quantity_l, weight, quantity_weight, spread_atoms=False, spread_quantity_vector=True
+    batch,
+    quantity_l,
+    weight,
+    quantity_weight,
+    spread_atoms=False,
+    spread_quantity_vector=True,
 ) -> float:
     quantity = quantity_l[-1]
     # repeat with interleaving for per-atom quantities
