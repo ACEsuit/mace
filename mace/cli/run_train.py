@@ -351,7 +351,7 @@ def run(args) -> None:
         head_config_pt = next(head_config_pt, None)
         assert head_config_pt is not None, "Pretraining head not found"
         if all_ase_readable:
-            ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
+            ratio_pt_ft = (size_collections_train - len(head_config_pt.collections.train)) / len(head_config_pt.collections.train)
             if ratio_pt_ft < 0.1:
                 logging.warning(
                     f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "

@@ -234,9 +234,9 @@ def load_from_xyz(
         key_specification.info_keys["energy"] = "REF_energy"
         for atoms in atoms_list:
             try:
-                print("OK")
+                # print("OK")
                 atoms.info["REF_energy"] = atoms.get_potential_energy()
-                print("atoms.info['REF_energy']:", atoms.info["REF_energy"])
+                # print("atoms.info['REF_energy']:", atoms.info["REF_energy"])
             except Exception as e:  # pylint: disable=W0703
                 logging.error(f"Failed to extract energy: {e}")
                 atoms.info["REF_energy"] = None
