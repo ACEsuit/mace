@@ -4,6 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+from collections import defaultdict
 import dataclasses
 import logging
 import time
@@ -628,7 +629,18 @@ class MACELoss(Metric):
         return to_numpy(delta)
 
     def compute(self):
-        aux = {}
+
+        class NoneMultiply:
+            def __mul__(self, other):
+                return NoneMultiply()
+            def __rmul__(self, other):
+                return NoneMultiply()
+            def __imul__(self, other):
+                return NoneMultiply()
+            def __format__(self, format_spec):
+                return str(None)
+
+        aux = defaultdict(NoneMultiply)
         aux["loss"] = to_numpy(self.total_loss / self.num_data).item()
         if self.E_computed:
             delta_es = self.convert(self.delta_es)
