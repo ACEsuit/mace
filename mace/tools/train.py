@@ -4,10 +4,10 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from collections import defaultdict
 import dataclasses
 import logging
 import time
+from collections import defaultdict
 from contextlib import nullcontext
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -596,23 +596,39 @@ class MACELoss(Metric):
             self.delta_es_per_atom.append(
                 (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
             )
-            self.E_computed += filter_nonzero_weight(batch, self.delta_es, batch.weight, batch.energy_weight) # DEBUG , label="delta_es")
-            filter_nonzero_weight(batch, self.delta_es_per_atom, batch.weight, batch.energy_weight) # DEBUG , label="delta_es_per_atom")
+            self.E_computed += filter_nonzero_weight(
+                batch, self.delta_es, batch.weight, batch.energy_weight
+            )  # DEBUG , label="delta_es")
+            filter_nonzero_weight(
+                batch, self.delta_es_per_atom, batch.weight, batch.energy_weight
+            )  # DEBUG , label="delta_es_per_atom")
         if output.get("forces") is not None and batch.forces is not None:
             self.fs.append(batch.forces)
             self.delta_fs.append(batch.forces - output["forces"])
-            self.Fs_computed += filter_nonzero_weight(batch, self.delta_fs, batch.weight, batch.forces_weight, spread_atoms=True) # DEBUG , label="delta_fs")
+            self.Fs_computed += filter_nonzero_weight(
+                batch,
+                self.delta_fs,
+                batch.weight,
+                batch.forces_weight,
+                spread_atoms=True,
+            )  # DEBUG , label="delta_fs")
         if output.get("stress") is not None and batch.stress is not None:
             self.delta_stress.append(batch.stress - output["stress"])
-            self.stress_computed += filter_nonzero_weight(batch, self.delta_stress, batch.weight, batch.stress_weight) # DEBUG , label="delta_stress")
+            self.stress_computed += filter_nonzero_weight(
+                batch, self.delta_stress, batch.weight, batch.stress_weight
+            )  # DEBUG , label="delta_stress")
         if output.get("virials") is not None and batch.virials is not None:
             self.delta_virials.append(batch.virials - output["virials"])
             self.delta_virials_per_atom.append(
                 (batch.virials - output["virials"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
             )
-            self.virials_computed += filter_nonzero_weight(batch, self.delta_virials, batch.weight, batch.virials_weight) # DEBUG , label="delta_virials")
-            filter_nonzero_weight(batch, self.delta_virials_per_atom, batch.weight, batch.virials_weight) # DEBUG , label="delta_virials_per_atom")
+            self.virials_computed += filter_nonzero_weight(
+                batch, self.delta_virials, batch.weight, batch.virials_weight
+            )  # DEBUG , label="delta_virials")
+            filter_nonzero_weight(
+                batch, self.delta_virials_per_atom, batch.weight, batch.virials_weight
+            )  # DEBUG , label="delta_virials_per_atom")
         if output.get("dipole") is not None and batch.dipole is not None:
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
@@ -620,8 +636,20 @@ class MACELoss(Metric):
                 (batch.dipole - output["dipole"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
-            self.Mus_computed += filter_nonzero_weight(batch, self.delta_mus, batch.weight, batch.dipole_weight, spread_quantity_vector=False) # DEBUG , label="delta_mus")
-            filter_nonzero_weight(batch, self.delta_mus_per_atom, batch.weight, batch.dipole_weight, spread_quantity_vector=False) # DEBUG , label="delta_mus_per_atom")
+            self.Mus_computed += filter_nonzero_weight(
+                batch,
+                self.delta_mus,
+                batch.weight,
+                batch.dipole_weight,
+                spread_quantity_vector=False,
+            )  # DEBUG , label="delta_mus")
+            filter_nonzero_weight(
+                batch,
+                self.delta_mus_per_atom,
+                batch.weight,
+                batch.dipole_weight,
+                spread_quantity_vector=False,
+            )  # DEBUG , label="delta_mus_per_atom")
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):
@@ -633,10 +661,13 @@ class MACELoss(Metric):
         class NoneMultiply:
             def __mul__(self, other):
                 return NoneMultiply()
+
             def __rmul__(self, other):
                 return NoneMultiply()
+
             def __imul__(self, other):
                 return NoneMultiply()
+
             def __format__(self, format_spec):
                 return str(None)
 
