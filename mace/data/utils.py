@@ -95,7 +95,9 @@ def random_train_valid_split(
     assert 0.0 < valid_fraction < 1.0
 
     size = len(items)
-    train_size = size - int(valid_fraction * size)
+    # guarantee at least one validation, mostly for tests with tiny fitting databases
+    assert size > 1
+    train_size = min(size - int(valid_fraction * size), size - 1)
 
     indices = list(range(size))
     rng = np.random.default_rng(seed)
