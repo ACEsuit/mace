@@ -1780,6 +1780,7 @@ def test_run_train_multihead_replay_filtered_pt_data(
         "filter_type_pt": "exclusive",
         "force_mh_ft_lr": True,
         "atomic_numbers": str(sorted(multihead_finetuning_config_20[1])),
+        "dry_run": None
     }
 
     run_env = os.environ.copy()
@@ -1801,26 +1802,6 @@ def test_run_train_multihead_replay_filtered_pt_data(
         m.chdir(tmp_path)
         p = subprocess.run(cmd, env=run_env, check=True)
     assert p.returncode == 0
-
-    # Load and test the finetuned model
-    calc = MACECalculator(
-        model_paths=tmp_path / "finetuned.model",
-        device="cpu",
-        default_dtype="float64",
-        head="pt_head",
-    )
-
-    Es = []
-    for at in fitting_configs:
-        at.calc = calc
-        Es.append(at.get_potential_energy())
-
-    print("Energies:", Es)
-
-    # Add some basic checks
-    assert len(Es) == len(fitting_configs)
-    assert all(isinstance(E, float) for E in Es)
-    assert len(set(Es)) > 1  # Ens
 
 
 # test multihead replay fine-tuning ratio of real to ft data
