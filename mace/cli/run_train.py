@@ -271,7 +271,9 @@ def run(args) -> None:
                 f"Using filtered Materials Project data for replay ({args.num_samples_pt}, {args.filter_type_pt}, {args.subselect_pt}). "
                 "You can also construct a different subset using `fine_tuning_select.py` script."
             )
-            collections = assemble_replay_data(head_config.train_file[0], args, head_config, tag)
+            collections = assemble_replay_data(
+                head_config.train_file[0], args, head_config, tag
+            )
             head_config.collections = collections
         elif any(check_path_ase_read(f) for f in head_config.train_file):
             train_files_ase_list = [
@@ -302,9 +304,9 @@ def run(args) -> None:
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
                 no_data_ok=(
-                    args.pseudolabel_replay and 
-                    args.multiheads_finetuning and 
-                    head_config.head_name == "pt_head"
+                    args.pseudolabel_replay
+                    and args.multiheads_finetuning
+                    and head_config.head_name == "pt_head"
                 ),
             )
             head_config.collections = SubsetCollection(
@@ -684,7 +686,7 @@ def run(args) -> None:
     # Cueq
     if args.enable_cueq and not args.only_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     # Optimizer
     param_options = get_params_options(args, model)
