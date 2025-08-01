@@ -461,6 +461,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=1.0,
     )
     parser.add_argument(
+        "--real_pt_data_ratio_threshold",
+        help="threshold of real data to replay data below which real data (sum over all real heads) is duplicated",
+        type=float,
+        default=0.1,
+    )
+    parser.add_argument(
         "--num_samples_pt",
         help="Number of samples in the pretrained head",
         type=int,
