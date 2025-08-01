@@ -1,5 +1,6 @@
 import argparse
 import importlib.util
+import os
 from pathlib import Path
 
 import ase.io
@@ -23,6 +24,12 @@ if (spec := importlib.util.find_spec("les")) is not None:
 else:
     LES_AVAILABLE = False
 
+if (spec := importlib.util.find_spec("cuequivariance")) is not None:
+    CUET_AVAILABLE = True
+else:
+    CUET_AVAILABLE = False
+
+CUDA_AVAILABLE = torch.cuda.is_available()
 
 @pytest.fixture(name="fitting_configs")
 def fixture_fitting_configs():
@@ -188,7 +195,60 @@ def test_run_train_with_mp(tmp_path, fitting_configs):
 
     assert np.allclose(Es, ref_Es)
 
+@pytest.mark.skipif(not (LES_AVAILABLE and CUET_AVAILABLE and CUDA_AVAILABLE), reason="Testing MACELES cueq training requires LES, cuequivariance, and CUDA to be available")
+def test_run_train_maceles_cueq(tmp_path, fitting_configs):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["device"] = "cuda"
+    mace_params["enable_cueq"] = True
+    args = build_default_arg_parser().parse_args(
+        [f"--{k}={v}" if v is not None else f"--{k}" for k, v in mace_params.items()]
+    )
+    # Seed torch, and enable deterministic algorithms for reproducibility
+    torch.manual_seed(5)
+    torch.use_deterministic_algorithms(True)
 
+    # Run the training
+    mace_run(args)
+
+    calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+    ref_Es = [
+        0.004919160731848143,
+        0.5906680240792959,
+        0.47887544882572264,
+        0.4176002467254094,
+        0.5606673227439406,
+        0.40181714730443363,
+        0.3367534132795259,
+        0.27118917957971056,
+        0.47967529915910134,
+        0.32077479180773283,
+        1.2865402405977537,
+        0.3472478715875782,
+        0.427734507004752,
+        0.8092185237225293,
+        0.38348242384362774,
+        0.14448973657513398,
+        0.5650118900854595,
+        0.429029669763921,
+        0.4837945154901776,
+        0.2244894146891574,
+        0.3667896493444026,
+        0.23811703879534651,
+    ]
+    assert np.allclose(Es, ref_Es)
+    
 MODEL_CONFIG = dict(
     r_max=5,
     num_bessel=8,
