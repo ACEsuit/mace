@@ -275,8 +275,8 @@ def load_from_xyz(
             logging.warning(msg + " Continuing because no_data_ok=True was passed in.")
         else:
             raise ValueError(
-                msg +
-                " Please change the key names in the command line arguments or ensure that the file contains the required data."
+                msg
+                + " Please change the key names in the command line arguments or ensure that the file contains the required data."
             )
     if not has_energy:
         logging.warning(
