@@ -7,6 +7,7 @@
 import dataclasses
 import logging
 import time
+from collections import defaultdict
 from contextlib import nullcontext
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -33,6 +34,7 @@ from .utils import (
     compute_rel_mae,
     compute_rel_rmse,
     compute_rmse,
+    filter_nonzero_weight,
 )
 
 
@@ -603,38 +605,69 @@ class MACELoss(Metric):
         self.num_data += batch.num_graphs
 
         if output.get("energy") is not None and batch.energy is not None:
-            self.E_computed += 1.0
             self.delta_es.append(batch.energy - output["energy"])
             self.delta_es_per_atom.append(
                 (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
             )
+            self.E_computed += filter_nonzero_weight(
+                batch, self.delta_es, batch.weight, batch.energy_weight
+            )  # DEBUG , label="delta_es")
+            filter_nonzero_weight(
+                batch, self.delta_es_per_atom, batch.weight, batch.energy_weight
+            )  # DEBUG , label="delta_es_per_atom")
         if output.get("forces") is not None and batch.forces is not None:
-            self.Fs_computed += 1.0
             self.fs.append(batch.forces)
             self.delta_fs.append(batch.forces - output["forces"])
+            self.Fs_computed += filter_nonzero_weight(
+                batch,
+                self.delta_fs,
+                batch.weight,
+                batch.forces_weight,
+                spread_atoms=True,
+            )  # DEBUG , label="delta_fs")
         if output.get("stress") is not None and batch.stress is not None:
-            self.stress_computed += 1.0
             self.delta_stress.append(batch.stress - output["stress"])
+            self.stress_computed += filter_nonzero_weight(
+                batch, self.delta_stress, batch.weight, batch.stress_weight
+            )  # DEBUG , label="delta_stress")
         if output.get("virials") is not None and batch.virials is not None:
-            self.virials_computed += 1.0
             self.delta_virials.append(batch.virials - output["virials"])
             self.delta_virials_per_atom.append(
                 (batch.virials - output["virials"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
             )
+            self.virials_computed += filter_nonzero_weight(
+                batch, self.delta_virials, batch.weight, batch.virials_weight
+            )  # DEBUG , label="delta_virials")
+            filter_nonzero_weight(
+                batch, self.delta_virials_per_atom, batch.weight, batch.virials_weight
+            )  # DEBUG , label="delta_virials_per_atom")
         if output.get("dipole") is not None and batch.dipole is not None:
-            self.Mus_computed += 1.0
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
             self.delta_mus_per_atom.append(
                 (batch.dipole - output["dipole"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
+            self.Mus_computed += filter_nonzero_weight(
+                batch,
+                self.delta_mus,
+                batch.weight,
+                batch.dipole_weight,
+                spread_quantity_vector=False,
+            )  # DEBUG , label="delta_mus")
+            filter_nonzero_weight(
+                batch,
+                self.delta_mus_per_atom,
+                batch.weight,
+                batch.dipole_weight,
+                spread_quantity_vector=False,
+            )  # DEBUG , label="delta_mus_per_atom")
         if (
             output.get("polarizability") is not None
             and batch.polarizability is not None
         ):
-            self.polarizability_computed += 1.0
+            self.polarizability_computed += 1.0 # TODO: add the filtering of missing data
             self.delta_polarizability.append(
                 batch.polarizability - output["polarizability"]
             )
@@ -649,7 +682,21 @@ class MACELoss(Metric):
         return to_numpy(delta)
 
     def compute(self):
-        aux = {}
+
+        class NoneMultiply:
+            def __mul__(self, other):
+                return NoneMultiply()
+
+            def __rmul__(self, other):
+                return NoneMultiply()
+
+            def __imul__(self, other):
+                return NoneMultiply()
+
+            def __format__(self, format_spec):
+                return str(None)
+
+        aux = defaultdict(NoneMultiply)
         aux["loss"] = to_numpy(self.total_loss / self.num_data).item()
         if self.E_computed:
             delta_es = self.convert(self.delta_es)
