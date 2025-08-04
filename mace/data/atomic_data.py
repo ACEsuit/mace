@@ -38,6 +38,7 @@ class AtomicData(torch_geometric.data.Data):
     virials: torch.Tensor
     dipole: torch.Tensor
     charges: torch.Tensor
+    polarizability: torch.Tensor
     total_charge: torch.Tensor
     total_spin: torch.Tensor
     weight: torch.Tensor
@@ -47,6 +48,7 @@ class AtomicData(torch_geometric.data.Data):
     virials_weight: torch.Tensor
     dipole_weight: torch.Tensor
     charges_weight: torch.Tensor
+    polarizability_weight: torch.Tensor
 
     def __init__(
         self,
@@ -64,12 +66,14 @@ class AtomicData(torch_geometric.data.Data):
         virials_weight: Optional[torch.Tensor],  # [,]
         dipole_weight: Optional[torch.Tensor],  # [,]
         charges_weight: Optional[torch.Tensor],  # [,]
+        polarizability_weight: Optional[torch.Tensor],  # [,]
         forces: Optional[torch.Tensor],  # [n_nodes, 3]
         energy: Optional[torch.Tensor],  # [, ]
         stress: Optional[torch.Tensor],  # [1,3,3]
         virials: Optional[torch.Tensor],  # [1,3,3]
         dipole: Optional[torch.Tensor],  # [, 3]
         charges: Optional[torch.Tensor],  # [n_nodes, ]
+        polarizability: Optional[torch.Tensor],  # [1, 3, 3]
         elec_temp: Optional[torch.Tensor],  # [,]
         total_charge: Optional[torch.Tensor] = None,  # [,]
         total_spin: Optional[torch.Tensor] = None,  # [,]
@@ -100,6 +104,7 @@ class AtomicData(torch_geometric.data.Data):
         assert elec_temp is None or len(elec_temp.shape) == 0
         assert total_charge is None or len(total_charge.shape) == 0
         assert total_spin is None or len(total_spin.shape) == 0
+        assert polarizability is None or polarizability.shape == (1, 3, 3)
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -117,12 +122,14 @@ class AtomicData(torch_geometric.data.Data):
             "virials_weight": virials_weight,
             "dipole_weight": dipole_weight,
             "charges_weight": charges_weight,
+            "polarizability_weight": polarizability_weight,
             "forces": forces,
             "energy": energy,
             "stress": stress,
             "virials": virials,
             "dipole": dipole,
             "charges": charges,
+            "polarizability": polarizability,
             "elec_temp": elec_temp,
             "total_charge": total_charge,
             "total_spin": total_spin,
@@ -225,7 +232,16 @@ class AtomicData(torch_geometric.data.Data):
             if config.property_weights.get("charges") is not None
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
-
+        polarizability_weight = (
+            torch.tensor(
+                config.property_weights.get("polarizability"),
+                dtype=torch.get_default_dtype(),
+            )
+            if config.property_weights.get("polarizability") is not None
+            else torch.tensor(
+                1.0, dtype=torch.get_default_dtype()
+            )  ### Might need to be updated
+        )
         forces = (
             torch.tensor(
                 config.properties.get("forces"), dtype=torch.get_default_dtype()
@@ -288,6 +304,15 @@ class AtomicData(torch_geometric.data.Data):
             if config.properties.get("total_charge") is not None
             else torch.tensor(0.0, dtype=torch.get_default_dtype())
         )
+
+        polarizability = (
+            torch.tensor(
+                config.properties.get("polarizability"), dtype=torch.get_default_dtype()
+            ).view(1, 3, 3)
+            if config.properties.get("polarizability") is not None
+            else torch.zeros(1, 3, 3, dtype=torch.get_default_dtype())
+        )
+
         total_spin = (
             torch.tensor(
                 config.properties.get("total_spin"), dtype=torch.get_default_dtype()
@@ -311,6 +336,7 @@ class AtomicData(torch_geometric.data.Data):
             virials_weight=virials_weight,
             dipole_weight=dipole_weight,
             charges_weight=charges_weight,
+            polarizability_weight=polarizability_weight,
             forces=forces,
             energy=energy,
             stress=stress,
@@ -319,6 +345,7 @@ class AtomicData(torch_geometric.data.Data):
             charges=charges,
             elec_temp=elec_temp,
             total_charge=total_charge,
+            polarizability=polarizability,
             total_spin=total_spin,
         )
 
