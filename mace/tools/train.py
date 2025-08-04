@@ -129,6 +129,12 @@ def valid_err_log(
         logging.info(
             f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_MU_per_atom={error_mu:8.2f} mDebye",
         )
+    elif log_errors == "DipolePolarRMSE":
+        error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
+        error_polarizability = eval_metrics["rmse_polarizability_per_atom"] * 1e3
+        logging.info(
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} me A, RMSE_polarizability_per_atom={error_polarizability:.2f} me A^2 / V",
+        )
     elif log_errors == "EnergyDipoleRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
@@ -583,6 +589,13 @@ class MACELoss(Metric):
         self.add_state("mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state(
+            "polarizability_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.add_state("delta_polarizability", default=[], dist_reduce_fx="cat")
+        self.add_state(
+            "delta_polarizability_per_atom", default=[], dist_reduce_fx="cat"
+        )
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
@@ -616,6 +629,18 @@ class MACELoss(Metric):
             self.delta_mus_per_atom.append(
                 (batch.dipole - output["dipole"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
+            )
+        if (
+            output.get("polarizability") is not None
+            and batch.polarizability is not None
+        ):
+            self.polarizability_computed += 1.0
+            self.delta_polarizability.append(
+                batch.polarizability - output["polarizability"]
+            )
+            self.delta_polarizability_per_atom.append(
+                (batch.polarizability - output["polarizability"])
+                / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1).unsqueeze(-1)
             )
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
@@ -665,5 +690,19 @@ class MACELoss(Metric):
             aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
             aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
             aux["q95_mu"] = compute_q95(delta_mus)
+        if self.polarizability_computed:
+            delta_polarizability = self.convert(self.delta_polarizability)
+            delta_polarizability_per_atom = self.convert(
+                self.delta_polarizability_per_atom
+            )
+            aux["mae_polarizability"] = compute_mae(delta_polarizability)
+            aux["mae_polarizability_per_atom"] = compute_mae(
+                delta_polarizability_per_atom
+            )
+            aux["rmse_polarizability"] = compute_rmse(delta_polarizability)
+            aux["rmse_polarizability_per_atom"] = compute_rmse(
+                delta_polarizability_per_atom
+            )
+            aux["q95_polarizability"] = compute_q95(delta_polarizability)
 
         return aux["loss"], aux
