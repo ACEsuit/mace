@@ -35,6 +35,14 @@ except (ImportError, ModuleNotFoundError):
     run_e3nn_to_cueq = None
 
 try:
+    from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
+
+    OEQ_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    OEQ_AVAILABLE = False
+    run_e3nn_to_oeq = None
+
+try:
     import intel_extension_for_pytorch as ipex
 
     has_ipex = True
@@ -83,19 +91,28 @@ class MACECalculator(Calculator):
         compile_mode=None,
         fullgraph=True,
         enable_cueq=False,
+        enable_oeq=False,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
-        if enable_cueq:
+        if enable_cueq or enable_oeq:
             assert model_type == "MACE", "CuEq only supports MACE models"
             if compile_mode is not None:
                 logging.warning(
-                    "CuEq does not support torch.compile, setting compile_mode to None"
+                    "CuEq or Oeq does not support torch.compile, setting compile_mode to None"
                 )
                 compile_mode = None
+        if enable_cueq and enable_oeq:
+            raise ValueError(
+                "CuEq and OEq cannot be used together, please choose one of them"
+            )
         if enable_cueq and not CUEQQ_AVAILABLE:
             raise ImportError(
                 "cuequivariance is not installed so CuEq acceleration cannot be used"
+            )
+        if enable_oeq and not OEQ_AVAILABLE:
+            raise ImportError(
+                "openequivariance is not installed so OEq acceleration cannot be used"
             )
         if "model_path" in kwargs:
             deprecation_message = (
@@ -279,6 +296,12 @@ class MACECalculator(Calculator):
             print("Converting models to CuEq for acceleration")
             self.models = [
                 run_e3nn_to_cueq(model, device=device).to(device)
+                for model in self.models
+            ]
+        if enable_oeq:
+            print("Converting models to OEq for acceleration")
+            self.models = [
+                run_e3nn_to_oeq(model, device=device).to(device)
                 for model in self.models
             ]
         for model in self.models:
