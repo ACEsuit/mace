@@ -212,10 +212,13 @@ def test_dipole_polar_mace():
         output["dipole"][1].detach().numpy(),
     )
     # sanity check of polarizability being the right shape
-    assert output["polarizability"][0].unsqueeze(0).shape == atomic_data.polarizability.shape
+    assert (
+        output["polarizability"][0].unsqueeze(0).shape
+        == atomic_data.polarizability.shape
+    )
     # test equivariance of output polarizability
     assert np.allclose(
-        np.array(rot @ output["polarizability"][0].detach().numpy()@ rot.T),
+        np.array(rot @ output["polarizability"][0].detach().numpy() @ rot.T),
         output["polarizability"][1].detach().numpy(),
     )
 

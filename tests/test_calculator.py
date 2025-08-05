@@ -315,6 +315,8 @@ def trained_dipole_fixture(tmp_path_factory, fitting_configs):
     return MACECalculator(
         model_paths=tmp_path / "MACE.model", device="cpu", model_type="DipoleMACE"
     )
+
+
 @pytest.fixture(scope="module", name="trained_dipole_polarizability_model")
 def trained_dipole_polar_fixture(tmp_path_factory, fitting_configs):
     _mace_params = {
@@ -373,6 +375,7 @@ def trained_dipole_polar_fixture(tmp_path_factory, fitting_configs):
     return MACECalculator(
         tmp_path / "MACE.model", device="cpu", model_type="DipolePolarizabilityMACE"
     )
+
 
 @pytest.fixture(scope="module", name="trained_energy_dipole_model")
 def trained_energy_dipole_fixture(tmp_path_factory, fitting_configs):
