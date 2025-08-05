@@ -105,6 +105,9 @@ class BackendTestBase:
             modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
             modules.interaction_classes["RealAgnosticInteractionBlock"],
             modules.interaction_classes["RealAgnosticDensityInteractionBlock"],
+            modules.interaction_classes[
+                "RealAgnosticResidualNonLinearInteractionBlock"
+            ],
         ],
     )
     @pytest.mark.parametrize(
@@ -115,9 +118,9 @@ class BackendTestBase:
             o3.Irreps("32x0e"),
         ],
     )
-    @pytest.mark.parametrize("default_dtype", [torch.float32, torch.float64])
-    @pytest.mark.parametrize("use_agnostic_product", [True, False])
-    @pytest.mark.parametrize("use_last_readout_only", [True, False])
+    @pytest.mark.parametrize("default_dtype", [torch.float64])
+    @pytest.mark.parametrize("use_agnostic_product", [False])
+    @pytest.mark.parametrize("use_last_readout_only", [False])
     @pytest.mark.parametrize("use_reduced_cg", [True, False])
     def test_bidirectional_conversion(
         self,

@@ -19,17 +19,10 @@ from mace.modules.models import ScaleShiftMACE
 from mace.tools.arg_parser import build_default_arg_parser
 from mace.tools.torch_tools import default_dtype
 
-if (spec := importlib.util.find_spec("les")) is not None:
-    LES_AVAILABLE = True
-else:
-    LES_AVAILABLE = False
-
-if (spec := importlib.util.find_spec("cuequivariance")) is not None:
-    CUET_AVAILABLE = True
-else:
-    CUET_AVAILABLE = False
-
+LES_AVAILABLE = bool((spec := importlib.util.find_spec("les")) is not None)
+CUET_AVAILABLE = bool((spec := importlib.util.find_spec("cuequivariance")) is not None)
 CUDA_AVAILABLE = torch.cuda.is_available()
+
 
 @pytest.fixture(name="fitting_configs")
 def fixture_fitting_configs():
@@ -195,7 +188,11 @@ def test_run_train_with_mp(tmp_path, fitting_configs):
 
     assert np.allclose(Es, ref_Es)
 
-@pytest.mark.skipif(not (LES_AVAILABLE and CUET_AVAILABLE and CUDA_AVAILABLE), reason="Testing MACELES cueq training requires LES, cuequivariance, and CUDA to be available")
+
+@pytest.mark.skipif(
+    not (LES_AVAILABLE and CUET_AVAILABLE and CUDA_AVAILABLE),
+    reason="Testing MACELES cueq training requires LES, cuequivariance, and CUDA to be available",
+)
 def test_run_train_maceles_cueq(tmp_path, fitting_configs):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
@@ -248,7 +245,8 @@ def test_run_train_maceles_cueq(tmp_path, fitting_configs):
         0.23811703879534651,
     ]
     assert np.allclose(Es, ref_Es)
-    
+
+
 MODEL_CONFIG = dict(
     r_max=5,
     num_bessel=8,
@@ -271,8 +269,8 @@ MODEL_CONFIG = dict(
 )
 
 
-@pytest.fixture
-def mace_model_path(tmp_path: Path) -> Path:
+@pytest.fixture(name="mace_model_path")
+def mace_model_path_fixture(tmp_path: Path) -> Path:
     """Create and save a standard ScaleShiftMACE model."""
     with default_dtype(torch.float32):
         model = ScaleShiftMACE(**MODEL_CONFIG)
@@ -282,8 +280,8 @@ def mace_model_path(tmp_path: Path) -> Path:
 
 
 @pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
-@pytest.fixture
-def maceles_model_path(tmp_path: Path) -> Path:
+@pytest.fixture(name="maceles_model_path")
+def maceles_model_path_fixture(tmp_path: Path) -> Path:
     """Create and save a MACELES model."""
     with default_dtype(torch.float32):
         model = MACELES(**MODEL_CONFIG)

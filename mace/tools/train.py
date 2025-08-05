@@ -612,9 +612,6 @@ class MACELoss(Metric):
             self.E_computed += filter_nonzero_weight(
                 batch, self.delta_es, batch.weight, batch.energy_weight
             )  # DEBUG , label="delta_es")
-            filter_nonzero_weight(
-                batch, self.delta_es_per_atom, batch.weight, batch.energy_weight
-            )  # DEBUG , label="delta_es_per_atom")
         if output.get("forces") is not None and batch.forces is not None:
             self.fs.append(batch.forces)
             self.delta_fs.append(batch.forces - output["forces"])
@@ -639,9 +636,6 @@ class MACELoss(Metric):
             self.virials_computed += filter_nonzero_weight(
                 batch, self.delta_virials, batch.weight, batch.virials_weight
             )  # DEBUG , label="delta_virials")
-            filter_nonzero_weight(
-                batch, self.delta_virials_per_atom, batch.weight, batch.virials_weight
-            )  # DEBUG , label="delta_virials_per_atom")
         if output.get("dipole") is not None and batch.dipole is not None:
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
@@ -656,24 +650,23 @@ class MACELoss(Metric):
                 batch.dipole_weight,
                 spread_quantity_vector=False,
             )  # DEBUG , label="delta_mus")
-            filter_nonzero_weight(
-                batch,
-                self.delta_mus_per_atom,
-                batch.weight,
-                batch.dipole_weight,
-                spread_quantity_vector=False,
-            )  # DEBUG , label="delta_mus_per_atom")
         if (
             output.get("polarizability") is not None
             and batch.polarizability is not None
         ):
-            self.polarizability_computed += 1.0 # TODO: add the filtering of missing data
             self.delta_polarizability.append(
                 batch.polarizability - output["polarizability"]
             )
             self.delta_polarizability_per_atom.append(
                 (batch.polarizability - output["polarizability"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1).unsqueeze(-1)
+            )
+            self.polarizability_computed += filter_nonzero_weight(
+                batch,
+                self.delta_polarizability,
+                batch.weight,
+                batch.polarizability_weight,
+                spread_quantity_vector=False,
             )
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
