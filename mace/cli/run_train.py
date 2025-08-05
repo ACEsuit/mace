@@ -22,7 +22,7 @@ from torch_ema import ExponentialMovingAverage
 
 import mace
 from mace import data, tools
-from mace.calculators.foundations_models import mace_mp, mace_off
+from mace.calculators.foundations_models import mace_mp, mace_mp_names, mace_off
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.visualise_train import TrainingPlotter
@@ -32,7 +32,8 @@ from mace.tools.distributed_tools import init_distributed
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
-    assemble_mp_data,
+    apply_pseudolabels_to_pt_head_configs,
+    assemble_replay_data,
     dict_head_to_dataclass,
     prepare_default_head,
     prepare_pt_head,
@@ -88,6 +89,7 @@ def run(args) -> None:
     if args.device == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
+            import oneccl_bindings_for_pytorch as oneccl  # pylint: disable=unused-import
         except ImportError as e:
             raise ImportError(
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"
@@ -102,7 +104,10 @@ def run(args) -> None:
         logging.log(level=loglevel, msg=message)
 
     if args.distributed:
-        torch.cuda.set_device(local_rank)
+        if args.device == "cuda":
+            torch.cuda.set_device(local_rank)
+        elif args.device == "xpu":
+            torch.xpu.set_device(local_rank)
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
         logging.info(f"Processes: {world_size}")
 
@@ -117,8 +122,10 @@ def run(args) -> None:
     commit = print_git_commit()
     model_foundation: Optional[torch.nn.Module] = None
     foundation_model_avg_num_neighbors = 0
+    # Filter out None from mace_mp_names to get valid model names
+    valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
     if args.foundation_model is not None:
-        if args.foundation_model in ["small", "medium", "large"]:
+        if args.foundation_model in valid_mace_mp_models:
             logging.info(
                 f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
             )
@@ -219,6 +226,10 @@ def run(args) -> None:
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
+        # don't apply user's --atomic_numbers to pt_head, that info needs to come
+        # from the actual pt data
+        if args.multiheads_finetuning and head_config.head_name == "pt_head":
+            head_config.atomic_numbers = None
 
         # Handle train_file and valid_file - normalize to lists
         if hasattr(head_config, "train_file") and head_config.train_file is not None:
@@ -252,14 +263,17 @@ def run(args) -> None:
                 head_config.atomic_energies_dict = ast.literal_eval(
                     statistics["atomic_energies"]
                 )
-        if head_config.train_file == ["mp"]:
+        if head_config.train_file in (["mp"], ["matpes_pbe"], ["matpes_r2scan"]):
             assert (
                 head_config.head_name == "pt_head"
             ), "Only pt_head should use mp as train_file"
             logging.info(
-                "Using the full Materials Project data for replay. You can construct a different subset using `fine_tuning_select.py` script."
+                f"Using filtered Materials Project data for replay ({args.num_samples_pt}, {args.filter_type_pt}, {args.subselect_pt}). "
+                "You can also construct a different subset using `fine_tuning_select.py` script."
             )
-            collections = assemble_mp_data(args, head_config, tag)
+            collections = assemble_replay_data(
+                head_config.train_file[0], args, head_config, tag
+            )
             head_config.collections = collections
         elif any(check_path_ase_read(f) for f in head_config.train_file):
             train_files_ase_list = [
@@ -289,6 +303,11 @@ def run(args) -> None:
                 key_specification=head_config.key_specification,
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
+                no_data_ok=(
+                    args.pseudolabel_replay
+                    and args.multiheads_finetuning
+                    and head_config.head_name == "pt_head"
+                ),
             )
             head_config.collections = SubsetCollection(
                 train=collections.train,
@@ -334,17 +353,20 @@ def run(args) -> None:
         head_config_pt = next(head_config_pt, None)
         assert head_config_pt is not None, "Pretraining head not found"
         if all_ase_readable:
-            ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
-            if ratio_pt_ft < 0.1:
+            ratio_pt_ft = (
+                size_collections_train - len(head_config_pt.collections.train)
+            ) / len(head_config_pt.collections.train)
+            if ratio_pt_ft < args.real_pt_data_ratio_threshold:
                 logging.warning(
                     f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
-                    f"increasing the number of configurations in the fine-tuning heads by {int(0.1 / ratio_pt_ft)}"
+                    f"increasing the number of configurations in the fine-tuning heads by {int(args.real_pt_data_ratio_threshold / ratio_pt_ft)}"
                 )
                 for head_config in head_configs:
                     if head_config.head_name == "pt_head":
                         continue
                     head_config.collections.train += (
-                        head_config.collections.train * int(0.1 / ratio_pt_ft)
+                        head_config.collections.train
+                        * int(args.real_pt_data_ratio_threshold / ratio_pt_ft)
                     )
             logging.info(
                 f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
@@ -456,6 +478,16 @@ def run(args) -> None:
         args.compute_forces = False
         args.compute_virials = False
         args.compute_stress = False
+        args.compute_polarizability = False
+    elif args.model == "AtomicDielectricMACE":
+        atomic_energies = None
+        dipole_only = False
+        args.compute_dipole = True
+        args.compute_energy = False
+        args.compute_forces = False
+        args.compute_virials = False
+        args.compute_stress = False
+        args.compute_polarizability = True
     else:
         dipole_only = False
         if args.model == "EnergyDipolesMACE":
@@ -464,9 +496,11 @@ def run(args) -> None:
             args.compute_forces = True
             args.compute_virials = False
             args.compute_stress = False
+            args.compute_polarizability = False
         else:
             args.compute_energy = True
             args.compute_dipole = False
+            args.compute_polarizability = False
         # atomic_energies: np.ndarray = np.array(
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
@@ -485,6 +519,21 @@ def run(args) -> None:
         train_datasets = []
 
         logging.info(f"Processing datasets for head '{head_config.head_name}'")
+
+        # Apply pseudolabels if this is the pt_head and pseudolabeling is enabled
+        if args.pseudolabel_replay and args.multiheads_finetuning and head_config.head_name == "pt_head":
+            logging.info("=============    Pseudolabeling for pt_head    ===========")
+            if apply_pseudolabels_to_pt_head_configs(
+                foundation_model=model_foundation,
+                pt_head_config=head_config,
+                r_max=args.r_max,
+                device=device,
+                batch_size=args.batch_size
+            ):
+                logging.info("Successfully applied pseudolabels to pt_head configurations")
+            else:
+                logging.warning("Pseudolabeling was not successful, continuing with original configurations")
+
         ase_files = [f for f in head_config.train_file if check_path_ase_read(f)]
         non_ase_files = [f for f in head_config.train_file if not check_path_ase_read(f)]
 
@@ -601,6 +650,7 @@ def run(args) -> None:
                 seed=args.seed,
             )
             valid_samplers[head] = valid_sampler
+
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
         batch_size=args.batch_size,
@@ -611,6 +661,7 @@ def run(args) -> None:
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
     )
+
     valid_loaders = {heads[i]: None for i in range(len(heads))}
     if not isinstance(valid_sets, dict):
         valid_sets = {"Default": valid_sets}
@@ -650,7 +701,7 @@ def run(args) -> None:
     # Cueq
     if args.enable_cueq and not args.only_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     # Optimizer
     param_options = get_params_options(args, model)
@@ -749,7 +800,8 @@ def run(args) -> None:
                 device=device,
                 plot_frequency=args.plot_frequency,
                 distributed=args.distributed,
-                swa_start=swa.start if swa else None
+                swa_start=swa.start if swa else None,
+                plot_interaction_e=args.plot_interaction_e
                 )
         except Exception as e:  # pylint: disable=W0718
             logging.debug(f"Creating Plotter failed: {e}")
@@ -760,6 +812,14 @@ def run(args) -> None:
         logging.info("DRY RUN mode enabled. Stopping now.")
         return
 
+    if args.device == "xpu":
+        try:
+            model, optimizer = ipex.optimize(model, optimizer=optimizer)
+        except ImportError as e:
+            logging.error(
+                "Intel Extension for PyTorch not found, but XPU device was specified. "
+                "Please install it to use XPU device."
+            )
 
     tools.train(
         model=model,

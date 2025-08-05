@@ -19,6 +19,7 @@ from mace.modules.wrapper_ops import (
     OEQConfig,
     SymmetricContractionWrapper,
     TensorProduct,
+    TransposeIrrepsLayoutWrapper,
 )
 from mace.tools.compile import simplify_if_compile
 from mace.tools.scatter import scatter_sum
@@ -189,6 +190,86 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
             self.irreps_out = o3.Irreps("1x1o")
         else:
             self.irreps_out = o3.Irreps("1x0e + 1x1o")
+        irreps_scalars = o3.Irreps(
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out]
+        )
+        irreps_gated = o3.Irreps(
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
+        )
+        irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
+        self.equivariant_nonlin = nn.Gate(
+            irreps_scalars=irreps_scalars,
+            act_scalars=[gate for _, ir in irreps_scalars],
+            irreps_gates=irreps_gates,
+            act_gates=[gate] * len(irreps_gates),
+            irreps_gated=irreps_gated,
+        )
+        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
+        self.linear_1 = Linear(
+            irreps_in=irreps_in, irreps_out=self.irreps_nonlin, cueq_config=cueq_config
+        )
+        self.linear_2 = Linear(
+            irreps_in=self.hidden_irreps,
+            irreps_out=self.irreps_out,
+            cueq_config=cueq_config,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        x = self.equivariant_nonlin(self.linear_1(x))
+        return self.linear_2(x)  # [n_nodes, 1]
+
+
+@compile_mode("script")
+class LinearDipolePolarReadoutBlock(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        use_polarizability: bool = True,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
+    ):
+        super().__init__()
+        if use_polarizability:
+            print("You will calculate the polarizability and dipole.")
+            self.irreps_out = o3.Irreps("2x0e + 1x1o + 1x2e")
+        else:
+            raise ValueError(
+                "Invalid configuration for LinearDipolePolarReadoutBlock: "
+                "use_polarizability must be either True."
+                "If you want to calculate only the dipole, use AtomicDipolesMACE."
+            )
+
+        self.linear = Linear(
+            irreps_in=irreps_in, irreps_out=self.irreps_out, cueq_config=cueq_config
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        y = self.linear(x)  # [n_nodes, 1]
+        return y  # [n_nodes, 1]
+
+
+@compile_mode("script")
+class NonLinearDipolePolarReadoutBlock(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Callable,
+        use_polarizability: bool = True,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
+    ):
+        super().__init__()
+        self.hidden_irreps = MLP_irreps
+        if use_polarizability:
+            print("You will calculate the polarizability and dipole.")
+            self.irreps_out = o3.Irreps("2x0e + 1x1o + 1x2e")
+        else:
+            raise ValueError(
+                "Invalid configuration for NonLinearDipolePolarReadoutBlock: "
+                "use_polarizability must be either True."
+                "If you want to calculate only the dipole, use AtomicDipolesMACE."
+            )
         irreps_scalars = o3.Irreps(
             [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out]
         )
@@ -1131,6 +1212,19 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         self.alpha = torch.nn.Parameter(torch.tensor(20.0), requires_grad=True)
         self.beta = torch.nn.Parameter(torch.tensor(0.0), requires_grad=True)
 
+        self.transpose_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_nonlin,
+            source="ir_mul",
+            target="mul_ir",
+            cueq_config=self.cueq_config,
+        )
+        self.transpose_ir_mul = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_out,
+            source="mul_ir",
+            target="ir_mul",
+            cueq_config=self.cueq_config,
+        )
+
     def forward(
         self,
         node_attrs: torch.Tensor,
@@ -1191,7 +1285,12 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         node_feats_res = self.truncate_ghosts(node_feats_res, n_real)
         message = self.linear_1(message) / (density * self.beta + self.alpha)
         message = message + node_feats_res
-        message = self.linear_2(self.equivariant_nonlin(message))
+        if self.transpose_mul_ir is not None:
+            message = self.transpose_mul_ir(message)
+        message = self.equivariant_nonlin(message)
+        if self.transpose_ir_mul is not None:
+            message = self.transpose_ir_mul(message)
+        message = self.linear_2(message)
         return (
             self.reshape(message),
             sc,
