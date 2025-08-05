@@ -1,7 +1,7 @@
 import argparse
 import logging
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import torch
@@ -19,29 +19,26 @@ except (ImportError, ModuleNotFoundError):
     CUEQQ_AVAILABLE = False
     cue = None
 
+SizeLike = Union[torch.Size, List[int]]
 
-def get_transfer_keys(num_layers: int) -> List[str]:
-    """Get list of keys that need to be transferred"""
-    return [
-        "node_embedding.linear.weight",
-        "radial_embedding.bessel_fn.bessel_weights",
-        "atomic_energies_fn.atomic_energies",
-        "readouts.0.linear.weight",
-        *[f"readouts.{j}.linear.weight" for j in range(num_layers - 1)],
-        "scale_shift.scale",
-        "scale_shift.shift",
-        *[f"readouts.{num_layers-1}.linear_{i}.weight" for i in range(1, 3)],
-    ] + [
-        s
-        for j in range(num_layers)
-        for s in [
-            f"interactions.{j}.linear_up.weight",
-            *[f"interactions.{j}.conv_tp_weights.layer{i}.weight" for i in range(4)],
-            f"interactions.{j}.linear.weight",
-            f"interactions.{j}.skip_tp.weight",
-            f"products.{j}.linear.weight",
-        ]
-    ]
+
+def shapes_match_up_to_unsqueeze(a: SizeLike, b: SizeLike) -> bool:
+    if isinstance(a, torch.Tensor):
+        a = a.shape
+    if isinstance(b, torch.Tensor):
+        b = b.shape
+
+    def drop(s):
+        return tuple(d for d in s if d != 1)
+
+    return drop(a) == drop(b)
+
+
+def reshape_like(src: torch.Tensor, ref_shape: torch.Size) -> torch.Tensor:
+    try:
+        return src.reshape(ref_shape)
+    except RuntimeError:
+        return src.clone().reshape(ref_shape)
 
 
 def get_kmax_pairs(
@@ -140,14 +137,6 @@ def transfer_weights(
     source_dict = source_model.state_dict()
     target_dict = target_model.state_dict()
 
-    # Transfer main weights
-    transfer_keys = get_transfer_keys(num_layers)
-    for key in transfer_keys:
-        if key in source_dict:  # Check if key exists
-            target_dict[key] = source_dict[key]
-        else:
-            logging.warning(f"Key {key} not found in source model")
-
     # Transfer symmetric contractions
     products = target_model.products
     transfer_symmetric_contractions(
@@ -160,13 +149,8 @@ def transfer_weights(
         use_reduced_cg,
     )
 
-    # Unsqueeze linear and skip_tp layers
-    for key in source_dict.keys():
-        if any(x in key for x in ["linear", "skip_tp"]) and "weight" in key:
-            target_dict[key] = target_dict[key].squeeze(0)
-
     # Transfer remaining matching keys
-    transferred_keys = set(transfer_keys)
+    transferred_keys = set()
     remaining_keys = (
         set(source_dict.keys()) & set(target_dict.keys()) - transferred_keys
     )
@@ -174,9 +158,17 @@ def transfer_weights(
 
     if remaining_keys:
         for key in remaining_keys:
+            src = source_dict[key]
+            tgt = target_dict[key]
             if source_dict[key].shape == target_dict[key].shape:
                 logging.debug(f"Transferring additional key: {key}")
                 target_dict[key] = source_dict[key]
+            elif shapes_match_up_to_unsqueeze(src.shape, tgt.shape):
+                logging.debug(
+                    f"Transferring key {key} after adapting shape "
+                    f"{tuple(src.shape)} → {tuple(tgt.shape)}"
+                )
+                target_dict[key] = reshape_like(src, tgt.shape)
             else:
                 logging.warning(
                     f"Shape mismatch for key {key}: "
@@ -184,7 +176,7 @@ def transfer_weights(
                 )
 
     # Transfer avg_num_neighbors
-    for i in range(2):
+    for i in range(num_layers):
         target_model.interactions[i].avg_num_neighbors = source_model.interactions[
             i
         ].avg_num_neighbors

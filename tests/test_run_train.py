@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import torch
 from ase.atoms import Atoms
+from ase.calculators.singlepoint import SinglePointCalculator
 
 from mace.calculators import MACECalculator, mace_mp
 
@@ -765,7 +766,7 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
     assert np.allclose(Es, ref_Es, atol=1e-1)
 
 
-def test_run_train_multihead_replay_custum_finetuning(
+def test_run_train_multihead_replay_custom_finetuning(
     tmp_path, fitting_configs, pretraining_configs
 ):
     ase.io.write(tmp_path / "pretrain.xyz", pretraining_configs)
@@ -1458,3 +1459,452 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
 
     assert np.isfinite(e1)
     assert np.isfinite(e2)
+
+
+def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs):
+    """Test multihead foundation finetuning with pseudolabeling enabled."""
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
+    atomic_numbers = np.unique(
+        np.concatenate([at.numbers for at in fitting_configs])
+    ).tolist()
+    for i, c in enumerate(fitting_configs):
+        if i in (0, 1):
+            c_dft = c.copy()
+            c_dft.info["head"] = "DFT"
+            fitting_configs_dft.append(c_dft)
+            fitting_configs_dft.append(c)
+            c_mp2 = c.copy()
+            c_mp2.info["head"] = "MP2"
+            fitting_configs_mp2.append(c_mp2)
+        elif i % 2 == 0:
+            c.info["head"] = "DFT"
+            fitting_configs_dft.append(c)
+        else:
+            c.info["head"] = "MP2"
+            fitting_configs_mp2.append(c)
+    ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
+    heads = {
+        "DFT": {"train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz"},
+        "MP2": {"train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz"},
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    filename = tmp_path / "config.yaml"
+    with open(filename, "w", encoding="utf-8") as file:
+        file.write(yaml_str)
+    mace_params = _mace_params.copy()
+    mace_params["valid_fraction"] = 0.1
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["config"] = tmp_path / "config.yaml"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "small"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float64"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["batch_size"] = 2
+    mace_params["valid_batch_size"] = 1
+    mace_params["num_samples_pt"] = 50
+    mace_params["subselect_pt"] = "random"
+    mace_params["atomic_numbers"] = "[" + ",".join(map(str, atomic_numbers)) + "]"
+    mace_params["filter_type_pt"] = "combinations"
+    mace_params["force_mh_ft_lr"] = True
+    mace_params["pseudolabel_replay"] = True
+    # make sure run_train.py is using the mace that is currently being tested
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    try:
+        completed_process = subprocess.run(
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True
+        )
+        # Process executed successfully
+        print(completed_process.stdout)
+    except subprocess.CalledProcessError as e:
+        # Process failed with non-zero exit code
+        print(f"Command failed with exit code {e.returncode}")
+        print(f"STDOUT: {e.stdout}")
+        print(f"STDERR: {e.stderr}")
+        raise e
+    assert completed_process.returncode == 0
+
+    Es = []
+    for at in fitting_configs:
+        config_head = at.info.get("head", "MP2")
+        calc = MACECalculator(
+            model_paths=tmp_path / "MACE.model",
+            device="cpu",
+            default_dtype="float64",
+            head=config_head,
+        )
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+    # Placeholder reference values - to be updated after first successful run
+    ref_Es = [
+        1.733670868926674,
+        0.3503205769480672,
+        1.1063898890973298,
+        0.8729299295124868,
+        0.8659647927914408,
+        1.2055872171939568,
+        1.0692213958943206,
+        0.8462353744801087,
+        1.032807515403141,
+        1.020364286693989,
+        0.7909197025613658,
+        0.8318386759173623,
+        1.0407572443331499,
+        0.8463884897043394,
+        1.0809739472058826,
+        0.6669607792294759,
+        1.3825620247612367,
+        1.0146534339101825,
+        0.9917190804182996,
+        0.6952642758709486,
+        0.8193046105321836,
+        0.8927566093599664,
+    ]
+    assert np.allclose(Es, ref_Es, atol=1e-1)
+
+
+@pytest.fixture(name="pretraining_configs_3_elems", scope="module")
+def fixture_pretraining_configs_3_elems():
+    """data for pretraining a mini foundation model with 3 elements
+    returns configurations as list(Atoms)
+    """
+    configs = []
+    for _ in range(20):
+        atoms = Atoms(
+            numbers=[8, 1, 3],
+            positions=np.random.rand(3, 3) * 3,
+            cell=[5, 5, 5],
+            pbc=[True] * 3,
+        )
+        atoms.info["REF_energy"] = np.random.normal(0, 1)
+        atoms.arrays["REF_forces"] = np.random.normal(0, 1, size=(3, 3))
+        atoms.info["REF_stress"] = np.random.normal(0, 1, size=6)
+        configs.append(atoms)
+    for Z_i, Z in enumerate([8, 1, 3]):
+        configs.append(
+            Atoms(numbers=[Z], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3),
+        )
+        configs[-1].info["REF_energy"] = -4.0 + Z_i
+        configs[-1].info["config_type"] = "IsolatedAtom"
+    return configs
+
+
+@pytest.fixture(name="mini_foundation_model", scope="module")
+def fixture_mini_foundation_model(tmp_path_factory, pretraining_configs_3_elems):
+    """fits tiny model that can be used as foundation for multihead replay finetuning
+    returns path of model file and value of XDG_CACHE_HOME where pretraining data is cached
+    """
+    # generate pretraining data
+    tmp_path = tmp_path_factory.mktemp("mini_foundation_model")
+
+    ase.io.write(tmp_path / "pretrain.xyz", pretraining_configs_3_elems)
+
+    foundation_params = {
+        "name": "foundation",
+        "train_file": os.path.join(tmp_path, "pretrain.xyz"),
+        "valid_fraction": 0.2,
+        "energy_weight": 1.0,
+        "forces_weight": 10.0,
+        "stress_weight": 1.0,
+        "model": "MACE",
+        "hidden_irreps": "32x0e",
+        "r_max": 5.0,
+        "batch_size": 2,
+        "max_num_epochs": 5,
+        "swa": None,
+        "start_swa": 3,
+        "device": "cpu",
+        "seed": 42,
+        "loss": "weighted",
+        "energy_key": "REF_energy",
+        "forces_key": "REF_forces",
+        "stress_key": "REF_stress",
+        "default_dtype": "float64",
+        "checkpoints_dir": str(tmp_path),
+        "model_dir": str(tmp_path),
+    }
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    # create fake cached MP data
+    run_env["XDG_CACHE_HOME"] = str(tmp_path / "cache")
+    (tmp_path / "cache" / "mace").mkdir(parents=True)
+    with open(
+        tmp_path / "cache" / "mace" / "mp_traj_combinedxyz", "w", encoding="utf-8"
+    ) as fout:
+        for atoms in pretraining_configs_3_elems:
+            if atoms.info.get("config_type") == "IsolatedAtom":
+                continue
+            atoms.calc = SinglePointCalculator(
+                atoms,
+                energy=atoms.info["REF_energy"],
+                forces=atoms.arrays.get("REF_forces"),
+            )
+            ase.io.write(fout, atoms, format="extxyz")
+            atoms.calc = None
+
+    cmd = [sys.executable, str(run_train)]
+    for k, v in foundation_params.items():
+        if v is None:
+            cmd.append(f"--{k}")
+        else:
+            cmd.append(f"--{k}={v}")
+
+    print("pretraining fit cmd", cmd)
+    try:
+        orig_dir = Path.cwd()
+        os.chdir(tmp_path)
+        p = subprocess.run(cmd, env=run_env, check=True)
+        os.chdir(orig_dir)
+    except Exception:
+        os.chdir(orig_dir)
+        raise
+
+    assert p.returncode == 0
+
+    return tmp_path / "foundation.model", run_env["XDG_CACHE_HOME"]
+
+
+@pytest.fixture(name="multihead_finetuning_config_20")
+def fixture_multihead_finetuning_config_20(tmp_path, fitting_configs):
+    return do_fixture_multihead_finetuning_config(tmp_path, fitting_configs, 20)
+
+
+@pytest.fixture(name="multihead_finetuning_config_5")
+def fixture_multihead_finetuning_config_5(tmp_path, fitting_configs):
+    return do_fixture_multihead_finetuning_config(tmp_path, fitting_configs, 5)
+
+
+def do_fixture_multihead_finetuning_config(tmp_path, fitting_configs, n_fit):
+    # Step 3: Create finetuning set
+    fitting_configs_dft = []
+    fitting_configs_mp2 = []
+    atomic_numbers = set()
+
+    rng = np.random.default_rng(10)
+    n_isolated = sum(
+        config.info.get("config_type") == "IsolatedAtom" for config in fitting_configs
+    )
+    # assume that _first_ n_isolated are IsolatedAtom
+    n_dups = int(np.ceil(n_fit / (len(fitting_configs) - n_isolated)))
+    avail_configs = fitting_configs[n_isolated:] * n_dups
+    rng.shuffle(avail_configs)
+    avail_configs = fitting_configs[0:n_isolated] + avail_configs[0:n_fit]
+
+    for i, c in enumerate(avail_configs):
+        atomic_numbers |= set(c.numbers)
+        if i in (0, 1):
+            c_dft = c.copy()
+            c_dft.info["head"] = "DFT"
+            fitting_configs_dft.append(c_dft)
+            fitting_configs_dft.append(c)
+            c_mp2 = c.copy()
+            c_mp2.info["head"] = "MP2"
+            fitting_configs_mp2.append(c_mp2)
+        elif i % 2 == 0:
+            c.info["head"] = "DFT"
+            fitting_configs_dft.append(c)
+        else:
+            c.info["head"] = "MP2"
+            fitting_configs_mp2.append(c)
+    ase.io.write(tmp_path / f"fit_multihead_dft_{n_fit}.xyz", fitting_configs_dft)
+    ase.io.write(tmp_path / f"fit_multihead_mp2_{n_fit}.xyz", fitting_configs_mp2)
+
+    # Step 4: Finetune the pretrained model with multihead replay
+    heads = {
+        "DFT": {"train_file": str(tmp_path / f"fit_multihead_dft_{n_fit}.xyz")},
+        "MP2": {"train_file": str(tmp_path / f"fit_multihead_mp2_{n_fit}.xyz")},
+    }
+    yaml_str = "heads:\n"
+    for key, value in heads.items():
+        yaml_str += f"  {key}:\n"
+        for sub_key, sub_value in value.items():
+            yaml_str += f"    {sub_key}: {sub_value}\n"
+    config_filename = tmp_path / "config.yaml"
+    with open(config_filename, "w", encoding="utf-8") as file:
+        file.write(yaml_str)
+
+    return config_filename, atomic_numbers
+
+
+# test multihead replay fine-tuning when fine-tuning data
+# has only a subset of the species present in the filtered replay data
+def test_run_train_multihead_replay_filtered_pt_data(
+    tmp_path,
+    monkeypatch,
+    mini_foundation_model,
+    multihead_finetuning_config_20,
+):
+    finetuning_params = {
+        "name": "finetuned",
+        "valid_fraction": 0.1,
+        "energy_weight": 1.0,
+        "forces_weight": 10.0,
+        "stress_weight": 1.0,
+        "model": "MACE",
+        "hidden_irreps": "32x0e",
+        "r_max": 5.0,
+        "batch_size": 2,
+        "max_num_epochs": 5,
+        "device": "cpu",
+        "seed": 42,
+        "loss": "weighted",
+        "default_dtype": "float64",
+        "checkpoints_dir": str(tmp_path),
+        "model_dir": str(tmp_path),
+        "foundation_model": str(mini_foundation_model[0]),
+        "config": str(multihead_finetuning_config_20[0]),
+        "pt_train_file": "mp",
+        "num_samples_pt": 10,
+        "subselect_pt": "random",
+        "filter_type_pt": "exclusive",
+        "force_mh_ft_lr": True,
+        "atomic_numbers": str(sorted(multihead_finetuning_config_20[1])),
+        "dry_run": None,
+    }
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    # create fake cached MP data
+    run_env["XDG_CACHE_HOME"] = mini_foundation_model[1]
+
+    cmd = [sys.executable, str(run_train)]
+    for k, v in finetuning_params.items():
+        if v is None:
+            cmd.append(f"--{k}")
+        else:
+            cmd.append(f"--{k}={v}")
+
+    print("fine-tuning fit cmd", cmd)
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        p = subprocess.run(cmd, env=run_env, check=True)
+    assert p.returncode == 0
+
+
+# test multihead replay fine-tuning ratio of real to ft data
+# try to reduce time by using refactored eodule-scope mini_foundation_model
+# fixture and --dry_run
+def test_run_train_real_pt_data_ratio(
+    tmp_path,
+    monkeypatch,
+    mini_foundation_model,
+    multihead_finetuning_config_5,
+):
+    finetuning_params = {
+        "name": "finetuned",
+        "valid_fraction": 0.1,
+        "energy_weight": 1.0,
+        "forces_weight": 10.0,
+        "stress_weight": 1.0,
+        "model": "MACE",
+        "hidden_irreps": "32x0e",
+        "r_max": 5.0,
+        "batch_size": 2,
+        "max_num_epochs": 5,
+        "device": "cpu",
+        "seed": 42,
+        "loss": "weighted",
+        "default_dtype": "float64",
+        "checkpoints_dir": str(tmp_path),
+        "model_dir": str(tmp_path),
+        "foundation_model": str(mini_foundation_model[0]),
+        "config": str(multihead_finetuning_config_5[0]),
+        "pt_train_file": "mp",
+        "num_samples_pt": 10,
+        "subselect_pt": "random",
+        "filter_type_pt": "exclusive",
+        "force_mh_ft_lr": True,
+        "atomic_numbers": str(sorted(multihead_finetuning_config_5[1])),
+        "dry_run": None,
+    }
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    # create fake cached MP data
+    run_env["XDG_CACHE_HOME"] = mini_foundation_model[1]
+
+    def _create_cmd(finetuning_params):
+        cmd = [sys.executable, str(run_train)]
+        for k, v in finetuning_params.items():
+            if v is None:
+                cmd.append(f"--{k}")
+            else:
+                cmd.append(f"--{k}={v}")
+
+        return cmd
+
+    cmd = _create_cmd(finetuning_params)
+    print("fine-tuning fit cmd", cmd)
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        p = subprocess.run(cmd, env=run_env, check=True, capture_output=True)
+    print(p.stdout.decode("utf-8"))
+    assert p.returncode == 0
+
+    # real to pt data ratio should not be triggered by 5 / 20 > default of 0.1
+    assert (
+        len(
+            [
+                l
+                for l in p.stdout.decode("utf-8").splitlines()
+                if "Ratio of the number of configurations in the "
+                "training set and the in the pt_train_file" in l
+            ]
+        )
+        == 0
+    )
+
+    finetuning_params["name"] = "finetuned_repeated_data"
+    finetuning_params["real_pt_data_ratio_threshold"] = 0.5
+    cmd = _create_cmd(finetuning_params)
+    print("fine-tuning fit cmd", cmd)
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        p = subprocess.run(cmd, env=run_env, check=True, capture_output=True)
+    assert p.returncode == 0
+    print(p.stdout.decode("utf-8"))
+
+    # real to pt data ratio should not be triggered by 5 / 20 > default of 0.1
+    l_ratio = [
+        l
+        for l in p.stdout.decode("utf-8").splitlines()
+        if "Ratio of the number of configurations in the "
+        "training set and the in the pt_train_file" in l
+    ]
+    assert len(l_ratio) == 1
+    assert l_ratio[0].strip().endswith(" 1")

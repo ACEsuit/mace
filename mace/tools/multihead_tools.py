@@ -4,7 +4,7 @@ import dataclasses
 import logging
 import os
 import urllib.request
-from pathlib import Path
+from copy import deepcopy
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -15,8 +15,11 @@ from mace.cli.fine_tuning_select import (
     SubselectType,
     select_samples,
 )
-from mace.data import KeySpecification
+from mace.data import AtomicData, KeySpecification
+from mace.data.utils import Configuration
+from mace.tools import torch_geometric
 from mace.tools.scripts_utils import SubsetCollection, get_dataset_from_xyz
+from mace.tools.utils import AtomicNumberTable, get_cache_dir
 
 
 @dataclasses.dataclass
@@ -134,17 +137,24 @@ def prepare_pt_head(
     return pt_head
 
 
-def assemble_mp_data(
+def assemble_replay_data(
+    name: str,
     args: argparse.Namespace,
     head_config_pt: HeadConfig,
     tag: str,
 ) -> SubsetCollection:
-    """Assemble Materials Project data for fine-tuning."""
+    """Assemble data for replay fine-tuning."""
     try:
-        checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
-        cache_dir = (
-            Path(os.environ.get("XDG_CACHE_HOME", "~/")).expanduser() / ".cache/mace"
-        )
+        if name == "mp":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
+        elif name == "matpes_pbe":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-pbe-replay-data.xyz"
+        elif name == "matpes_r2scan":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-r2scan-replay-data.extxyz"
+        else:
+            raise ValueError(f"Unknown replay dataset name {name}")
+
+        cache_dir = get_cache_dir()
         checkpoint_url_name = "".join(
             c for c in os.path.basename(checkpoint_url) if c.isalnum() or c in "_"
         )
@@ -178,6 +188,7 @@ def assemble_mp_data(
             filtering_type=FilteringType(args.filter_type_pt),
             subselect=SubselectType(args.subselect_pt),
             default_dtype=args.default_dtype,
+            allow_random_padding=args.allow_random_padding_pt,
         )
         select_samples(settings)
         head_config_pt.train_file = [output]
@@ -192,9 +203,226 @@ def assemble_mp_data(
             key_specification=head_config_pt.key_specification,
             head_name="pt_head",
             keep_isolated_atoms=args.keep_isolated_atoms,
+            no_data_ok=(
+                args.pseudolabel_replay
+                and args.multiheads_finetuning
+                and head_config_pt.head_name == "pt_head"
+            ),
         )
         return collections_mp
     except Exception as exc:
         raise RuntimeError(
-            "Model or descriptors download failed and no local model found"
+            "Foundation model replay data or descriptors cached data not found and download failed"
         ) from exc
+
+
+def generate_pseudolabels_for_configs(
+    model: torch.nn.Module,
+    configs: List[Configuration],
+    z_table: AtomicNumberTable,
+    r_max: float,
+    device: torch.device,
+    batch_size: int,
+) -> List[Configuration]:
+    """
+    Generate pseudolabels for a list of Configuration objects.
+
+    Args:
+        model: The foundation model
+        configs: List of Configuration objects
+        z_table: Atomic number table
+        r_max: Cutoff radius
+        device: Device to run model on
+        batch_size: Batch size for inference
+
+    Returns:
+        List of Configuration objects with updated properties
+    """
+
+    model.eval()
+    updated_configs = []
+
+    # Disable gradient tracking for model parameters
+    original_requires_grad = {}
+    for param in model.parameters():
+        original_requires_grad[param] = param.requires_grad
+        param.requires_grad = False
+
+    # Process configs in batches
+    for i in range(0, len(configs), batch_size):
+        batch_configs = configs[i : i + batch_size]
+
+        try:
+            # Create temporary AtomicData objects for this batch
+            batch_data = [
+                AtomicData.from_config(config, z_table=z_table, cutoff=r_max)
+                for config in batch_configs
+            ]
+
+            # Create a batch for model inference
+            batch = torch_geometric.Batch.from_data_list(batch_data).to(device)
+            batch_dict = batch.to_dict()
+
+            # Run model inference with computation of all properties
+            out = model(
+                batch_dict,
+                training=False,
+                compute_force=True,
+                compute_virials=True,
+                compute_stress=True,
+            )
+
+            # Process each configuration in the batch
+            for j, config in enumerate(batch_configs):
+                # Create a deepcopy to avoid modifying the original
+                config_copy = deepcopy(config)
+
+                # Ensure properties dict exists
+                if not hasattr(config_copy, "properties"):
+                    config_copy.properties = {}
+
+                # Update config properties with pseudolabels
+                if "energy" in out and out["energy"] is not None:
+                    config_copy.properties["energy"] = (
+                        out["energy"][j].detach().cpu().item()
+                    )
+                if "forces" in out and out["forces"] is not None:
+                    # Forces are per atom
+                    node_start = batch.ptr[j].item()
+                    node_end = batch.ptr[j + 1].item()
+
+                    config_copy.properties["forces"] = (
+                        out["forces"][node_start:node_end].detach().cpu().numpy()
+                    )
+                if "stress" in out and out["stress"] is not None:
+                    config_copy.properties["stress"] = (
+                        out["stress"][j].detach().cpu().numpy()
+                    )
+                if "virials" in out and out["virials"] is not None:
+                    config_copy.properties["virials"] = (
+                        out["virials"][j].detach().cpu().numpy()
+                    )
+                if "dipole" in out and out["dipole"] is not None:
+                    config_copy.properties["dipole"] = (
+                        out["dipole"][j].detach().cpu().numpy()
+                    )
+                if "charges" in out and out["charges"] is not None:
+                    # Charges are per atom
+                    node_start = batch.ptr[j].item()
+                    node_end = batch.ptr[j + 1].item()
+
+                    config_copy.properties["charges"] = (
+                        out["charges"][node_start:node_end].detach().cpu().numpy()
+                    )
+
+                updated_configs.append(config_copy)
+
+        except Exception as e:  # pylint: disable=broad-except
+            logging.error(
+                f"Error generating pseudolabels for batch {i//batch_size + 1}: {str(e)}"
+            )
+            # On error, return the original configs for this batch
+            updated_configs.extend([deepcopy(config) for config in batch_configs])
+
+    # Restore original requires_grad settings
+    for param, requires_grad in original_requires_grad.items():
+        param.requires_grad = requires_grad
+
+    logging.info(f"Generated pseudolabels for {len(updated_configs)} configurations")
+    return updated_configs
+
+
+def apply_pseudolabels_to_pt_head_configs(
+    foundation_model: torch.nn.Module,
+    pt_head_config: HeadConfig,
+    r_max: float,
+    device: torch.device,
+    batch_size: int,
+) -> bool:
+    """
+    Apply pseudolabels to pt_head configurations using the foundation model.
+
+    Args:
+        foundation_model: The pre-loaded foundation model
+        pt_head_config: The HeadConfig object for pt_head
+        r_max: Cutoff radius
+        device: Device to run model on
+        batch_size: Batch size for inference
+
+    Returns:
+        bool: True if pseudolabeling was successful, False otherwise
+    """
+
+    try:
+        logging.info(
+            "Applying pseudolabels to pt_head configurations using foundation model"
+        )
+
+        foundation_model.to(device)
+
+        # Use foundation model's z_table if available
+        if hasattr(foundation_model, "atomic_numbers"):
+            z_table = AtomicNumberTable(
+                sorted(foundation_model.atomic_numbers.tolist())
+            )
+            logging.info(
+                f"Using foundation model's atomic numbers for pseudolabeling: {z_table.zs}"
+            )
+        elif hasattr(pt_head_config, "z_table") and pt_head_config.z_table is not None:
+            z_table = pt_head_config.z_table
+            logging.info(f"Using pt_head's z_table for pseudolabeling: {z_table.zs}")
+        else:
+            logging.warning("No atomic number table available for pseudolabeling")
+            return False
+
+        # Process training configurations
+        if (
+            hasattr(pt_head_config.collections, "train")
+            and pt_head_config.collections.train
+        ):
+            logging.info(
+                f"Generating pseudolabels for {len(pt_head_config.collections.train)} pt_head training configurations"
+            )
+            updated_train_configs = generate_pseudolabels_for_configs(
+                model=foundation_model,
+                configs=pt_head_config.collections.train,
+                z_table=z_table,
+                r_max=r_max,
+                device=device,
+                batch_size=batch_size,
+            )
+
+            # Replace the original configurations with updated ones
+            pt_head_config.collections.train = updated_train_configs
+            logging.info(
+                f"Successfully applied pseudolabels to {len(updated_train_configs)} training configurations"
+            )
+
+        # Process validation configurations if they exist
+        if (
+            hasattr(pt_head_config.collections, "valid")
+            and pt_head_config.collections.valid
+        ):
+            logging.info(
+                f"Generating pseudolabels for {len(pt_head_config.collections.valid)} pt_head validation configurations"
+            )
+            updated_valid_configs = generate_pseudolabels_for_configs(
+                model=foundation_model,
+                configs=pt_head_config.collections.valid,
+                z_table=z_table,
+                r_max=r_max,
+                device=device,
+                batch_size=batch_size,
+            )
+
+            # Replace the original configurations with updated ones
+            pt_head_config.collections.valid = updated_valid_configs
+            logging.info(
+                f"Successfully applied pseudolabels to {len(updated_valid_configs)} validation configurations"
+            )
+
+        return True
+
+    except Exception as e:  # pylint: disable=broad-except
+        logging.error(f"Error applying pseudolabels: {str(e)}")
+        return False
