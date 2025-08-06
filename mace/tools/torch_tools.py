@@ -66,6 +66,11 @@ def init_device(device_str: str) -> torch.device:
         return torch.device("mps")
     if device_str == "xpu":
         torch.xpu.is_available()
+        devices = torch.xpu.device_count()
+        is_available = devices > 0
+        assert is_available, logging.info("No XPU backend is available")
+        torch.xpu.memory_stats()
+        logging.info("Using XPU GPU acceleration")
         return torch.device("xpu")
 
     logging.info("Using CPU")
@@ -79,13 +84,15 @@ def set_default_dtype(dtype: str) -> None:
     torch.set_default_dtype(dtype_dict[dtype])
 
 
-def spherical_to_cartesian(t: torch.Tensor):
-    """
-    Convert spherical notation to cartesian notation
-    """
-    stress_cart_tensor = CartesianTensor("ij=ji")
-    stress_rtp = stress_cart_tensor.reduced_tensor_products()
-    return stress_cart_tensor.to_cartesian(t, rtp=stress_rtp)
+def get_change_of_basis() -> torch.Tensor:
+    return CartesianTensor("ij=ji").reduced_tensor_products().change_of_basis
+
+
+def spherical_to_cartesian(t: torch.Tensor, change_of_basis: torch.Tensor):
+    # Optionally handle device mismatch
+    if change_of_basis.device != t.device:
+        change_of_basis = change_of_basis.to(t.device)
+    return torch.einsum("ijk,...i->...jk", change_of_basis, t)
 
 
 def cartesian_to_spherical(t: torch.Tensor):
@@ -125,7 +132,14 @@ def voigt_to_matrix(t: torch.Tensor):
 def init_wandb(project: str, entity: str, name: str, config: dict, directory: str):
     import wandb
 
-    wandb.init(project=project, entity=entity, name=name, config=config, dir=directory)
+    wandb.init(
+        project=project,
+        entity=entity,
+        name=name,
+        config=config,
+        dir=directory,
+        resume="allow",
+    )
 
 
 @contextmanager

@@ -1,5 +1,5 @@
 import logging
-from typing import Dict
+from typing import Dict, List, Optional
 
 import torch
 from prettytable import PrettyTable
@@ -29,9 +29,11 @@ def create_error_table(
     log_wandb: bool,
     device: str,
     distributed: bool = False,
+    skip_heads: Optional[List[str]] = None,
 ) -> PrettyTable:
     if log_wandb:
         import wandb
+    skip_heads = skip_heads or []
     table = PrettyTable()
     if table_type == "TotalRMSE":
         table.field_names = [
@@ -89,6 +91,13 @@ def create_error_table(
             "MAE MU / mDebye / atom",
             "relative MU MAE %",
         ]
+    elif table_type == "DipolePolarRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE MU / me A / atom",
+            "relative MU RMSE %",
+            "RMSE ALPHA e A^2 / V / atom",
+        ]
     elif table_type == "EnergyDipoleRMSE":
         table.field_names = [
             "config_type",
@@ -100,6 +109,9 @@ def create_error_table(
         ]
 
     for name in sorted(all_data_loaders, key=custom_key):
+        if any(skip_head in name for skip_head in skip_heads):
+            logging.info(f"Skipping evaluation of {name} (in skip_heads list)")
+            continue
         data_loader = all_data_loaders[name]
         logging.info(f"Evaluating {name} ...")
         _, metrics = evaluate(
@@ -225,6 +237,15 @@ def create_error_table(
                     name,
                     f"{metrics['mae_mu_per_atom'] * 1000:8.2f}",
                     f"{metrics['rel_mae_mu']:8.1f}",
+                ]
+            )
+        elif table_type == "DipolePolarRMSE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_mu_per_atom'] * 1000:.2f}",
+                    f"{metrics['rel_rmse_mu']:.1f}",
+                    f"{metrics['rmse_polarizability_per_atom'] * 1000:.2f}",
                 ]
             )
         elif table_type == "EnergyDipoleRMSE":

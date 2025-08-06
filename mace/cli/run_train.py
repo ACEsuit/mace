@@ -14,25 +14,31 @@ from pathlib import Path
 from typing import List, Optional
 
 import torch.distributed
-import torch.nn.functional
 from e3nn.util import jit
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim import LBFGS
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
 
 import mace
 from mace import data, tools
-from mace.calculators.foundations_models import mace_mp, mace_off
+from mace.calculators.foundations_models import mace_mp, mace_mp_names, mace_off
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
+from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.cli.visualise_train import TrainingPlotter
+from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
+from mace.tools.distributed_tools import init_distributed
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
-    assemble_mp_data,
+    apply_pseudolabels_to_pt_head_configs,
+    assemble_replay_data,
     dict_head_to_dataclass,
     prepare_default_head,
+    prepare_pt_head,
 )
 from mace.tools.run_train_utils import (
     combine_datasets,
@@ -59,7 +65,6 @@ from mace.tools.scripts_utils import (
     remove_pt_head,
     setup_wandb,
 )
-from mace.tools.slurm_distributed import DistributedEnvironment
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
 
@@ -79,27 +84,19 @@ def run(args) -> None:
     tag = tools.get_tag(name=args.name, seed=args.seed)
     args, input_log_messages = tools.check_args(args)
 
+    # default keyspec to update using heads dictionary
+    args.key_specification = KeySpecification()
+    update_keyspec_from_kwargs(args.key_specification, vars(args))
+
     if args.device == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
+            import oneccl_bindings_for_pytorch as oneccl  # pylint: disable=unused-import
         except ImportError as e:
             raise ImportError(
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"
             ) from e
-    if args.distributed:
-        try:
-            distr_env = DistributedEnvironment()
-        except Exception as e:  # pylint: disable=W0703
-            logging.error(f"Failed to initialize distributed environment: {e}")
-            return
-        world_size = distr_env.world_size
-        local_rank = distr_env.local_rank
-        rank = distr_env.rank
-        if rank == 0:
-            print(distr_env)
-        torch.distributed.init_process_group(backend="nccl")
-    else:
-        rank = int(0)
+    rank, local_rank, world_size = init_distributed(args)
 
     # Setup
     tools.set_seeds(args.seed)
@@ -109,7 +106,10 @@ def run(args) -> None:
         logging.log(level=loglevel, msg=message)
 
     if args.distributed:
-        torch.cuda.set_device(local_rank)
+        if args.device == "cuda":
+            torch.cuda.set_device(local_rank)
+        elif args.device == "xpu":
+            torch.xpu.set_device(local_rank)
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
         logging.info(f"Processes: {world_size}")
 
@@ -123,8 +123,11 @@ def run(args) -> None:
     device = tools.init_device(args.device)
     commit = print_git_commit()
     model_foundation: Optional[torch.nn.Module] = None
+    foundation_model_avg_num_neighbors = 0
+    # Filter out None from mace_mp_names to get valid model names
+    valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
     if args.foundation_model is not None:
-        if args.foundation_model in ["small", "medium", "large"]:
+        if args.foundation_model in valid_mace_mp_models:
             logging.info(
                 f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
             )
@@ -153,6 +156,9 @@ def run(args) -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
+        foundation_model_avg_num_neighbors = model_foundation.interactions[
+            0
+        ].avg_num_neighbors
         if (
             args.foundation_model not in ["small", "medium", "large"]
             and args.pt_train_file is None
@@ -168,13 +174,13 @@ def run(args) -> None:
             # check that the foundation model has a single head, if not, use the first head
             if not args.force_mh_ft_lr:
                 logging.info(
-                    "Multihead finetuning mode, setting learning rate to 0.001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
+                    "Multihead finetuning mode, setting learning rate to 0.0001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
                 )
                 args.lr = 0.0001
                 args.ema = True
                 args.ema_decay = 0.99999
             logging.info(
-                "Using multiheads finetuning mode, setting learning rate to 0.001 and EMA to True"
+                "Using multiheads finetuning mode, setting learning rate to 0.0001 and EMA to True"
             )
             if hasattr(model_foundation, "heads"):
                 if len(model_foundation.heads) > 1:
@@ -189,16 +195,43 @@ def run(args) -> None:
 
     if args.heads is not None:
         args.heads = ast.literal_eval(args.heads)
+        for _, head_dict in args.heads.items():
+            # priority is global args < head property_key values < head info_keys+arrays_keys
+            head_keyspec = deepcopy(args.key_specification)
+            update_keyspec_from_kwargs(head_keyspec, head_dict)
+            head_keyspec.update(
+                info_keys=head_dict.get("info_keys", {}),
+                arrays_keys=head_dict.get("arrays_keys", {}),
+            )
+            head_dict["key_specification"] = head_keyspec
     else:
         args.heads = prepare_default_head(args)
+    if args.multiheads_finetuning:
+        pt_keyspec = (
+            args.heads["pt_head"]["key_specification"]
+            if "pt_head" in args.heads
+            else deepcopy(args.key_specification)
+        )
+        args.heads["pt_head"] = prepare_pt_head(
+            args, pt_keyspec, foundation_model_avg_num_neighbors
+        )
 
     logging.info("===========LOADING INPUT DATA===========")
     heads = list(args.heads.keys())
     logging.info(f"Using heads: {heads}")
+    logging.info("Using the key specifications to parse data:")
+    for name, head_dict in args.heads.items():
+        head_keyspec = head_dict["key_specification"]
+        logging.info(f"{name}: {head_keyspec}")
+
     head_configs: List[HeadConfig] = []
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
+        # don't apply user's --atomic_numbers to pt_head, that info needs to come
+        # from the actual pt data
+        if args.multiheads_finetuning and head_config.head_name == "pt_head":
+            head_config.atomic_numbers = None
 
         # Handle train_file and valid_file - normalize to lists
         if hasattr(head_config, "train_file") and head_config.train_file is not None:
@@ -208,13 +241,13 @@ def run(args) -> None:
         if hasattr(head_config, "test_file") and head_config.test_file is not None:
             head_config.test_file = normalize_file_paths(head_config.test_file)
 
-        if head_config.statistics_file is not None:
+        if (
+            head_config.statistics_file is not None
+            and head_config.head_name != "pt_head"
+        ):
             with open(head_config.statistics_file, "r") as f:  # pylint: disable=W1514
                 statistics = json.load(f)
             logging.info("Using statistics json file")
-            head_config.r_max = (
-                statistics["r_max"] if args.foundation_model is None else args.r_max
-            )
             head_config.atomic_numbers = statistics["atomic_numbers"]
             head_config.mean = statistics["mean"]
             head_config.std = statistics["std"]
@@ -232,9 +265,19 @@ def run(args) -> None:
                 head_config.atomic_energies_dict = ast.literal_eval(
                     statistics["atomic_energies"]
                 )
-
-        if any(check_path_ase_read(f) for f in head_config.train_file):
-
+        if head_config.train_file in (["mp"], ["matpes_pbe"], ["matpes_r2scan"]):
+            assert (
+                head_config.head_name == "pt_head"
+            ), "Only pt_head should use mp as train_file"
+            logging.info(
+                f"Using filtered Materials Project data for replay ({args.num_samples_pt}, {args.filter_type_pt}, {args.subselect_pt}). "
+                "You can also construct a different subset using `fine_tuning_select.py` script."
+            )
+            collections = assemble_replay_data(
+                head_config.train_file[0], args, head_config, tag
+            )
+            head_config.collections = collections
+        elif any(check_path_ase_read(f) for f in head_config.train_file):
             train_files_ase_list = [
                 f for f in head_config.train_file if check_path_ase_read(f)
             ]
@@ -259,14 +302,14 @@ def run(args) -> None:
                 config_type_weights=config_type_weights,
                 test_path=test_files_ase_list,
                 seed=args.seed,
-                energy_key=head_config.energy_key,
-                forces_key=head_config.forces_key,
-                stress_key=head_config.stress_key,
-                virials_key=head_config.virials_key,
-                dipole_key=head_config.dipole_key,
-                charges_key=head_config.charges_key,
+                key_specification=head_config.key_specification,
                 head_name=head_config.head_name,
                 keep_isolated_atoms=head_config.keep_isolated_atoms,
+                no_data_ok=(
+                    args.pseudolabel_replay
+                    and args.multiheads_finetuning
+                    and head_config.head_name == "pt_head"
+                ),
             )
             head_config.collections = SubsetCollection(
                 train=collections.train,
@@ -303,118 +346,29 @@ def run(args) -> None:
             "==================Using multiheads finetuning mode=================="
         )
         args.loss = "universal"
-        if (
-            args.foundation_model in ["small", "medium", "large"]
-            or args.pt_train_file == "mp"
-        ):
-            logging.info(
-                "Using foundation model for multiheads finetuning with Materials Project data"
-            )
-            heads = list(dict.fromkeys(["pt_head"] + heads))
-            head_config_pt = HeadConfig(
-                head_name="pt_head",
-                E0s="foundation",
-                statistics_file=args.statistics_file,
-                compute_avg_num_neighbors=False,
-                avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
-            )
-            collections = assemble_mp_data(args, tag, head_configs)
-            head_config_pt.collections = collections
-            head_config_pt.train_file = [f"mp_finetuning-{tag}.xyz"]
-            head_configs.append(head_config_pt)
-        else:
-            logging.info(
-                f"Using foundation model for multiheads finetuning with {args.pt_train_file}"
-            )
-            heads = list(dict.fromkeys(["pt_head"] + heads))
-
-            # Use pt-specific keys if provided, otherwise fall back to general keys
-            pt_energy_key = args.pt_energy_key or args.energy_key
-            pt_forces_key = args.pt_forces_key or args.forces_key
-            pt_stress_key = args.pt_stress_key or args.stress_key
-            pt_virials_key = args.pt_virials_key or args.virials_key
-            pt_dipole_key = args.pt_dipole_key or args.dipole_key
-            pt_charges_key = args.pt_charges_key or args.charges_key
-
-            logging.info(
-                f"Using the following keys for pt_head: energy={pt_energy_key}, forces={pt_forces_key}, "
-                f"stress={pt_stress_key}, virials={pt_virials_key}, dipole={pt_dipole_key}, charges={pt_charges_key}"
-            )
-
-            # Normalize file paths
-            pt_train_file = normalize_file_paths(args.pt_train_file)
-            pt_valid_file = (
-                normalize_file_paths(args.pt_valid_file) if args.pt_valid_file else None
-            )
-
-            # Check if pt_train_file is ASE readable (e.g., xyz) vs LMDB/HDF5
-            is_ase_readable = all(check_path_ase_read(f) for f in pt_train_file)
-
-            head_config_pt = HeadConfig(
-                head_name="pt_head",
-                train_file=pt_train_file,
-                valid_file=pt_valid_file,
-                E0s="foundation",
-                statistics_file=args.statistics_file,
-                valid_fraction=args.valid_fraction,
-                config_type_weights=None,
-                energy_key=pt_energy_key,
-                forces_key=pt_forces_key,
-                stress_key=pt_stress_key,
-                virials_key=pt_virials_key,
-                dipole_key=pt_dipole_key,
-                charges_key=pt_charges_key,
-                keep_isolated_atoms=args.keep_isolated_atoms,
-                avg_num_neighbors=model_foundation.interactions[0].avg_num_neighbors,
-                compute_avg_num_neighbors=False,
-            )
-
-            if is_ase_readable:
-                # For xyz files, use get_dataset_from_xyz
-                collections, atomic_energies_dict = get_dataset_from_xyz(
-                    work_dir=args.work_dir,
-                    train_path=args.pt_train_file,
-                    valid_path=args.pt_valid_file,
-                    valid_fraction=args.valid_fraction,
-                    config_type_weights=None,
-                    test_path=None,
-                    seed=args.seed,
-                    energy_key=pt_energy_key,
-                    forces_key=pt_forces_key,
-                    stress_key=pt_stress_key,
-                    virials_key=pt_virials_key,
-                    dipole_key=pt_dipole_key,
-                    charges_key=pt_charges_key,
-                    head_name="pt_head",
-                    keep_isolated_atoms=args.keep_isolated_atoms,
-                )
-                head_config_pt.collections = collections
-                logging.info(
-                    f"Loaded ASE readable pretraining data: train={len(collections.train)}, valid={len(collections.valid)}"
-                )
-            else:
-                logging.info(
-                    f"Pretraining data file(s) will be loaded as LMDB/HDF5: {pt_train_file}"
-                )
-
-            head_configs.append(head_config_pt)
 
         all_ase_readable = all(
             all(check_path_ase_read(f) for f in head_config.train_file)
             for head_config in head_configs
         )
+        head_config_pt = filter(lambda x: x.head_name == "pt_head", head_configs)
+        head_config_pt = next(head_config_pt, None)
+        assert head_config_pt is not None, "Pretraining head not found"
         if all_ase_readable:
-            ratio_pt_ft = size_collections_train / len(head_config_pt.collections.train)
-            if ratio_pt_ft < 0.1:
+            ratio_pt_ft = (
+                size_collections_train - len(head_config_pt.collections.train)
+            ) / len(head_config_pt.collections.train)
+            if ratio_pt_ft < args.real_pt_data_ratio_threshold:
                 logging.warning(
                     f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
-                    f"increasing the number of configurations in the fine-tuning heads by {int(0.1 / ratio_pt_ft)}"
+                    f"increasing the number of configurations in the fine-tuning heads by {int(args.real_pt_data_ratio_threshold / ratio_pt_ft)}"
                 )
                 for head_config in head_configs:
                     if head_config.head_name == "pt_head":
                         continue
                     head_config.collections.train += (
-                        head_config.collections.train * int(0.1 / ratio_pt_ft)
+                        head_config.collections.train
+                        * int(args.real_pt_data_ratio_threshold / ratio_pt_ft)
                     )
             logging.info(
                 f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
@@ -507,7 +461,7 @@ def run(args) -> None:
             ].item()
             for z in z_table.zs
         }
-
+    heads = sorted(heads, key=lambda x: -1000 if x == "pt_head" else 0)
     # Padding atomic energies if keeping all elements of the foundation model
     if args.foundation_model_elements and model_foundation:
         atomic_energies_dict_padded = {}
@@ -526,6 +480,16 @@ def run(args) -> None:
         args.compute_forces = False
         args.compute_virials = False
         args.compute_stress = False
+        args.compute_polarizability = False
+    elif args.model == "AtomicDielectricMACE":
+        atomic_energies = None
+        dipole_only = False
+        args.compute_dipole = True
+        args.compute_energy = False
+        args.compute_forces = False
+        args.compute_virials = False
+        args.compute_stress = False
+        args.compute_polarizability = True
     else:
         dipole_only = False
         if args.model == "EnergyDipolesMACE":
@@ -534,9 +498,11 @@ def run(args) -> None:
             args.compute_forces = True
             args.compute_virials = False
             args.compute_stress = False
+            args.compute_polarizability = False
         else:
             args.compute_energy = True
             args.compute_dipole = False
+            args.compute_polarizability = False
         # atomic_energies: np.ndarray = np.array(
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
@@ -555,6 +521,21 @@ def run(args) -> None:
         train_datasets = []
 
         logging.info(f"Processing datasets for head '{head_config.head_name}'")
+
+        # Apply pseudolabels if this is the pt_head and pseudolabeling is enabled
+        if args.pseudolabel_replay and args.multiheads_finetuning and head_config.head_name == "pt_head":
+            logging.info("=============    Pseudolabeling for pt_head    ===========")
+            if apply_pseudolabels_to_pt_head_configs(
+                foundation_model=model_foundation,
+                pt_head_config=head_config,
+                r_max=args.r_max,
+                device=device,
+                batch_size=args.batch_size
+            ):
+                logging.info("Successfully applied pseudolabels to pt_head configurations")
+            else:
+                logging.warning("Pseudolabeling was not successful, continuing with original configurations")
+
         ase_files = [f for f in head_config.train_file if check_path_ase_read(f)]
         non_ase_files = [f for f in head_config.train_file if not check_path_ase_read(f)]
 
@@ -641,7 +622,7 @@ def run(args) -> None:
             dataset=train_sets[head_config.head_name],
             batch_size=args.batch_size,
             shuffle=True,
-            drop_last=True,
+            drop_last=(not args.lbfgs),
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
@@ -657,7 +638,7 @@ def run(args) -> None:
             num_replicas=world_size,
             rank=rank,
             shuffle=True,
-            drop_last=True,
+            drop_last=(not args.lbfgs),
             seed=args.seed,
         )
         valid_samplers = {}
@@ -671,16 +652,18 @@ def run(args) -> None:
                 seed=args.seed,
             )
             valid_samplers[head] = valid_sampler
+
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
         batch_size=args.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
-        drop_last=(train_sampler is None),
+        drop_last=(train_sampler is None and not args.lbfgs),
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
     )
+
     valid_loaders = {heads[i]: None for i in range(len(heads))}
     if not isinstance(valid_sets, dict):
         valid_sets = {"Default": valid_sets}
@@ -717,11 +700,22 @@ def run(args) -> None:
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
 
-    # Cueq
-    if args.enable_cueq:
+    # Cueq and OEQ conversion
+    if args.enable_cueq and args.enable_oeq:
+        logging.warning(
+            "Both CUEQ and OEQ are enabled, using CUEQ for training. "
+            "To use OEQ, disable CUEQ with --disable_cueq."
+        )
+        args.enable_oeq = False
+    if args.enable_cueq and not args.only_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE"]
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
+    if args.enable_oeq:
+        logging.info("Converting model to OEQ for accelerated training")
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
+        model = run_e3nn_to_oeq(deepcopy(model), device=device)
+
     # Optimizer
     param_options = get_params_options(args, model)
     optimizer: torch.optim.Optimizer
@@ -748,6 +742,8 @@ def run(args) -> None:
     )
 
     start_epoch = 0
+    restart_lbfgs = False
+    opt_start_epoch = None
     if args.restart_latest:
         try:
             opt_start_epoch = checkpoint_handler.load_latest(
@@ -756,11 +752,14 @@ def run(args) -> None:
                 device=device,
             )
         except Exception:  # pylint: disable=W0703
-            opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
-                swa=False,
-                device=device,
-            )
+            try:
+                opt_start_epoch = checkpoint_handler.load_latest(
+                    state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                    swa=False,
+                    device=device,
+                )
+            except Exception: # pylint: disable=W0703
+                restart_lbfgs = True
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
@@ -770,6 +769,21 @@ def run(args) -> None:
     else:
         for group in optimizer.param_groups:
             group["lr"] = args.lr
+
+    if args.lbfgs:
+        logging.info("Switching optimizer to LBFGS")
+        optimizer = LBFGS(model.parameters(),
+                          history_size=200,
+                          max_iter=20,
+                          line_search_fn="strong_wolfe")
+        if restart_lbfgs:
+            opt_start_epoch = checkpoint_handler.load_latest(
+                state=tools.CheckpointState(model, optimizer, lr_scheduler),
+                swa=False,
+                device=device,
+            )
+            if opt_start_epoch is not None:
+                start_epoch = opt_start_epoch
 
     if args.wandb:
         setup_wandb(args)
@@ -799,12 +813,26 @@ def run(args) -> None:
                 device=device,
                 plot_frequency=args.plot_frequency,
                 distributed=args.distributed,
-                swa_start=swa.start if swa else None
+                swa_start=swa.start if swa else None,
+                plot_interaction_e=args.plot_interaction_e
                 )
         except Exception as e:  # pylint: disable=W0718
             logging.debug(f"Creating Plotter failed: {e}")
     else:
         plotter = None
+
+    if args.dry_run:
+        logging.info("DRY RUN mode enabled. Stopping now.")
+        return
+
+    if args.device == "xpu":
+        try:
+            model, optimizer = ipex.optimize(model, optimizer=optimizer)
+        except ImportError as e:
+            logging.error(
+                "Intel Extension for PyTorch not found, but XPU device was specified. "
+                "Please install it to use XPU device."
+            )
 
     tools.train(
         model=model,
@@ -931,10 +959,12 @@ def run(args) -> None:
                 model_path = Path(args.checkpoints_dir) / (tag + ".model")
             logging.info(f"Saving model to {model_path}")
             model_to_save = deepcopy(model)
-            if args.enable_cueq:
-                print("RUNING CUEQ TO E3NN")
-                print("swa_eval", swa_eval)
+            if args.enable_cueq and not args.only_cueq:
+                logging.info("RUNING CUEQ TO E3NN")
                 model_to_save = run_cueq_to_e3nn(deepcopy(model), device=device)
+            if args.enable_oeq:
+                logging.info("RUNING OEQ TO E3NN")
+                model_to_save = run_oeq_to_e3nn(deepcopy(model), device=device)
             if args.save_cpu:
                 model_to_save = model_to_save.to("cpu")
             torch.save(model_to_save, model_path)
@@ -980,6 +1010,9 @@ def run(args) -> None:
         logging.info("Computing metrics for training, validation, and test sets")
         for param in model.parameters():
             param.requires_grad = False
+        skip_heads = args.skip_evaluate_heads.split(",") if args.skip_evaluate_heads else []
+        if skip_heads:
+            logging.info(f"Skipping evaluation for heads: {skip_heads}")
         table_train_valid = create_error_table(
             table_type=args.error_table,
             all_data_loaders=train_valid_data_loader,
@@ -989,6 +1022,7 @@ def run(args) -> None:
             log_wandb=args.wandb,
             device=device,
             distributed=args.distributed,
+            skip_heads=skip_heads,
         )
         logging.info("Error-table on TRAIN and VALID:\n" + str(table_train_valid))
 

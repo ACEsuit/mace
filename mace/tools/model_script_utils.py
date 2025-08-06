@@ -5,6 +5,7 @@ import numpy as np
 from e3nn import o3
 
 from mace import modules
+from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.utils import AtomicNumberTable
@@ -20,8 +21,13 @@ def configure_model(
     head_configs=None,
 ):
     # Selecting outputs
-    compute_virials = args.loss in ("stress", "virials", "huber", "universal")
+    compute_virials = args.loss == "virials"
+    compute_stress = args.loss in ("stress", "huber", "universal")
+
     if compute_virials:
+        args.compute_virials = True
+        args.error_table = "PerAtomRMSEstressvirials"
+    elif compute_stress:
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
 
@@ -29,8 +35,9 @@ def configure_model(
         "energy": args.compute_energy,
         "forces": args.compute_forces,
         "virials": compute_virials,
-        "stress": args.compute_stress,
+        "stress": compute_stress,
         "dipoles": args.compute_dipole,
+        "polarizabilities": args.compute_polarizability,
     }
     logging.info(
         f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
@@ -59,13 +66,22 @@ def configure_model(
                 )
         args.std = atomic_inter_scale
 
-    elif (args.mean is None or args.std is None) and args.model != "AtomicDipolesMACE":
+    elif (args.mean is None or args.std is None) and (
+        args.model not in ("AtomicDipolesMACE", "AtomicDielectricMACE")
+    ):
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
         )
-
+    if args.embedding_specs is not None:
+        args.embedding_specs = ast.literal_eval(args.embedding_specs)
+        logging.info("Using embedding specifications from command line arguments")
+        logging.info(f"Embedding specifications: {args.embedding_specs}")
     # Build model
-    if model_foundation is not None and args.model in ["MACE", "ScaleShiftMACE"]:
+    if model_foundation is not None and args.model in [
+        "MACE",
+        "ScaleShiftMACE",
+        "MACELES",
+    ]:
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
@@ -87,20 +103,25 @@ def configure_model(
 
         args.max_L = model_config_foundation["hidden_irreps"].lmax
 
-        if args.model == "MACE" and model_foundation.__class__.__name__ == "MACE":
-            model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
-        else:
+        if (
+            args.model == "ScaleShiftMACE"
+            or model_foundation.__class__.__name__ == "ScaleShiftMACE"
+        ):
             model_config_foundation["atomic_inter_shift"] = (
                 _determine_atomic_inter_shift(args.mean, heads)
             )
+        else:
+            model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
-        args.model = "FoundationMACE"
+        args.model = (
+            "FoundationMACELES" if args.model == "MACELES" else "FoundationMACE"
+        )
         model_config_foundation["heads"] = heads
         model_config = model_config_foundation
 
         logging.info("Model configuration extracted from foundation model")
-        logging.info("Using universal loss function for fine-tuning")
+        logging.info(f"Using {args.loss} loss function for fine-tuning")
         logging.info(
             f"Message passing with hidden irreps {model_config_foundation['hidden_irreps']})"
         )
@@ -137,6 +158,17 @@ def configure_model(
 
         logging.info(f"Hidden irreps: {args.hidden_irreps}")
 
+        cueq_config = None
+        if args.only_cueq:
+            logging.info("Using only the backend of the model")
+            cueq_config = CuEquivarianceConfig(
+                enabled=True,
+                layout="ir_mul",
+                group="O3_e3nn",
+                optimize_all=True,
+                conv_fusion=(args.device == "cuda"),
+            )
+
         model_config = dict(
             r_max=args.r_max,
             num_bessel=args.num_radial_basis,
@@ -146,9 +178,14 @@ def configure_model(
             num_interactions=args.num_interactions,
             num_elements=len(z_table),
             hidden_irreps=o3.Irreps(args.hidden_irreps),
+            edge_irreps=o3.Irreps(args.edge_irreps) if args.edge_irreps else None,
             atomic_energies=atomic_energies,
+            apply_cutoff=args.apply_cutoff,
             avg_num_neighbors=args.avg_num_neighbors,
             atomic_numbers=z_table.zs,
+            use_reduced_cg=args.use_reduced_cg,
+            use_so3=args.use_so3,
+            cueq_config=cueq_config,
         )
         model_config_foundation = None
 
@@ -204,6 +241,10 @@ def _build_model(
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             heads=heads,
+            embedding_specs=args.embedding_specs,
+            use_embedding_readout=args.use_embedding_readout,
+            use_last_readout_only=args.use_last_readout_only,
+            use_agnostic_product=args.use_agnostic_product,
         )
     if args.model == "ScaleShiftMACE":
         return modules.ScaleShiftMACE(
@@ -219,25 +260,25 @@ def _build_model(
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             heads=heads,
+            embedding_specs=args.embedding_specs,
+            use_embedding_readout=args.use_embedding_readout,
+            use_last_readout_only=args.use_last_readout_only,
+            use_agnostic_product=args.use_agnostic_product,
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)
+    if args.model == "FoundationMACELES":
+        from mace.modules.extensions import MACELES
+
+        return MACELES(
+            les_arguments=args.les_arguments,
+            **model_config_foundation,
+        )
     if args.model == "ScaleShiftBOTNet":
-        return modules.ScaleShiftBOTNet(
-            **model_config,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[args.interaction_first],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-            atomic_inter_scale=args.std,
-            atomic_inter_shift=args.mean,
-        )
+        # say it is deprecated
+        raise RuntimeError("ScaleShiftBOTNet is deprecated, use MACE instead")
     if args.model == "BOTNet":
-        return modules.BOTNet(
-            **model_config,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[args.interaction_first],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-        )
+        raise RuntimeError("BOTNet is deprecated, use MACE instead")
     if args.model == "AtomicDipolesMACE":
         assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
         assert (
@@ -252,6 +293,28 @@ def _build_model(
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
         )
+
+    if args.model == "AtomicDielectricMACE":
+        args.error_table = "DipolePolarRMSE"
+        # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
+        assert (
+            args.loss == "dipole_polar"
+        ), "Use dipole_polar loss with AtomicDielectricMACE model"
+        assert args.error_table in (
+            "DipoleRMSE",
+            "DipolePolarRMSE",
+        ), "Use error_table DipoleRMSE with AtomicDielectricMACE model"
+        return modules.AtomicDielectricMACE(
+            **model_config,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[
+                "RealAgnosticInteractionBlock"
+            ],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            use_polarizability=True,
+        )
+
     if args.model == "EnergyDipolesMACE":
         assert (
             args.loss == "energy_forces_dipole"
@@ -267,5 +330,27 @@ def _build_model(
                 "RealAgnosticInteractionBlock"
             ],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
+        )
+    if args.model == "MACELES":
+        from mace.modules.extensions import MACELES
+
+        return MACELES(
+            les_arguments=args.les_arguments,
+            **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=args.std,
+            atomic_inter_shift=[0.0] * len(heads),
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
+            heads=heads,
+            embedding_specs=args.embedding_specs,
+            use_embedding_readout=args.use_embedding_readout,
+            use_last_readout_only=args.use_last_readout_only,
+            use_agnostic_product=args.use_agnostic_product,
         )
     raise RuntimeError(f"Unknown model: '{args.model}'")

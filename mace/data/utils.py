@@ -5,22 +5,17 @@
 ###########################################################################################
 
 import logging
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import ase.data
 import ase.io
 import h5py
 import numpy as np
 
-from mace.tools import AtomicNumberTable
+from mace.tools import AtomicNumberTable, DefaultKeys
 
-Vector = np.ndarray  # [3,]
 Positions = np.ndarray  # [..., 3]
-Forces = np.ndarray  # [..., 3]
-Stress = np.ndarray  # [6, ], [3,3], [9, ]
-Virials = np.ndarray  # [6, ], [3,3], [9, ]
-Charges = np.ndarray  # [..., 1]
 Cell = np.ndarray  # [3,3]
 Pbc = tuple  # (3,)
 
@@ -29,25 +24,67 @@ DEFAULT_CONFIG_TYPE_WEIGHTS = {DEFAULT_CONFIG_TYPE: 1.0}
 
 
 @dataclass
+class KeySpecification:
+    info_keys: Dict[str, str] = field(default_factory=dict)
+    arrays_keys: Dict[str, str] = field(default_factory=dict)
+
+    def update(
+        self,
+        info_keys: Optional[Dict[str, str]] = None,
+        arrays_keys: Optional[Dict[str, str]] = None,
+    ):
+        if info_keys is not None:
+            self.info_keys.update(info_keys)
+        if arrays_keys is not None:
+            self.arrays_keys.update(arrays_keys)
+        return self
+
+    @classmethod
+    def from_defaults(cls):
+        instance = cls()
+        return update_keyspec_from_kwargs(instance, DefaultKeys.keydict())
+
+
+def update_keyspec_from_kwargs(
+    keyspec: KeySpecification, keydict: Dict[str, str]
+) -> KeySpecification:
+    # convert command line style property_key arguments into a keyspec
+    infos = [
+        "energy_key",
+        "stress_key",
+        "virials_key",
+        "dipole_key",
+        "head_key",
+        "elec_temp_key",
+        "total_charge_key",
+        "polarizability_key",
+        "total_spin_key",
+    ]
+    arrays = ["forces_key", "charges_key"]
+    info_keys = {}
+    arrays_keys = {}
+    for key in infos:
+        if key in keydict:
+            info_keys[key[:-4]] = keydict[key]
+    for key in arrays:
+        if key in keydict:
+            arrays_keys[key[:-4]] = keydict[key]
+    keyspec.update(info_keys=info_keys, arrays_keys=arrays_keys)
+    return keyspec
+
+
+@dataclass
 class Configuration:
     atomic_numbers: np.ndarray
     positions: Positions  # Angstrom
-    energy: Optional[float] = None  # eV
-    forces: Optional[Forces] = None  # eV/Angstrom
-    stress: Optional[Stress] = None  # eV/Angstrom^3
-    virials: Optional[Virials] = None  # eV
-    dipole: Optional[Vector] = None  # Debye
-    charges: Optional[Charges] = None  # atomic unit
+    properties: Dict[str, Any]
+    property_weights: Dict[str, float]
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
 
     weight: float = 1.0  # weight of config in loss
-    energy_weight: float = 1.0  # weight of config energy in loss
-    forces_weight: float = 1.0  # weight of config forces in loss
-    stress_weight: float = 1.0  # weight of config stress in loss
-    virials_weight: float = 1.0  # weight of config virial in loss
-    config_type: Optional[str] = DEFAULT_CONFIG_TYPE  # config_type of config
-    head: Optional[str] = "Default"  # head used to compute the config
+    config_type: str = DEFAULT_CONFIG_TYPE  # config_type of config
+    head: str = "Default"  # head used to compute the config
 
 
 Configurations = List[Configuration]
@@ -59,7 +96,9 @@ def random_train_valid_split(
     assert 0.0 < valid_fraction < 1.0
 
     size = len(items)
-    train_size = size - int(valid_fraction * size)
+    # guarantee at least one validation, mostly for tests with tiny fitting databases
+    assert size > 1
+    train_size = min(size - int(valid_fraction * size), size - 1)
 
     indices = list(range(size))
     rng = np.random.default_rng(seed)
@@ -86,14 +125,9 @@ def random_train_valid_split(
 
 def config_from_atoms_list(
     atoms_list: List[ase.Atoms],
-    energy_key="REF_energy",
-    forces_key="REF_forces",
-    stress_key="REF_stress",
-    virials_key="REF_virials",
-    dipole_key="REF_dipole",
-    charges_key="REF_charges",
-    head_key="head",
+    key_specification: KeySpecification,
     config_type_weights: Optional[Dict[str, float]] = None,
+    head_name: str = "Default",
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
     if config_type_weights is None:
@@ -104,14 +138,9 @@ def config_from_atoms_list(
         all_configs.append(
             config_from_atoms(
                 atoms,
-                energy_key=energy_key,
-                forces_key=forces_key,
-                stress_key=stress_key,
-                virials_key=virials_key,
-                dipole_key=dipole_key,
-                charges_key=charges_key,
-                head_key=head_key,
+                key_specification=key_specification,
                 config_type_weights=config_type_weights,
+                head_name=head_name,
             )
         )
     return all_configs
@@ -119,26 +148,14 @@ def config_from_atoms_list(
 
 def config_from_atoms(
     atoms: ase.Atoms,
-    energy_key="REF_energy",
-    forces_key="REF_forces",
-    stress_key="REF_stress",
-    virials_key="REF_virials",
-    dipole_key="REF_dipole",
-    charges_key="REF_charges",
-    head_key="head",
+    key_specification: KeySpecification = KeySpecification(),
     config_type_weights: Optional[Dict[str, float]] = None,
+    head_name: str = "Default",
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
     if config_type_weights is None:
         config_type_weights = DEFAULT_CONFIG_TYPE_WEIGHTS
 
-    energy = atoms.info.get(energy_key, None)  # eV
-    forces = atoms.arrays.get(forces_key, None)  # eV / Ang
-    stress = atoms.info.get(stress_key, None)  # eV / Ang ^ 3
-    virials = atoms.info.get(virials_key, None)
-    dipole = atoms.info.get(dipole_key, None)  # Debye
-    # Charges default to 0 instead of None if not found
-    charges = atoms.arrays.get(charges_key, np.zeros(len(atoms)))  # atomic unit
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
@@ -148,45 +165,29 @@ def config_from_atoms(
     weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(
         config_type, 1.0
     )
-    energy_weight = atoms.info.get("config_energy_weight", 1.0)
-    forces_weight = atoms.info.get("config_forces_weight", 1.0)
-    stress_weight = atoms.info.get("config_stress_weight", 1.0)
-    virials_weight = atoms.info.get("config_virials_weight", 1.0)
 
-    head = atoms.info.get(head_key, "Default")
+    properties = {}
+    property_weights = {}
+    for name in list(key_specification.arrays_keys) + list(key_specification.info_keys):
+        property_weights[name] = atoms.info.get(f"config_{name}_weight", 1.0)
 
-    # fill in missing quantities but set their weight to 0.0
-    if energy is None:
-        energy = 0.0
-        energy_weight = 0.0
-    if forces is None:
-        forces = np.zeros(np.shape(atoms.positions))
-        forces_weight = 0.0
-    if stress is None:
-        stress = np.zeros(6)
-        stress_weight = 0.0
-    if virials is None:
-        virials = np.zeros((3, 3))
-        virials_weight = 0.0
-    if dipole is None:
-        dipole = np.zeros(3)
-        # dipoles_weight = 0.0
+    for name, atoms_key in key_specification.info_keys.items():
+        properties[name] = atoms.info.get(atoms_key, None)
+        if not atoms_key in atoms.info:
+            property_weights[name] = 0.0
+
+    for name, atoms_key in key_specification.arrays_keys.items():
+        properties[name] = atoms.arrays.get(atoms_key, None)
+        if not atoms_key in atoms.arrays:
+            property_weights[name] = 0.0
 
     return Configuration(
         atomic_numbers=atomic_numbers,
         positions=atoms.get_positions(),
-        energy=energy,
-        forces=forces,
-        stress=stress,
-        virials=virials,
-        dipole=dipole,
-        charges=charges,
+        properties=properties,
         weight=weight,
-        head=head,
-        energy_weight=energy_weight,
-        forces_weight=forces_weight,
-        stress_weight=stress_weight,
-        virials_weight=virials_weight,
+        property_weights=property_weights,
+        head=head_name,
         config_type=config_type,
         pbc=pbc,
         cell=cell,
@@ -195,11 +196,13 @@ def config_from_atoms(
 
 def test_config_types(
     test_configs: Configurations,
-) -> List[Tuple[Optional[str], List[Configuration]]]:
+) -> List[Tuple[str, List[Configuration]]]:
     """Split test set based on config_type-s"""
     test_by_ct = []
     all_cts = []
     for conf in test_configs:
+        if conf.head is None:
+            conf.head = ""
         config_type_name = conf.config_type + "_" + conf.head
         if config_type_name not in all_cts:
             all_cts.append(config_type_name)
@@ -212,27 +215,31 @@ def test_config_types(
 
 def load_from_xyz(
     file_path: str,
-    config_type_weights: Dict,
-    energy_key: str = "REF_energy",
-    forces_key: str = "REF_forces",
-    stress_key: str = "REF_stress",
-    virials_key: str = "REF_virials",
-    dipole_key: str = "REF_dipole",
-    charges_key: str = "REF_charges",
-    head_key: str = "head",
+    key_specification: KeySpecification,
     head_name: str = "Default",
+    config_type_weights: Optional[Dict] = None,
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
+    no_data_ok: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
+    energy_key = key_specification.info_keys["energy"]
+    forces_key = key_specification.arrays_keys["forces"]
+    stress_key = key_specification.info_keys["stress"]
+    head_key = key_specification.info_keys["head"]
+    original_energy_key = energy_key
+    original_forces_key = forces_key
+    original_stress_key = stress_key
     if energy_key == "energy":
         logging.warning(
             "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'energy' to 'REF_energy'. You need to use --energy_key='REF_energy' to specify the chosen key name."
         )
-        energy_key = "REF_energy"
+        key_specification.info_keys["energy"] = "REF_energy"
         for atoms in atoms_list:
             try:
+                # print("OK")
                 atoms.info["REF_energy"] = atoms.get_potential_energy()
+                # print("atoms.info['REF_energy']:", atoms.info["REF_energy"])
             except Exception as e:  # pylint: disable=W0703
                 logging.error(f"Failed to extract energy: {e}")
                 atoms.info["REF_energy"] = None
@@ -240,7 +247,7 @@ def load_from_xyz(
         logging.warning(
             "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'forces' to 'REF_forces'. You need to use --forces_key='REF_forces' to specify the chosen key name."
         )
-        forces_key = "REF_forces"
+        key_specification.arrays_keys["forces"] = "REF_forces"
         for atoms in atoms_list:
             try:
                 atoms.arrays["REF_forces"] = atoms.get_forces()
@@ -251,12 +258,38 @@ def load_from_xyz(
         logging.warning(
             "Since ASE version 3.23.0b1, using stress_key 'stress' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'stress' to 'REF_stress'. You need to use --stress_key='REF_stress' to specify the chosen key name."
         )
-        stress_key = "REF_stress"
+        key_specification.info_keys["stress"] = "REF_stress"
         for atoms in atoms_list:
             try:
                 atoms.info["REF_stress"] = atoms.get_stress()
             except Exception as e:  # pylint: disable=W0703
                 atoms.info["REF_stress"] = None
+
+    final_energy_key = key_specification.info_keys["energy"]
+    final_forces_key = key_specification.arrays_keys["forces"]
+    final_dipole_key = key_specification.info_keys.get("dipole", "REF_dipole")
+    has_energy = any(final_energy_key in atoms.info for atoms in atoms_list)
+    has_forces = any(final_forces_key in atoms.arrays for atoms in atoms_list)
+    has_dipole = any(final_dipole_key in atoms.info for atoms in atoms_list)
+
+    if not has_energy and not has_forces and not has_dipole:
+        msg = f"None of '{final_energy_key}', '{final_forces_key}', and '{final_dipole_key}' found in '{file_path}'."
+        if no_data_ok:
+            logging.warning(msg + " Continuing because no_data_ok=True was passed in.")
+        else:
+            raise ValueError(
+                msg
+                + " Please change the key names in the command line arguments or ensure that the file contains the required data."
+            )
+    if not has_energy:
+        logging.warning(
+            f"No energies found with key '{final_energy_key}' in '{file_path}'. If this is unexpected, please change the key name in the command line arguments or ensure that the file contains the required data."
+        )
+    if not has_forces:
+        logging.warning(
+            f"No forces found with key '{final_forces_key}' in '{file_path}'. If this is unexpected, Please change the key name in the command line arguments or ensure that the file contains the required data."
+        )
+
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
 
@@ -265,6 +298,7 @@ def load_from_xyz(
         atoms_without_iso_atoms = []
 
         for idx, atoms in enumerate(atoms_list):
+            atoms.info[head_key] = head_name
             isolated_atom_config = (
                 len(atoms) == 1 and atoms.info.get("config_type") == "IsolatedAtom"
             )
@@ -292,14 +326,12 @@ def load_from_xyz(
     configs = config_from_atoms_list(
         atoms_list,
         config_type_weights=config_type_weights,
-        energy_key=energy_key,
-        forces_key=forces_key,
-        stress_key=stress_key,
-        virials_key=virials_key,
-        dipole_key=dipole_key,
-        charges_key=charges_key,
-        head_key=head_key,
+        key_specification=key_specification,
+        head_name=head_name,
     )
+    key_specification.info_keys["energy"] = original_energy_key
+    key_specification.arrays_keys["forces"] = original_forces_key
+    key_specification.info_keys["stress"] = original_stress_key
     return atomic_energies_dict, configs
 
 
@@ -315,7 +347,7 @@ def compute_average_E0s(
     A = np.zeros((len_train, len_zs))
     B = np.zeros(len_train)
     for i in range(len_train):
-        B[i] = collections_train[i].energy
+        B[i] = collections_train[i].properties["energy"]
         for j, z in enumerate(z_table.zs):
             A[i, j] = np.count_nonzero(collections_train[i].atomic_numbers == z)
     try:
@@ -336,26 +368,7 @@ def compute_average_E0s(
 def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
     with h5py.File(out_name, "w") as f:
         for i, data in enumerate(dataset):
-            grp = f.create_group(f"config_{i}")
-            grp["num_nodes"] = data.num_nodes
-            grp["edge_index"] = data.edge_index
-            grp["positions"] = data.positions
-            grp["shifts"] = data.shifts
-            grp["unit_shifts"] = data.unit_shifts
-            grp["cell"] = data.cell
-            grp["node_attrs"] = data.node_attrs
-            grp["weight"] = data.weight
-            grp["energy_weight"] = data.energy_weight
-            grp["forces_weight"] = data.forces_weight
-            grp["stress_weight"] = data.stress_weight
-            grp["virials_weight"] = data.virials_weight
-            grp["forces"] = data.forces
-            grp["energy"] = data.energy
-            grp["stress"] = data.stress
-            grp["virials"] = data.virials
-            grp["dipole"] = data.dipole
-            grp["charges"] = data.charges
-            grp["head"] = data.head
+            save_AtomicData_to_HDF5(data, i, f)
 
 
 def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
@@ -378,6 +391,7 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["virials"] = data.virials
     grp["dipole"] = data.dipole
     grp["charges"] = data.charges
+    grp["polarizability"] = data.polarizability
     grp["head"] = data.head
 
 
@@ -388,20 +402,15 @@ def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> N
         subgroup = grp.create_group(subgroup_name)
         subgroup["atomic_numbers"] = write_value(config.atomic_numbers)
         subgroup["positions"] = write_value(config.positions)
-        subgroup["energy"] = write_value(config.energy)
-        subgroup["forces"] = write_value(config.forces)
-        subgroup["stress"] = write_value(config.stress)
-        subgroup["virials"] = write_value(config.virials)
-        subgroup["head"] = write_value(config.head)
-        subgroup["dipole"] = write_value(config.dipole)
-        subgroup["charges"] = write_value(config.charges)
+        properties_subgrp = subgroup.create_group("properties")
+        for key, value in config.properties.items():
+            properties_subgrp[key] = write_value(value)
         subgroup["cell"] = write_value(config.cell)
         subgroup["pbc"] = write_value(config.pbc)
         subgroup["weight"] = write_value(config.weight)
-        subgroup["energy_weight"] = write_value(config.energy_weight)
-        subgroup["forces_weight"] = write_value(config.forces_weight)
-        subgroup["stress_weight"] = write_value(config.stress_weight)
-        subgroup["virials_weight"] = write_value(config.virials_weight)
+        weights_subgrp = subgroup.create_group("property_weights")
+        for key, value in config.property_weights.items():
+            weights_subgrp[key] = write_value(value)
         subgroup["config_type"] = write_value(config.config_type)
 
 
