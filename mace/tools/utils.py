@@ -197,8 +197,8 @@ def filter_nonzero_weight(
         weight = weight.view(*view).repeat(*repeats)
         if spread_quantity_vector:
             quantity_weight = quantity_weight.view(*view).repeat(*repeats)
-
     filtered_q = quantity[weight * quantity_weight > 0]
+
     if len(filtered_q) == 0:
         quantity_l.pop()
         return 0.0
