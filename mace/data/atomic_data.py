@@ -239,9 +239,17 @@ class AtomicData(torch_geometric.data.Data):
             )
             if config.property_weights.get("polarizability") is not None
             else torch.tensor(
-                1.0, dtype=torch.get_default_dtype()
-            )  ### Might need to be updated
+                [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
+                dtype=torch.get_default_dtype(),
+            )
         )
+        if len(polarizability_weight.shape) == 0:
+            polarizability_weight = polarizability_weight * torch.tensor(
+                [[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]],
+                dtype=torch.get_default_dtype(),
+            )
+        elif len(polarizability_weight.shape) == 2:
+            polarizability_weight = polarizability_weight.unsqueeze(0)
         forces = (
             torch.tensor(
                 config.properties.get("forces"), dtype=torch.get_default_dtype()
