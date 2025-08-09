@@ -40,6 +40,7 @@ from .models import (
     AtomicDielectricMACE,
     AtomicDipolesMACE,
     EnergyDipolesMACE,
+    LLPRModel,
     ScaleShiftMACE,
 )
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
