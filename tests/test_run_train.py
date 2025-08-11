@@ -45,7 +45,7 @@ def fixture_fitting_configs():
         c = water.copy()
         c.positions += np.random.normal(0.1, size=c.positions.shape)
         c.info["REF_energy"] = np.random.normal(0.1)
-        #print(c.info["REF_energy"])
+        print(c.info["REF_energy"])
         c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
         c.info["REF_stress"] = np.random.normal(0.1, size=6)
         c.info["REF_dipoles"] = np.random.normal(0.1, size=(3))
@@ -2009,11 +2009,6 @@ def test_run_train_dipole(tmp_path, fitting_configs):
                ]
 
     assert np.allclose(Mus, ref_Mus)
-test_run_train_dipole(Path(os.getcwd()), fixture_fitting_configs())
-
-
-#exit()
-
 
 _mace_params_dipole_polar = {
     "name": "DielectricMACE",
@@ -2204,5 +2199,4 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
 
     assert np.allclose(Mus, ref_Mus)
     assert np.allclose(alphas, ref_alphas)
-test_run_train_dipole_polar(Path(os.getcwd()), fixture_fitting_configs())
     
