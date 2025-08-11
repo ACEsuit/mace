@@ -59,7 +59,6 @@ def fixture_fitting_configs():
 
 @pytest.fixture(name="pretraining_configs")
 def fixture_pretraining_configs():
-    exit()
     configs = []
     for _ in range(10):
         atoms = Atoms(
@@ -85,6 +84,7 @@ def fixture_pretraining_configs():
     configs[-1].info["REF_energy"] = -4.0
     configs[-1].info["config_type"] = "IsolatedAtom"
     return configs
+
 _mace_params = {
     "name": "MACE",
     "valid_fraction": 0.05,
@@ -1931,7 +1931,7 @@ _mace_params_dipole = {
     "ema_decay": 0.99,
     "amsgrad": None,
     "restart_latest": None,
-    "device": "cuda",
+    "device": "cpu",
     "seed": 5,
     "loss": "dipole",
     "error_table": "DipoleRMSE",
@@ -1975,7 +1975,7 @@ def test_run_train_dipole(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(model_paths=tmp_path / "DipolesMACE.model",model_type="DipoleMACE", device="cuda")
+    calc = MACECalculator(model_paths=tmp_path / "DipolesMACE.model",model_type="DipoleMACE", device="cpu")
   
     Mus = []
     for at in fitting_configs:
@@ -2026,7 +2026,7 @@ _mace_params_dipole_polar = {
     "ema_decay": 0.99,
     "amsgrad": None,
     "restart_latest": None,
-    "device": "cuda",
+    "device": "cpu",
     "seed": 5,
     "loss": "dipole_polar",
     "error_table": "DipolePolarRMSE",
@@ -2072,7 +2072,7 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(model_paths=tmp_path / "DielectricMACE.model",model_type="DipolePolarizabilityMACE", device="cuda")
+    calc = MACECalculator(model_paths=tmp_path / "DielectricMACE.model",model_type="DipolePolarizabilityMACE", device="cpu")
   
     Mus = []
     alphas = []
