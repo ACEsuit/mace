@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -52,7 +53,13 @@ class SelectionSettings:
     filtering_type: FilteringType = FilteringType.COMBINATIONS
     weight_ft: float = 1.0
     weight_pt: float = 1.0
+    allow_random_padding: bool = True
     seed: int = 42
+
+
+def str_to_list(s: str) -> List[int]:
+    assert isinstance(s, str), "Input must be a string"
+    return ast.literal_eval(s)
 
 
 def parse_args() -> argparse.Namespace:
@@ -135,6 +142,18 @@ def parse_args() -> argparse.Namespace:
         help="weight for the pretraining set",
         type=float,
         default=1.0,
+    )
+    parser.add_argument(
+        "--atomic_numbers",
+        help="list of atomic numbers to filter the configurations",
+        type=str_to_list,
+        default=None,
+    )
+    parser.add_argument(
+        "--disallow_random_padding",
+        help="do not allow random padding of the configurations to match the number of samples",
+        action="store_false",
+        dest="allow_random_padding",
     )
     parser.add_argument("--seed", help="random seed", type=int, default=42)
     return parser.parse_args()
@@ -386,6 +405,7 @@ def _subsample_data(
     num_samples: int | None,
     subselect: SubselectType,
     descriptors_path: str | None,
+    allow_random_padding: bool,
     calc: MACECalculator | None,
 ) -> List[ase.Atoms]:
     if num_samples is None or num_samples == len(filtered_atoms):
@@ -393,7 +413,7 @@ def _subsample_data(
             f"No subsampling, keeping all {len(filtered_atoms)} filtered configurations"
         )
         return filtered_atoms
-    if num_samples > len(filtered_atoms):
+    if num_samples > len(filtered_atoms) and allow_random_padding:
         num_sample_randomly = num_samples - len(filtered_atoms)
         logging.info(
             f"Number of configurations after filtering {len(filtered_atoms)} "
@@ -413,9 +433,14 @@ def _subsample_data(
             calc,
             full_data_length=len(filtered_atoms) + len(remaining_atoms),
         )
-        logging.info("Selecting configurations using Farthest Point Sampling")
+        logging.info(
+            f"Selecting {num_samples} configurations out of {len(filtered_atoms)} using Farthest Point Sampling"
+        )
         return _maybe_fps(filtered_atoms, num_samples)
     if subselect == SubselectType.RANDOM:
+        logging.info(
+            f"Subselecting {num_samples} from filtered {len(filtered_atoms)} using random sampling"
+        )
         return _get_random_configs(num_samples, filtered_atoms)
     raise ValueError(f"Invalid subselect type: {subselect}")
 
@@ -458,6 +483,7 @@ def select_samples(
         settings.num_samples,
         settings.subselect,
         settings.descriptors,
+        settings.allow_random_padding,
         calc,
     )
     if ase.io.formats.filetype(settings.output, read=False) != "extxyz":

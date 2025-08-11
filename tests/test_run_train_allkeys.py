@@ -46,6 +46,7 @@ _mace_params = {
     "num_radial_basis": 10,
     "r_max": 6.0,
     "default_dtype": "float64",
+    "use_reduced_cg": False,
 }
 
 
