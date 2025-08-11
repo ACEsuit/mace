@@ -1941,6 +1941,7 @@ _mace_params_dipole = {
     "dipole_key": "REF_dipoles",
     "eval_interval": 2,
     "use_reduced_cg": False,
+    "compute_atomic_dipole":True,
 }
 
 
@@ -2041,6 +2042,8 @@ _mace_params_dipole_polar = {
     "polarizability_key": "REF_polarizability",
     "eval_interval": 2,
     "use_reduced_cg": False,
+    "compute_polarizability": True,
+    
 }
 
 
