@@ -45,16 +45,21 @@ def fixture_fitting_configs():
         c = water.copy()
         c.positions += np.random.normal(0.1, size=c.positions.shape)
         c.info["REF_energy"] = np.random.normal(0.1)
-        print(c.info["REF_energy"])
+        #print(c.info["REF_energy"])
         c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
         c.info["REF_stress"] = np.random.normal(0.1, size=6)
+        c.info["REF_dipoles"] = np.random.normal(0.1, size=(3))
+        c.info["REF_polarizability"] = np.random.normal(0.1, size=(3,3))
+        
         fit_configs.append(c)
 
     return fit_configs
 
 
+
 @pytest.fixture(name="pretraining_configs")
 def fixture_pretraining_configs():
+    exit()
     configs = []
     for _ in range(10):
         atoms = Atoms(
@@ -66,6 +71,8 @@ def fixture_pretraining_configs():
         atoms.info["REF_energy"] = np.random.normal(0, 1)
         atoms.arrays["REF_forces"] = np.random.normal(0, 1, size=(3, 3))
         atoms.info["REF_stress"] = np.random.normal(0, 1, size=6)
+        atoms.info["REF_dipoles"]= np.random.normal(0.1, size=(3))
+        atoms.info["REF_polarizability"]= np.random.normal(0.1, size=(3,3))
         configs.append(atoms)
     configs.append(
         Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3),
@@ -78,8 +85,6 @@ def fixture_pretraining_configs():
     configs[-1].info["REF_energy"] = -4.0
     configs[-1].info["config_type"] = "IsolatedAtom"
     return configs
-
-
 _mace_params = {
     "name": "MACE",
     "valid_fraction": 0.05,
