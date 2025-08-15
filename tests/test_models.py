@@ -30,12 +30,20 @@ config = data.Configuration(
         "energy": -1.5,
         "charges": np.array([-2.0, 1.0, 1.0]),
         "dipole": np.array([-1.5, 1.5, 2.0]),
+        "polarizability": np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        ),
     },
     property_weights={
         "forces": 1.0,
         "energy": 1.0,
         "charges": 1.0,
         "dipole": 1.0,
+        "polarizability": 1.0,
     },
 )
 # Created the rotated environment
@@ -55,12 +63,20 @@ config_rotated = data.Configuration(
         "energy": -1.5,
         "charges": np.array([-2.0, 1.0, 1.0]),
         "dipole": np.array([-1.5, 1.5, 2.0]),
+        "polarizability": np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        ),
     },
     property_weights={
         "forces": 1.0,
         "energy": 1.0,
         "charges": 1.0,
         "dipole": 1.0,
+        "polarizability": 1.0,
     },
 )
 table = tools.AtomicNumberTable([1, 8])

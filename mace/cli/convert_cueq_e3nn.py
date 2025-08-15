@@ -46,7 +46,9 @@ def get_kmax_pairs(
 ) -> List[Tuple[int, int]]:
     """Determine kmax pairs based on num_product_irreps and correlation"""
     if correlation == 2:
-        raise NotImplementedError("Correlation 2 not supported yet")
+        kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
+        kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
+        return kmax_pairs
     if correlation == 3:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
         kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
@@ -65,8 +67,7 @@ def transfer_symmetric_contractions(
 ):
     """Transfer symmetric contraction weights from CuEq to E3nn format"""
     kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
-
-    suffixes = ["_max", ".0", ".1"]
+    suffixes = ["_max"] + [f".{i}" for i in range(correlation - 1)]
     for i, kmax in kmax_pairs:
         # Get the combined weight tensor from source
         irreps_in = o3.Irreps(

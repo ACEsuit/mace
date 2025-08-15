@@ -13,6 +13,7 @@ from ase.calculators.test import gradient_test
 from ase.constraints import ExpCellFilter
 
 from mace.calculators import mace_mp, mace_off
+from mace.calculators.foundations_models import mace_omol
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
 
@@ -750,3 +751,23 @@ def test_mace_mp_stresses(model="medium", device="cpu"):
     assert stress.shape == (6,)
     assert stresses.shape == (32, 6)
     assert np.allclose(stress, stresses.sum(axis=0), atol=1e-6)
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+def test_mace_omol_cueq(device="cpu"):
+
+    calc = mace_omol(device=device, default_dtype="float64")
+    mol = build.molecule("H2O")
+    mol.set_calculator(calc)
+    energy = mol.get_potential_energy()
+    forces = mol.get_forces()
+
+    # reset the calculator to test CUEQ
+    mol.calc.reset()
+    calc_cueq = mace_omol(device=device, enable_cueq=True, default_dtype="float64")
+    mol.set_calculator(calc_cueq)
+    energy_cueq = mol.get_potential_energy()
+    forces_cueq = mol.get_forces()
+    assert np.allclose(energy, energy_cueq, atol=1e-6)
+    assert np.allclose(forces, forces_cueq, atol=1e-6)
+    assert np.allclose(energy, -2079.863496758961, atol=1e-9)
