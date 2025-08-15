@@ -974,6 +974,7 @@ def run(args) -> None:
                     convert_to_json_format(extract_config_mace_model(model))
                 ),
             }
+            os.makedirs(args.model_dir, exist_ok=True)
             if swa_eval:
                 torch.save(
                     model_to_save, Path(args.model_dir) / (args.name + "_stagetwo.model")
