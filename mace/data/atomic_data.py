@@ -77,6 +77,7 @@ class AtomicData(torch_geometric.data.Data):
         elec_temp: Optional[torch.Tensor],  # [,]
         total_charge: Optional[torch.Tensor] = None,  # [,]
         total_spin: Optional[torch.Tensor] = None,  # [,]
+        pbc: Optional[torch.Tensor] = None, # [, 3]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -105,6 +106,7 @@ class AtomicData(torch_geometric.data.Data):
         assert total_charge is None or len(total_charge.shape) == 0
         assert total_spin is None or len(total_spin.shape) == 0
         assert polarizability is None or polarizability.shape == (1, 3, 3)
+        assert pbc is None or (pbc.shape[-1] == 3 and pbc.dtype == torch.bool)
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -133,6 +135,7 @@ class AtomicData(torch_geometric.data.Data):
             "elec_temp": elec_temp,
             "total_charge": total_charge,
             "total_spin": total_spin,
+            "pbc": pbc,
         }
         super().__init__(**data)
 
@@ -329,6 +332,12 @@ class AtomicData(torch_geometric.data.Data):
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
 
+        pbc = (
+            torch.tensor([config.pbc], dtype=torch.bool)
+            if config.pbc is not None
+            else torch.tensor([[False, False, False]], dtype=torch.bool)
+        )
+
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
             positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
@@ -355,6 +364,7 @@ class AtomicData(torch_geometric.data.Data):
             total_charge=total_charge,
             polarizability=polarizability,
             total_spin=total_spin,
+            pbc=pbc,
         )
 
 
