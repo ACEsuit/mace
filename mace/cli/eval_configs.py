@@ -16,6 +16,7 @@ import torch
 
 from mace import data
 from mace.tools import torch_geometric, torch_tools, utils
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 
 
 def parse_args() -> argparse.Namespace:
@@ -93,7 +94,13 @@ def parse_args() -> argparse.Namespace:
         help="Model head used for evaluation",
         type=str,
         required=False,
-        default=None,
+        default="Default",
+    )
+    parser.add_argument(
+        "--enable_cueq",
+        help="enable cuequivariance acceleration",
+        action="store_true",
+        default=False,
     )
     return parser.parse_args()
 
@@ -109,6 +116,9 @@ def run(args: argparse.Namespace) -> None:
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+    if args.enable_cueq:
+        print("Converting models to CuEq for acceleration")
+        model = run_e3nn_to_cueq(model, device=device)
     model = model.to(
         args.device
     )  # shouldn't be necessary but seems to help with CUDA problems
@@ -172,7 +182,7 @@ def run(args: argparse.Namespace) -> None:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
 
         if args.compute_polarisation:
-            polarisations_list.append(torch_tools.to_numpy(output["polarisation"]).reshape(3))
+            polarisations_list.append(torch_tools.to_numpy(output["polarisation"])[0])
         
         if args.compute_polarisability:
             polarisabilities_list.append(torch_tools.to_numpy(output["polarisability"]).reshape(9))
@@ -250,10 +260,10 @@ def run(args: argparse.Namespace) -> None:
         if args.compute_polarisation:
             atoms.info[args.info_prefix + "polarisation"] = polarisations[i,:]
         if args.compute_polarisability:
-            atoms.info[args.info_prefix + "polarisability"] = polarisabilities[i,:]
+            atoms.info[args.info_prefix + "polarisability"] = polarisabilities[i]
 
     # Write atoms to output path
-    ase.io.write(args.output, images=atoms_list, format="extxyz")
+    ase.io.write(args.output, atoms_list)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ def get_transfer_keys(num_layers: int) -> List[str]:
         "scale_shift.scale",
         "scale_shift.shift",
         *[f"readouts.{num_layers-1}.linear_{i}.weight" for i in range(1, 3)],
+        *[f"field_feats.{j}.weight" for j in range(num_layers - 1)],
         *[f"field_linear.{j}.weight" for j in range(num_layers - 1)],
     ] + [
         s
@@ -96,15 +97,27 @@ def transfer_weights(
         source_dict, target_dict, max_L, correlation, num_layers
     )
 
-    # Unsqueeze linear and skip_tp layers
-    for key in source_dict.keys():
-        if any(x in key for x in ["linear", "skip_tp"]) and "weight" in key:
-            target_dict[key] = target_dict[key].unsqueeze(0)
+    # Fix 1D → [1,*] mismatches (e.g. field_feats.*.weight) by looking at the *target* shape
+    tgt_shapes = target_model.state_dict()  # fresh shapes as created by the CuEq model
 
-    transferred_keys = set(transfer_keys)
-    remaining_keys = (
-        set(source_dict.keys()) & set(target_dict.keys()) - transferred_keys
-    )
+    for key in list(target_dict.keys()):
+        if key not in tgt_shapes or "weight" not in key:
+            continue
+        s = target_dict[key]          # what we plan to load (may be from source)
+        t = tgt_shapes[key]           # what the target model expects
+
+        # If target wants a leading 1 and the rest matches, unsqueeze source
+        if s.ndim + 1 == t.ndim and t.shape[0] == 1 and s.shape == t.shape[1:]:
+            target_dict[key] = s.unsqueeze(0)
+        # (optional) opposite case: if source has a leading 1 but target doesn't
+        elif s.ndim == t.ndim + 1 and s.shape[0] == 1 and s.shape[1:] == t.shape:
+            target_dict[key] = s.squeeze(0)
+
+        transferred_keys = set(transfer_keys)
+        remaining_keys = (
+            set(source_dict.keys()) & set(target_dict.keys()) - transferred_keys
+        )
+        
     remaining_keys = {k for k in remaining_keys if "symmetric_contraction" not in k}
     if remaining_keys:
         for key in remaining_keys:

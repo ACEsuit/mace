@@ -223,35 +223,34 @@ def conditional_huber_forces(
 
     
 def fold_polarisation(
-    pred_polarisation: torch.Tensor, 
-    ref_polarisation: torch.Tensor, 
-    cell: torch.Tensor,
+    pred_polarisation: torch.Tensor,   # [B,3] intensive P_pred
+    ref_polarisation: torch.Tensor,    # [B,3] intensive P_ref  (branch anchor)
+    cell: torch.Tensor,         # [B,3,3] ASE-style cell (rows = lattice vectors)
 ) -> torch.Tensor:
+    """
+    Return the nearest-image *difference* ΔP_folded to add to P_ref:
+        P_pred_fold = P_ref + ΔP_folded
+    with ΔP identified modulo the polarization lattice Qpol = cell / |Ω|.
+    Keeps autograd intact (no detach), piecewise linear almost everywhere.
+    """
+    # --- build polarization lattice Q = cell / |Ω| ---
+    B = cell.view(-1, 3, 3)
+    vol = torch.linalg.det(B).abs().clamp_min(1e-30).view(-1, 1, 1)   # |Ω|
+    Q = B / vol                                                      # [B,3,3]
+   
+    # raw difference
+    dP = (pred_polarisation.view(-1, 3) - ref_polarisation.view(-1, 3))   # [B,3]
 
-    volume = torch.linalg.det(cell.view(-1,3,3)).view(-1,1,1)  # [n_graphs, 1, 1]
-    polarisation_quantum = cell.view(-1,3,3) / volume # [n_graphs, 3, 3]
-    polarisation_difference = pred_polarisation.view(-1,3) - ref_polarisation.view(-1,3)  # [n_graphs, 3]
+    # map to fractional coords c solving  Q^T c^T = dP^T   (i.e., c = dP @ Q^{-1})
+    c = torch.linalg.solve(Q.transpose(-2, -1), dP.unsqueeze(-1)).squeeze(-1)  # [B,3]
 
-    # Map polarisation_difference to fractional coordinates using polarisation quantum
-    fractional_polarisation_difference = torch.einsum(
-        "bi, bij -> bj", polarisation_difference, torch.linalg.inv(polarisation_quantum)
-    )  # [n_graphs, 3]
+    # wrap into (-0.5, 0.5] with minimum-image convention
+    # c_wrap = c - round(c) gives (-0.5, 0.5]; works with autograd (grad ~ 1 a.e.)
+    c = c - torch.round(c)
 
-    # Fold polarisation difference into "unit cell" in fractional coordinates, i.e. 3 by 3 identity matrix
-    fractional_polarisation_difference = torch.remainder(fractional_polarisation_difference, 1.0)
-
-    # Apply the minimum image convention
-    fractional_polarisation_difference = torch.where(
-        fractional_polarisation_difference > 0.5, fractional_polarisation_difference - 1.0, fractional_polarisation_difference
-    )
-    fractional_polarisation_difference = torch.where(
-        fractional_polarisation_difference < -0.5, fractional_polarisation_difference + 1.0, fractional_polarisation_difference
-    )
-
-    # map back from fractional to Cartesian
-    polarisation_difference = torch.einsum("bi, bij -> bj", fractional_polarisation_difference, polarisation_quantum)  # [n_graphs, 3]
-
-    return polarisation_difference
+    # back to Cartesian
+    dP_folded = torch.einsum("bi,bij->bj", c, Q)                           # [B,3]
+    return dP_folded
 
 
 # ------------------------------------------------------------------------------
@@ -527,16 +526,17 @@ class UniversalFieldLoss(torch.nn.Module):
         self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
     ) -> torch.Tensor:
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
+        volume = torch.linalg.det(ref["cell"].view(-1,3,3))
         configs_stress_weight = ref.stress_weight.view(-1, 1, 1)
         configs_energy_weight = ref.energy_weight
         configs_forces_weight = torch.repeat_interleave(
             ref.forces_weight, num_atoms
         ).unsqueeze(-1)
-        configs_polarisation_weight = ref.polarisation_weight.view(-1, 1)
+        configs_polarisation_weight = ref.polarisation_weight.view(-1, 1) * volume.view(-1, 1)
         configs_becs_weight = torch.repeat_interleave(
             ref.becs_weight, num_atoms
         ).view(-1, 1, 1) 
-        configs_polarisability_weight = ref.polarisability_weight.view(-1, 1, 1)
+        configs_polarisability_weight = ref.polarisability_weight.view(-1, 1, 1) * volume.view(-1, 1, 1)
         polarisation_difference = fold_polarisation(pred["polarisation"], ref["polarisation"], ref["cell"])
 
         if ddp:
@@ -580,7 +580,7 @@ class UniversalFieldLoss(torch.nn.Module):
                 reduction="none",
                 delta=self.huber_delta,
             )
-            loss_polarisability = reduce_loss(loss_polarisability)
+            loss_polarisability = reduce_loss(loss_polarisability, ddp)
         else:
             loss_energy = torch.nn.functional.huber_loss(
                 configs_energy_weight * ref["energy"] / num_atoms,
@@ -614,7 +614,7 @@ class UniversalFieldLoss(torch.nn.Module):
             )
             loss_polarisability = torch.nn.functional.huber_loss(
                 configs_polarisability_weight * ref["polarisability"],
-                configs_polarisability_weight * pred["polarisability"],
+                configs_polarisability_weight * pred["polarisability"], 
                 reduction="mean",
                 delta=self.huber_delta,
             )

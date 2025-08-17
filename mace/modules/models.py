@@ -528,8 +528,7 @@ class ScaleShiftFieldMACE(MACE):
                     irreps_in1=hidden_irreps,
                     irreps_in2=o3.Irreps("1o"),
                     irreps_out=hidden_irreps,
-                    internal_weights=True,
-                    shared_weights=True
+                    cueq_config=self.interactions[i].cueq_config
                 )
             )
             self.field_linear.append(
@@ -632,7 +631,7 @@ class ScaleShiftFieldMACE(MACE):
             )
             if i < len(self.interactions) - 1:
                 delta_node_feats = self.field_feats[i](node_feats, electric_field.repeat_interleave(data["ptr"][1:] - data["ptr"][:-1], dim=0))
-                node_feats = node_feats - self.field_linear[i](delta_node_feats)
+                node_feats = node_feats - self.field_linear[i](delta_node_feats) 
             node_feats_list.append(node_feats)
             node_es_list.append(
                 readout(node_feats, node_heads)[num_atoms_arange, node_heads]

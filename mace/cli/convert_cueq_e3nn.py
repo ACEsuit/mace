@@ -19,6 +19,7 @@ def get_transfer_keys(num_layers: int) -> List[str]:
         "scale_shift.scale",
         "scale_shift.shift",
         *[f"readouts.{num_layers-1}.linear_{i}.weight" for i in range(1, 3)],
+        *[f"field_feats.{j}.weight" for j in range(num_layers - 1)],
         *[f"field_linear.{j}.weight" for j in range(num_layers - 1)],
     ] + [
         s
@@ -111,10 +112,28 @@ def transfer_weights(
         source_dict, target_dict, max_L, correlation, num_layers
     )
 
-    # Unsqueeze linear and skip_tp layers
-    for key in source_dict.keys():
-        if any(x in key for x in ["linear", "skip_tp"]) and "weight" in key:
-            target_dict[key] = target_dict[key].squeeze(0)
+    tgt_shapes = target_model.state_dict()  # fresh tensors with desired shapes
+    for key in list(target_dict.keys()):
+        if key not in tgt_shapes:
+            continue
+        s = target_dict[key]
+        t = tgt_shapes[key]
+        # match dtype/device
+        s = s.to(dtype=t.dtype, device=t.device)
+
+        if s.shape == t.shape:
+            target_dict[key] = s
+            continue
+
+        # target expects [1, …] but source has […]: add leading singleton
+        if s.dim() + 1 == t.dim() and t.shape[0] == 1 and s.shape == t.shape[1:]:
+            target_dict[key] = s.unsqueeze(0)
+            continue
+
+        # target expects […] but source has [1, …]: drop leading singleton
+        if s.dim() == t.dim() + 1 and s.shape[0] == 1 and s.shape[1:] == t.shape:
+            target_dict[key] = s.squeeze(0)
+            continue
 
     # Transfer remaining matching keys
     transferred_keys = set(transfer_keys)
