@@ -561,8 +561,8 @@ class UniversalFieldLoss(torch.nn.Module):
             )
             loss_stress = reduce_loss(loss_stress, ddp)
             loss_polarisation = torch.nn.functional.huber_loss(
-                configs_polarisation_weight * ref["polarisation"],
-                configs_polarisation_weight * (polarisation_difference + ref["polarisation"]),
+                configs_polarisation_weight * ref["polarisation"] / num_atoms.view(-1, 1),
+                configs_polarisation_weight * (polarisation_difference + ref["polarisation"]) / num_atoms.view(-1, 1),
                 reduction="none",
                 delta=self.huber_delta,
             )
@@ -575,8 +575,8 @@ class UniversalFieldLoss(torch.nn.Module):
             )
             loss_becs = reduce_loss(loss_becs, ddp)
             loss_polarisability = torch.nn.functional.huber_loss(
-                configs_polarisability_weight * ref["polarisability"],
-                configs_polarisability_weight * pred["polarisability"],
+                configs_polarisability_weight * ref["polarisability"] / num_atoms.view(-1, 1, 1),
+                configs_polarisability_weight * pred["polarisability"] / num_atoms.view(-1, 1, 1),
                 reduction="none",
                 delta=self.huber_delta,
             )
@@ -601,8 +601,8 @@ class UniversalFieldLoss(torch.nn.Module):
                 delta=self.huber_delta,
             )
             loss_polarisation = torch.nn.functional.huber_loss(
-                configs_polarisation_weight * ref["polarisation"],
-                configs_polarisation_weight * (polarisation_difference + ref["polarisation"]),
+                configs_polarisation_weight * ref["polarisation"] / num_atoms.view(-1, 1),
+                configs_polarisation_weight * (polarisation_difference + ref["polarisation"]) / num_atoms.view(-1, 1),
                 reduction="mean",
                 delta=self.huber_delta,
             )
@@ -613,8 +613,8 @@ class UniversalFieldLoss(torch.nn.Module):
                 delta=self.huber_delta,
             )
             loss_polarisability = torch.nn.functional.huber_loss(
-                configs_polarisability_weight * ref["polarisability"],
-                configs_polarisability_weight * pred["polarisability"], 
+                configs_polarisability_weight * ref["polarisability"] / num_atoms.view(-1, 1, 1),
+                configs_polarisability_weight * pred["polarisability"] / num_atoms.view(-1, 1, 1), 
                 reduction="mean",
                 delta=self.huber_delta,
             )
