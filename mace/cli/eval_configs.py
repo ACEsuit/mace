@@ -102,6 +102,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--electric_field_key",
+        help="Key for the electric field",
+        type=str,
+        required=False,
+        default="REF_electric_field",
+    )
     return parser.parse_args()
 
 
@@ -119,7 +126,7 @@ def run(args: argparse.Namespace) -> None:
     if args.enable_cueq:
         print("Converting models to CuEq for acceleration")
         model = run_e3nn_to_cueq(model, device=device)
-    model = model.to(
+    model = model.eval().to(
         args.device
     )  # shouldn't be necessary but seems to help with CUDA problems
 
@@ -131,7 +138,12 @@ def run(args: argparse.Namespace) -> None:
     if args.head is not None:
         for atoms in atoms_list:
             atoms.info["head"] = args.head
-    configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
+
+    keyspec = data.KeySpecification(
+            info_keys={"electric_field": args.electric_field_key}, 
+            arrays_keys={}
+        )
+    configs = [data.config_from_atoms(atoms, key_specification=keyspec, head_name=args.head) for atoms in atoms_list]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
@@ -163,6 +175,7 @@ def run(args: argparse.Namespace) -> None:
 
     for batch in data_loader:
         batch = batch.to(device)
+        # print(batch.to_dict())
         output = model(
             batch.to_dict(), 
             compute_force=args.compute_force, 
