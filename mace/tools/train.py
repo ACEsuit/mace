@@ -611,7 +611,7 @@ class MACELoss(Metric):
             )
             self.E_computed += filter_nonzero_weight(
                 batch, self.delta_es, batch.weight, batch.energy_weight
-            )  # DEBUG , label="delta_es")
+            )
         if output.get("forces") is not None and batch.forces is not None:
             self.fs.append(batch.forces)
             self.delta_fs.append(batch.forces - output["forces"])
@@ -621,12 +621,12 @@ class MACELoss(Metric):
                 batch.weight,
                 batch.forces_weight,
                 spread_atoms=True,
-            )  # DEBUG , label="delta_fs")
+            )
         if output.get("stress") is not None and batch.stress is not None:
             self.delta_stress.append(batch.stress - output["stress"])
             self.stress_computed += filter_nonzero_weight(
                 batch, self.delta_stress, batch.weight, batch.stress_weight
-            )  # DEBUG , label="delta_stress")
+            )
         if output.get("virials") is not None and batch.virials is not None:
             self.delta_virials.append(batch.virials - output["virials"])
             self.delta_virials_per_atom.append(
@@ -635,7 +635,7 @@ class MACELoss(Metric):
             )
             self.virials_computed += filter_nonzero_weight(
                 batch, self.delta_virials, batch.weight, batch.virials_weight
-            )  # DEBUG , label="delta_virials")
+            )
         if output.get("dipole") is not None and batch.dipole is not None:
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
@@ -649,7 +649,7 @@ class MACELoss(Metric):
                 batch.weight,
                 batch.dipole_weight,
                 spread_quantity_vector=False,
-            )  # DEBUG , label="delta_mus")
+            )
         if (
             output.get("polarizability") is not None
             and batch.polarizability is not None
