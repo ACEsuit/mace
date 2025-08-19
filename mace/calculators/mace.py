@@ -261,6 +261,13 @@ class MACECalculator(Calculator):
         kwarg_head = kwargs.get("head", None)
         if kwarg_head is not None:
             self.head = kwarg_head
+            if isinstance(self.head, str):
+                if self.head not in self.available_heads:
+                    last_head = self.available_heads[-1]
+                    logging.warning(
+                        f"Head {self.head} not found in available heads {self.available_heads}, defaulting to the last head: {last_head}"
+                    )
+                    self.head = last_head
         elif len(self.available_heads) == 1:
             self.head = self.available_heads[0]
         else:

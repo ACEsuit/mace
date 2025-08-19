@@ -239,7 +239,7 @@ class AtomicData(torch_geometric.data.Data):
             )
             if config.property_weights.get("polarizability") is not None
             else torch.tensor(
-                [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
+                [[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]],
                 dtype=torch.get_default_dtype(),
             )
         )
