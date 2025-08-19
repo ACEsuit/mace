@@ -305,6 +305,10 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "radial_type": radial_to_name(
             model.radial_embedding.bessel_fn.__class__.__name__
         ),
+        "embedding_specs": (
+            model.embedding_specs if hasattr(model, "embedding_specs") else None
+        ),
+        "apply_cutoff": model.apply_cutoff if hasattr(model, "apply_cutoff") else True,
         "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
         "distance_transform": radial_to_transform(model.radial_embedding),
