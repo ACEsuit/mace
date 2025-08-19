@@ -104,6 +104,17 @@ class MACELES(ScaleShiftMACE):
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
 
+        # Setting LES cell input to zero when boundary conditions are not periodic
+        cell_les = cell.clone()
+        pbc_tensor = data["pbc"].to(device=data["cell"].device)
+        no_pbc_mask_cfg = ~pbc_tensor.any(dim=-1)
+        no_pbc_mask_rows = no_pbc_mask_cfg.repeat_interleave(3)
+        cell_les[no_pbc_mask_rows] = torch.zeros(
+            (no_pbc_mask_rows.sum(), 3),
+            dtype=cell_les.dtype,
+            device=cell_les.device
+        )
+
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
@@ -205,7 +216,7 @@ class MACELES(ScaleShiftMACE):
         les_result = self.les(
             latent_charges=les_q,
             positions=positions,
-            cell=cell.view(-1, 3, 3),
+            cell=cell_les.view(-1, 3, 3),
             batch=data["batch"],
             compute_energy=True,
             compute_bec=(compute_bec or self.compute_bec),
