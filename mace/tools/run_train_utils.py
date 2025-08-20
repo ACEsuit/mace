@@ -36,6 +36,7 @@ def load_dataset_for_path(
     heads: List[str],
     head_config: Any,
     collection: Optional[Any] = None,
+    dtype: Optional[torch.dtype] = None,
 ) -> Union[Dataset, List]:
     """
     Load a dataset from a file path based on its format.
@@ -51,6 +52,7 @@ def load_dataset_for_path(
     Returns:
         Loaded dataset
     """
+    dtype = dtype or torch.get_default_dtype()
     if isinstance(file_path, list):
         if len(file_path) == 1:
             file_path = file_path[0]
@@ -69,7 +71,7 @@ def load_dataset_for_path(
         ), "Collection must be provided for ASE readable files"
         return [
             data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=r_max, heads=heads
+                config, z_table=z_table, cutoff=r_max, heads=heads, dtype=dtype
             )
             for config in collection
         ]
@@ -87,6 +89,7 @@ def load_dataset_for_path(
                 z_table=z_table,
                 heads=heads,
                 head=head_config.head_name,
+                dtype=dtype,
             )
 
         h5_files = list(filepath.glob("*.h5")) + list(filepath.glob("*.hdf5"))
@@ -99,6 +102,7 @@ def load_dataset_for_path(
                     z_table=z_table,
                     heads=heads,
                     head=head_config.head_name,
+                    dtype=dtype,
                 )
             except Exception as e:
                 logging.error(f"Error loading sharded HDF5 dataset: {e}")
@@ -112,6 +116,7 @@ def load_dataset_for_path(
                 z_table=z_table,
                 heads=heads,
                 head=head_config.head_name,
+                dtype=dtype,
             )
 
         logging.info(f"Attempting to load directory as HDF5 dataset: {file_path}")
@@ -122,6 +127,7 @@ def load_dataset_for_path(
                 z_table=z_table,
                 heads=heads,
                 head=head_config.head_name,
+                dtype=dtype,
             )
         except Exception as e:
             logging.error(f"Error loading as sharded HDF5: {e}")
@@ -136,6 +142,7 @@ def load_dataset_for_path(
             z_table=z_table,
             heads=heads,
             head=head_config.head_name,
+            dtype=dtype,
         )
 
     if suffix in (".lmdb", ".aselmdb", ".db"):
@@ -146,6 +153,7 @@ def load_dataset_for_path(
             z_table=z_table,
             heads=heads,
             head=head_config.head_name,
+            dtype=dtype,
         )
 
     logging.info(f"Attempting to load as LMDB: {file_path}")
@@ -155,6 +163,7 @@ def load_dataset_for_path(
         z_table=z_table,
         heads=heads,
         head=head_config.head_name,
+        dtype=dtype,
     )
 
 

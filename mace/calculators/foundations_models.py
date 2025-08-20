@@ -35,7 +35,7 @@ mace_mp_urls = {
 mace_mp_names = [None] + list(mace_mp_urls.keys())
 
 
-def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
+def download_mace_mp_checkpoint(model: Union[str, Path, None] = None) -> str:
     """
     Downloads or locates the MACE-MP checkpoint file.
 
@@ -90,7 +90,7 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
 
 
 def mace_mp(
-    model: Union[str, Path] = None,
+    model: Union[str, Path, None] = None,
     device: str = "",
     default_dtype: str = "float32",
     dispersion: bool = False,
@@ -168,11 +168,10 @@ def mace_mp(
         ) from exc
 
     print("Using TorchDFTD3Calculator for D3 dispersion corrections")
-    dtype = torch.float32 if default_dtype == "float32" else torch.float64
     d3_calc = TorchDFTD3Calculator(
         device=device,
         damping=damping,
-        dtype=dtype,
+        dtype=mace_calc.dtype,
         xc=dispersion_xc,
         cutoff=dispersion_cutoff,
         **kwargs,
@@ -182,7 +181,7 @@ def mace_mp(
 
 
 def mace_off(
-    model: Union[str, Path] = None,
+    model: Union[str, Path, None] = None,
     device: str = "",
     default_dtype: str = "float64",
     return_raw_model: bool = False,
@@ -265,7 +264,7 @@ def mace_off(
 
 def mace_anicc(
     device: str = "cuda",
-    model_path: str = None,
+    model_path: Union[str, Path, None] = None,
     return_raw_model: bool = False,
 ) -> MACECalculator:
     """
@@ -318,7 +317,7 @@ def mace_anicc(
 
 
 def mace_omol(
-    model: Union[str, Path] = None,
+    model: Union[str, Path, None] = None,
     device: str = "",
     default_dtype: str = "float64",
     return_raw_model: bool = False,

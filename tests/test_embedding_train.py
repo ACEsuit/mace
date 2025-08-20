@@ -9,6 +9,8 @@ from ase.build import molecule
 
 from mace.calculators import MACECalculator
 
+test_dtype = "float64"
+
 
 def test_run_train_with_elec_temp(tmp_path):
     """Test run_train.py with electronic temperature embedding."""
@@ -52,12 +54,13 @@ def test_run_train_with_elec_temp(tmp_path):
         raise
 
     # Create config file with feature specs
-    config_yaml = """
+    config_yaml = f"""
 name: MACE_with_temp
 valid_fraction: 0.1
 energy_weight: 1.0
 forces_weight: 10.0
 model: MACE
+default_dtype: {test_dtype}
 hidden_irreps: 32x0e
 r_max: 5.0
 num_interactions: 3
@@ -97,9 +100,9 @@ embedding_specs:
 
     # Setup model parameters for command line
     mace_params = {
-        "config": str(tmp_path / "config.yaml"),
-        "work_dir": str(tmp_path),
-        "train_file": str(tmp_path / "fit_with_temp.xyz"),
+        "config": (tmp_path / "config.yaml").as_posix(),
+        "work_dir": (tmp_path).as_posix(),
+        "train_file": (tmp_path / "fit_with_temp.xyz").as_posix(),
     }
 
     # Run training
@@ -148,6 +151,7 @@ embedding_specs:
     calc = MACECalculator(
         model_paths=str(model_path),
         device="cpu",
+        default_dtype=test_dtype,
         info_keys={
             "elec_temp": "elec_temp",
             "total_charge": "total_charge",

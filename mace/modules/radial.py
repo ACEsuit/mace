@@ -20,9 +20,13 @@ class BesselBasis(torch.nn.Module):
     Equation (7)
     """
 
-    def __init__(self, r_max: float, num_basis=8, trainable=False):
+    def __init__(
+        self,
+        r_max: float,
+        num_basis=8,
+        trainable=False,
+    ):
         super().__init__()
-
         bessel_weights = (
             np.pi
             / r_max
@@ -30,7 +34,6 @@ class BesselBasis(torch.nn.Module):
                 start=1.0,
                 end=num_basis,
                 steps=num_basis,
-                dtype=torch.get_default_dtype(),
             )
         )
         if trainable:
@@ -38,12 +41,10 @@ class BesselBasis(torch.nn.Module):
         else:
             self.register_buffer("bessel_weights", bessel_weights)
 
-        self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
-        )
+        self.register_buffer("r_max", torch.tensor(r_max))
         self.register_buffer(
             "prefactor",
-            torch.tensor(np.sqrt(2.0 / r_max), dtype=torch.get_default_dtype()),
+            torch.tensor(np.sqrt(2.0 / r_max)),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [..., 1]
@@ -67,9 +68,7 @@ class ChebychevBasis(torch.nn.Module):
         super().__init__()
         self.register_buffer(
             "n",
-            torch.arange(1, num_basis + 1, dtype=torch.get_default_dtype()).unsqueeze(
-                0
-            ),
+            torch.arange(1, num_basis + 1).unsqueeze(0),
         )
         self.num_basis = num_basis
         self.r_max = r_max
@@ -91,11 +90,14 @@ class GaussianBasis(torch.nn.Module):
     Gaussian basis functions
     """
 
-    def __init__(self, r_max: float, num_basis=128, trainable=False):
+    def __init__(
+        self,
+        r_max: float,
+        num_basis=128,
+        trainable=False,
+    ):
         super().__init__()
-        gaussian_weights = torch.linspace(
-            start=0.0, end=r_max, steps=num_basis, dtype=torch.get_default_dtype()
-        )
+        gaussian_weights = torch.linspace(start=0.0, end=r_max, steps=num_basis)
         if trainable:
             self.gaussian_weights = torch.nn.Parameter(
                 gaussian_weights, requires_grad=True
@@ -120,10 +122,8 @@ class PolynomialCutoff(torch.nn.Module):
 
     def __init__(self, r_max: float, p=6):
         super().__init__()
-        self.register_buffer("p", torch.tensor(p, dtype=torch.int))
-        self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
-        )
+        self.register_buffer("p", torch.tensor(p))
+        self.register_buffer("r_max", torch.tensor(r_max))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.calculate_envelope(x, self.r_max, self.p.to(torch.int))
@@ -163,16 +163,14 @@ class ZBLBasis(torch.nn.Module):
         # Pre-calculate the p coefficients for the ZBL potential
         self.register_buffer(
             "c",
-            torch.tensor(
-                [0.1818, 0.5099, 0.2802, 0.02817], dtype=torch.get_default_dtype()
-            ),
+            torch.tensor([0.1818, 0.5099, 0.2802, 0.02817]),
         )
-        self.register_buffer("p", torch.tensor(p, dtype=torch.int))
+        self.register_buffer("p", torch.tensor(p))
         self.register_buffer(
             "covalent_radii",
             torch.tensor(
                 ase.data.covalent_radii,
-                dtype=torch.get_default_dtype(),
+                dtype=torch.get_default_dtype(),  # needed as source data is np.float64
             ),
         )
         if trainable:
@@ -235,20 +233,22 @@ class AgnesiTransform(torch.nn.Module):
         trainable=False,
     ):
         super().__init__()
-        self.register_buffer("q", torch.tensor(q, dtype=torch.get_default_dtype()))
-        self.register_buffer("p", torch.tensor(p, dtype=torch.get_default_dtype()))
-        self.register_buffer("a", torch.tensor(a, dtype=torch.get_default_dtype()))
+
         self.register_buffer(
             "covalent_radii",
             torch.tensor(
                 ase.data.covalent_radii,
-                dtype=torch.get_default_dtype(),
+                dtype=torch.get_default_dtype(),  # needed as source data is np.float64
             ),
         )
         if trainable:
-            self.a = torch.nn.Parameter(torch.tensor(1.0805, requires_grad=True))
-            self.q = torch.nn.Parameter(torch.tensor(0.9183, requires_grad=True))
-            self.p = torch.nn.Parameter(torch.tensor(4.5791, requires_grad=True))
+            self.q = torch.nn.Parameter(torch.tensor(q, requires_grad=True))
+            self.p = torch.nn.Parameter(torch.tensor(p, requires_grad=True))
+            self.a = torch.nn.Parameter(torch.tensor(a, requires_grad=True))
+        else:
+            self.register_buffer("q", torch.tensor(q))
+            self.register_buffer("p", torch.tensor(p))
+            self.register_buffer("a", torch.tensor(a))
 
     def forward(
         self,
@@ -297,19 +297,18 @@ class SoftTransform(torch.nn.Module):
             trainable (bool): Whether to make parameters trainable.
         """
         super().__init__()
-        # Initialize parameters
-        self.register_buffer(
-            "alpha", torch.tensor(alpha, dtype=torch.get_default_dtype())
-        )
-        if trainable:
-            self.alpha = torch.nn.Parameter(self.alpha.clone())
         self.register_buffer(
             "covalent_radii",
             torch.tensor(
                 ase.data.covalent_radii,
-                dtype=torch.get_default_dtype(),
+                dtype=torch.get_default_dtype(),  # needed as source data is np.float64
             ),
         )
+
+        if trainable:
+            self.alpha = torch.nn.Parameter(torch.tensor(alpha, requires_grad=True))
+        else:
+            self.register_buffer("alpha", torch.tensor(alpha))
 
     def compute_r_0(
         self,
@@ -356,6 +355,14 @@ class SoftTransform(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(alpha={self.alpha.item():.4f})"
+
+    def to(self, *args, **kwargs):
+        # pylint: disable=self-cls-assignment
+        self = super().to(*args, **kwargs)
+        self.covalent_radii = self.covalent_radii.to(*args, **kwargs)
+        if not isinstance(self.alpha, torch.nn.Parameter):
+            self.alpha = self.alpha.to(*args, **kwargs)
+        return self
 
 
 class RadialMLP(torch.nn.Module):

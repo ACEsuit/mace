@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 from ase.build import molecule
+import numpy.testing as npt
 
 from mace.cli.fine_tuning_select import (
     FilteringType,
@@ -99,7 +100,7 @@ def test_load_descriptors(
     for i, atoms in enumerate(filtered_atoms):
         assert "mace_descriptors" in atoms.info
         for key, value in expected_descriptors[i].items():
-            assert np.allclose(atoms.info["mace_descriptors"][key], value)
+            npt.assert_allclose(atoms.info["mace_descriptors"][key], value)
 
 
 def test_select_samples_random(train_atoms_fixture, tmp_path):

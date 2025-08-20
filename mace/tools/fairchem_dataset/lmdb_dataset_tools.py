@@ -26,7 +26,7 @@ except ImportError:
     cache = lru_cache(maxsize=None)
 from glob import glob
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 
 import ase
 import ase.db.core
@@ -751,10 +751,12 @@ class AseAtomsDataset(BaseDataset, ABC):
         self,
         config: dict,
         atoms_transform: Callable[[ase.Atoms, Any], ase.Atoms] = apply_one_tags,
+        dtype: Optional[torch.dtype] = None,
     ) -> None:
         super().__init__(config)
 
         a2g_args = config.get("a2g_args", {}) or {}
+        dtype = dtype or torch.get_default_dtype()
 
         # set default to False if not set by user, assuming otf_graph will be used
         if "r_edges" not in a2g_args:

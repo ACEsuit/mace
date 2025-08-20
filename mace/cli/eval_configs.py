@@ -7,7 +7,6 @@
 import argparse
 from typing import Dict
 
-import ase.data
 import ase.io
 import numpy as np
 import torch
@@ -17,6 +16,7 @@ from mace import data
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
+from mace.tools.torch_tools import dtype_dict
 
 
 def parse_args() -> argparse.Namespace:
@@ -133,7 +133,7 @@ def main() -> None:
 
 
 def run(args: argparse.Namespace) -> None:
-    torch_tools.set_default_dtype(args.default_dtype)
+    dtype = dtype_dict[args.default_dtype]
     device = torch_tools.init_device(args.device)
 
     # Load model
@@ -167,7 +167,11 @@ def run(args: argparse.Namespace) -> None:
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
             data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=float(model.r_max), heads=heads
+                config,
+                z_table=z_table,
+                cutoff=float(model.r_max),
+                heads=heads,
+                dtype=dtype,
             )
             for config in configs
         ],

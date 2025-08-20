@@ -47,7 +47,9 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
     ):
         super().__init__()
         self.linear = Linear(
-            irreps_in=irreps_in, irreps_out=irreps_out, cueq_config=cueq_config
+            irreps_in=irreps_in,
+            irreps_out=irreps_out,
+            cueq_config=cueq_config,
         )
 
     def forward(
@@ -68,7 +70,9 @@ class LinearReadoutBlock(torch.nn.Module):
     ):
         super().__init__()
         self.linear = Linear(
-            irreps_in=irreps_in, irreps_out=irrep_out, cueq_config=cueq_config
+            irreps_in=irreps_in,
+            irreps_out=irrep_out,
+            cueq_config=cueq_config,
         )
 
     def forward(
@@ -96,11 +100,15 @@ class NonLinearReadoutBlock(torch.nn.Module):
         self.hidden_irreps = MLP_irreps
         self.num_heads = num_heads
         self.linear_1 = Linear(
-            irreps_in=irreps_in, irreps_out=self.hidden_irreps, cueq_config=cueq_config
+            irreps_in=irreps_in,
+            irreps_out=self.hidden_irreps,
+            cueq_config=cueq_config,
         )
         self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
         self.linear_2 = Linear(
-            irreps_in=self.hidden_irreps, irreps_out=irrep_out, cueq_config=cueq_config
+            irreps_in=self.hidden_irreps,
+            irreps_out=irrep_out,
+            cueq_config=cueq_config,
         )
 
     def forward(
@@ -166,7 +174,9 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
         else:
             self.irreps_out = o3.Irreps("1x0e + 1x1o")
         self.linear = Linear(
-            irreps_in=irreps_in, irreps_out=self.irreps_out, cueq_config=cueq_config
+            irreps_in=irreps_in,
+            irreps_out=self.irreps_out,
+            cueq_config=cueq_config,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
@@ -206,7 +216,9 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         )
         self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
         self.linear_1 = Linear(
-            irreps_in=irreps_in, irreps_out=self.irreps_nonlin, cueq_config=cueq_config
+            irreps_in=irreps_in,
+            irreps_out=self.irreps_nonlin,
+            cueq_config=cueq_config,
         )
         self.linear_2 = Linear(
             irreps_in=self.hidden_irreps,
@@ -303,17 +315,19 @@ class NonLinearDipolePolarReadoutBlock(torch.nn.Module):
 class AtomicEnergiesBlock(torch.nn.Module):
     atomic_energies: torch.Tensor
 
-    def __init__(self, atomic_energies: Union[np.ndarray, torch.Tensor]):
+    def __init__(
+        self,
+        atomic_energies: Union[np.ndarray, torch.Tensor],
+    ):
         super().__init__()
-        # assert len(atomic_energies.shape) == 1
-
         self.register_buffer(
             "atomic_energies",
-            torch.tensor(atomic_energies, dtype=torch.get_default_dtype()),
-        )  # [n_elements, n_heads]
+            torch.tensor(atomic_energies),
+        )
 
     def forward(
-        self, x: torch.Tensor  # one-hot of elements [..., n_elements]
+        self,
+        x: torch.Tensor,  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
         return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
 
@@ -1302,11 +1316,11 @@ class ScaleShiftBlock(torch.nn.Module):
         super().__init__()
         self.register_buffer(
             "scale",
-            torch.tensor(scale, dtype=torch.get_default_dtype()),
+            torch.tensor(scale),
         )
         self.register_buffer(
             "shift",
-            torch.tensor(shift, dtype=torch.get_default_dtype()),
+            torch.tensor(shift),
         )
 
     def forward(self, x: torch.Tensor, head: torch.Tensor) -> torch.Tensor:

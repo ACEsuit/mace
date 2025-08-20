@@ -66,6 +66,7 @@ from mace.tools.scripts_utils import (
     setup_wandb,
 )
 from mace.tools.tables_utils import create_error_table
+from mace.tools.torch_tools import dtype_dict
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -88,6 +89,7 @@ def run(args) -> None:
     args.key_specification = KeySpecification()
     update_keyspec_from_kwargs(args.key_specification, vars(args))
 
+    # If XPU device is specified, check if Intel extension for PyTorch is installed
     if args.device == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
@@ -119,9 +121,11 @@ def run(args) -> None:
         logging.info("Cannot find MACE version, please install MACE via pip")
     logging.debug(f"Configuration: {args}")
 
-    tools.set_default_dtype(args.default_dtype)
     device = tools.init_device(args.device)
+    dtype = dtype_dict[args.default_dtype]
     commit = print_git_commit()
+
+    # If foundation model is specified, load it
     model_foundation: Optional[torch.nn.Module] = None
     foundation_model_avg_num_neighbors = 0
     # Filter out None from mace_mp_names to get valid model names
@@ -152,6 +156,7 @@ def run(args) -> None:
             model_foundation = torch.load(
                 args.foundation_model, map_location=args.device
             )
+            model_foundation = model_foundation.to(dtype=dtype)
             logging.info(
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
@@ -159,14 +164,18 @@ def run(args) -> None:
         foundation_model_avg_num_neighbors = model_foundation.interactions[
             0
         ].avg_num_neighbors
+
         if (
             args.foundation_model not in ["small", "medium", "large"]
             and args.pt_train_file is None
         ):
             logging.warning(
-                "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provied a path to a pretraining file with --pt_train_file."
+                "Using multiheads finetuning with a foundation model that is not "
+                "a Materials Project model, need to provied a path to a pretraining "
+                "file with --pt_train_file."
             )
             args.multiheads_finetuning = False
+
         if args.multiheads_finetuning:
             assert (
                 args.E0s != "average"
@@ -174,7 +183,9 @@ def run(args) -> None:
             # check that the foundation model has a single head, if not, use the first head
             if not args.force_mh_ft_lr:
                 logging.info(
-                    "Multihead finetuning mode, setting learning rate to 0.0001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
+                    "Multihead finetuning mode, setting learning rate to 0.0001 and "
+                    "EMA to True. To use a different learning rate, "
+                    "set --force_mh_ft_lr=True."
                 )
                 args.lr = 0.0001
                 args.ema = True
@@ -185,14 +196,18 @@ def run(args) -> None:
             if hasattr(model_foundation, "heads"):
                 if len(model_foundation.heads) > 1:
                     logging.warning(
-                        "Mutlihead finetuning with models with more than one head is not supported, using the first head as foundation head."
+                        "Mutlihead finetuning with models with more than one head "
+                        "is not supported, using the first head as foundation head."
                     )
                     model_foundation = remove_pt_head(
                         model_foundation, args.foundation_head
                     )
+
+        model_foundation = model_foundation.to(dtype=dtype)
     else:
         args.multiheads_finetuning = False
 
+    # If heads are specified, parse them
     if args.heads is not None:
         args.heads = ast.literal_eval(args.heads)
         for _, head_dict in args.heads.items():
@@ -206,6 +221,8 @@ def run(args) -> None:
             head_dict["key_specification"] = head_keyspec
     else:
         args.heads = prepare_default_head(args)
+
+    # If multiheads finetuning is specified, prepare the pt_head
     if args.multiheads_finetuning:
         pt_keyspec = (
             args.heads["pt_head"]["key_specification"]
@@ -401,7 +418,8 @@ def run(args) -> None:
             z_table_head = tools.AtomicNumberTable(zs_list)
             head_config.atomic_numbers = zs_list
             head_config.z_table = z_table_head
-        # yapf: enable
+    # yapf: enable
+
     all_atomic_numbers = set()
     for head_config in head_configs:
         all_atomic_numbers.update(head_config.atomic_numbers)
@@ -413,9 +431,15 @@ def run(args) -> None:
     # Atomic energies
     atomic_energies_dict = {}
     for head_config in head_configs:
-        if head_config.atomic_energies_dict is None or len(head_config.atomic_energies_dict) == 0:
+        if (
+            head_config.atomic_energies_dict is None
+            or len(head_config.atomic_energies_dict) == 0
+        ):
             assert head_config.E0s is not None, "Atomic energies must be provided"
-            if all(check_path_ase_read(f) for f in head_config.train_file) and head_config.E0s.lower() != "foundation":
+            if (
+                all(check_path_ase_read(f) for f in head_config.train_file)
+                and head_config.E0s.lower() != "foundation"
+            ):
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(
                     head_config.E0s, head_config.collections.train, head_config.z_table
                 )
@@ -424,12 +448,16 @@ def run(args) -> None:
                 z_table_foundation = AtomicNumberTable(
                     [int(z) for z in model_foundation.atomic_numbers]
                 )
-                foundation_atomic_energies = model_foundation.atomic_energies_fn.atomic_energies
+                foundation_atomic_energies = (
+                    model_foundation.atomic_energies_fn.atomic_energies
+                )
                 if foundation_atomic_energies.ndim > 1:
                     foundation_atomic_energies = foundation_atomic_energies.squeeze()
                     if foundation_atomic_energies.ndim == 2:
                         foundation_atomic_energies = foundation_atomic_energies[0]
-                        logging.info("Foundation model has multiple heads, using the first head as foundation E0s.")
+                        logging.info(
+                            "Foundation model has multiple heads, using the first head as foundation E0s."
+                        )
                 atomic_energies_dict[head_config.head_name] = {
                     z: foundation_atomic_energies[
                         z_table_foundation.z_to_index(z)
@@ -437,9 +465,13 @@ def run(args) -> None:
                     for z in z_table.zs
                 }
             else:
-                atomic_energies_dict[head_config.head_name] = get_atomic_energies(head_config.E0s, None, head_config.z_table)
+                atomic_energies_dict[head_config.head_name] = get_atomic_energies(
+                    head_config.E0s, None, head_config.z_table
+                )
         else:
-            atomic_energies_dict[head_config.head_name] = head_config.atomic_energies_dict
+            atomic_energies_dict[head_config.head_name] = (
+                head_config.atomic_energies_dict
+            )
 
     # Atomic energies for multiheads finetuning
     if args.multiheads_finetuning:
@@ -454,11 +486,11 @@ def run(args) -> None:
             foundation_atomic_energies = foundation_atomic_energies.squeeze()
             if foundation_atomic_energies.ndim == 2:
                 foundation_atomic_energies = foundation_atomic_energies[0]
-                logging.info("Foundation model has multiple heads, using the first head as foundation E0s.")
+                logging.info(
+                    "Foundation model has multiple heads, using the first head as foundation E0s."
+                )
         atomic_energies_dict["pt_head"] = {
-            z: foundation_atomic_energies[
-                z_table_foundation.z_to_index(z)
-            ].item()
+            z: foundation_atomic_energies[z_table_foundation.z_to_index(z)].item()
             for z in z_table.zs
         }
     heads = sorted(heads, key=lambda x: -1000 if x == "pt_head" else 0)
@@ -509,9 +541,21 @@ def run(args) -> None:
         atomic_energies = dict_to_array(atomic_energies_dict, heads)
         for head_config in head_configs:
             try:
-                logging.info(f"Atomic Energies used (z: eV) for head {head_config.head_name}: " + "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}")
+                logging.info(
+                    f"Atomic Energies used (z: eV) for head {head_config.head_name}: "
+                    + "{"
+                    + ", ".join(
+                        [
+                            f"{z}: {atomic_energies_dict[head_config.head_name][z]}"
+                            for z in head_config.z_table.zs
+                        ]
+                    )
+                    + "}"
+                )
             except KeyError as e:
-                raise KeyError(f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number") from e
+                raise KeyError(
+                    f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number"
+                ) from e
 
     # Load datasets for each head, supporting multiple files per head
     valid_sets = {head: [] for head in heads}
@@ -523,55 +567,75 @@ def run(args) -> None:
         logging.info(f"Processing datasets for head '{head_config.head_name}'")
 
         # Apply pseudolabels if this is the pt_head and pseudolabeling is enabled
-        if args.pseudolabel_replay and args.multiheads_finetuning and head_config.head_name == "pt_head":
+        if (
+            args.pseudolabel_replay
+            and args.multiheads_finetuning
+            and head_config.head_name == "pt_head"
+        ):
             logging.info("=============    Pseudolabeling for pt_head    ===========")
             if apply_pseudolabels_to_pt_head_configs(
                 foundation_model=model_foundation,
                 pt_head_config=head_config,
                 r_max=args.r_max,
                 device=device,
-                batch_size=args.batch_size
+                batch_size=args.batch_size,
             ):
-                logging.info("Successfully applied pseudolabels to pt_head configurations")
+                logging.info(
+                    "Successfully applied pseudolabels to pt_head configurations"
+                )
             else:
-                logging.warning("Pseudolabeling was not successful, continuing with original configurations")
+                logging.warning(
+                    "Pseudolabeling was not successful, continuing with original configurations"
+                )
 
         ase_files = [f for f in head_config.train_file if check_path_ase_read(f)]
-        non_ase_files = [f for f in head_config.train_file if not check_path_ase_read(f)]
+        non_ase_files = [
+            f for f in head_config.train_file if not check_path_ase_read(f)
+        ]
 
         if ase_files:
             dataset = load_dataset_for_path(
-            file_path=ase_files,
-            r_max=args.r_max,
-            z_table=z_table,
-            head_config=head_config,
-            heads=heads,
-            collection=head_config.collections.train,
+                file_path=ase_files,
+                r_max=args.r_max,
+                z_table=z_table,
+                head_config=head_config,
+                heads=heads,
+                collection=head_config.collections.train,
+                dtype=dtype,
             )
             train_datasets.append(dataset)
             logging.debug(f"Successfully loaded dataset from ASE files: {ase_files}")
 
         for file in non_ase_files:
             dataset = load_dataset_for_path(
-            file_path=file,
-            r_max=args.r_max,
-            z_table=z_table,
-            head_config=head_config,
-            heads=heads,
+                file_path=file,
+                r_max=args.r_max,
+                z_table=z_table,
+                head_config=head_config,
+                heads=heads,
+                dtype=dtype,
             )
             train_datasets.append(dataset)
             logging.debug(f"Successfully loaded dataset from non-ASE file: {file}")
 
         if not train_datasets:
-            raise ValueError(f"No valid training datasets found for head {head_config.head_name}")
+            raise ValueError(
+                f"No valid training datasets found for head {head_config.head_name}"
+            )
 
-        train_sets[head_config.head_name] = combine_datasets(train_datasets, head_config.head_name)
+        train_sets[head_config.head_name] = combine_datasets(
+            train_datasets, head_config.head_name
+        )
 
         if head_config.valid_file:
             valid_datasets = []
 
-            valid_ase_files = [f for f in head_config.valid_file if check_path_ase_read(f)]
-            valid_non_ase_files = [f for f in head_config.valid_file if not check_path_ase_read(f)]
+            valid_ase_files = [
+                f for f in head_config.valid_file if check_path_ase_read(f)
+            ]
+            valid_non_ase_files = [
+                f for f in head_config.valid_file if not check_path_ase_read(f)
+            ]
 
             if valid_ase_files:
                 valid_dataset = load_dataset_for_path(
@@ -581,42 +645,60 @@ def run(args) -> None:
                     head_config=head_config,
                     heads=heads,
                     collection=head_config.collections.valid,
+                    dtype=dtype,
                 )
                 valid_datasets.append(valid_dataset)
-                logging.debug(f"Successfully loaded validation dataset from ASE files: {valid_ase_files}")
+                logging.debug(
+                    f"Successfully loaded validation dataset from ASE files: {valid_ase_files}"
+                )
             for valid_file in valid_non_ase_files:
                 valid_dataset = load_dataset_for_path(
-                file_path=valid_file,
-                r_max=args.r_max,
-                z_table=z_table,
-                head_config=head_config,
-                heads=heads,
-            )
+                    file_path=valid_file,
+                    r_max=args.r_max,
+                    z_table=z_table,
+                    head_config=head_config,
+                    heads=heads,
+                    dtype=dtype,
+                )
                 valid_datasets.append(valid_dataset)
-                logging.debug(f"Successfully loaded validation dataset from {valid_file}")
+                logging.debug(
+                    f"Successfully loaded validation dataset from {valid_file}"
+                )
 
             # Combine validation datasets
             if valid_datasets:
-                valid_sets[head_config.head_name] = combine_datasets(valid_datasets, f"{head_config.head_name}_valid")
-                logging.info(f"Combined validation datasets for {head_config.head_name}")
+                valid_sets[head_config.head_name] = combine_datasets(
+                    valid_datasets, f"{head_config.head_name}_valid"
+                )
+                logging.info(
+                    f"Combined validation datasets for {head_config.head_name}"
+                )
 
         # If no valid file is provided but collection exist, use the validation set from the collection
         if head_config.valid_file is None and head_config.collections.valid:
             valid_sets[head_config.head_name] = [
                 data.AtomicData.from_config(
-                    config, z_table=z_table, cutoff=args.r_max, heads=heads
+                    config,
+                    z_table=z_table,
+                    cutoff=args.r_max,
+                    heads=heads,
+                    dtype=dtype,
                 )
                 for config in head_config.collections.valid
             ]
         if not valid_sets[head_config.head_name]:
-            raise ValueError(f"No valid datasets found for head {head_config.head_name}, please provide a valid_file or a valid_fraction")
+            raise ValueError(
+                f"No valid datasets found for head {head_config.head_name}, please provide a valid_file or a valid_fraction"
+            )
 
         # Create data loader for this head
         if isinstance(train_sets[head_config.head_name], list):
             dataset_size = len(train_sets[head_config.head_name])
         else:
             dataset_size = len(train_sets[head_config.head_name])
-        logging.info(f"Head '{head_config.head_name}' training dataset size: {dataset_size}")
+        logging.info(
+            f"Head '{head_config.head_name}' training dataset size: {dataset_size}"
+        )
 
         train_loader_head = torch_geometric.dataloader.DataLoader(
             dataset=train_sets[head_config.head_name],
@@ -679,12 +761,23 @@ def run(args) -> None:
             generator=torch.Generator().manual_seed(args.seed),
         )
 
-    loss_fn = get_loss_fn(args, dipole_only, args.compute_dipole)
-    args.avg_num_neighbors = get_avg_num_neighbors(head_configs, args, train_loader, device)
+    loss_fn = get_loss_fn(args, dipole_only, args.compute_dipole, dtype=dtype)
+    args.avg_num_neighbors = get_avg_num_neighbors(
+        head_configs, args, train_loader, device
+    )
 
     # Model
-    model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
-    model.to(device)
+    model, output_args = configure_model(
+        args,
+        train_loader,
+        atomic_energies,
+        model_foundation,
+        heads,
+        z_table,
+        head_configs,
+        dtype=dtype,
+    )
+    model.to(device=device, dtype=dtype)
 
     logging.debug(model)
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
@@ -732,7 +825,7 @@ def run(args) -> None:
     swa: Optional[tools.SWAContainer] = None
     swas = [False]
     if args.swa:
-        swa, swas = get_swa(args, model, optimizer, swas, dipole_only)
+        swa, swas = get_swa(args, model, optimizer, swas, dipole_only, dtype=dtype)
 
     checkpoint_handler = tools.CheckpointHandler(
         directory=args.checkpoints_dir,
@@ -758,7 +851,7 @@ def run(args) -> None:
                     swa=False,
                     device=device,
                 )
-            except Exception: # pylint: disable=W0703
+            except Exception:  # pylint: disable=W0703
                 restart_lbfgs = True
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
@@ -772,10 +865,12 @@ def run(args) -> None:
 
     if args.lbfgs:
         logging.info("Switching optimizer to LBFGS")
-        optimizer = LBFGS(model.parameters(),
-                          history_size=200,
-                          max_iter=20,
-                          line_search_fn="strong_wolfe")
+        optimizer = LBFGS(
+            model.parameters(),
+            history_size=200,
+            max_iter=20,
+            line_search_fn="strong_wolfe",
+        )
         if restart_lbfgs:
             opt_start_epoch = checkpoint_handler.load_latest(
                 state=tools.CheckpointState(model, optimizer, lr_scheduler),
@@ -791,7 +886,6 @@ def run(args) -> None:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
         distributed_model = None
-
 
     train_valid_data_loader = {}
     for head_config in head_configs:
@@ -814,8 +908,8 @@ def run(args) -> None:
                 plot_frequency=args.plot_frequency,
                 distributed=args.distributed,
                 swa_start=swa.start if swa else None,
-                plot_interaction_e=args.plot_interaction_e
-                )
+                plot_interaction_e=args.plot_interaction_e,
+            )
         except Exception as e:  # pylint: disable=W0718
             logging.debug(f"Creating Plotter failed: {e}")
     else:
@@ -875,40 +969,62 @@ def run(args) -> None:
     test_sets = {}
     stop_first_test = False
     test_data_loader = {}
-    if all(
-        head_config.test_file == head_configs[0].test_file
-        for head_config in head_configs
-    ) and head_configs[0].test_file is not None:
+    if (
+        all(
+            head_config.test_file == head_configs[0].test_file
+            for head_config in head_configs
+        )
+        and head_configs[0].test_file is not None
+    ):
         stop_first_test = True
-    if all(
-        head_config.test_dir == head_configs[0].test_dir
-        for head_config in head_configs
-    ) and head_configs[0].test_dir is not None:
+    if (
+        all(
+            head_config.test_dir == head_configs[0].test_dir
+            for head_config in head_configs
+        )
+        and head_configs[0].test_dir is not None
+    ):
         stop_first_test = True
     for head_config in head_configs:
         if all(check_path_ase_read(f) for f in head_config.train_file):
             for name, subset in head_config.collections.tests:
                 test_sets[name] = [
                     data.AtomicData.from_config(
-                        config, z_table=z_table, cutoff=args.r_max, heads=heads
+                        config,
+                        z_table=z_table,
+                        cutoff=args.r_max,
+                        heads=heads,
+                        dtype=dtype,
                     )
                     for config in subset
                 ]
+
         if head_config.test_dir is not None:
             if not args.multi_processed_test:
                 test_files = get_files_with_suffix(head_config.test_dir, "_test.h5")
                 for test_file in test_files:
                     name = os.path.splitext(os.path.basename(test_file))[0]
                     test_sets[name] = data.HDF5Dataset(
-                        test_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                        test_file,
+                        r_max=args.r_max,
+                        z_table=z_table,
+                        heads=heads,
+                        head=head_config.head_name,
+                        dtype=dtype,
                     )
             else:
                 test_folders = glob(head_config.test_dir + "/*")
                 for folder in test_folders:
                     name = os.path.splitext(os.path.basename(test_file))[0]
                     test_sets[name] = data.dataset_from_sharded_hdf5(
-                        folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                        folder,
+                        r_max=args.r_max,
+                        z_table=z_table,
+                        heads=heads,
+                        head=head_config.head_name,
+                        dtype=dtype,
                     )
+
         for test_name, test_set in test_sets.items():
             test_sampler = None
             if args.distributed:
@@ -933,6 +1049,7 @@ def run(args) -> None:
                 pin_memory=args.pin_memory,
             )
             test_data_loader[test_name] = test_loader
+
         if stop_first_test:
             break
 
@@ -977,7 +1094,8 @@ def run(args) -> None:
             os.makedirs(args.model_dir, exist_ok=True)
             if swa_eval:
                 torch.save(
-                    model_to_save, Path(args.model_dir) / (args.name + "_stagetwo.model")
+                    model_to_save,
+                    Path(args.model_dir) / (args.name + "_stagetwo.model"),
                 )
                 try:
                     path_complied = Path(args.model_dir) / (
@@ -1011,7 +1129,9 @@ def run(args) -> None:
         logging.info("Computing metrics for training, validation, and test sets")
         for param in model.parameters():
             param.requires_grad = False
-        skip_heads = args.skip_evaluate_heads.split(",") if args.skip_evaluate_heads else []
+        skip_heads = (
+            args.skip_evaluate_heads.split(",") if args.skip_evaluate_heads else []
+        )
         if skip_heads:
             logging.info(f"Skipping evaluation for heads: {skip_heads}")
         table_train_valid = create_error_table(
@@ -1051,7 +1171,7 @@ def run(args) -> None:
                     device=device,
                     plot_frequency=args.plot_frequency,
                     distributed=args.distributed,
-                    swa_start=swa.start if swa else None
+                    swa_start=swa.start if swa else None,
                 )
                 plotter.plot(epoch, model_to_evaluate, rank)
             except Exception as e:  # pylint: disable=W0718

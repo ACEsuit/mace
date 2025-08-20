@@ -3,12 +3,25 @@
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+from __future__ import annotations
 
 import argparse
 import os
 from typing import Dict, Optional
 
 from .default_keys import DefaultKeys
+
+
+def dict_to_arg_list(args_dict: dict) -> list[str]:
+    """Converts a dictionary of arguments to a command-line style list."""
+    result = []
+    for key, value in args_dict.items():
+        if value is None:
+            continue
+
+        result.append(f"--{key}")
+        result.append(str(value))
+    return result
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -72,7 +85,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--default_dtype",
         help="set default dtype",
         type=str,
-        choices=["float32", "float64"],
+        choices=["float32", "float64", ""],
         default="float64",
     )
     parser.add_argument(
@@ -988,6 +1001,13 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="The user defined number of processes to use, as well as the number of files created.",
         type=int,
         default=int(os.cpu_count() / 4),
+    )
+    parser.add_argument(
+        "--default_dtype",
+        help="set default dtype",
+        type=str,
+        choices=["float32", "float64", ""],
+        default="",
     )
     parser.add_argument(
         "--valid_fraction",

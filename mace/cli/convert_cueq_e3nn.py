@@ -194,7 +194,7 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
     else:
         source_model = input_model
     default_dtype = next(source_model.parameters()).dtype
-    torch.set_default_dtype(default_dtype)
+
     # Extract configuration
     config = extract_config_mace_model(source_model)
 
@@ -208,7 +208,9 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
 
     # Create new model without CuEq config
     logging.info("Creating new model without CuEq settings")
-    target_model = source_model.__class__(**config)
+    target_model = source_model.__class__(**config).to(
+        device=device, dtype=default_dtype
+    )
 
     # Transfer weights with proper remapping
     num_layers = config["num_interactions"]

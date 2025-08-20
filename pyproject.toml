@@ -44,3 +44,9 @@ ignore-paths = [
 
 [tool.pylint.FORMAT]
 max-module-lines = 2000
+
+[tool.ruff]
+target-version = "py37"
+
+[tool.ruff.lint.select]
+FA102 = true

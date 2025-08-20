@@ -15,16 +15,21 @@ from e3nn.io import CartesianTensor
 TensorDict = Dict[str, torch.Tensor]
 
 
-def to_one_hot(indices: torch.Tensor, num_classes: int) -> torch.Tensor:
-    """
-    Generates one-hot encoding with <num_classes> classes from <indices>
-    :param indices: (N x 1) tensor
-    :param num_classes: number of classes
-    :param device: torch device
-    :return: (N x num_classes) tensor
+def to_one_hot(
+    indices: torch.Tensor, num_classes: int, dtype: torch.dtype
+) -> torch.Tensor:
+    """Generates one-hot encoding from indices.
+
+    Args:
+        indices: A tensor of shape (N x 1) containing class indices.
+        num_classes: An integer specifying the total number of classes.
+        dtype: The desired data type of the output tensor.
+
+    Returns:
+        torch.Tensor: A tensor of shape (N x num_classes) containing the one-hot encodings.
     """
     shape = indices.shape[:-1] + (num_classes,)
-    oh = torch.zeros(shape, device=indices.device).view(shape)
+    oh = torch.zeros(shape, device=indices.device, dtype=dtype).view(shape)
 
     # scatter_ is the in-place version of scatter
     oh.scatter_(dim=-1, index=indices, value=1)
@@ -77,7 +82,12 @@ def init_device(device_str: str) -> torch.device:
     return torch.device("cpu")
 
 
-dtype_dict = {"float32": torch.float32, "float64": torch.float64}
+dtype_dict = {
+    "float32": torch.float32,
+    "float64": torch.float64,
+    "": torch.get_default_dtype(),
+    None: torch.get_default_dtype(),
+}
 
 
 def set_default_dtype(dtype: str) -> None:
@@ -105,10 +115,19 @@ def cartesian_to_spherical(t: torch.Tensor):
 
 
 def voigt_to_matrix(t: torch.Tensor):
-    """
-    Convert voigt notation to matrix notation
-    :param t: (6,) tensor or (3, 3) tensor or (9,) tensor
-    :return: (3, 3) tensor
+    """Converts a tensor from Voigt notation to matrix notation.
+
+    Args:
+        t: Input tensor in one of the following formats:
+            - (6,) tensor in Voigt notation
+            - (3, 3) tensor in matrix notation
+            - (9,) tensor that can be reshaped to (3, 3)
+
+    Returns:
+        torch.Tensor: A (3, 3) tensor in matrix notation.
+
+    Raises:
+        ValueError: If the input tensor shape is not (6,), (3, 3), or (9,).
     """
     if t.shape == (3, 3):
         return t
@@ -158,3 +177,20 @@ def default_dtype(dtype: Union[torch.dtype, str]):
     yield
 
     torch.set_default_dtype(init)
+
+
+def check_module_dtypes(module: torch.nn.Module) -> Dict[str, torch.dtype]:
+    """Check the dtype of all parameters and buffers in a torch.nn.Module.
+
+    Args:
+        module: The torch.nn.Module to check
+
+    Returns:
+        Dict mapping tensor names to their dtypes
+    """
+    dtypes = {}
+    # Check parameters
+    dtypes.update({name: param.dtype for name, param in module.named_parameters()})
+    # Check buffers
+    dtypes.update({name: buffer.dtype for name, buffer in module.named_buffers()})
+    return dtypes
