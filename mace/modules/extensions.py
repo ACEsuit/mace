@@ -110,9 +110,7 @@ class MACELES(ScaleShiftMACE):
         no_pbc_mask_cfg = ~pbc_tensor.any(dim=-1)
         no_pbc_mask_rows = no_pbc_mask_cfg.repeat_interleave(3)
         cell_les[no_pbc_mask_rows] = torch.zeros(
-            (no_pbc_mask_rows.sum(), 3),
-            dtype=cell_les.dtype,
-            device=cell_les.device
+            (no_pbc_mask_rows.sum(), 3), dtype=cell_les.dtype, device=cell_les.device
         )
 
         # Atomic energies
