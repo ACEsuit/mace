@@ -9,7 +9,7 @@ exclude: &exclude_files >
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v2.5.0
+    rev: v5.0.0
     hooks:
     -   id: mixed-line-ending
     -   id: trailing-whitespace
@@ -23,7 +23,7 @@ repos:
         exclude: *exclude_files
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 6.0.1
     hooks:
       - id: isort
         name: Sort imports
