@@ -8,6 +8,7 @@ from ase.build import molecule
 from e3nn import o3
 from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
+import numpy.testing as npt
 
 from mace import data, modules, tools
 from mace.calculators import mace_mp, mace_off
@@ -24,11 +25,10 @@ MODEL_PATH = (
     / "2023-12-03-mace-mp.model"
 )
 
-torch.set_default_dtype(torch.float64)
-
-
 @pytest.skip("Problem with the float type", allow_module_level=True)
 def test_foundations():
+    dtype = torch.float64
+
     # Create MACE model
     config = data.Configuration(
         atomic_numbers=molecule("H2COH").numbers,
@@ -92,7 +92,7 @@ def test_foundations():
         atomic_inter_scale=0.1,
         atomic_inter_shift=0.0,
     )
-    model = modules.ScaleShiftMACE(**model_config)
+    model = modules.ScaleShiftMACE(**model_config).to(dtype=dtype)
     calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
     model_loaded = load_foundations_elements(
         model,
@@ -102,9 +102,11 @@ def test_foundations():
         use_shift=False,
         max_L=1,
     )
-    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=6.0)
+    atomic_data = data.AtomicData.from_config(
+        config, z_table=table, cutoff=6.0, dtype=dtype
+    )
     atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=table, cutoff=6.0
+        config_rotated, z_table=table, cutoff=6.0, dtype=dtype
     )
 
     data_loader = torch_geometric.dataloader.DataLoader(
@@ -120,6 +122,8 @@ def test_foundations():
 
 
 def test_multi_reference():
+    dtype = torch.float64
+
     config_multi = data.Configuration(
         atomic_numbers=molecule("H2COH").numbers,
         positions=molecule("H2COH").positions,
@@ -166,6 +170,7 @@ def test_multi_reference():
         atomic_inter_scale=[1.0, 1.0],
         atomic_inter_shift=[0.0, 0.0],
         heads=["MP2", "DFT"],
+        dtype=dtype,
     )
     model = modules.ScaleShiftMACE(**model_config)
     calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
@@ -193,7 +198,7 @@ def test_multi_reference():
     atoms.info["head"] = "MP2"
     atoms.calc = calc_foundation
     forces = atoms.get_forces()
-    assert np.allclose(
+    npt.assert_allclose(
         forces, forces_loaded.detach().numpy()[:5, :], atol=1e-5, rtol=1e-5
     )
 
@@ -276,6 +281,7 @@ def test_extract_config(model):
 
 
 def test_remove_pt_head():
+    dtype = torch.float64
     # Set up test data
     torch.manual_seed(42)
     atomic_energies_pt_head = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float)
@@ -305,6 +311,7 @@ def test_remove_pt_head():
         "heads": ["pt_head", "DFT"],
         "atomic_inter_scale": [1.0, 1.0],
         "atomic_inter_shift": [0.0, 0.1],
+        "dtype": dtype,
     }
 
     model = modules.ScaleShiftMACE(**model_config)
@@ -319,7 +326,11 @@ def test_remove_pt_head():
         head="DFT",
     )
     atomic_data = data.AtomicData.from_config(
-        config_pt_head, z_table=z_table, cutoff=5.0, heads=["pt_head", "DFT"]
+        config_pt_head,
+        z_table=z_table,
+        cutoff=5.0,
+        heads=["pt_head", "DFT"],
+        dtype=dtype,
     )
     dataloader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data], batch_size=1, shuffle=False
@@ -340,7 +351,11 @@ def test_remove_pt_head():
 
     # Test output consistency
     atomic_data = data.AtomicData.from_config(
-        config_pt_head, z_table=z_table, cutoff=5.0, heads=["DFT"]
+        config_pt_head,
+        z_table=z_table,
+        cutoff=5.0,
+        heads=["DFT"],
+        dtype=dtype,
     )
     dataloader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data], batch_size=1, shuffle=False
@@ -356,6 +371,7 @@ def test_remove_pt_head():
 
 
 def test_remove_pt_head_multihead():
+    dtype = torch.float64
     # Set up test data
     torch.manual_seed(42)
     atomic_energies_pt_head = np.array(
@@ -391,6 +407,7 @@ def test_remove_pt_head_multihead():
         "heads": ["pt_head", "DFT", "MP2", "CCSD"],
         "atomic_inter_scale": [1.0, 1.0, 1.0, 1.0],
         "atomic_inter_shift": [0.0, 0.1, 0.2, 0.3],
+        "dtype": dtype,
     }
 
     model = modules.ScaleShiftMACE(**model_config)
@@ -414,7 +431,11 @@ def test_remove_pt_head_multihead():
         configs[head] = config_pt_head
 
         atomic_data = data.AtomicData.from_config(
-            config_pt_head, z_table=z_table, cutoff=5.0, heads=model.heads
+            config_pt_head,
+            z_table=z_table,
+            cutoff=5.0,
+            heads=model.heads,
+            dtype=dtype,
         )
         atomic_datas[head] = atomic_data
 
@@ -435,15 +456,15 @@ def test_remove_pt_head_multihead():
         # Basic structure tests
         assert len(new_model.heads) == 1, f"Failed for head {head}"
         assert new_model.heads[0] == head, f"Failed for head {head}"
-        assert (
-            new_model.atomic_energies_fn.atomic_energies.shape[0] == 1
-        ), f"Failed for head {head}"
-        assert (
-            len(torch.atleast_1d(new_model.scale_shift.scale)) == 1
-        ), f"Failed for head {head}"
-        assert (
-            len(torch.atleast_1d(new_model.scale_shift.shift)) == 1
-        ), f"Failed for head {head}"
+        assert new_model.atomic_energies_fn.atomic_energies.shape[0] == 1, (
+            f"Failed for head {head}"
+        )
+        assert len(torch.atleast_1d(new_model.scale_shift.scale)) == 1, (
+            f"Failed for head {head}"
+        )
+        assert len(torch.atleast_1d(new_model.scale_shift.shift)) == 1, (
+            f"Failed for head {head}"
+        )
 
         # Verify scale and shift values
         assert torch.allclose(
@@ -455,7 +476,11 @@ def test_remove_pt_head_multihead():
 
         # Test output consistency
         single_head_data = data.AtomicData.from_config(
-            configs[head], z_table=z_table, cutoff=5.0, heads=[head]
+            configs[head],
+            z_table=z_table,
+            cutoff=5.0,
+            heads=[head],
+            dtype=dtype,
         )
         single_head_loader = torch_geometric.dataloader.DataLoader(
             dataset=[single_head_data], batch_size=1, shuffle=False
@@ -497,7 +522,11 @@ def test_remove_pt_head_multihead():
 
     for head, head_model in models.items():
         single_head_data = data.AtomicData.from_config(
-            configs[head], z_table=z_table, cutoff=5.0, heads=[head]
+            configs[head],
+            z_table=z_table,
+            cutoff=5.0,
+            heads=[head],
+            dtype=dtype,
         )
         single_head_loader = torch_geometric.dataloader.DataLoader(
             dataset=[single_head_data], batch_size=1, shuffle=False
@@ -507,6 +536,6 @@ def test_remove_pt_head_multihead():
 
     # Verify each model produces different outputs
     energies = torch.stack([results[head]["energy"] for head in model.heads])
-    assert not torch.allclose(
-        energies[0], energies[1], rtol=1e-3
-    ), "Different heads should produce different outputs"
+    assert not torch.allclose(energies[0], energies[1], rtol=1e-3), (
+        "Different heads should produce different outputs"
+    )

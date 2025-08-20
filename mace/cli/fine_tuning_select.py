@@ -8,7 +8,6 @@ import ast
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 from typing import List, Tuple, Union
 
 import ase.data
@@ -184,10 +183,14 @@ def filter_atoms(
     element_subset (list): The list of elements to consider during filtering.
     filtering_type (FilteringType): The type of filtering to apply.
         Can be one of the following `FilteringType` enum members:
-          - `FilteringType.NONE`: No filtering is applied.
-          - `FilteringType.COMBINATIONS`: Return true if `atoms` is composed of combinations of elements in the subset, false otherwise. I.e. does not require all of the specified elements to be present.
-          - `FilteringType.EXCLUSIVE`: Return true if `atoms` contains *only* elements in the subset, false otherwise.
-          - `FilteringType.INCLUSIVE`: Return true if `atoms` contains all elements in the subset, false otherwise. I.e. allows additional elements.
+        - `FilteringType.NONE`: No filtering is applied.
+        - `FilteringType.COMBINATIONS`: Return true if `atoms` is composed of
+            combinations of elements in the subset, false otherwise.
+            i.e. does not require all of the specified elements to be present.
+        - `FilteringType.EXCLUSIVE`: Return true if `atoms` contains *only*
+            elements in the subset, false otherwise.
+        - `FilteringType.INCLUSIVE`: Return true if `atoms` contains all elements
+            in the subset, false otherwise. i.e. allows additional elements.
 
     Returns:
     bool: True if the atoms pass the filter, False otherwise.
@@ -376,10 +379,7 @@ def _maybe_save_descriptors(
     Also, delete the descriptors from the atoms objects.
     """
     if all("mace_descriptors" in x.info for x in atoms):
-        output_path = Path(output_path)
-        descriptor_save_path = output_path.parent / (
-            output_path.stem + "_descriptors.npy"
-        )
+        descriptor_save_path = output_path.replace(".xyz", "_descriptors.npy")
         logging.info(f"Saving descriptors at {descriptor_save_path}")
         descriptors_list = [x.info["mace_descriptors"] for x in atoms]
         np.save(descriptor_save_path, descriptors_list, allow_pickle=True)
@@ -486,11 +486,7 @@ def select_samples(
         settings.allow_random_padding,
         calc,
     )
-    if ase.io.formats.filetype(settings.output, read=False) != "extxyz":
-        raise ValueError(
-            f"filename '{settings.output}' does no have "
-            "suffix compatible with extxyz format"
-        )
+
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(
@@ -507,15 +503,15 @@ def select_samples(
     )
 
     logging.info("Saving the selected configurations")
-    ase.io.write(settings.output, subsampled_atoms)
+    ase.io.write(settings.output, subsampled_atoms, format="extxyz")
 
     logging.info("Saving a combined XYZ file")
     atoms_fps_pt_ft = subsampled_atoms + atoms_list_ft
 
-    output = Path(settings.output)
     ase.io.write(
-        output.parent / (output.stem + "_combined" + output.suffix),
+        settings.output.replace(".xyz", "_combined.xyz"),
         atoms_fps_pt_ft,
+        format="extxyz",
     )
 
 

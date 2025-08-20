@@ -18,7 +18,7 @@ atomic_energies = np.array([1.0], dtype=float)
 cutoff = 5.0
 
 
-def create_mace(device: str, seed: int = 1702):
+def create_mace(device: str, dtype: torch.dtype, seed: int = 1702):
     torch_geometric.seed_everything(seed)
 
     model_config = {
@@ -46,10 +46,10 @@ def create_mace(device: str, seed: int = 1702):
         "atomic_inter_shift": 0.0,
     }
     model = modules.ScaleShiftMACE(**model_config)
-    return model.to(device)
+    return model.to(device=device, dtype=dtype)
 
 
-def create_batch(device: str):
+def create_batch(device: str, dtype: torch.dtype):
     from ase import build
 
     size = 2
@@ -60,7 +60,9 @@ def create_batch(device: str):
     configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
-            data.AtomicData.from_config(config, z_table=table, cutoff=cutoff)
+            data.AtomicData.from_config(
+                config, z_table=table, cutoff=cutoff, dtype=dtype
+            )
             for config in configs
         ],
         batch_size=1,
@@ -92,17 +94,15 @@ def default_dtype(request):
 
 # skip if on windows
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize(
+    "device", ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+)
 def test_mace(device, default_dtype):  # pylint: disable=W0621
-    print(f"using default dtype = {default_dtype}")
-    if device == "cuda" and not torch.cuda.is_available():
-        pytest.skip(reason="cuda is not available")
-
-    model_defaults = create_mace(device)
-    tmp_model = mace_compile.prepare(create_mace)(device)
+    model_defaults = create_mace(device, default_dtype)
+    tmp_model = mace_compile.prepare(create_mace)(device, default_dtype)
     model_compiled = torch.compile(tmp_model, mode="default")
 
-    batch = create_batch(device)
+    batch = create_batch(device, default_dtype)
     output1 = model_defaults(batch, training=True)
     output2 = model_compiled(batch, training=True)
     assert_close(output1["energy"], output2["energy"])
@@ -112,9 +112,8 @@ def test_mace(device, default_dtype):  # pylint: disable=W0621
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
 def test_eager_benchmark(benchmark, default_dtype):  # pylint: disable=W0621
-    print(f"using default dtype = {default_dtype}")
-    batch = create_batch("cuda")
-    model = create_mace("cuda")
+    batch = create_batch("cuda", default_dtype)
+    model = create_mace("cuda", default_dtype)
     model = time_func(model)
     benchmark(model, batch, training=True)
 
@@ -127,15 +126,16 @@ def test_compile_benchmark(benchmark, compile_mode, enable_amp):
     if enable_amp:
         pytest.skip(reason="autocast compiler assertion aten.slice_scatter.default")
 
-    with tools.torch_tools.default_dtype(torch.float32):
-        batch = create_batch("cuda")
-        torch.compiler.reset()
-        model = mace_compile.prepare(create_mace)("cuda")
-        model = torch.compile(model, mode=compile_mode)
-        model = time_func(model)
+    dtype = torch.float32
 
-        with torch.autocast("cuda", enabled=enable_amp):
-            benchmark(model, batch, training=True)
+    batch = create_batch("cuda", dtype)
+    torch.compiler.reset()
+    model = mace_compile.prepare(create_mace)("cuda", dtype)
+    model = torch.compile(model, mode=compile_mode)
+    model = time_func(model)
+
+    with torch.autocast("cuda", enabled=enable_amp):
+        benchmark(model, batch, training=True)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
@@ -143,8 +143,9 @@ def test_compile_benchmark(benchmark, compile_mode, enable_amp):
 def test_graph_breaks():
     import torch._dynamo as dynamo
 
-    batch = create_batch("cuda")
-    model = mace_compile.prepare(create_mace)("cuda")
+    dtype = torch.float32
+    batch = create_batch("cuda", dtype)
+    model = mace_compile.prepare(create_mace)("cuda", dtype)
     explanation = dynamo.explain(model)(batch, training=False)
 
     # these clutter the output but might be useful for investigating graph breaks

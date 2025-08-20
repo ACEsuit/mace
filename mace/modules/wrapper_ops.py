@@ -192,8 +192,6 @@ class TensorProduct:
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
-                dtype=torch.get_default_dtype(),
-                math_dtype=torch.get_default_dtype(),
             )
         if (
             OEQ_AVAILABLE
@@ -295,8 +293,6 @@ class SymmetricContractionWrapper:
                 contraction_degree=correlation,
                 num_elements=num_elements,
                 original_mace=(not use_reduced_cg),
-                dtype=torch.get_default_dtype(),
-                math_dtype=torch.get_default_dtype(),
             )
 
         return SymmetricContraction(

@@ -10,11 +10,11 @@ import yaml
 from ase.atoms import Atoms
 
 pytest_mace_dir = Path(__file__).parent.parent
-preprocess_data = Path(__file__).parent.parent / "mace" / "cli" / "preprocess_data.py"
+preprocess_data = "mace_prepare_data"
 
 
-@pytest.fixture(name="sample_configs")
-def fixture_sample_configs():
+@pytest.fixture
+def sample_configs():
     water = Atoms(
         numbers=[8, 1, 1],
         positions=[[0, -2.0, 0], [1, 0, 0], [0, 1, 0]],
@@ -50,6 +50,7 @@ def test_preprocess_data(tmp_path, sample_configs):
         "r_max": 5.0,
         "config_type_weights": "{'Default':1.0}",
         "num_process": 2,
+        "default_dtype": "float32",
         "valid_fraction": 0.1,
         "h5_prefix": tmp_path / "preprocessed_",
         "compute_statistics": None,
@@ -59,15 +60,8 @@ def test_preprocess_data(tmp_path, sample_configs):
         "stress_key": "REF_stress",
     }
 
-    run_env = os.environ.copy()
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    run_env["PYTHONPATH"] = ":".join(sys.path)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
-
     cmd = (
-        sys.executable
-        + " "
-        + str(preprocess_data)
+        preprocess_data
         + " "
         + " ".join(
             [
@@ -77,7 +71,7 @@ def test_preprocess_data(tmp_path, sample_configs):
         )
     )
 
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    p = subprocess.run(cmd.split(), check=True)
     assert p.returncode == 0
 
     # Check if the output files are created
@@ -171,12 +165,12 @@ def test_preprocess_config(tmp_path, sample_configs):
     ase.io.write(tmp_path / "sample.xyz", sample_configs)
 
     preprocess_params = {
-        "train_file": str(tmp_path / "sample.xyz"),
+        "train_file": (tmp_path / "sample.xyz").as_posix(),
         "r_max": 5.0,
         "config_type_weights": "{'Default':1.0}",
         "num_process": 2,
         "valid_fraction": 0.1,
-        "h5_prefix": str(tmp_path / "preprocessed_"),
+        "h5_prefix": (tmp_path / "preprocessed_").as_posix(),
         "compute_statistics": None,
         "seed": 42,
         "energy_key": "REF_energy",
@@ -187,20 +181,7 @@ def test_preprocess_config(tmp_path, sample_configs):
     with open(filename, "w", encoding="utf-8") as file:
         yaml.dump(preprocess_params, file)
 
-    run_env = os.environ.copy()
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    run_env["PYTHONPATH"] = ":".join(sys.path)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
+    cmd = preprocess_data + " " + "--config" + " " + filename.as_posix()
 
-    cmd = (
-        sys.executable
-        + " "
-        + str(preprocess_data)
-        + " "
-        + "--config"
-        + " "
-        + str(filename)
-    )
-
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    p = subprocess.run(cmd.split(), check=True)
     assert p.returncode == 0

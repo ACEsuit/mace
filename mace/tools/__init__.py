@@ -1,4 +1,8 @@
-from .arg_parser import build_default_arg_parser, build_preprocess_arg_parser
+from .arg_parser import (
+    build_default_arg_parser,
+    build_preprocess_arg_parser,
+    dict_to_arg_list,
+)
 from .arg_parser_tools import check_args
 from .cg import U_matrix_real
 from .checkpoint import CheckpointHandler, CheckpointIO, CheckpointState
@@ -40,6 +44,8 @@ __all__ = [
     "to_numpy",
     "to_one_hot",
     "build_default_arg_parser",
+    "build_preprocess_arg_parser",
+    "dict_to_arg_list",
     "check_args",
     "DefaultKeys",
     "set_seeds",
@@ -69,5 +75,4 @@ __all__ = [
     "init_wandb",
     "load_foundations",
     "load_foundations_elements",
-    "build_preprocess_arg_parser",
 ]

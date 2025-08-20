@@ -16,6 +16,8 @@ from mace.data import (
 )
 from mace.tools import AtomicNumberTable, torch_geometric
 
+import numpy.testing as npt
+
 mace_path = Path(__file__).parent.parent
 
 
@@ -186,7 +188,7 @@ def test_periodic_edge():
         config.positions[receiver] - config.positions[sender] + shifts
     )  # [n_edges, 3]
     assert vectors.shape == (12, 3)  # 12 neighbors in close-packed bulk
-    assert np.allclose(
+    npt.assert_allclose(
         np.linalg.norm(vectors, axis=-1),
         dist,
     )
@@ -207,7 +209,7 @@ def test_half_periodic():
     _, neighbor_count = np.unique(edge_index[0], return_counts=True)
     assert (neighbor_count == 6).all()  # 6 neighbors
     # Check not periodic in z
-    assert np.allclose(
+    npt.assert_allclose(
         vectors[:, 2],
         np.zeros(vectors.shape[0]),
     )

@@ -244,15 +244,18 @@ def conditional_huber_forces(
 
 
 class WeightedEnergyForcesLoss(torch.nn.Module):
-    def __init__(self, energy_weight=1.0, forces_weight=1.0) -> None:
+    def __init__(
+        self, energy_weight=1.0, forces_weight=1.0, dtype: Optional[torch.dtype] = None
+    ) -> None:
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
             "energy_weight",
-            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(energy_weight, dtype=dtype),
         )
         self.register_buffer(
             "forces_weight",
-            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(forces_weight, dtype=dtype),
         )
 
     def forward(
@@ -270,11 +273,12 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
 
 
 class WeightedForcesLoss(torch.nn.Module):
-    def __init__(self, forces_weight=1.0) -> None:
+    def __init__(self, forces_weight=1.0, dtype: Optional[torch.dtype] = None) -> None:
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
             "forces_weight",
-            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(forces_weight, dtype=dtype),
         )
 
     def forward(
@@ -288,19 +292,26 @@ class WeightedForcesLoss(torch.nn.Module):
 
 
 class WeightedEnergyForcesStressLoss(torch.nn.Module):
-    def __init__(self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0) -> None:
+    def __init__(
+        self,
+        energy_weight=1.0,
+        forces_weight=1.0,
+        stress_weight=1.0,
+        dtype: Optional[torch.dtype] = None,
+    ) -> None:
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
             "energy_weight",
-            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(energy_weight, dtype=dtype),
         )
         self.register_buffer(
             "forces_weight",
-            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(forces_weight, dtype=dtype),
         )
         self.register_buffer(
             "stress_weight",
-            torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(stress_weight, dtype=dtype),
         )
 
     def forward(
@@ -324,22 +335,28 @@ class WeightedEnergyForcesStressLoss(torch.nn.Module):
 
 class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
     def __init__(
-        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01
+        self,
+        energy_weight=1.0,
+        forces_weight=1.0,
+        stress_weight=1.0,
+        huber_delta=0.01,
+        dtype: Optional[torch.dtype] = None,
     ) -> None:
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         # We store the huber_delta rather than a loss with fixed reduction.
         self.huber_delta = huber_delta
         self.register_buffer(
             "energy_weight",
-            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(energy_weight, dtype=dtype),
         )
         self.register_buffer(
             "forces_weight",
-            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(forces_weight, dtype=dtype),
         )
         self.register_buffer(
             "stress_weight",
-            torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(stress_weight, dtype=dtype),
         )
 
     def forward(
@@ -390,21 +407,27 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
 
 class UniversalLoss(torch.nn.Module):
     def __init__(
-        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01
+        self,
+        energy_weight=1.0,
+        forces_weight=1.0,
+        stress_weight=1.0,
+        huber_delta=0.01,
+        dtype: Optional[torch.dtype] = None,
     ) -> None:
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.huber_delta = huber_delta
         self.register_buffer(
             "energy_weight",
-            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(energy_weight, dtype=dtype),
         )
         self.register_buffer(
             "forces_weight",
-            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(forces_weight, dtype=dtype),
         )
         self.register_buffer(
             "stress_weight",
-            torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(stress_weight, dtype=dtype),
         )
 
     def forward(
@@ -471,20 +494,25 @@ class UniversalLoss(torch.nn.Module):
 
 class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
     def __init__(
-        self, energy_weight=1.0, forces_weight=1.0, virials_weight=1.0
+        self,
+        energy_weight=1.0,
+        forces_weight=1.0,
+        virials_weight=1.0,
+        dtype: Optional[torch.dtype] = None,
     ) -> None:
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
             "energy_weight",
-            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(energy_weight, dtype=dtype),
         )
         self.register_buffer(
             "forces_weight",
-            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(forces_weight, dtype=dtype),
         )
         self.register_buffer(
             "virials_weight",
-            torch.tensor(virials_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(virials_weight, dtype=dtype),
         )
 
     def forward(
@@ -507,11 +535,12 @@ class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
 
 
 class DipoleSingleLoss(torch.nn.Module):
-    def __init__(self, dipole_weight=1.0) -> None:
+    def __init__(self, dipole_weight=1.0, dtype: Optional[torch.dtype] = None) -> None:
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
             "dipole_weight",
-            torch.tensor(dipole_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(dipole_weight, dtype=dtype),
         )
 
     def forward(
@@ -565,19 +594,26 @@ class DipolePolarLoss(torch.nn.Module):
 
 
 class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
-    def __init__(self, energy_weight=1.0, forces_weight=1.0, dipole_weight=1.0) -> None:
+    def __init__(
+        self,
+        energy_weight=1.0,
+        forces_weight=1.0,
+        dipole_weight=1.0,
+        dtype: Optional[torch.dtype] = None,
+    ) -> None:
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
             "energy_weight",
-            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(energy_weight, dtype=dtype),
         )
         self.register_buffer(
             "forces_weight",
-            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(forces_weight, dtype=dtype),
         )
         self.register_buffer(
             "dipole_weight",
-            torch.tensor(dipole_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(dipole_weight, dtype=dtype),
         )
 
     def forward(
@@ -600,15 +636,18 @@ class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
 
 
 class WeightedEnergyForcesL1L2Loss(torch.nn.Module):
-    def __init__(self, energy_weight=1.0, forces_weight=1.0) -> None:
+    def __init__(
+        self, energy_weight=1.0, forces_weight=1.0, dtype: Optional[torch.dtype] = None
+    ) -> None:
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
             "energy_weight",
-            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(energy_weight, dtype=dtype),
         )
         self.register_buffer(
             "forces_weight",
-            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(forces_weight, dtype=dtype),
         )
 
     def forward(

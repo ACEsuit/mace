@@ -186,7 +186,7 @@ def run(
     else:
         source_model = input_model
     default_dtype = next(source_model.parameters()).dtype
-    torch.set_default_dtype(default_dtype)
+
     # Extract configuration
     config = extract_config_mace_model(source_model)
 
@@ -206,8 +206,9 @@ def run(
 
     # Create new model with cuequivariance config
     logging.info("Creating new model with cuequivariance settings")
-    target_model = source_model.__class__(**config).to(device)
-
+    target_model = source_model.__class__(**config).to(
+        device=device, dtype=default_dtype
+    )
     # Transfer weights with proper remapping
     num_layers = config["num_interactions"]
     transfer_weights(

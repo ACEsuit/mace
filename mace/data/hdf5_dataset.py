@@ -1,7 +1,8 @@
 from glob import glob
-from typing import List
+from typing import List, Optional
 
 import h5py
+import torch
 from torch.utils.data import ConcatDataset, Dataset
 
 from mace.data.atomic_data import AtomicData
@@ -11,7 +12,13 @@ from mace.tools.utils import AtomicNumberTable
 
 class HDF5Dataset(Dataset):
     def __init__(
-        self, file_path, r_max, z_table, atomic_dataclass=AtomicData, **kwargs
+        self,
+        file_path,
+        r_max,
+        z_table,
+        atomic_dataclass=AtomicData,
+        dtype: Optional[torch.dtype] = None,
+        **kwargs
     ):
         super(HDF5Dataset, self).__init__()  # pylint: disable=super-with-arguments
         self.file_path = file_path
@@ -21,6 +28,7 @@ class HDF5Dataset(Dataset):
         self.length = len(self.file.keys()) * self.batch_size
         self.r_max = r_max
         self.z_table = z_table
+        self.dtype = dtype or torch.get_default_dtype()
         self.atomic_dataclass = atomic_dataclass
         try:
             self.drop_last = bool(self.file.attrs["drop_last"])
@@ -76,18 +84,26 @@ class HDF5Dataset(Dataset):
             z_table=self.z_table,
             cutoff=self.r_max,
             heads=self.kwargs.get("heads", ["Default"]),
+            dtype=self.dtype,
             **{k: v for k, v in self.kwargs.items() if k != "heads"},
         )
         return atomic_data
 
 
 def dataset_from_sharded_hdf5(
-    files: List, z_table: AtomicNumberTable, r_max: float, **kwargs
+    files: List,
+    z_table: AtomicNumberTable,
+    r_max: float,
+    dtype: Optional[torch.dtype] = None,
+    **kwargs
 ):
+    dtype = dtype or torch.get_default_dtype()
     files = glob(files + "/*")
     datasets = []
     for file in files:
-        datasets.append(HDF5Dataset(file, z_table=z_table, r_max=r_max, **kwargs))
+        datasets.append(
+            HDF5Dataset(file, z_table=z_table, r_max=r_max, dtype=dtype, **kwargs)
+        )
     full_dataset = ConcatDataset(datasets)
     return full_dataset
 

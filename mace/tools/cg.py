@@ -172,8 +172,7 @@ if CUET_AVAILABLE:
     def compute_U_cueq(
         irreps_in, irreps_out, correlation=2, use_nonsymmetric_product=False, dtype=None
     ):
-        if dtype is None:
-            dtype = torch.get_default_dtype()
+        dtype = dtype or torch.get_default_dtype()
         U = []
         irreps_in = cue.Irreps(O3_e3nn, str(irreps_in))
         irreps_out = cue.Irreps(O3_e3nn, str(irreps_out))
