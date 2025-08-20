@@ -557,18 +557,23 @@ class DipoleSingleLoss(torch.nn.Module):
 
 class DipolePolarLoss(torch.nn.Module):
     def __init__(
-        self, dipole_weight=1.0, polarizability_weight=1.0
+        self,
+        dipole_weight=1.0,
+        polarizability_weight=1.0,
+        dtype: Optional[torch.dtype] = None,
     ) -> (
         None
     ):  # dipole_mean=None,dipole_std=None,polarizability_mean=None,polarizability_std=None
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
+
         self.register_buffer(
             "dipole_weight",
-            torch.tensor(dipole_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(dipole_weight, dtype=dtype),
         )
         self.register_buffer(
             "polarizability_weight",
-            torch.tensor(polarizability_weight, dtype=torch.get_default_dtype()),
+            torch.tensor(polarizability_weight, dtype=dtype),
         )
 
     def forward(

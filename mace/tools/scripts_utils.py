@@ -646,6 +646,7 @@ def get_loss_fn(
         loss_fn = modules.DipolePolarLoss(
             dipole_weight=args.dipole_weight,
             polarizability_weight=args.polarizability_weight,
+            dtype=dtype,
         )
     elif args.loss == "energy_forces_dipole":
         assert dipole_only is False and compute_dipole is True
@@ -707,6 +708,7 @@ def get_swa(
         loss_fn_energy = modules.DipolePolarLoss(
             dipole_weight=args.swa_dipole_weight,
             polarizability_weight=args.swa_polarizability_weight,
+            dtype=dtype,
         )
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, dipole weight : {args.swa_dipole_weight}, polarizability weight : {args.swa_polarizability_weight}, and learning rate : {args.swa_lr}"

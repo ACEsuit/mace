@@ -225,18 +225,18 @@ class AtomicData(torch_geometric.data.Data):
         polarizability_weight = (
             torch.tensor(
                 config.property_weights.get("polarizability"),
-                dtype=torch.get_default_dtype(),
+                dtype=dtype,
             )
             if config.property_weights.get("polarizability") is not None
             else torch.tensor(
                 [[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]],
-                dtype=torch.get_default_dtype(),
+                dtype=dtype,
             )
         )
         if len(polarizability_weight.shape) == 0:
             polarizability_weight = polarizability_weight * torch.tensor(
                 [[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]],
-                dtype=torch.get_default_dtype(),
+                dtype=dtype,
             )
         elif len(polarizability_weight.shape) == 2:
             polarizability_weight = polarizability_weight.unsqueeze(0)
@@ -277,34 +277,30 @@ class AtomicData(torch_geometric.data.Data):
         elec_temp = (
             torch.tensor(
                 config.properties.get("elec_temp"),
-                dtype=torch.get_default_dtype(),
+                dtype=dtype,
             )
             if config.properties.get("elec_temp") is not None
-            else torch.tensor(0.0, dtype=torch.get_default_dtype())
+            else torch.tensor(0.0, dtype=dtype)
         )
 
         total_charge = (
-            torch.tensor(
-                config.properties.get("total_charge"), dtype=torch.get_default_dtype()
-            )
+            torch.tensor(config.properties.get("total_charge"), dtype=dtype)
             if config.properties.get("total_charge") is not None
-            else torch.tensor(0.0, dtype=torch.get_default_dtype())
+            else torch.tensor(0.0, dtype=dtype)
         )
 
         polarizability = (
-            torch.tensor(
-                config.properties.get("polarizability"), dtype=torch.get_default_dtype()
-            ).view(1, 3, 3)
+            torch.tensor(config.properties.get("polarizability"), dtype=dtype).view(
+                1, 3, 3
+            )
             if config.properties.get("polarizability") is not None
-            else torch.zeros(1, 3, 3, dtype=torch.get_default_dtype())
+            else torch.zeros(1, 3, 3, dtype=dtype)
         )
 
         total_spin = (
-            torch.tensor(
-                config.properties.get("total_spin"), dtype=torch.get_default_dtype()
-            )
+            torch.tensor(config.properties.get("total_spin"), dtype=dtype)
             if config.properties.get("total_spin") is not None
-            else torch.tensor(1.0, dtype=torch.get_default_dtype())
+            else torch.tensor(1.0, dtype=dtype)
         )
 
         pbc = (
