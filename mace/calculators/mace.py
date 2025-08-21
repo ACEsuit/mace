@@ -315,6 +315,22 @@ class MACECalculator(Calculator):
             for param in model.parameters():
                 param.requires_grad = False
 
+    def check_state(self, atoms, tol: float = 1e-15) -> list:
+        """
+        Check for any system changes since the last calculation.
+
+        Args:
+            atoms (ase.Atoms): The atomic structure to check.
+            tol (float): Tolerance for detecting changes.
+
+        Returns:
+            list: A list of changes detected in the system.
+        """
+        state = super().check_state(atoms, tol=tol)
+        if (not state) and (self.atoms.info != atoms.info):
+            state.append("info")
+        return state
+
     def _create_result_tensors(
         self, model_type: str, num_models: int, num_atoms: int
     ) -> dict:
