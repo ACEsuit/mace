@@ -45,8 +45,8 @@ class HDF5Dataset(Dataset):
     def __len__(self):
         return self.length
 
-    def __getitem__(self, index):
-        # compute the index of the batch
+    def __getitem__backcomp__(self, index):
+        # support function for backward compatibility with original mptrj dataset
         batch_index = index // self.batch_size
         config_index = index % self.batch_size
         grp = self.file["config_batch_" + str(batch_index)]
@@ -54,6 +54,59 @@ class HDF5Dataset(Dataset):
 
         properties = {}
         property_weights = {}
+
+        target_properties = [
+            "energy",
+            "forces",
+            "stress",
+            "virials",
+            "dipole",
+            "charges",
+        ]
+        target_weights = [st + "_weight" for st in target_properties]
+
+        for key in subgrp.keys():
+            if key in target_properties:
+                properties[key] = unpack_value(subgrp[key][()])
+            if key in target_weights:
+                property_weights[key] = unpack_value(subgrp[key][()])
+
+        config = Configuration(
+            atomic_numbers=subgrp["atomic_numbers"][()],
+            positions=subgrp["positions"][()],
+            properties=properties,
+            weight=unpack_value(subgrp["weight"][()]),
+            property_weights=property_weights,
+            config_type=unpack_value(subgrp["config_type"][()]),
+            pbc=unpack_value(subgrp["pbc"][()]),
+            cell=unpack_value(subgrp["cell"][()]),
+        )
+        if config.head is None:
+            config.head = self.kwargs.get("head")
+        atomic_data = self.atomic_dataclass.from_config(
+            config,
+            z_table=self.z_table,
+            cutoff=self.r_max,
+            heads=self.kwargs.get("heads", ["Default"]),
+            **{k: v for k, v in self.kwargs.items() if k != "heads"},
+        )
+        return atomic_data
+
+    def __getitem__(self, index):
+        # compute the index of the batch
+        batch_index = index // self.batch_size
+        config_index = index % self.batch_size
+        grp = self.file["config_batch_" + str(batch_index)]
+        subgrp = grp["config_" + str(config_index)]
+
+        if "properties" not in subgrp.keys():
+            return self.__getitem__backcomp__(
+                index
+            )  # patch for compatibility with original mptrj dataset
+
+        properties = {}
+        property_weights = {}
+
         for key in subgrp["properties"]:
             properties[key] = unpack_value(subgrp["properties"][key][()])
         for key in subgrp["property_weights"]:

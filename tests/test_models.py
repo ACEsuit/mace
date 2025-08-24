@@ -448,3 +448,54 @@ def test_atomic_virials_stresses():
     assert torch.allclose(
         summed_atomic_stresses, total_stress.squeeze(0), atol=1e-6
     ), f"Sum of atomic stresses (normalized by volume) {summed_atomic_stresses} does not match total stress {total_stress.squeeze(0)}"
+
+
+def test_llpr_mace():
+    # Create original MACE model
+    model_config = dict(
+        r_max=5,
+        num_bessel=8,
+        num_polynomial_cutoff=6,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=5,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("32x0e + 32x1o"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies,
+        avg_num_neighbors=8,
+        atomic_numbers=table.zs,
+        correlation=3,
+        radial_type="bessel",
+    )
+    model = modules.MACE(**model_config)
+    llpr_model = modules.LLPRModel(model)
+
+    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
+    atomic_data2 = data.AtomicData.from_config(
+        config_rotated, z_table=table, cutoff=3.0
+    )
+
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data, atomic_data2],
+        batch_size=2,
+        shuffle=True,
+        drop_last=False,
+    )
+
+    llpr_model.compute_covariance(data_loader, include_forces=True)
+    llpr_model.compute_inv_covariance(1.0, 1e-2)
+
+    batch = next(iter(data_loader))
+    output = llpr_model(batch, compute_force_uncertainty=True)
+
+    assert torch.allclose(
+        output["energy_uncertainty"][0],
+        output["energy_uncertainty"][1]
+    )
