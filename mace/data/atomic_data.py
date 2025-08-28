@@ -77,7 +77,7 @@ class AtomicData(torch_geometric.data.Data):
         elec_temp: Optional[torch.Tensor],  # [,]
         total_charge: Optional[torch.Tensor] = None,  # [,]
         total_spin: Optional[torch.Tensor] = None,  # [,]
-        pbc: Optional[torch.Tensor] = None, # [, 3]
+        pbc: Optional[torch.Tensor] = None,  # [, 3]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -331,10 +331,13 @@ class AtomicData(torch_geometric.data.Data):
             if config.properties.get("total_spin") is not None
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
-
+        if config.pbc is not None:
+            pbc = list(bool(pbc_) for pbc_ in config.pbc)
+        else:
+            pbc = None
         pbc = (
-            torch.tensor([config.pbc], dtype=torch.bool)
-            if config.pbc is not None
+            torch.tensor([pbc], dtype=torch.bool)
+            if pbc is not None
             else torch.tensor([[False, False, False]], dtype=torch.bool)
         )
 
