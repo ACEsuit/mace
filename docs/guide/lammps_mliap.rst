@@ -36,7 +36,7 @@ Python Dependencies
 
 In addition to the standard MACE dependencies, you'll need:
 
-- **cuEquivariance**: Base, torch, and torch backend from `NVIDIA cuEquivariance <https://github.com/NVIDIA/cuEquivariance>`_
+- **cuEquivariance**: Base, torch, and torch backend from `NVIDIA cuEquivariance <https://github.com/NVIDIA/cuEquivariance>`_ You need to install `pip install cuequivariance-torch`, and `pip install cuequivariance`, and the kernels `pip install cuequivariance-ops-torch-cu12` (or cu11).
 - **cupy-cuda12x**: Compatible with your CUDA version
 - **lammps Python package**: Generated when building LAMMPS (see below)
 
