@@ -67,13 +67,13 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
         self.register_buffer(
             "total_charge",
             kwargs.get(
-                "total_charge", torch.tensor(0.0, dtype=torch.get_default_dtype())
+                "total_charge", torch.tensor([0.0], dtype=torch.get_default_dtype())
             ),
         )
         self.register_buffer(
             "total_spin",
             kwargs.get(
-                "total_spin", torch.tensor(1.0, dtype=torch.get_default_dtype())
+                "total_spin", torch.tensor([1.0], dtype=torch.get_default_dtype())
             ),
         )
 
