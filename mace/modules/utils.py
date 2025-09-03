@@ -588,7 +588,7 @@ def prepare_graph(
         num_atoms_arange = torch.arange(n_real, device=data["node_attrs"].device)
         displacement = None
         positions = torch.zeros(
-            (int(n_real), 3),
+            (n_real, 3),
             dtype=data["vectors"].dtype,
             device=data["vectors"].device,
         )
@@ -605,7 +605,7 @@ def prepare_graph(
         positions = data["positions"]
         cell = data["cell"]
         num_atoms_arange = torch.arange(positions.shape[0], device=positions.device)
-        num_graphs = int(data["ptr"].numel() - 1)
+        num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3), dtype=positions.dtype, device=positions.device
         )
