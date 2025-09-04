@@ -453,8 +453,13 @@ class MACECalculator(Calculator):
                 ret_tensors["dipole"][i] = out["dipole"].detach()
             if self.model_type == "DipolePolarizabilityMACE":
                 ret_tensors["charges"][i] = out["charges"].detach()
-                ret_tensors["polarizability"][i] = out["polarizability"].detach()
-                ret_tensors["polarizability_sh"][i] = out["polarizability_sh"].detach()
+                if out["polarizability"] is not None:
+                    ret_tensors["polarizability"][i] = out["polarizability"].detach()
+                    ret_tensors["polarizability_sh"][i] = out["polarizability_sh"].detach()
+                else:
+                    print("This model is not trained to predict polarizability, it will be only zeros")
+                    ret_tensors["polarizability"][i] = torch.zeros(3, 3, device=self.device)
+                    ret_tensors["polarizability_sh"][i] = torch.zeros(1, 6, device=self.device)
             if self.model_type in ["MACE"]:
                 if out["atomic_stresses"] is not None:
                     ret_tensors.setdefault("atomic_stresses", []).append(
