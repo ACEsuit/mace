@@ -124,9 +124,6 @@ def test_eager_benchmark(benchmark, default_dtype):  # pylint: disable=W0621
 @pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
 @pytest.mark.parametrize("enable_amp", [False, True], ids=["fp32", "mixed"])
 def test_compile_benchmark(benchmark, compile_mode, enable_amp):
-    if enable_amp:
-        pytest.skip(reason="autocast compiler assertion aten.slice_scatter.default")
-
     with tools.torch_tools.default_dtype(torch.float32):
         batch = create_batch("cuda")
         torch.compiler.reset()
