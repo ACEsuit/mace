@@ -100,7 +100,7 @@ def test_mace(device, default_dtype):  # pylint: disable=W0621
 
     model_defaults = create_mace(device)
     tmp_model = mace_compile.prepare(create_mace)(device)
-    model_compiled = torch.compile(tmp_model, mode="default")
+    model_compiled = torch.compile(tmp_model, mode="default", fullgraph=True)
 
     batch = create_batch(device)
     output1 = model_defaults(batch, training=True)
