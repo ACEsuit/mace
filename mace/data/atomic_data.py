@@ -340,10 +340,12 @@ class AtomicData(torch_geometric.data.Data):
             if pbc is not None
             else torch.tensor([[False, False, False]], dtype=torch.bool)
         )
+        positions = torch.tensor(config.positions, dtype=torch.get_default_dtype())
+        positions.requires_grad_(True)
 
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
-            positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
+            positions=positions,
             shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),
             unit_shifts=torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),
             cell=cell,

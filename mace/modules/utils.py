@@ -601,7 +601,6 @@ def prepare_graph(
         lengths = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
         ikw = InteractionKwargs(data["lammps_class"], (n_real, n_total))
     else:
-        data["positions"].requires_grad_(True)
         positions = data["positions"]
         cell = data["cell"]
         num_atoms_arange = torch.arange(positions.shape[0], device=positions.device)
