@@ -100,7 +100,7 @@ def test_mace(device, default_dtype):  # pylint: disable=W0621
 
     model_defaults = create_mace(device)
     tmp_model = mace_compile.prepare(create_mace)(device)
-    model_compiled = torch.compile(tmp_model, mode="default")
+    model_compiled = torch.compile(tmp_model, mode="default", fullgraph=True)
 
     batch = create_batch(device)
     output1 = model_defaults(batch, training=True)
@@ -124,9 +124,6 @@ def test_eager_benchmark(benchmark, default_dtype):  # pylint: disable=W0621
 @pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
 @pytest.mark.parametrize("enable_amp", [False, True], ids=["fp32", "mixed"])
 def test_compile_benchmark(benchmark, compile_mode, enable_amp):
-    if enable_amp:
-        pytest.skip(reason="autocast compiler assertion aten.slice_scatter.default")
-
     with tools.torch_tools.default_dtype(torch.float32):
         batch = create_batch("cuda")
         torch.compiler.reset()
@@ -139,12 +136,15 @@ def test_compile_benchmark(benchmark, compile_mode, enable_amp):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
-def test_graph_breaks():
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_graph_breaks(device):
     import torch._dynamo as dynamo
 
-    batch = create_batch("cuda")
-    model = mace_compile.prepare(create_mace)("cuda")
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip(reason="cuda is not available")
+
+    batch = create_batch(device)
+    model = mace_compile.prepare(create_mace)(device)
     explanation = dynamo.explain(model)(batch, training=False)
 
     # these clutter the output but might be useful for investigating graph breaks
