@@ -159,7 +159,7 @@ def config_from_atoms(
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
-    pbc = tuple(atoms.get_pbc())
+    pbc = tuple(atoms.get_pbc().tolist())
     cell = np.array(atoms.get_cell())
     config_type = atoms.info.get("config_type", "Default")
     weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(

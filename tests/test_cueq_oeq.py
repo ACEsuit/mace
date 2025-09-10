@@ -1,6 +1,5 @@
 # pylint: disable=wrong-import-position
 import os
-from copy import deepcopy
 from typing import Any, Dict
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
@@ -97,7 +96,7 @@ class BackendTestBase:
             drop_last=False,
         )
         batch = next(iter(data_loader))
-        return batch.to(device).to_dict()
+        return batch.to(device)
 
     @pytest.mark.parametrize(
         "interaction_cls_first",
@@ -146,11 +145,11 @@ class BackendTestBase:
         model_e3nn_back = run_backend_to_e3nn(model_backend).to(device)
 
         # Test forward pass equivalence
-        out_e3nn = model_e3nn(deepcopy(batch), training=True, compute_stress=True)
-        out_backend = model_backend(deepcopy(batch), training=True, compute_stress=True)
+        out_e3nn = model_e3nn(batch.clone().to_dict(), training=True, compute_stress=True)
+        out_backend = model_backend(batch.clone().to_dict(), training=True, compute_stress=True)
 
         out_e3nn_back = model_e3nn_back(
-            deepcopy(batch), training=True, compute_stress=True
+            batch.clone().to_dict(), training=True, compute_stress=True
         )
 
         # Check outputs match for both conversions
