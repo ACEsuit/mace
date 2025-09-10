@@ -136,12 +136,15 @@ def test_compile_benchmark(benchmark, compile_mode, enable_amp):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
-def test_graph_breaks():
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_graph_breaks(device):
     import torch._dynamo as dynamo
 
-    batch = create_batch("cuda")
-    model = mace_compile.prepare(create_mace)("cuda")
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip(reason="cuda is not available")
+
+    batch = create_batch(device)
+    model = mace_compile.prepare(create_mace)(device)
     explanation = dynamo.explain(model)(batch, training=False)
 
     # these clutter the output but might be useful for investigating graph breaks
