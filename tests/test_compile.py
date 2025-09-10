@@ -12,13 +12,27 @@ from torch.testing import assert_close
 from mace import data, modules, tools
 from mace.tools import compile as mace_compile
 from mace.tools import torch_geometric
+from mace.modules.wrapper_ops import CuEquivarianceConfig
 
 table = tools.AtomicNumberTable([6])
 atomic_energies = np.array([1.0], dtype=float)
 cutoff = 5.0
 
 
-def create_mace(device: str, seed: int = 1702):
+def setup_cueq(enable: bool, device: str):
+    if not enable:
+        return None
+
+    return CuEquivarianceConfig(
+        enabled=True,
+        layout="ir_mul",
+        group="O3_e3nn",
+        optimize_all=True,
+        conv_fusion=(device == "cuda"),
+    )
+
+
+def create_mace(device: str, seed: int = 1702, enable_cueq: bool = False):
     torch_geometric.seed_everything(seed)
 
     model_config = {
@@ -44,6 +58,7 @@ def create_mace(device: str, seed: int = 1702):
         "radial_type": "bessel",
         "atomic_inter_scale": 1.0,
         "atomic_inter_shift": 0.0,
+        "cueq_config": setup_cueq(enable_cueq, device)
     }
     model = modules.ScaleShiftMACE(**model_config)
     return model.to(device)
@@ -111,10 +126,11 @@ def test_mace(device, default_dtype):  # pylint: disable=W0621
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
-def test_eager_benchmark(benchmark, default_dtype):  # pylint: disable=W0621
+@pytest.mark.parametrize("enable_cueq", [True, False])
+def test_eager_benchmark(benchmark, default_dtype, enable_cueq):  # pylint: disable=W0621
     print(f"using default dtype = {default_dtype}")
     batch = create_batch("cuda")
-    model = create_mace("cuda")
+    model = create_mace("cuda", enable_cueq=enable_cueq)
     model = time_func(model)
     benchmark(model, batch, training=True)
 
@@ -123,11 +139,12 @@ def test_eager_benchmark(benchmark, default_dtype):  # pylint: disable=W0621
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
 @pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
 @pytest.mark.parametrize("enable_amp", [False, True], ids=["fp32", "mixed"])
-def test_compile_benchmark(benchmark, compile_mode, enable_amp):
+@pytest.mark.parametrize("enable_cueq", [False, True])
+def test_compile_benchmark(benchmark, compile_mode, enable_amp, enable_cueq):
     with tools.torch_tools.default_dtype(torch.float32):
         batch = create_batch("cuda")
         torch.compiler.reset()
-        model = mace_compile.prepare(create_mace)("cuda")
+        model = mace_compile.prepare(create_mace)("cuda", enable_cueq=enable_cueq)
         model = torch.compile(model, mode=compile_mode)
         model = time_func(model)
 
