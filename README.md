@@ -370,6 +370,24 @@ If you use this code, please cite our papers:
  }
 ```
 
+MACE also comes with uncertainty quantification (UQ) capabilities based on the last-layer prediction rigidity formalism. If you use this feature, please cite the following paper:
+
+```bibtex
+@article{Bigi2024,
+doi = {10.1088/2632-2153/ad805f},
+url = {https://dx.doi.org/10.1088/2632-2153/ad805f},
+year = {2024},
+month = {oct},
+publisher = {IOP Publishing},
+volume = {5},
+number = {4},
+pages = {045018},
+author = {Bigi, Filippo and Chong, Sanggyu and Ceriotti, Michele and Grasselli, Federico},
+title = {A prediction rigidity formalism for low-cost uncertainties in trained neural networks},
+journal = {Machine Learn.: Sci. Tech.},
+}
+```
+
 ## Contact
 
 If you have any questions, please contact us at ilyes.batatia@ens-paris-saclay.fr.
