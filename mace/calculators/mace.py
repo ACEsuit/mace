@@ -164,7 +164,7 @@ class MACECalculator(Calculator):
             if kwargs.get("compute_atomic_stresses", False):
                 self.implemented_properties.extend(
                     ["stresses", "virials"]
-                )  # remove virials
+                )
                 self.compute_atomic_stresses = True
         if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
             self.implemented_properties.extend(["dipole"])
@@ -337,7 +337,8 @@ class MACECalculator(Calculator):
         return state
 
     def _create_result_tensors(
-        self, model_type: str, num_models: int, num_atoms: int
+        self, model_type: str, num_models: int, num_atoms: int,
+        compute_atomic_stresses: bool
     ) -> dict:
         """
         Create tensors to store the results of the committee
@@ -347,24 +348,30 @@ class MACECalculator(Calculator):
         :return: tuple of torch tensors
         """
         dict_of_tensors = {}
+
         if model_type in ["MACE", "EnergyDipoleMACE"]:
             energy = torch.zeros(num_models, device=self.device)
-            atom_energy = torch.zeros(num_models, num_atoms, device=self.device)
             node_energy = torch.zeros(num_models, num_atoms, device=self.device)
             forces = torch.zeros(num_models, num_atoms, 3, device=self.device)
             stress = torch.zeros(num_models, 3, 3, device=self.device)
             dict_of_tensors.update(
                 {
                     "energy": energy,
-                    "atom_energy": atom_energy,
                     "node_energy": node_energy,
                     "forces": forces,
                     "stress": stress,
                 }
             )
+            if compute_atomic_stresses:
+                atomic_stresses = torch.zeros(num_models, num_atoms, 3, 3, device=self.device)
+                atomic_virials = torch.zeros(num_models, num_atoms, 3, 3, device=self.device)
+                dict_of_tensors.update({"atomic_stresses": atomic_stresses,
+                                        "atomic_virials": atomic_virials})
+
         if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
             dipole = torch.zeros(num_models, 3, device=self.device)
             dict_of_tensors.update({"dipole": dipole})
+
         if model_type in ["DipolePolarizabilityMACE"]:
             charges = torch.zeros(num_models, num_atoms, device=self.device)
             polarizability = torch.zeros(num_models, 3, 3, device=self.device)
@@ -376,6 +383,7 @@ class MACECalculator(Calculator):
                     "polarizability_sh": polarizability_sh,
                 }
             )
+
         return dict_of_tensors
 
     def _atoms_to_batch(self, atoms):
@@ -429,13 +437,14 @@ class MACECalculator(Calculator):
             num_atoms_arange = torch.arange(batch["positions"].shape[0])
             node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])[
                 num_atoms_arange, node_heads
-            ]
+            ].detach().cpu().numpy()
             compute_stress = not self.use_compile
         else:
             compute_stress = False
 
+        # copy from output of model() call to ret_tensors
         ret_tensors = self._create_result_tensors(
-            self.model_type, self.num_models, len(atoms)
+            self.model_type, self.num_models, len(atoms), self.compute_atomic_stresses
         )
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
@@ -446,130 +455,69 @@ class MACECalculator(Calculator):
                 compute_edge_forces=self.compute_atomic_stresses,
                 compute_atomic_stresses=self.compute_atomic_stresses,
             )
-            if self.model_type in ["MACE", "EnergyDipoleMACE"]:
-                ret_tensors["energy"][i] = out["energy"].detach()
-                ret_tensors["atom_energy"][i] = out["node_energy"].detach()
-                ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
-                ret_tensors["forces"][i] = out["forces"].detach()
-                if out["stress"] is not None:
-                    ret_tensors["stress"][i] = out["stress"].detach()
-                if out.get("atomic_stresses") is not None:
-                    ret_tensors.setdefault("atomic_stresses", []).append(
-                        out["atomic_stresses"].detach()
-                    )
-                if out.get("atomic_virials") is not None:  # remove virials
-                    ret_tensors.setdefault(
-                        "atomic_virials", []
-                    ).append(  # remove virials
-                        out["atomic_virials"].detach()  # remove virials
-                    )  # remove virials
-            if self.model_type in [
-                "DipoleMACE",
-                "EnergyDipoleMACE",
-                "DipolePolarizabilityMACE",
+            for key in [
+                "energy",
+                "node_energy",
+                "forces",
+                "stress",
+                "atomic_stresses",
+                "atomic_virials",
+                "dipole",
+                "charges",
+                "polarizability",
+                "polarizability_sh",
             ]:
-                ret_tensors["dipole"][i] = out["dipole"].detach()
-            if self.model_type == "DipolePolarizabilityMACE":
-                ret_tensors["charges"][i] = out["charges"].detach()
-                if out["polarizability"] is not None:
-                    ret_tensors["polarizability"][i] = out["polarizability"].detach()
-                    ret_tensors["polarizability_sh"][i] = out["polarizability_sh"].detach()
-                else:
-                    logging.warning("This model is not trained to predict polarizability, it will be only zeros")
-                    ret_tensors["polarizability"][i] = torch.zeros(3, 3, device=self.device)
-                    ret_tensors["polarizability_sh"][i] = torch.zeros(1, 6, device=self.device)
+                if out.get(key) is not None:
+                    ret_tensors[key][i] = out[key].detach()
 
+        # covert from ret_tensors to calculator results dict
         self.results = {}
-        if self.model_type in ["MACE", "EnergyDipoleMACE"]:
-            self.results["energy"] = (
-                torch.mean(ret_tensors["energy"], dim=0).cpu().item()
-                * self.energy_units_to_eV
-            )
+        is_scalar = set(["energy"])
+        store_ensemble = set(["energy", "forces", "stress", "dipole"])
+        for res_key, ret_key, unit_conv in [
+            ("energy", "energy", self.energy_units_to_eV),
+            ("node_energy", "node_energy", self.energy_units_to_eV),
+            ("forces", "forces", self.energy_units_to_eV / self.length_units_to_A),
+            ("stress", "stress", self.energy_units_to_eV / self.length_units_to_A ** 3),
+            ("stresses", "atomic_stresses", self.energy_units_to_eV / self.length_units_to_A ** 3),
+            ("virials", "atomic_virials", self.energy_units_to_eV / self.length_units_to_A ** 3),
+            ("dipole", "dipole", 1.0),
+            ("charges", "charges", 1.0),
+            ("polarizability", "polarizability", 1.0),
+            ("polarizability_sh", "polarizability_sh", 1.0),
+        ]:
+            if ret_tensors.get(ret_key) is not None:
+                data = torch.mean(ret_tensors[ret_key], dim=0).cpu()
+                if res_key in is_scalar:
+                    data = data.item()
+                else:
+                    data = data.numpy()
+                self.results[res_key] = data * unit_conv
+
+                if self.num_models > 1 and res_key in store_ensemble:
+                    data = ret_tensors[res_key].cpu().numpy()
+                    data *= unit_conv
+                    self.results[res_key + "_comm"] = data
+
+                    data = torch.var(ret_tensors[res_key], dim=0, unbiased=False).cpu()
+                    if res_key in is_scalar:
+                        data = data.item()
+                    else:
+                        data = data.numpy()
+                    data *= unit_conv
+                    self.results[res_key + "_var"] = data
+
+        # special cases
+        if self.results.get("energy") is not None:
             self.results["free_energy"] = self.results["energy"]
-            self.results["energies"] = (
-                torch.mean(ret_tensors["atom_energy"], dim=0).cpu().numpy()
-            )
-            self.results["node_energy"] = (
-                torch.mean(ret_tensors["node_energy"], dim=0).cpu().numpy()
-            )
-            self.results["forces"] = (
-                torch.mean(ret_tensors["forces"], dim=0).cpu().numpy()
-                * self.energy_units_to_eV
-                / self.length_units_to_A
-            )
-            if out["stress"] is not None:
-                self.results["stress"] = full_3x3_to_voigt_6_stress(
-                    torch.mean(ret_tensors["stress"], dim=0).cpu().numpy()
-                    * self.energy_units_to_eV
-                    / self.length_units_to_A**3
-                )
-            if "atomic_stresses" in ret_tensors:
-                self.results["stresses"] = (
-                    torch.mean(torch.stack(ret_tensors["atomic_stresses"]), dim=0)
-                    .cpu()
-                    .numpy()
-                    * self.energy_units_to_eV
-                    / self.length_units_to_A**3
-                )
-            if "atomic_virials" in ret_tensors:  # remove virials
-                self.results["virials"] = (  # remove virials
-                    torch.mean(
-                        torch.stack(ret_tensors["atomic_virials"]), dim=0
-                    )  # remove virials
-                    .cpu()  # remove virials
-                    .numpy()  # remove virials
-                    * self.energy_units_to_eV  # remove virials
-                )  # remove virials
-            # ensemble quantities
-            if self.num_models > 1:
-                self.results["energy_comm"] = (
-                    ret_tensors["energy"].cpu().numpy() * self.energy_units_to_eV
-                )
-                self.results["energy_var"] = (
-                    torch.var(ret_tensors["energy"], dim=0, unbiased=False)
-                    .cpu()
-                    .item()
-                    * self.energy_units_to_eV
-                )
-                self.results["forces_comm"] = (
-                    ret_tensors["forces"].cpu().numpy()
-                    * self.energy_units_to_eV
-                    / self.length_units_to_A
-                )
-                if out["stress"] is not None:
-                    self.results["stress_var"] = full_3x3_to_voigt_6_stress(
-                        torch.var(ret_tensors["stress"], dim=0, unbiased=False)
-                        .cpu()
-                        .numpy()
-                        * self.energy_units_to_eV
-                        / self.length_units_to_A**3
-                    )
-        if self.model_type in [
-            "DipoleMACE",
-            "EnergyDipoleMACE",
-            "DipolePolarizabilityMACE",
-        ]:
-            self.results["dipole"] = (
-                torch.mean(ret_tensors["dipole"], dim=0).cpu().numpy()
-            )
-            if self.num_models > 1:
-                self.results["dipole_var"] = (
-                    torch.var(ret_tensors["dipole"], dim=0, unbiased=False)
-                    .cpu()
-                    .numpy()
-                )
-        if self.model_type in [
-            "DipolePolarizabilityMACE",
-        ]:
-            self.results["charges"] = (
-                torch.mean(ret_tensors["charges"], dim=0).cpu().numpy()
-            )
-            self.results["polarizability"] = (
-                torch.mean(ret_tensors["polarizability"], dim=0).cpu().numpy()
-            )
-            self.results["polarizability_sh"] = (
-                torch.mean(ret_tensors["polarizability_sh"], dim=0).cpu().numpy()
-            )
+        if self.results.get("node_energy") is not None:
+            self.results["energies"] = self.results["node_energy"].copy()
+            self.results["node_energy"] -= node_e0
+        if self.results.get("stress") is not None:
+            self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
+        if self.results.get("stresses") is not None:
+            self.results["stresses"] = np.asarray([full_3x3_to_voigt_6_stress(stress) for stress in self.results["stresses"]])
+
 
     def get_dielectric_derivatives(self, atoms=None):
         if atoms is None and self.atoms is None:
