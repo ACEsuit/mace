@@ -8,7 +8,7 @@ import dataclasses
 import logging
 import time
 from collections import defaultdict
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -338,6 +338,25 @@ def train(
 
     logging.info("Training complete")
 
+def print_optimizer_info(optimizer, model):
+    for i, param_group in enumerate(optimizer.param_groups):
+        print(f"\n=== Param group {i} ===")
+        print(f"  lr: {param_group.get('lr', None)}")
+        print(f"  weight_decay: {param_group.get('weight_decay', None)}")
+        print(f"  other keys: {list(param_group.keys())}")  # 查看还保存了什么
+
+        for param in param_group["params"]:
+            # 找参数名（需要和 model.named_parameters() 对照）
+            name = None
+            for n, p in model.named_parameters():
+                if p is param:
+                    name = n
+                    break
+            print(
+                f"  - {name:40s} "
+                f"shape={tuple(param.shape)} "
+                f"requires_grad={param.requires_grad}"
+            )
 
 def train_one_epoch(
     model: torch.nn.Module,
@@ -355,7 +374,8 @@ def train_one_epoch(
     rank: Optional[int] = 0,
 ) -> None:
     model_to_train = model if distributed_model is None else distributed_model
-
+    
+    print_optimizer_info(optimizer, model)
     if isinstance(optimizer, LBFGS):
         _, opt_metrics = take_step_lbfgs(
             model=model_to_train,
@@ -530,6 +550,20 @@ def take_step_lbfgs(
 
     return loss, loss_dict
 
+# Keep parameters frozen/active after evaluation
+@contextmanager
+def preserve_grad_state(model):
+    # save the original requires_grad state for all parameters
+    requires_grad_backup = {param: param.requires_grad for param in model.parameters()}
+    try:
+        # temporarily disable gradients for all parameters
+        for param in model.parameters():
+            param.requires_grad = False
+        yield  # perform evaluation here
+    finally:
+        # restore the original requires_grad states
+        for param, requires_grad in requires_grad_backup.items():
+            param.requires_grad = requires_grad
 
 def evaluate(
     model: torch.nn.Module,
@@ -538,30 +572,41 @@ def evaluate(
     output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-    for param in model.parameters():
-        param.requires_grad = False
+    # for param in model.parameters():
+    #     param.requires_grad = False
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
     start_time = time.time()
-    for batch in data_loader:
-        batch = batch.to(device)
-        batch_dict = batch.to_dict()
-        output = model(
-            batch_dict,
-            training=False,
-            compute_force=output_args["forces"],
-            compute_virials=output_args["virials"],
-            compute_stress=output_args["stress"],
-        )
-        avg_loss, aux = metrics(batch, output)
-
+    # for batch in data_loader:
+    #     batch = batch.to(device)
+    #     batch_dict = batch.to_dict()
+    #     output = model(
+    #         batch_dict,
+    #         training=False,
+    #         compute_force=output_args["forces"],
+    #         compute_virials=output_args["virials"],
+    #         compute_stress=output_args["stress"],
+    #     )
+    #     avg_loss, aux = metrics(batch, output)
+    with preserve_grad_state(model):  # temporarily disable parameter gradients
+        for batch in data_loader:
+            batch = batch.to(device)
+            batch_dict = batch.to_dict()
+            output = model(
+                batch_dict,
+                training=False,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+            )
+            avg_loss, aux = metrics(batch, output)
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time
     metrics.reset()
 
-    for param in model.parameters():
-        param.requires_grad = True
+    # for param in model.parameters():
+    #     param.requires_grad = True
 
     return avg_loss, aux
 
