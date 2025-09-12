@@ -1,7 +1,7 @@
 import os
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional, ParamSpec, TypeVar, Union, overload
+from typing import Any, Literal, Optional, Union, overload
 
 import torch
 from ase import units
