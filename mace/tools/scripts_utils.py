@@ -732,6 +732,9 @@ def get_swa(
     )
     return swa, swas
 
+def freeze_module(module: torch.nn.Module, freeze: bool = True):
+    for p in module.parameters():
+        p.requires_grad = not freeze
 
 def get_params_options(
     args: argparse.Namespace, model: torch.nn.Module
@@ -739,37 +742,66 @@ def get_params_options(
     decay_interactions = {}
     no_decay_interactions = {}
     for name, param in model.interactions.named_parameters():
+        print(f"print model.interactions.named_parameters:{name}")
         if "linear.weight" in name or "skip_tp_full.weight" in name:
             decay_interactions[name] = param
         else:
             no_decay_interactions[name] = param
-
+    
+    print(f"print model:{model}")
+    print(f"print model.products:{model.products}")
+    print(f"print model.readouts:{model.readouts}")
+    
+    lr_params_factors = args.lr_params_factors
+    
+    if args.freeze:
+        if args.freeze >= 7:
+            lr_params_factors["readouts_lr_factor"] = 0.0 
+            #freeze_module(model.readouts, True)
+        if args.freeze >= 6:
+            lr_params_factors["products_lr_factor"] = 0.0 
+           # freeze_module(model.products, True)
+        if args.freeze >= 5:
+            lr_params_factors["interactions_lr_factor"] = 0.0 
+           # freeze_module(model.interactions, True)
+        if args.freeze >= 1:
+            lr_params_factors["embedding_lr_factor"] = 0.0 
+           # freeze_module(model.node_embedding, True)
+    
+    print(f"print lr_params_factors:{lr_params_factors}")
+    for name, param in model.named_parameters():
+        print(f"{name:40s} requires_grad={param.requires_grad}")
     param_options = dict(
         params=[
             {
                 "name": "embedding",
                 "params": model.node_embedding.parameters(),
                 "weight_decay": 0.0,
+                "lr":lr_params_factors.get("embedding_lr_factor", 1.0)*args.lr
             },
             {
                 "name": "interactions_decay",
                 "params": list(decay_interactions.values()),
                 "weight_decay": args.weight_decay,
+                "lr":lr_params_factors.get("interactions_lr_factor", 1.0)*args.lr
             },
             {
                 "name": "interactions_no_decay",
                 "params": list(no_decay_interactions.values()),
                 "weight_decay": 0.0,
+                "lr":lr_params_factors.get("interactions_lr_factor", 1.0)*args.lr
             },
             {
                 "name": "products",
                 "params": model.products.parameters(),
                 "weight_decay": args.weight_decay,
+                "lr":lr_params_factors.get("products_lr_factor", 1.0)*args.lr
             },
             {
                 "name": "readouts",
                 "params": model.readouts.parameters(),
                 "weight_decay": 0.0,
+                "lr":lr_params_factors.get("readouts_lr_factor", 1.0)*args.lr
             },
         ],
         lr=args.lr,

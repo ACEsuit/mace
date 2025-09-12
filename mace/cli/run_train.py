@@ -718,8 +718,21 @@ def run(args) -> None:
 
     # Optimizer
     param_options = get_params_options(args, model)
+    #print(f"Param options: {param_options}")
+    layers = list(model.children())
+    #print(f"Layers: {layers}")
+    param_list = list(model.named_parameters())
+    #print(f"Param list: {param_list.shape}")
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)
+    print("=======================check momentum=======================")
+    for name, p in model.named_parameters():
+        st = optimizer.state.get(p, {})
+        if st:
+            print(name, list(st.keys())) 
+    
+    for i, param_group in enumerate(optimizer.param_groups):
+        print(f"Param group {i}: lr = {param_group['lr']}")
     if args.device == "xpu":
         logging.info("Optimzing model and optimzier for XPU")
         model, optimizer = ipex.optimize(model, optimizer=optimizer)

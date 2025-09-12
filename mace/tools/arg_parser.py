@@ -534,7 +534,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
-
+   
     # Keys
     parser.add_argument(
         "--energy_key",
@@ -762,6 +762,16 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
+    )
+    parser.add_argument(
+        "--lr_params_factors", help="Learning rate factors to multiply on the original lr",
+        type=dict, default={"embedding_lr_factor":1.0, "interactions_lr_factor":1.0, "products_lr_factor":1.0, "readouts_lr_factor":1.0}
+    )
+    parser.add_argument(
+        "--freeze",
+        help="Freeze layers from 1 to N. Can be positive or negative, e.g. -1 means the last layer is frozen. 0 or None means all layers are active and is a default setting",
+        type=int,
+        default=None,
     )
     parser.add_argument(
         "--amsgrad",
