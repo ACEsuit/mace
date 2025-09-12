@@ -753,6 +753,17 @@ def test_mace_mp_stresses(model="medium", device="cpu"):
     assert np.allclose(stress, stresses.sum(axis=0), atol=1e-6)
 
 
+def test_mace_mp_energies(model="medium", device="cpu"):
+    atoms = build.bulk("Al", "fcc", a=4.05, cubic=True)
+    atoms = atoms.repeat((2, 2, 2))
+    mace_mp_model = mace_mp(model=model, device=device)
+    atoms.set_calculator(mace_mp_model)
+    energy = atoms.get_potential_energy()
+    energies = atoms.get_potential_energies()
+    assert energies.shape == (len(atoms),)
+    assert np.allclose(energy, energies.sum(), atol=1e-6)
+
+
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
 def test_mace_omol_cueq(device="cpu"):
 
