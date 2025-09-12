@@ -559,7 +559,7 @@ def test_calculator_committee(fitting_configs, trained_committee):
     assert np.allclose(grads[0], grads[1])
 
     E = at.get_potential_energy()
-    energies = at.calc.results["energies"]
+    energies = at.calc.results["energy_comm"]
     energies_var = at.calc.results["energy_var"]
     forces_var = np.var(at.calc.results["forces_comm"], axis=0)
     assert np.allclose(E, np.mean(energies))

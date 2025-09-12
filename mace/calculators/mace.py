@@ -453,11 +453,11 @@ class MACECalculator(Calculator):
                 ret_tensors["forces"][i] = out["forces"].detach()
                 if out["stress"] is not None:
                     ret_tensors["stress"][i] = out["stress"].detach()
-                if out["atomic_stresses"] is not None:
+                if out.get("atomic_stresses") is not None:
                     ret_tensors.setdefault("atomic_stresses", []).append(
                         out["atomic_stresses"].detach()
                     )
-                if out["atomic_virials"] is not None:  # remove virials
+                if out.get("atomic_virials") is not None:  # remove virials
                     ret_tensors.setdefault(
                         "atomic_virials", []
                     ).append(  # remove virials
