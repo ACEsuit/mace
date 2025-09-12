@@ -336,53 +336,28 @@ class MACECalculator(Calculator):
             state.append("info")
         return state
 
-    def _create_result_tensors(
-        self, model_type: str, num_models: int, num_atoms: int,
-        compute_atomic_stresses: bool
-    ) -> dict:
-        """
-        Create tensors to store the results of the committee
-        :param model_type: str, type of model to load
-            Options: [MACE, DipoleMACE, EnergyDipoleMACE]
-        :param num_models: int, number of models in the committee
-        :return: tuple of torch tensors
-        """
+    def _create_result_tensors(self, num_models: int, num_atoms: int, out) -> dict:
+        # unfortunately, code is expecting shape that isn't always same as underlying model
+        # output tensor shape, e.g. stress is returned as 1x3x3 and we want 3x3
+        tensor_shapes = {
+            "energy": [],
+            "node_energy": [num_atoms],
+            "forces": [num_atoms, 3],
+            "stress": [3, 3],
+            "atomic_stresses": [num_atoms, 3, 3],
+            "atomic_virials": [num_atoms, 3, 3],
+            "dipole": [3],
+            "charges": [num_atoms],
+            "polarizability": [3, 3],
+            "polarizability_sh": [6],
+        }
         dict_of_tensors = {}
-
-        if model_type in ["MACE", "EnergyDipoleMACE"]:
-            energy = torch.zeros(num_models, device=self.device)
-            node_energy = torch.zeros(num_models, num_atoms, device=self.device)
-            forces = torch.zeros(num_models, num_atoms, 3, device=self.device)
-            stress = torch.zeros(num_models, 3, 3, device=self.device)
-            dict_of_tensors.update(
-                {
-                    "energy": energy,
-                    "node_energy": node_energy,
-                    "forces": forces,
-                    "stress": stress,
-                }
-            )
-            if compute_atomic_stresses:
-                atomic_stresses = torch.zeros(num_models, num_atoms, 3, 3, device=self.device)
-                atomic_virials = torch.zeros(num_models, num_atoms, 3, 3, device=self.device)
-                dict_of_tensors.update({"atomic_stresses": atomic_stresses,
-                                        "atomic_virials": atomic_virials})
-
-        if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
-            dipole = torch.zeros(num_models, 3, device=self.device)
-            dict_of_tensors.update({"dipole": dipole})
-
-        if model_type in ["DipolePolarizabilityMACE"]:
-            charges = torch.zeros(num_models, num_atoms, device=self.device)
-            polarizability = torch.zeros(num_models, 3, 3, device=self.device)
-            polarizability_sh = torch.zeros(num_models, 6, device=self.device)
-            dict_of_tensors.update(
-                {
-                    "charges": charges,
-                    "polarizability": polarizability,
-                    "polarizability_sh": polarizability_sh,
-                }
-            )
+        for key in out:
+            if key not in tensor_shapes or out.get(key) is None:
+                continue
+            shape = [num_models] + tensor_shapes[key]
+            print("BOB", key, "ret_tensors shape", shape, "from tensor shape", list(out[key].shape))
+            dict_of_tensors[key] = torch.zeros(*shape, device=self.device)
 
         return dict_of_tensors
 
@@ -443,9 +418,6 @@ class MACECalculator(Calculator):
             compute_stress = False
 
         # copy from output of model() call to ret_tensors
-        ret_tensors = self._create_result_tensors(
-            self.model_type, self.num_models, len(atoms), self.compute_atomic_stresses
-        )
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
             out = model(
@@ -455,26 +427,17 @@ class MACECalculator(Calculator):
                 compute_edge_forces=self.compute_atomic_stresses,
                 compute_atomic_stresses=self.compute_atomic_stresses,
             )
-            for key in [
-                "energy",
-                "node_energy",
-                "forces",
-                "stress",
-                "atomic_stresses",
-                "atomic_virials",
-                "dipole",
-                "charges",
-                "polarizability",
-                "polarizability_sh",
-            ]:
+            if i == 0:
+                ret_tensors = self._create_result_tensors(self.num_models, len(atoms), out)
+            for key in ret_tensors:
                 if out.get(key) is not None:
                     ret_tensors[key][i] = out[key].detach()
 
         # covert from ret_tensors to calculator results dict
         self.results = {}
-        is_scalar = set(["energy"])
-        store_ensemble = set(["energy", "forces", "stress", "dipole"])
-        for res_key, ret_key, unit_conv in [
+        scalar_tensors = set(["energy"])
+        results_store_ensemble = set(["energy", "forces", "stress", "dipole"])
+        for results_key, ret_key, unit_conv in [
             ("energy", "energy", self.energy_units_to_eV),
             ("node_energy", "node_energy", self.energy_units_to_eV),
             ("forces", "forces", self.energy_units_to_eV / self.length_units_to_A),
@@ -488,24 +451,24 @@ class MACECalculator(Calculator):
         ]:
             if ret_tensors.get(ret_key) is not None:
                 data = torch.mean(ret_tensors[ret_key], dim=0).cpu()
-                if res_key in is_scalar:
+                if ret_key in scalar_tensors:
                     data = data.item()
                 else:
                     data = data.numpy()
-                self.results[res_key] = data * unit_conv
+                self.results[results_key] = data * unit_conv
 
-                if self.num_models > 1 and res_key in store_ensemble:
-                    data = ret_tensors[res_key].cpu().numpy()
+                if self.num_models > 1 and results_key in results_store_ensemble:
+                    data = ret_tensors[results_key].cpu().numpy()
                     data *= unit_conv
-                    self.results[res_key + "_comm"] = data
+                    self.results[results_key + "_comm"] = data
 
-                    data = torch.var(ret_tensors[res_key], dim=0, unbiased=False).cpu()
-                    if res_key in is_scalar:
+                    data = torch.var(ret_tensors[results_key], dim=0, unbiased=False).cpu()
+                    if ret_key in scalar_tensors:
                         data = data.item()
                     else:
                         data = data.numpy()
                     data *= unit_conv
-                    self.results[res_key + "_var"] = data
+                    self.results[results_key + "_var"] = data
 
         # special cases
         if self.results.get("energy") is not None:
