@@ -16,7 +16,7 @@ os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import numpy as np
 import torch
-from ase.calculators.calculator import Calculator, all_changes
+from ase.calculators.calculator import Calculator, all_changes, equal
 from ase.stress import full_3x3_to_voigt_6_stress
 from e3nn import o3
 
@@ -71,7 +71,7 @@ class MACECalculator(Calculator):
         default_dtype: str, default dtype of model
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
-                    Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+                    Options: [MACE, DipoleMACE, EnergyDipoleMAC, MACEField]
 
     Dipoles are returned in units of Debye
     """
@@ -92,11 +92,12 @@ class MACECalculator(Calculator):
         fullgraph=True,
         enable_cueq=False,
         enable_oeq=False,
+        electric_field=torch.zeros(3),
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
         if enable_cueq or enable_oeq:
-            assert model_type == "MACE", "CuEq only supports MACE models"
+            assert model_type in ["MACE", "MACEField"], "CuEq only supports MACE models"
             if compile_mode is not None:
                 logging.warning(
                     "CuEq or Oeq does not support torch.compile, setting compile_mode to None"
@@ -171,9 +172,21 @@ class MACECalculator(Calculator):
                 "stress",
                 "dipole",
             ]
+        elif model_type == "MACEField":
+            self.implemented_properties = [
+                "energy",
+                "free_energy",
+                "node_energy",
+                "forces",
+                "stress",
+                "polarization",
+                "becs",
+                "polarizability",
+            ]
+            self.electric_field = electric_field
         else:
             raise ValueError(
-                f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
+                f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE, MACEField], {model_type} not supported"
             )
 
         if model_paths is not None:
@@ -217,6 +230,18 @@ class MACECalculator(Calculator):
                 )
             elif model_type == "DipoleMACE":
                 self.implemented_properties.extend(["dipole_var"])
+            elif model_type == "MACEField":
+                self.implemented_properties.extend(
+                    [
+                        "energies",
+                        "energy_var",
+                        "forces_comm",
+                        "stress_var",
+                        "polarization_var",
+                        "becs_var",
+                        "polarizability_var",
+                    ]
+                )
 
         if compile_mode is not None:
             print(f"Torch compile is enabled with mode: {compile_mode}")
@@ -327,7 +352,11 @@ class MACECalculator(Calculator):
             list: A list of changes detected in the system.
         """
         state = super().check_state(atoms, tol=tol)
-        if (not state) and (self.atoms.info != atoms.info):
+        if (not state) and (
+            not equal(
+                getattr(self.atoms, "info", {}), getattr(atoms, "info", {}), atol=tol
+            )
+        ):
             state.append("info")
         return state
 
@@ -342,7 +371,7 @@ class MACECalculator(Calculator):
         :return: tuple of torch tensors
         """
         dict_of_tensors = {}
-        if model_type in ["MACE", "EnergyDipoleMACE"]:
+        if model_type in ["MACE", "EnergyDipoleMACE", "MACEField"]:
             energies = torch.zeros(num_models, device=self.device)
             node_energy = torch.zeros(num_models, num_atoms, device=self.device)
             forces = torch.zeros(num_models, num_atoms, 3, device=self.device)
@@ -367,6 +396,17 @@ class MACECalculator(Calculator):
                     "charges": charges,
                     "polarizability": polarizability,
                     "polarizability_sh": polarizability_sh,
+                }
+            )
+        if model_type == "MACEField":
+            polarization = torch.zeros(num_models, 3, device=self.device)
+            becs = torch.zeros(num_models, num_atoms, 3, 3, device=self.device)
+            polarizability = torch.zeros(num_models, 3, 3, device=self.device)
+            dict_of_tensors.update(
+                {
+                    "polarization": polarization,
+                    "becs": becs,
+                    "polarizability": polarizability,
                 }
             )
         return dict_of_tensors
@@ -416,7 +456,7 @@ class MACECalculator(Calculator):
 
         batch_base = self._atoms_to_batch(atoms)
 
-        if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+        if self.model_type in ["MACE", "EnergyDipoleMACE", "MACEField"]:
             batch = self._clone_batch(batch_base)
             node_heads = batch["head"][batch["batch"]]
             num_atoms_arange = torch.arange(batch["positions"].shape[0])
@@ -427,19 +467,41 @@ class MACECalculator(Calculator):
         else:
             compute_stress = False
 
+        if self.model_type == "MACEField":
+            compute_polarization = True
+            compute_becs = True
+            compute_polarizability = True
+            batch_base["electric_field"] = torch.tensor(
+                self.electric_field, dtype=next(self.models[0].parameters()).dtype
+            )
+
         ret_tensors = self._create_result_tensors(
             self.model_type, self.num_models, len(atoms)
         )
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
-            out = model(
-                batch.to_dict(),
-                compute_stress=compute_stress,
-                training=self.use_compile,
-                compute_edge_forces=self.compute_atomic_stresses,
-                compute_atomic_stresses=self.compute_atomic_stresses,
-            )
-            if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+            if self.model_type == "MACEField":
+                out = model(
+                    batch.to_dict(),
+                    compute_force=True,
+                    compute_stress=compute_stress,
+                    compute_polarization=compute_polarization,
+                    compute_becs=compute_becs,
+                    compute_polarizability=compute_polarizability,
+                    electric_field=self.electric_field,
+                    training=True,
+                    compute_edge_forces=self.compute_atomic_stresses,
+                    compute_atomic_stresses=self.compute_atomic_stresses,
+                )
+            else:
+                out = model(
+                    batch.to_dict(),
+                    compute_stress=compute_stress,
+                    training=self.use_compile,
+                    compute_edge_forces=self.compute_atomic_stresses,
+                    compute_atomic_stresses=self.compute_atomic_stresses,
+                )
+            if self.model_type in ["MACE", "EnergyDipoleMACE", "MACEField"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
                 ret_tensors["forces"][i] = out["forces"].detach()
@@ -464,9 +526,13 @@ class MACECalculator(Calculator):
                     ret_tensors.setdefault("atomic_virials", []).append(
                         out["atomic_virials"].detach()
                     )
+            if self.model_type == "MACEField":
+                ret_tensors["polarization"][i] = out["polarization"].detach()
+                ret_tensors["becs"][i] = out["becs"].detach()
+                ret_tensors["polarizability"][i] = out["polarizability"].detach()
 
         self.results = {}
-        if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+        if self.model_type in ["MACE", "EnergyDipoleMACE", "MACEField"]:
             self.results["energy"] = (
                 torch.mean(ret_tensors["energies"], dim=0).cpu().item()
                 * self.energy_units_to_eV
@@ -551,6 +617,44 @@ class MACECalculator(Calculator):
                 torch.mean(ret_tensors["polarizability_sh"], dim=0).cpu().numpy()
             )
 
+        if self.model_type == "MACEField":
+            self.results["polarization"] = (
+                torch.mean(ret_tensors["polarization"], dim=0).cpu().numpy()
+                * self.energy_units_to_eV
+                / self.length_units_to_A**2
+            )
+            self.results["becs"] = (
+                torch.mean(ret_tensors["becs"], dim=0).view(-1, 9).cpu().numpy()
+            )
+            self.results["polarizability"] = (
+                torch.mean(ret_tensors["polarizability"], dim=0)
+                .view(-1, 9)
+                .cpu()
+                .numpy()
+                * self.length_units_to_A
+            )
+            if self.num_models > 1:
+                self.results["polarization_var"] = (
+                    torch.var(ret_tensors["polarization"], dim=0, unbiased=False)
+                    .cpu()
+                    .numpy()
+                    * self.energy_units_to_eV
+                    / self.length_units_to_A**2
+                )
+                self.results["becs_var"] = (
+                    torch.var(ret_tensors["becs"], dim=0, unbiased=False)
+                    .view(-1, 9)
+                    .cpu()
+                    .numpy()
+                )
+                self.results["polarizability_var"] = (
+                    torch.var(ret_tensors["polarizability"], dim=0, unbiased=False)
+                    .view(-1, 9)
+                    .cpu()
+                    .numpy()
+                    * self.length_units_to_A
+                )
+
     def get_dielectric_derivatives(self, atoms=None):
         if atoms is None and self.atoms is None:
             raise ValueError("atoms not set")
@@ -591,7 +695,7 @@ class MACECalculator(Calculator):
             raise ValueError("atoms not set")
         if atoms is None:
             atoms = self.atoms
-        if self.model_type != "MACE":
+        if self.model_type not in ["MACE", "MACEField"]:
             raise NotImplementedError("Only implemented for MACE models")
         batch = self._atoms_to_batch(atoms)
         hessians = [
@@ -619,8 +723,8 @@ class MACECalculator(Calculator):
             raise ValueError("atoms not set")
         if atoms is None:
             atoms = self.atoms
-        if self.model_type != "MACE":
-            raise NotImplementedError("Only implemented for MACE models")
+        if self.model_type not in ["MACE", "MACEField"]:
+            raise NotImplementedError("Only implemented for MACE and MACEField models")
         num_interactions = int(self.models[0].num_interactions)
         if num_layers == -1:
             num_layers = num_interactions
