@@ -9,8 +9,12 @@ class DefaultKeys(Enum):
     STRESS = "REF_stress"
     VIRIALS = "REF_virials"
     DIPOLE = "dipole"
+    POLARIZABILITY = "polarizability"
     HEAD = "head"
     CHARGES = "REF_charges"
+    TOTAL_CHARGE = "total_charge"
+    TOTAL_SPIN = "total_spin"
+    ELEC_TEMP = "elec_temp"
 
     @staticmethod
     def keydict() -> dict[str, str]:

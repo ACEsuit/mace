@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import List, Tuple, Union
 
 import ase.data
@@ -51,7 +53,13 @@ class SelectionSettings:
     filtering_type: FilteringType = FilteringType.COMBINATIONS
     weight_ft: float = 1.0
     weight_pt: float = 1.0
+    allow_random_padding: bool = True
     seed: int = 42
+
+
+def str_to_list(s: str) -> List[int]:
+    assert isinstance(s, str), "Input must be a string"
+    return ast.literal_eval(s)
 
 
 def parse_args() -> argparse.Namespace:
@@ -134,6 +142,18 @@ def parse_args() -> argparse.Namespace:
         help="weight for the pretraining set",
         type=float,
         default=1.0,
+    )
+    parser.add_argument(
+        "--atomic_numbers",
+        help="list of atomic numbers to filter the configurations",
+        type=str_to_list,
+        default=None,
+    )
+    parser.add_argument(
+        "--disallow_random_padding",
+        help="do not allow random padding of the configurations to match the number of samples",
+        action="store_false",
+        dest="allow_random_padding",
     )
     parser.add_argument("--seed", help="random seed", type=int, default=42)
     return parser.parse_args()
@@ -356,7 +376,10 @@ def _maybe_save_descriptors(
     Also, delete the descriptors from the atoms objects.
     """
     if all("mace_descriptors" in x.info for x in atoms):
-        descriptor_save_path = output_path.replace(".xyz", "_descriptors.npy")
+        output_path = Path(output_path)
+        descriptor_save_path = output_path.parent / (
+            output_path.stem + "_descriptors.npy"
+        )
         logging.info(f"Saving descriptors at {descriptor_save_path}")
         descriptors_list = [x.info["mace_descriptors"] for x in atoms]
         np.save(descriptor_save_path, descriptors_list, allow_pickle=True)
@@ -382,6 +405,7 @@ def _subsample_data(
     num_samples: int | None,
     subselect: SubselectType,
     descriptors_path: str | None,
+    allow_random_padding: bool,
     calc: MACECalculator | None,
 ) -> List[ase.Atoms]:
     if num_samples is None or num_samples == len(filtered_atoms):
@@ -389,7 +413,7 @@ def _subsample_data(
             f"No subsampling, keeping all {len(filtered_atoms)} filtered configurations"
         )
         return filtered_atoms
-    if num_samples > len(filtered_atoms):
+    if num_samples > len(filtered_atoms) and allow_random_padding:
         num_sample_randomly = num_samples - len(filtered_atoms)
         logging.info(
             f"Number of configurations after filtering {len(filtered_atoms)} "
@@ -409,9 +433,14 @@ def _subsample_data(
             calc,
             full_data_length=len(filtered_atoms) + len(remaining_atoms),
         )
-        logging.info("Selecting configurations using Farthest Point Sampling")
+        logging.info(
+            f"Selecting {num_samples} configurations out of {len(filtered_atoms)} using Farthest Point Sampling"
+        )
         return _maybe_fps(filtered_atoms, num_samples)
     if subselect == SubselectType.RANDOM:
+        logging.info(
+            f"Subselecting {num_samples} from filtered {len(filtered_atoms)} using random sampling"
+        )
         return _get_random_configs(num_samples, filtered_atoms)
     raise ValueError(f"Invalid subselect type: {subselect}")
 
@@ -454,8 +483,14 @@ def select_samples(
         settings.num_samples,
         settings.subselect,
         settings.descriptors,
+        settings.allow_random_padding,
         calc,
     )
+    if ase.io.formats.filetype(settings.output, read=False) != "extxyz":
+        raise ValueError(
+            f"filename '{settings.output}' does no have "
+            "suffix compatible with extxyz format"
+        )
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(
@@ -472,15 +507,15 @@ def select_samples(
     )
 
     logging.info("Saving the selected configurations")
-    ase.io.write(settings.output, subsampled_atoms, format="extxyz")
+    ase.io.write(settings.output, subsampled_atoms)
 
     logging.info("Saving a combined XYZ file")
     atoms_fps_pt_ft = subsampled_atoms + atoms_list_ft
 
+    output = Path(settings.output)
     ase.io.write(
-        settings.output.replace(".xyz", "_combined.xyz"),
+        output.parent / (output.stem + "_combined" + output.suffix),
         atoms_fps_pt_ft,
-        format="extxyz",
     )
 
 

@@ -6,9 +6,12 @@ from .blocks import (
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
     InteractionBlock,
+    LinearDipolePolarReadoutBlock,
     LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
     LinearReadoutBlock,
+    NonLinearBiasReadoutBlock,
+    NonLinearDipolePolarReadoutBlock,
     NonLinearDipoleReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
@@ -17,9 +20,11 @@ from .blocks import (
     RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticInteractionBlock,
     RealAgnosticResidualInteractionBlock,
+    RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
 )
 from .loss import (
+    DipolePolarLoss,
     DipoleSingleLoss,
     UniversalLoss,
     WeightedEnergyForcesDipoleLoss,
@@ -30,12 +35,20 @@ from .loss import (
     WeightedForcesLoss,
     WeightedHuberEnergyForcesStressLoss,
 )
-from .models import MACE, AtomicDipolesMACE, EnergyDipolesMACE, ScaleShiftMACE
+from .models import (
+    MACE,
+    AtomicDielectricMACE,
+    AtomicDipolesMACE,
+    EnergyDipolesMACE,
+    ScaleShiftMACE,
+)
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
 from .utils import (
     compute_avg_num_neighbors,
+    compute_dielectric_gradients,
     compute_fixed_charge_dipole,
+    compute_fixed_charge_dipole_polar,
     compute_mean_rms_energy_forces,
     compute_mean_std_atomic_inter_energy,
     compute_rms_dipoles,
@@ -48,6 +61,15 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
     "RealAgnosticDensityInteractionBlock": RealAgnosticDensityInteractionBlock,
     "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
+    "RealAgnosticResidualNonLinearInteractionBlock": RealAgnosticResidualNonLinearInteractionBlock,
+}
+
+readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
+    "LinearReadoutBlock": LinearReadoutBlock,
+    "LinearDipoleReadoutBlock": LinearDipoleReadoutBlock,
+    "NonLinearDipoleReadoutBlock": NonLinearDipoleReadoutBlock,
+    "NonLinearReadoutBlock": NonLinearReadoutBlock,
+    "NonLinearBiasReadoutBlock": NonLinearBiasReadoutBlock,
 }
 
 scaling_classes: Dict[str, Callable] = {
@@ -72,7 +94,9 @@ __all__ = [
     "EquivariantProductBasisBlock",
     "ScaleShiftBlock",
     "LinearDipoleReadoutBlock",
+    "LinearDipolePolarReadoutBlock",
     "NonLinearDipoleReadoutBlock",
+    "NonLinearDipolePolarReadoutBlock",
     "InteractionBlock",
     "NonLinearReadoutBlock",
     "PolynomialCutoff",
@@ -81,6 +105,7 @@ __all__ = [
     "MACE",
     "ScaleShiftMACE",
     "AtomicDipolesMACE",
+    "AtomicDielectricMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
@@ -97,4 +122,6 @@ __all__ = [
     "compute_avg_num_neighbors",
     "compute_statistics",
     "compute_fixed_charge_dipole",
+    "compute_fixed_charge_dipole_polar",
+    "compute_dielectric_gradients",
 ]

@@ -49,7 +49,17 @@ def update_keyspec_from_kwargs(
     keyspec: KeySpecification, keydict: Dict[str, str]
 ) -> KeySpecification:
     # convert command line style property_key arguments into a keyspec
-    infos = ["energy_key", "stress_key", "virials_key", "dipole_key", "head_key"]
+    infos = [
+        "energy_key",
+        "stress_key",
+        "virials_key",
+        "dipole_key",
+        "head_key",
+        "elec_temp_key",
+        "total_charge_key",
+        "polarizability_key",
+        "total_spin_key",
+    ]
     arrays = ["forces_key", "charges_key"]
     info_keys = {}
     arrays_keys = {}
@@ -86,7 +96,9 @@ def random_train_valid_split(
     assert 0.0 < valid_fraction < 1.0
 
     size = len(items)
-    train_size = size - int(valid_fraction * size)
+    # guarantee at least one validation, mostly for tests with tiny fitting databases
+    assert size > 1
+    train_size = min(size - int(valid_fraction * size), size - 1)
 
     indices = list(range(size))
     rng = np.random.default_rng(seed)
@@ -189,6 +201,8 @@ def test_config_types(
     test_by_ct = []
     all_cts = []
     for conf in test_configs:
+        if conf.head is None:
+            conf.head = ""
         config_type_name = conf.config_type + "_" + conf.head
         if config_type_name not in all_cts:
             all_cts.append(config_type_name)
@@ -206,12 +220,16 @@ def load_from_xyz(
     config_type_weights: Optional[Dict] = None,
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
+    no_data_ok: bool = False,
 ) -> Tuple[Dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
     energy_key = key_specification.info_keys["energy"]
     forces_key = key_specification.arrays_keys["forces"]
     stress_key = key_specification.info_keys["stress"]
     head_key = key_specification.info_keys["head"]
+    original_energy_key = energy_key
+    original_forces_key = forces_key
+    original_stress_key = stress_key
     if energy_key == "energy":
         logging.warning(
             "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'energy' to 'REF_energy'. You need to use --energy_key='REF_energy' to specify the chosen key name."
@@ -219,7 +237,9 @@ def load_from_xyz(
         key_specification.info_keys["energy"] = "REF_energy"
         for atoms in atoms_list:
             try:
+                # print("OK")
                 atoms.info["REF_energy"] = atoms.get_potential_energy()
+                # print("atoms.info['REF_energy']:", atoms.info["REF_energy"])
             except Exception as e:  # pylint: disable=W0703
                 logging.error(f"Failed to extract energy: {e}")
                 atoms.info["REF_energy"] = None
@@ -244,6 +264,32 @@ def load_from_xyz(
                 atoms.info["REF_stress"] = atoms.get_stress()
             except Exception as e:  # pylint: disable=W0703
                 atoms.info["REF_stress"] = None
+
+    final_energy_key = key_specification.info_keys["energy"]
+    final_forces_key = key_specification.arrays_keys["forces"]
+    final_dipole_key = key_specification.info_keys.get("dipole", "REF_dipole")
+    has_energy = any(final_energy_key in atoms.info for atoms in atoms_list)
+    has_forces = any(final_forces_key in atoms.arrays for atoms in atoms_list)
+    has_dipole = any(final_dipole_key in atoms.info for atoms in atoms_list)
+
+    if not has_energy and not has_forces and not has_dipole:
+        msg = f"None of '{final_energy_key}', '{final_forces_key}', and '{final_dipole_key}' found in '{file_path}'."
+        if no_data_ok:
+            logging.warning(msg + " Continuing because no_data_ok=True was passed in.")
+        else:
+            raise ValueError(
+                msg
+                + " Please change the key names in the command line arguments or ensure that the file contains the required data."
+            )
+    if not has_energy:
+        logging.warning(
+            f"No energies found with key '{final_energy_key}' in '{file_path}'. If this is unexpected, please change the key name in the command line arguments or ensure that the file contains the required data."
+        )
+    if not has_forces:
+        logging.warning(
+            f"No forces found with key '{final_forces_key}' in '{file_path}'. If this is unexpected, Please change the key name in the command line arguments or ensure that the file contains the required data."
+        )
+
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
 
@@ -283,6 +329,9 @@ def load_from_xyz(
         key_specification=key_specification,
         head_name=head_name,
     )
+    key_specification.info_keys["energy"] = original_energy_key
+    key_specification.arrays_keys["forces"] = original_forces_key
+    key_specification.info_keys["stress"] = original_stress_key
     return atomic_energies_dict, configs
 
 
@@ -342,6 +391,7 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["virials"] = data.virials
     grp["dipole"] = data.dipole
     grp["charges"] = data.charges
+    grp["polarizability"] = data.polarizability
     grp["head"] = data.head
 
 

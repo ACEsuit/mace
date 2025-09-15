@@ -54,6 +54,7 @@ def get_dataset_from_xyz(
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
+    no_data_ok: bool = False,
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """
     Load training, validation, and test datasets from xyz files.
@@ -69,6 +70,7 @@ def get_dataset_from_xyz(
         seed: Random seed for train/validation split
         keep_isolated_atoms: Whether to keep isolated atoms in the dataset
         head_name: Name of the head for multi-head models
+        no_data_ok: accept files that have no energy/force/stress data
 
     Returns:
         Tuple containing:
@@ -107,6 +109,7 @@ def get_dataset_from_xyz(
             extract_atomic_energies=True,  # Extract from all files to average
             keep_isolated_atoms=keep_isolated_atoms,
             head_name=head_name,
+            no_data_ok=no_data_ok,
         )
         all_train_configs.extend(train_configs)
 
@@ -221,8 +224,8 @@ def print_git_commit():
 
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
-    if model.__class__.__name__ != "ScaleShiftMACE":
-        return {"error": "Model is not a ScaleShiftMACE model"}
+    if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES"]:
+        return {"error": "Model is not a ScaleShiftMACE or MACELES model"}
 
     def radial_to_name(radial_type):
         if radial_type == "BesselBasis":
@@ -250,7 +253,6 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         if model.num_interactions.item() > 1
         else 1
     )
-    mlp_irreps = o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e")
     try:
         correlation = (
             len(model.products[0].symmetric_contractions.contractions[0].weights) + 1
@@ -267,7 +269,12 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "num_interactions": model.num_interactions.item(),
         "num_elements": len(model.atomic_numbers),
         "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
-        "MLP_irreps": (mlp_irreps if model.num_interactions.item() > 1 else 1),
+        "edge_irreps": model.edge_irreps if hasattr(model, "edge_irreps") else None,
+        "MLP_irreps": (
+            o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e")
+            if model.num_interactions.item() > 1
+            else 1
+        ),
         "gate": (
             model.readouts[-1]  # pylint: disable=protected-access
             .non_linearity._modules["acts"][0]
@@ -275,6 +282,23 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             if model.num_interactions.item() > 1
             else None
         ),
+        "use_reduced_cg": (
+            model.use_reduced_cg if hasattr(model, "use_reduced_cg") else False
+        ),
+        "use_so3": model.use_so3 if hasattr(model, "use_so3") else False,
+        "use_agnostic_product": (
+            model.use_agnostic_product
+            if hasattr(model, "use_agnostic_product")
+            else False
+        ),
+        "use_last_readout_only": (
+            model.use_last_readout_only
+            if hasattr(model, "use_last_readout_only")
+            else False
+        ),
+        "use_embedding_readout": (hasattr(model, "embedding_readout")),
+        "readout_cls": model.readouts[-1].__class__,
+        "cueq_config": model.cueq_config if hasattr(model, "cueq_config") else None,
         "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
         "atomic_numbers": model.atomic_numbers,
@@ -282,6 +306,10 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "radial_type": radial_to_name(
             model.radial_embedding.bessel_fn.__class__.__name__
         ),
+        "embedding_specs": (
+            model.embedding_specs if hasattr(model, "embedding_specs") else None
+        ),
+        "apply_cutoff": model.apply_cutoff if hasattr(model, "apply_cutoff") else True,
         "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
         "distance_transform": radial_to_transform(model.radial_embedding),
@@ -289,6 +317,10 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "atomic_inter_shift": shift.cpu().numpy(),
         "heads": heads,
     }
+    if model.__class__.__name__ == "AtomicDielectricMACE":
+        config["use_polarizability"] = model.use_polarizability
+        config["only_dipole"] = False  # model.only_dipole
+        config["gate"] = torch.nn.functional.silu
     return config
 
 
@@ -599,6 +631,11 @@ def get_loss_fn(
         loss_fn = modules.DipoleSingleLoss(
             dipole_weight=args.dipole_weight,
         )
+    elif args.loss == "dipole_polar":
+        loss_fn = modules.DipolePolarLoss(
+            dipole_weight=args.dipole_weight,
+            polarizability_weight=args.polarizability_weight,
+        )
     elif args.loss == "energy_forces_dipole":
         assert dipole_only is False and compute_dipole is True
         loss_fn = modules.WeightedEnergyForcesDipoleLoss(
@@ -648,6 +685,14 @@ def get_swa(
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
         )
+    elif args.loss == "dipole_polar":
+        loss_fn_energy = modules.DipolePolarLoss(
+            dipole_weight=args.swa_dipole_weight,
+            polarizability_weight=args.swa_polarizability_weight,
+        )
+        logging.info(
+            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, dipole weight : {args.swa_dipole_weight}, polarizability weight : {args.swa_polarizability_weight}, and learning rate : {args.swa_lr}"
+        )
     elif args.loss == "energy_forces_dipole":
         loss_fn_energy = modules.WeightedEnergyForcesDipoleLoss(
             args.swa_energy_weight,
@@ -677,16 +722,14 @@ def get_swa(
         )
 
     # If using soft-freeze, use a custom scheduler with scaled lrs
-
-    use_soft_freeze = bool(
+    use_soft_freeze_swa = bool(
         args.soft_freeze and args.soft_freeze_factor and args.soft_freeze_swa
     )
-    if use_soft_freeze:
-        scheduler_cls = CustomSWALR
-        logging.info("--soft_freeze_swa detected, using soft-freezing for Stage Two")
-    else:
-        scheduler_cls = SWALR
-        logging.info("Using uniform lr_swa for Stage Two")
+    scheduler_cls = CustomSWALR if use_soft_freeze_swa else SWALR
+    logging.info(
+        "Using %s for Stage Two",
+        "soft-freezing" if use_soft_freeze_swa else "uniform lr_swa",
+    )
 
     swa = SWAContainer(
         model=AveragedModel(model),
@@ -733,11 +776,7 @@ def get_params_options(
                 args.lr * args.soft_freeze_factor if i <= num_soft else args.lr
             )
     else:
-        logging.info(
-            "Soft freeze skipped (soft_freeze=%s, soft_freeze_factor=%s)",
-            args.soft_freeze,
-            args.soft_freeze_factor,
-        )
+        logging.info("Soft freeze skipped.")
 
     param_groups = [
         {
@@ -771,6 +810,34 @@ def get_params_options(
             "lr": layer_lrs.get("readouts", args.lr),
         },
     ]
+
+    if hasattr(model, "joint_embedding") and model.joint_embedding is not None:
+        param_groups.append(
+            {
+                "name": "joint_embedding",
+                "params": model.joint_embedding.parameters(),
+                "weight_decay": 0.0,
+                "lr": layer_lrs.get("joint_embedding", args.lr),
+            }
+        )
+    if hasattr(model, "embedding_readout") and model.embedding_readout is not None:
+        param_groups.append(
+            {
+                "name": "embedding_readout",
+                "params": model.embedding_readout.parameters(),
+                "weight_decay": 0.0,
+                "lr": layer_lrs.get("embedding_readout", args.lr),
+            }
+        )
+    if hasattr(model, "les_readouts") and model.les_readouts is not None:
+        param_groups.append(
+            {
+                "name": "les_readouts",
+                "params": model.les_readouts.parameters(),
+                "weight_decay": 0.0,
+                "lr": layer_lrs.get("les_readouts", args.lr),
+            }
+        )
 
     # Tag each parameter with its lr for logging
     for group in param_groups:

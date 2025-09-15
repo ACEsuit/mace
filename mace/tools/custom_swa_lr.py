@@ -12,7 +12,7 @@ class CustomSWALR(SWALR):
         self.anneal_strategy = kwargs.get("anneal_strategy", "linear")
         self.swa_lr = swa_lr
 
-        # Compute LR scaling ratios
+        # Compute lr scaling ratios
         max_lr = max(group["lr"] for group in optimizer.param_groups)
         self.lr_ratios = [group["lr"] / max_lr for group in optimizer.param_groups]
         self.base_lrs = [swa_lr * r for r in self.lr_ratios]

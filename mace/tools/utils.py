@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Union
 
 import numpy as np
@@ -164,3 +165,43 @@ class LAMMPS_MP(torch.autograd.Function):
         gout = torch.empty_like(grad)
         ctx.data.reverse_exchange(grad, gout, ctx.vec_len)
         return gout, None
+
+
+def get_cache_dir() -> Path:
+    # get cache dir from XDG_CACHE_HOME if set, otherwise appropriate default
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "mace"
+
+
+def filter_nonzero_weight(
+    batch,
+    quantity_l,
+    weight,
+    quantity_weight,
+    spread_atoms=False,
+    spread_quantity_vector=True,
+) -> float:
+    quantity = quantity_l[-1]
+    # repeat with interleaving for per-atom quantities
+    if spread_atoms:
+        weight = torch.repeat_interleave(
+            weight, batch.ptr[1:] - batch.ptr[:-1]
+        ).unsqueeze(-1)
+        quantity_weight = torch.repeat_interleave(
+            quantity_weight, batch.ptr[1:] - batch.ptr[:-1]
+        ).unsqueeze(-1)
+
+    # repeat for additional dimensions
+    if len(quantity.shape) > 1:
+        repeats = [1] + list(quantity.shape[1:])
+        view = [-1] + [1] * (len(quantity.shape) - 1)
+        weight = weight.view(*view).repeat(*repeats)
+        if spread_quantity_vector:
+            quantity_weight = quantity_weight.view(*view).repeat(*repeats)
+    filtered_q = quantity[weight * quantity_weight > 0]
+
+    if len(filtered_q) == 0:
+        quantity_l.pop()
+        return 0.0
+
+    quantity_l[-1] = filtered_q
+    return 1.0
