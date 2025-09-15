@@ -1075,9 +1075,9 @@ class AtomicDielectricMACE(torch.nn.Module):
             else:
                 node_dipoles = node_out[:, 1:4]
                 dipoles.append(node_dipoles)
-                #raise ValueError(
+                # raise ValueError(
                 #    "Polarizability is not used in this model, but it is required for the AtomicDielectricMACE."
-                #)
+                # )
         contributions_dipoles = torch.stack(
             dipoles, dim=-1
         )  # [n_nodes,3,n_contributions]

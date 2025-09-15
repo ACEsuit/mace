@@ -334,7 +334,9 @@ class MACECalculator(Calculator):
             state.append("info")
         return state
 
-    def _create_result_tensors(self, num_models: int, num_atoms: int, out) -> dict:
+    def _create_result_tensors(
+        self, num_models: int, num_atoms: int, batch, out: dict
+    ) -> dict:
         # unfortunately, code is expecting shape that isn't always same as underlying model
         # output tensor shape, e.g. stress is returned as 1x3x3 and we want 3x3
         tensor_shapes = {
@@ -354,17 +356,21 @@ class MACECalculator(Calculator):
             if key not in tensor_shapes or out.get(key) is None:
                 continue
             shape = [num_models] + tensor_shapes[key]
-            print(
-                "BOB",
-                key,
-                "ret_tensors shape",
-                shape,
-                "from tensor shape",
-                list(out[key].shape),
-            )
             dict_of_tensors[key] = torch.zeros(*shape, device=self.device)
 
-        return dict_of_tensors
+        node_e0 = None
+        if "node_energy" in out:
+            node_heads = batch["head"][batch["batch"]]
+            num_atoms_arange = torch.arange(batch["positions"].shape[0])
+            node_e0 = (
+                self.models[0]
+                .atomic_energies_fn(batch["node_attrs"])[num_atoms_arange, node_heads]
+                .detach()
+                .cpu()
+                .numpy()
+            )
+
+        return dict_of_tensors, node_e0
 
     def _atoms_to_batch(self, atoms):
         self.arrays_keys.update({self.charges_key: "charges"})
@@ -412,20 +418,12 @@ class MACECalculator(Calculator):
         batch_base = self._atoms_to_batch(atoms)
 
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
-            batch = self._clone_batch(batch_base)
-            node_heads = batch["head"][batch["batch"]]
-            num_atoms_arange = torch.arange(batch["positions"].shape[0])
-            node_e0 = (
-                self.models[0]
-                .atomic_energies_fn(batch["node_attrs"])[num_atoms_arange, node_heads]
-                .detach()
-                .cpu()
-                .numpy()
-            )
             compute_stress = not self.use_compile
         else:
             compute_stress = False
 
+        ret_tensors = None
+        node_e0 = None
         # copy from output of model() call to ret_tensors
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
@@ -437,12 +435,12 @@ class MACECalculator(Calculator):
                 compute_atomic_stresses=self.compute_atomic_stresses,
             )
             if i == 0:
-                ret_tensors = self._create_result_tensors(
-                    self.num_models, len(atoms), out
+                ret_tensors, node_e0 = self._create_result_tensors(
+                    self.num_models, len(atoms), batch, out
                 )
-            for key in ret_tensors:
+            for key, val in ret_tensors.items():
                 if out.get(key) is not None:
-                    ret_tensors[key][i] = out[key].detach()
+                    val[i] = out[key].detach()
 
         # covert from ret_tensors to calculator results dict
         self.results = {}
