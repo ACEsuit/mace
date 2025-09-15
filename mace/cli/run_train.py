@@ -31,6 +31,7 @@ from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
 from mace.tools.distributed_tools import init_distributed
+from mace.tools.freeze import freeze_layers, freeze_param
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -61,6 +62,7 @@ from mace.tools.scripts_utils import (
     get_optimizer,
     get_params_options,
     get_swa,
+    log_soft_freeze,
     print_git_commit,
     remove_pt_head,
     setup_wandb,
@@ -689,16 +691,6 @@ def run(args) -> None:
     logging.debug(model)
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
     logging.info("")
-    logging.info("===========OPTIMIZER INFORMATION===========")
-    logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
-    logging.info(f"Batch size: {args.batch_size}")
-    if args.ema:
-        logging.info(f"Using Exponential Moving Average with decay: {args.ema_decay}")
-    logging.info(
-        f"Number of gradient updates: {int(args.max_num_epochs*len(train_set)/args.batch_size)}"
-    )
-    logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
-    logging.info(loss_fn)
 
     # Cueq and OEQ conversion
     if args.enable_cueq and args.enable_oeq:
@@ -716,8 +708,39 @@ def run(args) -> None:
         assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
 
+
+    # Freeze layers or parameter groups
+    freeze, freeze_par = args.freeze, args.freeze_par
+    if freeze:
+        if freeze_par:
+            logging.info("Both --freeze and --freeze_par detected, using --freeze")
+        freeze_layers(model, freeze)
+    elif freeze_par:
+        freeze_param(model, freeze_par)
+
+
+    logging.info("")
+    logging.info("===========OPTIMIZER INFORMATION===========")
+    logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
+    logging.info(f"Batch size: {args.batch_size}")
+    if args.ema:
+        logging.info(f"Using Exponential Moving Average with decay: {args.ema_decay}")
+    logging.info(
+        f"Number of gradient updates: {int(args.max_num_epochs*len(train_set)/args.batch_size)}"
+    )
+    logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
+    logging.info(loss_fn)
+
+
     # Optimizer
     param_options = get_params_options(args, model)
+
+    def log_stage(stage, param_options, model):
+        logging.info(f"========== {stage} PARAMETERS ==========")
+        log_soft_freeze(param_options, model)
+
+    log_stage("STAGE ONE", param_options, model)
+
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)
     if args.device == "xpu":
@@ -733,7 +756,7 @@ def run(args) -> None:
     swas = [False]
     if args.swa:
         swa, swas = get_swa(args, model, optimizer, swas, dipole_only)
-
+        log_stage("STAGE TWO", param_options, model)
     checkpoint_handler = tools.CheckpointHandler(
         directory=args.checkpoints_dir,
         tag=tag,

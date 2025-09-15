@@ -8,7 +8,7 @@ import dataclasses
 import logging
 import time
 from collections import defaultdict
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -189,7 +189,12 @@ def train(
     logging.info("Started training, reporting errors on validation set")
     logging.info("Loss metrics on validation set")
     epoch = start_epoch
-
+    if swa:
+        log_epochs_freeze = set(
+            [0, 1, 2, 3, swa.start, swa.start + 1, swa.start + 2, swa.start + 3]
+        )
+    else:
+        log_epochs_freeze = set([0, 1, 2, 3])
     # log validation loss before _any_ training
     for valid_loader_name, valid_loader in valid_loaders.items():
         valid_loss_head, eval_metrics = evaluate(
@@ -334,9 +339,37 @@ def train(
                         keep_last = False or save_all_checkpoints
         if distributed:
             torch.distributed.barrier()
+        if epoch in log_epochs_freeze:
+            log_freeze_lr_train(model, optimizer)
         epoch += 1
 
     logging.info("Training complete")
+
+# Only logging this for the first 4 epochs for debug purposes
+def log_freeze_lr_train(model, optimizer):
+    # Checking gradients in the active layers
+    logging.debug("Checking gradients")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            if param.grad is None:
+                logging.warning(f"Parameter: {name}, Gradient is None")
+            else:
+                gradient_norm = torch.norm(param.grad).item()
+                logging.debug(f"Parameter: {name}, Gradient norm: {gradient_norm}")
+        else:
+            logging.debug(f"Parameter: {name}, Gradient norm: Frozen")
+
+    # Logging lrs used in each optimizer parameter group
+    logging.debug("Checking optimizer learning rates:")
+    for i, group in enumerate(optimizer.param_groups):
+        group_name = group.get("name", f"group_{i}")
+        lr = group.get("lr", "n/a")
+        weight_decay = group.get("weight_decay", "n/a")
+        num_params = len(group.get("params", []))
+
+        logging.debug(
+            f"'{group_name}': lr={lr:.2e} | weight_decay={weight_decay} | num_params={num_params}"
+        )
 
 
 def train_one_epoch(
@@ -531,6 +564,22 @@ def take_step_lbfgs(
     return loss, loss_dict
 
 
+# Keep parameters frozen/active after evaluation
+@contextmanager
+def preserve_grad_state(model):
+    # save the original requires_grad state for all parameters
+    requires_grad_backup = {param: param.requires_grad for param in model.parameters()}
+    try:
+        # temporarily disable gradients for all parameters
+        for param in model.parameters():
+            param.requires_grad = False
+        yield  # perform evaluation here
+    finally:
+        # restore the original requires_grad states
+        for param, requires_grad in requires_grad_backup.items():
+            param.requires_grad = requires_grad
+
+
 def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
@@ -538,30 +587,25 @@ def evaluate(
     output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-    for param in model.parameters():
-        param.requires_grad = False
-
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
     start_time = time.time()
-    for batch in data_loader:
-        batch = batch.to(device)
-        batch_dict = batch.to_dict()
-        output = model(
-            batch_dict,
-            training=False,
-            compute_force=output_args["forces"],
-            compute_virials=output_args["virials"],
-            compute_stress=output_args["stress"],
-        )
-        avg_loss, aux = metrics(batch, output)
+    with preserve_grad_state(model):  # temporarily disable parameter gradients
+        for batch in data_loader:
+            batch = batch.to(device)
+            batch_dict = batch.to_dict()
+            output = model(
+                batch_dict,
+                training=False,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+            )
+            avg_loss, aux = metrics(batch, output)
 
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time
     metrics.reset()
-
-    for param in model.parameters():
-        param.requires_grad = True
 
     return avg_loss, aux
 

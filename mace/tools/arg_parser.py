@@ -534,6 +534,38 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
+    parser.add_argument(
+        "--freeze",
+        help="Freeze layers [1..N]. Negative indices count from the end (e.g., -1 = last layer). 0 or None = no freeze.",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--freeze_par",
+        help="Freeze parameters [1..N]. Negative indices count from the end (e.g., -1 = last parameter). 0 or None = no freeze.",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--soft_freeze",
+        help="Soft-freeze layers [1..N]. If combined with full freezing, the count starts after freezing",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--soft_freeze_factor",
+        help="A fraction of --lr for soft-freeze",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--soft_freeze_swa",
+        "--soft_freeze_stage_two",
+        help="Apply soft-freezing to Stage Two, using the same soft_freeze_factor",
+        action="store_true",
+        default=False,
+        dest="soft_freeze_swa",
+    )
 
     # Keys
     parser.add_argument(

@@ -77,7 +77,7 @@ class AtomicData(torch_geometric.data.Data):
         elec_temp: Optional[torch.Tensor],  # [,]
         total_charge: Optional[torch.Tensor] = None,  # [,]
         total_spin: Optional[torch.Tensor] = None,  # [,]
-        pbc: Optional[torch.Tensor] = None, # [, 3]
+        pbc: Optional[torch.Tensor] = None,  # [, 3]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]

@@ -21,6 +21,7 @@ from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules, tools
 from mace.data import KeySpecification
+from mace.tools.custom_swa_lr import CustomSWALR
 from mace.tools.train import SWAContainer
 
 
@@ -719,9 +720,20 @@ def get_swa(
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight} and learning rate : {args.swa_lr}"
         )
+
+    # If using soft-freeze, use a custom scheduler with scaled lrs
+    use_soft_freeze_swa = bool(
+        args.soft_freeze and args.soft_freeze_factor and args.soft_freeze_swa
+    )
+    scheduler_cls = CustomSWALR if use_soft_freeze_swa else SWALR
+    logging.info(
+        "Using %s for Stage Two",
+        "soft-freezing" if use_soft_freeze_swa else "uniform lr_swa",
+    )
+
     swa = SWAContainer(
         model=AveragedModel(model),
-        scheduler=SWALR(
+        scheduler=scheduler_cls(
             optimizer=optimizer,
             swa_lr=args.swa_lr,
             anneal_epochs=1,
@@ -736,71 +748,146 @@ def get_swa(
 def get_params_options(
     args: argparse.Namespace, model: torch.nn.Module
 ) -> Dict[str, Any]:
-    decay_interactions = {}
-    no_decay_interactions = {}
-    for name, param in model.interactions.named_parameters():
-        if "linear.weight" in name or "skip_tp_full.weight" in name:
-            decay_interactions[name] = param
-        else:
-            no_decay_interactions[name] = param
 
-    param_options = dict(
-        params=[
-            {
-                "name": "embedding",
-                "params": model.node_embedding.parameters(),
-                "weight_decay": 0.0,
-            },
-            {
-                "name": "interactions_decay",
-                "params": list(decay_interactions.values()),
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "name": "interactions_no_decay",
-                "params": list(no_decay_interactions.values()),
-                "weight_decay": 0.0,
-            },
-            {
-                "name": "products",
-                "params": model.products.parameters(),
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "name": "readouts",
-                "params": model.readouts.parameters(),
-                "weight_decay": 0.0,
-            },
-        ],
-        lr=args.lr,
-        amsgrad=args.amsgrad,
-        betas=(args.beta, 0.999),
-    )
+    decay_interactions = {
+        name: param
+        for name, param in model.interactions.named_parameters()
+        if "linear.weight" in name or "skip_tp_full.weight" in name
+    }
+    no_decay_interactions = {
+        name: param
+        for name, param in model.interactions.named_parameters()
+        if name not in decay_interactions
+    }
+
+    use_soft_freeze = bool(args.soft_freeze and args.soft_freeze_factor)
+    num_soft = args.soft_freeze if use_soft_freeze else 0
+
+    # If using soft-freeze, assign lr by layer as defined by args.soft_freeze, and map them to optimizer parameter groups
+    layer_lrs = {}
+    if use_soft_freeze:
+        softfreeze_targets = [
+            (name, layer)
+            for name, layer in model.named_children()
+            if any(p.requires_grad for p in layer.parameters())
+        ]
+        for i, (name, layer) in enumerate(softfreeze_targets, 1):
+            layer_lrs[name] = (
+                args.lr * args.soft_freeze_factor if i <= num_soft else args.lr
+            )
+    else:
+        logging.info("Soft freeze skipped.")
+
+    param_groups = [
+        {
+            "name": "embedding",
+            "params": list(model.node_embedding.parameters()),
+            "weight_decay": 0.0,
+            "lr": layer_lrs.get("node_embedding", args.lr),
+        },
+        {
+            "name": "interactions_decay",
+            "params": list(decay_interactions.values()),
+            "weight_decay": args.weight_decay,
+            "lr": layer_lrs.get("interactions", args.lr),
+        },
+        {
+            "name": "interactions_no_decay",
+            "params": list(no_decay_interactions.values()),
+            "weight_decay": 0.0,
+            "lr": layer_lrs.get("interactions", args.lr),
+        },
+        {
+            "name": "products",
+            "params": list(model.products.parameters()),
+            "weight_decay": args.weight_decay,
+            "lr": layer_lrs.get("products", args.lr),
+        },
+        {
+            "name": "readouts",
+            "params": list(model.readouts.parameters()),
+            "weight_decay": 0.0,
+            "lr": layer_lrs.get("readouts", args.lr),
+        },
+    ]
+
     if hasattr(model, "joint_embedding") and model.joint_embedding is not None:
-        param_options["params"].append(
+        param_groups.append(
             {
                 "name": "joint_embedding",
                 "params": model.joint_embedding.parameters(),
                 "weight_decay": 0.0,
+                "lr": layer_lrs.get("joint_embedding", args.lr),
             }
         )
     if hasattr(model, "embedding_readout") and model.embedding_readout is not None:
-        param_options["params"].append(
+        param_groups.append(
             {
                 "name": "embedding_readout",
                 "params": model.embedding_readout.parameters(),
                 "weight_decay": 0.0,
+                "lr": layer_lrs.get("embedding_readout", args.lr),
             }
         )
     if hasattr(model, "les_readouts") and model.les_readouts is not None:
-        param_options["params"].append(
+        param_groups.append(
             {
                 "name": "les_readouts",
                 "params": model.les_readouts.parameters(),
                 "weight_decay": 0.0,
+                "lr": layer_lrs.get("les_readouts", args.lr),
             }
         )
-    return param_options
+
+    # Tag each parameter with its lr for logging
+    for group in param_groups:
+        for p in group["params"]:
+            if p.requires_grad:
+                p.lr = group["lr"]
+
+    return {
+        "params": param_groups,
+        "lr": args.lr,
+        "amsgrad": args.amsgrad,
+        "betas": (args.beta, 0.999),
+    }
+
+
+def log_soft_freeze(param_options, model: torch.nn.Module):
+
+    # Build map from param id to optimizer group info
+    param_to_group = {}
+    for group in param_options["params"]:
+        group_name = group.get("name", "[unnamed]")
+        weight_decay = group.get("weight_decay", "n/a")
+        for p in group["params"]:
+            param_to_group[id(p)] = {"group": group_name, "weight_decay": weight_decay}
+
+    # Walk through layers in order
+    for i, (layer_name, layer) in enumerate(model.named_children(), 1):
+        layer_params = list(layer.named_parameters())
+        header = f"Layer {i} '{layer_name}'" + (":" if layer_params else "")
+        logging.info(header)
+
+        for j, (param_name, param) in enumerate(layer_params, 1):
+            param_id = id(param)
+            group_info = param_to_group.get(param_id, {})
+            group_name = group_info.get("group", "[unknown group]")
+            weight_decay = group_info.get("weight_decay", "n/a")
+            lr = getattr(param, "lr", "n/a")
+
+            if not param.requires_grad:
+                status = "[frozen]"
+            elif isinstance(lr, float) and lr < param_options["lr"]:
+                status = "[soft-frozen]"
+            else:
+                status = "[active]"
+
+            lr_str = f"{lr:.2e}" if isinstance(lr, float) else str(lr)
+
+            logging.info(
+                f"  Param {j}: {status} {param_name} | lr={lr_str} | weight_decay={weight_decay} | optimizer group='{group_name}'"
+            )
 
 
 def get_optimizer(

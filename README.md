@@ -29,6 +29,7 @@
       - [Example usage in ASE](#example-usage-in-ase-1)
     - [Finetuning foundation models](#finetuning-foundation-models)
     - [Latest recommended foundation models](#latest-recommended-foundation-models)
+    - [MACE-freeze](#mace-freeze)
   - [Caching](#caching)
   - [Development](#development)
   - [References](#references)
@@ -320,6 +321,105 @@ mace_run_train \
 
 Other options are "medium" and "large", or the path to a foundation model.
 If you want to finetune another model, the model will be loaded from the path provided `--foundation_model=$path_model`, all the hypers will be extracted automatically.
+
+<a id="mace-freeze"></a>
+## MACE-freeze
+
+> [!Note]
+> If using MACE 0.3.13 with freezing and cuEquivariance acceleration, please update all cuEquivariance dependencies to 0.4.0.
+
+> [!Note]
+> When using the latest foundation models: MPA, OMAT, MATPES — the recommended starting point is --freeze=6
+
+
+**Installation**
+
+To install the MACE-freeze version of MACE, clone the mace-freeze branch into your work folder:
+```sh
+git clone -b mace-freeze https://github.com/7radians/mace-freeze.git
+pip install ./mace-freeze
+```
+### Full-freezing mode
+
+This functionality allows to freeze neural network layers/parameters for transfer learning or other applications. 
+
+**Usage**
+
+Use the `--freeze=<N>` to freeze the layers from the first one to N inclusive. Freezing a layer prevents its parameters from being updated during training. For example, to freeze the first 5 layers, provide a positive integer:
+
+```sh
+--freeze=5
+```
+
+To freeze the last N layers, provide a negative integer:
+
+```sh
+--freeze=-5
+```
+For more fine-grained control, the `--freeze_par` argument allows freezing by parameter tensors or vectors that form the model layers.
+The log file will contain the hierarchical list of the layers and named parameters of the model within them, which can be used to identify specific components to freeze.
+For example, to freeze the first 6 parameters of the model, use:
+
+```sh
+--freeze_par=6 
+```
+`--freeze_par` takes integer values and works in the same manner as `--freeze`, freezing from 1 to N (if positive) or the last N (if negative).
+
+**Note**
+
+- By default, MACE-freeze assumes all layers and parameters are trainable. This is equivalent to: `--freeze=0` or `--freeze_par=0`.
+- The `--freeze` and `--freeze_par` are mutually exclusive. If both are provided, only `--freeze` will take effect.
+- If you intend to use freezing as the sole fine-tuning strategy, ensure that `--multiheads_finetuning=False`.
+- Conversely, if you are using the multiheads fine-tuning method independently, either omit the --freeze argument or explicitly set `--freeze=0` in your training script.
+
+### Soft-freezing mode
+
+Soft-freezing provides a flexible approach to fine-tuning models by assigning a reduced learning rate to selected layers, rather than fully freezing them. This can be useful when adapting pretrained models, enabling a smooth transition between frozen and actively trained parameters.
+
+**Overview**
+
+Soft-freezing scales down the learning rate in a subset of layers using a multiplicative factor. This allows certain layers to update their weights more slowly than others, preserving learned representations while still allowing gradual adaptation. It can be used:
+- On its own.
+- In conjunction with layer freezing.
+- Alongside multi-head fine-tuning.
+
+**Configuration**
+- `--soft_freeze=<N>`: Specifies the number of layers to soft-freeze.
+- `--soft_freeze_factor=<float>`: A scaling factor between 0 and 1 applied to the base learning rate (`--lr`) for soft-frozen parameters.
+- `--soft_freeze_swa` will also apply the soft-freeze logic to the Stage Two training by applying `--soft_freeze_factor` scaling to `--lr_swa`. Omit this flag to make the Stage Two learning rate uniform across parameters.
+
+**Behavior with freezing**
+
+When combined with standard layer freezing (`--freeze`):
+- The first `--freeze` layers are fully frozen (i.e., excluded from optimization).
+- The soft-freezing begins immediately after the frozen layers. For example:
+`--freeze=5` and `--soft_freeze=1` will freeze layers 1–5, soft-freeze layer 6, and leave all subsequent layers fully trainable.
+
+When combined with parameter-level freezing (`--freeze_par`):
+- If a layer contains a mix of frozen and active parameters, the soft-freezing logic begins at the first layer with any active parameters.
+- A single layer can contain both soft-frozen and fully frozen parameters, depending on the granularity of the freeze.
+
+**Logging**
+
+During training, the structure of the model, including its layers and parameters, is printed to the logs in a hierarchical format. Each parameter is annotated with its learning rate, showing:
+- Fully frozen parameters (either showing the baseline `--lr` or n/a, as the learning rate is irrelevant for parameters that are not updated)
+- Soft-frozen parameters (lr = `--lr` × `--soft_freeze_factor`)
+- Actively trained parameters (lr = `--lr`)
+This detailed breakdown allows for informed decision-making about the fine-tuning strategy applied to each part of the model.
+
+### Referencing MACE-freeze
+If you use the freezing functionality, please cite [this paper](https://arxiv.org/abs/2502.15582): 
+<details> <summary>BibTeX</summary>
+@misc{radova2025freeze,
+      title={Fine-tuning foundation models of materials interatomic potentials with frozen transfer learning}, 
+      author={Mariia Radova and Wojciech G. Stark and Connor S. Allen and Reinhard J. Maurer and Albert P. Bartók},
+      year={2025},
+      eprint={2502.15582},
+      archivePrefix={arXiv},
+      primaryClass={cond-mat.mtrl-sci},
+      url={https://arxiv.org/abs/2502.15582}, 
+}
+</details>
 
 ## Caching
 
