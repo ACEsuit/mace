@@ -718,10 +718,10 @@ def run(args) -> None:
 
     # Optimizer
     param_options = get_params_options(args, model)
-    
+
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)
-    print("=======================check momentum=======================")
+    print("=======================Check momentum=======================")
     for name, p in model.named_parameters():
         st = optimizer.state.get(p, {})
         if st:
