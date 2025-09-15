@@ -1,3 +1,16 @@
+"""
+Benchmark inference performance of the MACE medium model on GPU.
+
+Run benchmarks:
+    pytest tests/test_benchmark.py --benchmark-save=<some name>
+
+To also include torch.compile benchmarks:
+    MACE_FULL_BENCH=1 pytest tests/test_benchmark.py --benchmark-save=<some name>
+
+Convert results to CSV:
+    python tests/test_benchmark.py > results.csv
+"""
+
 import json
 import os
 from pathlib import Path
