@@ -20,7 +20,7 @@ from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
 from e3nn import o3
 
-from mace import data
+from mace import data as mace_data
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import prepare
@@ -374,15 +374,15 @@ class MACECalculator(Calculator):
 
     def _atoms_to_batch(self, atoms):
         self.arrays_keys.update({self.charges_key: "charges"})
-        keyspec = data.KeySpecification(
+        keyspec = mace_data.KeySpecification(
             info_keys=self.info_keys, arrays_keys=self.arrays_keys
         )
-        config = data.config_from_atoms(
+        config = mace_data.config_from_atoms(
             atoms, key_specification=keyspec, head_name=self.head
         )
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[
-                data.AtomicData.from_config(
+                mace_data.AtomicData.from_config(
                     config,
                     z_table=self.z_table,
                     cutoff=self.r_max,
