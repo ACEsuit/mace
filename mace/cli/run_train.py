@@ -718,11 +718,7 @@ def run(args) -> None:
 
     # Optimizer
     param_options = get_params_options(args, model)
-    #print(f"Param options: {param_options}")
-    layers = list(model.children())
-    #print(f"Layers: {layers}")
-    param_list = list(model.named_parameters())
-    #print(f"Param list: {param_list.shape}")
+    
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)
     print("=======================check momentum=======================")
