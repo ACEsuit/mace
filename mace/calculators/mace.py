@@ -162,9 +162,7 @@ class MACECalculator(Calculator):
                 "stress",
             ]
             if kwargs.get("compute_atomic_stresses", False):
-                self.implemented_properties.extend(
-                    ["stresses", "virials"]
-                )
+                self.implemented_properties.extend(["stresses", "virials"])
                 self.compute_atomic_stresses = True
         if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
             self.implemented_properties.extend(["dipole"])
@@ -356,7 +354,14 @@ class MACECalculator(Calculator):
             if key not in tensor_shapes or out.get(key) is None:
                 continue
             shape = [num_models] + tensor_shapes[key]
-            print("BOB", key, "ret_tensors shape", shape, "from tensor shape", list(out[key].shape))
+            print(
+                "BOB",
+                key,
+                "ret_tensors shape",
+                shape,
+                "from tensor shape",
+                list(out[key].shape),
+            )
             dict_of_tensors[key] = torch.zeros(*shape, device=self.device)
 
         return dict_of_tensors
@@ -410,9 +415,13 @@ class MACECalculator(Calculator):
             batch = self._clone_batch(batch_base)
             node_heads = batch["head"][batch["batch"]]
             num_atoms_arange = torch.arange(batch["positions"].shape[0])
-            node_e0 = self.models[0].atomic_energies_fn(batch["node_attrs"])[
-                num_atoms_arange, node_heads
-            ].detach().cpu().numpy()
+            node_e0 = (
+                self.models[0]
+                .atomic_energies_fn(batch["node_attrs"])[num_atoms_arange, node_heads]
+                .detach()
+                .cpu()
+                .numpy()
+            )
             compute_stress = not self.use_compile
         else:
             compute_stress = False
@@ -428,7 +437,9 @@ class MACECalculator(Calculator):
                 compute_atomic_stresses=self.compute_atomic_stresses,
             )
             if i == 0:
-                ret_tensors = self._create_result_tensors(self.num_models, len(atoms), out)
+                ret_tensors = self._create_result_tensors(
+                    self.num_models, len(atoms), out
+                )
             for key in ret_tensors:
                 if out.get(key) is not None:
                     ret_tensors[key][i] = out[key].detach()
@@ -441,9 +452,17 @@ class MACECalculator(Calculator):
             ("energy", "energy", self.energy_units_to_eV),
             ("node_energy", "node_energy", self.energy_units_to_eV),
             ("forces", "forces", self.energy_units_to_eV / self.length_units_to_A),
-            ("stress", "stress", self.energy_units_to_eV / self.length_units_to_A ** 3),
-            ("stresses", "atomic_stresses", self.energy_units_to_eV / self.length_units_to_A ** 3),
-            ("virials", "atomic_virials", self.energy_units_to_eV / self.length_units_to_A ** 3),
+            ("stress", "stress", self.energy_units_to_eV / self.length_units_to_A**3),
+            (
+                "stresses",
+                "atomic_stresses",
+                self.energy_units_to_eV / self.length_units_to_A**3,
+            ),
+            (
+                "virials",
+                "atomic_virials",
+                self.energy_units_to_eV / self.length_units_to_A**3,
+            ),
             ("dipole", "dipole", 1.0),
             ("charges", "charges", 1.0),
             ("polarizability", "polarizability", 1.0),
@@ -462,7 +481,9 @@ class MACECalculator(Calculator):
                     data *= unit_conv
                     self.results[results_key + "_comm"] = data
 
-                    data = torch.var(ret_tensors[results_key], dim=0, unbiased=False).cpu()
+                    data = torch.var(
+                        ret_tensors[results_key], dim=0, unbiased=False
+                    ).cpu()
                     if ret_key in scalar_tensors:
                         data = data.item()
                     else:
@@ -479,8 +500,12 @@ class MACECalculator(Calculator):
         if self.results.get("stress") is not None:
             self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
         if self.results.get("stresses") is not None:
-            self.results["stresses"] = np.asarray([full_3x3_to_voigt_6_stress(stress) for stress in self.results["stresses"]])
-
+            self.results["stresses"] = np.asarray(
+                [
+                    full_3x3_to_voigt_6_stress(stress)
+                    for stress in self.results["stresses"]
+                ]
+            )
 
     def get_dielectric_derivatives(self, atoms=None):
         if atoms is None and self.atoms is None:
