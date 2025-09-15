@@ -343,10 +343,9 @@ def print_optimizer_info(optimizer, model):
         print(f"\n=== Param group {i} ===")
         print(f"  lr: {param_group.get('lr', None)}")
         print(f"  weight_decay: {param_group.get('weight_decay', None)}")
-        print(f"  other keys: {list(param_group.keys())}")  # 查看还保存了什么
+        print(f"  other keys: {list(param_group.keys())}") 
 
         for param in param_group["params"]:
-            # 找参数名（需要和 model.named_parameters() 对照）
             name = None
             for n, p in model.named_parameters():
                 if p is param:
@@ -572,24 +571,13 @@ def evaluate(
     output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-    # for param in model.parameters():
-    #     param.requires_grad = False
+
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
     start_time = time.time()
-    # for batch in data_loader:
-    #     batch = batch.to(device)
-    #     batch_dict = batch.to_dict()
-    #     output = model(
-    #         batch_dict,
-    #         training=False,
-    #         compute_force=output_args["forces"],
-    #         compute_virials=output_args["virials"],
-    #         compute_stress=output_args["stress"],
-    #     )
-    #     avg_loss, aux = metrics(batch, output)
-    with preserve_grad_state(model):  # temporarily disable parameter gradients
+
+    with preserve_grad_state(model):
         for batch in data_loader:
             batch = batch.to(device)
             batch_dict = batch.to_dict()
@@ -604,9 +592,6 @@ def evaluate(
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time
     metrics.reset()
-
-    # for param in model.parameters():
-    #     param.requires_grad = True
 
     return avg_loss, aux
 

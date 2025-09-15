@@ -721,14 +721,15 @@ def run(args) -> None:
 
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)
-    print("=======================Check momentum=======================")
+    logging.info("=== Layer learning rates ===")
     for name, p in model.named_parameters():
         st = optimizer.state.get(p, {})
         if st:
-            print(name, list(st.keys())) 
+            logging.info(f"Param: {name}: {list(st.keys())}")
     
     for i, param_group in enumerate(optimizer.param_groups):
-        print(f"Param group {i}: lr = {param_group['lr']}")
+        logging.info(f"Param group {i}: lr = {param_group['lr']}")
+
     if args.device == "xpu":
         logging.info("Optimzing model and optimzier for XPU")
         model, optimizer = ipex.optimize(model, optimizer=optimizer)
@@ -775,9 +776,6 @@ def run(args) -> None:
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
-    else:
-        for group in optimizer.param_groups:
-            group["lr"] = args.lr
 
     if args.lbfgs:
         logging.info("Switching optimizer to LBFGS")
