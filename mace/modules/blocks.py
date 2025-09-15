@@ -79,7 +79,6 @@ class LinearReadoutBlock(torch.nn.Module):
         return self.linear(x)  # [n_nodes, 1]
 
 
-@simplify_if_compile
 @compile_mode("script")
 class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
@@ -98,7 +97,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         self.linear_1 = Linear(
             irreps_in=irreps_in, irreps_out=self.hidden_irreps, cueq_config=cueq_config
         )
-        self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
+        self.non_linearity = simplify_if_compile(nn.Activation)(irreps_in=self.hidden_irreps, acts=[gate])
         self.linear_2 = Linear(
             irreps_in=self.hidden_irreps, irreps_out=irrep_out, cueq_config=cueq_config
         )
