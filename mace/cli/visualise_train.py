@@ -104,6 +104,19 @@ error_type = {
             ("dipole", "Dipole per atom [Debye]"),
         ],
     ),
+    "EnergyDipoleChargeRMSE": (
+        [
+            ("rmse_e_per_atom", "RMSE E/atom [meV]"),
+            ("rmse_f", "RMSE F [meV / A]"),
+            ("rmse_mu_per_atom", "RMSE MU/atom [mDebye]"),
+            ("rmse_Z", "RMSE Z [e]"),
+        ],
+        [
+            ("energy", "Energy per atom [eV]"),
+            ("force", "Force [eV / A]"),
+            ("dipole", "Dipole per atom [Debye]"),
+        ],
+    ),
 }
 
 

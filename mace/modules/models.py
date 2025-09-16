@@ -1301,6 +1301,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
         num_graphs = data["ptr"].numel() - 1
+        num_atoms = data["ptr"][1:] - data["ptr"][:-1]
         num_atoms_arange = torch.arange(data["positions"].shape[0])
         displacement = torch.zeros(
             (num_graphs, 3, 3),
@@ -1344,6 +1345,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         # Interactions
         energies = [e0]
         node_energies_list = [node_e0]
+        charges = []
         dipoles = []
         for interaction, product, readout in zip(
             self.interactions, self.products, self.readouts
@@ -1368,7 +1370,8 @@ class EnergyDipolesMACE(torch.nn.Module):
                 src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
             energies.append(energy)
-            node_dipoles = node_out[:, 1:]
+            charges.append(node_out[:, 1])
+            node_dipoles = node_out[:, 2:]
             dipoles.append(node_dipoles)
 
         # Compute the energies and dipoles
@@ -1376,6 +1379,12 @@ class EnergyDipolesMACE(torch.nn.Module):
         total_energy = torch.sum(contributions, dim=-1)  # [n_graphs, ]
         node_energy_contributions = torch.stack(node_energies_list, dim=-1)
         node_energy = torch.sum(node_energy_contributions, dim=-1)  # [n_nodes, ]
+        atomic_charges = torch.stack(charges, dim=-1).sum(-1)  # [n_nodes,]
+        # The idea is to normalize the charges so that they sum to the net charge in the system before predicting the dipole.
+        total_charge_excess = scatter_mean(
+            src=atomic_charges, index=data["batch"], dim_size=num_graphs
+        ) - (data["total_charge"] / num_atoms)
+        atomic_charges = (atomic_charges - total_charge_excess[data["batch"]])
         contributions_dipoles = torch.stack(
             dipoles, dim=-1
         )  # [n_nodes,3,n_contributions]
@@ -1387,7 +1396,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             dim_size=num_graphs,
         )  # [n_graphs,3]
         baseline = compute_fixed_charge_dipole(
-            charges=data["charges"],
+            charges=atomic_charges,
             positions=data["positions"],
             batch=data["batch"],
             num_graphs=num_graphs,
@@ -1415,5 +1424,6 @@ class EnergyDipolesMACE(torch.nn.Module):
             "displacement": displacement,
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
+            "charges": atomic_charges.unsqueeze(-1)
         }
         return output

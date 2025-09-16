@@ -144,6 +144,14 @@ def valid_err_log(
         logging.info(
             f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_Mu_per_atom={error_mu:8.2f} mDebye",
         )
+    elif log_errors == "EnergyDipoleChargeRMSE":
+        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+        error_f = eval_metrics["rmse_f"] * 1e3
+        error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
+        error_Z = eval_metrics["rmse_charges"] * 1e3
+        logging.info(
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_Mu_per_atom={error_mu:8.2f} mDebye, RMSE_Z={error_Z:6.3f} me",
+        )
 
 
 def train(
@@ -598,6 +606,8 @@ class MACELoss(Metric):
         self.add_state(
             "delta_polarizability_per_atom", default=[], dist_reduce_fx="cat"
         )
+        self.add_state("Zs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("delta_Zs", default=[], dist_reduce_fx="cat")
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
@@ -667,6 +677,12 @@ class MACELoss(Metric):
                 batch.weight,
                 batch.polarizability_weight,
                 spread_quantity_vector=False,
+            )
+        if output.get("charges") is not None and batch.charges is not None:
+
+            self.delta_Zs.append(batch.charges - output["charges"])
+            self.Zs_computed += filter_nonzero_weight(
+                batch, self.delta_Zs, batch.weight, batch.charges_weight, spread_atoms=True
             )
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
@@ -744,5 +760,10 @@ class MACELoss(Metric):
                 delta_polarizability_per_atom
             )
             aux["q95_polarizability"] = compute_q95(delta_polarizability)
+        if self.Zs_computed:
+            delta_Zs = self.convert(self.delta_Zs)
+            aux["mae_charges"] = compute_mae(delta_Zs)
+            aux["rmse_charges"] = compute_rmse(delta_Zs)
+            aux["q95_charges"] = compute_q95(delta_Zs)
 
         return aux["loss"], aux
