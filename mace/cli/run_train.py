@@ -721,12 +721,12 @@ def run(args) -> None:
 
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)
-    logging.info("=== Layer learning rates ===")
+    logging.info("=== Layer's learning rates ===")
     for name, p in model.named_parameters():
         st = optimizer.state.get(p, {})
         if st:
             logging.info(f"Param: {name}: {list(st.keys())}")
-    
+
     for i, param_group in enumerate(optimizer.param_groups):
         logging.info(f"Param group {i}: lr = {param_group['lr']}")
 

@@ -764,8 +764,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
     )
     parser.add_argument(
-        "--lr_params_factors", help="Learning rate factors to multiply on the original lr",
-        type=dict, default={"embedding_lr_factor":1.0, "interactions_lr_factor":1.0, "products_lr_factor":1.0, "readouts_lr_factor":1.0}
+        "--lr_params_factors",
+        help="Learning rate factors to multiply on the original lr",
+        type=str,
+        default='{"embedding_lr_factor": 1.0, "interactions_lr_factor": 1.0, "products_lr_factor": 1.0, "readouts_lr_factor": 1.0}',
     )
     parser.add_argument(
         "--freeze",
