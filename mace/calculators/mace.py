@@ -170,6 +170,7 @@ class MACECalculator(Calculator):
                 "forces",
                 "stress",
                 "dipole",
+                "charges"
             ]
         else:
             raise ValueError(
@@ -539,11 +540,21 @@ class MACECalculator(Calculator):
                     .numpy()
                 )
         if self.model_type in [
+            "EnergyDipoleMACE",
             "DipolePolarizabilityMACE",
         ]:
             self.results["charges"] = (
-                torch.mean(ret_tensors["charges"], dim=0).cpu().numpy()
-            )
+                            torch.mean(ret_tensors["charges"], dim=0).cpu().numpy()
+                        )
+            if self.num_models > 1:
+                self.results["charges_var"] = (
+                    torch.var(ret_tensors["charges"], dim=0, unbiased=False)
+                    .cpu()
+                    .numpy()
+                )
+        if self.model_type in [
+            "DipolePolarizabilityMACE",
+        ]:
             self.results["polarizability"] = (
                 torch.mean(ret_tensors["polarizability"], dim=0).cpu().numpy()
             )

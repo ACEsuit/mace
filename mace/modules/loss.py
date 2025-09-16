@@ -154,6 +154,32 @@ def weighted_mean_squared_error_dipole(
     raw_loss = torch.square((ref["dipole"] - pred["dipole"]) / num_atoms)
     return reduce_loss(raw_loss, ddp)
 
+# ------------------------------------------------------------------------------
+# Charges Loss Function
+# ------------------------------------------------------------------------------
+
+def weighted_mean_squared_error_charges(
+    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+) -> torch.Tensor:
+    
+    # Calculate per-graph number of atoms.
+    num_atoms = ref.ptr[1:] - ref.ptr[:-1]  # shape: [n_graphs]
+
+    # Repeat per-graph weights to per-atom level.
+    configs_weight = torch.repeat_interleave(
+        ref.weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(-1)
+    configs_charges_weight = torch.repeat_interleave(
+        ref.charges_weight, ref.ptr[1:] - ref.ptr[:-1]
+    ).unsqueeze(-1)
+
+    raw_loss = (
+        configs_weight
+        * configs_charges_weight
+        * torch.square((ref["charges"].unsqueeze(-1) - pred["charges"]) / num_atoms)  # Why is unsqueeze needed here? Should it be somewhere else instead?
+    )
+
+    return reduce_loss(raw_loss, ddp)
 
 # ------------------------------------------------------------------------------
 # Polarizability Loss Function
@@ -596,6 +622,47 @@ class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
             f"forces_weight={self.forces_weight:.3f}, dipole_weight={self.dipole_weight:.3f})"
+        )
+    
+class WeightedEnergyForcesDipoleChargesLoss(torch.nn.Module):
+    def __init__(self, energy_weight=1.0, forces_weight=1.0, dipole_weight=1.0, charges_weight=1.0) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "dipole_weight",
+            torch.tensor(dipole_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "charges_weight",
+            torch.tensor(charges_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(
+        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ) -> torch.Tensor:
+        loss_energy = weighted_mean_squared_error_energy(ref, pred, ddp)
+        loss_forces = mean_squared_error_forces(ref, pred, ddp)
+        loss_dipole = weighted_mean_squared_error_dipole(ref, pred, ddp) * 100.0
+        loss_charges = weighted_mean_squared_error_charges(ref, pred, ddp)
+        return (
+            self.energy_weight * loss_energy
+            + self.forces_weight * loss_forces
+            + self.dipole_weight * loss_dipole
+            + self.charges_weight * loss_charges
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f}, dipole_weight={self.dipole_weight:.3f})"
+            f", charges_weight={self.charges_weight:.3f})"
         )
 
 

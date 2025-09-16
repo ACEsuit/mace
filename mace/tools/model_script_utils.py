@@ -317,11 +317,9 @@ def _build_model(
 
     if args.model == "EnergyDipolesMACE":
         assert (
-            args.loss == "energy_forces_dipole"
-        ), "Use energy_forces_dipole loss with EnergyDipolesMACE model"
-        assert (
-            args.error_table == "EnergyDipoleRMSE"
-        ), "Use error_table EnergyDipoleRMSE with AtomicDipolesMACE model"
+            (args.loss == "energy_forces_dipole" and args.error_table == "EnergyDipoleRMSE")
+            or (args.loss == "energy_forces_dipole_charges" and args.error_table == "EnergyDipoleChargeRMSE")
+        ), "Use energy_forces_dipole loss + EnergyDipoleRMSE or energy_forces_dipole_charges loss + EnergyDipoleChargeRMSE with EnergyDipolesMACE model"
         return modules.EnergyDipolesMACE(
             **model_config,
             correlation=args.correlation,
