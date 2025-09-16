@@ -158,30 +158,100 @@ def test_run_train_freeze(tmp_path, fitting_configs):
     print("Es", Es)
 
     ref_Es = [
-        5.0515191462,
-        2.3054579400,
-        7.8241036773,
-        7.0553514878,
-        5.3206756801,
-        8.2035107897,
-        7.8436588785,
-        7.3792063144,
-        7.3911904609,
-        7.8037639811,
-        11.7320008784,
-        6.3847356085,
-        7.5927331920,
-        5.0871388009,
-        6.7783866071,
-        5.6115314645,
-        8.1487276026,
-        6.8827813354,
-        5.5037692727,
-        6.3979570745,
-        6.4291638326,
-        6.3360278320,
+        5.348334089807952,
+        2.4128907878403982,
+        8.5566950528953,
+        7.743803832228654,
+        5.788643738738498,
+        9.103127501095454,
+        8.719323994063377,
+        8.169843256425096,
+        8.077166786336269,
+        8.679676296893602,
+        12.189297325152948,
+        6.911712148654615,
+        8.290506707079263,
+        5.303821445834231,
+        7.296761518032694,
+        5.946962420990914,
+        9.043336244248948,
+        7.446979685692335,
+        5.764245581904601,
+        6.975111618768769,
+        6.931624082425803,
+        6.72206658924676,
     ]
 
     assert np.allclose(Es, ref_Es)
 
+
+def test_run_train_soft_freeze(tmp_path, fitting_configs):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "small"
+    mace_params["hidden_irreps"] = "128x0e"
+    mace_params["r_max"] = 6.0
+    mace_params["default_dtype"] = "float64"
+    mace_params["num_radial_basis"] = 10
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["multiheads_finetuning"] = False
+    mace_params["lr_params_factors"] = '{"embedding_lr_factor": 0.0, "interactions_lr_factor": 1.0, "products_lr_factor": 1.0, "readouts_lr_factor": 1.0}'
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    cmd = [sys.executable, str(run_train)]
+    for k, v in mace_params.items():
+        if v is not None:
+            cmd.append(f"--{k}={v}")
+        else:
+            cmd.append(f"--{k}")
+    
+    print(f"Running command: {cmd}")
+    p = subprocess.run(cmd, env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device=device, default_dtype="float64"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+
+    ref_Es = [
+        4.077101520328611,
+        1.9125514950167353,
+        4.6390361860381795,
+        4.6415570296531214,
+        3.9153698530138845,
+        4.487578378535444,
+        4.439674506695098,
+        4.906251552572849,
+        4.6943771636613985,
+        4.443480673870315,
+        12.392544826986759,
+        4.8014551746345475,
+        4.6380462142293455,
+        4.126315015844008,
+        4.923222049125721,
+        4.442558518514199,
+        4.556565520687697,
+        4.935513763430022,
+        4.077869607943539,
+        4.4407761603911124,
+        5.10253699303561,
+        4.537672050884654,
+    ]
+
+    assert np.allclose(Es, ref_Es)
 
