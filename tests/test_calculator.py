@@ -28,6 +28,19 @@ pytest_mace_dir = Path(__file__).parent.parent
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
 
+def write_extxyz_test(tmp_path, atoms):
+    assert isinstance(atoms, Atoms), "write_extxyz_test only working for Atoms, not anything else such as list(Atoms)"
+    ase.io.write(tmp_path / "test.extxyz", atoms)
+    atoms_written = ase.io.read(tmp_path / "test.extxyz")
+
+    nonstd_fields = set(['node_energy', 'energy_var', 'energy_comm', 'stress_var', 'stress_comm', 'forces_var', 'forces_comm', 'virials'])
+    # everything that we expect has been written
+    assert set(atoms.calc.results.keys()) - nonstd_fields == set(atoms_written.calc.results.keys())
+    # everything that was written was correct
+    assert all([np.allclose(atoms.calc.results[k], atoms_written.calc.results[k])
+                for k in atoms_written.calc.results])
+
+
 @pytest.fixture(scope="module", name="fitting_configs")
 def fitting_configs_fixture():
     water = Atoms(
@@ -528,7 +541,7 @@ def test_calculator_node_energy(fitting_configs, trained_model):
         np.testing.assert_allclose(energy, energy_via_nodes, atol=1e-6)
 
 
-def test_calculator_forces(fitting_configs, trained_model):
+def test_calculator_forces(tmp_path, fitting_configs, trained_model):
     at = fitting_configs[2].copy()
     at.calc = trained_model
 
@@ -536,9 +549,10 @@ def test_calculator_forces(fitting_configs, trained_model):
     grads = gradient_test(at)
 
     assert np.allclose(grads[0], grads[1])
+    write_extxyz_test(tmp_path, at)
 
 
-def test_calculator_stress(fitting_configs, trained_model):
+def test_calculator_stress(tmp_path, fitting_configs, trained_model):
     at = fitting_configs[2].copy()
     at.calc = trained_model
 
@@ -547,9 +561,10 @@ def test_calculator_stress(fitting_configs, trained_model):
     grads = gradient_test(at_wrapped)
 
     assert np.allclose(grads[0], grads[1])
+    write_extxyz_test(tmp_path, at)
 
 
-def test_calculator_committee(fitting_configs, trained_committee):
+def test_calculator_committee(tmp_path, fitting_configs, trained_committee):
     at = fitting_configs[2].copy()
     at.calc = trained_committee
 
@@ -559,38 +574,42 @@ def test_calculator_committee(fitting_configs, trained_committee):
     assert np.allclose(grads[0], grads[1])
 
     E = at.get_potential_energy()
-    energies = at.calc.results["energies"]
+    energies = at.calc.results["energy_comm"]
     energies_var = at.calc.results["energy_var"]
     forces_var = np.var(at.calc.results["forces_comm"], axis=0)
     assert np.allclose(E, np.mean(energies))
     assert np.allclose(energies_var, np.var(energies))
     assert forces_var.shape == at.calc.results["forces"].shape
+    write_extxyz_test(tmp_path, at)
 
 
-def test_calculator_from_model(fitting_configs, trained_committee):
+def test_calculator_from_model(tmp_path, fitting_configs, trained_committee):
     # test single model
     test_calculator_forces(
+        tmp_path,
         fitting_configs,
         trained_model=MACECalculator(models=trained_committee.models[0], device="cpu"),
     )
 
     # test committee model
     test_calculator_committee(
+        tmp_path,
         fitting_configs,
         trained_committee=MACECalculator(models=trained_committee.models, device="cpu"),
     )
 
 
-def test_calculator_dipole(fitting_configs, trained_dipole_model):
+def test_calculator_dipole(tmp_path, fitting_configs, trained_dipole_model):
     at = fitting_configs[2].copy()
     at.calc = trained_dipole_model
 
     dip = at.get_dipole_moment()
 
     assert len(dip) == 3
+    write_extxyz_test(tmp_path, at)
 
 
-def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model):
+def test_calculator_energy_dipole(tmp_path, fitting_configs, trained_energy_dipole_model):
     at = fitting_configs[2].copy()
     at.calc = trained_energy_dipole_model
 
@@ -599,6 +618,7 @@ def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model):
 
     assert np.allclose(grads[0], grads[1])
     assert len(dip) == 3
+    write_extxyz_test(tmp_path, at)
 
 
 def test_calculator_descriptor(fitting_configs, trained_equivariant_model):
@@ -699,7 +719,7 @@ def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_c
     assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
-def test_mace_mp(capsys: pytest.CaptureFixture):
+def test_mace_mp(tmp_path, capsys: pytest.CaptureFixture):
     mp_mace = mace_mp()
     assert isinstance(mp_mace, MACECalculator)
     assert mp_mace.model_type == "MACE"
@@ -710,7 +730,7 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
     assert stderr == ""
 
 
-def test_mace_off():
+def test_mace_off(tmp_path):
     mace_off_model = mace_off(model="small", device="cpu")
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"
@@ -723,10 +743,11 @@ def test_mace_off():
     E = atoms.get_potential_energy()
 
     assert np.allclose(E, -2081.116128586803, atol=1e-9)
+    write_extxyz_test(tmp_path, atoms)
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-def test_mace_off_cueq(model="medium", device="cpu"):
+def test_mace_off_cueq(tmp_path, model="medium", device="cpu"):
     mace_off_model = mace_off(model=model, device=device, enable_cueq=True)
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"
@@ -739,9 +760,10 @@ def test_mace_off_cueq(model="medium", device="cpu"):
     E = atoms.get_potential_energy()
 
     assert np.allclose(E, -2081.116128586803, atol=1e-9)
+    write_extxyz_test(tmp_path, atoms)
 
 
-def test_mace_mp_stresses(model="medium", device="cpu"):
+def test_mace_mp_stresses(tmp_path, model="medium", device="cpu"):
     atoms = build.bulk("Al", "fcc", a=4.05, cubic=True)
     atoms = atoms.repeat((2, 2, 2))
     mace_mp_model = mace_mp(model=model, device=device, compute_atomic_stresses=True)
@@ -751,10 +773,23 @@ def test_mace_mp_stresses(model="medium", device="cpu"):
     assert stress.shape == (6,)
     assert stresses.shape == (32, 6)
     assert np.allclose(stress, stresses.sum(axis=0), atol=1e-6)
+    write_extxyz_test(tmp_path, atoms)
+
+
+def test_mace_mp_energies(tmp_path, model="medium", device="cpu"):
+    atoms = build.bulk("Al", "fcc", a=4.05, cubic=True)
+    atoms = atoms.repeat((2, 2, 2))
+    mace_mp_model = mace_mp(model=model, device=device)
+    atoms.set_calculator(mace_mp_model)
+    energy = atoms.get_potential_energy()
+    energies = atoms.get_potential_energies()
+    assert energies.shape == (len(atoms),)
+    assert np.allclose(energy, energies.sum(), atol=1e-6)
+    write_extxyz_test(tmp_path, atoms)
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-def test_mace_omol_cueq(device="cpu"):
+def test_mace_omol_cueq(tmp_path, device="cpu"):
 
     calc = mace_omol(device=device, default_dtype="float64")
     mol = build.molecule("H2O")
@@ -771,3 +806,4 @@ def test_mace_omol_cueq(device="cpu"):
     assert np.allclose(energy, energy_cueq, atol=1e-6)
     assert np.allclose(forces, forces_cueq, atol=1e-6)
     assert np.allclose(energy, -2079.863496758961, atol=1e-9)
+    write_extxyz_test(tmp_path, mol)
