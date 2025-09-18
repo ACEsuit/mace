@@ -157,9 +157,9 @@ def valid_err_log(
         error_stress = eval_metrics["rmse_stress"] * 1e3
         error_polarization = eval_metrics["rmse_polarization"] * 1e3
         error_becs = eval_metrics["rmse_becs"]
-        error_polarizability = eval_metrics["rmse_polarizability"]
+        error_polarizability = eval_metrics["rmse_polarizability"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.8f} meV, RMSE_F={error_f:8.8f} meV / A, RMSE_stress={error_stress:8.8f} meV / A^3, RMSE_polarization={error_polarization:8.8f} m|e| / A^2, RMSE_becs={error_becs:8.8f} |e|, RMSE_polarizability={error_polarizability:8.8f} |e| / V / A",
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.8f} meV, RMSE_F={error_f:8.8f} meV / A, RMSE_stress={error_stress:8.8f} meV / A^3, RMSE_polarization={error_polarization:8.8f} m|e| / A^2, RMSE_becs={error_becs:8.8f} |e|, RMSE_polarizability={error_polarizability:8.8f} m|e| / V / A",
         )
 
 
