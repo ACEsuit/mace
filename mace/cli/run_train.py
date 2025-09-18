@@ -309,6 +309,7 @@ def run(args) -> None:
                     args.pseudolabel_replay
                     and args.multiheads_finetuning
                     and head_config.head_name == "pt_head"
+                    or args.model == "MACEField"
                 ),
             )
             head_config.collections = SubsetCollection(

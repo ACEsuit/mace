@@ -515,6 +515,15 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                 atomic_energies_dict = data.compute_average_E0s(
                     train_collection, z_table
                 )
+                atomic_energies_dict = {
+                    key:value 
+                    if 
+                        not np.isnan(value) 
+                    else 
+                        0.0 
+                    for 
+                        key, value in atomic_energies_dict.items()
+                }
             except Exception as e:
                 raise RuntimeError(
                     f"Could not compute average E0s if no training xyz given, error {e} occured"
