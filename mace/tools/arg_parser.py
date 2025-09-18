@@ -534,6 +534,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
+    parser.add_argument(
+        "--lora",
+        help="Use Low-Rank Adaptation for the fine-tuning",
+        type=str2bool,
+        default=False,
+    )
 
     # Keys
     parser.add_argument(
