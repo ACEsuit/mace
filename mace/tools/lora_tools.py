@@ -11,15 +11,17 @@ def inject_LoRAs(model: nn.Module, rank: int = 4, alpha: int = 1):
         rank (int): The rank for the LoRA layers.
         alpha (int): Scaling factor for the LoRA layers.
     """
-    for name, module in model.named_modules():
-        print(f"Module {name}: {module.__class__.__name__}")
-        if isinstance(module, o3.Linear):
-            print(f"Input features: {module.in_features}")  
-            print(f"Output features: {module.out_features}") 
-            print(f"Injecting LoRA into module: {name}")
-            lora_layer = LoRALinear(module, rank=rank, alpha=alpha)
-            lora_layer=lora_layer.to(dtype=module.weight.dtype, device=module.weight.device)
-            setattr(module, name, lora_layer)
+
+    for child_name, child in list(model.named_children()): 
+        if isinstance(child, LoRALinear):
+            continue
+        if isinstance(child, o3.Linear):
+            print(f"Input features: {child.irreps_in}")  
+            print(f"Output features: {child.irreps_out}") 
+            print(f"Injecting LoRA into module: {child_name}")
+            setattr(model, child_name, LoRALinear(child, rank=rank, alpha=alpha))
+        else:
+            inject_LoRAs(child, rank=rank, alpha=alpha)
     return model
 
 
@@ -28,15 +30,26 @@ class LoRALinear(nn.Module):
     def __init__(self, linear_layer: nn.Module, rank=4, alpha=1):
         super().__init__()
         self.linear_layer = linear_layer
-        self.liner_layer.requires_grad_(False)
+        self.linear_layer.requires_grad_(False)
         self.scaling = alpha / rank
-        
-        self.lora_A = nn.Linear(linear_layer.in_features, rank, bias=False)
-        self.lora_B = nn.Linear(rank, linear_layer.out_features, bias=False)
+        self.lora_irreps = o3.Irreps(f"{rank}x0e")
+
+        # Create the trainable LoRA matrices
+        self.lora_A = o3.Linear(linear_layer.irreps_in, self.lora_irreps, internal_weights=True)
+        self.lora_B = o3.Linear(self.lora_irreps, linear_layer.irreps_out, internal_weights=True)
         
         # Initialize LoRA parameters, so ΔW starts at 0
-        nn.init.kaiming_uniform_(self.lora_A.weight, a=5**0.5)  
-        nn.init.zeros_(self.lora_B.weight) 
+        with torch.no_grad():
+            for p in self.lora_B.parameters():
+                p.zero_()
+
+        with torch.no_grad():
+            for p in self.lora_A.parameters():
+                if p.dim() >= 2:
+                    # small std normal (keeps update tiny)
+                    p.normal_(mean=0.0, std=1e-3)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.linear_layer + self.scaling * self.lora_B(self.lora_A(x))
+        base = self.linear_layer(x)          
+        delta = self.lora_B(self.lora_A(x))  
+        return base + self.scaling * delta
