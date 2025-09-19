@@ -1,4 +1,8 @@
 from e3nn import o3
+try:
+    from e3nn.nn._fc import _Layer as E3NNFCLayer  # type: ignore
+except Exception:  # pragma: no cover - e3nn not available in some envs
+    E3NNFCLayer = None  # type: ignore
 import torch
 import torch.nn as nn
 from typing import Tuple
@@ -96,6 +100,51 @@ class LoRADenseLinear(nn.Module):
         return base + self.scaling * delta
 
 
+class LoRAFCLayer(nn.Module):
+    """LoRA for e3nn.nn._fc._Layer used by FullyConnectedNet (scalar MLP).
+    Adds a low-rank delta on the weight matrix; preserves scalar nature.
+    """
+
+    def __init__(self, base_layer: nn.Module, rank: int = 4, alpha: float = 1.0):
+        super().__init__()
+        if not hasattr(base_layer, "weight"):
+            raise TypeError("LoRAFCLayer requires a layer with a 'weight' parameter")
+        self.base = base_layer
+        _freeze_module(self.base)
+        w = self.base.weight  # type: ignore[attr-defined]
+        in_f, out_f = int(w.shape[0]), int(w.shape[1])
+        self.scaling = float(alpha) / float(rank)
+        # Use explicit parameters to match e3nn layout [in, out]
+        self.lora_A = nn.Parameter(torch.empty(in_f, rank, device=w.device, dtype=w.dtype))
+        self.lora_B = nn.Parameter(torch.empty(rank, out_f, device=w.device, dtype=w.dtype))
+        with torch.no_grad():
+            torch.nn.init.normal_(self.lora_A, mean=0.0, std=1e-3)
+            torch.nn.init.zeros_(self.lora_B)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Replicate e3nn _Layer normalization exactly
+        W = self.base.weight  # type: ignore[attr-defined]
+        h_in = getattr(self.base, "h_in")
+        var_in = getattr(self.base, "var_in")
+        var_out = getattr(self.base, "var_out")
+        act = getattr(self.base, "act", None)
+
+        delta = self.lora_A @ self.lora_B
+        W_sum = W + self.scaling * delta
+
+        if act is not None:
+            denom = (h_in * var_in) ** 0.5
+            w = W_sum / denom
+            x = x @ w
+            x = act(x)
+            x = x * (var_out ** 0.5)
+        else:
+            denom = (h_in * var_in / var_out) ** 0.5
+            w = W_sum / denom
+            x = x @ w
+        return x
+
+
 def _replace_child(parent: nn.Module, name: str, new_child: nn.Module) -> None:
     # Works for standard submodules and for ModuleList/ModuleDict immediate children
     parent._modules[name] = new_child
@@ -143,6 +192,21 @@ def inject_lora(
                 print(f"[LoRA] Wrapped dense {child_name}: {child.in_features} -> {child.out_features}")
             # Do not recurse into the wrapper internals
             continue
+        # e3nn FullyConnectedNet internal layer
+        if wrap_dense and (E3NNFCLayer is not None) and isinstance(child, E3NNFCLayer):  # type: ignore[arg-type]
+            # Wrap all FC layers; LoRA forward replicates normalization exactly
+            try:
+                wrapped = LoRAFCLayer(child, rank=rank, alpha=alpha)
+            except Exception as exc:
+                if verbose:
+                    print(f"[LoRA] Skip {child_name} (fc layer): {exc}")
+            else:
+                _replace_child(module, child_name, wrapped)
+                num_dense += 1
+                if verbose:
+                    w = child.weight
+                    print(f"[LoRA] Wrapped e3nn FC layer {child_name}: weight {tuple(w.shape)}")
+                continue
         # Recurse
         sub_eq, sub_dense = inject_lora(child, rank, alpha, wrap_equivariant, wrap_dense, verbose)
         num_eq += sub_eq
