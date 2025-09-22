@@ -147,21 +147,24 @@ class MACECalculator(Calculator):
             "DipoleMACE",
             "EnergyDipoleMACE",
             "DipolePolarizabilityMACE",
+            "FieldFukuiMACE",
         ]:
             raise ValueError(
                 f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
         # superclass constructor initializes self.implemented_properties to an empty list
-        if model_type in ["MACE", "EnergyDipoleMACE"]:
-            self.implemented_properties.extend([
-                "energy",
-                "energies",
-                "free_energy",
-                "node_energy",
-                "forces",
-                "stress",
-            ])
+        if model_type in ["MACE", "EnergyDipoleMACE", "FieldFukuiMACE"]:
+            self.implemented_properties.extend(
+                [
+                    "energy",
+                    "energies",
+                    "free_energy",
+                    "node_energy",
+                    "forces",
+                    "stress",
+                ]
+            )
             if kwargs.get("compute_atomic_stresses", False):
                 self.implemented_properties.extend(["stresses", "virials"])
                 self.compute_atomic_stresses = True
@@ -257,6 +260,9 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+        self.density_dim = (
+            getattr(self.models[0], "atomic_multipoles_max_l", 0) + 1
+        ) ** 2
 
         try:
             self.available_heads: List[str] = self.models[0].heads  # type: ignore
@@ -349,12 +355,15 @@ class MACECalculator(Calculator):
             "atomic_virials": [num_atoms, 3, 3],
             "dipole": [3],
             "charges": [num_atoms],
+            "spins": [num_atoms],
+            "density_coefficients": [num_atoms, self.density_dim],
+            "spin_charge_density": [num_atoms, 2, self.density_dim],
             "polarizability": [3, 3],
             "polarizability_sh": [6],
         }
         dict_of_tensors = {}
-        for key in out:
-            if key not in tensor_shapes or out.get(key) is None:
+        for key, val in out.items():
+            if key not in tensor_shapes or val is None:
                 continue
             shape = [num_models] + tensor_shapes[key]
             dict_of_tensors[key] = torch.zeros(*shape, device=self.device)
@@ -418,7 +427,7 @@ class MACECalculator(Calculator):
 
         batch_base = self._atoms_to_batch(atoms)
 
-        if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+        if self.model_type in ["MACE", "EnergyDipoleMACE", "FieldFukuiMACE"]:
             compute_stress = not self.use_compile
         else:
             compute_stress = False
@@ -464,6 +473,9 @@ class MACECalculator(Calculator):
             ),
             ("dipole", "dipole", 1.0),
             ("charges", "charges", 1.0),
+            ("spins", "spins", 1.0),
+            ("density_coefficients", "density_coefficients", 1.0),
+            ("spin_charge_density", "spin_charge_density", 1.0),
             ("polarizability", "polarizability", 1.0),
             ("polarizability_sh", "polarizability_sh", 1.0),
         ]:
