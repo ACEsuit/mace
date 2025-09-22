@@ -99,7 +99,6 @@ class PBCAgnosticElectrostaticFeatureBlock(torch.nn.Module):
                 return_electrostatic_potentials,
             )
         else:
-            print("Using realspace electrostatic features")
             return self.realspace_features(source_feats, node_positions, batch)
 
 
