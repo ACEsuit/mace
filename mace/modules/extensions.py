@@ -276,12 +276,8 @@ from typing import Any, Optional, Type  # noqa: E402  (local import for minimal 
 from e3nn import o3  # noqa: E402
 from mace.tools.scatter import scatter_sum  # noqa: E402
 from .blocks import (  # noqa: E402
-    AtomicEnergiesBlock,
-    EquivariantProductBasisBlock,
     InteractionBlock,
-    LinearNodeEmbeddingBlock,
     NonLinearBiasReadoutBlock,
-    RadialEmbeddingBlock,
 )
 from .utils import get_edge_vectors_and_lengths, get_outputs  # noqa: E402
 from .electrostatic_features import (  # noqa: E402
@@ -335,8 +331,10 @@ class FieldFukuiMACE(ScaleShiftMACE):
         edge_irreps: Optional[o3.Irreps] = None,
         include_electrostatic_self_interaction: bool = False,
         add_local_electron_energy: bool = False,
+        use_reduced_cg: bool = True,
         field_dependence_type: str = "local_linear",
         final_field_readout_type: str = "OneBodyMLPFieldReadout",
+        readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
         quadrupole_feature_corrections: bool = False,
         return_electrostatic_potentials: bool = False,
         heads: Optional[List[str]] = None,
@@ -370,9 +368,12 @@ class FieldFukuiMACE(ScaleShiftMACE):
             atomic_inter_scale=[1.0] * (len(heads) if heads is not None else 1),
             atomic_inter_shift=[0.0] * (len(heads) if heads is not None else 1),
             edge_irreps=edge_irreps,
+            use_reduced_cg=use_reduced_cg,
             use_agnostic_product=True,
             cueq_config=cueq_config,
             oeq_config=oeq_config,
+            readout_cls=readout_cls,
+            keep_last_layer_irreps=True,
         )
         self.num_recursion_steps = int(num_recursion_steps)
         self.atomic_multipoles_max_l = int(atomic_multipoles_max_l)
@@ -403,23 +404,11 @@ class FieldFukuiMACE(ScaleShiftMACE):
             torch.tensor(expanded, dtype=torch.get_default_dtype()),
         )
 
-        # Spin-charge source maps per interaction layer matching product outputs
-        layer_irreps_out = []
-        for i in range(num_interactions):
-            if num_interactions == 1:
-                layer_irreps_out.append(str(hidden_irreps[0]))
-            else:
-                if i == num_interactions - 1:
-                    layer_irreps_out.append(str(hidden_irreps[0]))
-                else:
-                    layer_irreps_out.append(hidden_irreps)
         self.lr_source_maps = torch.nn.ModuleList(
-            [
-                EnvironmentDependentSpinSourceBlock(
-                    irreps_in=ir_out, max_l=atomic_multipoles_max_l
-                )
-                for ir_out in layer_irreps_out
-            ]
+            EnvironmentDependentSpinSourceBlock(
+                irreps_in=hidden_irreps, max_l=atomic_multipoles_max_l
+            )
+            for _ in range(num_recursion_steps + 1)
         )
 
         # Field-dependent components
@@ -584,7 +573,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
         ).to(vectors.dtype)
 
         node_feats = self.node_embedding(data["node_attrs"])
-        edge_attrs = self.spherical_harmonics(vectors)
+        edge_attrs = self.spherical_harmonics(_permute_to_e3nn_convention(vectors))
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
@@ -619,6 +608,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
+            print("node feats 0", node_feats[0, :10])
             node_feats_list.append(node_feats)
 
             feat_idx = -1 if len(self.readouts) == 1 else min(i, len(self.readouts) - 1)
@@ -641,14 +631,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
         )
 
         # SCF fixed point
-        # If layer outputs have different dims (e.g., last layer scalar-only), fall back to first layer features
-        dims = [nf.shape[-1] for nf in node_feats_list]
-        if len(set(dims)) == 1:
-            features_mixed = self.layer_feature_mixer(
-                torch.stack(node_feats_list, dim=0)
-            )
-        else:
-            features_mixed = node_feats_list[0]
+        features_mixed = self.layer_feature_mixer(torch.stack(node_feats_list, dim=0))
         spin_charge_density = spin_charge_density.view(
             spin_charge_density.shape[0], 2, -1
         )
@@ -706,13 +689,15 @@ class FieldFukuiMACE(ScaleShiftMACE):
                 use_pbc_evaluator=use_pbc_evaluator,
                 return_electrostatic_potentials=self.return_electrostatic_potentials,
             )
-            field_feats = field_feats_alpha + field_feats_beta
-            field_feats = field_feats + self.external_field_contribution(
+            half_external_field = 0.5 * self.external_field_contribution(
                 data["batch"], positions, external_potential
             )
-            field_feats = field_feats / self.field_feature_norms
-            field_feats_alpha = field_feats_alpha / self.field_feature_norms
-            field_feats_beta = field_feats_beta / self.field_feature_norms
+            field_feats_alpha = (
+                field_feats_alpha + half_external_field
+            ) / self.field_feature_norms
+            field_feats_beta = (
+                field_feats_beta + half_external_field
+            ) / self.field_feature_norms
 
             potential_features = torch.cat(
                 (field_feats_alpha, field_feats_beta), dim=-1
