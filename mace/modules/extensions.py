@@ -7,7 +7,7 @@ from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock
 from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
 from mace.modules.wrapper_ops import CuEquivarianceConfig, OEQConfig
-from mace.tools.scatter import scatter_sum
+from mace.tools.scatter import scatter_mean, scatter_sum
 
 
 def _copy_mace_readout(
@@ -717,8 +717,17 @@ class FieldFukuiMACE(ScaleShiftMACE):
                 return_electrostatic_potentials=self.return_electrostatic_potentials,
             )
 
+            # Add external field contribution and subtract center of mass motion for gauge invariance
+            center_of_mass = scatter_mean(
+                src=positions.double(),
+                index=data["batch"],
+                dim=0,
+                dim_size=num_graphs,
+            ).to(positions.dtype)
             half_external_field = 0.5 * self.external_field_contribution(
-                data["batch"], positions, external_potential
+                data["batch"],
+                positions - center_of_mass[data["batch"], :],
+                external_potential,
             )
             field_feats_alpha = (
                 field_feats_alpha + half_external_field
