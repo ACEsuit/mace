@@ -1,3 +1,9 @@
+###########################################################################################
+# Long Range Blocks
+# Authors: Will Baldwin, Ilyes Batatia
+# This program is distributed under the MIT License (see MIT.md)
+###########################################################################################
+
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -192,7 +198,6 @@ class FieldUpdateBlock(torch.nn.Module):
         edge_index: torch.Tensor,
         potential_features: torch.Tensor,
         local_charges: torch.Tensor,
-        total_charges: torch.Tensor,
     ) -> torch.Tensor:  # pragma: no cover - abstract
         ...
 
@@ -282,7 +287,6 @@ class AgnosticEmbeddedOneBodyVariableUpdate(FieldUpdateBlock):
         edge_index: torch.Tensor,
         potential_features: torch.Tensor,
         local_charges: torch.Tensor,
-        total_charges: torch.Tensor,
     ) -> torch.Tensor:
         # create pot feats
         mixed_feats = self.potential_embedding(

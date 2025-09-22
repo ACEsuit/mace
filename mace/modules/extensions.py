@@ -272,28 +272,43 @@ class MACELES(ScaleShiftMACE):
 # ------------------------------
 # Field-aware Fukui MACE variant
 # ------------------------------
-from typing import Any, Optional, Type  # noqa: E402  (local import for minimal diffs)
-from e3nn import o3  # noqa: E402
-from mace.tools.scatter import scatter_sum  # noqa: E402
-from .blocks import (  # noqa: E402
+from typing import Any, Callable, Dict, List, Optional, Type
+import numpy as np
+import torch
+from e3nn import o3
+from e3nn.util.jit import compile_mode
+import logging
+
+from mace.tools.scatter import scatter_sum
+from mace.modules.utils import (
+    get_outputs,
+)
+
+from mace.modules import (
     InteractionBlock,
+    LinearReadoutBlock,
+    NonLinearReadoutBlock,
     NonLinearBiasReadoutBlock,
 )
-from .utils import get_edge_vectors_and_lengths, get_outputs  # noqa: E402
-from .electrostatic_features import (  # noqa: E402
-    PBCAgnosticDirectElectrostaticEnergyBlock,
-    PBCAgnosticElectrostaticFeatureBlock,
-    DisplacedGTOExternalFieldBlock,
-    compute_k_vectors,
-    compute_total_charge_dipole,
+
+from graph_longrange.kspace import compute_k_vectors
+from graph_longrange.gto_electrostatics import (
     gto_basis_kspace_cutoff,
+    GTOExternalFieldBlock,
+    DisplacedGTOExternalFieldBlock,
+    KSpaceDirectElectrostaticEnergyBlock,
+    PBCAgnosticDirectElectrostaticEnergyBlock,
 )
-from .field_blocks import (  # noqa: E402
+from .electrostatic_features import (
+    PBCAgnosticElectrostaticFeatureBlock,
+)
+from .field_blocks import (
     EnvironmentDependentSpinSourceBlock,
-    MultiLayerFeatureMixer,
     field_update_blocks,
     field_readout_blocks,
+    MultiLayerFeatureMixer,
 )
+from .utils import compute_total_charge_dipole_permuted
 
 
 def _permute_to_e3nn_convention(x: torch.Tensor) -> torch.Tensor:
@@ -332,6 +347,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
         include_electrostatic_self_interaction: bool = False,
         add_local_electron_energy: bool = False,
         use_reduced_cg: bool = True,
+        apply_cutoff: bool = True,
         field_dependence_type: str = "local_linear",
         final_field_readout_type: str = "OneBodyMLPFieldReadout",
         readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
@@ -370,6 +386,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
             edge_irreps=edge_irreps,
             use_reduced_cg=use_reduced_cg,
             use_agnostic_product=True,
+            apply_cutoff=apply_cutoff,
             cueq_config=cueq_config,
             oeq_config=oeq_config,
             readout_cls=readout_cls,
@@ -389,9 +406,13 @@ class FieldFukuiMACE(ScaleShiftMACE):
         )
 
         # Normalization for field features
-        if field_feature_norms is None:
+        if field_feature_norms is not None:
+            assert len(field_feature_norms) == len(field_feature_widths) * (
+                field_feature_max_l + 1
+            ), f"{len(field_feature_widths) * (field_feature_max_l+1)}, {len(field_feature_norms)}"
+        else:
             field_feature_norms = (
-                [1.0] * (field_feature_max_l + 1) * len(field_feature_widths)
+                [1.0] * len(field_feature_widths) * (field_feature_max_l + 1)
             )
         expanded: List[float] = []
         for l in range(field_feature_max_l + 1):
@@ -422,10 +443,9 @@ class FieldFukuiMACE(ScaleShiftMACE):
             density_max_l=atomic_multipoles_max_l,
             density_smearing_width=atomic_multipoles_smearing_width,
             projection_max_l=field_feature_max_l,
-            projection_smearing_widths=list(field_feature_widths),
-            kspace_cutoff=float(kspace_cutoff),
+            projection_smearing_widths=field_feature_widths,
+            kspace_cutoff=kspace_cutoff,
             include_self_interaction=field_si,
-            integral_normalization="receiver",
             quadrupole_feature_corrections=quadrupole_feature_corrections,
         )
 
@@ -577,6 +597,14 @@ class FieldFukuiMACE(ScaleShiftMACE):
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+        if hasattr(self, "pair_repulsion"):
+            pair_node_energy = self.pair_repulsion_fn(
+                lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+            )
+            if is_lammps:
+                pair_node_energy = pair_node_energy[: lammps_natoms[0]]
+        else:
+            pair_node_energy = torch.zeros_like(node_e0)
 
         node_es_list: List[torch.Tensor] = []
         node_feats_list: List[torch.Tensor] = []
@@ -608,7 +636,6 @@ class FieldFukuiMACE(ScaleShiftMACE):
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
-            print("node feats 0", node_feats[0, :10])
             node_feats_list.append(node_feats)
 
             feat_idx = -1 if len(self.readouts) == 1 else min(i, len(self.readouts) - 1)
@@ -635,7 +662,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
         spin_charge_density = spin_charge_density.view(
             spin_charge_density.shape[0], 2, -1
         )
-        fukui_sources = self.fukui_source_map(features_mixed)
+        fukui_sources = self.fukui_source_map(node_feats)
         fukui_norm = scatter_sum(
             src=fukui_sources.double(), index=data["batch"], dim=0, dim_size=num_graphs
         )[data["batch"]].to(vectors.dtype)
@@ -663,8 +690,9 @@ class FieldFukuiMACE(ScaleShiftMACE):
         )
         field_independent_spin_charge_density = spin_charge_density.clone()
         esps: Optional[torch.Tensor] = None
+        print("spin charge density before SCF", spin_charge_density)
 
-        for _ in range(self.num_recursion_steps):
+        for i in range(self.num_recursion_steps):
             field_feats_alpha, _, esps = self.electric_potential_descriptor(
                 k_vectors=k_vectors,
                 k_vectors_normed_squared=kv_norms_squared,
@@ -689,6 +717,8 @@ class FieldFukuiMACE(ScaleShiftMACE):
                 use_pbc_evaluator=use_pbc_evaluator,
                 return_electrostatic_potentials=self.return_electrostatic_potentials,
             )
+            print("field feats alpha", field_feats_alpha)
+
             half_external_field = 0.5 * self.external_field_contribution(
                 data["batch"], positions, external_potential
             )
@@ -702,7 +732,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
             potential_features = torch.cat(
                 (field_feats_alpha, field_feats_beta), dim=-1
             )
-            charge_sources_out = self.field_dependent_charges_maps[0](
+            charge_sources_out = self.field_dependent_charges_maps[i](
                 node_attrs=data["node_attrs"],
                 node_feats=features_mixed,
                 edge_attrs=edge_attrs[:, : self.from_ell_max_field_update],
@@ -712,8 +742,8 @@ class FieldFukuiMACE(ScaleShiftMACE):
                 local_charges=spin_charge_density.view(
                     spin_charge_density.shape[0], -1
                 ),
-                total_charges=data["density_coefficients"],
             )
+
             current_fukui_sources = charge_sources_out[:, -2:]
             charge_sources = charge_sources_out[:, :-2]
             spin_charge_density_sources = charge_sources.view(
@@ -741,8 +771,11 @@ class FieldFukuiMACE(ScaleShiftMACE):
             spin_charge_density[:, 1, 0] = spin_charge_density[
                 :, 1, 0
             ] + current_fukui_sources[:, 1] * ((Q_m_S / 2) - pred_total_charges[:, 1])
+            print("spin charge density after step", i, spin_charge_density)
 
         total_energy = e0 + inter_e
+        print("total_energy", total_energy)
+        print("final spin charge density", spin_charge_density[0, 0])
         local_q_e = self.local_electron_energy(
             node_attrs=data["node_attrs"],
             node_feats=features_mixed,
@@ -765,7 +798,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
 
         charge_density = spin_charge_density.sum(dim=1)
         spin_density = spin_charge_density[:, 0, :] - spin_charge_density[:, 1, :]
-        total_charge, total_dipole = compute_total_charge_dipole(
+        total_charge, total_dipole = compute_total_charge_dipole_permuted(
             charge_density, positions, data["batch"], num_graphs
         )
         electro_energy = self.coulomb_energy(
@@ -779,6 +812,8 @@ class FieldFukuiMACE(ScaleShiftMACE):
             num_graphs,
             use_pbc_evaluator=use_pbc_evaluator,
         )
+        print("electron energy", le_total)
+        print("electrostatic energy", electro_energy)
         total_energy = (
             total_energy
             + electro_energy

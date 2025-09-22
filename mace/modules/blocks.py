@@ -133,8 +133,7 @@ class NonLinearBiasReadoutBlock(torch.nn.Module):
         self.linear_1 = Linear(
             irreps_in=irreps_in, irreps_out=self.hidden_irreps, cueq_config=cueq_config
         )
-        acts = [gate] * len(self.hidden_irreps)
-        self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=acts)
+        self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
         self.linear_mid = o3.Linear(
             irreps_in=self.hidden_irreps, irreps_out=self.hidden_irreps, biases=True
         )
@@ -302,41 +301,53 @@ class NonLinearDipolePolarReadoutBlock(torch.nn.Module):
 
 
 class GeneralNonLinearBiasReadoutBlock(torch.nn.Module):
-    """Internal gated non-linear readout with bias, compatible with vector/tensor irreps."""
-
     def __init__(
-        self, irreps_in: o3.Irreps, MLP_irreps: o3.Irreps, gate, irreps_out: o3.Irreps
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Optional[Callable],
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        irreps_out: Optional[o3.Irreps] = None,
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
-        # Split hidden irreps into scalars/gated and construct gates for non-scalars
+        self.irreps_out = irrep_out
+        if irreps_out is not None:
+            self.irreps_out = irreps_out
         irreps_scalars = o3.Irreps(
-            [(mul, ir) for mul, ir in self.hidden_irreps if ir.l == 0]
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out]
         )
         irreps_gated = o3.Irreps(
-            [(mul, ir) for mul, ir in self.hidden_irreps if ir.l > 0]
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
         )
         irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
-        self.gate = nn.Gate(
+        activation_fn = torch.nn.functional.silu
+        act_gates_fn = torch.nn.functional.sigmoid
+        self.equivariant_nonlin = nn.Gate(
             irreps_scalars=irreps_scalars,
-            act_scalars=[gate for _ in irreps_scalars],
+            act_scalars=[activation_fn for _, ir in irreps_scalars],
             irreps_gates=irreps_gates,
-            act_gates=[gate] * len(irreps_gates),
+            act_gates=[act_gates_fn] * len(irreps_gates),
             irreps_gated=irreps_gated,
         )
-        self.irreps_nonlin = self.gate.irreps_in.simplify()
+        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
         self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_nonlin)
         self.linear_mid = o3.Linear(
             irreps_in=self.hidden_irreps, irreps_out=self.irreps_nonlin, biases=True
         )
         self.linear_2 = o3.Linear(
-            irreps_in=self.hidden_irreps, irreps_out=irreps_out, biases=True
+            irreps_in=self.hidden_irreps, irreps_out=self.irreps_out, biases=True
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.gate(self.linear_1(x))
-        x = self.gate(self.linear_mid(x))
-        return self.linear_2(x)
+    def forward(
+        self,
+        x: torch.Tensor,
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        x = self.linear_1(x)
+        x = self.equivariant_nonlin(x)
+        x = self.linear_mid(x)
+        x = self.equivariant_nonlin(x)
+        return self.linear_2(x)  # [n_nodes, 1]
 
 
 @compile_mode("script")
@@ -1307,6 +1318,7 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         density = scatter_sum(
             src=edge_density, index=edge_index[1], dim=0, dim_size=num_nodes
         )
+        # print("density", density[0, 0])
 
         if hasattr(self, "conv_fusion"):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
@@ -1322,14 +1334,19 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         density = self.truncate_ghosts(density, n_real)
         sc = self.truncate_ghosts(sc, n_real)
         node_feats_res = self.truncate_ghosts(node_feats_res, n_real)
+        # print("message before density", message[0, :4])
         message = self.linear_1(message) / (density * self.beta + self.alpha)
+        # print("message after density", message[0, :4])
         message = message + node_feats_res
         if self.transpose_mul_ir is not None:
             message = self.transpose_mul_ir(message)
+        # print("message after skip", message[0, :4])
         message = self.equivariant_nonlin(message)
+        # print("message after nonlin", message[0, :4])
         if self.transpose_ir_mul is not None:
             message = self.transpose_ir_mul(message)
         message = self.linear_2(message)
+        # print("message after linear2", message[0, :4])
         return (
             self.reshape(message),
             sc,
