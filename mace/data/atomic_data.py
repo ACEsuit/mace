@@ -370,10 +370,29 @@ class AtomicData(torch_geometric.data.Data):
             rcell = 2 * torch.pi * torch.linalg.inv(cell.mT)
         else:
             rcell = torch.zeros(3, 3, dtype=torch.get_default_dtype())
-        fermi_level = torch.tensor(0.0, dtype=torch.get_default_dtype())
-        external_field = torch.zeros(1, 3, dtype=torch.get_default_dtype())
-        density_coefficients = torch.zeros(
-            (num_atoms, 1), dtype=torch.get_default_dtype()
+        fermi_level = (
+            torch.tensor(
+                config.properties.get("fermi_level"), dtype=torch.get_default_dtype()
+            )
+            if config.properties.get("fermi_level") is not None
+            else torch.tensor(0.0, dtype=torch.get_default_dtype())
+        )
+        print("config.properties", config.properties)
+        external_field = (
+            torch.tensor(
+                config.properties.get("external_field"),
+                dtype=torch.get_default_dtype(),
+            ).view(1, 3)
+            if config.properties.get("external_field") is not None
+            else torch.zeros(1, 3, dtype=torch.get_default_dtype())
+        )
+        density_coefficients = (
+            torch.tensor(
+                config.properties.get("density_coefficients"),
+                dtype=torch.get_default_dtype(),
+            )
+            if config.properties.get("density_coefficients") is not None
+            else torch.zeros(num_atoms, 1, dtype=torch.get_default_dtype())
         )
 
         return cls(
