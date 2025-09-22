@@ -27,8 +27,12 @@ def build_model(device, dtype):
         num_bessel=8,
         num_polynomial_cutoff=6,
         max_ell=3,
-        interaction_cls=interaction_classes["RealAgnosticResidualNonLinearInteractionBlock"],
-        interaction_cls_first=interaction_classes["RealAgnosticResidualNonLinearInteractionBlock"],
+        interaction_cls=interaction_classes[
+            "RealAgnosticResidualNonLinearInteractionBlock"
+        ],
+        interaction_cls_first=interaction_classes[
+            "RealAgnosticResidualNonLinearInteractionBlock"
+        ],
         num_interactions=3,
         num_elements=num_elements,
         hidden_irreps=hidden_irreps,
@@ -76,7 +80,15 @@ def build_water_atoms():
 
 
 @pytest.mark.skipif(
-    not os.path.exists(os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "mace-fukui-spin-3L-xL-25-cpu_state_dict.pt"))),
+    not os.path.exists(
+        os.path.normpath(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "mace-fukui-spin-3L-xL-25-cpu_state_dict.pt",
+            )
+        )
+    ),
     reason="Missing pretrained state dict at repo root",
 )
 def test_calculator_water_energy_and_charges():
@@ -85,7 +97,11 @@ def test_calculator_water_energy_and_charges():
     model = build_model(device, dtype)
     # Try to load state dict (filtered) if present
     sd_path = os.path.normpath(
-        os.path.join(os.path.dirname(__file__), "..", "mace-fukui-spin-3L-xL-25-cpu_state_dict.pt")
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "mace-fukui-spin-3L-xL-25-cpu_state_dict.pt",
+        )
     )
     try:
         sd = torch.load(sd_path, map_location="cpu")
@@ -95,7 +111,9 @@ def test_calculator_water_energy_and_charges():
                     sd = sd[k]
                     break
         current = model.state_dict()
-        filtered = {k: v for k, v in sd.items() if k in current and current[k].shape == v.shape}
+        filtered = {
+            k: v for k, v in sd.items() if k in current and current[k].shape == v.shape
+        }
         model.load_state_dict(filtered, strict=False)
     except Exception:
         pass
@@ -121,4 +139,6 @@ def test_calculator_water_energy_and_charges():
 
     # At least one should differ for trained weights (skip if not)
     if np.isclose(e0, e_spin) and np.isclose(e0, e_charge):
-        pytest.skip("Energy did not change with spin/charge; weights may not be fully matching")
+        pytest.skip(
+            "Energy did not change with spin/charge; weights may not be fully matching"
+        )
