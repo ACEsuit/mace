@@ -690,7 +690,6 @@ class FieldFukuiMACE(ScaleShiftMACE):
         )
         field_independent_spin_charge_density = spin_charge_density.clone()
         esps: Optional[torch.Tensor] = None
-        print("spin charge density before SCF", spin_charge_density)
 
         for i in range(self.num_recursion_steps):
             field_feats_alpha, _, esps = self.electric_potential_descriptor(
@@ -717,7 +716,6 @@ class FieldFukuiMACE(ScaleShiftMACE):
                 use_pbc_evaluator=use_pbc_evaluator,
                 return_electrostatic_potentials=self.return_electrostatic_potentials,
             )
-            print("field feats alpha", field_feats_alpha)
 
             half_external_field = 0.5 * self.external_field_contribution(
                 data["batch"], positions, external_potential
@@ -771,14 +769,11 @@ class FieldFukuiMACE(ScaleShiftMACE):
             spin_charge_density[:, 1, 0] = spin_charge_density[
                 :, 1, 0
             ] + current_fukui_sources[:, 1] * ((Q_m_S / 2) - pred_total_charges[:, 1])
-            print("spin charge density after step", i, spin_charge_density)
 
         total_energy = e0 + inter_e
-        print("total_energy", total_energy)
-        print("final spin charge density", spin_charge_density[0, 0])
         local_q_e = self.local_electron_energy(
             node_attrs=data["node_attrs"],
-            node_feats=features_mixed,
+            node_feats=node_feats,
             edge_attrs=edge_attrs[:, : self.from_ell_max_field_update],
             edge_feats=edge_feats,
             edge_index=data["edge_index"],
@@ -812,8 +807,6 @@ class FieldFukuiMACE(ScaleShiftMACE):
             num_graphs,
             use_pbc_evaluator=use_pbc_evaluator,
         )
-        print("electron energy", le_total)
-        print("electrostatic energy", electro_energy)
         total_energy = (
             total_energy
             + electro_energy
