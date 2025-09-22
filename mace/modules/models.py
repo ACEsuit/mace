@@ -78,6 +78,7 @@ class MACE(torch.nn.Module):
         oeq_config: Optional[Dict[str, Any]] = None,
         lammps_mliap: Optional[bool] = False,
         readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
+        keep_last_layer_irreps: bool = False,
     ):
         super().__init__()
         self.register_buffer(
@@ -212,10 +213,8 @@ class MACE(torch.nn.Module):
             )
 
         for i in range(num_interactions - 1):
-            if i == num_interactions - 2:
-                hidden_irreps_out = str(
-                    hidden_irreps[0]
-                )  # Select only scalars for last layer
+            if i == num_interactions - 2 and not keep_last_layer_irreps:
+                hidden_irreps_out = str(hidden_irreps[0])  # Select only scalars for last layer
             else:
                 hidden_irreps_out = hidden_irreps
             inter = interaction_cls(
