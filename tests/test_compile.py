@@ -102,9 +102,12 @@ def test_mace(device, default_dtype):  # pylint: disable=W0621
     tmp_model = mace_compile.prepare(create_mace)(device)
     model_compiled = torch.compile(tmp_model, mode="default", fullgraph=True)
 
-    batch = create_batch(device)
-    output1 = model_defaults(batch, training=True)
-    output2 = model_compiled(batch, training=True)
+    batch1 = create_batch(device)
+    output1 = model_defaults(batch1, training=True)
+
+    batch2 = create_batch(device)
+    batch2["positions"].requires_grad_(True)
+    output2 = model_compiled(batch2, training=True)
     assert_close(output1["energy"], output2["energy"])
     assert_close(output1["forces"], output2["forces"])
 
@@ -144,6 +147,7 @@ def test_graph_breaks(device):
         pytest.skip(reason="cuda is not available")
 
     batch = create_batch(device)
+    batch["positions"].requires_grad_(True)
     model = mace_compile.prepare(create_mace)(device)
     explanation = dynamo.explain(model)(batch, training=False)
 
