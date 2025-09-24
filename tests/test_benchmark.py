@@ -30,7 +30,7 @@ def test_inference(
 
     with torch_tools.default_dtype(dtype):
         model = load_mace_mp_medium(dtype, compile_mode, device)
-        batch = create_batch(size, model, device)
+        batch = create_batch(size, model, device, is_compiled=compile_mode is not None)
         log_bench_info(benchmark, dtype, compile_mode, batch)
 
         def func():
@@ -53,7 +53,7 @@ def load_mace_mp_medium(dtype, compile_mode, device):
     return model
 
 
-def create_batch(size: int, model: torch.nn.Module, device: str) -> dict:
+def create_batch(size: int, model: torch.nn.Module, device: str, is_compiled: bool = False) -> dict:
     cutoff = model.r_max.item()
     z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
     atoms = build.bulk("C", "diamond", a=3.567, cubic=True)
@@ -68,6 +68,8 @@ def create_batch(size: int, model: torch.nn.Module, device: str) -> dict:
     )
     batch = next(iter(data_loader))
     batch.to(device)
+    if is_compiled:
+        batch.positions.requires_grad_(True)
     return batch.to_dict()
 
 

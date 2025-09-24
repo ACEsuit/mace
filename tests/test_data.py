@@ -4,6 +4,7 @@ from pathlib import Path
 import ase.build
 import h5py
 import numpy as np
+import pytest
 import torch
 
 from mace.data import (
@@ -56,15 +57,17 @@ class TestAtomicData:
         assert data.forces.shape == (3, 3)
         assert data.node_attrs.shape == (3, 2)
 
-    def test_data_loader(self):
+    @pytest.mark.parametrize("num_workers", [0, 2])
+    def test_data_loader(self, num_workers):
         data1 = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
-        data2 = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
+        data2 = AtomicData.from_config(self.config_2, z_table=self.table, cutoff=3.0)
 
         data_loader = torch_geometric.dataloader.DataLoader(
             dataset=[data1, data2],
             batch_size=2,
             shuffle=True,
             drop_last=False,
+            num_workers=num_workers,
         )
 
         for batch in data_loader:
