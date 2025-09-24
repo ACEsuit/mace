@@ -717,8 +717,8 @@ class FieldFukuiMACE(ScaleShiftMACE):
                 return_electrostatic_potentials=self.return_electrostatic_potentials,
             )
 
-            # Add external field contribution and subtract center of mass motion for gauge invariance
-            center_of_mass = scatter_mean(
+            # Add external field contribution and subtract barycenter for gauge invariance
+            barycenter = scatter_mean(
                 src=positions.double(),
                 index=data["batch"],
                 dim=0,
@@ -726,7 +726,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
             ).to(positions.dtype)
             half_external_field = 0.5 * self.external_field_contribution(
                 data["batch"],
-                positions - center_of_mass[data["batch"], :],
+                positions - barycenter[data["batch"], :],
                 external_potential,
             )
             field_feats_alpha = (
