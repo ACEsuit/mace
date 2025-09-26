@@ -429,7 +429,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
             EnvironmentDependentSpinSourceBlock(
                 irreps_in=hidden_irreps, max_l=atomic_multipoles_max_l
             )
-            for _ in range(num_recursion_steps + 1)
+            for _ in range(num_interactions)
         )
 
         # Field-dependent components
