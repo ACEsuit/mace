@@ -85,8 +85,8 @@ class MACECalculator(Calculator):
         length_units_to_A: float = 1.0,
         default_dtype="",
         charges_key="Qs",
-        info_keys=None,
-        arrays_keys=None,
+        info_keys={},
+        arrays_keys={},
         model_type="MACE",
         compile_mode=None,
         fullgraph=True,
@@ -132,16 +132,14 @@ class MACECalculator(Calculator):
             )
 
         self.results = {}
-        if info_keys is None:
-            info_keys = {
-                "total_spin": "spin",
-                "total_charge": "charge",
-                "external_field": "external_field",
-            }
-        if arrays_keys is None:
-            arrays_keys = {}
-        self.info_keys = info_keys
-        self.arrays_keys = arrays_keys
+        self.info_keys = {
+            "total_spin": "spin",
+            "total_charge": "charge",
+            "external_field": "external_field",
+        }
+        self.info_keys.update(info_keys)
+        self.arrays_keys = {}
+        self.arrays_keys.update(arrays_keys)
 
         self.model_type = model_type
         self.compute_atomic_stresses = False
