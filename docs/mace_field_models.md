@@ -5,7 +5,7 @@ The archtiecture is still adapting, but a rough overview of the current electros
 ![fukui mace models](./field_mace_fukui_steps.png)
 
 A few points about the model:
-- This model is not 'self-consistent', since there is no conevrgence criterion. The number of SC-like steps ($N$) is normally just set to 3.
+- This model is not 'self-consistent', since there is no conevrgence criterion. The number of SC-like steps ($N$) is normally just set to 2.
 - One can apply external fields, since the electric potential features $v_{nlm}^i$ are proejctions of the actual electric potential, from both the model's charges and from aplied fields. 
 
 # Requirements
@@ -15,7 +15,7 @@ A few points about the model:
 # Models
 The available models can be found in https://github.com/ilyes319/mace-field/releases/tag/fukui-1.
 There are three models with 1, 2, and 3 mace layers, all trained on 100 millions OMOL.
-
+Download them. The 1 layer is the fastest, the 2 layer is a good compromise between speed and accuracy, and the 3 layer is the most accurate but slowest.
 
 # How to use the model
 
