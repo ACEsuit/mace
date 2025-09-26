@@ -12,6 +12,11 @@ A few points about the model:
 
 - graph_longrange. Contact `WillBaldwin0` and use the `develop` branch. 
 
+# Models
+The available models can be found in https://github.com/ilyes319/mace-field/releases/tag/fukui-1.
+There are three models with 1, 2, and 3 mace layers, all trained on 100 millions OMOL.
+
+
 # How to use the model
 
 set up and use a calculator via
@@ -19,18 +24,17 @@ set up and use a calculator via
 ```python
 from mace.calculators import MACECalculator
 
-model_path = "mace-fukui-spin-3L-xL-25-cpu-trans.model"
+model_path = "mace-field-fukui-spin-2L.model""
 calc = MACECalculator(
     model_path,
     device='cuda',
 )
 
 atoms.calc = calc
-atoms.get_forces()
 
 # with specified total charge, spin, field:
 atoms.info['charge'] = 1.0              # (e)
-atoms.info['spin'] = 1                  # multiplicity, default=1 (not total spin)
+atoms.info['spin'] = 1                  # multiplicity, default=1 (not total spin but (number of unpaired electrons + 1))
 atoms.info['external_field'] = 0.01     # V/\AA. note that sign is REVERSED. fields point uphill, consistent with fhi-aims, vasp, ...
 atoms.get_forces()
 ```
@@ -60,13 +64,3 @@ In this case, any keys which are not specified will take the default values of `
 - Partial charges and dipoles are **not well defined**. Futhermore, sums of these quantities onto clusters or molecules are also not defined, except one sums the totals on **isolated** fragments, where isolated means that the fragment to be summed doesnt come within ~6 Angstrom of any other atoms.
 - Partial spins (some models). We also store a spin density array `calc.results['spin_charge_density']` which is `(n_atoms, 2, 4)`. This also contains atomic multipoles, resolved to two different spin channels. The sum across the second index is the atomic multipoes above.
 
-# Models and Naming
-
-### Models trained on partial charges (not recommended)
-- 
-
-### Models without spin density channels
-- 
-
-### Models with spin density channels
-- fukui-large-spin: `mace-fukui-spin-3L-xL-25-cpu-trans.model`
