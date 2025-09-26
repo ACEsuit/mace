@@ -1,13 +1,34 @@
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type
 
-import torch
+from e3nn import o3
 from e3nn.util.jit import compile_mode
+from graph_longrange.gto_electrostatics import (
+    DisplacedGTOExternalFieldBlock,
+    PBCAgnosticDirectElectrostaticEnergyBlock,
+    gto_basis_kspace_cutoff,
+)
+from graph_longrange.kspace import compute_k_vectors
+import torch
 
+from mace.modules import InteractionBlock, NonLinearBiasReadoutBlock
 from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock
 from mace.modules.models import ScaleShiftMACE
-from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
+from mace.modules.utils import (
+    get_atomic_virials_stresses,
+    get_outputs,
+    prepare_graph,
+)
 from mace.modules.wrapper_ops import CuEquivarianceConfig, OEQConfig
 from mace.tools.scatter import scatter_mean, scatter_sum
+
+from .electrostatic_features import PBCAgnosticElectrostaticFeatureBlock
+from .field_blocks import (
+    EnvironmentDependentSpinSourceBlock,
+    MultiLayerFeatureMixer,
+    field_readout_blocks,
+    field_update_blocks,
+)
+from .utils import compute_total_charge_dipole_permuted
 
 
 def _copy_mace_readout(
@@ -267,48 +288,6 @@ class MACELES(ScaleShiftMACE):
             "latent_charges": les_q,
             "BEC": les_result["BEC"],
         }
-
-
-# ------------------------------
-# Field-aware Fukui MACE variant
-# ------------------------------
-from typing import Any, Callable, Dict, List, Optional, Type
-import numpy as np
-import torch
-from e3nn import o3
-from e3nn.util.jit import compile_mode
-import logging
-
-from mace.tools.scatter import scatter_sum
-from mace.modules.utils import (
-    get_outputs,
-)
-
-from mace.modules import (
-    InteractionBlock,
-    LinearReadoutBlock,
-    NonLinearReadoutBlock,
-    NonLinearBiasReadoutBlock,
-)
-
-from graph_longrange.kspace import compute_k_vectors
-from graph_longrange.gto_electrostatics import (
-    gto_basis_kspace_cutoff,
-    GTOExternalFieldBlock,
-    DisplacedGTOExternalFieldBlock,
-    KSpaceDirectElectrostaticEnergyBlock,
-    PBCAgnosticDirectElectrostaticEnergyBlock,
-)
-from .electrostatic_features import (
-    PBCAgnosticElectrostaticFeatureBlock,
-)
-from .field_blocks import (
-    EnvironmentDependentSpinSourceBlock,
-    field_update_blocks,
-    field_readout_blocks,
-    MultiLayerFeatureMixer,
-)
-from .utils import compute_total_charge_dipole_permuted
 
 
 def _permute_to_e3nn_convention(x: torch.Tensor) -> torch.Tensor:
