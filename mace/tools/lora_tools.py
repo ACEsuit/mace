@@ -88,7 +88,7 @@ class LoRADenseLinear(nn.Module):
 
 class LoRAFCLayer(nn.Module):
     """LoRA for e3nn.nn._fc._Layer used by FullyConnectedNet (scalar MLP).
-    Adds a low-rank delta on the weight matrix; preserves scalar nature.
+    Adds a low-rank delta on the weight matrix.
     """
 
     def __init__(self, base_layer: nn.Module, rank: int = 4, alpha: float = 1.0):
@@ -110,7 +110,7 @@ class LoRAFCLayer(nn.Module):
             torch.nn.init.zeros_(self.lora_B)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Replicate e3nn _Layer normalization exactly
+        # Replicate e3nn _Layer normalization 
         W = self.base.weight  # type: ignore[attr-defined]
         h_in = getattr(self.base, "h_in")
         var_in = getattr(self.base, "var_in")
@@ -139,8 +139,6 @@ def inject_lora(
     alpha: float = 1.0,
     wrap_equivariant: bool = True,
     wrap_dense: bool = True,
-    verbose: bool = False,
-    freeze_non_lora: bool = True,
     _is_root: bool = True,
 ) -> None:
     """
@@ -150,44 +148,30 @@ def inject_lora(
 
     for child_name, child in list(module.named_children()):
         # Skip already wrapped
-        if isinstance(child, (LoRAO3Linear, LoRADenseLinear)):
+        if isinstance(child, (LoRAO3Linear, LoRADenseLinear, LoRAFCLayer)):
             continue
         # Equivariant o3.Linear
         if wrap_equivariant and isinstance(child, o3.Linear):
             try:
                 wrapped = LoRAO3Linear(child, rank=rank, alpha=alpha)
-            except Exception as exc:  # If no shared irreps, skip
-                if verbose:
-                    print(f"[LoRA] Skip {child_name}: {exc}")
+            except Exception: # If no shared irreps, skip
+                continue
             else:
                 module._modules[child_name] = wrapped
-                if verbose:
-                    print(f"[LoRA] Wrapped equivariant {child_name}: {child.irreps_in} -> {child.irreps_out}")
-                # Do not recurse into the wrapper internals (base/lora_A/lora_B)
-                continue
         # Dense nn.Linear
         if wrap_dense and isinstance(child, nn.Linear):
             wrapped = LoRADenseLinear(child, rank=rank, alpha=alpha)
             module._modules[child_name] = wrapped
-            if verbose:
-                print(f"[LoRA] Wrapped dense {child_name}: {child.in_features} -> {child.out_features}")
-            # Do not recurse into the wrapper internals
             continue
         # e3nn FullyConnectedNet internal layer
-        if wrap_dense and (E3NNFCLayer is not None) and isinstance(child, E3NNFCLayer):  # type: ignore[arg-type]
-            # Wrap all FC layers; LoRA forward replicates normalization exactly
-
+        if wrap_dense and isinstance(child, E3NNFCLayer):
             wrapped = LoRAFCLayer(child, rank=rank, alpha=alpha)
             module._modules[child_name] = wrapped
-            if verbose:
-                print(f"[LoRA] Wrapped e3nn FC layer {child_name}: weight {tuple(child.weight.shape)}")
-                
             continue
         # Recurse
-        inject_lora(child, rank, alpha, wrap_equivariant, wrap_dense, verbose, freeze_non_lora, _is_root=False)
+        inject_lora(child, rank, alpha, wrap_equivariant, wrap_dense, _is_root=False)
 
-    # Optionally freeze everything except LoRA A/B (only once at root)
-    if freeze_non_lora and _is_root:
+    if _is_root:
         for name, p in module.named_parameters():
             if ("lora_A" in name) or ("lora_B" in name):
                 p.requires_grad = True
@@ -196,6 +180,6 @@ def inject_lora(
 
 
 def inject_LoRAs(model: nn.Module, rank: int = 4, alpha: int = 1):
-    inject_lora(model, rank=rank, alpha=alpha, wrap_equivariant=True, wrap_dense=True, verbose=True)
+    inject_lora(model, rank=rank, alpha=alpha, wrap_equivariant=True, wrap_dense=True)
     return model
     
