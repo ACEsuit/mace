@@ -531,7 +531,8 @@ def run(args) -> None:
                 pt_head_config=head_config,
                 r_max=args.r_max,
                 device=device,
-                batch_size=args.batch_size
+                batch_size=args.batch_size,
+                force_stress=args.pseudolabel_replay_compute_stress,
             ):
                 logging.info("Successfully applied pseudolabels to pt_head configurations")
             else:

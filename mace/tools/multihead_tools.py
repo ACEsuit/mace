@@ -223,6 +223,7 @@ def generate_pseudolabels_for_configs(
     r_max: float,
     device: torch.device,
     batch_size: int,
+    force_stress: bool = False,
 ) -> List[Configuration]:
     """
     Generate pseudolabels for a list of Configuration objects.
@@ -281,6 +282,15 @@ def generate_pseudolabels_for_configs(
                 if not hasattr(config_copy, "properties"):
                     config_copy.properties = {}
 
+                if not hasattr(config_copy, "property_weights"):
+                    config_copy.property_weights = {}
+
+                original_stress_weight = config.property_weights.get("stress", 0.0)
+                had_stress = (
+                    config.properties.get("stress") is not None
+                    and original_stress_weight > 0.0
+                )
+
                 # Update config properties with pseudolabels
                 if "energy" in out and out["energy"] is not None:
                     config_copy.properties["energy"] = (
@@ -295,9 +305,13 @@ def generate_pseudolabels_for_configs(
                         out["forces"][node_start:node_end].detach().cpu().numpy()
                     )
                 if "stress" in out and out["stress"] is not None:
-                    config_copy.properties["stress"] = (
-                        out["stress"][j].detach().cpu().numpy()
-                    )
+                    if had_stress or force_stress:
+                        config_copy.properties["stress"] = (
+                            out["stress"][j].detach().cpu().numpy()
+                        )
+                        config_copy.property_weights["stress"] = (
+                            original_stress_weight if had_stress else 1.0
+                        )
                 if "virials" in out and out["virials"] is not None:
                     config_copy.properties["virials"] = (
                         out["virials"][j].detach().cpu().numpy()
@@ -338,6 +352,7 @@ def apply_pseudolabels_to_pt_head_configs(
     r_max: float,
     device: torch.device,
     batch_size: int,
+    force_stress: bool = False,
 ) -> bool:
     """
     Apply pseudolabels to pt_head configurations using the foundation model.
@@ -390,6 +405,7 @@ def apply_pseudolabels_to_pt_head_configs(
                 r_max=r_max,
                 device=device,
                 batch_size=batch_size,
+                force_stress=force_stress,
             )
 
             # Replace the original configurations with updated ones
@@ -413,6 +429,7 @@ def apply_pseudolabels_to_pt_head_configs(
                 r_max=r_max,
                 device=device,
                 batch_size=batch_size,
+                force_stress=force_stress,
             )
 
             # Replace the original configurations with updated ones
