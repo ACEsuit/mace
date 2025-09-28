@@ -32,6 +32,7 @@ from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
 from mace.tools.distributed_tools import init_distributed
 from mace.tools.model_script_utils import configure_model
+from mace.tools.lora_tools import inject_LoRAs
 from mace.tools.multihead_tools import (
     HeadConfig,
     apply_pseudolabels_to_pt_head_configs,
@@ -686,32 +687,27 @@ def run(args) -> None:
     model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
     model.to(device)
 
-    logging.debug(model)
-    logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
-    logging.info("")
-    # =================================================================
-    # LORA
-    # =================================================================
-    
-    # Check for a command-line argument to enable LoRA
-    if args.lora: 
-        print("LoRA fine-tuning enabled.")
-        from mace.tools.lora_tools import inject_LoRAs
+    if args.lora:
+        lora_rank = args.lora_rank
+        lora_alpha = args.lora_alpha
 
-        logging.info("Original model has {} trainable parameters.".format({tools.count_parameters(model)}))
-        LORA_RANK = 4 
-        LORA_ALPHA = 1.0
+        logging.info(
+            "Injecting LoRA layers with rank=%s and alpha=%s",
+            lora_rank,
+            lora_alpha,
+        )
         
-        logging.info(f"Injecting LoRA layers with rank={LORA_RANK} and alpha={LORA_ALPHA}")
-        model = inject_LoRAs(model, rank=LORA_RANK, alpha=LORA_ALPHA)
+        logging.info(
+            "Original model has %s trainable parameters.",
+            tools.count_parameters(model),
+        )
 
-        
-        logging.info("Model with LoRA has {} trainable parameters.".format({tools.count_parameters(model)}))
+        model = inject_LoRAs(model, rank=lora_rank, alpha=lora_alpha)
 
-    # =================================================================
-    # LORA
-    # =================================================================
-
+        logging.info(
+            "Model with LoRA has %s trainable parameters.",
+            tools.count_parameters(model),
+        )
 
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")

@@ -57,13 +57,10 @@ class LoRAO3Linear(nn.Module):
 
 
 class LoRADenseLinear(nn.Module):
-    """LoRA for torch.nn.Linear (scalar MLPs; does not affect equivariance)."""
+    """LoRA for torch.nn.Linear"""
 
     def __init__(self, base_linear: nn.Linear, rank: int = 4, alpha: float = 1.0):
         super().__init__()
-        if base_linear.bias is not None:
-            # Keep bias in the base path only
-            bias = base_linear.bias
         self.base = base_linear
         in_f = self.base.in_features
         out_f = self.base.out_features
@@ -143,7 +140,6 @@ def inject_lora(
 ) -> None:
     """
     Recursively replace eligible linears with LoRA-wrapped versions.
-    Returns None.
     """
 
     for child_name, child in list(module.named_children()):
