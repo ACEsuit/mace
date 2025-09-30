@@ -28,6 +28,7 @@ from .utils import (
     compute_rel_mae,
     compute_rel_rmse,
     compute_rmse,
+    fold_polarization,
     get_atomic_number_table_from_zs,
     get_tag,
     setup_logger,
@@ -70,4 +71,5 @@ __all__ = [
     "load_foundations",
     "load_foundations_elements",
     "build_preprocess_arg_parser",
+    "fold_polarization",
 ]

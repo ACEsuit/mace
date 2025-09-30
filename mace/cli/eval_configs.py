@@ -5,7 +5,7 @@
 ###########################################################################################
 
 import argparse
-from typing import Dict
+from typing import Dict, Optional
 
 import ase.data
 import ase.io
@@ -55,9 +55,43 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--compute_bec",
-        help="compute BEC",
+        help="compute BEC for LES",
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "--compute_polarization",
+        help="compute polarization for MACEField",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_becs",
+        help="compute becs for MACEField",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_polarizability",
+        help="compute polarizability for MACEField",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--electric_field_key",
+        help="Key for the electric field",
+        type=str,
+        required=False,
+        default="REF_electric_field",
+    )
+    parser.add_argument(
+        "--electric-field",
+        help="Uniform electric field components in a.u.",
+        type=float,
+        nargs=3,
+        metavar=("Ex", "Ey", "Ez"),
+        required=False,
+        default=None,
     )
     parser.add_argument(
         "--return_contributions",
@@ -116,6 +150,10 @@ def get_model_output(
     batch: Dict[str, torch.Tensor],
     compute_stress: bool,
     compute_bec: bool,
+    compute_polarization: bool,  # MACEField
+    compute_becs: bool,  # MACEField
+    compute_polarizability: bool,  # MACEField
+    electric_field: Optional[torch.Tensor] = None,  # MACEField
 ) -> Dict[str, torch.Tensor]:
     forward_args = {
         "compute_stress": compute_stress,
@@ -124,6 +162,17 @@ def get_model_output(
         # Only add `compute_bec` if it is requested
         # We check if the model is MACELES at the start of the run function
         forward_args["compute_bec"] = compute_bec
+    if compute_polarization:
+        forward_args["compute_polarization"] = compute_polarization
+        forward_args["training"] = True
+    if compute_becs:
+        forward_args["compute_becs"] = compute_becs
+        forward_args["training"] = True
+    if compute_polarizability:
+        forward_args["compute_polarizability"] = compute_polarizability
+        forward_args["training"] = True
+    if electric_field is not None:
+        forward_args["electric_field"] = electric_field
     return model(batch, **forward_args)
 
 
@@ -140,6 +189,16 @@ def run(args: argparse.Namespace) -> None:
     model = torch.load(f=args.model, map_location=args.device)
     if model.__class__.__name__ != "MACELES" and args.compute_bec:
         raise ValueError("BEC can only be computed with MACELES model. ")
+    if model.__class__.__name__ != "MACEField" and (
+        args.compute_polarization or args.compute_becs or args.compute_polarizability
+    ):
+        raise ValueError(
+            "Polarization, BECs and polarizability can only be computed with MACEField model."
+        )
+    if args.electric_field is not None:
+        electric_field = torch.Tensor(args.electric_field)
+    else:
+        electric_field = None
     if args.enable_cueq:
         print("Converting models to CuEq for acceleration")
         model = run_e3nn_to_cueq(model, device=device)
@@ -155,7 +214,12 @@ def run(args: argparse.Namespace) -> None:
     if args.head is not None:
         for atoms in atoms_list:
             atoms.info["head"] = args.head
-    configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
+    keyspec = data.KeySpecification(
+        info_keys={"electric_field": args.electric_field_key}, arrays_keys={}
+    )
+    configs = [
+        data.config_from_atoms(atoms, key_specification=keyspec) for atoms in atoms_list
+    ]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
@@ -185,11 +249,21 @@ def run(args: argparse.Namespace) -> None:
     bec_list = []
     qs_list = []
     forces_collection = []
+    polarizations_list = []  # MACEField
+    becs_collection = []  # MACEField
+    polarizabilities_list = []  # MACEField
 
     for batch in data_loader:
         batch = batch.to(device)
         output = get_model_output(
-            model, batch.to_dict(), args.compute_stress, args.compute_bec
+            model,
+            batch.to_dict(),
+            args.compute_stress,
+            args.compute_bec,
+            args.compute_polarization,  # MACEField
+            args.compute_becs,  # MACEField
+            args.compute_polarizability,  # MACEField
+            electric_field,  # MACEField
         )
         energies_list.append(torch_tools.to_numpy(output["energy"]))
         if args.compute_stress:
@@ -208,6 +282,20 @@ def run(args: argparse.Namespace) -> None:
                 axis=0,
             )
             qs_list.append(qs[:-1])  # drop last as its empty
+
+        # MACEField
+        if args.compute_polarization:
+            polarizations_list.append(torch_tools.to_numpy(output["polarization"]))
+        if args.compute_polarizability:
+            polarizabilities_list.append(torch_tools.to_numpy(output["polarizability"]))
+        if args.compute_becs:
+            becs = np.split(
+                torch_tools.to_numpy(output["becs"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            becs = [becs.reshape(-1, 9) for becs in becs[:-1]]  # drop last as its empty
+            becs_collection.append(becs)
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
@@ -277,6 +365,15 @@ def run(args: argparse.Namespace) -> None:
         bec_list = [becs for sublist in bec_list for becs in sublist]
         qs_list = [qs for sublist in qs_list for qs in sublist]
 
+    if args.compute_polarization:
+        polarizations = np.concatenate(polarizations_list, axis=0)
+
+    if args.compute_becs:
+        becs_list = [becs for becs_list in becs_collection for becs in becs_list]
+
+    if args.compute_polarizability:
+        polarizabilities = np.concatenate(polarizabilities_list, axis=0)
+
     if args.return_contributions:
         contributions = np.concatenate(contributions_list, axis=0)
         assert len(atoms_list) == contributions.shape[0]
@@ -296,11 +393,22 @@ def run(args: argparse.Namespace) -> None:
         atoms.arrays[args.info_prefix + "forces"] = forces
 
         if args.compute_stress:
-            atoms.info[args.info_prefix + "stress"] = stresses[i]
+            atoms.info[args.info_prefix + "stress"] = stresses[i].reshape(9)
 
         if args.compute_bec:
             atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(-1, 9)
             atoms.arrays[args.info_prefix + "latent_charges"] = qs_list[i]
+
+        if args.compute_polarization:
+            atoms.info[args.info_prefix + "polarization"] = polarizations[i, :]
+
+        if args.compute_becs:
+            atoms.arrays[args.info_prefix + "becs"] = becs_list[i].reshape(-1, 9)
+
+        if args.compute_polarizability:
+            atoms.info[args.info_prefix + "polarizability"] = polarizabilities[
+                i, :, :
+            ].reshape(9)
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]

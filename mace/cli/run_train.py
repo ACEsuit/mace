@@ -309,6 +309,7 @@ def run(args) -> None:
                     args.pseudolabel_replay
                     and args.multiheads_finetuning
                     and head_config.head_name == "pt_head"
+                    or args.model == "MACEField"
                 ),
             )
             head_config.collections = SubsetCollection(
@@ -498,11 +499,12 @@ def run(args) -> None:
             args.compute_forces = True
             args.compute_virials = False
             args.compute_stress = False
-            args.compute_polarizability = False
+            # args.compute_polarizability = False
         else:
             args.compute_energy = True
             args.compute_dipole = False
-            args.compute_polarizability = False
+            # args.compute_polarizability = False
+
         # atomic_energies: np.ndarray = np.array(
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
@@ -709,11 +711,11 @@ def run(args) -> None:
         args.enable_oeq = False
     if args.enable_cueq and not args.only_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES", "MACEField"]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     if args.enable_oeq:
         logging.info("Converting model to OEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES", "MACEField"]
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
 
     # Optimizer
