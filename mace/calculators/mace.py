@@ -471,9 +471,8 @@ class MACECalculator(Calculator):
             compute_polarization = True
             compute_becs = True
             compute_polarizability = True
-            batch_base["electric_field"] = torch.tensor(
-                self.electric_field, dtype=next(self.models[0].parameters()).dtype
-            )
+            batch_base["electric_field"] = self.electric_field.detach().clone()
+            
 
         ret_tensors = self._create_result_tensors(
             self.model_type, self.num_models, len(atoms)
