@@ -226,6 +226,7 @@ def test_run_train_with_atom_embed(tmp_path):
         )
         # Add electronic temperature (in K)
         water.arrays["KEY_quant"] = np.random.normal(0.0, 0.01, size=len(water))
+        water.arrays["quant_v"] = np.random.normal(0.0, 0.01, size=(len(water), 2))
         water.arrays["cat"] = np.random.randint(2, size=len(water))
         configs_with_atom_embed.append(water)
 
@@ -236,8 +237,9 @@ def test_run_train_with_atom_embed(tmp_path):
         )
         isolated_atom.info["REF_energy"] = 0.0
         isolated_atom.info["config_type"] = "IsolatedAtom"
-        water.arrays["KEY_quant"] = np.asarray([0.0])
-        water.arrays["cat"] = np.asarray([0])
+        water.arrays["KEY_quant"] = np.zeros(1)
+        water.arrays["quant_v"] = np.zeros((1, 2))
+        water.arrays["cat"] = np.zeros(1).astype(int)
         configs_with_atom_embed.append(isolated_atom)
 
     # Save configurations
@@ -278,6 +280,12 @@ embedding_specs:
         type: continuous
         per: atom
         in_dim: 1
+        emb_dim: 32
+    quant_v:
+        key: quant_v
+        type: continuous
+        per: atom
+        in_dim: 2
         emb_dim: 32
 """
 
@@ -339,68 +347,42 @@ embedding_specs:
         device="cpu",
         arrays_keys={
             "quant": "quant",
+            "quant_v": "quant_v",
             "cat": "cat",
         },
     )
 
-    # Create two test molecules with different cat values
-    test_mol1 = molecule("H2O")
-    test_mol1.new_array("quant", np.zeros(len(test_mol1)))
-    test_mol1.new_array("cat", np.zeros(len(test_mol1)).astype(int))
+    for vary_prop in ["cat", "quant", "quant_v"]:
+        # Create two test molecules with different cat values
+        test_mol1 = molecule("H2O")
+        test_mol1.new_array("quant", np.zeros(len(test_mol1)))
+        test_mol1.new_array("quant_v", np.zeros((len(test_mol1), 2)))
+        test_mol1.new_array("cat", np.zeros(len(test_mol1)).astype(int))
 
-    test_mol2 = molecule("H2O")
-    test_mol2.positions = test_mol1.positions.copy()  # Ensure identical geometry
-    test_mol2.new_array("quant", np.zeros(len(test_mol2)))
-    test_mol2.new_array("cat", np.zeros(len(test_mol2)).astype(int))
+        test_mol2 = molecule("H2O")
+        test_mol2.positions = test_mol1.positions.copy()  # Ensure identical geometry
+        test_mol2.new_array("quant", np.zeros(len(test_mol2)))
+        test_mol2.new_array("quant_v", np.zeros((len(test_mol2), 2)))
+        test_mol2.new_array("cat", np.zeros(len(test_mol2)).astype(int))
 
-    test_mol2.arrays["cat"][0] = 1
+        test_mol2.arrays[vary_prop][0] = 1
 
-    # Get energies
-    test_mol1.calc = calc
-    energy1 = test_mol1.get_potential_energy()
-    calc.reset()
-    test_mol2.calc = calc
-    energy2 = test_mol2.get_potential_energy()
+        # Get energies
+        calc.reset()
+        test_mol1.calc = calc
+        energy1 = test_mol1.get_potential_energy()
+        calc.reset()
+        test_mol2.calc = calc
+        energy2 = test_mol2.get_potential_energy()
 
-    # Verify energies are different (the model responds to temperature)
-    assert np.isfinite(energy1), "Energy calculation failed for cat [0, 0, ..., 0]"
-    assert np.isfinite(energy2), "Energy calculation failed for cat [1, 0, ..., 0]"
+        # Verify energies are different (the model responds to temperature)
+        assert np.isfinite(energy1), f"Energy calculation failed for {vary_prop} {test_mol1.arrays[vary_prop]}"
+        assert np.isfinite(energy2), f"Energy calculation failed for {vary_prop} {test_mol2.arrays[vary_prop]}"
 
-    # The energies should be different if the model correctly uses temperature
-    assert abs(energy1 - energy2) > 1e-6, "Model is not sensitive to cat"
+        # The energies should be different if the model correctly uses temperature
+        assert abs(energy1 - energy2) > 1e-6, "Model is not sensitive to {vary_prop"
 
-    print("Model produces different energies for different cat:")
-    print(f"Energy at {test_mol1.arrays['cat']}: {energy1:.6f} eV")
-    print(f"Energy at {test_mol2.arrays['cat']}: {energy2:.6f} eV")
-    print(f"Difference: {abs(energy1 - energy2):.6f} eV")
-
-    # Create two test molecules with different quant values
-    test_mol1 = molecule("H2O")
-    test_mol1.new_array("quant", np.zeros(len(test_mol1)))
-    test_mol1.new_array("cat", np.zeros(len(test_mol1)).astype(int))
-
-    test_mol2 = molecule("H2O")
-    test_mol2.positions = test_mol1.positions.copy()  # Ensure identical geometry
-    test_mol2.new_array("quant", np.zeros(len(test_mol2)))
-    test_mol2.new_array("cat", np.zeros(len(test_mol2)).astype(int))
-
-    test_mol2.arrays["quant"][0] = 0.1
-
-    # Get energies
-    test_mol1.calc = calc
-    energy1 = test_mol1.get_potential_energy()
-    calc.reset()
-    test_mol2.calc = calc
-    energy2 = test_mol2.get_potential_energy()
-
-    # Verify energies are different (the model responds to temperature)
-    assert np.isfinite(energy1), "Energy calculation failed for quant [0, 0, ..., 0]"
-    assert np.isfinite(energy2), "Energy calculation failed for quant [0.1, 0, ..., 0]"
-
-    # The energies should be different if the model correctly uses temperature
-    assert abs(energy1 - energy2) > 1e-6, "Model is not sensitive to quant"
-
-    print("Model produces different energies for different quant:")
-    print(f"Energy at {test_mol1.arrays['quant']}: {energy1:.6f} eV")
-    print(f"Energy at {test_mol2.arrays['quant']}: {energy2:.6f} eV")
-    print(f"Difference: {abs(energy1 - energy2):.6f} eV")
+        print(f"Model produces different energies for different {vary_prop}:")
+        print(f"Energy at {test_mol1.arrays[vary_prop]}: {energy1:.6f} eV")
+        print(f"Energy at {test_mol2.arrays[vary_prop]}: {energy2:.6f} eV")
+        print(f"Difference: {abs(energy1 - energy2):.6f} eV")
