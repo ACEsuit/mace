@@ -71,7 +71,7 @@ def update_keyspec_from_kwargs(
             arrays_keys[key[:-4]] = keydict[key]
 
     # automagically add properties for embeddings
-    if "embedding_specs" in keydict:
+    if keydict.get("embedding_specs") is not None:
         for embed_name, embed_spec in keydict["embedding_specs"].items():
             key = embed_spec.get("key", embed_name)
             if embed_spec["per"] == "atom":
