@@ -6,10 +6,19 @@ OpenMM Interface
 
 MACE models can be used to run molecular dynamics through OpenMM.  A wide variety of simulations can be run in this way, and it allows for execution of the full simulation on the GPU.
 
-Manual Installation steps
--------------------------
+Installation
+~~~~~~~~~~~~
 
-Create the conda environment from the provided environment file. Note we use mamba as a drop in conda replacement.
+The `mace-md` package provides a frontend for creating openMM systems and running simulations with MACE.
+
+Clone the repository
+
+.. code-block:: console
+
+    git clone https://github.com/jharrymoore/mace-md.git
+
+
+Create the conda environment from the provided `env.yaml` file. Note we use mamba as a drop in conda replacement.
 
 ``conda install mamba -c conda-forge``
 
@@ -17,25 +26,15 @@ If you are installing on a headnode, override the virtual cuda package to match 
 
 .. code-block:: console
 
-    export CONDA_OVERRIDE_CUDA=11.8
-    mamba env create -f mace-openmm.yml
-
-- Install additional MACE/openMM related packages from GitHub
-
-.. code-block:: console
-
-    pip install git+https://github.com/choderalab/mpiplus.git
-    pip install git+https://github.com/ACEsuit/mace.git
-    pip install git+https://github.com/openmm/openmm-ml.git
-    pip install git+https://github.com/jharrymoore/openmmtools.git@development
+    export CONDA_OVERRIDE_CUDA=12.4
+    mamba env create -f env.yml
 
 
-- To quickly test the installation, run the following command to run a short MACE MD simulation
+- To quickly test the installation, we will use the MACE-OFF23-S model available from https://github.com/ACEsuit/mace-off/blob/main/ and the example files provided in the mace-md repo.
 
 .. code-block:: console
 
-    wget https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model
-    mace-md -f ejm_31.sdf --ml_mol ejm_31.sdf --model_path MACE-OFF23_small.model --output_dir md_test --nl torch_nl --steps 1000 --minimiser ase --dtype float64 --remove_cmm --unwrap
+    mace-md -f ejm_31.sdf --model_path MACE-OFF23_small.model --output_dir md_test  --steps 1000 --unwrap --minimiser openmm
 
 Testing your Installation
 -------------------------
@@ -44,108 +43,30 @@ Run the unit tests for mace-md with the following:
 
 .. code-block:: console
 
-    pytest -s openmmtools/tests/test_mace-md.py
+    pytest -s mace_md/tests/test_mace-md.py
 
 
 Running MD simulations
 ----------------------
 
-The following snippets use files from the ``examples/example_data`` folder of the openmmtools repository.
-
-Run pure MACE MD simulation with Langevin dynamics:
-
-.. code-block:: python
-
-    from openmmtools.openmm_torch.hybrid_md import PureSystem
-    import torch
-
-    torch.set_default_dtype(torch.float64)
-
-    file = "ejm_31.sdf"
-    model_path = "MACE_SPICE_larger.model"
-    temperature = 298
-
-    system=PureSystem(
-      	ml_mol=file
-        model_path=model_path
-        potential="mace"
-        output_dir="output_md"
-        temperature=298,
-        nl="torch"
-    )
-
-    system.run_mixed_md(
-        steps=5000, interval=25, output_file="output.pdb", restart=False,
-    )
-    
-Example of a MACE NPT simulation with periodic boundary conditions:
-
-.. code-block:: python
-    
-    from openmmtools.openmm_torch.hybrid_md import PureSystem
-    import torch
-
-    torch.set_default_dtype(torch.float64)
-
-    file = "waterbox.xyz"
-    model_path = "MACE_SPICE_larger.model"
-    temperature = 298
-    pressure = 1.0
-
-    system=PureSystem(
-        file=file,
-        model_path=model_path,
-        potential="mace",
-        temperature=temperature,
-        output_dir="output_md",
-		pressure = pressure
-    )
-
-    system.run_mixed_md(
-        steps=10000, interval=50, output_file="output_md_water.pdb", restart=False
-    )
-
-Example of a hybrid ML-MM simulation where the small molecule is parametrised by MACE, whilst the solvent and ions are modelled with a classical FF
-
-.. code-block:: python
-    
-    from openmmtools.openmm_torch.hybrid_md import HybridSystem
-    import torch
-
-    torch.set_default_dtype(torch.float64)
-
-    file = "ejm_31.sdf"
-    model_path = "MACE_SPICE_larger.model"
-    temperature = 298
-
-    system = MixedSystem(
-        file=file,
-        ml_mol=file,
-        model_path=model_path,
-        potential="mace",
-        output_dir="output_hybrid",
-        temperature=298,
-        nl="nnpops",
-        nnpify_type="resname",
-        resname="UNK",
-    )
-
-    system.run_mixed_md(
-        steps=10000, interval=50, output_file="output_md_mlmm.pdb", restart=False
-    )
-
-
-Alternatively, simulations can also be run through the mace-md interface, which exposes exactly the same functionality.
+The following examples use files from the ``examples/example_data`` folder of the mace-md repository.
 
 Pure MD simulations
 ~~~~~~~~~~~~~~~~~~~
 
 The simplest use case is where the full system is simulated with the MACE potential.  The simulation can be started from a ``.xyz`` file as follows, which will run the simulation for 1000 steps, reporting structures and run information every 100 steps
 
-``mace-md -f molecule.xyz --ml_mol molecule.xyz --model_path /path/to/my-mace.model --steps 1000 --timestep 1.0 --integrator langevin --interval 100 --output_dir ./test_output``
+.. code-block:: console
+mace-md -f molecule.xyz \
+    --model_path /path/to/my-mace.model \
+    --steps 1000 \
+    --timestep 1.0 \
+    --interval 100 \
+    --output_dir ./test_output
 
 
-For a full set of command line argument options, run 
+For a full set of command line argument options, run
+
 ``mace-md -h``
 
 
@@ -166,3 +87,34 @@ This will run 1 ns (1000 x 1 ps MCMC swap attempts), writing all information req
 
 
 
+Alchemical simulations with MACE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+It is possible to perform alchemical free energy calculations via `mace-md` using a pure MACE simulations as described in https://arxiv.org/abs/2405.18171. The model must have been trained according to the softcore protocol introduced in the paper, for example the `MACE-OFF23-SC` model available under the ASL https://github.com/jharrymoore/MACE-OFF23-SC.
+
+To perform an absolute hydration free energy calculation, use the following command, and the example input file from the `mace-md` repo .
+
+.. code-block:: console
+
+  mace-md -f methane_solv.pdb \
+  --decouple \
+  --resname UNK \ # this must correspond to the resid of the small molecule to be alchemically decoupled in the pdb file
+  --output_dir repex_methane \
+  --steps 1000 \ # 1 ns per replica
+  --replicas 16 \ # by default use uniform spacing
+  --steps_per_iter 1000 \ # 1ps between attempted exchanges
+  --interval 1 \ # log every repex iteration
+  --pressure 1.0 \ # NPT
+  --restart \
+  --model_path /path/to/mace.model \
+
+
+Optionally, the following arguments will log the repex calculation progress to wandb
+
+.. code-block:: console
+
+  --wandb \
+  --wandb_project test_repex_calculations \
+  --wandb_name "methane"
+
+Make sure you have run `wandb login` to authenticate with wandb first.
