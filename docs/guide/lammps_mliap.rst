@@ -130,6 +130,8 @@ The ``0`` after the model filename is a required parameter for the unified ML-IA
 
 The element list after ``pair_coeff * *`` should be ordered as you want them to appear in LAMMPS, and must be a subset of the elements your model was trained on.
 
+Note that the ``atom_modify map`` argument can be any valid one, including ``array`` which is the ASE ``LAMMPSlib`` default.
+
 Command Line Options
 -----------------
 
