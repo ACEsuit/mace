@@ -49,7 +49,7 @@ class SelectionSettings:
     configs_pt: str
     output: str
     configs_ft: str | None = None
-    pt_filter_atomic_numbers: List[int] | None = None
+    filter_atomic_numbers_pt: List[int] | None = None
     num_samples: int | None = None
     subselect: SubselectType = SubselectType.FPS
     model: str = "small"
@@ -168,7 +168,7 @@ def build_default_finetuning_select_arg_parser() -> argparse.ArgumentParser:
         default=1.0,
     )
     parser.add_argument(
-        "--pt_filter_atomic_numbers",
+        "--filter_atomic_numbers_pt",
         help="list of atomic numbers to filter the configurations",
         type=str_to_list,
         default=None,
@@ -309,16 +309,16 @@ def _load_calc(
 
 
 def _get_finetuning_elements(
-    atoms: List[ase.Atoms], pt_filter_atomic_numbers: List[int] | None
+    atoms: List[ase.Atoms], filter_atomic_numbers_pt: List[int] | None
 ) -> List[str]:
     if atoms:
         logging.debug(
             "Using elements from the finetuning configurations for filtering."
         )
         species = np.unique([x.symbol for atoms in atoms for x in atoms]).tolist()  # type: ignore
-    elif pt_filter_atomic_numbers is not None and pt_filter_atomic_numbers:
+    elif filter_atomic_numbers_pt is not None and filter_atomic_numbers_pt:
         logging.debug("Using the supplied atomic numbers for filtering.")
-        species = [ase.data.chemical_symbols[z] for z in pt_filter_atomic_numbers]
+        species = [ase.data.chemical_symbols[z] for z in filter_atomic_numbers_pt]
     else:
         species = []
     return species
@@ -502,12 +502,13 @@ def select_samples(
     )
     atoms_list_ft = _read_finetuning_configs(settings.configs_ft)
     all_species_ft = _get_finetuning_elements(
-        atoms_list_ft, settings.pt_filter_atomic_numbers
+        atoms_list_ft, settings.filter_atomic_numbers_pt
     )
 
     if settings.filtering_type is not FilteringType.NONE and not all_species_ft:
         raise ValueError(
-            "Filtering types other than NONE require elements for filtering. They can be specified via the `--pt_filter_atomic_numbers` flag."
+            """Filtering types other than NONE require elements for filtering. They can be specified via the
+            `--filter_atomic_numbers_pt` flag."""
         )
     logging.info(f"Reading {settings.configs_pt}")
     atoms_list_pt: list[ase.Atoms] = ase.io.read(settings.configs_pt, index=":")  # type: ignore
