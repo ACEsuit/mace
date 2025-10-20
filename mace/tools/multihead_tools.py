@@ -180,7 +180,7 @@ def assemble_replay_data(
         settings = SelectionSettings(
             configs_pt=cached_dataset_path,
             output=f"mp_finetuning-{tag}.xyz",
-            pt_filter_atomic_numbers=atomic_numbers,
+            filter_atomic_numbers_pt=atomic_numbers,
             num_samples=args.num_samples_pt,
             seed=args.seed,
             head_pt="pbe_mp",
