@@ -53,7 +53,6 @@ def fixture_fitting_configs():
     return fit_configs
 
 
-
 @pytest.fixture(name="pretraining_configs")
 def fixture_pretraining_configs():
     configs = []
@@ -79,6 +78,7 @@ def fixture_pretraining_configs():
     configs[-1].info["REF_energy"] = -4.0
     configs[-1].info["config_type"] = "IsolatedAtom"
     return configs
+
 
 _mace_params = {
     "name": "MACE",
