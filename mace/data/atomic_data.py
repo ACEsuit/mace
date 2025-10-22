@@ -36,6 +36,8 @@ class AtomicData(torch_geometric.data.Data):
     energy: torch.Tensor
     stress: torch.Tensor
     virials: torch.Tensor
+    magmom: torch.Tensor 
+    magforces: torch.Tensor 
     dipole: torch.Tensor
     charges: torch.Tensor
     polarizability: torch.Tensor
@@ -49,6 +51,7 @@ class AtomicData(torch_geometric.data.Data):
     dipole_weight: torch.Tensor
     charges_weight: torch.Tensor
     polarizability_weight: torch.Tensor
+    magforces_weight: torch.Tensor
 
     def __init__(
         self,
@@ -67,6 +70,7 @@ class AtomicData(torch_geometric.data.Data):
         dipole_weight: Optional[torch.Tensor],  # [,]
         charges_weight: Optional[torch.Tensor],  # [,]
         polarizability_weight: Optional[torch.Tensor],  # [,]
+        magforces_weight: Optional[torch.Tensor],  # [,]
         forces: Optional[torch.Tensor],  # [n_nodes, 3]
         energy: Optional[torch.Tensor],  # [, ]
         stress: Optional[torch.Tensor],  # [1,3,3]
@@ -74,10 +78,13 @@ class AtomicData(torch_geometric.data.Data):
         dipole: Optional[torch.Tensor],  # [, 3]
         charges: Optional[torch.Tensor],  # [n_nodes, ]
         polarizability: Optional[torch.Tensor],  # [1, 3, 3]
+        magmom: Optional[torch.Tensor], # [n_nodes, 3]
+        magforces: Optional[torch.Tensor],
         elec_temp: Optional[torch.Tensor],  # [,]
         total_charge: Optional[torch.Tensor] = None,  # [,]
         total_spin: Optional[torch.Tensor] = None,  # [,]
         pbc: Optional[torch.Tensor] = None,  # [, 3]
+        
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -94,7 +101,8 @@ class AtomicData(torch_geometric.data.Data):
         assert stress_weight is None or len(stress_weight.shape) == 0
         assert virials_weight is None or len(virials_weight.shape) == 0
         assert dipole_weight is None or dipole_weight.shape == (1, 3), dipole_weight
-        assert charges_weight is None or len(charges_weight.shape) == 0
+        assert charges_weight is None or len(charges_weight.shape) == 0 
+        assert magforces_weight is None or len(magforces_weight.shape) == 0
         assert cell is None or cell.shape == (3, 3)
         assert forces is None or forces.shape == (num_nodes, 3)
         assert energy is None or len(energy.shape) == 0
@@ -102,6 +110,8 @@ class AtomicData(torch_geometric.data.Data):
         assert virials is None or virials.shape == (1, 3, 3)
         assert dipole is None or dipole.shape[-1] == 3
         assert charges is None or charges.shape == (num_nodes,)
+        assert magmom is None or magmom.shape == (num_nodes, 3)
+        assert magforces is None or magforces.shape == (num_nodes, 3)
         assert elec_temp is None or len(elec_temp.shape) == 0
         assert total_charge is None or len(total_charge.shape) == 0
         assert total_spin is None or len(total_spin.shape) == 0
@@ -125,6 +135,7 @@ class AtomicData(torch_geometric.data.Data):
             "dipole_weight": dipole_weight,
             "charges_weight": charges_weight,
             "polarizability_weight": polarizability_weight,
+            "magforces_weight": magforces_weight,
             "forces": forces,
             "energy": energy,
             "stress": stress,
@@ -136,6 +147,8 @@ class AtomicData(torch_geometric.data.Data):
             "total_charge": total_charge,
             "total_spin": total_spin,
             "pbc": pbc,
+            "magmom": magmom,
+            "magforces": magforces,
         }
         super().__init__(**data)
 
@@ -235,6 +248,7 @@ class AtomicData(torch_geometric.data.Data):
             if config.property_weights.get("charges") is not None
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
+        
         polarizability_weight = (
             torch.tensor(
                 config.property_weights.get("polarizability"),
@@ -253,6 +267,13 @@ class AtomicData(torch_geometric.data.Data):
             )
         elif len(polarizability_weight.shape) == 2:
             polarizability_weight = polarizability_weight.unsqueeze(0)
+
+        magforces_weight = (
+            torch.tensor(config.magforces_weight, dtype=torch.get_default_dtype())
+            if config.property_weights.get("magforces") is not None
+            else torch.tensor(1.0, dtype=torch.get_default_dtype())
+        )
+
         forces = (
             torch.tensor(
                 config.properties.get("forces"), dtype=torch.get_default_dtype()
@@ -298,6 +319,16 @@ class AtomicData(torch_geometric.data.Data):
             )
             if config.properties.get("charges") is not None
             else torch.zeros(num_atoms, dtype=torch.get_default_dtype())
+        )
+        magmom = (
+            torch.tensor(config.properties.get("magmom"), dtype=torch.get_default_dtype())
+            if config.properties.get("magmom") is not None
+            else None
+        )
+        magforces = (
+            torch.tensor(config.properties.get("magforces"), dtype=torch.get_default_dtype())
+            if config.properties.get("magforces") is not None
+            else None
         )
         elec_temp = (
             torch.tensor(
@@ -357,12 +388,15 @@ class AtomicData(torch_geometric.data.Data):
             dipole_weight=dipole_weight,
             charges_weight=charges_weight,
             polarizability_weight=polarizability_weight,
+            magforces_weight=magforces_weight,
             forces=forces,
             energy=energy,
             stress=stress,
             virials=virials,
             dipole=dipole,
             charges=charges,
+            magmom=magmom,
+            magforces=magforces,
             elec_temp=elec_temp,
             total_charge=total_charge,
             polarizability=polarizability,
@@ -383,3 +417,86 @@ def get_data_loader(
         shuffle=shuffle,
         drop_last=drop_last,
     )
+
+# === for data augmentation ===
+
+
+from torch_geometric.transforms import BaseTransform
+import numpy as np
+
+class Random3DRotation(BaseTransform):
+    """
+    Apply a random SO(3) rotation to all magnetic moments in a configuration.
+    A single rotation is applied per structure, preserving relative orientation.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, data):
+        if hasattr(data, 'magmom') and data.magmom is not None:
+            device = data.magmom.device
+            dtype = data.magmom.dtype
+
+            # === Step 1: Sample a random unit quaternion (uniform over SO(3))
+            u1, u2, u3 = torch.rand(3, device=device, dtype=dtype)
+            q1 = torch.sqrt(1 - u1) * torch.sin(2 * np.pi * u2)
+            q2 = torch.sqrt(1 - u1) * torch.cos(2 * np.pi * u2)
+            q3 = torch.sqrt(u1) * torch.sin(2 * np.pi * u3)
+            q4 = torch.sqrt(u1) * torch.cos(2 * np.pi * u3)
+
+            # === Step 2: Convert quaternion to rotation matrix
+            R = torch.tensor([
+                [1 - 2*(q3**2 + q4**2),     2*(q2*q3 - q1*q4),     2*(q2*q4 + q1*q3)],
+                [2*(q2*q3 + q1*q4),     1 - 2*(q2**2 + q4**2),     2*(q3*q4 - q1*q2)],
+                [2*(q2*q4 - q1*q3),         2*(q3*q4 + q1*q2), 1 - 2*(q2**2 + q3**2)]
+            ], device=device, dtype=dtype)
+
+            # === Step 3: Apply to magmom (shape [N, 3])
+            data.magmom = torch.matmul(data.magmom, R.T)
+
+        return data
+
+def create_random_rotation_loader(original_loader):
+    """
+    Create a new DataLoader with hemisphere rotation augmentation.
+    
+    Args:
+        original_loader: Original PyTorch Geometric DataLoader
+    
+    Returns:
+        New DataLoader with hemisphere rotation transform
+    """
+    transform = Random3DRotation()
+    
+    # Apply transform to dataset
+    dataset = original_loader.dataset
+    
+    # Create new dataset with transform
+    class TransformedDataset:
+        def __init__(self, original_dataset, transform):
+            self.dataset = original_dataset
+            self.transform = transform
+        
+        def __len__(self):
+            return len(self.dataset)
+        
+        def __getitem__(self, idx):
+            data = self.dataset[idx]
+            return self.transform(data)
+    
+    transformed_dataset = TransformedDataset(dataset, transform)
+    
+    is_shuffle = False if original_loader.sampler.__class__ == torch.utils.data.sampler.SequentialSampler else True
+
+    # Create new DataLoader with same parameters
+    new_loader = torch_geometric.dataloader.DataLoader(
+        transformed_dataset,
+        batch_size=original_loader.batch_size,
+        shuffle=is_shuffle,
+        num_workers=original_loader.num_workers,
+        pin_memory=original_loader.pin_memory,
+        drop_last=original_loader.drop_last
+    )
+    
+    return new_loader

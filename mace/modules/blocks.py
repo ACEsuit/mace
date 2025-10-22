@@ -448,6 +448,115 @@ class EquivariantProductBasisBlock(torch.nn.Module):
             return self.linear(node_feats) + sc
         return self.linear(node_feats)
 
+@compile_mode("script")
+class EquivariantProductBasisWithSelfMagmomBlock(torch.nn.Module):
+    def __init__(
+        self,
+        node_feats_irreps: o3.Irreps,
+        target_irreps: o3.Irreps,
+        magmom_node_inv_feats_irreps: o3.Irreps,
+        magmom_node_attrs_irreps: o3.Irreps,
+        correlation: int,
+        use_sc: bool = True,
+        num_elements: Optional[int] = None,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+    ) -> None:
+        super().__init__()
+
+        self.use_sc = use_sc
+        self.magmom_node_inv_feats_irreps = magmom_node_inv_feats_irreps
+        self.magmom_node_attrs_irreps = magmom_node_attrs_irreps
+        self.cueq_config = cueq_config
+        
+        self.symmetric_contractions = SymmetricContractionWrapper(
+            irreps_in=node_feats_irreps,
+            irreps_out=target_irreps,
+            correlation=correlation,
+            num_elements=num_elements,
+            cueq_config=cueq_config,
+        )
+    
+        # interaction with self magnetic moment
+        irreps_mid, instructions = tp_out_irreps_with_instructions(
+            o3.Irreps(str(target_irreps)),
+            self.magmom_node_attrs_irreps,
+            o3.Irreps(str(target_irreps)),
+        )
+        self.conv_tp = TensorProduct(
+            o3.Irreps(str(target_irreps)),
+            self.magmom_node_attrs_irreps,
+            irreps_mid,
+            instructions=instructions,
+            shared_weights=False,
+            internal_weights=False,
+            cueq_config=self.cueq_config,
+        )
+        magmom_input_dim = self.magmom_node_inv_feats_irreps.num_irreps
+        self.conv_tp_weights =  nn.FullyConnectedNet(
+            [magmom_input_dim] + [64, 64, 64] + [self.conv_tp.weight_numel],
+            torch.nn.functional.silu,
+        )
+        
+        # Update linear
+        self.linear = Linear(
+            self.conv_tp.irreps_out,
+            o3.Irreps(str(target_irreps)),
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=cueq_config,
+        )
+        self.linear_ori = Linear(
+            o3.Irreps(str(target_irreps)),
+            o3.Irreps(str(target_irreps)),
+            internal_weights=True,
+            shared_weights=True,
+            cueq_config=cueq_config,
+        )
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        sc: Optional[torch.Tensor],
+        node_attrs: torch.Tensor,
+        magmom_node_inv_feats: torch.Tensor,
+        magmom_node_attrs: torch.Tensor,
+    ) -> torch.Tensor:
+        use_cueq = False
+        use_cueq_mul_ir = False
+        if hasattr(self, "cueq_config"):
+            if self.cueq_config is not None:
+                if self.cueq_config.enabled and (
+                    self.cueq_config.optimize_all or self.cueq_config.optimize_symmetric
+                ):
+                    use_cueq = True
+                if self.cueq_config.layout_str == "mul_ir":
+                    use_cueq_mul_ir = True
+        if use_cueq:
+            if use_cueq_mul_ir:
+                node_feats = torch.transpose(node_feats, 1, 2)
+            index_attrs = torch.nonzero(node_attrs)[:, 1].int()
+            node_feats = self.symmetric_contractions(
+                node_feats.flatten(1),
+                index_attrs,
+            )
+        else:
+            node_feats = self.symmetric_contractions(node_feats, node_attrs)
+
+        # interaction with magnectic moment
+        tp_weights = self.conv_tp_weights(magmom_node_inv_feats)
+        # print("magmom_node_inv_feats: ", magmom_node_inv_feats)
+        # print("tp_weights:", tp_weights)
+        out = self.conv_tp(node_feats, magmom_node_attrs, tp_weights)
+        # print("node_feats:", node_feats)
+        # print("magmom_node_attrs:", magmom_node_attrs)
+        # print("out: ", out)
+        # print(torch.norm(self.linear(out)))
+        # print(torch.norm(self.linear_ori(node_feats)))
+        # out = node_feats
+        if self.use_sc and sc is not None:
+            out_message = self.linear(out) + self.linear_ori(node_feats) + sc
+        else:
+            out_message = self.linear(out) + self.linear_ori(node_feats)
+        return out_message
 
 @compile_mode("script")
 class InteractionBlock(torch.nn.Module):
