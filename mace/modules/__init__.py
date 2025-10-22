@@ -56,9 +56,10 @@ from .utils import (
 )
 
 from .extensions import (
-    MagneticRealAgnosticSpinOrbitCoupledMagmomDensityInteractionBlock, 
+    MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock, 
     MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock, 
-    MagneticGinzburgScaleShiftMACE
+    MagneticGinzburgScaleShiftMACE,
+    MagneticSCFMACE,
 )
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {
@@ -69,7 +70,7 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
     "RealAgnosticResidualNonLinearInteractionBlock": RealAgnosticResidualNonLinearInteractionBlock,
     "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock": MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock,
-    "MagneticRealAgnosticSpinOrbitCoupledMagmomDensityInteractionBlock": MagneticRealAgnosticSpinOrbitCoupledMagmomDensityInteractionBlock,
+    "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock": MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock,
 }
 
 readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
@@ -116,6 +117,7 @@ __all__ = [
     "AtomicDielectricMACE",
     "EnergyDipolesMACE",
     "MagneticGinzburgScaleShiftMACE", 
+    "MagneticSCFMACE",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",

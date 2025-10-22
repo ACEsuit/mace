@@ -143,6 +143,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "AtomicDipolesMACE",
             "AtomicDielectricMACE",
             "EnergyDipolesMACE",
+            "MagneticGinzburgScaleShiftMACE",
         ],
     )
     parser.add_argument(
@@ -209,6 +210,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
             "RealAgnosticResidualNonLinearInteractionBlock",
+            "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+            "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -222,6 +225,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
             "RealAgnosticResidualNonLinearInteractionBlock",
+            "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+            "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -335,6 +340,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compute_atomic_dipole",
         help="Select True to compute dipoles",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_magforces",
+        help="Select True to compute magnetic forces",
         type=str2bool,
         default=False,
     )
@@ -571,6 +582,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Key of polarizability in training xyz",
         type=str,
         default=DefaultKeys.POLARIZABILITY.value,
+    )
+    parser.add_argument(
+        "--magmom_key",
+        help="Key of magnetic moment in training xyz",
+        type=str,
+        default="REF_magmom",
+    )
+    parser.add_argument(
+        "--magforces_key",
+        help="Key of magnetic forces in training xyz",
+        type=str,
+        default="REF_magforces",
     )
     parser.add_argument(
         "--head_key",
@@ -947,6 +970,37 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "energy_weight",
             "forces_weight",
         ],
+    )
+
+    # --- magnetic mace specific arguments ---
+    parser.add_argument(
+        "--num_mag_radial_basis_one_body",
+        help="number of radial basis for one body contribution in magnetic mace",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "--m_max",
+        help="|m| basis m_max for magnetic momgent",
+        type=float,
+        nargs='+',
+    )
+    parser.add_argument(
+        "--max_m_ell",
+        help="max_ell for magnetic mace",
+        type=int,
+        default=3,
+    )
+    parser.add_argument(
+        "--num_mag_radial_basis",
+        help="number of radial basis for magnetic part",
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
+        "--train_one_body_contribution",
+        type=str2bool,
+        default=False
     )
     return parser
 

@@ -417,7 +417,7 @@ class MagneticInteractionBlock(InteractionBlock):
         raise NotImplementedError
 
 @compile_mode("script")
-class MagneticRealAgnosticSpinOrbitCoupledMagmomDensityInteractionBlock(MagneticInteractionBlock):
+class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(MagneticInteractionBlock):
     def _setup(self) -> None:
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
@@ -496,7 +496,7 @@ class MagneticRealAgnosticSpinOrbitCoupledMagmomDensityInteractionBlock(Magnetic
 
         # Density normalization
         self.density_fn = nn.FullyConnectedNet(
-            [input_dim + magmom_input_dim]
+            [input_dim]
             + [
                 1,
             ],
@@ -530,7 +530,7 @@ class MagneticRealAgnosticSpinOrbitCoupledMagmomDensityInteractionBlock(Magnetic
         tp_weights = self.conv_tp_weights(edge_feats_with_magmom)
 
         # density normalization
-        edge_density = torch.tanh(self.density_fn(edge_feats_with_magmom) ** 2)
+        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
 
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
@@ -556,7 +556,6 @@ class MagneticRealAgnosticSpinOrbitCoupledMagmomDensityInteractionBlock(Magnetic
             self.reshape(magmom_message),
             None,
         )  # [n_nodes, channels, (lmax + 1)**2]
-
 
 @compile_mode("script")
 class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(MagneticInteractionBlock):
@@ -743,11 +742,22 @@ class MagneticMACE(torch.nn.Module):
         correlation: Union[int, List[int]],
         gate: Optional[Callable],
         pair_repulsion: bool = False,
+        apply_cutoff: bool = True,
+        use_reduced_cg: bool = True,
+        use_so3: bool = False,
+        use_agnostic_product: bool = False,
+        use_last_readout_only: bool = False,
+        use_embedding_readout: bool = False,
         distance_transform: str = "None",
+        edge_irreps: Optional[o3.Irreps] = None,
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None, 
+        cueq_config: Optional[Dict[str, Any]] = None,
+        embedding_specs: Optional[Dict[str, Any]] = None,
+        oeq_config: Optional[Dict[str, Any]] = None,
+        lammps_mliap: Optional[bool] = False,
+        readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
     ):
         super().__init__()        
         try:
@@ -774,6 +784,14 @@ class MagneticMACE(torch.nn.Module):
         self.heads = heads
         if isinstance(correlation, int):
             correlation = [correlation] * num_interactions
+
+        self.lammps_mliap = lammps_mliap
+        self.apply_cutoff = apply_cutoff
+        self.edge_irreps = edge_irreps
+        self.use_reduced_cg = use_reduced_cg
+        self.use_agnostic_product = use_agnostic_product
+        self.use_so3 = use_so3
+        self.use_last_readout_only = use_last_readout_only
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -1144,3 +1162,99 @@ class MagneticGinzburgScaleShiftMACE(MagneticMACE):
             "node_feats": node_feats_out,
         }
         return output
+    
+
+# this does not differentiate through SCF but just a convenient wrapper for equilibrating magmom 
+# for a given position. Still later we can do something like:
+# given position also predict the magnetic moment based on the previous magnetic moment
+# to accelerate SCF cycles that have to be done
+class MagneticSCFMACE(torch.nn.Module):
+    def __init__(self, model, n_scf_step=10, scf_tol=1e-5, scf_logging=False, scf_step_size=1.0, use_scf = True):
+        super().__init__()
+        self.magmom_mace = model # original magnetic mace
+        self.n_scf_step = n_scf_step
+        self.scf_tol = scf_tol
+        self.cache_magmom = None
+        self.scf_logging = scf_logging
+        self.scf_step_size = scf_step_size
+        self.use_scf = use_scf
+ 
+        self.cache_magmom = None
+
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
+        compute_force: bool = True,
+        compute_virials: bool = False,
+        compute_stress: bool = False,
+        compute_displacement: bool = False,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        
+        device = next(self.magmom_mace.parameters()).device
+
+        # === Initialize magmom ===
+        if "magmom" in data:
+            magmom = data["magmom"].detach().to(device).clone()
+        elif self.cache_magmom is not None:
+            magmom = self.cache_magmom.clone()
+        else:
+            raise ValueError("No initial magnetic moment provided and no cache available.")
+
+        magmom = magmom.to(device)
+        magmom.requires_grad_(True)
+        energy_history = []
+
+        # === Define optimizer ===
+        if self.use_scf:
+            optimizer = torch.optim.LBFGS([magmom], max_iter=self.n_scf_step, tolerance_grad=self.scf_tol, \
+                                          line_search_fn="strong_wolfe", lr=self.scf_step_size)
+
+            def closure():
+                optimizer.zero_grad()
+
+                # Update magnetic moments in config
+                data["magmom"] = magmom
+
+                # Evaluate model
+                output = self.magmom_mace(
+                    data,
+                    training=training,
+                    compute_force=compute_force,
+                    compute_virials=compute_virials,
+                    compute_stress=compute_stress,
+                    compute_displacement=compute_displacement,
+                )
+
+                energy = output["energy"][0]
+                energy_history.append(energy.item())
+
+                # Set gradient manually from mag_forces
+                magmom.grad = -output["magforces"].detach()
+                if self.scf_logging:
+                    print(f"[SCF LBFGS] Energy = {energy.item():.6f} | Mag force norm = {magmom.grad.norm().item():.6f}")
+                return energy
+
+            optimizer.step(closure)
+
+            # Cache final magnetic moments
+            self.cache_magmom = magmom.detach()
+
+            # Final output (evaluate one last time with final magmom)
+            data["dft_magmom"] = magmom
+
+        final_output = self.magmom_mace(
+            data,
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+            compute_displacement=compute_displacement,
+        )
+
+        # Add SCF info to output
+        final_output["scf_energy_history"] = torch.tensor(energy_history, dtype=torch.float32)
+        final_output["scf_steps"] = len(energy_history)
+        final_output["equilibrated_magmom"] = magmom.detach()
+
+        return final_output
