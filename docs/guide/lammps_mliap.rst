@@ -118,7 +118,6 @@ Your LAMMPS input should begin with standard settings::
 
     units         metal
     atom_style    atomic
-    atom_modify   map yes
     newton        on
 
 Then define the ML-IAP pair style with your converted model::
@@ -129,8 +128,6 @@ Then define the ML-IAP pair style with your converted model::
 The ``0`` after the model filename is a required parameter for the unified ML-IAP interface.
 
 The element list after ``pair_coeff * *`` should be ordered as you want them to appear in LAMMPS, and must be a subset of the elements your model was trained on.
-
-Note that the ``atom_modify map`` argument can be any valid one, including ``array`` which is the ASE ``LAMMPSlib`` default.
 
 Command Line Options
 -----------------
@@ -185,7 +182,6 @@ Here's a complete example LAMMPS script for using MACE with ML-IAP::
     # MACE ML-IAP example
     units         metal
     atom_style    atomic
-    atom_modify   map yes
     newton        on
 
     # Read structure
