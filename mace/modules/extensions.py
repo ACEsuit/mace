@@ -316,76 +316,54 @@ class SHModule(torch.nn.Module):
                 xyz, 1, torch.tensor([2, 0, 1], dtype=torch.long,device=xyz.device)
             ))
         return sh
-    
-class ChebychevBasisWithConst(torch.nn.Module):
+
+class ChebyshevBasisGeneral(torch.nn.Module):
     """
-    Fully differentiable Chebyshev basis (T₀ to Tₙ₋₁) using recurrence.
-    Returns full set including constant term T₀(x) = 1.
+    Differentiable Chebyshev basis up to T_n(x) using recurrence.
+    Can include or exclude constant term T₀(x) = 1.
+
+    Args:
+        r_max (float): Cutoff or scaling parameter (not used directly here).
+        num_basis (int): Number of basis functions to return.
+        include_constant (bool): Whether to include T₀(x)=1 as first term.
     """
 
-    def __init__(self, r_max: float, num_basis=8):
+    def __init__(self, r_max: float, num_basis: int = 8, include_constant: bool = True):
         super().__init__()
-        self.num_basis = num_basis
         self.r_max = r_max
-        self.register_buffer("n", torch.arange(num_basis))  # compatibility
+        self.num_basis = num_basis
+        self.include_constant = include_constant
+
+        # Store the polynomial orders for compatibility
+        start = 0 if include_constant else 1
+        self.register_buffer("n", torch.arange(start, start + num_basis))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: Tensor of shape [N, 1], assumed in [-1, 1]
-
+            x (Tensor): shape [N, 1], assumed scaled to [-1, 1]
         Returns:
-            Tensor of shape [N, num_basis]: T₀(x), T₁(x), ..., Tₙ₋₁(x)
+            Tensor [N, num_basis] of Chebyshev basis values
         """
-        T0 = torch.ones_like(x)       # T₀(x)
-        if self.num_basis == 1:
-            return T0
+        T0 = torch.ones_like(x)
+        T1 = x
+        basis = [T0, T1]
 
-        T1 = x                        # T₁(x)
-        B = [T0, T1]
-
-        for _ in range(2, self.num_basis):
+        # Build full recurrence sequence
+        for _ in range(2, self.num_basis + 1 if self.include_constant else self.num_basis + 2):
             T2 = 2 * x * T1 - T0
-            B.append(T2)
+            basis.append(T2)
             T0, T1 = T1, T2
 
-        out = torch.cat(B[:self.num_basis], dim=-1)  # shape: [N, num_basis]
+        if self.include_constant:
+            out = torch.cat(basis[:self.num_basis], dim=-1)
+        else:
+            out = torch.cat(basis[1:self.num_basis + 1], dim=-1)
         return out
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(r_max={self.r_max}, num_basis={self.num_basis})"
-
-@compile_mode("script")
-class ChebychevBasis2(torch.nn.Module):
-    """
-    Fully differentiable Chebyshev basis (T_n) using recurrence.
-    Matches behavior of torch.special.chebyshev_polynomial_t(x, n) in shape and interface.
-    """
-
-    def __init__(self, r_max: float, num_basis=8):
-        super().__init__()
-        self.num_basis = num_basis
-        self.r_max = r_max
-        self.register_buffer("n", torch.arange(1, num_basis + 1))  # for compatibility
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: Tensor of shape [N, 1], assumed in [-1, 1]
-
-        Returns:
-            Tensor of shape [N, num_basis]: T₁(x), T₂(x), ..., Tₙ(x)
-        """
-        B = [x]  # T₁(x)
-        T0 = torch.ones_like(x)  # T₀(x)
-        T1 = x
-        for _ in range(2, self.num_basis + 1):
-            T2 = 2 * x * T1 - T0
-            B.append(T2)
-            T0, T1 = T1, T2
-
-        out = torch.cat(B[:self.num_basis], dim=-1)  # shape: [N, num_basis]
-        return out
+        return (f"{self.__class__.__name__}(r_max={self.r_max}, "
+                f"num_basis={self.num_basis}, include_constant={self.include_constant})")
 
 @compile_mode("script")
 class MagneticInteractionBlock(InteractionBlock):
@@ -422,7 +400,6 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(MagneticIntera
         if not hasattr(self, "cueq_config"):
             self.cueq_config = None
 
-        print("into MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock")
         # First linear
         self.linear_up = Linear(
             self.node_feats_irreps,
@@ -431,7 +408,7 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(MagneticIntera
             shared_weights=True,
             cueq_config=self.cueq_config,
         )
-        print("===done init linear===")
+        
         # TensorProduct for real space
         irreps_mid, instructions = tp_out_irreps_with_instructions(
             self.node_feats_irreps,
@@ -447,7 +424,7 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(MagneticIntera
             internal_weights=False,
             cueq_config=self.cueq_config,
         )
-        print("===done init conv_tp===")
+        
         # TensorProduct in magnetic moment space
         magmom_irreps_mid, magmom_instructions = tp_out_irreps_with_instructions(
             #self.conv_tp.irreps_out,
@@ -464,7 +441,7 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(MagneticIntera
             internal_weights=False,
             cueq_config=self.cueq_config,
         )
-        print("===done init magmom conv_tp===")
+        
         # Convolution weights 
         input_dim = self.edge_feats_irreps.num_irreps
         magmom_input_dim = self.magmom_node_inv_feats_irreps.num_irreps
@@ -627,13 +604,7 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(Magneti
             shared_weights=True,
             cueq_config=self.cueq_config,
         )
-        # self.magmom_skip_tp = FullyConnectedTensorProduct(
-        #     self.irreps_out,
-        #     self.node_attrs_irreps,
-        #     self.irreps_out,
-        #     cueq_config=self.cueq_config,
-        # )
-
+        
         # Selector TensorProduct
         self.skip_tp = FullyConnectedTensorProduct(
             self.node_feats_irreps,
@@ -671,21 +642,10 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(Magneti
 
         # residue connection
         sc = self.skip_tp(node_feats, node_attrs)
-
-        #
         node_feats = self.linear_up(node_feats)
         
         # boardcast node feats to number of nodes
         magmom_inv_feats_j = magmom_node_inv_feats[sender]
-
-        print("======")
-        print(type(edge_feats))
-        print(edge_feats)
-        print(edge_feats.shape)
-        print(type(magmom_inv_feats_j))
-        print(magmom_inv_feats_j.shape)
-        
-        print("======")
         edge_feats_with_magmom = torch.cat([edge_feats, magmom_inv_feats_j], dim=-1)        
         
         # combined learnable radial
@@ -827,9 +787,10 @@ class MagneticMACE(torch.nn.Module):
         # --- magnetic stuffs ---
         # m_max is not used here but Chebychev is still on (-1, 1)
         # this needs to have a specicies dependent transform
-        self.mag_radial_embedding = ChebychevBasis2(
-            r_max = 0.0,
+        self.mag_radial_embedding = ChebyshevBasisGeneral(
+            r_max=0.0,
             num_basis=num_mag_radial_basis,
+            include_constant=False,
         )
 
         magmom_sh_irreps = o3.Irreps.spherical_harmonics(max_m_ell)
@@ -968,10 +929,12 @@ class MagneticGinzburgScaleShiftMACE(MagneticMACE):
         # coefficient for the chebyshev polynomails
         self.onebody_magmombasis_coeffs = torch.nn.Parameter(torch.randn(len(self.atomic_numbers), num_mag_radial_basis_one_body, len(self.heads)))
 
-        self.one_body_cheb_basis_with_const = ChebychevBasisWithConst(
-            r_max = 1.0,
-            num_basis = num_mag_radial_basis_one_body,
+        self.one_body_cheb_basis_with_const = ChebyshevBasisGeneral(
+            r_max=1.0,
+            num_basis=num_mag_radial_basis_one_body,
+            include_constant=True,
         )
+
 
         # correction to shift E0s for each species
         self.register_buffer(
@@ -1241,7 +1204,7 @@ class MagneticSCFMACE(torch.nn.Module):
             self.cache_magmom = magmom.detach()
 
             # Final output (evaluate one last time with final magmom)
-            data["dft_magmom"] = magmom
+            data["mace_magmom"] = magmom
 
         final_output = self.magmom_mace(
             data,
