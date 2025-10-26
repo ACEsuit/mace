@@ -22,6 +22,8 @@ from .blocks import (
     RealAgnosticResidualInteractionBlock,
     RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
+    MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock, 
+    MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock, 
 )
 from .loss import (
     DipolePolarLoss,
@@ -56,9 +58,7 @@ from .utils import (
 )
 
 from .extensions import (
-    MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock, 
-    MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock, 
-    MagneticGinzburgScaleShiftMACE,
+    MagneticScaleShiftMACE,
     MagneticSCFMACE,
 )
 
@@ -116,7 +116,7 @@ __all__ = [
     "AtomicDipolesMACE",
     "AtomicDielectricMACE",
     "EnergyDipolesMACE",
-    "MagneticGinzburgScaleShiftMACE", 
+    "MagneticScaleShiftMACE", 
     "MagneticSCFMACE",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",

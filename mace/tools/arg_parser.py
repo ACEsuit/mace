@@ -143,7 +143,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "AtomicDipolesMACE",
             "AtomicDielectricMACE",
             "EnergyDipolesMACE",
-            "MagneticGinzburgScaleShiftMACE",
+            "MagneticScaleShiftMACE",
         ],
     )
     parser.add_argument(
@@ -686,6 +686,17 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_forces_weight",
     )
     parser.add_argument(
+        "--magforces_weight", help="weight of mag forces loss", type=float, default=100.0
+    )
+    parser.add_argument(
+        "--swa_magforces_weight",
+        "--stage_two_magforces_weight",
+        help="weight of magforces loss after starting Stage Two (previously called swa)",
+        type=float,
+        default=100.0,
+        dest="swa_magforces_weight",
+    )
+    parser.add_argument(
         "--energy_weight", help="weight of energy loss", type=float, default=1.0
     )
     parser.add_argument(
@@ -998,7 +1009,14 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=8,
     )
     parser.add_argument(
+        "--use_magmom_one_body",
+        help="If true, use one body mangetic moment contribution in the model",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--train_one_body_contribution",
+        help="It true, freeze weights other than the one body contribution.",
         type=str2bool,
         default=False
     )

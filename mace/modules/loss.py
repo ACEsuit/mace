@@ -390,7 +390,7 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
 
 class UniversalLoss(torch.nn.Module):
     def __init__(
-        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01
+        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, magforces_weight=1.0, huber_delta=0.01
     ) -> None:
         super().__init__()
         self.huber_delta = huber_delta
@@ -406,6 +406,10 @@ class UniversalLoss(torch.nn.Module):
             "stress_weight",
             torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
         )
+        self.register_buffer(
+            "magforces_weight",
+            torch.tensor(magforces_weight, dtype=torch.get_default_dtype()),
+        )
 
     def forward(
         self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
@@ -415,6 +419,9 @@ class UniversalLoss(torch.nn.Module):
         configs_energy_weight = ref.energy_weight
         configs_forces_weight = torch.repeat_interleave(
             ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
+        ).unsqueeze(-1)
+        configs_magforces_weight = torch.repeat_interleave(
+            ref.magforces_weight, ref.ptr[1:] - ref.ptr[:-1]
         ).unsqueeze(-1)
         if ddp:
             loss_energy = torch.nn.functional.huber_loss(
@@ -456,16 +463,26 @@ class UniversalLoss(torch.nn.Module):
                 reduction="mean",
                 delta=self.huber_delta,
             )
+            if "magforces" in pred.keys() and (pred["magforces"] is not None and ref["magforces"] is not None):
+                loss_magforces = torch.nn.functional.huber_loss(
+                    configs_magforces_weight * ref["magforces"],
+                    configs_magforces_weight * pred["magforces"],
+                    reduction="mean",
+                    delta=self.huber_delta,
+                )
+            else:
+                loss_magforces = 0
         return (
             self.energy_weight * loss_energy
             + self.forces_weight * loss_forces
             + self.stress_weight * loss_stress
+            + self.magforces_weight * loss_magforces
         )
 
     def __repr__(self):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
-            f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f})"
+            f"forces_weight={self.forces_weight:.3f}, stress_weight={self.stress_weight:.3f}, magforces_weight={self.magforces_weight:.3f})"
         )
 
 

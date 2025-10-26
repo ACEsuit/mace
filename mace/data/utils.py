@@ -60,7 +60,7 @@ def update_keyspec_from_kwargs(
         "polarizability_key",
         "total_spin_key",
     ]
-    arrays = ["forces_key", "charges_key", "magmom_key",]
+    arrays = ["forces_key", "charges_key", "magmom_key", "magforces_key"]
     info_keys = {}
     arrays_keys = {}
     for key in infos:

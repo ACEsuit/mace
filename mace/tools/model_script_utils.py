@@ -38,6 +38,7 @@ def configure_model(
         "stress": compute_stress,
         "dipoles": args.compute_dipole,
         "polarizabilities": args.compute_polarizability,
+        "magforces": args.compute_magforces,
     }
     logging.info(
         f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
@@ -223,8 +224,8 @@ def _build_model(
     args, model_config, model_config_foundation, heads
 ):  # pylint: disable=too-many-return-statements
     
-    if args.model == "MagneticGinzburgScaleShiftMACE":
-        return modules.MagneticGinzburgScaleShiftMACE(
+    if args.model == "MagneticScaleShiftMACE":
+        return modules.MagneticScaleShiftMACE(
             **model_config,
             pair_repulsion=args.pair_repulsion,
             distance_transform=args.distance_transform,
@@ -241,6 +242,7 @@ def _build_model(
             max_m_ell=args.max_m_ell,
             num_mag_radial_basis=args.num_mag_radial_basis,
             num_mag_radial_basis_one_body=args.num_mag_radial_basis_one_body,
+            use_magmom_one_body=args.use_magmom_one_body,
         )
     if args.model == "MACE":
         if args.interaction_first not in [

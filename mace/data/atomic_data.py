@@ -269,7 +269,7 @@ class AtomicData(torch_geometric.data.Data):
             polarizability_weight = polarizability_weight.unsqueeze(0)
 
         magforces_weight = (
-            torch.tensor(config.magforces_weight, dtype=torch.get_default_dtype())
+            torch.tensor(config.property_weights.get("magforces"), dtype=torch.get_default_dtype())
             if config.property_weights.get("magforces") is not None
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )

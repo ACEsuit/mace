@@ -296,7 +296,7 @@ class MACELES(ScaleShiftMACE):
             "BEC": les_result["BEC"],
         }
 
-# === magnetic mace integration ===
+# === magnetic mace utilities  ===
 class SHModule(torch.nn.Module):
     """Example of how to use SphericalHarmonics from within a
     `torch.nn.Module`"""
@@ -366,320 +366,6 @@ class ChebyshevBasisGeneral(torch.nn.Module):
                 f"num_basis={self.num_basis}, include_constant={self.include_constant})")
 
 @compile_mode("script")
-class MagneticInteractionBlock(InteractionBlock):
-    def __init__(
-        self,
-        magmom_node_inv_feats_irreps: Optional[o3.Irreps] = None,
-        magmom_node_attrs_irreps: Optional[o3.Irreps] = None,
-        **kwargs,
-    ) -> None:
-        self.magmom_node_inv_feats_irreps = magmom_node_inv_feats_irreps
-        self.magmom_node_attrs_irreps = magmom_node_attrs_irreps
-        super().__init__(**kwargs)
-
-    @abstractmethod
-    def _setup(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def forward(
-        self,
-        node_attrs: torch.Tensor,
-        node_feats: torch.Tensor,
-        edge_attrs: torch.Tensor,
-        edge_feats: torch.Tensor,
-        edge_index: torch.Tensor,
-        magmom_node_inv_feats: Optional[torch.Tensor] = None,
-        magmom_node_attrs: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        raise NotImplementedError
-
-@compile_mode("script")
-class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(MagneticInteractionBlock):
-    def _setup(self) -> None:
-        if not hasattr(self, "cueq_config"):
-            self.cueq_config = None
-
-        # First linear
-        self.linear_up = Linear(
-            self.node_feats_irreps,
-            self.node_feats_irreps,
-            internal_weights=True,
-            shared_weights=True,
-            cueq_config=self.cueq_config,
-        )
-        
-        # TensorProduct for real space
-        irreps_mid, instructions = tp_out_irreps_with_instructions(
-            self.node_feats_irreps,
-            self.edge_attrs_irreps,
-            self.target_irreps,
-        )
-        self.conv_tp = TensorProduct(
-            self.node_feats_irreps,
-            self.edge_attrs_irreps,
-            irreps_mid,
-            instructions=instructions,
-            shared_weights=False,
-            internal_weights=False,
-            cueq_config=self.cueq_config,
-        )
-        
-        # TensorProduct in magnetic moment space
-        magmom_irreps_mid, magmom_instructions = tp_out_irreps_with_instructions(
-            #self.conv_tp.irreps_out,
-            irreps_mid,
-            self.magmom_node_attrs_irreps,
-            self.target_irreps,
-        )
-        self.magmom_conv_tp = TensorProduct(
-            self.conv_tp.irreps_out,
-            self.magmom_node_attrs_irreps,
-            magmom_irreps_mid,
-            instructions=magmom_instructions,
-            shared_weights=False,
-            internal_weights=False,
-            cueq_config=self.cueq_config,
-        )
-        
-        # Convolution weights 
-        input_dim = self.edge_feats_irreps.num_irreps
-        magmom_input_dim = self.magmom_node_inv_feats_irreps.num_irreps
-        self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim + magmom_input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
-            torch.nn.functional.silu,
-        )
-        # transforming from radial l channels to magnetic l channels
-        self.conv_tp_weights_magmom = nn.FullyConnectedNet(
-            [input_dim + magmom_input_dim, ] + [self.magmom_conv_tp.weight_numel, ]
-        )
-
-        # Linear
-        self.irreps_out = self.target_irreps
-
-        self.magmom_linear = Linear(
-            self.magmom_conv_tp.irreps_out,
-            self.irreps_out,
-            internal_weights=True,
-            shared_weights=True,
-            cueq_config=self.cueq_config,
-        )
-        self.magmom_skip_tp = FullyConnectedTensorProduct(
-            self.irreps_out,
-            self.node_attrs_irreps,
-            self.irreps_out,
-            cueq_config=self.cueq_config,
-        )
-
-        # Density normalization
-        self.density_fn = nn.FullyConnectedNet(
-            [input_dim]
-            + [
-                1,
-            ],
-            torch.nn.functional.silu,
-        )
-        # Reshape
-        self.reshape = reshape_irreps(self.irreps_out, cueq_config=self.cueq_config)
-
-    def forward(
-        self,
-        node_attrs: torch.Tensor,
-        node_feats: torch.Tensor,
-        edge_attrs: torch.Tensor,
-        edge_feats: torch.Tensor, # (n_edges, n_basis)
-        edge_index: torch.Tensor,
-        magmom_node_inv_feats: torch.Tensor,
-        magmom_node_attrs: torch.Tensor
-    ) -> Tuple[torch.Tensor, None]:
-        sender = edge_index[0]
-        receiver = edge_index[1]
-        
-        num_nodes = node_feats.shape[0]
-        node_feats = self.linear_up(node_feats)
-        
-        # boardcast node feats to number of nodes
-        magmom_inv_feats_j = magmom_node_inv_feats[sender]
-        
-        edge_feats_with_magmom = torch.cat([edge_feats, magmom_inv_feats_j], dim=-1)        
-        
-        # combined learnable radial
-        tp_weights = self.conv_tp_weights(edge_feats_with_magmom)
-
-        # density normalization
-        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
-
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        
-        tp_weights_magmom = self.conv_tp_weights_magmom(edge_feats_with_magmom)
-        
-        magmom_mji = self.magmom_conv_tp(
-            mji, magmom_node_attrs[sender], tp_weights_magmom
-        )  # [n_edges, irreps]
-        
-        density = scatter_sum(
-            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
-        )  # [n_nodes, 1]
-        
-        magmom_message = scatter_sum(
-            src=magmom_mji, index=receiver, dim = 0, dim_size=num_nodes,
-        )
-
-        magmom_message = self.magmom_linear(magmom_message) / (density + 1)
-        magmom_message = self.magmom_skip_tp(magmom_message, node_attrs)
-        return (
-            self.reshape(magmom_message),
-            None,
-        )  # [n_nodes, channels, (lmax + 1)**2]
-
-@compile_mode("script")
-class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(MagneticInteractionBlock):
-    def _setup(self) -> None:
-        if not hasattr(self, "cueq_config"):
-            self.cueq_config = None
-
-        # First linear
-        self.linear_up = Linear(
-            self.node_feats_irreps,
-            self.node_feats_irreps,
-            internal_weights=True,
-            shared_weights=True,
-            cueq_config=self.cueq_config,
-        )
-
-        # TensorProduct for real space
-        irreps_mid, instructions = tp_out_irreps_with_instructions(
-            self.node_feats_irreps,
-            self.edge_attrs_irreps,
-            self.target_irreps,
-        )
-        self.conv_tp = TensorProduct(
-            self.node_feats_irreps,
-            self.edge_attrs_irreps,
-            irreps_mid,
-            instructions=instructions,
-            shared_weights=False,
-            internal_weights=False,
-            cueq_config=self.cueq_config,
-        )
-
-        # TensorProduct in magnetic moment space
-        magmom_irreps_mid, magmom_instructions = tp_out_irreps_with_instructions(
-            #self.conv_tp.irreps_out,
-            irreps_mid,
-            self.magmom_node_attrs_irreps,
-            self.target_irreps,
-        )
-        self.magmom_conv_tp = TensorProduct(
-            self.conv_tp.irreps_out,
-            self.magmom_node_attrs_irreps,
-            magmom_irreps_mid,
-            instructions=magmom_instructions,
-            shared_weights=False,
-            internal_weights=False,
-            cueq_config=self.cueq_config,
-        )
-        
-        # Convolution weights 
-        input_dim = self.edge_feats_irreps.num_irreps
-        magmom_input_dim = self.magmom_node_inv_feats_irreps.num_irreps
-        self.conv_tp_weights = nn.FullyConnectedNet(
-            [input_dim + magmom_input_dim] + self.radial_MLP + [self.conv_tp.weight_numel],
-            torch.nn.functional.silu,
-        )
-        # transforming from radial l channels to magnetic l channels
-        self.conv_tp_weights_magmom = nn.FullyConnectedNet(
-            [input_dim + magmom_input_dim, ] + [self.magmom_conv_tp.weight_numel, ]
-        )
-
-        # Linear
-        self.irreps_out = self.target_irreps
-
-        self.magmom_linear = Linear(
-            self.magmom_conv_tp.irreps_out,
-            self.irreps_out,
-            internal_weights=True,
-            shared_weights=True,
-            cueq_config=self.cueq_config,
-        )
-        
-        # Selector TensorProduct
-        self.skip_tp = FullyConnectedTensorProduct(
-            self.node_feats_irreps,
-            self.node_attrs_irreps,
-            self.hidden_irreps,
-            cueq_config=self.cueq_config,
-        )
-
-        # Density normalization
-        self.density_fn = nn.FullyConnectedNet(
-            [input_dim]
-            + [
-                1,
-            ],
-            torch.nn.functional.silu,
-        )
-        # Reshape
-        self.reshape = reshape_irreps(self.irreps_out, cueq_config=self.cueq_config)
-        
-
-    def forward(
-        self,
-        node_attrs: torch.Tensor,
-        node_feats: torch.Tensor,
-        edge_attrs: torch.Tensor,
-        edge_feats: torch.Tensor, # (n_edges, n_basis)
-        edge_index: torch.Tensor,
-        magmom_node_inv_feats: torch.Tensor,
-        magmom_node_attrs: torch.Tensor
-    ) -> Tuple[torch.Tensor, None]:
-        sender = edge_index[0]
-        receiver = edge_index[1]
-        
-        num_nodes = node_feats.shape[0]
-
-        # residue connection
-        sc = self.skip_tp(node_feats, node_attrs)
-        node_feats = self.linear_up(node_feats)
-        
-        # boardcast node feats to number of nodes
-        magmom_inv_feats_j = magmom_node_inv_feats[sender]
-        edge_feats_with_magmom = torch.cat([edge_feats, magmom_inv_feats_j], dim=-1)        
-        
-        # combined learnable radial
-        tp_weights = self.conv_tp_weights(edge_feats_with_magmom)
-
-        # density normalization
-        edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
-
-        mji = self.conv_tp(
-            node_feats[sender], edge_attrs, tp_weights
-        )  # [n_edges, irreps]
-        
-        tp_weights_magmom = self.conv_tp_weights_magmom(edge_feats_with_magmom)
-        
-        magmom_mji = self.magmom_conv_tp(
-            mji, magmom_node_attrs[sender], tp_weights_magmom
-        )  # [n_edges, irreps]
-        
-        density = scatter_sum(
-            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
-        )  # [n_nodes, 1]
-        
-        magmom_message = scatter_sum(
-            src=magmom_mji, index=receiver, dim=0, dim_size=num_nodes,
-        )
-
-        magmom_message = self.magmom_linear(magmom_message) / (density + 1)
-
-        return (
-            self.reshape(magmom_message),
-            sc,
-        )  # [n_nodes, channels, (lmax + 1)**2]
-
-@compile_mode("script")
 class MagneticMACE(torch.nn.Module):
     def __init__(
         self,
@@ -709,6 +395,7 @@ class MagneticMACE(torch.nn.Module):
         use_last_readout_only: bool = False,
         use_embedding_readout: bool = False,
         distance_transform: str = "None",
+        use_magmom_one_body: Optional[bool] = False,
         edge_irreps: Optional[o3.Irreps] = None,
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
@@ -752,6 +439,7 @@ class MagneticMACE(torch.nn.Module):
         self.use_agnostic_product = use_agnostic_product
         self.use_so3 = use_so3
         self.use_last_readout_only = use_last_readout_only
+        self.use_magmom_one_body = use_magmom_one_body
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -913,7 +601,7 @@ class MagneticMACE(torch.nn.Module):
 
 
 @compile_mode("script")
-class MagneticGinzburgScaleShiftMACE(MagneticMACE):
+class MagneticScaleShiftMACE(MagneticMACE):
     def __init__(
         self,
         atomic_inter_scale: float,
@@ -926,20 +614,21 @@ class MagneticGinzburgScaleShiftMACE(MagneticMACE):
             scale=atomic_inter_scale, shift=0.0
         )
 
-        # coefficient for the chebyshev polynomails
-        self.onebody_magmombasis_coeffs = torch.nn.Parameter(torch.randn(len(self.atomic_numbers), num_mag_radial_basis_one_body, len(self.heads)))
+        if self.use_magmom_one_body:
+            # coefficient for the chebyshev polynomails
+            self.onebody_magmombasis_coeffs = torch.nn.Parameter(torch.randn(len(self.atomic_numbers), num_mag_radial_basis_one_body, len(self.heads)))
 
-        self.one_body_cheb_basis_with_const = ChebyshevBasisGeneral(
-            r_max=1.0,
-            num_basis=num_mag_radial_basis_one_body,
-            include_constant=True,
-        )
+            self.one_body_cheb_basis_with_const = ChebyshevBasisGeneral(
+                r_max=1.0,
+                num_basis=num_mag_radial_basis_one_body,
+                include_constant=True,
+            )
 
 
-        # correction to shift E0s for each species
-        self.register_buffer(
-            "one_body_magmom_const_correction", torch.zeros(len(self.atomic_numbers), len(self.heads))
-        )
+            # correction to shift E0s for each species
+            self.register_buffer(
+                "one_body_magmom_const_correction", torch.zeros(len(self.atomic_numbers), len(self.heads))
+            )
 
     def forward(
         self,
@@ -1025,9 +714,10 @@ class MagneticGinzburgScaleShiftMACE(MagneticMACE):
         magmom_node_feats = self.mag_radial_embedding(magmom_lenghts_trans) # (n_atoms, n_basis)
 
         # one body contribution radials, this is with constant shift so that it can be fitted
-        magmom_one_body_radials = self.one_body_cheb_basis_with_const(
-            magmom_lenghts_trans
-        )
+        if self.use_magmom_one_body:
+            magmom_one_body_radials = self.one_body_cheb_basis_with_const(
+                magmom_lenghts_trans
+            )
         
         # Interactions
         node_es_list = [pair_node_energy]
@@ -1054,28 +744,34 @@ class MagneticGinzburgScaleShiftMACE(MagneticMACE):
             
             node_feats_list.append(node_feats)
             if idx == (len(self.readouts) - 1):    
-                # linear (natom, num_basis) -> (natom, 1)
-                # remove certain constant to make it matches with E0, 
-                # self.one_body_magmom_const_correction is computed outside after pre-training
-                # Select the correct coefficient row for each atom via einsum
-                selected_coeffs = torch.einsum(
-                    "ns,sbh->nbh", data["node_attrs"], self.onebody_magmombasis_coeffs
-                )
-                #
-                one_body_correction = torch.einsum(
-                    'ns,sh->nh', data["node_attrs"], self.one_body_magmom_const_correction
-                )
-                # Compute dot product over nbasis → (n_nodes, num_heads)
-                onebody_magmom_contri = (magmom_one_body_radials.unsqueeze(-1) * selected_coeffs).sum(dim=1)
+                if self.use_magmom_one_body:
+                    # linear (natom, num_basis) -> (natom, 1)
+                    # remove certain constant to make it matches with E0, 
+                    # self.one_body_magmom_const_correction is computed outside after pre-training
+                    # Select the correct coefficient row for each atom via einsum
+                    selected_coeffs = torch.einsum(
+                        "ns,sbh->nbh", data["node_attrs"], self.onebody_magmombasis_coeffs
+                    )
+                    #
+                    one_body_correction = torch.einsum(
+                        'ns,sh->nh', data["node_attrs"], self.one_body_magmom_const_correction
+                    )
 
-                # apply correction so that the zero matches E0 exactly
-                onebody_magmom_contri -= one_body_correction
+                    # Compute dot product over nbasis → (n_nodes, num_heads)
+                    onebody_magmom_contri = (magmom_one_body_radials.unsqueeze(-1) * selected_coeffs).sum(dim=1)
 
-                # Gather energy per atom + one-body magmom contribution for each head
-                node_es_list.append(
-                    readout(node_feats, node_heads)[num_atoms_arange, node_heads] +
-                    onebody_magmom_contri[num_atoms_arange, node_heads]
-                )
+                    # apply correction so that the zero matches E0 exactly
+                    onebody_magmom_contri -= one_body_correction
+
+                    # Gather energy per atom + one-body magmom contribution for each head
+                    node_es_list.append(
+                        readout(node_feats, node_heads)[num_atoms_arange, node_heads] +
+                        onebody_magmom_contri[num_atoms_arange, node_heads]
+                    )
+                else:
+                    node_es_list.append(
+                        readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+                    )
             else:
                 node_es_list.append(
                     readout(node_feats, node_heads)[num_atoms_arange, node_heads]
