@@ -1020,6 +1020,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False
     )
+    parser.add_argument(
+        "--data_aug_magmom",
+        help="Whether to use data agumentation on manetic moment training. ",
+        type=str2bool,
+        default=False,
+    )
+
     return parser
 
 

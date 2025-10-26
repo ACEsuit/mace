@@ -1,9 +1,24 @@
 
 import torch
 import numpy as np
-from torch_geometric.transforms import BaseTransform
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+import importlib
+
+# --- Optional torch_geometric support ---
+if importlib.util.find_spec("torch_geometric") is not None:
+    from torch_geometric.transforms import BaseTransform
+    from torch_geometric.loader import DataLoader as PyGDataLoader
+    has_tg = True
+else:
+    has_tg = False
+
+    # --- Minimal stub classes so code still runs ---
+    class BaseTransform:
+        """Fallback stub if torch_geometric is unavailable."""
+        def __init__(self): pass
+        def __call__(self, data): return data
+
+    PyGDataLoader = None
+
 
 class Random3DRotation(BaseTransform):
     """
@@ -48,8 +63,14 @@ def create_random_rotation_loader(original_loader):
     Returns:
         New DataLoader with hemisphere rotation transform
     """
-    transform = Random3DRotation()
+    if not has_tg:
+        raise ImportError(
+            "torch_geometric is required for DataLoader functionality.\n"
+            "Install it via: pip install torch-geometric"
+        )
     
+    transform = Random3DRotation()
+
     # Apply transform to dataset
     dataset = original_loader.dataset
     

@@ -860,6 +860,7 @@ def run(args) -> None:
         plotter=plotter,
         train_sampler=train_sampler,
         rank=rank,
+        data_aug_magmom=args.data_aug_magmom,
     )
 
     logging.info("")

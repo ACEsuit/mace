@@ -282,6 +282,7 @@ def get_outputs(
             compute_stress=compute_stress,
             training=(training or compute_hessian or compute_edge_forces),
         )
+        mag_forces = None
     elif compute_force and compute_magforces:
         assert magmoms is not None, "Magnetic momenet must be inputed to get magnetic forces"
         forces, mag_forces = compute_forces_magforces(

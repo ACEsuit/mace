@@ -2,6 +2,7 @@ from .atomic_data import AtomicData
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
 from .lmdb_dataset import LMDBDataset
 from .neighborhood import get_neighborhood
+from .augmentation import create_random_rotation_loader
 from .utils import (
     Configuration,
     Configurations,
@@ -37,4 +38,5 @@ __all__ = [
     "KeySpecification",
     "update_keyspec_from_kwargs",
     "LMDBDataset",
+    "create_random_rotation_loader",
 ]
