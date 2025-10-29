@@ -481,6 +481,15 @@ def run(args) -> None:
         args.compute_virials = False
         args.compute_stress = False
         args.compute_polarizability = False
+    elif args.model == "AtomicForcesMACE":
+        atomic_energies = None
+        dipole_only = False
+        args.compute_dipole = False
+        args.compute_energy = False
+        args.compute_forces = True
+        args.compute_virials = False
+        args.compute_stress = False
+        args.compute_polarizability = False
     elif args.model == "AtomicDielectricMACE":
         atomic_energies = None
         dipole_only = False

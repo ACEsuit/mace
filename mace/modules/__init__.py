@@ -38,6 +38,7 @@ from .loss import (
 from .models import (
     MACE,
     AtomicDielectricMACE,
+    AtomicForcesMACE,
     AtomicDipolesMACE,
     EnergyDipolesMACE,
     ScaleShiftMACE,
@@ -105,6 +106,7 @@ __all__ = [
     "MACE",
     "ScaleShiftMACE",
     "AtomicDipolesMACE",
+    "AtomicForcesMACE",
     "AtomicDielectricMACE",
     "EnergyDipolesMACE",
     "WeightedEnergyForcesLoss",
