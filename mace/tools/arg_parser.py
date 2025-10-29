@@ -631,6 +631,25 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="pt_head",
     )
+    # === MIL pooling options ===
+    parser.add_argument(
+        "--use_mil_pooling",
+        help="Enable Conjunctive MIL pooling residual readout",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--mil_d_attn",
+        help="Hidden dimension of the MIL attention MLP",
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
+        "--mil_dropout",
+        help="Dropout probability inside MIL pooling",
+        type=float,
+        default=0.1,
+    )
 
     # Loss and optimization
     parser.add_argument(
@@ -968,6 +987,25 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
     except ImportError:
         parser = argparse.ArgumentParser(
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        # === MIL pooling options ===
+        parser.add_argument(
+            "--use_mil_pooling",
+            help="Enable Conjunctive MIL pooling residual readout",
+            type=str2bool,
+            default=False,
+        )
+        parser.add_argument(
+            "--mil_d_attn",
+            help="Hidden dimension of the MIL attention MLP",
+            type=int,
+            default=8,
+        )
+        parser.add_argument(
+            "--mil_dropout",
+            help="Dropout probability inside MIL pooling",
+            type=float,
+            default=0.1,
         )
     parser.add_argument(
         "--train_file",

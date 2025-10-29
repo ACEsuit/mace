@@ -543,6 +543,13 @@ def evaluate(
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
+    try:
+        m = model.modules if hasattr(model, "module") else model
+        if hasattr(m, "heads"):
+            metrics.set_num_heads(len(m.heads))
+    except Exception:
+        pass
+
     start_time = time.time()
     for batch in data_loader:
         batch = batch.to(device)
@@ -598,6 +605,22 @@ class MACELoss(Metric):
         self.add_state(
             "delta_polarizability_per_atom", default=[], dist_reduce_fx="cat"
         )
+        self._num_heads: Optional[int] = None
+    def set_num_heads(self, H: int):
+        self._num_heads = int(H)
+
+    def _normalize_to_2d(self, t: torch.Tensor) -> torch.Tensor:
+        if t.dim() == 1:
+            return t.unsqueeze(1)
+        return t
+    def _pad_or_slice_to_H(self, t: torch.Tensor, H: int) -> torch.Tensor:
+        t = self._normalize_to_2d(t)
+        C = t.shape[1]
+        if C == H:
+            pad = (0, H-C)
+            return torch.nn.functional.pad(t, pad=pad)
+        return t[:, :H]
+
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
@@ -671,7 +694,17 @@ class MACELoss(Metric):
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):
-            delta = torch.cat(delta)
+            if len(delta) == 0:
+                H = self._num_heads if self._num_heads is not None else 0
+                empty = torch.empty(0, H) if H > 0 else torch.empty(0)
+                return to_numpy(empty)
+            if self._num_heads is not None:
+                H = self._num_heads
+            else:
+                H = max(self._normalize_to_2d(t).shape[1] if t.dim() > 1 else 1 for t in delta)
+            padded = [self._pad_or_slice_to_H(t, H) for t in delta]
+            delta = torch.cat(padded, dim=0)
+            #delta = torch.cat(delta)
         return to_numpy(delta)
 
     def compute(self):

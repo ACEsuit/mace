@@ -20,6 +20,7 @@ def configure_model(
     z_table=None,
     head_configs=None,
 ):
+    logging.info(f"HEADS used: {heads}")
     # Selecting outputs
     compute_virials = args.loss == "virials"
     compute_stress = args.loss in ("stress", "huber", "universal")
@@ -186,6 +187,10 @@ def configure_model(
             use_reduced_cg=args.use_reduced_cg,
             use_so3=args.use_so3,
             cueq_config=cueq_config,
+            # --- MIL flags passed down to modules.models.{MACE,ScaleShiftMACE} ---
+            use_mil_pooling=args.use_mil_pooling,
+            mil_d_attn=args.mil_d_attn,
+            mil_dropout=args.mil_dropout,
         )
         model_config_foundation = None
 
@@ -222,12 +227,18 @@ def _determine_atomic_inter_shift(mean, heads):
 def _build_model(
     args, model_config, model_config_foundation, heads
 ):  # pylint: disable=too-many-return-statements
+    def _purge_mil_keys(cfg: dict):
+        # remove MIL-related keys if present to avoid duplicate kwargs
+        for k in ("use_mil_pooling", "mil_d_attn", "mil_dropout"):
+            if k in cfg:
+                cfg.pop(k, None)
     if args.model == "MACE":
         if args.interaction_first not in [
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityInteractionBlock",
         ]:
             args.interaction_first = "RealAgnosticInteractionBlock"
+        _purge_mil_keys(model_config)
         return modules.ScaleShiftMACE(
             **model_config,
             pair_repulsion=args.pair_repulsion,
@@ -245,8 +256,13 @@ def _build_model(
             use_embedding_readout=args.use_embedding_readout,
             use_last_readout_only=args.use_last_readout_only,
             use_agnostic_product=args.use_agnostic_product,
+            # --- MIL flags passed down to modules.models.{MACE,ScaleShiftMACE} ---
+            use_mil_pooling=args.use_mil_pooling,
+            mil_d_attn=args.mil_d_attn,
+            mil_dropout=args.mil_dropout,
         )
     if args.model == "ScaleShiftMACE":
+        _purge_mil_keys(model_config)
         return modules.ScaleShiftMACE(
             **model_config,
             pair_repulsion=args.pair_repulsion,
@@ -266,13 +282,24 @@ def _build_model(
             use_agnostic_product=args.use_agnostic_product,
         )
     if args.model == "FoundationMACE":
-        return modules.ScaleShiftMACE(**model_config_foundation)
+        _purge_mil_keys(model_config)
+        return modules.ScaleShiftMACE(
+            **model_config_foundation,
+            # --- MIL flags passed down to modules.models.{MACE,ScaleShiftMACE} ---
+            use_mil_pooling=args.use_mil_pooling,
+            mil_d_attn=args.mil_d_attn,
+            mil_dropout=args.mil_dropout,
+        )
     if args.model == "FoundationMACELES":
         from mace.modules.extensions import MACELES
-
+        _purge_mil_keys(model_config)
         return MACELES(
             les_arguments=args.les_arguments,
             **model_config_foundation,
+            # --- MIL flags passed down to modules.models.{MACE,ScaleShiftMACE} ---
+            use_mil_pooling=args.use_mil_pooling,
+            mil_d_attn=args.mil_d_attn,
+            mil_dropout=args.mil_dropout,
         )
     if args.model == "ScaleShiftBOTNet":
         # say it is deprecated
@@ -333,7 +360,7 @@ def _build_model(
         )
     if args.model == "MACELES":
         from mace.modules.extensions import MACELES
-
+        _purge_mil_keys(model_config)
         return MACELES(
             les_arguments=args.les_arguments,
             **model_config,
@@ -352,5 +379,8 @@ def _build_model(
             use_embedding_readout=args.use_embedding_readout,
             use_last_readout_only=args.use_last_readout_only,
             use_agnostic_product=args.use_agnostic_product,
+            use_mil_pooling=args.use_mil_pooling,
+            mil_d_attn=args.mil_d_attn,
+            mil_dropout=args.mil_dropout,
         )
     raise RuntimeError(f"Unknown model: '{args.model}'")
