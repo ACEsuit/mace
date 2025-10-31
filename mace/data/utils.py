@@ -69,6 +69,18 @@ def update_keyspec_from_kwargs(
     for key in arrays:
         if key in keydict:
             arrays_keys[key[:-4]] = keydict[key]
+
+    # automagically add properties for embeddings
+    if keydict.get("embedding_specs") is not None:
+        for embed_name, embed_spec in keydict["embedding_specs"].items():
+            key = embed_spec.get("key", embed_name)
+            if embed_spec["per"] == "atom":
+                arrays_keys[embed_name] = key
+            elif embed_spec["per"] == "graph":
+                info_keys[embed_name] = key
+            else:
+                raise ValueError(f"Unsupported embedding_specs per {embed_spec['per']} for {embed_name}")
+
     keyspec.update(info_keys=info_keys, arrays_keys=arrays_keys)
     return keyspec
 
@@ -159,7 +171,7 @@ def config_from_atoms(
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
-    pbc = tuple(atoms.get_pbc())
+    pbc = tuple(atoms.get_pbc().tolist())
     cell = np.array(atoms.get_cell())
     config_type = atoms.info.get("config_type", "Default")
     weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(
