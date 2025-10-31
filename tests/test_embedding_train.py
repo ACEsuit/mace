@@ -16,7 +16,7 @@ def test_run_train_with_elec_temp(tmp_path):
 
     # Create configurations with electronic temperature
     configs_with_temp = []
-    for _ in range(20):
+    for i in range(20):
         # Create a water molecule with random displacements
         water = molecule("H2O")
         water.positions += np.random.normal(0, 0.1, size=water.positions.shape)
@@ -216,7 +216,7 @@ def test_run_train_with_atom_embed(tmp_path):
 
     # Create configurations with electronic temperature
     configs_with_atom_embed = []
-    for i in range(20):
+    for _ in range(20):
         # Create a water molecule with random displacements
         water = molecule("H2O")
         water.positions += np.random.normal(0, 0.1, size=water.positions.shape)
