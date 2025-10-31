@@ -37,8 +37,10 @@ def write_extxyz_test(tmp_path, atoms):
     # everything that we expect has been written
     assert set(atoms.calc.results.keys()) - nonstd_fields == set(atoms_written.calc.results.keys())
     # everything that was written was correct
-    assert all([np.allclose(atoms.calc.results[k], atoms_written.calc.results[k])
-                for k in atoms_written.calc.results])
+    assert all(
+        np.allclose(atoms.calc.results[k], atoms_written.calc.results[k])
+        for k in atoms_written.calc.results
+    )
 
 
 @pytest.fixture(scope="module", name="fitting_configs")
@@ -719,7 +721,7 @@ def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_c
     assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
-def test_mace_mp(tmp_path, capsys: pytest.CaptureFixture):
+def test_mace_mp(_tmp_path, capsys: pytest.CaptureFixture):
     mp_mace = mace_mp()
     assert isinstance(mp_mace, MACECalculator)
     assert mp_mace.model_type == "MACE"

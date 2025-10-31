@@ -266,5 +266,5 @@ class EmptyParam(torch.nn.Parameter):
         zero = torch.zeros_like(data)
         return super().__new__(cls, zero, requires_grad=False)
 
-    def requires_grad_(self):
+    def requires_grad_(self, requires_grad: bool = True):  # pylint: disable=arguments-differ
         return self
