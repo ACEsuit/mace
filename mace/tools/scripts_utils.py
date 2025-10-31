@@ -54,6 +54,7 @@ def get_dataset_from_xyz(
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
     no_data_ok: bool = False,
+    prefix: Optional[str] = None,
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """
     Load training, validation, and test datasets from xyz files.
@@ -67,6 +68,7 @@ def get_dataset_from_xyz(
         key_specification: KeySpecification object for loading data
         test_path: Path or list of paths to test xyz files
         seed: Random seed for train/validation split
+        prefix: Optional filename prefix (e.g., potential name) for saved valid indices
         keep_isolated_atoms: Whether to keep isolated atoms in the dataset
         head_name: Name of the head for multi-head models
         no_data_ok: accept files that have no energy/force/stress data
@@ -150,7 +152,7 @@ def get_dataset_from_xyz(
         # Split training data if no validation files are provided
         logging.info("No validation set provided, splitting training data instead.")
         train_configs, valid_configs = data.random_train_valid_split(
-            all_train_configs, valid_fraction, seed, work_dir
+            all_train_configs, valid_fraction, seed, work_dir, prefix
         )
         log_dataset_contents(train_configs, "Random Split Training set")
         log_dataset_contents(valid_configs, "Random Split Validation set")
