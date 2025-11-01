@@ -310,6 +310,7 @@ def run(args) -> None:
                     and args.multiheads_finetuning
                     and head_config.head_name == "pt_head"
                 ),
+                prefix=args.name,
             )
             head_config.collections = SubsetCollection(
                 train=collections.train,
