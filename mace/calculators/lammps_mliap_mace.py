@@ -64,6 +64,18 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
         self.register_buffer("atomic_numbers", model.atomic_numbers)
         self.register_buffer("r_max", model.r_max)
         self.register_buffer("num_interactions", model.num_interactions)
+        self.register_buffer(
+            "total_charge",
+            kwargs.get(
+                "total_charge", torch.tensor([0.0], dtype=torch.get_default_dtype())
+            ),
+        )
+        self.register_buffer(
+            "total_spin",
+            kwargs.get(
+                "total_spin", torch.tensor([1.0], dtype=torch.get_default_dtype())
+            ),
+        )
 
         if not hasattr(model, "heads"):
             model.heads = ["Default"]
@@ -80,6 +92,8 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute energies and per-pair forces."""
         data["head"] = self.head
+        data["total_charge"] = self.total_charge
+        data["total_spin"] = self.total_spin
 
         out = self.model(
             data,

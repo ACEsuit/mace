@@ -77,7 +77,9 @@ class AtomicData(torch_geometric.data.Data):
         elec_temp: Optional[torch.Tensor],  # [,]
         total_charge: Optional[torch.Tensor] = None,  # [,]
         total_spin: Optional[torch.Tensor] = None,  # [,]
-        pbc: Optional[torch.Tensor] = None, # [, 3]
+        pbc: Optional[torch.Tensor] = None,  # [, 3]
+        **extra_data # additional properties that aren't hard-coded and therefore not
+                     # for correct shape, etc
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -107,6 +109,7 @@ class AtomicData(torch_geometric.data.Data):
         assert total_spin is None or len(total_spin.shape) == 0
         assert polarizability is None or polarizability.shape == (1, 3, 3)
         assert pbc is None or (pbc.shape[-1] == 3 and pbc.dtype == torch.bool)
+
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -137,7 +140,7 @@ class AtomicData(torch_geometric.data.Data):
             "total_spin": total_spin,
             "pbc": pbc,
         }
-        super().__init__(**data)
+        super().__init__(**data, **extra_data)
 
     @classmethod
     def from_config(
@@ -331,14 +334,17 @@ class AtomicData(torch_geometric.data.Data):
             if config.properties.get("total_spin") is not None
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
-
+        if config.pbc is not None:
+            pbc = list(bool(pbc_) for pbc_ in config.pbc)
+        else:
+            pbc = None
         pbc = (
-            torch.tensor([config.pbc], dtype=torch.bool)
-            if config.pbc is not None
+            torch.tensor([pbc], dtype=torch.bool)
+            if pbc is not None
             else torch.tensor([[False, False, False]], dtype=torch.bool)
         )
 
-        return cls(
+        cls_kwargs = dict(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
             positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
             shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),
@@ -366,6 +372,25 @@ class AtomicData(torch_geometric.data.Data):
             total_spin=total_spin,
             pbc=pbc,
         )
+
+        # Add other properties that aren't checked. WARNING: shape dependence
+        # and unsqueeze(-1) call may implicitly be assuming that these are all
+        # per-atom, not per-config.
+        #
+        # NOTE: might be able to simpligy a lot by adding most properties this
+        # way, except a few that need to be special cased, e.g. are mandatory,
+        # really need a default value (e.g. weight), or need shape conversion
+        # (e.g. stress/virial). Getting the right shape might require some knowledge
+        # of whether the property is per-config or per-atom
+        for k, v in config.properties.items():
+            if k not in cls_kwargs and v is not None:
+                if len(v.shape) == 1:
+                    # promote to n_atoms x 1
+                    cls_kwargs[k] = torch.tensor(v, dtype=torch.get_default_dtype()).unsqueeze(-1)
+                elif len(v.shape) == 2:
+                    cls_kwargs[k] = torch.tensor(v, dtype=torch.get_default_dtype())
+
+        return cls(**cls_kwargs)
 
 
 def get_data_loader(
