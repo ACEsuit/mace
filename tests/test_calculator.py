@@ -37,8 +37,10 @@ def write_extxyz_test(tmp_path, atoms):
     # everything that we expect has been written
     assert set(atoms.calc.results.keys()) - nonstd_fields == set(atoms_written.calc.results.keys())
     # everything that was written was correct
-    assert all([np.allclose(atoms.calc.results[k], atoms_written.calc.results[k])
-                for k in atoms_written.calc.results])
+    assert all(
+        np.allclose(atoms.calc.results[k], atoms_written.calc.results[k])
+        for k in atoms_written.calc.results
+    )
 
 
 @pytest.fixture(scope="module", name="fitting_configs")

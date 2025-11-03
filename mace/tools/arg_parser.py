@@ -629,19 +629,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--embedding_specs",
         help=(
-            "List of feature‐spec dictionaries. "
+            "Dict of feature‐spec dictionaries. "
             "embedding_specs:\n"
-            "  - name: total_spin\n"
+            "  total_spin:\n"
             "    type: categorical\n"
             "    per: graph\n"
             "    num_classes: 101\n"
             "    emb_dim: 64\n"
-            "  - name: total_charge\n"
+            "  total_charge:\n"
             "    type: categorical\n"
             "    per: graph\n"
             "    num_classes: 201\n"
             "    emb_dim: 64\n"
-            "  - name: temperature\n"
+            "  temperature:\n"
             "    type: continuous\n"
             "    per: graph\n"
             "    in_dim: 1\n"

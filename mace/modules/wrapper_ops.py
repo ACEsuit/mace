@@ -91,7 +91,7 @@ class Linear:
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
-                use_fallback=True,
+                method="naive",
             )
 
         return o3.Linear(
@@ -183,6 +183,7 @@ class TensorProduct:
                         .squeeze_modes()
                         .polynomial,
                         math_dtype=torch.get_default_dtype(),
+                        method="uniform_1d",
                     )
                 )
             return cuet.ChannelWiseTensorProduct(
@@ -255,7 +256,7 @@ class FullyConnectedTensorProduct:
                 layout=cueq_config.layout,
                 shared_weights=shared_weights,
                 internal_weights=internal_weights,
-                use_fallback=True,
+                method="naive",
             )
 
         return o3.FullyConnectedTensorProduct(
