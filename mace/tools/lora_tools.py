@@ -1,10 +1,12 @@
-from e3nn import o3
-from e3nn.nn._fc import _Layer as E3NNFCLayer  
 import torch
 import torch.nn as nn
+from e3nn import o3
+from e3nn.nn._fc import _Layer as E3NNFCLayer
 
 
-def build_lora_irreps(irreps_in: o3.Irreps, irreps_out: o3.Irreps, rank: int) -> o3.Irreps:
+def build_lora_irreps(
+    irreps_in: o3.Irreps, irreps_out: o3.Irreps, rank: int
+) -> o3.Irreps:
     """
     Choose an equivariant bottleneck irreps that preserves symmetry: for every irrep
     present in BOTH input and output, allocate `rank` copies.
@@ -99,15 +101,19 @@ class LoRAFCLayer(nn.Module):
         self.scaling = float(alpha) / float(rank)
 
         # Use explicit parameters to match e3nn layout [in, out]
-        self.lora_A = nn.Parameter(torch.empty(in_f, rank, device=w.device, dtype=w.dtype))
-        self.lora_B = nn.Parameter(torch.empty(rank, out_f, device=w.device, dtype=w.dtype))
-        
+        self.lora_A = nn.Parameter(
+            torch.empty(in_f, rank, device=w.device, dtype=w.dtype)
+        )
+        self.lora_B = nn.Parameter(
+            torch.empty(rank, out_f, device=w.device, dtype=w.dtype)
+        )
+
         with torch.no_grad():
             torch.nn.init.normal_(self.lora_A, mean=0.0, std=1e-3)
             torch.nn.init.zeros_(self.lora_B)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Replicate e3nn _Layer normalization 
+        # Replicate e3nn _Layer normalization
         W = self.base.weight  # type: ignore[attr-defined]
         h_in = getattr(self.base, "h_in")
         var_in = getattr(self.base, "var_in")
@@ -122,7 +128,7 @@ class LoRAFCLayer(nn.Module):
             w = W_sum / denom
             x = x @ w
             x = act(x)
-            x = x * (var_out ** 0.5)
+            x = x * (var_out**0.5)
         else:
             denom = (h_in * var_in / var_out) ** 0.5
             w = W_sum / denom
@@ -150,7 +156,7 @@ def inject_lora(
         if wrap_equivariant and isinstance(child, o3.Linear):
             try:
                 wrapped = LoRAO3Linear(child, rank=rank, alpha=alpha)
-            except Exception: # If no shared irreps, skip
+            except Exception:  # If no shared irreps, skip
                 continue
             else:
                 module._modules[child_name] = wrapped
@@ -178,4 +184,3 @@ def inject_lora(
 def inject_LoRAs(model: nn.Module, rank: int = 4, alpha: int = 1):
     inject_lora(model, rank=rank, alpha=alpha, wrap_equivariant=True, wrap_dense=True)
     return model
-    
