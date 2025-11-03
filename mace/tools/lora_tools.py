@@ -1,5 +1,5 @@
 import torch
-import torch.nn as nn
+from torch import nn
 from e3nn import o3
 from e3nn.nn._fc import _Layer as E3NNFCLayer
 
@@ -156,19 +156,18 @@ def inject_lora(
         if wrap_equivariant and isinstance(child, o3.Linear):
             try:
                 wrapped = LoRAO3Linear(child, rank=rank, alpha=alpha)
-            except Exception:  # If no shared irreps, skip
+            except ValueError:  # If no shared irreps, skip
                 continue
-            else:
-                module._modules[child_name] = wrapped
+            module._modules[child_name] = wrapped  # pylint: disable=protected-access
         # Dense nn.Linear
         if wrap_dense and isinstance(child, nn.Linear):
             wrapped = LoRADenseLinear(child, rank=rank, alpha=alpha)
-            module._modules[child_name] = wrapped
+            module._modules[child_name] = wrapped  # pylint: disable=protected-access
             continue
         # e3nn FullyConnectedNet internal layer
         if wrap_dense and isinstance(child, E3NNFCLayer):
             wrapped = LoRAFCLayer(child, rank=rank, alpha=alpha)
-            module._modules[child_name] = wrapped
+            module._modules[child_name] = wrapped  # pylint: disable=protected-access
             continue
         # Recurse
         inject_lora(child, rank, alpha, wrap_equivariant, wrap_dense, _is_root=False)
