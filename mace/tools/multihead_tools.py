@@ -208,6 +208,7 @@ def assemble_replay_data(
                 and args.multiheads_finetuning
                 and head_config_pt.head_name == "pt_head"
             ),
+            prefix=args.name,
         )
         return collections_mp
     except Exception as exc:
