@@ -1,7 +1,7 @@
 import torch
-from torch import nn
 from e3nn import o3
 from e3nn.nn._fc import _Layer as E3NNFCLayer
+from torch import nn
 
 
 def build_lora_irreps(
