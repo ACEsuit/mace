@@ -18,7 +18,7 @@ import torch
 from tqdm import tqdm
 
 from mace.calculators import MACECalculator, mace_mp
-from mace.calculators.foundations_models import mace_mp_constants
+from mace.calculators.foundations_models import mace_mp_names
 
 try:
     import fpsample  # type: ignore
@@ -281,7 +281,6 @@ class FPS:
 
         for i, atoms in tqdm(
             enumerate(self.atoms_list),
-            total=len(self.atoms_list),
             desc="Assembling descriptors",
         ):
             descriptors = atoms.info["mace_descriptors"]
@@ -296,7 +295,7 @@ def _load_calc(
 ) -> Union[MACECalculator, None]:
     if subselect == SubselectType.RANDOM:
         return None
-    if model in mace_mp_constants:
+    if model in filter(None, mace_mp_names):
         calc = mace_mp(model, device=device, head=head, default_dtype=default_dtype)
     else:
         calc = MACECalculator(
@@ -316,7 +315,7 @@ def _get_finetuning_elements(
             "Using elements from the finetuning configurations for filtering."
         )
         species = np.unique([x.symbol for atoms in atoms for x in atoms]).tolist()  # type: ignore
-    elif filter_atomic_numbers_pt is not None and filter_atomic_numbers_pt:
+    elif filter_atomic_numbers_pt:
         logging.debug("Using the supplied atomic numbers for filtering.")
         species = [ase.data.chemical_symbols[z] for z in filter_atomic_numbers_pt]
     else:
@@ -531,7 +530,7 @@ def select_samples(
             "suffix compatible with extxyz format"
         )
     output_path = Path(settings.configs_pt).name
-    _maybe_save_descriptors(filtered_pt_atoms, output_path, False)
+    _maybe_save_descriptors(filtered_pt_atoms, output_path, True)
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(
