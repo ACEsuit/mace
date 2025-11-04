@@ -32,8 +32,7 @@ mace_mp_urls = {
     "mace-matpes-pbe-0": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-pbe-omat-ft.model",
     "mace-matpes-r2scan-0": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-r2scan-omat-ft.model",
 }
-mace_mp_constants = list(mace_mp_urls.keys())
-mace_mp_names = [None] + mace_mp_constants
+mace_mp_names = [None] + list(mace_mp_urls.keys())
 
 
 def download_mace_mp_checkpoint(model: Optional[Union[str, Path]] = None) -> str:
