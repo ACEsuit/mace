@@ -13,10 +13,6 @@ from mace.data import Configuration
 from mace.tools import torch_geometric
 from mace.tools.lora_tools import inject_lora
 
-
-torch.set_default_dtype(torch.float64)
-
-
 def _random_config(seed: int = 0) -> Configuration:
     rng = np.random.default_rng(seed)
     atomic_numbers = np.array([6, 1, 1], dtype=int)
