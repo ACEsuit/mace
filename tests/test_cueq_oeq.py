@@ -145,8 +145,12 @@ class BackendTestBase:
         model_e3nn_back = run_backend_to_e3nn(model_backend).to(device)
 
         # Test forward pass equivalence
-        out_e3nn = model_e3nn(batch.clone().to_dict(), training=True, compute_stress=True)
-        out_backend = model_backend(batch.clone().to_dict(), training=True, compute_stress=True)
+        out_e3nn = model_e3nn(
+            batch.clone().to_dict(), training=True, compute_stress=True
+        )
+        out_backend = model_backend(
+            batch.clone().to_dict(), training=True, compute_stress=True
+        )
 
         out_e3nn_back = model_e3nn_back(
             batch.clone().to_dict(), training=True, compute_stress=True

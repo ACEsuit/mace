@@ -29,13 +29,28 @@ run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
 
 def write_extxyz_test(tmp_path, atoms):
-    assert isinstance(atoms, Atoms), "write_extxyz_test only working for Atoms, not anything else such as list(Atoms)"
+    assert isinstance(
+        atoms, Atoms
+    ), "write_extxyz_test only working for Atoms, not anything else such as list(Atoms)"
     ase.io.write(tmp_path / "test.extxyz", atoms)
     atoms_written = ase.io.read(tmp_path / "test.extxyz")
 
-    nonstd_fields = set(['node_energy', 'energy_var', 'energy_comm', 'stress_var', 'stress_comm', 'forces_var', 'forces_comm', 'virials'])
+    nonstd_fields = set(
+        [
+            "node_energy",
+            "energy_var",
+            "energy_comm",
+            "stress_var",
+            "stress_comm",
+            "forces_var",
+            "forces_comm",
+            "virials",
+        ]
+    )
     # everything that we expect has been written
-    assert set(atoms.calc.results.keys()) - nonstd_fields == set(atoms_written.calc.results.keys())
+    assert set(atoms.calc.results.keys()) - nonstd_fields == set(
+        atoms_written.calc.results.keys()
+    )
     # everything that was written was correct
     assert all(
         np.allclose(atoms.calc.results[k], atoms_written.calc.results[k])
@@ -611,7 +626,9 @@ def test_calculator_dipole(tmp_path, fitting_configs, trained_dipole_model):
     write_extxyz_test(tmp_path, at)
 
 
-def test_calculator_energy_dipole(tmp_path, fitting_configs, trained_energy_dipole_model):
+def test_calculator_energy_dipole(
+    tmp_path, fitting_configs, trained_energy_dipole_model
+):
     at = fitting_configs[2].copy()
     at.calc = trained_energy_dipole_model
 
@@ -721,7 +738,7 @@ def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_c
     assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
-def test_mace_mp(tmp_path, capsys: pytest.CaptureFixture):
+def test_mace_mp(capsys: pytest.CaptureFixture):
     mp_mace = mace_mp()
     assert isinstance(mp_mace, MACECalculator)
     assert mp_mace.model_type == "MACE"
