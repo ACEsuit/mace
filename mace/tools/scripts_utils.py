@@ -287,6 +287,11 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             model.use_reduced_cg if hasattr(model, "use_reduced_cg") else False
         ),
         "use_so3": model.use_so3 if hasattr(model, "use_so3") else False,
+        "use_edge_irreps_first": (
+            model.use_edge_irreps_first
+            if hasattr(model, "use_edge_irreps_first")
+            else False
+        ),
         "use_agnostic_product": (
             model.use_agnostic_product
             if hasattr(model, "use_agnostic_product")
@@ -311,7 +316,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             model.embedding_specs if hasattr(model, "embedding_specs") else None
         ),
         "apply_cutoff": model.apply_cutoff if hasattr(model, "apply_cutoff") else True,
-        "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
+        "radial_MLP": extract_radial_MLP(model),
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
         "distance_transform": radial_to_transform(model.radial_embedding),
         "atomic_inter_scale": scale.cpu().numpy(),
@@ -329,6 +334,23 @@ def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return extract_model(
         torch.load(f=f, map_location=map_location), map_location=map_location
     )
+
+
+def extract_radial_MLP(model: torch.nn.Module) -> List[int]:
+    try:
+        return model.interactions[0].conv_tp_weights.hs[1:-1]
+    except AttributeError:
+        try:
+            return [
+                int(
+                    model.interactions[0]
+                    .conv_tp_weights.net[k]
+                    .__dict__["normalized_shape"][0]
+                )
+                for k in range(1, len(model.interactions[0].conv_tp_weights.net), 3)
+            ]
+        except AttributeError:
+            return []
 
 
 def remove_pt_head(
@@ -375,7 +397,6 @@ def remove_pt_head(
     model_config["atomic_inter_scale"] = model.scale_shift.scale[head_idx].item()
     model_config["atomic_inter_shift"] = model.scale_shift.shift[head_idx].item()
     mlp_count_irreps = model_config["MLP_irreps"].count((0, 1))
-    # model_config["MLP_irreps"] = o3.Irreps(f"{mlp_count_irreps}x0e")
 
     new_model = model.__class__(**model_config)
     state_dict = model.state_dict()
@@ -392,13 +413,6 @@ def remove_pt_head(
             end_idx = start_idx + channels_per_head
             if "linear_2.weight" in name:
                 end_idx = start_idx + channels_per_head // 2
-            # if (
-            #     "readouts.0.linear.weight" in name
-            #     or "readouts.1.linear_2.weight" in name
-            # ):
-            #     new_state_dict[name] = param[start_idx:end_idx] / (
-            #         len(model.heads) ** 0.5
-            #     )
             if "readouts.0.linear.weight" in name:
                 new_state_dict[name] = param.reshape(-1, len(model.heads))[
                     :, head_idx
@@ -407,6 +421,17 @@ def remove_pt_head(
                 new_state_dict[name] = param.reshape(
                     -1, len(model.heads), mlp_count_irreps
                 )[:, head_idx, :].flatten()
+            elif "readouts.1.linear_mid.weight" in name:
+                new_state_dict[name] = param.reshape(
+                    mlp_count_irreps,
+                    -1,
+                    len(model.heads),
+                )[:, :, head_idx].flatten()
+            if "readouts.1.linear_mid.bias" in name:
+                new_state_dict[name] = param.reshape(
+                    -1,
+                    len(model.heads),
+                )[:, head_idx].flatten()
             elif "readouts.1.linear_2.weight" in name:
                 new_state_dict[name] = param.reshape(
                     len(model.heads), -1, len(model.heads)
@@ -418,7 +443,7 @@ def remove_pt_head(
             new_state_dict[name] = param
 
     # Load state dict into new model
-    new_model.load_state_dict(new_state_dict)
+    new_model.load_state_dict(new_state_dict, strict=False)
 
     return new_model
 

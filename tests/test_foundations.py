@@ -10,7 +10,7 @@ from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
-from mace.calculators import mace_mp, mace_off
+from mace.calculators import mace_mp, mace_off, mace_omol
 from mace.tools import torch_geometric
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model, remove_pt_head
@@ -27,7 +27,7 @@ MODEL_PATH = (
 torch.set_default_dtype(torch.float64)
 
 
-@pytest.skip("Problem with the float type", allow_module_level=True)
+# @pytest.skip("Problem with the float type", allow_module_level=True)
 def test_foundations():
     # Create MACE model
     config = data.Configuration(
@@ -91,6 +91,7 @@ def test_foundations():
         radial_type="bessel",
         atomic_inter_scale=0.1,
         atomic_inter_shift=0.0,
+        use_reduced_cg=False,
     )
     model = modules.ScaleShiftMACE(**model_config)
     calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
@@ -166,6 +167,7 @@ def test_multi_reference():
         atomic_inter_scale=[1.0, 1.0],
         atomic_inter_shift=[0.0, 0.0],
         heads=["MP2", "DFT"],
+        use_reduced_cg=False,
     )
     model = modules.ScaleShiftMACE(**model_config)
     calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
@@ -196,6 +198,89 @@ def test_multi_reference():
     assert np.allclose(
         forces, forces_loaded.detach().numpy()[:5, :], atol=1e-5, rtol=1e-5
     )
+
+
+def test_mace_omol_elements_subset_reproduces_energy_forces():
+    """
+    Extract MACE-OMOL config, create a same-config model with fewer elements,
+    load weights with load_foundations_elements, and verify it reproduces
+    energies and forces for a simple molecule.
+    """
+
+    calc_foundation = mace_omol(device="cpu", default_dtype="float64")
+
+    foundation_model = calc_foundation.models[0]
+
+    # Build a small test molecule using a subset of elements (H, C, O)
+    atoms = molecule("H2O")
+    atoms.positions += np.random.randn(*atoms.positions.shape) * 0.05
+    atoms.calc = calc_foundation
+    energy_ref = atoms.get_potential_energy()
+    forces_ref = atoms.get_forces()
+
+    # Extract foundation config and adapt to a smaller element set
+    full_cfg = extract_config_mace_model(foundation_model)
+    subset_table = AtomicNumberTable([1, 6, 8])
+
+    # Subset atomic energies to match our reduced element set and preserve heads
+    # atomic_energies is [n_heads, n_elements] or [n_elements] -> make 2D, then subset columns
+    ae_full = foundation_model.atomic_energies_fn.atomic_energies.detach().cpu().numpy()
+    ae_full_2d = ae_full if ae_full.ndim == 2 else ae_full[None, :]
+    z_table_full = AtomicNumberTable([int(z) for z in foundation_model.atomic_numbers])
+    col_idx = [z_table_full.z_to_index(z) for z in subset_table.zs]
+    ae_subset = ae_full_2d[:, col_idx]
+
+    # Prepare model config for the reduced element set
+    model_cfg = dict(full_cfg)
+    model_cfg.update(
+        {
+            "num_elements": len(subset_table),
+            "atomic_numbers": subset_table.zs,
+            "atomic_energies": ae_subset,
+        }
+    )
+
+    # Create target model and load the subset of foundation weights
+    model_subset = modules.ScaleShiftMACE(**model_cfg)
+    model_loaded = load_foundations_elements(
+        model_subset,
+        foundation_model,
+        table=subset_table,
+        load_readout=True,
+        use_shift=True,
+        use_scale=True,
+        max_L=2,
+    )
+
+    # Build a single-config batch for the same atoms using the reduced table
+    config = data.Configuration(
+        atomic_numbers=atoms.numbers,
+        positions=atoms.positions,
+        properties={
+            "forces": np.zeros_like(atoms.positions),
+            "energy": 0.0,
+        },
+        property_weights={"forces": 1.0, "energy": 1.0, "spin": 1.0, "charges": 0.0},
+        head="omol",
+    )
+    atomic_data = data.AtomicData.from_config(
+        config,
+        z_table=subset_table,
+        cutoff=float(foundation_model.r_max),
+        heads=["omol"],
+    )
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data], batch_size=1, shuffle=False, drop_last=False
+    )
+    batch = next(iter(data_loader))
+    outputs = model_loaded(batch.to_dict())
+
+    # Compare energies (graph-level) and forces (node-level)
+    energy_loaded = outputs["energy"].detach().cpu().numpy().item()
+    forces_loaded = outputs["forces"].detach().cpu().numpy()
+
+    assert np.allclose(energy_ref, energy_loaded, atol=1e-5, rtol=1e-5)
+    assert np.allclose(forces_ref, forces_loaded, atol=1e-5, rtol=1e-5)
 
 
 @pytest.mark.parametrize(
@@ -257,7 +342,7 @@ def test_extract_config(model):
         },
     )
     model_copy = modules.ScaleShiftMACE(**extract_config_mace_model(model))
-    model_copy.load_state_dict(model.state_dict())
+    model_copy.load_state_dict(model.state_dict(), strict=False)
     z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
     atomic_data = data.AtomicData.from_config(config, z_table=z_table, cutoff=6.0)
     data_loader = torch_geometric.dataloader.DataLoader(

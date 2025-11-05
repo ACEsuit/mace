@@ -78,8 +78,8 @@ class AtomicData(torch_geometric.data.Data):
         total_charge: Optional[torch.Tensor] = None,  # [,]
         total_spin: Optional[torch.Tensor] = None,  # [,]
         pbc: Optional[torch.Tensor] = None,  # [, 3]
-        **extra_data # additional properties that aren't hard-coded and therefore not
-                     # for correct shape, etc
+        **extra_data,  # additional properties that aren't hard-coded and therefore not
+        # for correct shape, etc
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -386,7 +386,9 @@ class AtomicData(torch_geometric.data.Data):
             if k not in cls_kwargs and v is not None:
                 if len(v.shape) == 1:
                     # promote to n_atoms x 1
-                    cls_kwargs[k] = torch.tensor(v, dtype=torch.get_default_dtype()).unsqueeze(-1)
+                    cls_kwargs[k] = torch.tensor(
+                        v, dtype=torch.get_default_dtype()
+                    ).unsqueeze(-1)
                 elif len(v.shape) == 2:
                     cls_kwargs[k] = torch.tensor(v, dtype=torch.get_default_dtype())
 
