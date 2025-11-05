@@ -233,11 +233,10 @@ def test_dipole_polar_mace():
         == atomic_data.polarizability.shape
     )
     # test equivariance of output polarizability
-    pol0_rotated = np.array(
-        rot @ output["polarizability"][0].detach().numpy() @ rot.T, dtype=np.float64
+    assert np.allclose(
+        np.array(rot @ output["polarizability"][0].detach().numpy() @ rot.T),
+        output["polarizability"][1].detach().numpy(),
     )
-    pol1 = np.array(output["polarizability"][1].detach().numpy(), dtype=np.float64)
-    assert np.allclose(pol0_rotated, pol1)
 
 
 def test_energy_dipole_mace():
