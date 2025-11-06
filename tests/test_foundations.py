@@ -283,6 +283,94 @@ def test_mace_omol_elements_subset_reproduces_energy_forces():
     assert np.allclose(forces_ref, forces_loaded, atol=1e-5, rtol=1e-5)
 
 
+def test_mace_mh_1_elements_subset_reproduces_energy_forces():
+    """
+    Extract MACE-MH-1 config, create a same-config model with fewer elements,
+    load weights with load_foundations_elements, and verify it reproduces
+    energies and forces for a simple molecule.
+    """
+
+    calc_foundation = mace_mp(
+        model="mh-1", device="cpu", default_dtype="float64", head="omat_pbe"
+    )
+
+    foundation_model = remove_pt_head(
+        calc_foundation.models[0], head_to_keep="omat_pbe"
+    )
+    print("foundation_model", foundation_model)
+
+    # Build a small test molecule using a subset of elements (H, C, O)
+    atoms = molecule("H2O")
+    atoms.positions += np.random.randn(*atoms.positions.shape) * 0.05
+    atoms.calc = calc_foundation
+    energy_ref = atoms.get_potential_energy()
+    forces_ref = atoms.get_forces()
+
+    # Extract foundation config and adapt to a smaller element set
+    full_cfg = extract_config_mace_model(foundation_model)
+    subset_table = AtomicNumberTable([1, 6, 8])
+
+    # Subset atomic energies to match our reduced element set and preserve heads
+    # atomic_energies is [n_heads, n_elements] or [n_elements] -> make 2D, then subset columns
+    ae_full = foundation_model.atomic_energies_fn.atomic_energies.detach().cpu().numpy()
+    ae_full_2d = ae_full if ae_full.ndim == 2 else ae_full[None, :]
+    z_table_full = AtomicNumberTable([int(z) for z in foundation_model.atomic_numbers])
+    col_idx = [z_table_full.z_to_index(z) for z in subset_table.zs]
+    ae_subset = ae_full_2d[:, col_idx]
+
+    # Prepare model config for the reduced element set
+    model_cfg = dict(full_cfg)
+    model_cfg.update(
+        {
+            "num_elements": len(subset_table),
+            "atomic_numbers": subset_table.zs,
+            "atomic_energies": ae_subset,
+        }
+    )
+
+    # Create target model and load the subset of foundation weights
+    model_subset = modules.ScaleShiftMACE(**model_cfg)
+    model_loaded = load_foundations_elements(
+        model_subset,
+        foundation_model,
+        table=subset_table,
+        load_readout=True,
+        use_shift=True,
+        use_scale=True,
+        max_L=1,
+    )
+
+    # Build a single-config batch for the same atoms using the reduced table
+    config = data.Configuration(
+        atomic_numbers=atoms.numbers,
+        positions=atoms.positions,
+        properties={
+            "forces": np.zeros_like(atoms.positions),
+            "energy": 0.0,
+        },
+        property_weights={"forces": 1.0, "energy": 1.0, "spin": 1.0, "charges": 0.0},
+        head="omat_pbe",
+    )
+    atomic_data = data.AtomicData.from_config(
+        config,
+        z_table=subset_table,
+        cutoff=float(foundation_model.r_max),
+        heads=["omat_pbe"],
+    )
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data], batch_size=1, shuffle=False, drop_last=False
+    )
+    batch = next(iter(data_loader))
+    outputs = model_loaded(batch.to_dict())
+
+    # Compare energies (graph-level) and forces (node-level)
+    energy_loaded = outputs["energy"].detach().cpu().numpy().item()
+    forces_loaded = outputs["forces"].detach().cpu().numpy()
+
+    assert np.allclose(energy_ref, energy_loaded, atol=1e-5, rtol=1e-5)
+    assert np.allclose(forces_ref, forces_loaded, atol=1e-5, rtol=1e-5)
+
+
 @pytest.mark.parametrize(
     "calc",
     [
@@ -450,6 +538,7 @@ def test_remove_pt_head_multihead():
         ]
         * 2
     )
+    print("atomic_energies_pt_head", atomic_energies_pt_head.shape)
     z_table = AtomicNumberTable([1, 8])  # H and O
 
     # Create multihead model
@@ -594,4 +683,135 @@ def test_remove_pt_head_multihead():
     energies = torch.stack([results[head]["energy"] for head in model.heads])
     assert not torch.allclose(
         energies[0], energies[1], rtol=1e-3
+    ), "Different heads should produce different outputs"
+
+
+def test_remove_pt_head_omol_multihead():
+    # Set up test data
+    calc = mace_omol(device="cpu", default_dtype="float64")
+    model_config = extract_config_mace_model(calc.models[0])
+    model_config["heads"] = ["pt_head", "DFT", "MP2", "CCSD"]
+    model_config["atomic_inter_scale"] = [1.0] * len(model_config["heads"])
+    model_config["atomic_inter_shift"] = [0.0] * len(model_config["heads"])
+    # repeat atomic energies for each head from [n_elements] to [n_heads, n_elements]
+    model_config["atomic_energies"] = model_config["atomic_energies"][
+        None, 0, :
+    ].repeat(len(model_config["heads"]), axis=0)
+    model = modules.ScaleShiftMACE(**model_config)
+    z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
+
+    # Create test configurations for each head
+    mol = molecule("H2O")
+    configs = {}
+    atomic_datas = {}
+    dataloaders = {}
+    original_outputs = {}
+
+    # First get outputs from original model for each head
+    for head in model.heads:
+        config_pt_head = data.Configuration(
+            atomic_numbers=mol.numbers,
+            positions=mol.positions,
+            properties={"energy": 1.0, "forces": np.random.randn(len(mol), 3)},
+            property_weights={"forces": 1.0, "energy": 1.0},
+            head=head,
+        )
+        configs[head] = config_pt_head
+
+        atomic_data = data.AtomicData.from_config(
+            config_pt_head, z_table=z_table, cutoff=5.0, heads=model.heads
+        )
+        atomic_datas[head] = atomic_data
+
+        dataloader = torch_geometric.dataloader.DataLoader(
+            dataset=[atomic_data], batch_size=1, shuffle=False
+        )
+        dataloaders[head] = dataloader
+
+        batch = next(iter(dataloader))
+        output = model(batch.to_dict())
+        original_outputs[head] = output
+
+    # Now test each head separately
+    for i, head in enumerate(model.heads):
+        # Convert to single head model
+        new_model = remove_pt_head(model, head_to_keep=head)
+
+        # Basic structure tests
+        assert len(new_model.heads) == 1, f"Failed for head {head}"
+        assert new_model.heads[0] == head, f"Failed for head {head}"
+        assert (
+            new_model.atomic_energies_fn.atomic_energies.shape[0] == 1
+        ), f"Failed for head {head}"
+        assert (
+            len(torch.atleast_1d(new_model.scale_shift.scale)) == 1
+        ), f"Failed for head {head}"
+        assert (
+            len(torch.atleast_1d(new_model.scale_shift.shift)) == 1
+        ), f"Failed for head {head}"
+
+        # Verify scale and shift values
+        assert torch.allclose(
+            new_model.scale_shift.scale, model.scale_shift.scale[i : i + 1]
+        ), f"Failed for head {head}"
+        assert torch.allclose(
+            new_model.scale_shift.shift, model.scale_shift.shift[i : i + 1]
+        ), f"Failed for head {head}"
+
+        # Test output consistency
+        single_head_data = data.AtomicData.from_config(
+            configs[head], z_table=z_table, cutoff=5.0, heads=[head]
+        )
+        single_head_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[single_head_data], batch_size=1, shuffle=False
+        )
+        batch = next(iter(single_head_loader))
+        new_output = new_model(batch.to_dict())
+
+        # Compare outputs
+        print(
+            original_outputs[head]["energy"],
+            new_output["energy"],
+        )
+        torch.testing.assert_close(
+            original_outputs[head]["energy"],
+            new_output["energy"],
+            rtol=1e-5,
+            atol=1e-5,
+            msg=f"Energy mismatch for head {head}",
+        )
+        torch.testing.assert_close(
+            original_outputs[head]["forces"],
+            new_output["forces"],
+            rtol=1e-5,
+            atol=1e-5,
+            msg=f"Forces mismatch for head {head}",
+        )
+
+    # Test error cases
+    with pytest.raises(ValueError, match="Head non_existent not found in model"):
+        remove_pt_head(model, head_to_keep="non_existent")
+
+    # Test default behavior (first non-PT head)
+    default_model = remove_pt_head(model)
+    assert default_model.heads[0] == "DFT"
+
+    # Additional test: check if each model's computation graph is independent
+    models = {head: remove_pt_head(model, head_to_keep=head) for head in model.heads}
+    results = {}
+
+    for head, head_model in models.items():
+        single_head_data = data.AtomicData.from_config(
+            configs[head], z_table=z_table, cutoff=5.0, heads=[head]
+        )
+        single_head_loader = torch_geometric.dataloader.DataLoader(
+            dataset=[single_head_data], batch_size=1, shuffle=False
+        )
+        batch = next(iter(single_head_loader))
+        results[head] = head_model(batch.to_dict())
+
+    # Verify each model produces different outputs
+    energies = torch.stack([results[head]["energy"] for head in model.heads])
+    assert not torch.allclose(
+        energies[0], energies[1], rtol=1e-4
     ), "Different heads should produce different outputs"

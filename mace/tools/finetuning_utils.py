@@ -213,18 +213,16 @@ def load_foundations_elements(
                         .linear_1.__dict__["irreps_out"]
                         .num_irreps
                     )
-                    shape_output_1 = (
-                        readout.linear_1.__dict__["irreps_out"].num_irreps
-                    )
+                    shape_output_1 = readout.linear_1.__dict__["irreps_out"].num_irreps
                 else:
                     shape_input_1 = (
                         model_foundations.readouts[i]
                         .linear_mid.__dict__["irreps_out"]
                         .num_irreps
                     )
-                    shape_output_1 = (
-                        readout.linear_mid.__dict__["irreps_out"].num_irreps
-                    )
+                    shape_output_1 = readout.linear_mid.__dict__[
+                        "irreps_out"
+                    ].num_irreps
 
                 if hasattr(readout, "linear_1"):
                     model_readouts_one_linear_1_weight = readout.linear_1.weight.clone()
@@ -250,7 +248,9 @@ def load_foundations_elements(
                             model_readouts_one_linear_1_bias
                         )
                 if hasattr(readout, "linear_mid"):
-                    model_readouts_one_linear_mid_weight = readout.linear_mid.weight.clone()
+                    model_readouts_one_linear_mid_weight = (
+                        readout.linear_mid.weight.clone()
+                    )
                     model_readouts_one_linear_mid_weight = (
                         model_foundations.readouts[i]
                         .linear_mid.weight.view(shape_input_1, -1)
@@ -263,7 +263,9 @@ def load_foundations_elements(
                     )
                     # if it has biases transfer them too
                     if readout.linear_mid.bias is not None:
-                        model_readouts_one_linear_mid_bias = readout.linear_mid.bias.clone()
+                        model_readouts_one_linear_mid_bias = (
+                            readout.linear_mid.bias.clone()
+                        )
                         model_readouts_one_linear_mid_bias = (
                             model_foundations.readouts[i]
                             .linear_mid.bias.view(-1)
