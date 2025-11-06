@@ -390,7 +390,12 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
 
 class UniversalLoss(torch.nn.Module):
     def __init__(
-        self, energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, magforces_weight=1.0, huber_delta=0.01
+        self,
+        energy_weight=1.0,
+        forces_weight=1.0,
+        stress_weight=1.0,
+        magforces_weight=1.0,
+        huber_delta=0.01,
     ) -> None:
         super().__init__()
         self.huber_delta = huber_delta
@@ -444,6 +449,7 @@ class UniversalLoss(torch.nn.Module):
                 delta=self.huber_delta,
             )
             loss_stress = reduce_loss(loss_stress, ddp)
+            loss_magforces = 0
         else:
             loss_energy = torch.nn.functional.huber_loss(
                 configs_energy_weight * ref["energy"] / num_atoms,
@@ -463,15 +469,16 @@ class UniversalLoss(torch.nn.Module):
                 reduction="mean",
                 delta=self.huber_delta,
             )
-            if "magforces" in pred.keys() and (pred["magforces"] is not None and ref["magforces"] is not None):
+            loss_magforces = 0
+            if "magforces" in pred.keys() and (
+                pred["magforces"] is not None and ref["magforces"] is not None
+            ):
                 loss_magforces = torch.nn.functional.huber_loss(
                     configs_magforces_weight * ref["magforces"],
                     configs_magforces_weight * pred["magforces"],
                     reduction="mean",
                     delta=self.huber_delta,
                 )
-            else:
-                loss_magforces = 0
         return (
             self.energy_weight * loss_energy
             + self.forces_weight * loss_forces

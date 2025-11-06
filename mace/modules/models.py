@@ -391,7 +391,7 @@ class MACE(torch.nn.Module):
         node_energy = torch.sum(torch.stack(node_energies_list, dim=-1), dim=-1)
         node_feats_out = torch.cat(node_feats_concat, dim=-1)
 
-        forces, virials, stress, hessian, edge_forces = get_outputs(
+        forces, virials, stress, hessian, edge_forces, _ = get_outputs(
             energy=total_energy,
             positions=positions,
             displacement=displacement,
@@ -571,7 +571,7 @@ class ScaleShiftMACE(MACE):
         total_energy = e0 + inter_e
         node_energy = node_e0.clone().double() + node_inter_es.clone().double()
 
-        forces, virials, stress, hessian, edge_forces = get_outputs(
+        forces, virials, stress, hessian, edge_forces, _ = get_outputs(
             energy=inter_e,
             positions=positions,
             displacement=displacement,
@@ -1394,7 +1394,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         )  # [n_graphs,3]
         total_dipole = total_dipole + baseline
 
-        forces, virials, stress, _, _ = get_outputs(
+        forces, virials, stress, _, _, _ = get_outputs(
             energy=total_energy,
             positions=data["positions"],
             displacement=displacement,

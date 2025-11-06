@@ -161,21 +161,26 @@ def compute_hessians_loop(
     hessian = torch.stack(hessian)
     return hessian
 
+
 def compute_forces_virials_magforces(
     energy: torch.Tensor,
     positions: torch.Tensor,
     displacement: torch.Tensor,
     cell: torch.Tensor,
-    magmoms: Optional[torch.Tensor] = None,
+    magmoms: torch.Tensor,
     training: bool = True,
     compute_stress: bool = False,
-) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-    grad_outputs = [torch.ones_like(energy)]
+) -> Tuple[
+    torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]
+]:
+
+    # forces correct static type
+    grad_outputs = torch.jit.annotate(
+        List[Optional[torch.Tensor]], [torch.ones_like(energy)]
+    )
 
     # Pack all inputs into a list
-    inputs = [positions, displacement]
-    if magmoms is not None:
-        inputs.append(magmoms)
+    inputs = [positions, displacement, magmoms]
 
     grads = torch.autograd.grad(
         outputs=[energy],
@@ -186,30 +191,32 @@ def compute_forces_virials_magforces(
         allow_unused=True,
     )
 
-    # Unpack the gradients
-    forces = grads[0] if grads[0] is not None else torch.zeros_like(positions)
-    virials = grads[1] if grads[1] is not None else torch.zeros_like(displacement)
-    mag_forces = grads[2] if magmoms is not None and grads[2] is not None else (
-        torch.zeros_like(magmoms) if magmoms is not None else None
+    # Explicit unwrapping of Optionals for torch compile
+    forces_opt = grads[0]
+    virials_opt = grads[1]
+    mag_forces_opt = grads[2]
+
+    forces = forces_opt if forces_opt is not None else torch.zeros_like(positions)
+    virials = virials_opt if virials_opt is not None else torch.zeros_like(displacement)
+    mag_forces = (
+        mag_forces_opt if mag_forces_opt is not None else torch.zeros_like(magmoms)
     )
 
     # Compute stress if requested
-    stress = None
+    stress = torch.zeros_like(displacement)
     if compute_stress:
         cell = cell.view(-1, 3, 3)
         volume = torch.linalg.det(cell).abs().unsqueeze(-1)
         stress = virials / volume.view(-1, 1, 1)
         stress = torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
 
-    return -forces, -virials, stress, -mag_forces if mag_forces is not None else None
+    return -forces, -virials, stress, -mag_forces
 
-import torch
-from typing import Tuple, Optional
 
 def compute_forces_magforces(
     energy: torch.Tensor,
     positions: torch.Tensor,
-    magmoms: Optional[torch.Tensor] = None,
+    magmoms: torch.Tensor,
     training: bool = True,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
@@ -219,11 +226,13 @@ def compute_forces_magforces(
         -forces: dE/d(positions)
         -mag_forces: dE/d(magmoms), or None if magmoms not provided
     """
-    grad_outputs = [torch.ones_like(energy)]
-    inputs = [positions]
-    if magmoms is not None:
-        inputs.append(magmoms)
 
+    # forces correct static type
+    grad_outputs = torch.jit.annotate(
+        List[Optional[torch.Tensor]], [torch.ones_like(energy)]
+    )
+
+    inputs = [positions, magmoms]
     grads = torch.autograd.grad(
         outputs=[energy],
         inputs=inputs,
@@ -233,12 +242,17 @@ def compute_forces_magforces(
         allow_unused=True,
     )
 
-    forces = grads[0] if grads[0] is not None else torch.zeros_like(positions)
-    mag_forces = grads[1] if magmoms is not None and grads[1] is not None else (
-        torch.zeros_like(magmoms) if magmoms is not None else None
+    # Explicitly unwrap Optionals so TorchScript knows they are Tensors
+    forces_opt = grads[0]
+    mag_forces_opt = grads[1]
+
+    forces = forces_opt if forces_opt is not None else torch.zeros_like(positions)
+    mag_forces = (
+        mag_forces_opt if mag_forces_opt is not None else torch.zeros_like(magmoms)
     )
 
-    return -forces, -mag_forces if mag_forces is not None else None
+    return -forces, -mag_forces
+
 
 def get_outputs(
     energy: torch.Tensor,
@@ -260,10 +274,15 @@ def get_outputs(
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
+    Optional[torch.Tensor],
 ]:
-    
-    if ((compute_virials or compute_stress) and displacement is not None) and compute_magforces:
-        assert magmoms is not None, "Magnetic momenet must be inputed to get magnetic forces"
+
+    if (
+        (compute_virials or compute_stress) and displacement is not None
+    ) and compute_magforces:
+        assert (
+            magmoms is not None
+        ), "Magnetic momenet must be inputed to get magnetic forces"
         forces, virials, stress, mag_forces = compute_forces_virials_magforces(
             energy=energy,
             positions=positions,
@@ -271,7 +290,7 @@ def get_outputs(
             cell=cell,
             magmoms=magmoms,
             training=(training or compute_hessian),
-            compute_stress=True
+            compute_stress=True,
         )
     elif (compute_virials or compute_stress) and displacement is not None:
         forces, virials, stress = compute_forces_virials(
@@ -284,13 +303,15 @@ def get_outputs(
         )
         mag_forces = None
     elif compute_force and compute_magforces:
-        assert magmoms is not None, "Magnetic momenet must be inputed to get magnetic forces"
+        assert (
+            magmoms is not None
+        ), "Magnetic momenet must be inputed to get magnetic forces"
         forces, mag_forces = compute_forces_magforces(
-                                            energy=energy,
-                                            positions=positions,
-                                            magmoms=magmoms,
-                                            training=(training or compute_hessian),
-                                            )
+            energy=energy,
+            positions=positions,
+            magmoms=magmoms,
+            training=(training or compute_hessian),
+        )
         virials, stress = None, None
     elif compute_force:
         forces, virials, stress = (

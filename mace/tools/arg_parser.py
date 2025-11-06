@@ -686,7 +686,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_forces_weight",
     )
     parser.add_argument(
-        "--magforces_weight", help="weight of mag forces loss", type=float, default=100.0
+        "--magforces_weight",
+        help="weight of mag forces loss",
+        type=float,
+        default=100.0,
     )
     parser.add_argument(
         "--swa_magforces_weight",
@@ -994,7 +997,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--m_max",
         help="|m| basis m_max for magnetic momgent",
         type=float,
-        nargs='+',
+        nargs="+",
     )
     parser.add_argument(
         "--max_m_ell",
@@ -1018,7 +1021,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--train_one_body_contribution",
         help="It true, freeze weights other than the one body contribution.",
         type=str2bool,
-        default=False
+        default=False,
     )
     parser.add_argument(
         "--data_aug_magmom",

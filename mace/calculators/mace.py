@@ -154,14 +154,16 @@ class MACECalculator(Calculator):
 
         # superclass constructor initializes self.implemented_properties to an empty list
         if model_type in ["MACE", "EnergyDipoleMACE"]:
-            self.implemented_properties.extend([
-                "energy",
-                "energies",
-                "free_energy",
-                "node_energy",
-                "forces",
-                "stress",
-            ])
+            self.implemented_properties.extend(
+                [
+                    "energy",
+                    "energies",
+                    "free_energy",
+                    "node_energy",
+                    "forces",
+                    "stress",
+                ]
+            )
             if kwargs.get("compute_atomic_stresses", False):
                 self.implemented_properties.extend(["stresses", "virials"])
                 self.compute_atomic_stresses = True
@@ -609,6 +611,7 @@ class MACECalculator(Calculator):
             return descriptors[0]
         return descriptors
 
+
 class MagneticMACECalculator(Calculator):
     """MACE ASE Calculator
     args:
@@ -779,7 +782,7 @@ class MagneticMACECalculator(Calculator):
         )
         self.charges_key = charges_key
         self.magmom_key = magmom_key
-        
+
         try:
             self.available_heads = self.models[0].magmom_mace.heads
         except AttributeError:
@@ -857,7 +860,7 @@ class MagneticMACECalculator(Calculator):
         if (not state) and (self.atoms.info != atoms.info):
             state.append("info")
         return state
-    
+
     def _create_result_tensors(
         self, model_type: str, num_models: int, num_atoms: int
     ) -> dict:
@@ -888,9 +891,14 @@ class MagneticMACECalculator(Calculator):
         return dict_of_tensors
 
     def _atoms_to_batch(self, atoms):
-        #self.arrays_keys.update({self.charges_key: "charges", self.magmom_key: "magmom"})
-        
-        self.arrays_keys.update({"charges": self.charges_key, "magmom": self.magmom_key,})
+        # self.arrays_keys.update({self.charges_key: "charges", self.magmom_key: "magmom"})
+
+        self.arrays_keys.update(
+            {
+                "charges": self.charges_key,
+                "magmom": self.magmom_key,
+            }
+        )
         # print("self.arrays_keys: ", self.arrays_keys)
         keyspec = mace_data.KeySpecification(
             info_keys=self.info_keys, arrays_keys=self.arrays_keys
@@ -938,9 +946,9 @@ class MagneticMACECalculator(Calculator):
             batch = self._clone_batch(batch_base)
             node_heads = batch["head"][batch["batch"]]
             num_atoms_arange = torch.arange(batch["positions"].shape[0])
-            node_e0 = self.models[0].magmom_mace.atomic_energies_fn(batch["node_attrs"])[
-                num_atoms_arange, node_heads
-            ]
+            node_e0 = self.models[0].magmom_mace.atomic_energies_fn(
+                batch["node_attrs"]
+            )[num_atoms_arange, node_heads]
             compute_stress = not self.use_compile
         else:
             compute_stress = False
@@ -982,10 +990,10 @@ class MagneticMACECalculator(Calculator):
                 * self.energy_units_to_eV
                 / self.length_units_to_A
             )
-            if "mace_magmom" in ret_tensors.keys():
-                #self.results['mace_magmom'] = torch.mean(ret_tensors["mace_magmom"], dim=0).cpu().numpy()
-                self.results['mace_magmom'] = ret_tensors["mace_magmom"].cpu().numpy()
-            
+
+            if "mace_magmom" in ret_tensors:
+                self.results["mace_magmom"] = ret_tensors["mace_magmom"].cpu().numpy()
+
             if self.num_models > 1:
                 self.results["energies"] = (
                     ret_tensors["energies"].cpu().numpy() * self.energy_units_to_eV
@@ -1026,7 +1034,7 @@ class MagneticMACECalculator(Calculator):
                     .numpy()
                 )
         # modify this inpalce
-        atoms.arrays['mace_magmom'] = self.results["mace_magmom"]
+        atoms.arrays["mace_magmom"] = self.results["mace_magmom"]
 
     def get_hessian(self, atoms=None):
         if atoms is None and self.atoms is None:
@@ -1069,7 +1077,9 @@ class MagneticMACECalculator(Calculator):
         batch = self._atoms_to_batch(atoms)
         descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
 
-        irreps_out = o3.Irreps(str(self.models[0].magmom_mace.products[0].linear.irreps_out))
+        irreps_out = o3.Irreps(
+            str(self.models[0].magmom_mace.products[0].linear.irreps_out)
+        )
         l_max = irreps_out.lmax
         num_invariant_features = irreps_out.dim // (l_max + 1) ** 2
         per_layer_features = [irreps_out.dim for _ in range(num_interactions)]
@@ -1096,7 +1106,9 @@ class MagneticMACECalculator(Calculator):
             return descriptors[0]
         return descriptors
 
-    def clean_cache_magmom(self,):
+    def clean_cache_magmom(
+        self,
+    ):
         for model in self.models:
             if hasattr(model, "cache_magmom"):
                 model.cache_magmom = None

@@ -76,10 +76,14 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         error_stress = eval_metrics["rmse_stress"] * 1e3
         errors_magforces = None
-        if 'rmse_magf' in eval_metrics.keys():
-            errors_magforces = eval_metrics['rmse_magf'] * 1e3
+        if "rmse_magf" in eval_metrics.keys():
+            errors_magforces = eval_metrics["rmse_magf"] * 1e3
         msg = f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3"
-        msg += f", RMSE_magforces={errors_magforces:8.2f} meV / μB" if errors_magforces is not None else ""
+        msg += (
+            f", RMSE_magforces={errors_magforces:8.2f} meV / μB"
+            if errors_magforces is not None
+            else ""
+        )
         logging.info(msg)
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -237,6 +241,7 @@ def train(
         # allow data augmentation on magnetic moment
         if data_aug_magmom:
             from mace.data import create_random_rotation_loader
+
             train_loader = create_random_rotation_loader(train_loader)
 
         train_one_epoch(
@@ -425,14 +430,23 @@ def take_step(
 
     def closure():
         optimizer.zero_grad(set_to_none=True)
-        output = model(
-            batch_dict,
-            training=True,
-            compute_force=output_args["forces"],
-            compute_virials=output_args["virials"],
-            compute_stress=output_args["stress"],
-            compute_magforces=output_args["magforces"]
-        )
+        if not output_args["magforces"]:
+            output = model(
+                batch_dict,
+                training=True,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+            )
+        else:
+            output = model(
+                batch_dict,
+                training=True,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+                compute_magforces=output_args["magforces"],
+            )
         loss = loss_fn(pred=output, ref=batch)
         loss.backward()
         if max_grad_norm is not None:
@@ -566,14 +580,23 @@ def evaluate(
     for batch in data_loader:
         batch = batch.to(device)
         batch_dict = batch.to_dict()
-        output = model(
-            batch_dict,
-            training=False,
-            compute_force=output_args["forces"],
-            compute_virials=output_args["virials"],
-            compute_stress=output_args["stress"],
-            compute_magforces=output_args["magforces"],
-        )
+        if not output_args["magforces"]:
+            output = model(
+                batch_dict,
+                training=False,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+            )
+        else:
+            output = model(
+                batch_dict,
+                training=False,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+                compute_magforces=output_args["magforces"],
+            )
         avg_loss, aux = metrics(batch, output)
 
     avg_loss, aux = metrics.compute()
@@ -619,10 +642,11 @@ class MACELoss(Metric):
             "delta_polarizability_per_atom", default=[], dist_reduce_fx="cat"
         )
 
-        self.add_state("MagFs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "MagFs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
         self.add_state("MagFs", default=[], dist_reduce_fx="cat")
         self.add_state("delta_MagFs", default=[], dist_reduce_fx="cat")
-        
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
@@ -647,7 +671,7 @@ class MACELoss(Metric):
                 batch.forces_weight,
                 spread_atoms=True,
             )
-        
+
         if output.get("magforces") is not None and batch.magforces is not None:
             self.MagFs_computed += 1.0
             self.MagFs.append(batch.magforces)

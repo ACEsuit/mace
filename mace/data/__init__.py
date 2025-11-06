@@ -1,8 +1,8 @@
 from .atomic_data import AtomicData
+from .augmentation import create_random_rotation_loader
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
 from .lmdb_dataset import LMDBDataset
 from .neighborhood import get_neighborhood
-from .augmentation import create_random_rotation_loader
 from .utils import (
     Configuration,
     Configurations,

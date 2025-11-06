@@ -223,7 +223,7 @@ def _determine_atomic_inter_shift(mean, heads):
 def _build_model(
     args, model_config, model_config_foundation, heads
 ):  # pylint: disable=too-many-return-statements
-    
+
     if args.model == "MagneticScaleShiftMACE":
         return modules.MagneticScaleShiftMACE(
             **model_config,
@@ -234,7 +234,7 @@ def _build_model(
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
-            atomic_inter_shift=args.mean,
+            atomic_inter_shift=[0.0] * len(heads),
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             heads=heads,

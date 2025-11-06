@@ -10,6 +10,8 @@ from .blocks import (
     LinearDipoleReadoutBlock,
     LinearNodeEmbeddingBlock,
     LinearReadoutBlock,
+    MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock,
+    MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock,
     NonLinearBiasReadoutBlock,
     NonLinearDipolePolarReadoutBlock,
     NonLinearDipoleReadoutBlock,
@@ -22,9 +24,8 @@ from .blocks import (
     RealAgnosticResidualInteractionBlock,
     RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
-    MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock, 
-    MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock, 
 )
+from .extensions import MagneticScaleShiftMACE, MagneticSCFMACE
 from .loss import (
     DipolePolarLoss,
     DipoleSingleLoss,
@@ -55,11 +56,6 @@ from .utils import (
     compute_mean_std_atomic_inter_energy,
     compute_rms_dipoles,
     compute_statistics,
-)
-
-from .extensions import (
-    MagneticScaleShiftMACE,
-    MagneticSCFMACE,
 )
 
 interaction_classes: Dict[str, Type[InteractionBlock]] = {
@@ -116,7 +112,7 @@ __all__ = [
     "AtomicDipolesMACE",
     "AtomicDielectricMACE",
     "EnergyDipolesMACE",
-    "MagneticScaleShiftMACE", 
+    "MagneticScaleShiftMACE",
     "MagneticSCFMACE",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",

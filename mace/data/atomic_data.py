@@ -36,8 +36,8 @@ class AtomicData(torch_geometric.data.Data):
     energy: torch.Tensor
     stress: torch.Tensor
     virials: torch.Tensor
-    magmom: torch.Tensor 
-    magforces: torch.Tensor 
+    magmom: torch.Tensor
+    magforces: torch.Tensor
     dipole: torch.Tensor
     charges: torch.Tensor
     polarizability: torch.Tensor
@@ -78,13 +78,12 @@ class AtomicData(torch_geometric.data.Data):
         dipole: Optional[torch.Tensor],  # [, 3]
         charges: Optional[torch.Tensor],  # [n_nodes, ]
         polarizability: Optional[torch.Tensor],  # [1, 3, 3]
-        magmom: Optional[torch.Tensor], # [n_nodes, 3]
+        magmom: Optional[torch.Tensor],  # [n_nodes, 3]
         magforces: Optional[torch.Tensor],
         elec_temp: Optional[torch.Tensor],  # [,]
         total_charge: Optional[torch.Tensor] = None,  # [,]
         total_spin: Optional[torch.Tensor] = None,  # [,]
         pbc: Optional[torch.Tensor] = None,  # [, 3]
-        
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -101,7 +100,7 @@ class AtomicData(torch_geometric.data.Data):
         assert stress_weight is None or len(stress_weight.shape) == 0
         assert virials_weight is None or len(virials_weight.shape) == 0
         assert dipole_weight is None or dipole_weight.shape == (1, 3), dipole_weight
-        assert charges_weight is None or len(charges_weight.shape) == 0 
+        assert charges_weight is None or len(charges_weight.shape) == 0
         assert magforces_weight is None or len(magforces_weight.shape) == 0
         assert cell is None or cell.shape == (3, 3)
         assert forces is None or forces.shape == (num_nodes, 3)
@@ -248,7 +247,7 @@ class AtomicData(torch_geometric.data.Data):
             if config.property_weights.get("charges") is not None
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
-        
+
         polarizability_weight = (
             torch.tensor(
                 config.property_weights.get("polarizability"),
@@ -269,7 +268,10 @@ class AtomicData(torch_geometric.data.Data):
             polarizability_weight = polarizability_weight.unsqueeze(0)
 
         magforces_weight = (
-            torch.tensor(config.property_weights.get("magforces"), dtype=torch.get_default_dtype())
+            torch.tensor(
+                config.property_weights.get("magforces"),
+                dtype=torch.get_default_dtype(),
+            )
             if config.property_weights.get("magforces") is not None
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
@@ -321,12 +323,16 @@ class AtomicData(torch_geometric.data.Data):
             else torch.zeros(num_atoms, dtype=torch.get_default_dtype())
         )
         magmom = (
-            torch.tensor(config.properties.get("magmom"), dtype=torch.get_default_dtype())
+            torch.tensor(
+                config.properties.get("magmom"), dtype=torch.get_default_dtype()
+            )
             if config.properties.get("magmom") is not None
             else None
         )
         magforces = (
-            torch.tensor(config.properties.get("magforces"), dtype=torch.get_default_dtype())
+            torch.tensor(
+                config.properties.get("magforces"), dtype=torch.get_default_dtype()
+            )
             if config.properties.get("magforces") is not None
             else None
         )
