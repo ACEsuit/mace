@@ -407,35 +407,53 @@ def remove_pt_head(
             new_state_dict[name] = param[head_idx : head_idx + 1]
         elif "scale" in name or "shift" in name:
             new_state_dict[name] = param[head_idx : head_idx + 1]
+        elif "embedding_readout.linear" in name:
+            new_state_dict[name] = param.reshape(-1, len(model.heads))[
+                :, head_idx
+            ].flatten()
+
         elif "readouts" in name:
             channels_per_head = param.shape[0] // len(model.heads)
             start_idx = head_idx * channels_per_head
             end_idx = start_idx + channels_per_head
             if "linear_2.weight" in name:
                 end_idx = start_idx + channels_per_head // 2
-            if "readouts.0.linear.weight" in name:
+            if "linear.weight" in name:
                 new_state_dict[name] = param.reshape(-1, len(model.heads))[
                     :, head_idx
                 ].flatten()
-            elif "readouts.1.linear_1.weight" in name:
+            elif "linear_1.weight" in name:
                 new_state_dict[name] = param.reshape(
                     -1, len(model.heads), mlp_count_irreps
                 )[:, head_idx, :].flatten()
-            elif "readouts.1.linear_mid.weight" in name:
+            elif "linear_1.bias" in name:
+                if param.shape == torch.Size([0]):
+                    continue
                 new_state_dict[name] = param.reshape(
+                    len(model.heads), mlp_count_irreps
+                )[head_idx, :].flatten()
+            elif "linear_mid.weight" in name:
+                new_state_dict[name] = param.reshape(
+                    len(model.heads),
                     mlp_count_irreps,
-                    -1,
                     len(model.heads),
-                )[:, :, head_idx].flatten()
-            if "readouts.1.linear_mid.bias" in name:
+                    mlp_count_irreps,
+                )[head_idx, :, head_idx, :].flatten() / (len(model.heads) ** 0.5)
+            elif "linear_mid.bias" in name:
+                if param.shape == torch.Size([0]):
+                    continue
                 new_state_dict[name] = param.reshape(
-                    -1,
                     len(model.heads),
-                )[:, head_idx].flatten()
-            elif "readouts.1.linear_2.weight" in name:
+                    mlp_count_irreps,
+                )[head_idx, :].flatten()
+            elif "linear_2.weight" in name:
                 new_state_dict[name] = param.reshape(
                     len(model.heads), -1, len(model.heads)
                 )[head_idx, :, head_idx].flatten() / (len(model.heads) ** 0.5)
+            elif "linear_2.bias" in name:
+                if param.shape == torch.Size([0]):
+                    continue
+                new_state_dict[name] = param[head_idx].flatten()
             else:
                 new_state_dict[name] = param[start_idx:end_idx]
 

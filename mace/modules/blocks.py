@@ -145,6 +145,9 @@ class NonLinearBiasReadoutBlock(torch.nn.Module):
         self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
+        if hasattr(self, "num_heads"):
+            if self.num_heads > 1 and heads is not None:
+                x = mask_head(x, heads, self.num_heads)
         x = self.non_linearity(self.linear_mid(x))
         if hasattr(self, "num_heads"):
             if self.num_heads > 1 and heads is not None:
