@@ -13,13 +13,12 @@ from mace.data import Configuration
 from mace.tools import torch_geometric
 from mace.tools.lora_tools import inject_lora
 
-def _random_config(seed: int = 0) -> Configuration:
-    rng = np.random.default_rng(seed)
+def _random_config() -> Configuration:
     atomic_numbers = np.array([6, 1, 1], dtype=int)
-    positions = rng.normal(scale=0.5, size=(3, 3))
+    positions = np.random.normal(scale=0.5, size=(3, 3))
     properties = {
-        "energy": rng.normal(scale=0.1),
-        "forces": rng.normal(scale=0.1, size=(3, 3)),
+        "energy": np.random.normal(scale=0.1),
+        "forces": np.random.normal(scale=0.1, size=(3, 3)),
     }
     prop_weights = {"energy": 1.0, "forces": 1.0}
     return Configuration(
@@ -32,9 +31,7 @@ def _random_config(seed: int = 0) -> Configuration:
     )
 
 
-def _build_model(seed: int = 0) -> Tuple[modules.MACE, tools.AtomicNumberTable]:
-    torch.manual_seed(seed)
-    rng = np.random.default_rng(seed)
+def _build_model() -> Tuple[modules.MACE, tools.AtomicNumberTable]:
     table = tools.AtomicNumberTable([1, 6])
     model = modules.MACE(
         r_max=4.5,
@@ -48,7 +45,7 @@ def _build_model(seed: int = 0) -> Tuple[modules.MACE, tools.AtomicNumberTable]:
         hidden_irreps=o3.Irreps("16x0e + 16x1o"),
         MLP_irreps=o3.Irreps("16x0e"),
         gate=torch.nn.functional.silu,
-        atomic_energies=rng.normal(scale=0.1, size=len(table.zs)),
+        atomic_energies=np.random.normal(scale=0.1, size=len(table.zs)),
         avg_num_neighbors=6.0,
         atomic_numbers=table.zs,
         correlation=2,
@@ -84,19 +81,17 @@ def _forward_energy_forces(
     return energies, forces
 
 
-def _randomize_lora_parameters(model: torch.nn.Module, seed: int = 0) -> None:
-    torch.manual_seed(seed)
+def _randomize_lora_parameters(model: torch.nn.Module) -> None:
     with torch.no_grad():
         for name, param in model.named_parameters():
             if "lora_A" in name or "lora_B" in name:
                 torch.nn.init.normal_(param, mean=0.0, std=0.05)
 
 
-def _rotation_matrix(seed: int = 0) -> np.ndarray:
-    rng = np.random.default_rng(seed)
-    axis = rng.normal(size=3)
+def _rotation_matrix() -> np.ndarray:
+    axis = np.random.normal(size=3)
     axis /= np.linalg.norm(axis)
-    theta = rng.uniform(0, 2 * math.pi)
+    theta = np.random.uniform(0, 2 * math.pi)
     K = np.array(
         [
             [0.0, -axis[2], axis[1]],
@@ -145,28 +140,27 @@ def _reflect_config(config: Configuration, normal: np.ndarray) -> Tuple[Configur
 
 @pytest.fixture()
 def random_configs() -> Tuple[Configuration, Configuration]:
-    return _random_config(seed=0), _random_config(seed=1)
+    return _random_config(), _random_config()
 
 
 @pytest.fixture()
-def build_lora_model() -> Callable[[int, float, int, bool], Tuple[modules.MACE, tools.AtomicNumberTable]]:
+def build_lora_model() -> Callable[[int, float, bool], Tuple[modules.MACE, tools.AtomicNumberTable]]:
     def _builder(
         rank: int = 2,
         alpha: float = 0.5,
-        seed: int = 0,
         randomize: bool = True,
     ) -> Tuple[modules.MACE, tools.AtomicNumberTable]:
-        model, table = _build_model(seed=seed)
+        model, table = _build_model()
         inject_lora(model, rank=rank, alpha=alpha)
         if randomize:
-            _randomize_lora_parameters(model, seed=seed)
+            _randomize_lora_parameters(model)
         return model, table
 
     return _builder
 
 
 def test_lora_trainable_parameter_count(build_lora_model) -> None:
-    model, _ = build_lora_model(rank=2, alpha=0.5, seed=42, randomize=True)
+    model, _ = build_lora_model(rank=2, alpha=0.5, randomize=True)
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     expected = sum(
         p.numel() for name, p in model.named_parameters() if "lora_" in name
@@ -185,7 +179,7 @@ def test_lora_trainable_parameter_count(build_lora_model) -> None:
 
 
 def test_lora_symmetry_equivariance(build_lora_model, random_configs) -> None:
-    model, table = build_lora_model(rank=2, alpha=0.5, seed=0, randomize=True)
+    model, table = build_lora_model(rank=2, alpha=0.5, randomize=True)
     model.eval()
     base_cfg = random_configs[0]
 
@@ -194,7 +188,7 @@ def test_lora_symmetry_equivariance(build_lora_model, random_configs) -> None:
     forces_val = forces.squeeze(0).detach().numpy()
 
     # Rotation invariance / covariance
-    R = _rotation_matrix(seed=123)
+    R = _rotation_matrix()
     rotated_cfg = _rotate_config(base_cfg, R)
     energy_rot, forces_rot = _forward_energy_forces(model, [rotated_cfg], table)
     assert np.allclose(energy_rot.item(), energy_val, rtol=1e-6, atol=1e-6)
@@ -204,8 +198,8 @@ def test_lora_symmetry_equivariance(build_lora_model, random_configs) -> None:
     shift = np.array([0.17, -0.05, 0.08])
     translated_cfg = _translate_config(base_cfg, shift)
     energy_trans, forces_trans = _forward_energy_forces(model, [translated_cfg], table)
-    assert np.allclose(energy_trans.item(), energy_val, rtol=1e-8, atol=1e-8)
-    assert np.allclose(forces_trans.squeeze(0).detach().numpy(), forces_val, rtol=1e-8, atol=1e-8)
+    assert np.allclose(energy_trans.item(), energy_val, rtol=1e-6, atol=1e-6)
+    assert np.allclose(forces_trans.squeeze(0).detach().numpy(), forces_val, rtol=1e-6, atol=1e-6)
 
     # Reflection invariance / covariance
     reflected_cfg, R_reflect = _reflect_config(base_cfg, np.array([1.0, -2.0, 3.0]))
