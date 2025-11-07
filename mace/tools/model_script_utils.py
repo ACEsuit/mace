@@ -291,7 +291,6 @@ def _build_model(
         args.error_table = "PerAtomFieldRMSE"
         args.loss = "UniversalField"
         return MACEField(
-            electric_field=args.electric_field,
             **model_config_foundation,
         )
     if args.model == "ScaleShiftBOTNet":

@@ -346,7 +346,10 @@ def run(args) -> None:
         logging.info(
             "==================Using multiheads finetuning mode=================="
         )
-        args.loss = "universal"
+        if args.model == "MACEField":
+            args.loss = "universal_field"
+        else:
+            args.loss = "universal"
 
         all_ase_readable = all(
             all(check_path_ase_read(f) for f in head_config.train_file)
@@ -686,7 +689,7 @@ def run(args) -> None:
 
     # Model
     model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
-    model.to(device)
+    model.to(device, dtype={"float32": torch.float32, "float64": torch.float64}[args.default_dtype])
 
     logging.debug(model)
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")

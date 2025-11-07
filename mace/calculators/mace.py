@@ -183,7 +183,7 @@ class MACECalculator(Calculator):
                 "becs",
                 "polarizability",
             ]
-            self.electric_field = electric_field
+            self.electric_field = torch.tensor(electric_field)
         else:
             raise ValueError(
                 f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE, MACEField], {model_type} not supported"
@@ -259,7 +259,7 @@ class MACECalculator(Calculator):
 
         # Ensure all models are on the same device
         for model in self.models:
-            model.to(device)
+            model.to(device, dtype={"float32": torch.float32, "float64": torch.float64}[default_dtype])
 
         if has_ipex and device == "xpu":
             for model in self.models:
@@ -471,7 +471,7 @@ class MACECalculator(Calculator):
             compute_polarization = True
             compute_becs = True
             compute_polarizability = True
-            batch_base["electric_field"] = self.electric_field.detach().clone()
+            batch_base["electric_field"] = self.electric_field
             
 
         ret_tensors = self._create_result_tensors(
