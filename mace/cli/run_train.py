@@ -22,7 +22,12 @@ from torch_ema import ExponentialMovingAverage
 
 import mace
 from mace import data, tools
-from mace.calculators.foundations_models import mace_mp, mace_mp_names, mace_off
+from mace.calculators.foundations_models import (
+    mace_mp,
+    mace_mp_names,
+    mace_off,
+    mace_omol,
+)
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
@@ -127,17 +132,21 @@ def run(args) -> None:
     foundation_model_avg_num_neighbors = 0
     # Filter out None from mace_mp_names to get valid model names
     valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
+    args.foundation_model_kwargs = ast.literal_eval(args.foundation_model_kwargs)
+    args.foundation_model_kwargs["head"] = args.foundation_head
     if args.foundation_model is not None:
         if args.foundation_model in valid_mace_mp_models:
             logging.info(
-                f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
+                f"Using foundation model mace {args.foundation_model} as initial checkpoint."
             )
             calc = mace_mp(
                 model=args.foundation_model,
                 device=args.device,
                 default_dtype=args.default_dtype,
+                **args.foundation_model_kwargs,
             )
             model_foundation = calc.models[0]
+
         elif args.foundation_model in ["small_off", "medium_off", "large_off"]:
             model_type = args.foundation_model.split("_")[0]
             logging.info(
@@ -145,6 +154,13 @@ def run(args) -> None:
             )
             calc = mace_off(
                 model=model_type,
+                device=args.device,
+                default_dtype=args.default_dtype,
+            )
+            model_foundation = calc.models[0]
+        elif args.foundation_model in ["mace_omol"]:
+            logging.info("Using foundation model mace-omol as initial checkpoint.")
+            calc = mace_omol(
                 device=args.device,
                 default_dtype=args.default_dtype,
             )
@@ -164,9 +180,10 @@ def run(args) -> None:
             args.foundation_model not in ["small", "medium", "large"]
             and args.pt_train_file is None
         ):
-            logging.warning(
-                "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provied a path to a pretraining file with --pt_train_file."
-            )
+            if args.multiheads_finetuning:
+                logging.warning(
+                    "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provied a path to a pretraining file with --pt_train_file."
+                )
             args.multiheads_finetuning = False
         if args.multiheads_finetuning:
             assert (
@@ -183,14 +200,14 @@ def run(args) -> None:
             logging.info(
                 "Using multiheads finetuning mode, setting learning rate to 0.0001 and EMA to True"
             )
-            if hasattr(model_foundation, "heads"):
-                if len(model_foundation.heads) > 1:
-                    logging.warning(
-                        "Mutlihead finetuning with models with more than one head is not supported, using the first head as foundation head."
-                    )
-                    model_foundation = remove_pt_head(
-                        model_foundation, args.foundation_head
-                    )
+        if hasattr(model_foundation, "heads"):
+            if len(model_foundation.heads) > 1:
+                logging.warning(
+                    f"Mutlihead finetuning with models with more than one head is not supported, using the head {args.foundation_head} as foundation head."
+                )
+                model_foundation = remove_pt_head(
+                    model_foundation, args.foundation_head
+                )
     else:
         args.multiheads_finetuning = False
 

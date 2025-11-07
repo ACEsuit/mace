@@ -376,8 +376,12 @@ embedding_specs:
         energy2 = test_mol2.get_potential_energy()
 
         # Verify energies are different (the model responds to temperature)
-        assert np.isfinite(energy1), f"Energy calculation failed for {vary_prop} {test_mol1.arrays[vary_prop]}"
-        assert np.isfinite(energy2), f"Energy calculation failed for {vary_prop} {test_mol2.arrays[vary_prop]}"
+        assert np.isfinite(
+            energy1
+        ), f"Energy calculation failed for {vary_prop} {test_mol1.arrays[vary_prop]}"
+        assert np.isfinite(
+            energy2
+        ), f"Energy calculation failed for {vary_prop} {test_mol2.arrays[vary_prop]}"
 
         # The energies should be different if the model correctly uses temperature
         assert abs(energy1 - energy2) > 1e-6, "Model is not sensitive to {vary_prop"
