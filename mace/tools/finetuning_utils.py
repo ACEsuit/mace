@@ -47,7 +47,12 @@ def load_foundations_elements(
             model.embedding_readout.named_parameters(),
             model_foundations.embedding_readout.named_parameters(),
         ):
-            param_1.data.copy_(param_2.data)
+            param_1.data.copy_(
+                param_2.data.reshape(-1, 1)
+                .repeat(1, len(model_heads))
+                .flatten()
+                .clone()
+            )
     if model.radial_embedding.bessel_fn.__class__.__name__ == "BesselBasis":
         model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
             model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
@@ -215,15 +220,7 @@ def load_foundations_elements(
                     )
                     shape_output_1 = readout.linear_1.__dict__["irreps_out"].num_irreps
                 else:
-                    shape_input_1 = (
-                        model_foundations.readouts[i]
-                        .linear_mid.__dict__["irreps_out"]
-                        .num_irreps
-                    )
-                    shape_output_1 = readout.linear_mid.__dict__[
-                        "irreps_out"
-                    ].num_irreps
-
+                    raise ValueError("Readout block must have linear_1")
                 if hasattr(readout, "linear_1"):
                     model_readouts_one_linear_1_weight = readout.linear_1.weight.clone()
                     model_readouts_one_linear_1_weight = (
@@ -248,32 +245,23 @@ def load_foundations_elements(
                             model_readouts_one_linear_1_bias
                         )
                 if hasattr(readout, "linear_mid"):
-                    model_readouts_one_linear_mid_weight = (
-                        readout.linear_mid.weight.clone()
-                    )
-                    model_readouts_one_linear_mid_weight = (
+                    readout.linear_mid.weight = torch.nn.Parameter(
                         model_foundations.readouts[i]
-                        .linear_mid.weight.view(shape_input_1, -1)
-                        .repeat(1, len(model_heads))
+                        .linear_mid.weight.view(
+                            shape_input_1,
+                            shape_input_1,
+                        )
+                        .repeat(len(model_heads), len(model_heads))
                         .flatten()
                         .clone()
-                    )
-                    readout.linear_mid.weight = torch.nn.Parameter(
-                        model_readouts_one_linear_mid_weight
+                        / ((shape_input_1) / (shape_output_1)) ** 0.5
                     )
                     # if it has biases transfer them too
                     if readout.linear_mid.bias is not None:
-                        model_readouts_one_linear_mid_bias = (
-                            readout.linear_mid.bias.clone()
-                        )
-                        model_readouts_one_linear_mid_bias = (
-                            model_foundations.readouts[i]
-                            .linear_mid.bias.view(-1)
-                            .repeat(len(model_heads))
-                            .clone()
-                        )
                         readout.linear_mid.bias = torch.nn.Parameter(
-                            model_readouts_one_linear_mid_bias
+                            model_foundations.readouts[i]
+                            .linear_mid.bias.repeat(len(model_heads))
+                            .clone()
                         )
                 if hasattr(readout, "linear_2"):
                     model_readouts_one_linear_2_weight = readout.linear_2.weight.clone()
@@ -293,6 +281,7 @@ def load_foundations_elements(
                             model_foundations.readouts[i]
                             .linear_2.bias.view(-1)
                             .repeat(len(model_heads))
+                            .flatten()
                             .clone()
                         )
                         readout.linear_2.bias = torch.nn.Parameter(
