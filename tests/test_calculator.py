@@ -808,6 +808,34 @@ def test_mace_mp_energies(tmp_path, model="medium", device="cpu"):
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+def test_mace_mh_1_cueq(tmp_path, device="cpu"):
+
+    calc = mace_mp(
+        model="mh-1", device=device, default_dtype="float64", head="omat_pbe"
+    )
+    mol = build.molecule("H2O")
+    mol.set_calculator(calc)
+    energy = mol.get_potential_energy()
+    forces = mol.get_forces()
+
+    # reset the calculator to test CUEQ
+    mol.calc.reset()
+    calc_cueq = mace_mp(
+        model="mh-1",
+        device=device,
+        default_dtype="float64",
+        head="omat_pbe",
+        enable_cueq=True,
+    )
+    mol.set_calculator(calc_cueq)
+    energy_cueq = mol.get_potential_energy()
+    forces_cueq = mol.get_forces()
+    assert np.allclose(energy, energy_cueq, atol=1e-6)
+    assert np.allclose(forces, forces_cueq, atol=1e-6)
+    write_extxyz_test(tmp_path, mol)
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
 def test_mace_omol_cueq(tmp_path, device="cpu"):
 
     calc = mace_omol(device=device, default_dtype="float64")
