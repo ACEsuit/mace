@@ -97,7 +97,9 @@ class NonLinearReadoutBlock(torch.nn.Module):
         self.linear_1 = Linear(
             irreps_in=irreps_in, irreps_out=self.hidden_irreps, cueq_config=cueq_config
         )
-        self.non_linearity = simplify_if_compile(nn.Activation)(irreps_in=self.hidden_irreps, acts=[gate])
+        self.non_linearity = simplify_if_compile(nn.Activation)(
+            irreps_in=self.hidden_irreps, acts=[gate]
+        )
         self.linear_2 = Linear(
             irreps_in=self.hidden_irreps, irreps_out=irrep_out, cueq_config=cueq_config
         )
@@ -143,6 +145,9 @@ class NonLinearBiasReadoutBlock(torch.nn.Module):
         self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
+        if hasattr(self, "num_heads"):
+            if self.num_heads > 1 and heads is not None:
+                x = mask_head(x, heads, self.num_heads)
         x = self.non_linearity(self.linear_mid(x))
         if hasattr(self, "num_heads"):
             if self.num_heads > 1 and heads is not None:

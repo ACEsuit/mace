@@ -80,7 +80,9 @@ def update_keyspec_from_kwargs(
             elif embed_spec["per"] == "graph":
                 info_keys[embed_name] = key
             else:
-                raise ValueError(f"Unsupported embedding_specs per {embed_spec['per']} for {embed_name}")
+                raise ValueError(
+                    f"Unsupported embedding_specs per {embed_spec['per']} for {embed_name}"
+                )
 
     keyspec.update(info_keys=info_keys, arrays_keys=arrays_keys)
     return keyspec

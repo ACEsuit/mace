@@ -154,14 +154,16 @@ class MACECalculator(Calculator):
 
         # superclass constructor initializes self.implemented_properties to an empty list
         if model_type in ["MACE", "EnergyDipoleMACE"]:
-            self.implemented_properties.extend([
-                "energy",
-                "energies",
-                "free_energy",
-                "node_energy",
-                "forces",
-                "stress",
-            ])
+            self.implemented_properties.extend(
+                [
+                    "energy",
+                    "energies",
+                    "free_energy",
+                    "node_energy",
+                    "forces",
+                    "stress",
+                ]
+            )
             if kwargs.get("compute_atomic_stresses", False):
                 self.implemented_properties.extend(["stresses", "virials"])
                 self.compute_atomic_stresses = True
