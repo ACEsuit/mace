@@ -680,7 +680,7 @@ class UniversalFieldLoss(torch.nn.Module):
             num_atoms,
             dim=0,
         ).view(-1, 3, 3)
-        configs_polarizability_weight = ref.polarizability_weight.view(-1, 3, 3) / 5.526349e-3  # divide by eps_0
+        configs_polarizability_weight = ref.polarizability_weight.view(-1, 3, 3)
         _, fractional_difference = fold_polarization(
             pred["polarization"], ref["polarization"], ref["cell"]
         )

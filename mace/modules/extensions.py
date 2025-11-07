@@ -361,6 +361,9 @@ class MACEField(ScaleShiftMACE):
         # Cell volume
         volume = torch.linalg.det(cell.view(-1, 3, 3)).abs()
 
+        # Vacuum permittivity (units: e/V/A)
+        eps0 = 8.8541878128e-12 / 1.602176634e-19 / 1e10
+
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
@@ -498,7 +501,7 @@ class MACEField(ScaleShiftMACE):
                 polarizability = get_polarizability(
                     polarization=polarization,
                     electric_field=electric_field,
-                ) / volume.view(-1, 1, 1)
+                ) / volume.view(-1, 1, 1) / eps0
             else:
                 polarizability = None
             polarization = polarization / volume.view(-1, 1)

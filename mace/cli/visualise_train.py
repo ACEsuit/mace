@@ -119,7 +119,7 @@ error_type = {
             ("stress", "Stress [eV / A^3]"),
             ("polarization", "Polarization [e / A^2]"),
             ("becs", "Born Effective Charges [e]"),
-            ("polarizability", "Polarizability [e / V / A]"),
+            ("polarizability", "Polarizability [ε0]"),
         ],
     ),
 }
