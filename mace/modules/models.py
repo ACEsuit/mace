@@ -522,9 +522,11 @@ class ScaleShiftMACE(MACE):
                 embedding_features,
             )
             if hasattr(self, "embedding_readout"):
-                embedding_node_energy = self.embedding_readout(node_feats, node_heads)[
-                    num_atoms_arange, node_heads
-                ].squeeze(-1)
+                embedding_node_energy = torch.atleast_1d(
+                    self.embedding_readout(node_feats, node_heads)[
+                        num_atoms_arange, node_heads
+                    ].squeeze(-1)
+                )
                 embedding_energy = scatter_sum(
                     src=embedding_node_energy,
                     index=data["batch"],

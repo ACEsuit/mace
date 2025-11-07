@@ -815,3 +815,71 @@ def test_remove_pt_head_omol_multihead():
     assert not torch.allclose(
         energies[0], energies[1], rtol=1e-4
     ), "Different heads should produce different outputs"
+
+
+def test_load_foundations_elements_omol_multihead_pt_matches():
+    """
+    Build a 2-head multihead model from the MACE-OMOL foundation config,
+    load weights with load_foundations_elements, and verify that the
+    pt_head reproduces the energies and forces of the mace_omol model.
+    """
+
+    # Foundation (single-head omol) calculator and reference outputs
+    calc = mace_omol(device="cpu", default_dtype="float64")
+    foundation_model = calc.models[0]
+
+    atoms = molecule("H2O")
+    atoms.positions += np.random.randn(*atoms.positions.shape) * 0.02
+    atoms.calc = calc
+    energy_ref = atoms.get_potential_energy()
+    forces_ref = atoms.get_forces()
+
+    # Create a 2-head multihead model using the foundation config
+    model_config = extract_config_mace_model(foundation_model)
+    model_config["heads"] = ["pt_head", "DFT"]  # use 2 heads instead of 4
+    model_config["atomic_inter_scale"] = [1.0] * len(model_config["heads"])
+    model_config["atomic_inter_shift"] = [0.0] * len(model_config["heads"])
+    # repeat atomic energies for each head from [n_elements] to [n_heads, n_elements]
+    model_config["atomic_energies"] = model_config["atomic_energies"][
+        None, 0, :
+    ].repeat(len(model_config["heads"]), axis=0)
+
+    model_mh = modules.ScaleShiftMACE(**model_config)
+    z_table = AtomicNumberTable([int(z) for z in model_mh.atomic_numbers])
+
+    # Load foundation weights into the multihead model (multihead finetuning logic)
+    model_loaded = load_foundations_elements(
+        model_mh,
+        foundation_model,
+        table=z_table,
+        load_readout=True,
+        use_shift=True,
+        use_scale=True,
+        max_L=2,
+    )
+
+    # Prepare a batch selecting the pt_head
+    config_pt_head = data.Configuration(
+        atomic_numbers=atoms.numbers,
+        positions=atoms.positions,
+        properties={"energy": 0.0, "forces": np.zeros_like(atoms.positions)},
+        property_weights={"forces": 1.0, "energy": 1.0},
+        head="pt_head",
+    )
+    atomic_data = data.AtomicData.from_config(
+        config_pt_head,
+        z_table=z_table,
+        cutoff=float(foundation_model.r_max),
+        heads=model_config["heads"],
+    )
+    loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data], batch_size=1, shuffle=False
+    )
+    batch = next(iter(loader))
+    outputs = model_loaded(batch.to_dict())
+
+    energy_loaded = outputs["energy"].detach().cpu().numpy().item()
+    forces_loaded = outputs["forces"].detach().cpu().numpy()
+
+    assert np.allclose(energy_ref, energy_loaded, atol=1e-5, rtol=1e-5)
+    assert np.allclose(forces_ref, forces_loaded, atol=1e-5, rtol=1e-5)
