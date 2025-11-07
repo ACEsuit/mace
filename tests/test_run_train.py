@@ -53,7 +53,6 @@ def fixture_fitting_configs():
     return fit_configs
 
 
-
 @pytest.fixture(name="pretraining_configs")
 def fixture_pretraining_configs():
     configs = []
@@ -79,6 +78,7 @@ def fixture_pretraining_configs():
     configs[-1].info["REF_energy"] = -4.0
     configs[-1].info["config_type"] = "IsolatedAtom"
     return configs
+
 
 _mace_params = {
     "name": "MACE",
@@ -1908,3 +1908,92 @@ def test_run_train_real_pt_data_ratio(
     ]
     assert len(l_ratio) == 1
     assert l_ratio[0].strip().endswith(" 1")
+
+
+def test_run_train_omol_foundation(tmp_path, fitting_configs):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "mace_omol"
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["multiheads_finetuning"] = False
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
+
+
+def test_run_train_mh_foundation(tmp_path, fitting_configs):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    mace_params["loss"] = "weighted"
+    mace_params["foundation_model"] = "mh-1"
+    mace_params["interaction_first"] = "RealAgnosticResidualInteractionBlock"
+    mace_params["foundation_head"] = "omat_pbe"
+    mace_params["multiheads_finetuning"] = False
+
+    run_env = os.environ.copy()
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    run_env["PYTHONPATH"] = ":".join(sys.path)
+
+    cmd = (
+        sys.executable
+        + " "
+        + str(run_train)
+        + " "
+        + " ".join(
+            [
+                (f"--{k}={v}" if v is not None else f"--{k}")
+                for k, v in mace_params.items()
+            ]
+        )
+    )
+
+    p = subprocess.run(cmd.split(), env=run_env, check=True)
+    assert p.returncode == 0
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+    )
+
+    Es = []
+    for at in fitting_configs:
+        at.calc = calc
+        Es.append(at.get_potential_energy())
+
+    print("Es", Es)
