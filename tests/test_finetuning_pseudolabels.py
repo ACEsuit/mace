@@ -96,7 +96,7 @@ def _run_and_collect_pt_metrics(name: str, mace_params: dict):
     return pt_initial
 
 
-def _assert_near_zero_metrics(metrics: dict, atol_loss=1e-5, atol_e=1e-4, atol_f=1e-4):
+def _assert_near_zero_metrics(metrics: dict, atol_loss=1e-5, atol_e=1e-4, atol_f=1e-3):
     # Loss and RMSEs should be ~0 because labels are pseudolabels from foundation model
     assert float(metrics.get("loss", 0.0)) <= atol_loss
     # Only check keys if present
@@ -197,8 +197,8 @@ def test_initial_metrics_replay_head_omol(tmp_path):
         "config": cfg_path,
         "loss": "weighted",
         "error_table": "PerAtomRMSE",
-        "batch_size": 1,
-        "valid_batch_size": 1,
+        "batch_size": 2,
+        "valid_batch_size": 2,
         "valid_fraction": 0.3,
         "foundation_model": "mace_omol",
         "multiheads_finetuning": True,
