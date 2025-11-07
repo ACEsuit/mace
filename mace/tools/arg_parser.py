@@ -858,6 +858,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument(
+        "--foundation_model_kwargs",
+        help="Additional kwargs for the foundation model for transfer learning",
+        type=str,
+        default="{}",
+    )
+    parser.add_argument(
         "--foundation_model_readout",
         help="Use readout of foundation model for transfer learning",
         action="store_false",
