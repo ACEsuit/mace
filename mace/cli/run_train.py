@@ -201,8 +201,8 @@ def run(args) -> None:
             )
         if hasattr(model_foundation, "heads"):
             if len(model_foundation.heads) > 1:
-                logging.warning(
-                    f"Mutlihead finetuning with models with more than one head is not supported, using the head {args.foundation_head} as foundation head."
+                logging.info(
+                    f"Selecting the head {args.foundation_head} as foundation head."
                 )
                 model_foundation = remove_pt_head(
                     model_foundation, args.foundation_head
