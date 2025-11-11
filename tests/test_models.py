@@ -448,3 +448,75 @@ def test_atomic_virials_stresses():
     assert torch.allclose(
         summed_atomic_stresses, total_stress.squeeze(0), atol=1e-6
     ), f"Sum of atomic stresses (normalized by volume) {summed_atomic_stresses} does not match total stress {total_stress.squeeze(0)}"
+
+
+def test_mace_embedding_charge_spin_nonlinear_jit():
+    """
+    Build a MACE model using RealAgnosticResidualNonLinearInteractionBlock
+    with graph-level embeddings for total charge and total spin (OMOL-style),
+    then JIT-compile it and run a forward pass.
+    """
+    # OMOL-like categorical embeddings for total charge/spin
+    embedding_specs = {
+        "total_charge": {
+            "type": "categorical",
+            "per": "graph",
+            "in_dim": 1,
+            "emb_dim": 32,
+            "num_classes": 200,
+            "offset": 100,
+        },
+        "total_spin": {
+            "type": "categorical",
+            "per": "graph",
+            "in_dim": 1,
+            "emb_dim": 32,
+            "num_classes": 100,
+        },
+    }
+
+    model_config = dict(
+        r_max=5.0,
+        num_bessel=8,
+        num_polynomial_cutoff=6,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualNonLinearInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualNonLinearInteractionBlock"
+        ],
+        num_interactions=3,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("32x0e + 32x1o"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies,
+        avg_num_neighbors=6.0,
+        atomic_numbers=table.zs,
+        correlation=3,
+        radial_type="bessel",
+        embedding_specs=embedding_specs,
+    )
+
+    model = modules.MACE(**model_config)
+    model_compiled = jit.compile(model)
+
+    # Build a small batch; total_charge and total_spin default values exist
+    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
+    atomic_data2 = data.AtomicData.from_config(
+        config_rotated, z_table=table, cutoff=3.0
+    )
+
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data, atomic_data2], batch_size=2, shuffle=False, drop_last=False
+    )
+    batch = next(iter(data_loader))
+
+    # Ensure forward works both pre- and post-compile
+    out1 = model(batch.to_dict(), training=True)
+    out2 = model_compiled(batch.to_dict(), training=True)
+
+    # Basic consistency/invariance checks
+    assert torch.allclose(out1["energy"][0], out2["energy"][0])
+    assert torch.allclose(out2["energy"][0], out2["energy"][1])

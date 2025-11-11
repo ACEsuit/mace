@@ -142,7 +142,10 @@ class MACELES(ScaleShiftMACE):
         # Embeddings of additional features
         if hasattr(self, "joint_embedding"):
             embedding_features: Dict[str, torch.Tensor] = {}
-            for name, _ in self.embedding_specs.items():
+            names: List[str] = getattr(self, "embedding_names", [])  # type: ignore[attr-defined]
+            if not names and hasattr(self, "embedding_specs"):
+                names = list(self.embedding_specs.keys())  # type: ignore[attr-defined]
+            for name in names:
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
                 data["batch"],

@@ -114,7 +114,9 @@ class MACE(torch.nn.Module):
         )
         embedding_size = node_feats_irreps.count(o3.Irrep(0, 1))
         if embedding_specs is not None:
+            # Keep dict for Python use, but store names list for TorchScript
             self.embedding_specs = embedding_specs
+            self.embedding_names = list(embedding_specs.keys())
             self.joint_embedding = GenericJointEmbedding(
                 base_dim=embedding_size,
                 embedding_specs=embedding_specs,
@@ -336,7 +338,10 @@ class MACE(torch.nn.Module):
 
         if hasattr(self, "joint_embedding"):
             embedding_features: Dict[str, torch.Tensor] = {}
-            for name, _ in self.embedding_specs.items():
+            names: List[str] = getattr(self, "embedding_names", [])  # type: ignore[attr-defined]
+            if not names and hasattr(self, "embedding_specs"):
+                names = list(self.embedding_specs.keys())  # type: ignore[attr-defined]
+            for name in names:
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
                 data["batch"],
@@ -515,7 +520,10 @@ class ScaleShiftMACE(MACE):
         # Embeddings of additional features
         if hasattr(self, "joint_embedding"):
             embedding_features: Dict[str, torch.Tensor] = {}
-            for name, _ in self.embedding_specs.items():
+            names: List[str] = getattr(self, "embedding_names", [])  # type: ignore[attr-defined]
+            if not names and hasattr(self, "embedding_specs"):
+                names = list(self.embedding_specs.keys())  # type: ignore[attr-defined]
+            for name in names:
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
                 data["batch"],
