@@ -36,6 +36,7 @@ from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
 from mace.tools.distributed_tools import init_distributed
+from mace.tools.lora_tools import inject_LoRAs
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -548,7 +549,8 @@ def run(args) -> None:
                 pt_head_config=head_config,
                 r_max=args.r_max,
                 device=device,
-                batch_size=args.batch_size
+                batch_size=args.batch_size,
+                force_stress=args.pseudolabel_replay_compute_stress,
             ):
                 logging.info("Successfully applied pseudolabels to pt_head configurations")
             else:
@@ -704,9 +706,28 @@ def run(args) -> None:
     model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
     model.to(device)
 
-    logging.debug(model)
-    logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
-    logging.info("")
+    if args.lora:
+        lora_rank = args.lora_rank
+        lora_alpha = args.lora_alpha
+
+        logging.info(
+            "Injecting LoRA layers with rank=%s and alpha=%s",
+            lora_rank,
+            lora_alpha,
+        )
+
+        logging.info(
+            "Original model has %s trainable parameters.",
+            tools.count_parameters(model),
+        )
+
+        model = inject_LoRAs(model, rank=lora_rank, alpha=lora_alpha)
+
+        logging.info(
+            "Model with LoRA has %s trainable parameters.",
+            tools.count_parameters(model),
+        )
+
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
     logging.info(f"Batch size: {args.batch_size}")
