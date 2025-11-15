@@ -70,6 +70,7 @@ class MACE(torch.nn.Module):
         use_embedding_readout: bool = False,
         distance_transform: str = "None",
         edge_irreps: Optional[o3.Irreps] = None,
+        use_edge_irreps_first: bool = False,
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
@@ -101,6 +102,7 @@ class MACE(torch.nn.Module):
         self.use_agnostic_product = use_agnostic_product
         self.use_so3 = use_so3
         self.use_last_readout_only = use_last_readout_only
+        self.use_edge_irreps_first = use_edge_irreps_first
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -163,14 +165,21 @@ class MACE(torch.nn.Module):
             radial_MLP = [64, 64, 64]
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
-
+        if num_interactions == 1:
+            hidden_irreps_out = str(hidden_irreps[0])
+        else:
+            hidden_irreps_out = hidden_irreps
+        edge_irreps_first = None
+        if use_edge_irreps_first and edge_irreps is not None:
+            edge_irreps_first = o3.Irreps(f"{edge_irreps.count(o3.Irrep(0, 1))}x0e")
         inter = interaction_cls_first(
             node_attrs_irreps=node_attr_irreps,
             node_feats_irreps=node_feats_irreps,
             edge_attrs_irreps=sh_irreps,
             edge_feats_irreps=edge_feats_irreps,
             target_irreps=interaction_irreps_first,
-            hidden_irreps=hidden_irreps,
+            hidden_irreps=hidden_irreps_out,
+            edge_irreps=edge_irreps_first,
             avg_num_neighbors=avg_num_neighbors,
             radial_MLP=radial_MLP,
             cueq_config=cueq_config,
@@ -186,7 +195,7 @@ class MACE(torch.nn.Module):
         node_feats_irreps_out = inter.target_irreps
         prod = EquivariantProductBasisBlock(
             node_feats_irreps=node_feats_irreps_out,
-            target_irreps=hidden_irreps,
+            target_irreps=hidden_irreps_out,
             correlation=correlation[0],
             num_elements=num_elements,
             use_sc=use_sc_first,
@@ -201,7 +210,7 @@ class MACE(torch.nn.Module):
         if not use_last_readout_only:
             self.readouts.append(
                 LinearReadoutBlock(
-                    hidden_irreps,
+                    hidden_irreps_out,
                     o3.Irreps(f"{len(heads)}x0e"),
                     cueq_config,
                     oeq_config,
@@ -513,9 +522,11 @@ class ScaleShiftMACE(MACE):
                 embedding_features,
             )
             if hasattr(self, "embedding_readout"):
-                embedding_node_energy = self.embedding_readout(
-                    node_feats, node_heads
-                ).squeeze(-1)
+                embedding_node_energy = torch.atleast_1d(
+                    self.embedding_readout(node_feats, node_heads)[
+                        num_atoms_arange, node_heads
+                    ].squeeze(-1)
+                )
                 embedding_energy = scatter_sum(
                     src=embedding_node_energy,
                     index=data["batch"],
@@ -1070,9 +1081,11 @@ class AtomicDielectricMACE(torch.nn.Module):
                 polarizabilities.append(node_polarizability)
                 dipoles.append(node_dipoles)
             else:
-                raise ValueError(
-                    "Polarizability is not used in this model, but it is required for the AtomicDielectricMACE."
-                )
+                node_dipoles = node_out[:, 1:4]
+                dipoles.append(node_dipoles)
+                # raise ValueError(
+                #    "Polarizability is not used in this model, but it is required for the AtomicDielectricMACE."
+                # )
         contributions_dipoles = torch.stack(
             dipoles, dim=-1
         )  # [n_nodes,3,n_contributions]

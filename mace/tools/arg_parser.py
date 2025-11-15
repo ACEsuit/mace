@@ -442,6 +442,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--pseudolabel_replay_compute_stress",
+        help="When replay pseudolabels are generated, always generate stress labels even if the original replay data lacked stress",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--foundation_filter_elements",
         help="Filter element during fine-tuning",
         type=str2bool,
@@ -534,7 +540,25 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
-   
+    parser.add_argument(
+        "--lora",
+        help="Use Low-Rank Adaptation for the fine-tuning",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--lora_rank",
+        help="Rank of the LoRA matrices",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
+        "--lora_alpha",
+        help="Scaling factor for LoRA",
+        type=float,
+        default=1.0,
+    )
+
     # Keys
     parser.add_argument(
         "--energy_key",
@@ -605,19 +629,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--embedding_specs",
         help=(
-            "List of feature‐spec dictionaries. "
+            "Dict of feature‐spec dictionaries. "
             "embedding_specs:\n"
-            "  - name: total_spin\n"
+            "  total_spin:\n"
             "    type: categorical\n"
             "    per: graph\n"
             "    num_classes: 101\n"
             "    emb_dim: 64\n"
-            "  - name: total_charge\n"
+            "  total_charge:\n"
             "    type: categorical\n"
             "    per: graph\n"
             "    num_classes: 201\n"
             "    emb_dim: 64\n"
-            "  - name: temperature\n"
+            "  temperature:\n"
             "    type: continuous\n"
             "    per: graph\n"
             "    in_dim: 1\n"
@@ -844,6 +868,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Path to the foundation model for transfer learning",
         type=str,
         default=None,
+    )
+    parser.add_argument(
+        "--foundation_model_kwargs",
+        help="Additional kwargs for the foundation model for transfer learning",
+        type=str,
+        default="{}",
     )
     parser.add_argument(
         "--foundation_model_readout",
