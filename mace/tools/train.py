@@ -204,6 +204,8 @@ def train(
         )
     valid_loss = valid_loss_head  # consider only the last head for the checkpoint
 
+    # variable used for broadcast by rank == 0 if epoch loop is exited early, e.g. patience
+    exit_now = torch.zeros(1, device=device) if distributed else None
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
@@ -306,7 +308,8 @@ def train(
                             logging.info(
                                 f"Stopping optimization after {patience_counter} epochs without improvement"
                             )
-                            break
+                            if exit_now is not None:
+                                exit_now.fill_(1)
                     if save_all_checkpoints:
                         param_context = (
                             ema.average_parameters()
@@ -334,6 +337,11 @@ def train(
                         keep_last = False or save_all_checkpoints
         if distributed:
             torch.distributed.barrier()
+        if exit_now is not None:
+            torch.distributed.broadcast(exit_now, src=0)
+            if exit_now == 1:
+                break
+
         epoch += 1
 
     logging.info("Training complete")

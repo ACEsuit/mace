@@ -569,10 +569,16 @@ class InferenceMetric(Metric):
             self.pred_energies_per_atom.append(output["energy"] / atoms_per_config)
 
             self.n_energy += filter_nonzero_weight(
-                batch, self.ref_energies, batch.weight, batch.energy_weight,
+                batch,
+                self.ref_energies,
+                batch.weight,
+                batch.energy_weight,
             )
             filter_nonzero_weight(
-                batch, self.pred_energies, batch.weight, batch.energy_weight,
+                batch,
+                self.pred_energies,
+                batch.weight,
+                batch.energy_weight,
             )
             filter_nonzero_weight(
                 batch,
@@ -632,10 +638,18 @@ class InferenceMetric(Metric):
             self.pred_forces.append(output["forces"])
 
             self.n_forces += filter_nonzero_weight(
-                batch, self.ref_forces, batch.weight, batch.forces_weight, spread_atoms=True,
+                batch,
+                self.ref_forces,
+                batch.weight,
+                batch.forces_weight,
+                spread_atoms=True,
             )
             filter_nonzero_weight(
-                batch, self.pred_forces, batch.weight, batch.forces_weight, spread_atoms=True,
+                batch,
+                self.pred_forces,
+                batch.weight,
+                batch.forces_weight,
+                spread_atoms=True,
             )
 
         # Stress
@@ -644,10 +658,16 @@ class InferenceMetric(Metric):
             self.pred_stress.append(output["stress"])
 
             self.n_stress += filter_nonzero_weight(
-                batch, self.ref_stress, batch.weight, batch.stress_weight,
+                batch,
+                self.ref_stress,
+                batch.weight,
+                batch.stress_weight,
             )
             filter_nonzero_weight(
-                batch, self.pred_stress, batch.weight, batch.stress_weight,
+                batch,
+                self.pred_stress,
+                batch.weight,
+                batch.stress_weight,
             )
 
         # Virials
@@ -660,10 +680,16 @@ class InferenceMetric(Metric):
             self.pred_virials_per_atom.append(output["virials"] / atoms_per_config_3d)
 
             self.n_virials += filter_nonzero_weight(
-                batch, self.ref_virials, batch.weight, batch.virials_weight,
+                batch,
+                self.ref_virials,
+                batch.weight,
+                batch.virials_weight,
             )
             filter_nonzero_weight(
-                batch, self.pred_virials, batch.weight, batch.virials_weight,
+                batch,
+                self.pred_virials,
+                batch.weight,
+                batch.virials_weight,
             )
             filter_nonzero_weight(
                 batch,
