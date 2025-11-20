@@ -439,6 +439,7 @@ def estimate_e0s_from_foundation(
     
     # Set model to eval mode
     foundation_model.eval()
+    foundation_model = foundation_model.to(device)
     
     # Get r_max as a float 
     r_max = foundation_model.r_max
