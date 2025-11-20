@@ -861,7 +861,10 @@ def get_optimizer(
                 "`schedulefree` is not installed. Please install it via `pip install schedulefree` or `pip install mace-torch[schedulefree]`"
             ) from exc
         _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
-        optimizer = adamw_schedulefree.AdamWScheduleFree(**_param_options)
+        _param_options.pop("betas", None)
+        optimizer = adamw_schedulefree.AdamWScheduleFree(
+            **_param_options, betas=(args.beta1_schedulefree, args.beta2_schedulefree)
+        )
     else:
         optimizer = torch.optim.Adam(**param_options)
     return optimizer

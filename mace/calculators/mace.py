@@ -332,8 +332,20 @@ class MACECalculator(Calculator):
         Returns:
             list: A list of changes detected in the system.
         """
+
+        def _infos_equal(a: dict, b: dict) -> bool:
+            if a.keys() != b.keys():
+                return False
+            for k in a:
+                va, vb = a[k], b[k]
+                if isinstance(va, np.ndarray) or isinstance(vb, np.ndarray):
+                    continue
+                if va != vb:
+                    return False
+            return True
+
         state = super().check_state(atoms, tol=tol)
-        if (not state) and (self.atoms.info != atoms.info):
+        if (not state) and (not _infos_equal(self.atoms.info, atoms.info)):
             state.append("info")
         return state
 
