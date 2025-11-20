@@ -340,9 +340,8 @@ class MACECalculator(Calculator):
                 va, vb = a[k], b[k]
                 if isinstance(va, np.ndarray) or isinstance(vb, np.ndarray):
                     continue
-                else:
-                    if va != vb:
-                        return False
+                if va != vb:
+                    return False
             return True
 
         state = super().check_state(atoms, tol=tol)
