@@ -113,27 +113,23 @@ class LoRAFCLayer(nn.Module):
             torch.nn.init.zeros_(self.lora_B)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Replicate e3nn _Layer normalization
-        W = self.base.weight  # type: ignore[attr-defined]
-        h_in = getattr(self.base, "h_in")
-        var_in = getattr(self.base, "var_in")
-        var_out = getattr(self.base, "var_out")
-        act = getattr(self.base, "act", None)
-
+        # Temporarily patch the weight of the base layer to include LoRA delta
+        # This avoids re-implementing the complex normalization/activation logic of e3nn _Layer
+        w_orig = self.base.weight
         delta = self.lora_A @ self.lora_B
-        W_sum = W + self.scaling * delta
+        weight_patched = w_orig + self.scaling * delta
 
-        if act is not None:
-            denom = (h_in * var_in) ** 0.5
-            w = W_sum / denom
-            x = x @ w
-            x = act(x)
-            x = x * (var_out**0.5)
-        else:
-            denom = (h_in * var_in / var_out) ** 0.5
-            w = W_sum / denom
-            x = x @ w
-        return x
+        # Patch: self.base.weight is a Parameter. We replace it with a Tensor for the forward pass.
+        # To do this safely in PyTorch, we must temporarily remove it from _parameters.
+        del self.base._parameters["weight"]
+        self.base.weight = weight_patched
+
+        try:
+            return self.base(x)
+        finally:
+            # Restore the original Parameter
+            self.base.weight = w_orig
+            self.base._parameters["weight"] = w_orig
 
 
 def inject_lora(
@@ -158,16 +154,16 @@ def inject_lora(
                 wrapped = LoRAO3Linear(child, rank=rank, alpha=alpha)
             except ValueError:  # If no shared irreps, skip
                 continue
-            module._modules[child_name] = wrapped  # pylint: disable=protected-access
+            setattr(module, child_name, wrapped)
         # Dense nn.Linear
         if wrap_dense and isinstance(child, nn.Linear):
             wrapped = LoRADenseLinear(child, rank=rank, alpha=alpha)
-            module._modules[child_name] = wrapped  # pylint: disable=protected-access
+            setattr(module, child_name, wrapped)
             continue
         # e3nn FullyConnectedNet internal layer
         if wrap_dense and isinstance(child, E3NNFCLayer):
             wrapped = LoRAFCLayer(child, rank=rank, alpha=alpha)
-            module._modules[child_name] = wrapped  # pylint: disable=protected-access
+            setattr(module, child_name, wrapped)
             continue
         # Recurse
         inject_lora(child, rank, alpha, wrap_equivariant, wrap_dense, _is_root=False)
