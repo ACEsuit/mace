@@ -442,6 +442,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--pseudolabel_replay_compute_stress",
+        help="When replay pseudolabels are generated, always generate stress labels even if the original replay data lacked stress",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--foundation_filter_elements",
         help="Filter element during fine-tuning",
         type=str2bool,
@@ -533,6 +539,24 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Keep isolated atoms in the dataset, useful for transfer learning",
         type=str2bool,
         default=False,
+    )
+    parser.add_argument(
+        "--lora",
+        help="Use Low-Rank Adaptation for the fine-tuning",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--lora_rank",
+        help="Rank of the LoRA matrices",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
+        "--lora_alpha",
+        help="Scaling factor for LoRA",
+        type=float,
+        default=1.0,
     )
 
     # Keys
@@ -744,6 +768,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Beta parameter for the optimizer",
         type=float,
         default=0.9,
+    )
+    parser.add_argument(
+        "--beta1_schedulefree",
+        help="Beta1 parameter for the ScheduleFree optimizer",
+        type=float,
+        default=0.9,
+    )
+    parser.add_argument(
+        "--beta2_schedulefree",
+        help="Beta2 parameter for the ScheduleFree optimizer",
+        type=float,
+        default=0.98,
     )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
