@@ -339,10 +339,7 @@ class MACECalculator(Calculator):
             for k in a:
                 va, vb = a[k], b[k]
                 if isinstance(va, np.ndarray) or isinstance(vb, np.ndarray):
-                    if not (isinstance(va, np.ndarray) and isinstance(vb, np.ndarray)):
-                        return False
-                    if not np.array_equal(va, vb):
-                        return False
+                    continue
                 else:
                     if va != vb:
                         return False
