@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, List, Tuple
 
 import numpy as np
 import pytest
 import torch
+from e3nn import o3
 
 from mace import data, modules, tools
-from e3nn import o3
 from mace.data import Configuration
 from mace.tools import torch_geometric
 from mace.tools.lora_tools import inject_lora
+
 
 def _random_config() -> Configuration:
     atomic_numbers = np.array([6, 1, 1], dtype=int)
@@ -38,8 +39,12 @@ def _build_model() -> Tuple[modules.MACE, tools.AtomicNumberTable]:
         num_bessel=4,
         num_polynomial_cutoff=3,
         max_ell=1,
-        interaction_cls=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
-        interaction_cls_first=modules.interaction_classes["RealAgnosticResidualInteractionBlock"],
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
         num_interactions=2,
         num_elements=2,
         hidden_irreps=o3.Irreps("16x0e + 16x1o"),
@@ -131,20 +136,24 @@ def _translate_config(config: Configuration, shift: np.ndarray) -> Configuration
     )
 
 
-def _reflect_config(config: Configuration, normal: np.ndarray) -> Tuple[Configuration, np.ndarray]:
+def _reflect_config(
+    config: Configuration, normal: np.ndarray
+) -> Tuple[Configuration, np.ndarray]:
     normal = normal / np.linalg.norm(normal)
     R = np.eye(3) - 2.0 * np.outer(normal, normal)
     reflected = _rotate_config(config, R)
     return reflected, R
 
 
-@pytest.fixture()
-def random_configs() -> Tuple[Configuration, Configuration]:
+@pytest.fixture(name="random_configs")
+def _random_configs() -> Tuple[Configuration, Configuration]:
     return _random_config(), _random_config()
 
 
-@pytest.fixture()
-def build_lora_model() -> Callable[[int, float, bool], Tuple[modules.MACE, tools.AtomicNumberTable]]:
+@pytest.fixture(name="build_lora_model")
+def _build_lora_model_fixture() -> (
+    Callable[[int, float, bool], Tuple[modules.MACE, tools.AtomicNumberTable]]
+):
     def _builder(
         rank: int = 2,
         alpha: float = 0.5,
@@ -162,20 +171,24 @@ def build_lora_model() -> Callable[[int, float, bool], Tuple[modules.MACE, tools
 def test_lora_trainable_parameter_count(build_lora_model) -> None:
     model, _ = build_lora_model(rank=2, alpha=0.5, randomize=True)
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    expected = sum(
-        p.numel() for name, p in model.named_parameters() if "lora_" in name
-    )
+    expected = sum(p.numel() for name, p in model.named_parameters() if "lora_" in name)
     assert trainable == expected
 
     non_lora_trainable = [
-        name for name, p in model.named_parameters() if "lora_" not in name and p.requires_grad
+        name
+        for name, p in model.named_parameters()
+        if "lora_" not in name and p.requires_grad
     ]
-    assert not non_lora_trainable, f"Non-LoRA parameters trainable: {non_lora_trainable}"
+    assert (
+        not non_lora_trainable
+    ), f"Non-LoRA parameters trainable: {non_lora_trainable}"
 
     # Ensure LoRA parameters were randomized away from zero
     for name, param in model.named_parameters():
         if "lora_B" in name:
-            assert torch.any(torch.abs(param) > 0), f"LoRA parameter {name} incorrectly zero"
+            assert torch.any(
+                torch.abs(param) > 0
+            ), f"LoRA parameter {name} incorrectly zero"
 
 
 def test_lora_symmetry_equivariance(build_lora_model, random_configs) -> None:
@@ -192,14 +205,18 @@ def test_lora_symmetry_equivariance(build_lora_model, random_configs) -> None:
     rotated_cfg = _rotate_config(base_cfg, R)
     energy_rot, forces_rot = _forward_energy_forces(model, [rotated_cfg], table)
     assert np.allclose(energy_rot.item(), energy_val, rtol=1e-6, atol=1e-6)
-    assert np.allclose(forces_val @ R.T, forces_rot.squeeze(0).detach().numpy(), rtol=1e-5, atol=1e-5)
+    assert np.allclose(
+        forces_val @ R.T, forces_rot.squeeze(0).detach().numpy(), rtol=1e-5, atol=1e-5
+    )
 
     # Translation invariance
     shift = np.array([0.17, -0.05, 0.08])
     translated_cfg = _translate_config(base_cfg, shift)
     energy_trans, forces_trans = _forward_energy_forces(model, [translated_cfg], table)
     assert np.allclose(energy_trans.item(), energy_val, rtol=1e-6, atol=1e-6)
-    assert np.allclose(forces_trans.squeeze(0).detach().numpy(), forces_val, rtol=1e-6, atol=1e-6)
+    assert np.allclose(
+        forces_trans.squeeze(0).detach().numpy(), forces_val, rtol=1e-6, atol=1e-6
+    )
 
     # Reflection invariance / covariance
     reflected_cfg, R_reflect = _reflect_config(base_cfg, np.array([1.0, -2.0, 3.0]))
