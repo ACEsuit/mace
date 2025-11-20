@@ -470,8 +470,14 @@ def estimate_e0s_from_foundation(
             )
             batch = next(iter(data_loader)).to(device)
             
-            # Get model prediction
-            output = foundation_model(batch.to_dict())
+            # Get model prediction (only energy, no forces/stress to avoid gradient computation)
+            output = foundation_model(
+                batch.to_dict(),
+                training=False,
+                compute_force=False,
+                compute_virials=False,
+                compute_stress=False,
+            )
             predicted_energy = output["energy"]
             
             # Handle different tensor shapes (batched or unbatched)
