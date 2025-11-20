@@ -16,6 +16,7 @@ import numpy as np
 
 import torch
 from ase.atoms import Atoms
+from mace.data import AtomicData
 
 from mace.tools import AtomicNumberTable, DefaultKeys
 
@@ -442,14 +443,20 @@ def estimate_e0s_from_foundation(
     # Set model to eval mode
     foundation_model.eval()
     
+    # Get r_max as a float 
+    r_max = foundation_model.r_max
+    if hasattr(r_max, 'item'):
+        r_max = r_max.item()
+    elif isinstance(r_max, torch.Tensor):
+        r_max = float(r_max)
+    
     with torch.no_grad():
         for i, config in enumerate(valid_configs):
             # Convert to AtomicData for model prediction
-            from mace.data import AtomicData
             atomic_data = AtomicData.from_config(
                 config,
                 z_table=AtomicNumberTable([int(z) for z in foundation_model.atomic_numbers]),
-                cutoff=foundation_model.r_max,
+                cutoff=r_max,
             )
             atomic_data = atomic_data.to(device)
             
