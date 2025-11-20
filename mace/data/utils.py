@@ -14,10 +14,6 @@ import ase.io
 import h5py
 import numpy as np
 
-import torch
-from ase.atoms import Atoms
-from mace.data import AtomicData
-
 from mace.tools import AtomicNumberTable, DefaultKeys
 
 Positions = np.ndarray  # [..., 3]
@@ -418,6 +414,7 @@ def estimate_e0s_from_foundation(
     Returns:
         Dictionary with estimated E0 values for each element
     """
+    import torch
     
     # Filter configs with valid energy
     valid_configs = []
@@ -453,6 +450,8 @@ def estimate_e0s_from_foundation(
     with torch.no_grad():
         for i, config in enumerate(valid_configs):
             # Convert to AtomicData for model prediction
+            # Import here to avoid circular dependency
+            from mace.data import AtomicData
             atomic_data = AtomicData.from_config(
                 config,
                 z_table=AtomicNumberTable([int(z) for z in foundation_model.atomic_numbers]),
