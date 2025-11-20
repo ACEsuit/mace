@@ -452,15 +452,25 @@ def estimate_e0s_from_foundation(
             # Convert to AtomicData for model prediction
             # Import here to avoid circular dependency
             from mace.data import AtomicData
+            from mace.tools import torch_geometric
+            
             atomic_data = AtomicData.from_config(
                 config,
                 z_table=AtomicNumberTable([int(z) for z in foundation_model.atomic_numbers]),
                 cutoff=r_max,
             )
-            atomic_data = atomic_data.to(device)
+            
+            # Create a proper batch using DataLoader
+            data_loader = torch_geometric.dataloader.DataLoader(
+                dataset=[atomic_data],
+                batch_size=1,
+                shuffle=False,
+                drop_last=False,
+            )
+            batch = next(iter(data_loader)).to(device)
             
             # Get model prediction
-            output = foundation_model(atomic_data.to_dict())
+            output = foundation_model(batch.to_dict())
             predicted_energy = output["energy"]
             
             # Handle different tensor shapes (batched or unbatched)
