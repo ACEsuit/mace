@@ -14,6 +14,9 @@ import ase.io
 import h5py
 import numpy as np
 
+import torch
+from ase.atoms import Atoms
+
 from mace.tools import AtomicNumberTable, DefaultKeys
 
 Positions = np.ndarray  # [..., 3]
@@ -386,6 +389,143 @@ def compute_average_E0s(
         for i, z in enumerate(z_table.zs):
             atomic_energies_dict[z] = 0.0
     return atomic_energies_dict
+
+
+def estimate_e0s_from_foundation(
+    foundation_model,
+    foundation_e0s: Dict[int, float],
+    collections_train: Configurations,
+    z_table: AtomicNumberTable,
+    device: str = "cpu",
+) -> Dict[int, float]:
+    """
+    Estimate atomic reference energies (E0s) by solving a linear system
+    that optimally corrects foundation model predictions on training data.
+    
+    This function computes E0 corrections by:
+    1. Running the foundation model on all training configurations
+    2. Computing prediction errors (reference - predicted)
+    3. Solving a least-squares system to find optimal E0 corrections
+    
+    Args:
+        foundation_model: The foundation MACE model
+        foundation_e0s: Dictionary mapping element atomic numbers to original E0 values
+        collections_train: List of training configurations
+        z_table: Atomic number table for the training dataset
+        device: Device to run predictions on (default: "cpu")
+        
+    Returns:
+        Dictionary with estimated E0 values for each element
+    """
+    
+    # Filter configs with valid energy
+    valid_configs = []
+    for config in collections_train:
+        if "energy" in config.properties and config.properties["energy"] is not None:
+            valid_configs.append(config)
+    
+    if not valid_configs:
+        logging.warning("No configurations with energy found for E0 estimation. Using foundation E0s.")
+        return foundation_e0s.copy()
+    
+    elements = z_table.zs
+    n_configs = len(valid_configs)
+    n_elements = len(elements)
+    
+    # A matrix: each row contains atom counts for each element
+    # b vector: each entry is the prediction error for a configuration
+    A = np.zeros((n_configs, n_elements))
+    b = np.zeros(n_configs)
+    
+    logging.info(f"Estimating E0s using foundation model on {n_configs} configurations with {n_elements} elements")
+    
+    # Set model to eval mode
+    foundation_model.eval()
+    
+    with torch.no_grad():
+        for i, config in enumerate(valid_configs):
+            # Convert to AtomicData for model prediction
+            from mace.data import AtomicData
+            atomic_data = AtomicData.from_config(
+                config,
+                z_table=AtomicNumberTable([int(z) for z in foundation_model.atomic_numbers]),
+                cutoff=foundation_model.r_max,
+            )
+            atomic_data = atomic_data.to(device)
+            
+            # Get model prediction
+            output = foundation_model(atomic_data.to_dict())
+            predicted_energy = output["energy"]
+            
+            # Handle different tensor shapes (batched or unbatched)
+            if predicted_energy.dim() == 0:
+                predicted_energy = predicted_energy.item()
+            else:
+                predicted_energy = predicted_energy.item() if predicted_energy.numel() == 1 else predicted_energy[0].item()
+            
+            # Get reference energy
+            ref_energy = config.properties["energy"]
+            
+            # Compute error
+            error = ref_energy - predicted_energy
+            b[i] = error
+            
+            # Store atom counts for each element
+            for j, element in enumerate(elements):
+                A[i, j] = np.sum(config.atomic_numbers == element)
+    
+    # Solve least squares system: A @ corrections = b
+    try:
+        corrections, residuals, rank, s = np.linalg.lstsq(A, b, rcond=None)
+        
+        logging.info("=" * 80)
+        logging.info("E0 ESTIMATION FROM FOUNDATION MODEL")
+        logging.info("=" * 80)
+        logging.info(f"Rank of system: {rank}/{n_elements}")
+        logging.info(f"Residuals: {residuals}")
+        
+        # Compute new E0s
+        new_e0s = {}
+        for i, element in enumerate(elements):
+            correction = corrections[i]
+            foundation_e0 = foundation_e0s.get(element, 0.0)
+            new_e0s[element] = foundation_e0 + correction
+            logging.info(
+                f"Element {element}: foundation E0 = {foundation_e0:.6f} eV, "
+                f"correction = {correction:.6f} eV, new E0 = {new_e0s[element]:.6f} eV"
+            )
+        
+        # Compute statistics
+        mse_before = np.mean(b**2)
+        b_after = b - A @ corrections
+        mse_after = np.mean(b_after**2)
+        rmse_before = np.sqrt(mse_before)
+        rmse_after = np.sqrt(mse_after)
+        mae_before = np.mean(np.abs(b))
+        mae_after = np.mean(np.abs(b_after))
+        
+        logging.info("=" * 80)
+        logging.info("FIT STATISTICS")
+        logging.info("=" * 80)
+        logging.info(f"RMSE before E0 correction: {rmse_before:.6f} eV")
+        logging.info(f"RMSE after E0 correction:  {rmse_after:.6f} eV")
+        logging.info(f"MAE before E0 correction:  {mae_before:.6f} eV")
+        logging.info(f"MAE after E0 correction:   {mae_after:.6f} eV")
+        
+        if rank < n_elements:
+            logging.warning(
+                f"System is rank deficient (rank {rank}/{n_elements}). "
+                "Some elements may not be sufficiently represented in the dataset."
+            )
+        
+        logging.info("=" * 80)
+        
+        return new_e0s
+        
+    except np.linalg.LinAlgError as e:
+        logging.error(f"Error solving linear system for E0 estimation: {e}")
+        logging.warning("Falling back to foundation model E0s")
+        return foundation_e0s.copy()
 
 
 def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
