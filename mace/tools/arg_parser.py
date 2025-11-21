@@ -143,6 +143,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "AtomicDipolesMACE",
             "AtomicDielectricMACE",
             "EnergyDipolesMACE",
+            "MagneticScaleShiftMACE",
         ],
     )
     parser.add_argument(
@@ -209,6 +210,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
             "RealAgnosticResidualNonLinearInteractionBlock",
+            "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+            "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -222,6 +225,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
             "RealAgnosticResidualNonLinearInteractionBlock",
+            "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+            "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -335,6 +340,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compute_atomic_dipole",
         help="Select True to compute dipoles",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_magforces",
+        help="Select True to compute magnetic forces",
         type=str2bool,
         default=False,
     )
@@ -597,6 +608,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=DefaultKeys.POLARIZABILITY.value,
     )
     parser.add_argument(
+        "--magmom_key",
+        help="Key of magnetic moment in training xyz",
+        type=str,
+        default="REF_magmom",
+    )
+    parser.add_argument(
+        "--magforces_key",
+        help="Key of magnetic forces in training xyz",
+        type=str,
+        default="REF_magforces",
+    )
+    parser.add_argument(
         "--head_key",
         help="Key of head in training xyz",
         type=str,
@@ -685,6 +708,20 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=100.0,
         dest="swa_forces_weight",
+    )
+    parser.add_argument(
+        "--magforces_weight",
+        help="weight of mag forces loss",
+        type=float,
+        default=100.0,
+    )
+    parser.add_argument(
+        "--swa_magforces_weight",
+        "--stage_two_magforces_weight",
+        help="weight of magforces loss after starting Stage Two (previously called swa)",
+        type=float,
+        default=100.0,
+        dest="swa_magforces_weight",
     )
     parser.add_argument(
         "--energy_weight", help="weight of energy loss", type=float, default=1.0
@@ -990,6 +1027,51 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "forces_weight",
         ],
     )
+
+    # --- magnetic mace specific arguments ---
+    parser.add_argument(
+        "--num_mag_radial_basis_one_body",
+        help="number of radial basis for one body contribution in magnetic mace",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "--m_max",
+        help="|m| basis m_max for magnetic momgent",
+        type=float,
+        nargs="+",
+    )
+    parser.add_argument(
+        "--max_m_ell",
+        help="max_ell for magnetic mace",
+        type=int,
+        default=3,
+    )
+    parser.add_argument(
+        "--num_mag_radial_basis",
+        help="number of radial basis for magnetic part",
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
+        "--use_magmom_one_body",
+        help="If true, use one body mangetic moment contribution in the model",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--train_one_body_contribution",
+        help="It true, freeze weights other than the one body contribution.",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--data_aug_magmom",
+        help="Whether to use data agumentation on manetic moment training. ",
+        type=str2bool,
+        default=False,
+    )
+
     return parser
 
 
