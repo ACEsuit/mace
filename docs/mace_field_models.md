@@ -35,7 +35,7 @@ atoms.calc = calc
 # with specified total charge, spin, field:
 atoms.info['charge'] = 1.0              # (e)
 atoms.info['spin'] = 1                  # multiplicity, default=1 (not total spin but (number of unpaired electrons + 1))
-atoms.info['external_field'] = 0.01     # V/\AA. note that sign is REVERSED. fields point uphill, consistent with fhi-aims, vasp, ...
+atoms.info['external_field'] = [0, 0, 0.01]     # V/\AA. note that sign is REVERSED. fields point uphill, consistent with fhi-aims, vasp, ...
 atoms.get_forces()
 ```
 
