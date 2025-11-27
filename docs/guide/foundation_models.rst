@@ -15,6 +15,7 @@ Currently available pretrained MACE models:
    "MACE-OMAT-0",    "89",  "OMAT",            "DFT (PBE+U) VASP 54",    "Materials",  "medium-omat-0_",                     ">=v0.3.10", "Most accurate for phonons",                                                "ASL"
    "MACE-MATPES-0",  "89",  "MATPES",          "PBE/R2SCAN",            "Materials",  "matpes-pbe_, matpes-r2scan_",        ">=v0.3.10", "PBE and R2SCAN models for MATPES dataset. Latest recommended ones.",      "ASL"
    "MACE-OFF23",     "10",  "SPICE v1",        "DFT (wB97M+D3)",        "Organic Chemistry",  "small-off_, medium-off_, large-off_", ">=v0.3.6",  "Initial release covering neutral organic chemistry.",                      "ASL"
+   "MACE-MH-1/0",    "89",  "OMAT/OMOL/OC20/MATPES", "DFT (PBE/R2SCAN/wB97M-VV10)",    "Materials/Molecules/Surfaces",  "mace-mh-1_, mace-mh-0_", ">=v0.3.14",  "Multihead model for materials chemistry. `More info. <https://huggingface.co/mace-foundations/mace-mh-1>`_,       "ASL"
 
 .. _small: https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model
 .. _medium: https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model
@@ -26,6 +27,8 @@ Currently available pretrained MACE models:
 .. _large-off: https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model
 .. _matpes-pbe: https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-pbe-omat-ft.model
 .. _matpes-r2scan: https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-r2scan-omat-ft.model
+.. _mace-mh-1: https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/mace-mh-1.model
+.. _mace-mh-0: https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/mace-mh-0.model
 
 Foundation models are a rapidly evolving field. Please look at the `MACE-MP GitHub repository <https://github.com/ACEsuit/mace-mp/releases>`_ and the `MACE-OFF23 GitHub repository <https://github.com/ACEsuit/mace-off/releases>`_ for the latest releases.
 
