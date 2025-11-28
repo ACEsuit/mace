@@ -36,7 +36,7 @@ from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
 from mace.tools.distributed_tools import init_distributed
-from mace.tools.lora_tools import inject_LoRAs
+from mace.tools.lora_tools import inject_LoRAs, merge_lora_weights
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -1028,6 +1028,9 @@ def run(args) -> None:
                 model_path = Path(args.checkpoints_dir) / (tag + ".model")
             logging.info(f"Saving model to {model_path}")
             model_to_save = deepcopy(model)
+            if args.lora:
+                logging.info("Merging LoRA weights into base model")
+                merge_lora_weights(model_to_save)
             if args.enable_cueq and not args.only_cueq:
                 logging.info("RUNING CUEQ TO E3NN")
                 model_to_save = run_cueq_to_e3nn(deepcopy(model), device=device)
