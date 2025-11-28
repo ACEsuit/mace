@@ -324,3 +324,55 @@ def test_lora_merge_preserves_equivariance(build_lora_model, random_configs) -> 
     assert np.allclose(
         forces_val @ R.T, forces_rot.squeeze(0).detach().numpy(), rtol=1e-5, atol=1e-5
     ), "Forces not equivariant under rotation after merge"
+
+
+def test_lora_evaluate_preserves_frozen_state(build_lora_model, random_configs) -> None:
+    """Test that evaluate() preserves requires_grad states for LoRA models.
+    """
+    from mace.tools import evaluate
+    from mace.modules.loss import WeightedEnergyForcesLoss
+
+    model, table = build_lora_model(rank=2, alpha=0.5, randomize=True)
+
+    # Record which parameters should be trainable (only LoRA params)
+    lora_params_before = {
+        name: p.requires_grad for name, p in model.named_parameters()
+    }
+    trainable_before = [name for name, grad in lora_params_before.items() if grad]
+    frozen_before = [name for name, grad in lora_params_before.items() if not grad]
+
+    # Verify initial state: only LoRA params are trainable
+    assert all("lora_" in name for name in trainable_before), (
+        "Only LoRA params should be trainable initially"
+    )
+    assert len(frozen_before) > 0, "Some base params should be frozen"
+
+    # Create a minimal data loader for evaluation
+    configs = list(random_configs)
+    dataset = [_atomic_data_from_config(cfg, table) for cfg in configs]
+    loader = torch_geometric.dataloader.DataLoader(
+        dataset=dataset,
+        batch_size=len(dataset),
+        shuffle=False,
+        drop_last=False,
+    )
+
+    # Run evaluate
+    loss_fn = WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
+    output_args = {"forces": True, "virials": False, "stress": False}
+    evaluate(model, loss_fn, loader, output_args, device=torch.device("cpu"))
+
+    # Check that requires_grad states are preserved
+    lora_params_after = {
+        name: p.requires_grad for name, p in model.named_parameters()
+    }
+
+    for name in trainable_before:
+        assert lora_params_after[name], (
+            f"LoRA param {name} should still be trainable after evaluate()"
+        )
+
+    for name in frozen_before:
+        assert not lora_params_after[name], (
+            f"Base param {name} should still be frozen after evaluate()"
+        )
