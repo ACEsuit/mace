@@ -800,6 +800,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
     )
     parser.add_argument(
+        "--lr_params_factors",
+        help="Learning rate factors to multiply on the original lr",
+        type=str,
+        default='{"embedding_lr_factor": 1.0, "interactions_lr_factor": 1.0, "products_lr_factor": 1.0, "readouts_lr_factor": 1.0}',
+    )
+    parser.add_argument(
+        "--freeze",
+        help="Freeze layers from 1 to N. Can be positive or negative, e.g. -1 means the last layer is frozen. 0 or None means all layers are active and is a default setting",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
         "--amsgrad",
         help="use amsgrad variant of optimizer",
         action="store_true",
