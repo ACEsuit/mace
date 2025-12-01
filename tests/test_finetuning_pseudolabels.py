@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 from ase.atoms import Atoms
 
-
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
 
