@@ -352,10 +352,10 @@ class MACEField(ScaleShiftMACE):
 
         # Setting electric field
         if electric_field is not None:
-            electric_field = electric_field.detach().clone().view(-1, 3).requires_grad_(True) # [num_graphs, 3]
+            electric_field = electric_field.detach().clone().to(device=vectors.device.type, dtype=vectors.dtype).view(-1, 3).requires_grad_(True) # [num_graphs, 3]
         else:
             electric_field = (
-                data["electric_field"].reshape(-1, 3).requires_grad_(True)
+                data["electric_field"].to(device=vectors.device.type, dtype=vectors.dtype).reshape(-1, 3).requires_grad_(True)
             )  # [num_graphs, 3]
 
         # Cell volume
