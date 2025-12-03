@@ -26,6 +26,7 @@ from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import prepare
 from mace.tools.scripts_utils import extract_model
+from mace.data.atomic_data import atomicdata_collate
 
 try:
     from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
@@ -386,7 +387,7 @@ class MACECalculator(Calculator):
         )
 
         collate = partial(
-                mace_data.atomicdata_collate,
+                atomicdata_collate,
                 z_table=self.z_table,
                 cutoff=self.r_max,
                 heads=self.available_heads,
