@@ -5,13 +5,13 @@
 **MACE-Field** is a field-aware extension of the **MACE** (Message Passing Atomic Cluster Expansion) architecture that enables learning **electric-field–dependent energy functionals** for molecules and periodic materials. From a *single scalar electric enthalpy*, MACE-Field exposes physically consistent dielectric response properties via **automatic differentiation**:
 
 - **Polarization**  
-  \( \mathbf{P} = -\frac{1}{\Omega}\,\frac{\partial E}{\partial \mathbf{E}} \)
+  $\mathbf{P} = -\frac{1}{\Omega}\,\frac{\partial E}{\partial \mathbf{E}}$
 
 - **Born effective charges (BECs)**  
-  \( Z^*_{\kappa,\alpha\beta} = \Omega\, \frac{\partial P_\beta}{\partial u_{\kappa,\alpha}} \)
+  $Z^\ast_{\kappa,\alpha\beta} = \frac{\partial P_\alpha}{\partial R_{\kappa,\beta}}$
 
-- **Polarisability / susceptibility**  
-  \( \chi_{\alpha\beta} = \frac{\partial P_\alpha}{\partial E_\beta} \)
+- **Polarisability/susceptibility**  
+  $\chi_{\alpha\beta} = \frac{\partial P_\alpha}{\partial E_\beta}$
 
 All quantities are **derivative-consistent** (Maxwell relations, acoustic sum rule) by construction.
 
