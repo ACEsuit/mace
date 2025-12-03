@@ -12,7 +12,7 @@ jobs:
         python-version: ['3.8','3.9','3.10','3.11','3.12','3.13']
 
     steps:
-      - name: checkout 
+      - name: checkout
         uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -31,7 +31,7 @@ jobs:
 
       - name: Run general unit tests
         run: |
-          pytest tests --ignore=tests/test_cueq.py
+          pytest tests --ignore=tests/test_cueq_oeq.py
 
   pytest-cueq:
     runs-on: ubuntu-latest
@@ -53,4 +53,5 @@ jobs:
 
       - name: Run cueq-specific tests
         run: |
-          pytest tests/test_cueq.py tests/test_calculator.py
+          pytest tests/test_cueq_oeq.py -k TestCueq
+          pytest tests/test_calculator.py

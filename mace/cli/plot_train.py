@@ -153,12 +153,13 @@ def plot(
         "rmse_virials_per_atom": " RMSE virials/atom [meV]",
         "mae_virials": "MAE Virials [meV]",
         "rmse_mu_per_atom": "RMSE MU/atom [mDebye]",
-        "mae_polarisation": "MAE P [meV / A^2]",
-        "rmse_polarisation": "RMSE P [meV / A^2]",
-        "mae_becs": "MAE Z* [A]",
-        "rmse_becs": "RMSE Z* [A]",
-        "mae_polarisability": "MAE a [meV / A]",
-        "rmse_polarisability": "RMSE a [meV / A]",
+        "mae_polarization": "MAE P [me / A^2]",
+        "rmse_polarization": "RMSE P [me / A^2]",
+        "mae_becs": "MAE Z* [e]",
+        "rel_rmse_becs": "Relative RMSE BECs [e]",
+        "rmse_becs": "RMSE Z* [e]",
+        "mae_polarizability": "MAE a [me / V / A]",
+        "rmse_polarizability": "RMSE a [me / V / A]",
     }
 
     data = data[data["epoch"] > min_epoch]

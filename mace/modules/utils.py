@@ -557,6 +557,131 @@ def compute_fixed_charge_dipole(
     )  # [N_graphs,3]
 
 
+def compute_fixed_charge_dipole_polar(
+    charges: torch.Tensor,
+    positions: torch.Tensor,
+    batch: torch.Tensor,
+    num_graphs: int,
+) -> torch.Tensor:
+    mu = positions * charges.unsqueeze(
+        -1
+    )  # / (1e-11 / c / e)  # [N_atoms,3] = 0.20819...
+    return scatter_sum(src=mu, index=batch.unsqueeze(-1), dim=0, dim_size=num_graphs)
+
+
+@torch.jit.ignore
+def compute_dielectric_gradients(
+    dielectric: torch.Tensor,
+    positions: torch.Tensor,
+) -> Tuple[torch.tensor, torch.tensor]:
+    dielectric_flatten = dielectric.view(-1)
+
+    def get_vjp(v):
+        return torch.autograd.grad(
+            dielectric_flatten,
+            positions,
+            v,
+            retain_graph=True,
+            create_graph=True,
+            allow_unused=False,
+        )
+
+    try:
+        I_N = torch.eye(dielectric.shape[-1]).to(dielectric.device)
+        gradient = torch.vmap(get_vjp, in_dims=0, out_dims=0)(I_N)[0]
+    except RuntimeError:
+        gradient = compute_dielectric_gradients_loop(dielectric, positions).detach()
+    if gradient is None:
+        return torch.zeros((positions.shape[0], dielectric.shape[-1], 3))
+    return gradient
+
+
+def compute_dielectric_gradients_loop(
+    dielectric: torch.Tensor,
+    positions: torch.Tensor,
+) -> torch.Tensor:
+    gradients = []
+    for i in range(dielectric.shape[-1]):
+        grad_elem = dielectric[:, i]
+        hess_row = torch.autograd.grad(
+            grad_elem,
+            positions,
+            retain_graph=True,
+            create_graph=True,
+            allow_unused=False,
+        )[0]
+        gradients.append(hess_row)
+    gradients = torch.stack(gradients)
+    return gradients
+
+
+def get_polarization(
+    energy: torch.Tensor,
+    electric_field: torch.Tensor,
+) -> torch.Tensor:
+    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+    polarization = torch.autograd.grad(
+        outputs=[energy],  # [n_graphs, ]
+        inputs=[electric_field],  # [3, ]
+        grad_outputs=grad_outputs,
+        retain_graph=True,  # Make sure the graph is not destroyed
+        create_graph=True,  # Create graph for higher derivatives
+        allow_unused=False,
+    )[0]
+    if polarization is None:
+        return torch.zeros_like(electric_field)
+    return -polarization  # [n_graphs, 3]
+
+
+def get_becs(
+    polarization: torch.Tensor,
+    positions: torch.Tensor,
+) -> torch.Tensor:
+    becs_polar_list = []
+    for d in range(3):  # Loop over dimensions
+        polar_component = polarization[:, d]  # [n_graphs, 1]
+        polar_grad_outputs: List[Optional[torch.Tensor]] = [
+            torch.ones_like(polar_component)
+        ]
+        gradient = torch.autograd.grad(
+            outputs=[polar_component],  # [n_graphs, 1]
+            inputs=[positions],  # [n_nodes, 3]
+            grad_outputs=polar_grad_outputs,
+            retain_graph=True,  # Make sure the graph is not destroyed
+            create_graph=True,  # Create graph for higher derivatives
+            allow_unused=False,
+        )[0]
+        if gradient is None:
+            return torch.zeros_like(positions)
+        becs_polar_list.append(gradient)  # [n_nodes, 3]
+    becs = torch.stack(becs_polar_list, dim=1)  # [n_nodes, 3, 3]
+    return becs  # [n_nodes, 3, 3]
+
+
+def get_polarizability(
+    polarization: torch.Tensor,
+    electric_field: torch.Tensor,
+) -> torch.Tensor:
+    # Second derivatives (BEC and polarizability) computed for each polarization component.
+    polarizability_list = []
+    for d in range(3):
+        polar_component = polarization[:, d]  # [n_graphs, 1]
+        grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(polar_component)]
+        grad_field = torch.autograd.grad(
+            outputs=[polar_component],  # [n_graphs, 1]
+            inputs=[electric_field],  # [3, ]
+            grad_outputs=grad_outputs,
+            retain_graph=True,  # Make sure the graph is not destroyed
+            create_graph=True,  # Create graph for higher derivatives
+            allow_unused=False,
+        )[0]
+        if grad_field is None:
+            grad_field = torch.zeros_like(electric_field)
+        polarizability_list.append(grad_field)  # [n_graphs, 3]
+    polarizability = torch.stack(polarizability_list, dim=1)  # [n_graphs, 3, 3]
+    return polarizability  # [n_graphs, 3, 3]
+
+
 class InteractionKwargs(NamedTuple):
     lammps_class: Optional[torch.Tensor]
     lammps_natoms: Tuple[int, int] = (0, 0)

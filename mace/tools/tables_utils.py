@@ -91,6 +91,13 @@ def create_error_table(
             "MAE MU / mDebye / atom",
             "relative MU MAE %",
         ]
+    elif table_type == "DipolePolarRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE MU / me A / atom",
+            "relative MU RMSE %",
+            "RMSE ALPHA e A^2 / V / atom",
+        ]
     elif table_type == "EnergyDipoleRMSE":
         table.field_names = [
             "config_type",
@@ -100,7 +107,7 @@ def create_error_table(
             "RMSE MU / mDebye / atom",
             "rel MU RMSE %",
         ]
-    elif table_type == "PerAtomRMSEstressvirialsfield":
+    elif table_type == "PerAtomFieldRMSE":
         table.field_names = [
             "config_type",
             "RMSE E / meV / atom",
@@ -109,7 +116,7 @@ def create_error_table(
             "RMSE Stress (Virials) / meV / A (A^3)",
             "RMSE Polarisation / m|e| / A^2",
             "RMSE BECs / |e|",
-            "RMSE Polarisability / |e| / V / A"
+            "RMSE Polarisability / ε0",
         ]
 
     for name in sorted(all_data_loaders, key=custom_key):
@@ -243,6 +250,15 @@ def create_error_table(
                     f"{metrics['rel_mae_mu']:8.1f}",
                 ]
             )
+        elif table_type == "DipolePolarRMSE":
+            table.add_row(
+                [
+                    name,
+                    f"{metrics['rmse_mu_per_atom'] * 1000:.2f}",
+                    f"{metrics['rel_rmse_mu']:.1f}",
+                    f"{metrics['rmse_polarizability_per_atom'] * 1000:.2f}",
+                ]
+            )
         elif table_type == "EnergyDipoleRMSE":
             table.add_row(
                 [
@@ -254,7 +270,7 @@ def create_error_table(
                     f"{metrics['rel_rmse_mu']:8.1f}",
                 ]
             )
-        elif table_type == "PerAtomRMSEstressvirialsfield":
+        elif table_type == "PerAtomFieldRMSE":
             table.add_row(
                 [
                     name,
@@ -262,9 +278,9 @@ def create_error_table(
                     f"{metrics['rmse_f'] * 1000:8.1f}",
                     f"{metrics['rel_rmse_f']:8.2f}",
                     f"{metrics['rmse_stress'] * 1000:8.1f}",
-                    f"{metrics['rmse_polarisation'] * 1000:8.1f}",
+                    f"{metrics['rmse_polarization'] * 1000:8.1f}",
                     f"{metrics['rmse_becs']:8.1f}",
-                    f"{metrics['rmse_polarisability']:8.1f}",
+                    f"{metrics['rmse_polarizability']:8.1f}",
                 ]
             )
     return table

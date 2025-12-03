@@ -8,7 +8,10 @@
 import os
 import socket
 
-import hostlist
+try:
+    import hostlist
+except ImportError:
+    hostlist = None  # Only needed on SLURM systems
 
 # class DistributedEnvironment:
 #     def __init__(self):
@@ -43,23 +46,29 @@ class DistributedEnvironment:
         self.rank = int(os.environ["RANK"])
 
     def _setup_distr_env(self):
-        # Set MASTER_ADDR from the first host in PE_HOSTFILE
-        pe_hostfile = os.environ.get("PE_HOSTFILE", "")
-        if os.path.exists(pe_hostfile):
-            with open(pe_hostfile, "r") as f:
-                first_host = f.readline().split()[0]
-                os.environ["MASTER_ADDR"] = first_host
+        if "SLURM_JOB_NODELIST" in os.environ:
+            hostname = hostlist.expand_hostlist(os.environ["SLURM_JOB_NODELIST"])[0]
+            os.environ["MASTER_ADDR"] = hostname
+            os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "33333")
+            os.environ["WORLD_SIZE"] = os.environ.get(
+                "SLURM_NTASKS",
+                str(
+                    int(os.environ["SLURM_NTASKS_PER_NODE"])
+                    * int(os.environ["SLURM_NNODES"])
+                ),
+            )
+            os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
+            os.environ["RANK"] = os.environ["SLURM_PROCID"]
         else:
-            os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "localhost")
+            # Assume local manual run with torchrun
+            os.environ.setdefault("MASTER_ADDR", "localhost")
+            os.environ.setdefault("MASTER_PORT", "33333")
+            os.environ.setdefault("WORLD_SIZE", "1")
+            os.environ.setdefault("LOCAL_RANK", "0")
+            os.environ.setdefault("RANK", "0")
 
-        # Default port if not set
-        os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "29500")
-
-        # Derive world size (number of slots)
-        if "WORLD_SIZE" not in os.environ:
-            ns = os.environ.get("NSLOTS", "1")
-            os.environ["WORLD_SIZE"] = ns
-
-        # Use MPI variables if present, otherwise fallback
-        os.environ["RANK"] = os.environ.get("OMPI_COMM_WORLD_RANK", os.environ.get("RANK", "0"))
-        os.environ["LOCAL_RANK"] = os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK", os.environ.get("LOCAL_RANK", "0"))
+    def __repr__(self):
+        return (
+            f"DistributedEnvironment(master_addr={self.master_addr}, master_port={self.master_port}, "
+            f"world_size={self.world_size}, local_rank={self.local_rank}, rank={self.rank})"
+        )

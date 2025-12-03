@@ -196,8 +196,8 @@ class ZBLBasis(torch.nn.Module):
         node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
             -1
         )
-        Z_u = node_atomic_numbers[sender]
-        Z_v = node_atomic_numbers[receiver]
+        Z_u = node_atomic_numbers[sender].to(torch.int64)
+        Z_v = node_atomic_numbers[receiver].to(torch.int64)
         a = (
             self.a_prefactor
             * 0.529
@@ -262,8 +262,8 @@ class AgnesiTransform(torch.nn.Module):
         node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
             -1
         )
-        Z_u = node_atomic_numbers[sender]
-        Z_v = node_atomic_numbers[receiver]
+        Z_u = node_atomic_numbers[sender].to(torch.int64)
+        Z_v = node_atomic_numbers[receiver].to(torch.int64)
         r_0: torch.Tensor = 0.5 * (self.covalent_radii[Z_u] + self.covalent_radii[Z_v])
         r_over_r_0 = x / r_0
         return (
@@ -333,8 +333,8 @@ class SoftTransform(torch.nn.Module):
         node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
             -1
         )
-        Z_u = node_atomic_numbers[sender]
-        Z_v = node_atomic_numbers[receiver]
+        Z_u = node_atomic_numbers[sender].to(torch.int64)
+        Z_v = node_atomic_numbers[receiver].to(torch.int64)
         r_0: torch.Tensor = self.covalent_radii[Z_u] + self.covalent_radii[Z_v]
         return r_0
 
@@ -356,3 +356,29 @@ class SoftTransform(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(alpha={self.alpha.item():.4f})"
+
+
+class RadialMLP(torch.nn.Module):
+    """
+    Construct a radial MLP (Linear → LayerNorm → SiLU) stack
+    given a list of channel sizes, following ESEN / FairChem.
+    """
+
+    def __init__(self, channels_list) -> None:
+        super().__init__()
+
+        modules = []
+        in_channels = channels_list[0]
+
+        for idx, out_channels in enumerate(channels_list[1:], start=1):
+            modules.append(torch.nn.Linear(in_channels, out_channels, bias=True))
+            in_channels = out_channels
+            if idx < len(channels_list) - 1:
+                modules.append(torch.nn.LayerNorm(out_channels))
+                modules.append(torch.nn.SiLU())
+
+        self.net = torch.nn.Sequential(*modules)
+        self.hs = channels_list
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return self.net(inputs)

@@ -7,6 +7,7 @@
 import dataclasses
 import logging
 import time
+from collections import defaultdict
 from contextlib import nullcontext
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -34,6 +35,8 @@ from .utils import (
     compute_rel_mae,
     compute_rel_rmse,
     compute_rmse,
+    filter_nonzero_weight,
+    fold_polarization,
 )
 
 
@@ -132,6 +135,12 @@ def valid_err_log(
         logging.info(
             f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_MU_per_atom={error_mu:8.2f} mDebye",
         )
+    elif log_errors == "DipolePolarRMSE":
+        error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
+        error_polarizability = eval_metrics["rmse_polarizability_per_atom"] * 1e3
+        logging.info(
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:.4f}, RMSE_MU_per_atom={error_mu:.2f} me A, RMSE_polarizability_per_atom={error_polarizability:.2f} me A^2 / V",
+        )
     elif log_errors == "EnergyDipoleRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
@@ -163,6 +172,22 @@ def valid_err_log(
         error_polarisability= eval_metrics["rmse_polarisability"] 
         logging.info(
             f"{initial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.8f} meV, RMSE_F={error_f:8.8f} meV / A, RMSE_stress={error_stress:8.8f} meV / A^3, RMSE_polarisation={error_polarisation:8.8f} m|e| / A^2, RMSE_becs={error_becs:8.8f} |e|, RMSE_polarisability={error_polarisability:8.8f} |e| / V / A",
+        )
+    elif (
+        log_errors == "PerAtomFieldRMSE"
+        and eval_metrics["rmse_stress"] is not None
+        and eval_metrics["rmse_becs"] is not None
+        and eval_metrics["rmse_polarization"] is not None
+        and eval_metrics["rmse_polarizability"] is not None
+    ):
+        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+        error_f = eval_metrics["rmse_f"] * 1e3
+        error_stress = eval_metrics["rmse_stress"] * 1e3
+        error_polarization = eval_metrics["rmse_polarization"] * 1e3
+        error_becs = eval_metrics["rmse_becs"]
+        error_polarizability = eval_metrics["rmse_polarizability"]
+        logging.info(
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.8f} meV, RMSE_F={error_f:8.8f} meV / A, RMSE_stress={error_stress:8.8f} meV / A^3, RMSE_polarization={error_polarization:8.8f} m|e| / A^2, RMSE_becs={error_becs:8.8f} |e|, RMSE_polarizability={error_polarizability:8.8f} ε0",
         )
 
 
@@ -429,16 +454,29 @@ def take_step(
 
     def closure():
         optimizer.zero_grad(set_to_none=True)
-        output = model(
-            batch_dict,
-            training=True,
-            compute_force=output_args["forces"],
-            compute_virials=output_args["virials"],
-            compute_stress=output_args["stress"],
-            compute_polarisation=output_args["polarisation"],
-            compute_becs=output_args["becs"],
-            compute_polarisability=output_args["polarisability"],
-        )
+        if (
+            output_args["polarization"]
+            or output_args["becs"]
+            or output_args["polarizability"]
+        ):
+            output = model(
+                batch_dict,
+                training=True,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+                compute_polarization=output_args["polarization"],
+                compute_becs=output_args["becs"],
+                compute_polarizability=output_args["polarizability"],
+            )
+        else:
+            output = model(
+                batch_dict,
+                training=True,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+            )
         loss = loss_fn(pred=output, ref=batch)
         loss.backward()
         if max_grad_norm is not None:
@@ -506,16 +544,29 @@ def take_step_lbfgs(
         for batch in data_loader:
             batch = batch.to(device)
             batch_dict = batch.to_dict()
-            output = model(
-                batch_dict,
-                training=True,
-                compute_force=output_args["forces"],
-                compute_virials=output_args["virials"],
-                compute_stress=output_args["stress"],
-                compute_polarisation=output_args["polarisation"],
-                compute_becs=output_args["becs"],
-                compute_polarisability=output_args["polarisability"],
-            )
+            if (
+                output_args["polarization"]
+                or output_args["becs"]
+                or output_args["polarizability"]
+            ):
+                output = model(
+                    batch_dict,
+                    training=True,
+                    compute_force=output_args["forces"],
+                    compute_virials=output_args["virials"],
+                    compute_stress=output_args["stress"],
+                    compute_polarization=output_args["polarization"],
+                    compute_becs=output_args["becs"],
+                    compute_polarizability=output_args["polarizability"],
+                )
+            else:
+                output = model(
+                    batch_dict,
+                    training=True,
+                    compute_force=output_args["forces"],
+                    compute_virials=output_args["virials"],
+                    compute_stress=output_args["stress"],
+                )
             batch_loss = loss_fn(pred=output, ref=batch)
             batch_loss = batch_loss * (batch.num_graphs / total_sample_count)
 
@@ -575,16 +626,29 @@ def evaluate(
     for batch in data_loader:
         batch = batch.to(device)
         batch_dict = batch.to_dict()
-        output = model(
-            batch_dict,
-            training=False,
-            compute_force=output_args["forces"],
-            compute_virials=output_args["virials"],
-            compute_stress=output_args["stress"],
-            compute_polarisation=output_args["polarisation"],
-            compute_becs=output_args["becs"],
-            compute_polarisability=output_args["polarisability"],
-        )
+        if (
+            output_args["polarization"]
+            or output_args["becs"]
+            or output_args["polarizability"]
+        ):
+            output = model(
+                batch_dict,
+                training=True,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+                compute_polarization=output_args["polarization"],
+                compute_becs=output_args["becs"],
+                compute_polarizability=output_args["polarizability"],
+            )
+        else:
+            output = model(
+                batch_dict,
+                training=False,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+            )
         avg_loss, aux = metrics(batch, output)
 
     avg_loss, aux = metrics.compute()
@@ -622,18 +686,23 @@ class MACELoss(Metric):
         self.add_state("mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
-        self.add_state("polarisation_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("polarisation", default=[], dist_reduce_fx="cat")
-        self.add_state("delta_polarisation", default=[], dist_reduce_fx="cat")
-        self.add_state("delta_polarisation_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state(
+            "polarization_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.add_state("polarization", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_polarization", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_polarization_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("becs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("becs", default=[], dist_reduce_fx="cat")
         self.add_state("delta_becs", default=[], dist_reduce_fx="cat")
         self.add_state("delta_becs_per_atom", default=[], dist_reduce_fx="cat")
-        self.add_state("polarisability_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("polarisability", default=[], dist_reduce_fx="cat")
-        self.add_state("delta_polarisability", default=[], dist_reduce_fx="cat")
-        self.add_state("delta_polarisability_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state(
+            "polarizability_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.add_state("delta_polarizability", default=[], dist_reduce_fx="cat")
+        self.add_state(
+            "delta_polarizability_per_atom", default=[], dist_reduce_fx="cat"
+        )
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
@@ -641,52 +710,101 @@ class MACELoss(Metric):
         self.num_data += batch.num_graphs
 
         if output.get("energy") is not None and batch.energy is not None:
-            self.E_computed += 1.0
             self.delta_es.append(batch.energy - output["energy"])
             self.delta_es_per_atom.append(
                 (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
             )
+            self.E_computed += filter_nonzero_weight(
+                batch, self.delta_es, batch.weight, batch.energy_weight
+            )
         if output.get("forces") is not None and batch.forces is not None:
-            self.Fs_computed += 1.0
             self.fs.append(batch.forces)
             self.delta_fs.append(batch.forces - output["forces"])
+            self.Fs_computed += filter_nonzero_weight(
+                batch,
+                self.delta_fs,
+                batch.weight,
+                batch.forces_weight,
+                spread_atoms=True,
+            )
         if output.get("stress") is not None and batch.stress is not None:
-            self.stress_computed += 1.0
             self.delta_stress.append(batch.stress - output["stress"])
+            self.stress_computed += filter_nonzero_weight(
+                batch, self.delta_stress, batch.weight, batch.stress_weight
+            )
         if output.get("virials") is not None and batch.virials is not None:
-            self.virials_computed += 1.0
             self.delta_virials.append(batch.virials - output["virials"])
             self.delta_virials_per_atom.append(
                 (batch.virials - output["virials"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
             )
+            self.virials_computed += filter_nonzero_weight(
+                batch, self.delta_virials, batch.weight, batch.virials_weight
+            )
         if output.get("dipole") is not None and batch.dipole is not None:
-            self.Mus_computed += 1.0
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
             self.delta_mus_per_atom.append(
                 (batch.dipole - output["dipole"])
                 / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
             )
-        if output.get("polarisation") is not None and batch.polarisation is not None:
-            self.polarisation_computed += 1.0
-            self.polarisation.append(batch.polarisation.view(-1,3))
-            polarisation_difference = fold_polarisation(output["polarisation"], batch.polarisation, batch.cell)
-            self.delta_polarisation.append(polarisation_difference)
-            self.delta_polarisation_per_atom.append(polarisation_difference / (batch.ptr[1:] - batch.ptr[:-1]).view(-1,1))
+            self.Mus_computed += filter_nonzero_weight(
+                batch,
+                self.delta_mus,
+                batch.weight,
+                batch.dipole_weight,
+                spread_quantity_vector=False,
+            )
+        if output.get("polarization") is not None and batch.polarization is not None:
+            self.polarization.append(batch.polarization.view(-1, 3))
+            polarization_difference, _ = fold_polarization(
+                output["polarization"], batch.polarization, batch.cell
+            )
+            self.delta_polarization.append(polarization_difference)
+            self.delta_polarization_per_atom.append(
+                polarization_difference / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1)
+            )
+            self.polarization_computed += filter_nonzero_weight(
+                batch,
+                self.delta_polarization,
+                batch.weight,
+                batch.polarization_weight,
+                spread_quantity_vector=False,
+            )
         if output.get("becs") is not None and batch.becs is not None:
-            self.becs_computed += 1.0
-            self.becs.append(batch.becs.view(-1,3,3))
-            self.delta_becs.append(batch.becs.view(-1,3,3) - output["becs"].view(-1,3,3))
-            self.delta_becs_per_atom.append(batch.becs.view(-1,3,3) - output["becs"].view(-1,3,3))
-        if output.get("polarisability") is not None and batch.polarisability is not None:    
-            self.polarisability_computed += 1.0
-            self.polarisability.append(batch.polarisability.view(-1,3,3))
-            self.delta_polarisability.append(batch.polarisability.view(-1,3,3) - output["polarisability"].view(-1,3,3))
-            self.delta_polarisability_per_atom.append(
-                (batch.polarisability.view(-1,3,3) - output["polarisability"].view(-1,3,3))
-                / (batch.ptr[1:] - batch.ptr[:-1]).view(-1,1,1)
-                )
+            self.becs.append(batch.becs.view(-1, 3, 3))
+            self.delta_becs.append(
+                batch.becs.view(-1, 3, 3) - output["becs"].view(-1, 3, 3)
+            )
+            self.delta_becs_per_atom.append(
+                batch.becs.view(-1, 3, 3) - output["becs"].view(-1, 3, 3)
+            )
+            self.becs_computed += filter_nonzero_weight(
+                batch,
+                self.delta_becs,
+                batch.weight,
+                batch.becs_weight,
+                spread_atoms=True,
+                spread_quantity_vector=False,
+            )
+        if (
+            output.get("polarizability") is not None
+            and batch.polarizability is not None
+        ):
+            self.delta_polarizability.append(
+                batch.polarizability - output["polarizability"]
+            )
+            self.delta_polarizability_per_atom.append(
+                (batch.polarizability - output["polarizability"])
+                / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1).unsqueeze(-1)
+            )
+            self.polarizability_computed += filter_nonzero_weight(
+                batch,
+                self.delta_polarizability,
+                batch.weight,
+                batch.polarizability_weight,
+                spread_quantity_vector=False,
+            )
 
     def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):
@@ -694,7 +812,21 @@ class MACELoss(Metric):
         return to_numpy(delta)
 
     def compute(self):
-        aux = {}
+
+        class NoneMultiply:
+            def __mul__(self, other):
+                return NoneMultiply()
+
+            def __rmul__(self, other):
+                return NoneMultiply()
+
+            def __imul__(self, other):
+                return NoneMultiply()
+
+            def __format__(self, format_spec):
+                return str(None)
+
+        aux = defaultdict(NoneMultiply)
         aux["loss"] = to_numpy(self.total_loss / self.num_data).item()
         if self.E_computed:
             delta_es = self.convert(self.delta_es)
@@ -735,29 +867,37 @@ class MACELoss(Metric):
             aux["rmse_mu_per_atom"] = compute_rmse(delta_mus_per_atom)
             aux["rel_rmse_mu"] = compute_rel_rmse(delta_mus, mus)
             aux["q95_mu"] = compute_q95(delta_mus)
-        if self.polarisation_computed:
-            polarisation = self.convert(self.polarisation)
-            delta_polarisation = self.convert(self.delta_polarisation)
-            delta_polarisation_per_atom = self.convert(self.delta_polarisation_per_atom)
-            aux["mae_polarisation"] = compute_mae(delta_polarisation)
-            aux["mae_polarisation_per_atom"] = compute_mae(delta_polarisation_per_atom)
-            aux["rmse_polarisation"] = compute_rmse(delta_polarisation)
-            aux["rmse_polarisation_per_atom"] = compute_rmse(delta_polarisation_per_atom)
-            aux["q95_polarisation"] = compute_q95(delta_polarisation)
+        if self.polarization_computed:
+            delta_polarization = self.convert(self.delta_polarization)
+            delta_polarization_per_atom = self.convert(self.delta_polarization_per_atom)
+            aux["mae_polarization"] = compute_mae(delta_polarization)
+            aux["mae_polarization_per_atom"] = compute_mae(delta_polarization_per_atom)
+            aux["rmse_polarization"] = compute_rmse(delta_polarization)
+            aux["rmse_polarization_per_atom"] = compute_rmse(
+                delta_polarization_per_atom
+            )
+            aux["q95_polarization"] = compute_q95(delta_polarization)
         if self.becs_computed:
             becs = self.convert(self.becs)
             delta_becs = self.convert(self.delta_becs)
             aux["mae_becs"] = compute_mae(delta_becs)
+            aux["rel_mae_becs"] = compute_rel_mae(delta_becs, becs)
             aux["rmse_becs"] = compute_rmse(delta_becs)
+            aux["rel_rmse_becs"] = compute_rel_rmse(delta_becs, becs)
             aux["q95_bec"] = compute_q95(delta_becs)
-        if self.polarisability_computed:
-            polarisability = self.convert(self.polarisability)
-            delta_polarisability = self.convert(self.delta_polarisability)
-            delta_polarisability_per_atom = self.convert(self.delta_polarisability_per_atom)
-            aux["mae_polarisability"] = compute_mae(delta_polarisability)
-            aux["mae_polarisability_per_atom"] = compute_mae(delta_polarisability_per_atom)
-            aux["rmse_polarisability"] = compute_rmse(delta_polarisability)
-            aux["rmse_polarisability_per_atom"] = compute_rmse(delta_polarisability_per_atom)
-            aux["q95_polarisability"] = compute_q95(delta_polarisability)
+        if self.polarizability_computed:
+            delta_polarizability = self.convert(self.delta_polarizability)
+            delta_polarizability_per_atom = self.convert(
+                self.delta_polarizability_per_atom
+            )
+            aux["mae_polarizability"] = compute_mae(delta_polarizability)
+            aux["mae_polarizability_per_atom"] = compute_mae(
+                delta_polarizability_per_atom
+            )
+            aux["rmse_polarizability"] = compute_rmse(delta_polarizability)
+            aux["rmse_polarizability_per_atom"] = compute_rmse(
+                delta_polarizability_per_atom
+            )
+            aux["q95_polarizability"] = compute_q95(delta_polarizability)
 
         return aux["loss"], aux

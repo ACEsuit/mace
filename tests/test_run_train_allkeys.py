@@ -46,6 +46,7 @@ _mace_params = {
     "num_radial_basis": 10,
     "r_max": 6.0,
     "default_dtype": "float64",
+    "use_reduced_cg": False,
 }
 
 
@@ -454,6 +455,7 @@ def test_multihead_finetuning_does_not_modify_default_keyspec(tmp_path):
     default_key_spec.info_keys["energy"] = "2_energy"
     run_mace_train(args)
     assert args.key_specification == default_key_spec
+
 
 # for creating values
 def make_output():

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Union
 
 import numpy as np
@@ -164,3 +165,77 @@ class LAMMPS_MP(torch.autograd.Function):
         gout = torch.empty_like(grad)
         ctx.data.reverse_exchange(grad, gout, ctx.vec_len)
         return gout, None
+
+
+def get_cache_dir() -> Path:
+    # get cache dir from XDG_CACHE_HOME if set, otherwise appropriate default
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "mace"
+
+
+def filter_nonzero_weight(
+    batch,
+    quantity_l,
+    weight,
+    quantity_weight,
+    spread_atoms=False,
+    spread_quantity_vector=True,
+) -> float:
+    quantity = quantity_l[-1]
+    # repeat with interleaving for per-atom quantities
+    if spread_atoms:
+        weight = torch.repeat_interleave(
+            weight, batch.ptr[1:] - batch.ptr[:-1], dim=0
+        ).unsqueeze(-1)
+        quantity_weight = torch.repeat_interleave(
+            quantity_weight, batch.ptr[1:] - batch.ptr[:-1], dim=0
+        )
+
+    # repeat for additional dimensions
+    if len(quantity.shape) > 1:
+        repeats = [1] + list(quantity.shape[1:])
+        view = [-1] + [1] * (len(quantity.shape) - 1)
+        weight = weight.view(*view).repeat(*repeats)
+        if spread_quantity_vector:
+            quantity_weight = quantity_weight.view(*view).repeat(*repeats)
+
+    filtered_q = quantity[weight * quantity_weight > 0]
+
+    if len(filtered_q) == 0:
+        quantity_l.pop()
+        return 0.0
+
+    quantity_l[-1] = filtered_q
+    return 1.0
+
+
+def fold_polarization(
+    pred_polarization: torch.Tensor,  # [n_graphs, 3] intensive P_pred
+    ref_polarization: torch.Tensor,  # [n_graphs, 3] intensive P_ref  (branch anchor)
+    cell: torch.Tensor,  # [n_graphs, 3, 3] ASE-style cell (rows = lattice vectors)
+) -> torch.Tensor:
+    """
+    Return the nearest-image *difference* ΔP_folded to add to P_ref:
+        P_pred_fold = P_ref + ΔP_folded
+    with ΔP identified modulo the polarization lattice Qpol = cell / |Ω|.
+    Keeps autograd intact (no detach), piecewise linear almost everywhere.
+    """
+    # --- build polarization lattice Q = cell / |Ω| ---
+    B = cell.view(-1, 3, 3)
+    vol = torch.linalg.det(B).abs().clamp_min(1e-30).view(-1, 1, 1)  # |Ω|
+    Q = B / vol  # [n_graphs, 3, 3]
+
+    # raw difference
+    dP = pred_polarization.view(-1, 3) - ref_polarization.view(-1, 3)  # [n_graphs, 3]
+
+    # map to fractional coords c solving  Q^T c^T = dP^T   (i.e., c = dP @ Q^{-1})
+    c = torch.linalg.solve(Q.transpose(-2, -1), dP.unsqueeze(-1)).squeeze(
+        -1
+    )  # [n_graphs, 3]
+
+    # wrap into (-0.5, 0.5] with minimum-image convention
+    # c_wrap = c - round(c) gives (-0.5, 0.5]; works with autograd (grad ~ 1 a.e.)
+    c = c - torch.round(c)
+
+    # back to Cartesian
+    dP_folded = torch.einsum("bi,bij->bj", c, Q)  # [n_graphs, 3]
+    return dP_folded, c
