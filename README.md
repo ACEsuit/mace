@@ -58,7 +58,7 @@ Training is done via the standard MACE CLI with `--model MACEField` and the `uni
 ```bash
 python -m mace.scripts.run_train \
     --model MACEField \
-    --name macefield_model \
+    --name MACEField_model \
     --train_file data/field_train.xyz \
     --valid_fraction 0.2 \
     \
@@ -93,6 +93,130 @@ python -m mace.scripts.run_train \
     --max_num_epochs 50 \
     --lr 1e-3
 ```
+
+---
+
+## 3. Inference with a trained MACE-Field model
+
+Once a model is compiled, it can be used like a standard MACE model via MACECalculator, with additional field-aware outputs.
+
+### 3.1. Single-point inference (static calculation)
+```
+import numpy as np
+from ase.io import read
+from mace.calculators import MACECalculator
+
+# Load compiled MACE-Field model
+calc = MACECalculator(
+    model_paths=["path/to/macefield_model_compiled.model"],
+    model_type="MACEField",
+    device="cpu",
+    default_dtype="float32",
+)
+
+atoms = read("config.xyz")
+
+# Attach electric field if required by your workflow
+atoms.info["REF_electric_field"] = np.array([0.0, 0.0, 0.1])  # V/Å
+
+atoms.calc = calc
+
+# Standard predictions
+energy = atoms.get_potential_energy()
+forces = atoms.get_forces()
+stress = atoms.get_stress()
+
+# Field-aware predictions
+results = atoms.calc.results
+
+polarization = results["polarization"]        # shape (3,)
+becs = results["becs"]                        # shape (N, 3, 3)
+polarizability = results["polarizability"]    # shape (3, 3)
+```
+
+The electric field couples directly to the model and affects all predicted quantities self-consistently.
+
+### 3.2 Inference for .xyz
+
+Inference can also be done for an entire .xyz file using the CLI:
+
+```
+!mace_eval_configs \
+  --configs "path/to/input.xyz" \
+  --model "path/to/your/MACE-field.model" \
+  --output "path/to/output.xyz" \
+  --batch_size 1 \
+  --head "pt_head" \  # "pt_head" for a foundation model, "Default" otherwise.
+  --compute_becs \
+  --compute_polarizability \
+  --compute_polarization \
+  --enable_cueq \
+  --device "cuda" \
+  --default_dtype "float32"
+  ```
+
+Polarizations and polarizabilities are saved under `atom.info` as `atom.info["MACE_polarization"]` and `atom.info["MACE_polarizability"] respectively. 
+
+Born effective charges are saved under `atom.arrays` as `atom.info["MACE_becs"]`.
+
+---
+
+## 4. Finite-field molecular dynamics (MLMD)
+
+MACE-Field can be used in standard ASE molecular dynamics drivers to perform finite-field MLMD.
+
+### 4.1. Constant-field MD example
+```
+import numpy as np
+from ase.io import read
+from ase.md.langevin import Langevin
+from ase import units
+from mace.calculators import MACECalculator
+
+atoms = read("initial_structure.xyz")
+
+calc = MACECalculator(
+    model_paths=["path/to/macefield_model_compiled.model"],
+    model_type="MACEField",
+    device="cpu",
+)
+
+atoms.calc = calc
+
+# Apply a constant electric field
+atoms.info["REF_electric_field"] = np.array([0.0, 0.0, 0.1])  # V/Å
+
+dyn = Langevin(
+    atoms,
+    timestep=0.5 * units.fs,
+    temperature_K=300,
+    friction=0.01,
+)
+
+dyn.run(5000)
+```
+During the MD, energies, forces, stresses, polarization, BECs, and polarizabilities are all evaluated consistently from the field-aware model.
+
+### 4.2. Time-dependent electric fields
+
+For driven simulations (e.g. oscillatory or pulsed fields), the electric field can be updated between MD steps by modifying atoms.info["REF_electric_field"] in an MD logger or via a small wrapper class around the calculator.
+
+---
+
+## 5. Notes on units and conventions
+
+Energies and forces follow standard MACE/ASE conventions (eV, eV/Å).
+
+Electric fields are typically given in V/Å.
+
+Polarization is assumed to be consistent with Berry-phase conventions (eV/Å²).
+
+BECs are dimensionless (units of elementary charge |e|).
+
+Polarizability is treated as a tensor, usually reported in units of vacuum permittivity ε₀.
+
+Please ensure unit consistency between your reference data and training targets.
+
 
 # <span style="font-size:larger;">MACE</span>
 
