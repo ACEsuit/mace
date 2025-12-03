@@ -695,6 +695,14 @@ def run(args) -> None:
     if not isinstance(valid_sets, dict):
         valid_sets = {"Default": valid_sets}
     for head, valid_set in valid_sets.items():
+
+        collate_valid = partial(
+            atomicdata_collate,
+            z_table=z_table,
+            cutoff=args.r_max,
+            heads=heads,
+        )
+
         valid_loaders[head] = torch_geometric.dataloader.DataLoader(
             dataset=valid_set,
             batch_size=args.valid_batch_size,
@@ -704,6 +712,7 @@ def run(args) -> None:
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
+            collate_fn=collate_valid,
         )
 
     loss_fn = get_loss_fn(args, dipole_only, args.compute_dipole)
@@ -951,6 +960,14 @@ def run(args) -> None:
                 drop_last = test_set.drop_last
             except AttributeError as e:  # pylint: disable=W0612
                 drop_last = False
+
+            collate_test = partial(
+                atomicdata_collate,
+                z_table=z_table,
+                cutoff=args.r_max,
+                heads=heads,
+            )
+
             test_loader = torch_geometric.dataloader.DataLoader(
                 test_set,
                 batch_size=args.valid_batch_size,
@@ -958,6 +975,7 @@ def run(args) -> None:
                 drop_last=drop_last,
                 num_workers=args.num_workers,
                 pin_memory=args.pin_memory,
+                collate_fn=collate_test,
             )
             test_data_loader[test_name] = test_loader
         if stop_first_test:
