@@ -407,28 +407,39 @@ class AtomicData(torch_geometric.data.Data):
 
 # Adding a collate function
 
-def atomicdata_collate(configs, z_table, cutoff, mode, heads=None):
+def atomicdata_collate(batch, z_table, cutoff, mode, heads=None):
+    # If they are already AtomicData (e.g. HDF5/LMDB), just batch them
+    if isinstance(batch[0], AtomicData):
+        return Batch.from_data_list(batch)
 
-    batched_edge_index, batched_shifts, batched_unit_shifts, batched_cells = get_neighborhood_batched(configs, cutoff=cutoff)
+    # Otherwise assume they are Configuration objects
+    configs = batch
+
+    positions_list = [cfg.positions for cfg in configs]
+    pbc_list = [cfg.pbc for cfg in configs]
+    cell_list = [cfg.cell for cfg in configs]
+
+    edge_indices, shifts_list, unit_shifts_list, cells_list = get_neighborhood_batched(
+        positions_list=positions_list,
+        cutoff=cutoff,
+        pbc_list=pbc_list,
+        cell_list=cell_list,
+        true_self_interaction=False,
+    )
+
     data_list = []
-
-    for i, config in enumerate(configs):
-    # slice per-config pieces
-        edge_index_i = batched_edge_index[i]
-        shifts_i = batched_shifts[i]
-        unit_shifts_i = batched_unit_shifts[i]
-        cell_i = batched_cells[i]
-
-        # helper that skips its own get_neighborhood
-        atomic_i = AtomicData.from_config_with_edges(
-            config=config,
+    for cfg, edge_index, shifts, unit_shifts, cell in zip(
+        configs, edge_indices, shifts_list, unit_shifts_list, cells_list
+    ):
+        atomic_i = AtomicData.from_config(
+            config=cfg,
             z_table=z_table,
             cutoff=cutoff,
             heads=heads,
-            edge_index=edge_index_i,
-            shifts=shifts_i,
-            unit_shifts=unit_shifts_i,
-            cell=cell_i,
+            edge_index=edge_index,
+            shifts=shifts,
+            unit_shifts=unit_shifts,
+            cell=cell,
         )
         data_list.append(atomic_i)
 
