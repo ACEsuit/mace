@@ -83,14 +83,12 @@ class Configuration:
     property_weights: Dict[str, float]
     cell: Optional[Cell] = None
     pbc: Optional[Pbc] = None
-
     weight: float = 1.0  # weight of config in loss
     config_type: str = DEFAULT_CONFIG_TYPE  # config_type of config
     head: str = "Default"  # head used to compute the config
 
 
 Configurations = List[Configuration]
-
 
 def random_train_valid_split(
     items: Sequence, valid_fraction: float, seed: int, work_dir: str
@@ -398,6 +396,12 @@ def save_AtomicData_to_HDF5(data, i, h5_file) -> None:
     grp["becs"] = data.becs
     grp["polarizability"] = data.polarizability
     grp["head"] = data.head
+    grp["polarisation"] = data.polarisation
+    grp["becs"] = data.becs
+    grp["polarisability"] = data.polarisability
+    grp["electric_field"] = data.electric_field
+    grp["becs_weight"] = data.becs_weight
+    grp["polarisability_weight"] = data.polarisability_weight
 
 
 def save_configurations_as_HDF5(configurations: Configurations, _, h5_file) -> None:

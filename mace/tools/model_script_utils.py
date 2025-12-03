@@ -1,5 +1,6 @@
 import ast
 import logging
+import torch
 
 import numpy as np
 from e3nn import o3
@@ -30,7 +31,6 @@ def configure_model(
         args.error_table = "PerAtomRMSEstressvirials"
     elif compute_stress:
         args.compute_stress = True
-        args.error_table = "PerAtomRMSEstressvirials"
 
     if compute_dielectric:
         args.error_table = "PerAtomFieldRMSE"
@@ -92,7 +92,7 @@ def configure_model(
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
-
+ 
         if args.foundation_model_elements:
             foundation_z_table = AtomicNumberTable(
                 [int(z) for z in model_foundation.atomic_numbers]
@@ -211,6 +211,9 @@ def configure_model(
             max_L=args.max_L,
         )
 
+    dtype_dict = {"float32": torch.float32, "float64": torch.float64}
+    model.to(dtype_dict[args.default_dtype]) # Ensure foundation model weights are updated to specified dtype
+
     return model, output_args
 
 
@@ -239,6 +242,37 @@ def _build_model(
             "RealAgnosticDensityInteractionBlock",
         ]:
             args.interaction_first = "RealAgnosticInteractionBlock"
+        if args.compute_field:
+            return modules.ScaleShiftFieldMACE(
+                **model_config,
+                pair_repulsion=args.pair_repulsion,
+                distance_transform=args.distance_transform,
+                correlation=args.correlation,
+                gate=modules.gate_dict[args.gate],
+                interaction_cls_first=modules.interaction_classes[args.interaction_first],
+                MLP_irreps=o3.Irreps(args.MLP_irreps),
+                atomic_inter_scale=args.std,
+                atomic_inter_shift=[0.0] * len(heads),
+                radial_MLP=ast.literal_eval(args.radial_MLP),
+                radial_type=args.radial_type,
+                heads=heads,
+            )
+        else:
+            return modules.ScaleShiftMACE(
+                **model_config,
+                pair_repulsion=args.pair_repulsion,
+                distance_transform=args.distance_transform,
+                correlation=args.correlation,
+                gate=modules.gate_dict[args.gate],
+                interaction_cls_first=modules.interaction_classes[args.interaction_first],
+                MLP_irreps=o3.Irreps(args.MLP_irreps),
+                atomic_inter_scale=args.std,
+                atomic_inter_shift=[0.0] * len(heads),
+                radial_MLP=ast.literal_eval(args.radial_MLP),
+                radial_type=args.radial_type,
+                heads=heads,
+            )
+    if args.model == "ScaleShiftMACE":
         return modules.ScaleShiftMACE(
             **model_config,
             pair_repulsion=args.pair_repulsion,
@@ -248,7 +282,7 @@ def _build_model(
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
-            atomic_inter_shift=[0.0] * len(heads),
+            atomic_inter_shift=args.mean,
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             heads=heads,
@@ -257,8 +291,27 @@ def _build_model(
             use_last_readout_only=args.use_last_readout_only,
             use_agnostic_product=args.use_agnostic_product,
         )
-    if args.model == "ScaleShiftMACE":
-        return modules.ScaleShiftMACE(
+    if args.model == "ScaleShiftFieldMACE":
+        return modules.ScaleShiftFieldMACE(
+            **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=args.std,
+            atomic_inter_shift=args.mean,
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
+            heads=heads,
+        )
+    if args.model == "FoundationMACE":
+        return modules.ScaleShiftMACE(**model_config_foundation)
+    if args.model == "FoundationFieldMACE":
+        return modules.ScaleShiftFieldMACE(**model_config_foundation)
+    if args.model == "ScaleShiftBOTNet":
+        return modules.ScaleShiftBOTNet(
             **model_config,
             pair_repulsion=args.pair_repulsion,
             distance_transform=args.distance_transform,

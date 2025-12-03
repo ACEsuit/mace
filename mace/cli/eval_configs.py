@@ -17,6 +17,7 @@ from mace import data
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
+from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,6 +48,18 @@ def parse_args() -> argparse.Namespace:
         default="float64",
     )
     parser.add_argument("--batch_size", help="batch size", type=int, default=64)
+    parser.add_argument(
+        "--compute_energy",
+        help="compute energy",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_force",
+        help="compute forces",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument(
         "--compute_stress",
         help="compute stress",
@@ -140,7 +153,20 @@ def parse_args() -> argparse.Namespace:
         help="Model head used for evaluation",
         type=str,
         required=False,
-        default=None,
+        default="Default",
+    )
+    parser.add_argument(
+        "--enable_cueq",
+        help="enable cuequivariance acceleration",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--electric_field_key",
+        help="Key for the electric field",
+        type=str,
+        required=False,
+        default="REF_electric_field",
     )
     return parser.parse_args()
 
@@ -235,7 +261,7 @@ def run(args: argparse.Namespace) -> None:
             )
             for config in configs
         ],
-        batch_size=args.batch_size,
+        batch_size=1,
         shuffle=False,
         drop_last=False,
     )
@@ -352,11 +378,6 @@ def run(args: argparse.Namespace) -> None:
         )
         forces_collection.append(forces[:-1])  # drop last as its empty
 
-    energies = np.concatenate(energies_list, axis=0)
-    forces_list = [
-        forces for forces_list in forces_collection for forces in forces_list
-    ]
-    assert len(atoms_list) == len(energies) == len(forces_list)
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)
         assert len(atoms_list) == stresses.shape[0]
@@ -387,10 +408,25 @@ def run(args: argparse.Namespace) -> None:
         assert len(atoms_list) == node_energies.shape[0]
 
     # Store data in atoms objects
-    for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
+
+    if args.compute_energy:
+        for (atoms, energy) in zip(atoms_list, energies):
+            atoms.calc = None  # crucial
+            atoms.info[args.info_prefix + "energy"] = energy
+
+    if args.compute_force:
+        for (atoms, forces) in zip(atoms_list, forces_list):
+            atoms.calc = None  # crucial
+            atoms.arrays[args.info_prefix + "forces"] = forces
+
+    if args.compute_becs:
+        for (atoms, becs) in zip(atoms_list, becs_list):
+            atoms.calc = None  # crucial
+            atoms.arrays[args.info_prefix + "becs"] = becs
+
+
+    for i, atoms in enumerate(atoms_list):
         atoms.calc = None  # crucial
-        atoms.info[args.info_prefix + "energy"] = energy
-        atoms.arrays[args.info_prefix + "forces"] = forces
 
         if args.compute_stress:
             atoms.info[args.info_prefix + "stress"] = stresses[i].reshape(9)
@@ -412,6 +448,10 @@ def run(args: argparse.Namespace) -> None:
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
+        if args.compute_polarisation:
+            atoms.info[args.info_prefix + "polarisation"] = polarisations[i,:]
+        if args.compute_polarisability:
+            atoms.info[args.info_prefix + "polarisability"] = polarisabilities[i]
 
         if args.return_descriptors:
             descriptors = descriptors_list[i]
@@ -434,7 +474,7 @@ def run(args: argparse.Namespace) -> None:
             atoms.arrays[args.info_prefix + "node_energies"] = node_energies[i]
 
     # Write atoms to output path
-    ase.io.write(args.output, images=atoms_list, format="extxyz")
+    ase.io.write(args.output, atoms_list)
 
 
 if __name__ == "__main__":
