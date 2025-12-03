@@ -648,6 +648,7 @@ def run(args) -> None:
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
+            collate_fn=collate
         )
         head_config.train_loader = train_loader_head
 
@@ -675,6 +676,9 @@ def run(args) -> None:
             )
             valid_samplers[head] = valid_sampler
 
+
+    collate = partial(atomicdata_collate, z_table=z_table, cutoff=args.r_max, heads=heads)
+
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
         batch_size=args.batch_size,
@@ -684,6 +688,7 @@ def run(args) -> None:
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
+        collate_fn=collate
     )
 
     valid_loaders = {heads[i]: None for i in range(len(heads))}

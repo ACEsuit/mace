@@ -407,7 +407,7 @@ class AtomicData(torch_geometric.data.Data):
 
 # Adding a collate function
 
-def atomicdata_collate(batch, z_table, cutoff, mode, heads=None):
+def atomicdata_collate(batch, z_table, cutoff, heads=None):
     # If they are already AtomicData (e.g. HDF5/LMDB), just batch them
     if isinstance(batch[0], AtomicData):
         return Batch.from_data_list(batch)
