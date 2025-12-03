@@ -2,7 +2,7 @@
 
 ## Overview
 
-**MACE-Field** is a field-aware extension of the **MACE** (Message Passing Atomic Cluster Expansion) architecture that enables learning **electric-field–dependent energy functionals** for molecules and periodic materials. From a *single scalar electric enthalpy*, MACE-Field exposes physically consistent dielectric response properties via **automatic differentiation**:
+**MACE-Field** is a field-aware extension of the **MACE** architecture that enables learning **electric-field–dependent energy functionals** for molecules and periodic materials. From a *single scalar electric enthalpy*, MACE-Field exposes physically consistent dielectric response properties via **automatic differentiation**:
 
 - **Polarization**  
   $\mathbf{P} = -\frac{1}{\Omega}\,\frac{\partial E}{\partial \mathbf{E}}$
