@@ -69,8 +69,13 @@ class DataLoader(torch.utils.data.DataLoader):
         shuffle: bool = False,
         follow_batch: Optional[List[str]] = [None],
         exclude_keys: Optional[List[str]] = [None],
+        collate_fn=None,
         **kwargs,
     ):
+        
+        if collate_fn is None:
+            collate_fn = Collater(follow_batch, exclude_keys)
+
         if "collate_fn" in kwargs:
             del kwargs["collate_fn"]
 
@@ -82,6 +87,6 @@ class DataLoader(torch.utils.data.DataLoader):
             dataset,
             batch_size,
             shuffle,
-            collate_fn=Collater(follow_batch, exclude_keys),
+            collate_fn=collate_fn,
             **kwargs,
         )

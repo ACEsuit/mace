@@ -17,7 +17,8 @@ from mace.tools import (
     voigt_to_matrix,
 )
 
-from .neighborhood import get_neighborhood
+from ..tools.torch_geometric import Batch
+from .neighborhood import get_neighborhood, get_neighborhood_batched
 from .utils import Configuration
 
 
@@ -153,12 +154,21 @@ class AtomicData(torch_geometric.data.Data):
     ) -> "AtomicData":
         if heads is None:
             heads = ["Default"]
-        edge_index, shifts, unit_shifts, cell = get_neighborhood(
-            positions=config.positions,
-            cutoff=cutoff,
-            pbc=deepcopy(config.pbc),
-            cell=deepcopy(config.cell),
-        )
+
+        edge_index = kwargs.pop("edge_index", None)
+        shifts = kwargs.pop("shifts", None)
+        unit_shifts = kwargs.pop("unit_shifts", None)
+
+        if edge_index is None or shifts is None or unit_shifts is None:
+            edge_index, shifts, unit_shifts, cell = get_neighborhood(
+                positions=config.positions,
+                cutoff=cutoff,
+                pbc=deepcopy(config.pbc),
+                cell=deepcopy(config.cell),
+            )
+        else:
+            cell = deepcopy(config.cell)
+
         indices = atomic_numbers_to_indices(config.atomic_numbers, z_table=z_table)
         one_hot = to_one_hot(
             torch.tensor(indices, dtype=torch.long).unsqueeze(-1),
@@ -395,15 +405,42 @@ class AtomicData(torch_geometric.data.Data):
         return cls(**cls_kwargs)
 
 
-def get_data_loader(
-    dataset: Sequence[AtomicData],
-    batch_size: int,
-    shuffle=True,
-    drop_last=False,
-) -> torch.utils.data.DataLoader:
-    return torch_geometric.dataloader.DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        drop_last=drop_last,
+# Adding a collate function
+
+def atomicdata_collate(batch, z_table, cutoff, heads=None):
+    # If they are already AtomicData (e.g. HDF5/LMDB), just batch them
+    if isinstance(batch[0], AtomicData):
+        return Batch.from_data_list(batch)
+
+    # Otherwise assume they are Configuration objects
+    configs = batch
+
+    positions_list = [cfg.positions for cfg in configs]
+    pbc_list = [cfg.pbc for cfg in configs]
+    cell_list = [cfg.cell for cfg in configs]
+
+    edge_indices, shifts_list, unit_shifts_list, cells_list = get_neighborhood_batched(
+        positions_list=positions_list,
+        cutoff=cutoff,
+        pbc_list=pbc_list,
+        cell_list=cell_list,
+        true_self_interaction=False,
     )
+
+    data_list = []
+    for cfg, edge_index, shifts, unit_shifts, cell in zip(
+        configs, edge_indices, shifts_list, unit_shifts_list, cells_list
+    ):
+        atomic_i = AtomicData.from_config(
+            config=cfg,
+            z_table=z_table,
+            cutoff=cutoff,
+            heads=heads,
+            edge_index=edge_index,
+            shifts=shifts,
+            unit_shifts=unit_shifts,
+            cell=cell,
+        )
+        data_list.append(atomic_i)
+
+    return Batch.from_data_list(data_list)

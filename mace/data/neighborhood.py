@@ -1,9 +1,48 @@
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple, Sequence
 
 import numpy as np
 from matscipy.neighbours import neighbour_list
 
+def get_neighborhood_batched(
+    positions_list: Sequence[np.ndarray],  # list of [num_positions_i, 3]
+    cutoff: float,
+    pbc_list: Optional[Sequence[Optional[Tuple[bool, bool, bool]]]] = None,
+    cell_list: Optional[Sequence[Optional[np.ndarray]]] = None,  # list of [3, 3]
+    true_self_interaction: bool = False,
+) -> Tuple[
+    List[np.ndarray],  # edge_index_list
+    List[np.ndarray],  # shifts_list
+    List[np.ndarray],  # unit_shifts_list
+    List[np.ndarray],  # cell_list_out
+]:
+    """
+    For now: trivial batched version that just loops over structures and
+    calls get_neighborhood for each one.
+    """
+    if pbc_list is None:
+        pbc_list = [None] * len(positions_list)
+    if cell_list is None:
+        cell_list = [None] * len(positions_list)
 
+    edge_index_list: List[np.ndarray] = []
+    shifts_list: List[np.ndarray] = []
+    unit_shifts_list: List[np.ndarray] = []
+    cell_list_out: List[np.ndarray] = []
+
+    for positions, pbc, cell in zip(positions_list, pbc_list, cell_list):
+        edge_index, shifts, unit_shifts, cell_out = get_neighborhood(
+            positions=positions,
+            cutoff=cutoff,
+            pbc=pbc,
+            cell=cell,
+            true_self_interaction=true_self_interaction,
+        )
+        edge_index_list.append(edge_index)
+        shifts_list.append(shifts)
+        unit_shifts_list.append(unit_shifts)
+        cell_list_out.append(cell_out)
+
+    return edge_index_list, shifts_list, unit_shifts_list, cell_list_out
 def get_neighborhood(
     positions: np.ndarray,  # [num_positions, 3]
     cutoff: float,

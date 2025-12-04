@@ -67,12 +67,7 @@ def load_dataset_for_path(
         assert (
             collection is not None
         ), "Collection must be provided for ASE readable files"
-        return [
-            data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=r_max, heads=heads
-            )
-            for config in collection
-        ]
+        return list(collection)
 
     filepath = Path(file_path)
     if filepath.is_dir():
