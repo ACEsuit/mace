@@ -8,7 +8,6 @@ import pandas as pd
 import torch
 import torch.distributed
 from torchmetrics import Metric
-from mace.modules.loss import fold_polarisation
 
 from mace.tools.utils import filter_nonzero_weight, fold_polarization
 

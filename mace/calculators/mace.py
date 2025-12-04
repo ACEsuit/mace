@@ -371,7 +371,7 @@ class MACECalculator(Calculator):
         """
         Create tensors to store the results of the committee
         :param model_type: str, type of model to load
-            Options: [MACE, DipoleMACE, EnergyDipoleMACE, ScaleShiftFieldMACE]
+            Options: [MACE, DipoleMACE, EnergyDipoleMACE]
         :param num_models: int, number of models in the committee
         :return: tuple of torch tensors
         """
@@ -456,12 +456,8 @@ class MACECalculator(Calculator):
         :param system_changes: [str], system changes since last calculation, used by ASE internally
         :return:
         """
-
-        if properties is None:
-            properties = self.implemented_properties
-
         # call to base-class to set atoms attribute
-        Calculator.calculate(self, atoms, properties, system_changes)
+        Calculator.calculate(self, atoms)
 
         batch_base = self._atoms_to_batch(atoms)
 
@@ -537,11 +533,6 @@ class MACECalculator(Calculator):
                 ret_tensors["polarization"][i] = out["polarization"].detach()
                 ret_tensors["becs"][i] = out["becs"].detach()
                 ret_tensors["polarizability"][i] = out["polarizability"].detach()
-
-            if self.model_type == "ScaleShiftFieldMACE":
-                ret_tensors["polarisation"][i] = out["polarisation"].detach()
-                ret_tensors["becs"][i] = out["becs"].detach()
-                ret_tensors["polarisability"][i] = out["polarisability"].detach()
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE", "MACEField"]:
@@ -701,45 +692,6 @@ class MACECalculator(Calculator):
             return dipole_derivatives[0]
         del outputs, batch, atoms
         return dipole_derivatives
-
-        if self.model_type == "ScaleShiftFieldMACE":
-            self.results["polarisation"] = (
-                torch.mean(ret_tensors["polarisation"], dim=0).cpu().numpy()
-                * self.energy_units_to_eV
-                / self.length_units_to_A**2
-            )
-            self.results["becs"] = (
-                torch.mean(ret_tensors["becs"], dim=0)
-                .view(-1,9)
-                .cpu().numpy()
-            )
-            self.results["polarisability"] = (
-                torch.mean(ret_tensors["polarisability"], dim=0)
-                .view(-1,9)
-                .cpu().numpy()
-                * self.length_units_to_A
-            )
-            if self.num_models > 1:
-                self.results["polarisation_var"] = (
-                    torch.var(ret_tensors["polarisation"], dim=0, unbiased=False)
-                    .cpu()
-                    .numpy()
-                    * self.energy_units_to_eV
-                    / self.length_units_to_A**2
-                )
-                self.results["becs_var"] = (
-                    torch.var(ret_tensors["becs"], dim=0, unbiased=False)
-                    .view(-1,9)
-                    .cpu()
-                    .numpy()
-                )
-                self.results["polarisability_var"] = (
-                    torch.var(ret_tensors["polarisability"], dim=0, unbiased=False)
-                    .view(-1,9)
-                    .cpu()
-                    .numpy()
-                    * self.length_units_to_A
-                )
 
     def get_hessian(self, atoms=None):
         if atoms is None and self.atoms is None:

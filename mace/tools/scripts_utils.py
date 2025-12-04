@@ -250,7 +250,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
     model_mlp_irreps = (
         o3.Irreps(str(model.readouts[-1].hidden_irreps))
         if model.num_interactions.item() > 1
-        else [1]
+        else 1
     )
     try:
         correlation = (
@@ -493,7 +493,7 @@ def load_from_json(f: str, map_location: str = "cpu") -> torch.nn.Module:
     model_jit_load = torch.jit.load(
         f, _extra_files=extra_files_extract, map_location=map_location
     )
-    model_load_yaml = modules.ScaleShiftFieldMACE(
+    model_load_yaml = modules.ScaleShiftMACE(
         **convert_from_json_format(json.loads(extra_files_extract["config.json"]))
     )
     model_load_yaml.load_state_dict(model_jit_load.state_dict())
@@ -632,16 +632,6 @@ def get_loss_fn(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
         )
-    elif args.loss == "universal_field":
-        loss_fn = modules.UniversalFieldLoss(
-            energy_weight=args.energy_weight,
-            forces_weight=args.forces_weight,
-            stress_weight=args.stress_weight,
-            huber_delta=args.huber_delta,
-            polarisation_weight=args.polarisation_weight,
-            becs_weight=args.becs_weight,
-            polarisability_weight=args.polarisability_weight,
-        )
     elif args.loss == "dipole":
         assert (
             dipole_only is True
@@ -740,19 +730,6 @@ def get_swa(
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
         )
-    elif args.loss == "universal_field":
-        loss_fn_energy = modules.UniversalFieldLoss(
-            energy_weight=args.swa_energy_weight,
-            forces_weight=args.swa_forces_weight,
-            stress_weight=args.swa_stress_weight,
-            huber_delta=args.huber_delta,
-            polarisation_weight=args.swa_polarisation_weight,
-            bec_weight=args.swa_bec_weight,
-            polarisability_weight=args.swa_polarisability_weight,
-        )
-        logging.info(
-            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight}, BEC weight : {args.swa_bec_weight}, polarisability weight : {args.swa_polarisability_weight} and learning rate : {args.swa_lr}"
-        )
     else:
         loss_fn_energy = modules.WeightedEnergyForcesLoss(
             energy_weight=args.swa_energy_weight,
@@ -785,6 +762,7 @@ def get_params_options(
             decay_interactions[name] = param
         else:
             no_decay_interactions[name] = param
+
     param_options = dict(
         params=[
             {
@@ -811,16 +789,6 @@ def get_params_options(
                 "name": "readouts",
                 "params": model.readouts.parameters(),
                 "weight_decay": 0.0,
-            },
-            {
-                "name": "field_feats",
-                "params": model.field_feats.parameters(),
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "name": "field_linear",
-                "params": model.field_linear.parameters(),
-                "weight_decay": args.weight_decay,
             },
         ],
         lr=args.lr,

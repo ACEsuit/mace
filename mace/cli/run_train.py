@@ -9,10 +9,6 @@ import glob
 import json
 import logging
 import os
-
-os.environ['TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD'] = '1'
-
-import socket
 from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional
@@ -23,7 +19,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import LBFGS
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
-import torch.multiprocessing as mp
 
 import mace
 from mace import data, tools
@@ -72,16 +67,7 @@ from mace.tools.scripts_utils import (
 )
 from mace.tools.tables_utils import create_error_table
 from mace.tools.utils import AtomicNumberTable
-from mace.tools.slurm_distributed import DistributedEnvironment
 
-import warnings
-warnings.filterwarnings("ignore")
-warnings.simplefilter(action='ignore', category=FutureWarning)
-
-def is_port_in_use(port: int) -> bool:
-    import socket
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(('localhost', port)) == 0
 
 def main() -> None:
     """

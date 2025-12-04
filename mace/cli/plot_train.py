@@ -32,7 +32,9 @@ class RunInfo:
     name: str
     seed: int
 
+
 name_re = re.compile(r"(?P<name>.+)_run-(?P<seed>\d+)_train.txt")
+
 
 def parse_path(path: str) -> RunInfo:
     match = name_re.match(os.path.basename(path))
@@ -40,6 +42,7 @@ def parse_path(path: str) -> RunInfo:
         raise RuntimeError(f"Cannot parse {path}")
 
     return RunInfo(name=match.group("name"), seed=int(match.group("seed")))
+
 
 def parse_training_results(path: str) -> List[dict]:
     run_info = parse_path(path)
@@ -52,6 +55,7 @@ def parse_training_results(path: str) -> List[dict]:
             results.append(d)
 
     return results
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
