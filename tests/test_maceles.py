@@ -304,9 +304,6 @@ def test_run_eval_with_bec(tmp_path: Path, maceles_model_path: Path, fitting_con
         batch_size=1,
         compute_stress=False,
         compute_bec=True,
-        compute_polarization=False, # MACEField namespace
-        compute_becs=False, # MACEField namespace
-        compute_polarizability=False, # MACEField namespace
         enable_cueq=False,
         return_contributions=False,
         return_descriptors=False,
@@ -342,9 +339,6 @@ def test_run_eval_fail_with_wrong_model(
         batch_size=1,
         compute_stress=False,
         compute_bec=True,  # Request BEC with wrong model
-        compute_polarization=False, # MACEField namespace
-        compute_becs=False, # MACEField namespace
-        compute_polarizability=False, # MACEField namespace
         enable_cueq=False,
         return_contributions=False,
         return_descriptors=False,
@@ -373,9 +367,6 @@ def test_run_eval_no_bec(tmp_path: Path, maceles_model_path: Path, fitting_confi
         batch_size=1,
         compute_stress=True,
         compute_bec=False,  # BEC computation is off
-        compute_polarization=False, # MACEField namespace
-        compute_becs=False, # MACEField namespace
-        compute_polarizability=False, # MACEField namespace
         enable_cueq=False,
         return_contributions=False,
         return_descriptors=False,
