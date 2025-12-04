@@ -352,11 +352,26 @@ class MACEField(ScaleShiftMACE):
 
         # Setting electric field
         if electric_field is not None:
-            electric_field = electric_field.detach().clone().to(device=vectors.device.type, dtype=vectors.dtype).view(-1, 3).requires_grad_(True) # [num_graphs, 3]
+            # Might be a single global field (shape [3] or [1, 3]) or per-graph
+            electric_field = (
+                electric_field.detach()
+                .clone()
+                .to(device=vectors.device, dtype=vectors.dtype)
+                .view(-1, 3)
+            )
         else:
             electric_field = (
-                data["electric_field"].to(device=vectors.device.type, dtype=vectors.dtype).reshape(-1, 3).requires_grad_(True)
-            )  # [num_graphs, 3]
+                data["electric_field"]
+                .to(device=vectors.device, dtype=vectors.dtype)
+                .reshape(-1, 3)
+            )
+
+        # If we only got one field vector but have multiple graphs, interpret
+        # it as a global field applied to all graphs.
+        if electric_field.shape[0] == 1 and num_graphs > 1:
+            electric_field = electric_field.expand(num_graphs, 3)
+
+        electric_field = electric_field.requires_grad_(True)  # [num_graphs, 3]
 
         # Cell volume
         volume = torch.linalg.det(cell.view(-1, 3, 3)).abs()
@@ -486,24 +501,48 @@ class MACEField(ScaleShiftMACE):
             )
 
         if compute_polarization or compute_becs or compute_polarizability:
+            # First derivative: P = -∂E/∂E_field
             polarization = get_polarization(
                 energy=inter_e,
                 electric_field=electric_field,
-            )
+            )  # [n_graphs, 3]
+
             if compute_becs:
-                becs = get_becs(
-                    polarization=polarization,
-                    positions=positions,
-                )
+                if polarization.requires_grad:
+                    becs = get_becs(
+                        polarization=polarization,
+                        positions=positions,
+                    )  # [n_nodes, 3, 3]
+                else:
+                    becs = torch.zeros(
+                        positions.shape[0],
+                        3,
+                        3,
+                        device=positions.device,
+                        dtype=positions.dtype,
+                    )
             else:
                 becs = None
+
             if compute_polarizability:
-                polarizability = get_polarizability(
-                    polarization=polarization,
-                    electric_field=electric_field,
-                ) / volume.view(-1, 1, 1) / eps0
+                if polarization.requires_grad:
+                    polarizability = get_polarizability(
+                        polarization=polarization,
+                        electric_field=electric_field,
+                    )  # [n_graphs, 3, 3]
+                    polarizability = polarizability / volume.view(-1, 1, 1) / eps0
+                else:
+                    polarizability = torch.zeros(
+                        polarization.shape[0],
+                        3,
+                        3,
+                        device=polarization.device,
+                        dtype=polarization.dtype,
+                    )
             else:
                 polarizability = None
+
+            # Always scale P by volume for final output
             polarization = polarization / volume.view(-1, 1)
         else:
             polarization = None

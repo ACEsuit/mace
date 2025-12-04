@@ -83,7 +83,7 @@ class MACECalculator(Calculator):
         device: str = "cpu",
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
-        default_dtype="",
+        default_dtype="float64",
         charges_key="Qs",
         info_keys=None,
         arrays_keys=None,
@@ -259,7 +259,12 @@ class MACECalculator(Calculator):
 
         # Ensure all models are on the same device
         for model in self.models:
-            model.to(device, dtype={"float32": torch.float32, "float64": torch.float64}[default_dtype])
+            model.to(
+                device,
+                dtype={"float32": torch.float32, "float64": torch.float64}[
+                    default_dtype
+                ],
+            )
 
         if has_ipex and device == "xpu":
             for model in self.models:
@@ -476,7 +481,6 @@ class MACECalculator(Calculator):
             compute_becs = True
             compute_polarizability = True
             batch_base["electric_field"] = self.electric_field
-            
 
         ret_tensors = self._create_result_tensors(
             self.model_type, self.num_models, len(atoms)
