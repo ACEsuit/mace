@@ -65,7 +65,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--device",
         help="select device",
         type=str,
-        # choices=["cpu", "cuda", "mps", "xpu"],
+        choices=["cpu", "cuda", "mps", "xpu"],
         default="cpu",
     )
     parser.add_argument(
@@ -672,30 +672,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="pt_head",
     )
-    parser.add_argument(
-        "--polarisation_key",
-        help="Key of polarisation in training xyz",
-        type=str,
-        default=DefaultKeys.POLARISATION.value,
-    )
-    parser.add_argument(
-        "--becs_key",
-        help="Key of born effective charges in training xyz",
-        type=str,
-        default=DefaultKeys.BECS.value,
-    )
-    parser.add_argument(
-        "--polarisability_key",
-        help="Key of polarisability in training xyz",
-        type=str,
-        default=DefaultKeys.POLARISABILITY.value,
-    )
-    parser.add_argument(
-        "--electric_field_key",
-        help="Key of electric field in training xyz",
-        type=str,
-        default=DefaultKeys.FIELD.value,
-    )
 
     # Loss and optimization
     parser.add_argument(
@@ -712,7 +688,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "dipole_polar",
             "huber",
             "universal",
-            "universal_field",
             "energy_forces_dipole",
             "l1l2energyforces",
             "universal_field",
@@ -1175,30 +1150,6 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="Key of atomic charges in training xyz",
         type=str,
         default=DefaultKeys.CHARGES.value,
-    )
-    parser.add_argument(
-        "--polarisation_key",
-        help="Key of polarisation in training xyz",
-        type=str,
-        default=DefaultKeys.POLARISATION.value,
-    )
-    parser.add_argument(
-        "--becs_key",
-        help="Key of BECs in training xyz",
-        type=str,
-        default=DefaultKeys.BECS.value,
-    )
-    parser.add_argument(
-        "--polarisability_key",
-        help="Key of polarisability in training xyz",
-        type=str,
-        default=DefaultKeys.POLARISABILITY.value,
-    )
-    parser.add_argument(
-        "--electric_field_key",
-        help="Key of electric field in training xyz",
-        type=str,
-        default=DefaultKeys.FIELD.value,
     )
     parser.add_argument(
         "--atomic_numbers",

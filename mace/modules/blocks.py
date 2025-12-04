@@ -49,6 +49,7 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         self.linear = Linear(
             irreps_in=irreps_in, irreps_out=irreps_out, cueq_config=cueq_config
         )
+
     def forward(
         self,
         node_attrs: torch.Tensor,
@@ -61,7 +62,7 @@ class LinearReadoutBlock(torch.nn.Module):
     def __init__(
         self,
         irreps_in: o3.Irreps,
-        irrep_out: o3.Irreps = o3.Irreps("1x0e"),
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
         cueq_config: Optional[CuEquivarianceConfig] = None,
         oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
@@ -86,7 +87,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         MLP_irreps: o3.Irreps,
         gate: Optional[Callable],
-        irrep_out: o3.Irreps = o3.Irreps("1x0e"),
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
         num_heads: int = 1,
         cueq_config: Optional[CuEquivarianceConfig] = None,
         oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
