@@ -12,12 +12,14 @@ import ase.io
 import numpy as np
 import torch
 from e3nn import o3
+from functools import partial
+
 
 from mace import data
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
-
+from mace.data.atomic_data import atomicdata_collate
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -165,15 +167,16 @@ def run(args: argparse.Namespace) -> None:
         heads = None
 
     data_loader = torch_geometric.dataloader.DataLoader(
-        dataset=[
-            data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=float(model.r_max), heads=heads
-            )
-            for config in configs
-        ],
+        dataset=configs,  # list of Configuration
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
+        collate_fn=partial(
+            atomicdata_collate,
+            z_table=z_table,
+            cutoff=float(model.r_max),
+            heads=heads,
+        ),
     )
 
     # Collect data
@@ -327,7 +330,6 @@ def run(args: argparse.Namespace) -> None:
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
-
 
 if __name__ == "__main__":
     main()
