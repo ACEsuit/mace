@@ -19,6 +19,7 @@ from tqdm import tqdm
 
 from mace.calculators import MACECalculator, mace_mp
 from mace.calculators.foundations_models import mace_mp_names
+from mace.tools.utils import distributed_on_root, distributed_barrier
 
 try:
     import fpsample  # type: ignore
@@ -486,7 +487,6 @@ def _write_metadata(
         if head is not None:
             a.info["head"] = head
 
-
 def select_samples(
     settings: SelectionSettings,
 ) -> None:
@@ -529,9 +529,11 @@ def select_samples(
             f"filename '{settings.output}' does no have "
             "suffix compatible with extxyz format"
         )
-    output_path = Path(settings.configs_pt).name
-    _maybe_save_descriptors(filtered_pt_atoms, output_path, True)
-    _maybe_save_descriptors(subsampled_atoms, settings.output)
+    if distributed_on_root():
+        output_path = Path(settings.configs_pt).name
+        _maybe_save_descriptors(filtered_pt_atoms, output_path, True)
+        _maybe_save_descriptors(subsampled_atoms, settings.output)
+    distributed_barrier()
 
     _write_metadata(
         subsampled_atoms,
@@ -546,17 +548,21 @@ def select_samples(
         head=settings.head_ft,
     )
 
-    logging.info("Saving the selected configurations")
-    ase.io.write(settings.output, subsampled_atoms)
+    if distributed_on_root():
+        logging.info("Saving the selected configurations")
+        ase.io.write(settings.output, subsampled_atoms)
+    distributed_barrier()
 
     logging.info("Saving a combined XYZ file")
     atoms_fps_pt_ft = subsampled_atoms + atoms_list_ft
 
-    output = Path(settings.output)
-    ase.io.write(
-        output.parent / (output.stem + "_combined" + output.suffix),
-        atoms_fps_pt_ft,
-    )
+    if distributed_on_root():
+        output = Path(settings.output)
+        ase.io.write(
+            output.parent / (output.stem + "_combined" + output.suffix),
+            atoms_fps_pt_ft,
+        )
+    distributed_barrier()
 
 
 def main() -> None:
