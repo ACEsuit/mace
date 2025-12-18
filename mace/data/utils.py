@@ -15,6 +15,7 @@ import h5py
 import numpy as np
 
 from mace.tools import AtomicNumberTable, DefaultKeys
+from mace.tools.utils import distributed_on_root, distributed_barrier
 
 Positions = np.ndarray  # [..., 3]
 Cell = np.ndarray  # [3,3]
@@ -132,9 +133,11 @@ def random_train_valid_split(
         if prefix is not None and len(prefix) > 0:
             filename = f"{prefix}_" + filename
         path = os.path.join(work_dir, filename)
-        with open(path, "w", encoding="utf-8") as f:
-            for index in indices[train_size:]:
-                f.write(f"{index}\n")
+        if distributed_on_root():
+            with open(path, "w", encoding="utf-8") as f:
+                for index in indices[train_size:]:
+                    f.write(f"{index}\n")
+        distributed_barrier()
 
         logging.info(
             f"Using random {100 * valid_fraction:.0f}% of training set for validation with indices saved in: {path}"

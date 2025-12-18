@@ -205,3 +205,11 @@ def filter_nonzero_weight(
 
     quantity_l[-1] = filtered_q
     return 1.0
+
+def distributed_on_root():
+    distributed = torch.distributed.is_available() and torch.distributed.is_initialized()
+    return (not distributed) or (torch.distributed.get_rank() == 0)
+
+def distributed_barrier():
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        torch.distributed.barrier()
