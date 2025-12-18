@@ -297,7 +297,7 @@ class MACEField(ScaleShiftMACE):
                 irreps_out=hidden_irreps,
                 cueq_config=cueq_config,
             )
-            for _ in range(self.num_interactions - 1)
+            for _ in range(self.num_interactions)
         )
 
         self.field_linear = torch.nn.ModuleList(
@@ -306,7 +306,7 @@ class MACEField(ScaleShiftMACE):
                 irreps_out=hidden_irreps,
                 cueq_config=cueq_config,
             )
-            for _ in range(self.num_interactions - 1)
+            for _ in range(self.num_interactions)
         )
 
     def forward(
@@ -430,12 +430,16 @@ class MACEField(ScaleShiftMACE):
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
 
-        for i, (interaction, product) in enumerate(
-            zip(self.interactions, self.products)
+        # Precompute per-atom electric field once
+        per_atom_electric_field = electric_field.repeat_interleave(num_atoms, dim=0)
+
+        for i, (interaction, product, field_block, linear_block) in enumerate(
+            zip(self.interactions, self.products, self.field_feats, self.field_linear)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
                 node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
+
             node_feats, sc = interaction(
                 node_attrs=node_attrs_slice,
                 node_feats=node_feats,
@@ -447,16 +451,24 @@ class MACEField(ScaleShiftMACE):
                 lammps_class=lammps_class,
                 lammps_natoms=lammps_natoms,
             )
+
             if is_lammps and i == 0:
                 node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
+
             node_feats = product(
-                node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
+                node_feats=node_feats,
+                sc=sc,
+                node_attrs=node_attrs_slice,
             )
-            if i < len(self.interactions) - 1:  # All but last layer
-                delta_node_feats = self.field_feats[i](
-                    node_feats, electric_field.repeat_interleave(num_atoms, dim=0)
+
+            # Field coupling on all but the last interaction layer
+            if i < self.num_interactions - 1:
+                delta_node_feats = field_block(
+                    node_feats,
+                    per_atom_electric_field,
                 )
-                node_feats = node_feats - self.field_linear[i](delta_node_feats)
+                node_feats = node_feats - linear_block(delta_node_feats)
+
             node_feats_list.append(node_feats)
 
         for i, readout in enumerate(self.readouts):
