@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import logging
+import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -533,6 +534,7 @@ def select_samples(
         output_path = Path(settings.configs_pt).name
         _maybe_save_descriptors(filtered_pt_atoms, output_path, True)
         _maybe_save_descriptors(subsampled_atoms, settings.output)
+        time.sleep(1) # hope this is enough for filesystem to re-synchronize
     distributed_barrier()
 
     _write_metadata(
@@ -551,6 +553,7 @@ def select_samples(
     if distributed_on_root():
         logging.info("Saving the selected configurations")
         ase.io.write(settings.output, subsampled_atoms)
+        time.sleep(1) # hope this is enough for filesystem to re-synchronize
     distributed_barrier()
 
     logging.info("Saving a combined XYZ file")
@@ -562,6 +565,7 @@ def select_samples(
             output.parent / (output.stem + "_combined" + output.suffix),
             atoms_fps_pt_ft,
         )
+        time.sleep(1) # hope this is enough for filesystem to re-synchronize
     distributed_barrier()
 
 

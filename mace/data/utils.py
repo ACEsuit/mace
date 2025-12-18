@@ -6,6 +6,7 @@
 
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -137,6 +138,7 @@ def random_train_valid_split(
             with open(path, "w", encoding="utf-8") as f:
                 for index in indices[train_size:]:
                     f.write(f"{index}\n")
+            time.sleep(1) # hope this is enough for filesystem to re-synchronize
         distributed_barrier()
 
         logging.info(
