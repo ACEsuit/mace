@@ -191,11 +191,10 @@ def load_foundations_elements(
 
     if load_readout:
         # Transferring readouts
-        for i, readout in enumerate(model.readouts):
+        for readout, foundation_readout in zip(model.readouts, model_foundations.readouts):
             if readout.__class__.__name__ == "LinearReadoutBlock":
-                model_readouts_zero_linear_weight = readout.linear.weight.clone()
                 model_readouts_zero_linear_weight = (
-                    model_foundations.readouts[i]
+                    foundation_readout
                     .linear.weight.view(num_channels_foundation, -1)
                     .repeat(1, len(model_heads))
                     .flatten()
@@ -214,7 +213,7 @@ def load_foundations_elements(
                 # Determine shapes once to avoid uninitialized use
                 if hasattr(readout, "linear_1"):
                     shape_input_1 = (
-                        model_foundations.readouts[i]
+                        foundation_readout
                         .linear_1.__dict__["irreps_out"]
                         .num_irreps
                     )
@@ -222,9 +221,8 @@ def load_foundations_elements(
                 else:
                     raise ValueError("Readout block must have linear_1")
                 if hasattr(readout, "linear_1"):
-                    model_readouts_one_linear_1_weight = readout.linear_1.weight.clone()
                     model_readouts_one_linear_1_weight = (
-                        model_foundations.readouts[i]
+                        foundation_readout
                         .linear_1.weight.view(num_channels_foundation, -1)
                         .repeat(1, len(model_heads))
                         .flatten()
@@ -233,10 +231,9 @@ def load_foundations_elements(
                     readout.linear_1.weight = torch.nn.Parameter(
                         model_readouts_one_linear_1_weight
                     )
-                    if readout.linear_1.bias is not None:
-                        model_readouts_one_linear_1_bias = readout.linear_1.bias.clone()
+                    if readout.linear_1.bias is not None and readout.linear_1.bias.nelement() != 0:
                         model_readouts_one_linear_1_bias = (
-                            model_foundations.readouts[i]
+                            foundation_readout
                             .linear_1.bias.view(-1)
                             .repeat(len(model_heads))
                             .clone()
@@ -246,7 +243,7 @@ def load_foundations_elements(
                         )
                 if hasattr(readout, "linear_mid"):
                     readout.linear_mid.weight = torch.nn.Parameter(
-                        model_foundations.readouts[i]
+                        foundation_readout
                         .linear_mid.weight.view(
                             shape_input_1,
                             shape_input_1,
@@ -257,28 +254,25 @@ def load_foundations_elements(
                         / ((shape_input_1) / (shape_output_1)) ** 0.5
                     )
                     # if it has biases transfer them too
-                    if readout.linear_mid.bias is not None:
+                    if readout.linear_mid.bias is not None and readout.linear_mid.bias.nelement() != 0:
                         readout.linear_mid.bias = torch.nn.Parameter(
-                            model_foundations.readouts[i]
+                            foundation_readout
                             .linear_mid.bias.repeat(len(model_heads))
                             .clone()
                         )
                 if hasattr(readout, "linear_2"):
-                    model_readouts_one_linear_2_weight = readout.linear_2.weight.clone()
-                    model_readouts_one_linear_2_weight = model_foundations.readouts[
-                        i
-                    ].linear_2.weight.view(shape_input_1, -1).repeat(
-                        len(model_heads), len(model_heads)
-                    ).flatten().clone() / (
-                        ((shape_input_1) / (shape_output_1)) ** 0.5
-                    )
+                    model_readouts_one_linear_2_weight = (foundation_readout
+                        .linear_2.weight.view(shape_input_1, -1).repeat(
+                            len(model_heads), len(model_heads)
+                        ).flatten().clone() / (
+                            ((shape_input_1) / (shape_output_1)) ** 0.5
+                        ))
                     readout.linear_2.weight = torch.nn.Parameter(
                         model_readouts_one_linear_2_weight
                     )
-                    if readout.linear_2.bias is not None:
-                        model_readouts_one_linear_2_bias = readout.linear_2.bias.clone()
+                    if readout.linear_2.bias is not None and readout.linear_2.bias.nelement() != 0:
                         model_readouts_one_linear_2_bias = (
-                            model_foundations.readouts[i]
+                            foundation_readout
                             .linear_2.bias.view(-1)
                             .repeat(len(model_heads))
                             .flatten()
