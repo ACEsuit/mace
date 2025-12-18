@@ -551,7 +551,9 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
                 self._handle_field_outputs(efield, pol, becs, alpha, natoms)
 
     def _prepare_batch(self, data, natoms, nghosts, species):
-        # Note: we always pass lammps_class/natoms so the core model can build positions/cell etc.
+        # number of nodes actually provided to the model (usually local+ghost)
+        n_nodes = int(species.numel())
+
         return {
             "vectors": torch.as_tensor(data.rij).to(self.dtype).to(self.device),
             "node_attrs": torch.nn.functional.one_hot(
@@ -564,7 +566,9 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
                 ],
                 dim=0,
             ),
-            "batch": torch.zeros(natoms, dtype=torch.int64, device=self.device),
+            # single graph in this call
+            "batch": torch.zeros(n_nodes, dtype=torch.int64, device=self.device),
+            "ptr": torch.tensor([0, n_nodes], dtype=torch.long, device=self.device),
             "lammps_class": data,
             "natoms": (natoms, nghosts),
         }
