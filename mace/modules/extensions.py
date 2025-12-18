@@ -349,6 +349,8 @@ class MACEField(ScaleShiftMACE):
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
 
+        print("Electric field:", data["electric_field"], electric_field)
+
         # Setting electric field
         if electric_field is not None:
             # Might be a single global field (shape [3] or [1, 3]) or per-graph
