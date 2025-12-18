@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import logging
+import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -17,6 +18,7 @@ import numpy as np
 import torch
 
 from mace.calculators import MACECalculator, mace_mp
+from mace.tools.utils import distributed_on_root, distributed_barrier
 
 try:
     import fpsample  # type: ignore
@@ -454,7 +456,6 @@ def _write_metadata(
         if head is not None:
             a.info["head"] = head
 
-
 def select_samples(
     settings: SelectionSettings,
 ) -> None:
@@ -491,7 +492,10 @@ def select_samples(
             f"filename '{settings.output}' does no have "
             "suffix compatible with extxyz format"
         )
-    _maybe_save_descriptors(subsampled_atoms, settings.output)
+    if distributed_on_root():
+        _maybe_save_descriptors(subsampled_atoms, settings.output)
+        time.sleep(1) # hope this is enough for filesystem to re-synchronize
+    distributed_barrier()
 
     _write_metadata(
         subsampled_atoms,
@@ -506,17 +510,23 @@ def select_samples(
         head=settings.head_ft,
     )
 
-    logging.info("Saving the selected configurations")
-    ase.io.write(settings.output, subsampled_atoms)
+    if distributed_on_root():
+        logging.info("Saving the selected configurations")
+        ase.io.write(settings.output, subsampled_atoms)
+        time.sleep(1) # hope this is enough for filesystem to re-synchronize
+    distributed_barrier()
 
     logging.info("Saving a combined XYZ file")
     atoms_fps_pt_ft = subsampled_atoms + atoms_list_ft
 
-    output = Path(settings.output)
-    ase.io.write(
-        output.parent / (output.stem + "_combined" + output.suffix),
-        atoms_fps_pt_ft,
-    )
+    if distributed_on_root():
+        output = Path(settings.output)
+        ase.io.write(
+            output.parent / (output.stem + "_combined" + output.suffix),
+            atoms_fps_pt_ft,
+        )
+        time.sleep(1) # hope this is enough for filesystem to re-synchronize
+    distributed_barrier()
 
 
 def main():
