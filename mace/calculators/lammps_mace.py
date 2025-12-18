@@ -88,7 +88,7 @@ class LAMMPS_MACE(torch.nn.Module):
                 electric_field=ef,
             )
         else:
-            # Plain MACE path (unchanged)
+            # Plain MACE path
             out = self.model(
                 data,
                 training=False,
@@ -152,7 +152,7 @@ class LAMMPS_MACE(torch.nn.Module):
             )[0]
             forces = -forces if forces is not None else torch.zeros_like(positions)
 
-        # MACEField extras (will be None unless you asked for them)
+        # MACEField extras (will be None unless asked for)
         pol = out.get("polarization", None) if self.is_macefield else None
         becs = out.get("becs", None) if self.is_macefield else None
         alpha = out.get("polarizability", None) if self.is_macefield else None
