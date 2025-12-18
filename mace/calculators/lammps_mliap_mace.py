@@ -29,19 +29,19 @@ class MACELammpsConfig:
         self.allow_cpu = self._get_env_bool("MACE_ALLOW_CPU", False)
         self.force_cpu = self._get_env_bool("MACE_FORCE_CPU", False)
 
-        # Constant E-field fallback (same as before)
+        # Constant fallback E-field (used if not pulling from LAMMPS variables)
         self.electric_field = self._get_env_vec3("MACE_EFIELD", (0.0, 0.0, 0.0))
 
+        # Pull E-field from LAMMPS equal-style variables each step
         # Modes: "env" (default) or "lammps_var"
         self.efield_mode = os.environ.get("MACE_EFIELD_MODE", "env").strip().lower()
 
-        # Names of LAMMPS equal-style variables to query each step (no "v_" prefix)
-        # e.g. in LAMMPS: variable Ez equal v_E0*sin(...)
-        self.efield_vars = os.environ.get("MACE_EFIELD_VARS", "Ex Ey Ez").split()
-        if len(self.efield_vars) < 3:
-            raise ValueError(
-                "MACE_EFIELD_VARS must contain three names, e.g. 'Ex Ey Ez'"
-            )
+        # Names of equal-style variables (without v_) e.g. "Ex Ey Ez"
+        self.efield_vars = self._get_env_list3("MACE_EFIELD_VARS", ("Ex", "Ey", "Ez"))
+
+        # Optional debug logging
+        self.efield_debug = self._get_env_bool("MACE_EFIELD_DEBUG", False)
+        self.efield_debug_attrs = self._get_env_bool("MACE_EFIELD_DEBUG_ATTRS", False)
 
     @staticmethod
     def _get_env_bool(var_name: str, default: bool) -> bool:
@@ -68,8 +68,24 @@ class MACELammpsConfig:
             )
         try:
             return (float(parts[0]), float(parts[1]), float(parts[2]))
-        except Exception as e:
-            raise ValueError(f"Failed to parse {var_name}={raw!r} as 3 floats") from e
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Failed to parse {var_name}={raw!r} as 3 floats") from exc
+
+    @staticmethod
+    def _get_env_list3(
+        var_name: str, default: Tuple[str, str, str]
+    ) -> Tuple[str, str, str]:
+        raw = os.environ.get(var_name, None)
+        if raw is None or str(raw).strip() == "":
+            return default
+        s = str(raw).strip().replace(",", " ")
+        parts = [p for p in s.split() if p]
+        if len(parts) != 3:
+            raise ValueError(
+                f"{var_name} must have 3 names, got {len(parts)} from: {raw!r}. "
+                f"Use e.g. '{var_name}=Ex Ey Ez' or '{var_name}=Ex,Ey,Ez'."
+            )
+        return (parts[0], parts[1], parts[2])
 
 
 @contextmanager
@@ -150,7 +166,16 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
 
 
 class LAMMPS_MLIAP_MACE(MLIAPUnified):
-    """MACE integration for LAMMPS using the MLIAP interface."""
+    """MACE integration for LAMMPS using the MLIAP interface.
+
+    Supports passing a time-dependent electric field defined in LAMMPS as equal-style variables
+    Ex/Ey/Ez (or user-specified via MACE_EFIELD_VARS) by setting:
+
+      MACE_EFIELD_MODE=lammps_var
+      MACE_EFIELD_VARS="Ex Ey Ez"
+
+    Otherwise falls back to constant MACE_EFIELD="0 0 0.3".
+    """
 
     def __init__(self, model, **kwargs):
         super().__init__()
@@ -166,16 +191,21 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         self.initialized = False
         self.step = 0
 
+        # E-field tensor; updated in-place each step (so batch always sees updated value)
         self.electric_field = torch.tensor(
             self.config.electric_field, dtype=self.dtype
         ).view(1, 3)
 
+        # Best-effort detection of MACEField-like models
         self.is_macefield = bool(
             hasattr(model, "field_feats") or hasattr(model, "field_linear")
         )
 
-        self._lmp = None
-        self._warned_lmp = False
+        # Cached python handle to running LAMMPS instance (if obtainable)
+        self._lmp_handle = None
+        self._warned_no_lmp = False
+        self._warned_not_macefield = False
+        self._dumped_attrs = False
 
     def _initialize_device(self, data):
         using_kokkos = "kokkos" in data.__class__.__module__.lower()
@@ -196,81 +226,156 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         logging.info(f"MACE model initialized on device: {device}")
         self.initialized = True
 
-    def _get_lmp_handle(self, data):
-        """Get a Python LAMMPS handle for extract_variable()."""
-        if self._lmp is not None:
-            return self._lmp
+    def _get_lammps_handle(self, data):
+        """Best-effort: get a python 'lammps' handle to the *running* LAMMPS instance."""
+        if self._lmp_handle is not None:
+            return self._lmp_handle
 
-        # If data already exposes a python lammps object, use it
-        for name in ("lmp", "_lmp"):
-            if hasattr(data, name):
-                obj = getattr(data, name)
-                if obj is not None and hasattr(obj, "extract_variable"):
-                    self._lmp = obj
-                    return self._lmp
+        if self.config.efield_debug_attrs and not self._dumped_attrs:
+            try:
+                logging.info(f"[MACE_EFIELD_DEBUG_ATTRS] data class: {data.__class__}")
+                logging.info(
+                    f"[MACE_EFIELD_DEBUG_ATTRS] data module: {data.__class__.__module__}"
+                )
+                logging.info(
+                    f"[MACE_EFIELD_DEBUG_ATTRS] dir(data) sample: {sorted(dir(data))[:200]}"
+                )
+            except (AttributeError, TypeError, ValueError, RuntimeError):
+                # purely best-effort debug output
+                pass
+            self._dumped_attrs = True
 
-        # Try to build from a pointer if available
-        ptr = None
-        for name in ("lmp_ptr", "ptr", "lammps_ptr"):
-            if hasattr(data, name):
-                ptr = getattr(data, name)
-                if ptr is not None:
-                    break
+        # 1) If data (or self) already has an object exposing extract_variable, use it directly
+        for obj in (data, self):
+            for name in ("lmp", "_lmp", "lammps", "_lammps"):
+                try:
+                    h = getattr(obj, name)
+                except AttributeError:
+                    h = None
+                if h is not None and hasattr(h, "extract_variable"):
+                    self._lmp_handle = h
+                    return h
 
-        if ptr is None:
-            return None
+            if hasattr(obj, "extract_variable"):
+                self._lmp_handle = obj
+                return obj
 
+        # 2) Try to wrap an existing pointer/capsule if present
+        ptr_candidates = []
+        for obj in (data, self):
+            for name in (
+                "lmpptr",
+                "_lmpptr",
+                "lmp_ptr",
+                "_lmp_ptr",
+                "ptr",
+                "_ptr",
+                "lammps_ptr",
+                "_lammps_ptr",
+            ):
+                try:
+                    c = getattr(obj, name)
+                except AttributeError:
+                    c = None
+                if c is not None:
+                    ptr_candidates.append(c)
+
+        # 3) Also check __main__ for embedded-python globals (sometimes exposed)
+        try:
+            import __main__  # type: ignore
+
+            for name in ("lmp", "lmpptr", "lmp_ptr"):
+                c = getattr(__main__, name, None)
+                if c is not None:
+                    if hasattr(c, "extract_variable"):
+                        self._lmp_handle = c
+                        return c
+                    ptr_candidates.append(c)
+        except (ImportError, AttributeError, RuntimeError, TypeError):
+            pass
+
+        # Try constructing a lammps python object from ptr
         try:
             from lammps import lammps as lammps_py  # type: ignore
         except (ImportError, ModuleNotFoundError):
+            lammps_py = None
+
+        if lammps_py is None:
             return None
 
-        # Try ptr as-is, then int(ptr) if possible
-        candidates = [ptr]
-        try:
-            candidates.append(int(ptr))
-        except (TypeError, ValueError):
-            pass
-
-        for cand in candidates:
+        for c in ptr_candidates:
             try:
-                self._lmp = lammps_py(ptr=cand)
-                return self._lmp
-            except (TypeError, ValueError, RuntimeError, OSError):
+                if hasattr(c, "extract_variable"):
+                    self._lmp_handle = c
+                    return c
+
+                if isinstance(c, int):
+                    h = lammps_py(ptr=c)
+                    if hasattr(h, "extract_variable"):
+                        self._lmp_handle = h
+                        return h
+
+                if hasattr(c, "value") and isinstance(getattr(c, "value"), int):
+                    h = lammps_py(ptr=int(c.value))
+                    if hasattr(h, "extract_variable"):
+                        self._lmp_handle = h
+                        return h
+            except (TypeError, ValueError, RuntimeError, AttributeError):
                 continue
 
         return None
 
     def _update_electric_field_from_lammps(self, data):
-        """If enabled, update self.electric_field from LAMMPS equal-style variables."""
-        if (not self.is_macefield) or (self.config.efield_mode != "lammps_var"):
+        """If enabled, pull Ex/Ey/Ez from LAMMPS equal-style variables each step."""
+        if self.config.efield_mode != "lammps_var":
             return
 
-        lmp = self._get_lmp_handle(data)
+        if not self.is_macefield and not self._warned_not_macefield:
+            logging.warning(
+                "MACE_EFIELD_MODE=lammps_var set but underlying model does not look like MACEField; "
+                "will still attach electric_field to batch, but model may ignore it."
+            )
+            self._warned_not_macefield = True
+
+        lmp = self._get_lammps_handle(data)
         if lmp is None:
-            if not self._warned_lmp:
+            if not self._warned_no_lmp:
                 logging.warning(
-                    "MACE_EFIELD_MODE=lammps_var but could not obtain a LAMMPS handle "
-                    "for extract_variable(). Falling back to constant MACE_EFIELD."
+                    "MACE_EFIELD_MODE=lammps_var but could not access running LAMMPS handle; "
+                    "falling back to static MACE_EFIELD."
                 )
-                self._warned_lmp = True
+                self._warned_no_lmp = True
             return
 
-        vx, vy, vz = self.config.efield_vars[:3]
+        ex_name, ey_name, ez_name = self.config.efield_vars
         try:
-            ex = float(lmp.extract_variable(vx, None, 0))
-            ey = float(lmp.extract_variable(vy, None, 0))
-            ez = float(lmp.extract_variable(vz, None, 0))
-        except Exception as e:
+            ex = lmp.extract_variable(ex_name, None, 0)  # 0 = equal-style
+            ey = lmp.extract_variable(ey_name, None, 0)
+            ez = lmp.extract_variable(ez_name, None, 0)
+        except (AttributeError, TypeError, RuntimeError) as exc:
             raise RuntimeError(
-                f"Failed to read LAMMPS variables {vx},{vy},{vz} via extract_variable(). "
-                "Check they are defined as equal-style variables in your input."
-            ) from e
+                f"Failed to extract LAMMPS variables {self.config.efield_vars} via "
+                "extract_variable(..., type=0)."
+            ) from exc
 
-        with torch.no_grad():
-            self.electric_field[0, 0] = ex
-            self.electric_field[0, 1] = ey
-            self.electric_field[0, 2] = ez
+        if ex is None or ey is None or ez is None:
+            raise ValueError(
+                f"One or more LAMMPS variables not found: {self.config.efield_vars}. "
+                "Define them as equal-style variables in your input, e.g. 'variable Ez equal ...'."
+            )
+
+        exf, eyf, ezf = float(ex), float(ey), float(ez)
+
+        # In-place update so the batch always sees the updated value (same tensor object)
+        self.electric_field[0, 0] = exf
+        self.electric_field[0, 1] = eyf
+        self.electric_field[0, 2] = ezf
+
+        if self.config.efield_debug and (self.step < 5 or (self.step % 1000 == 0)):
+            logging.info(
+                f"[MACE_EFIELD] step={self.step} "
+                f"E=({exf:.6f},{eyf:.6f},{ezf:.6f}) vars={self.config.efield_vars}"
+            )
 
     def compute_forces(self, data):
         natoms = data.nlocal
@@ -285,10 +390,11 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         self.step += 1
         self._manage_profiling()
 
+        # Update E-field from LAMMPS variables each step (if enabled)
+        self._update_electric_field_from_lammps(data)
+
         if natoms == 0 or npairs <= 1:
             return
-
-        self._update_electric_field_from_lammps(data)
 
         with timer("total_step", enabled=self.config.debug_time):
             with timer("prepare_batch", enabled=self.config.debug_time):
@@ -322,6 +428,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
             "natoms": (natoms, nghosts),
         }
 
+        # Always attach electric_field (MACEField will use it; plain MACE should ignore unknown key)
         batch["electric_field"] = self.electric_field
         return batch
 
