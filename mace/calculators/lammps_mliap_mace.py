@@ -305,8 +305,6 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
 
     def _prepare_batch(self, data, natoms, nghosts, species):
         """Prepare the input batch for the MACE model."""
-        ntotal = int(species.numel())  # must match node_attrs length
-
         batch = {
             "vectors": torch.as_tensor(data.rij).to(self.dtype).to(self.device),
             "node_attrs": torch.nn.functional.one_hot(
@@ -319,10 +317,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
                 ],
                 dim=0,
             ),
-            # Must be length ntotal
-            "batch": torch.zeros(ntotal, dtype=torch.int64, device=self.device),
-            # Required by MACEField
-            "ptr": torch.tensor([0, ntotal], dtype=torch.int64, device=self.device),
+            "batch": torch.zeros(natoms, dtype=torch.int64, device=self.device),
             "lammps_class": data,
             "natoms": (natoms, nghosts),
         }

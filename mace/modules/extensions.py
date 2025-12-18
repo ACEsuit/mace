@@ -339,7 +339,6 @@ class MACEField(ScaleShiftMACE):
         is_lammps = ctx.is_lammps
         num_atoms_arange = ctx.num_atoms_arange
         num_graphs = ctx.num_graphs
-        num_atoms = data["ptr"][1:] - data["ptr"][:-1]
         displacement = ctx.displacement
         positions = ctx.positions
         vectors = ctx.vectors
@@ -431,7 +430,7 @@ class MACEField(ScaleShiftMACE):
         node_feats_list: List[torch.Tensor] = []
 
         # Precompute per-atom electric field once
-        per_atom_electric_field = electric_field.repeat_interleave(num_atoms, dim=0)
+        per_atom_electric_field = electric_field[data["batch"].to(torch.long)]
 
         for i, (interaction, product, field_block, linear_block) in enumerate(
             zip(self.interactions, self.products, self.field_feats, self.field_linear)
