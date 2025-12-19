@@ -280,7 +280,6 @@ def mace_model_path_fixture(tmp_path: Path) -> Path:
 
 
 @pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
-@pytest.fixture(name="maceles_model_path")
 def maceles_model_path_fixture(tmp_path: Path) -> Path:
     """Create and save a MACELES model."""
     with default_dtype(torch.float32):

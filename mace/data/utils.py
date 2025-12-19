@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -71,6 +72,20 @@ def update_keyspec_from_kwargs(
     for key in arrays:
         if key in keydict:
             arrays_keys[key[:-4]] = keydict[key]
+
+    # automagically add properties for embeddings
+    if keydict.get("embedding_specs") is not None:
+        for embed_name, embed_spec in keydict["embedding_specs"].items():
+            key = embed_spec.get("key", embed_name)
+            if embed_spec["per"] == "atom":
+                arrays_keys[embed_name] = key
+            elif embed_spec["per"] == "graph":
+                info_keys[embed_name] = key
+            else:
+                raise ValueError(
+                    f"Unsupported embedding_specs per {embed_spec['per']} for {embed_name}"
+                )
+
     keyspec.update(info_keys=info_keys, arrays_keys=arrays_keys)
     return keyspec
 
@@ -93,7 +108,11 @@ Configurations = List[Configuration]
 
 
 def random_train_valid_split(
-    items: Sequence, valid_fraction: float, seed: int, work_dir: str
+    items: Sequence,
+    valid_fraction: float,
+    seed: int,
+    work_dir: str,
+    prefix: Optional[str] = None,
 ) -> Tuple[List, List]:
     assert 0.0 < valid_fraction < 1.0
 
@@ -110,13 +129,17 @@ def random_train_valid_split(
             f"Using random {100 * valid_fraction:.0f}% of training set for validation with following indices: {indices[train_size:]}"
         )
     else:
-        # Save indices to file
-        with open(work_dir + f"/valid_indices_{seed}.txt", "w", encoding="utf-8") as f:
+        # Save indices to file (optionally prefixed with experiment name)
+        filename = f"valid_indices_{seed}.txt"
+        if prefix is not None and len(prefix) > 0:
+            filename = f"{prefix}_" + filename
+        path = os.path.join(work_dir, filename)
+        with open(path, "w", encoding="utf-8") as f:
             for index in indices[train_size:]:
                 f.write(f"{index}\n")
 
         logging.info(
-            f"Using random {100 * valid_fraction:.0f}% of training set for validation with indices saved in: {work_dir}/valid_indices_{seed}.txt"
+            f"Using random {100 * valid_fraction:.0f}% of training set for validation with indices saved in: {path}"
         )
 
     return (
@@ -161,7 +184,7 @@ def config_from_atoms(
     atomic_numbers = np.array(
         [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
     )
-    pbc = tuple(atoms.get_pbc())
+    pbc = tuple(atoms.get_pbc().tolist())
     cell = np.array(atoms.get_cell())
     config_type = atoms.info.get("config_type", "Default")
     weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(

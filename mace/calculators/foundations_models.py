@@ -1,7 +1,7 @@
 import os
 import urllib.request
 from pathlib import Path
-from typing import Union
+from typing import Any, Literal, Optional, Union, overload
 
 import torch
 from ase import units
@@ -31,11 +31,13 @@ mace_mp_urls = {
     "medium-omat-0": "https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model",
     "mace-matpes-pbe-0": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-pbe-omat-ft.model",
     "mace-matpes-r2scan-0": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-r2scan-omat-ft.model",
+    "mh-0": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/mace-mh-0.model",
+    "mh-1": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/mace-mh-1.model",
 }
 mace_mp_names = [None] + list(mace_mp_urls.keys())
 
 
-def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
+def download_mace_mp_checkpoint(model: Optional[Union[str, Path]] = None) -> str:
     """
     Downloads or locates the MACE-MP checkpoint file.
 
@@ -89,8 +91,18 @@ def download_mace_mp_checkpoint(model: Union[str, Path] = None) -> str:
     return cached_model_path
 
 
+@overload
+def mace_mp(*, return_raw_model: Literal[True], **kwargs: Any) -> torch.nn.Module: ...
+
+
+@overload
 def mace_mp(
-    model: Union[str, Path] = None,
+    *, return_raw_model: Literal[False] = False, **kwargs: Any
+) -> MACECalculator: ...
+
+
+def mace_mp(
+    model: Optional[Union[str, Path]] = None,
     device: str = "",
     default_dtype: str = "float32",
     dispersion: bool = False,
@@ -99,7 +111,7 @@ def mace_mp(
     dispersion_cutoff: float = 40.0 * units.Bohr,
     return_raw_model: bool = False,
     **kwargs,
-) -> MACECalculator:
+) -> Union[MACECalculator, torch.nn.Module, SumCalculator]:
     """
     Constructs a MACECalculator with a pretrained model based on the Materials Project (89 elements).
     The model is released under the MIT license. See https://github.com/ACEsuit/mace-foundations for all models.
@@ -181,13 +193,23 @@ def mace_mp(
     return SumCalculator([mace_calc, d3_calc])
 
 
+@overload
+def mace_off(*, return_raw_model: Literal[True], **kwargs: Any) -> torch.nn.Module: ...
+
+
+@overload
 def mace_off(
-    model: Union[str, Path] = None,
+    *, return_raw_model: Literal[False] = False, **kwargs: Any
+) -> MACECalculator: ...
+
+
+def mace_off(
+    model: Optional[Union[str, Path]] = None,
     device: str = "",
     default_dtype: str = "float64",
     return_raw_model: bool = False,
     **kwargs,
-) -> MACECalculator:
+) -> Union[MACECalculator, torch.nn.Module]:
     """
     Constructs a MACECalculator with a pretrained model based on the MACE-OFF23 models.
     The model is released under the ASL license.
@@ -263,11 +285,23 @@ def mace_off(
     return mace_calc
 
 
+@overload
+def mace_anicc(
+    *, return_raw_model: Literal[True], **kwargs: Any
+) -> torch.nn.Module: ...
+
+
+@overload
+def mace_anicc(
+    *, return_raw_model: Literal[False] = False, **kwargs: Any
+) -> MACECalculator: ...
+
+
 def mace_anicc(
     device: str = "cuda",
-    model_path: str = None,
+    model_path: Optional[str] = None,
     return_raw_model: bool = False,
-) -> MACECalculator:
+) -> Union[MACECalculator, torch.nn.Module]:
     """
     Constructs a MACECalculator with a pretrained model based on the ANI (H, C, N, O).
     The model is released under the MIT license.
@@ -317,13 +351,23 @@ def mace_anicc(
     )
 
 
+@overload
+def mace_omol(*, return_raw_model: Literal[True], **kwargs: Any) -> torch.nn.Module: ...
+
+
+@overload
 def mace_omol(
-    model: Union[str, Path] = None,
+    *, return_raw_model: Literal[False] = False, **kwargs: Any
+) -> MACECalculator: ...
+
+
+def mace_omol(
+    model: Optional[Union[str, Path]] = None,
     device: str = "",
     default_dtype: str = "float64",
     return_raw_model: bool = False,
     **kwargs,
-) -> MACECalculator:
+) -> Union[MACECalculator, torch.nn.Module]:
     """
     Constructs a MACECalculator with a pretrained model based on the MACE-OMOL models.
     The model is released under the ASL license.
