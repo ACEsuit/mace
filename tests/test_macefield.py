@@ -129,6 +129,31 @@ def _common_train_args(tmp_path: Path, xyz: Path, name: str = "MACEField-mini"):
     return args
 
 
+def _locate_trained_model(tmp_path: Path, name: str, seed: int | None = None) -> Path:
+    """Locate a trained model file for a given run name.
+
+    Handles both compiled and tagged naming schemes used by MACE.
+    """
+    compiled = tmp_path / f"{name}_compiled.model"
+    if compiled.exists():
+        return compiled
+
+    if seed is not None:
+        tagged = tmp_path / f"{name}_run-{seed}.model"
+        if tagged.exists():
+            return tagged
+
+    tagged_candidates = sorted(tmp_path.glob(f"{name}_run-*.model"))
+    if tagged_candidates:
+        return tagged_candidates[-1]
+
+    fallback = tmp_path / f"{name}.model"
+    if fallback.exists():
+        return fallback
+
+    raise FileNotFoundError(f"Could not find trained model for name={name} in {tmp_path}")
+
+
 def _make_macefield_calculator(
     model_path: Path,
     *,
@@ -207,10 +232,8 @@ def test_macefield_train_cli_smoke(tmp_path, field_fitting_configs):
     args = _common_train_args(tmp_path, xyz)
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    tagged = tmp_path / f"{args.name}_run-{args.seed}.model"
-
-    assert compiled.exists() or tagged.exists()
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
+    assert model_path.exists()
 
 
 @pytest.mark.filterwarnings("ignore::UserWarning")
@@ -222,11 +245,7 @@ def test_macefield_calculator_smoke(tmp_path, field_fitting_configs):
     args = _common_train_args(tmp_path, xyz)
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    if compiled.exists():
-        model_path = compiled
-    else:
-        model_path = tmp_path / f"{args.name}_run-{args.seed}.model"
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
     assert model_path.exists()
 
     calc = _make_macefield_calculator(model_path, default_dtype_str="float32")
@@ -265,11 +284,7 @@ def test_universal_field_loss_loading_and_eval_cli(tmp_path, field_fitting_confi
     args = _common_train_args(tmp_path, xyz)
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    if compiled.exists():
-        model_path = compiled
-    else:
-        model_path = tmp_path / f"{args.name}_run-{args.seed}.model"
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
     assert model_path.exists()
 
     out = tmp_path / "out.xyz"
@@ -282,7 +297,6 @@ def test_universal_field_loss_loading_and_eval_cli(tmp_path, field_fitting_confi
         default_dtype="float32",
         batch_size=2,
         compute_stress=True,
-        compute_bec=False,            # LES-only flag; unused here
         compute_polarization=True,
         compute_becs=True,
         compute_polarizability=True,
@@ -334,8 +348,7 @@ def test_energy_field_gradient_matches_polarization(tmp_path, field_fitting_conf
     args = _common_train_args(tmp_path, xyz)
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    model_path = compiled if compiled.exists() else tmp_path / f"{args.name}_run-{args.seed}.model"
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
 
     calc = _make_macefield_calculator(
         model_path,
@@ -352,6 +365,7 @@ def test_energy_field_gradient_matches_polarization(tmp_path, field_fitting_conf
     at.calc = calc
     E0 = at.get_potential_energy()
     P = np.asarray(at.calc.results["polarization"])
+    assert np.isfinite(E0)
 
     h = 1e-3
     for comp in range(3):
@@ -385,8 +399,7 @@ def test_becs_match_polarization_displacement_response(tmp_path, field_fitting_c
     args = _common_train_args(tmp_path, xyz)
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    model_path = compiled if compiled.exists() else tmp_path / f"{args.name}_run-{args.seed}.model"
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
 
     calc = _make_macefield_calculator(
         model_path,
@@ -425,8 +438,7 @@ def test_forces_are_energy_gradients_with_field(tmp_path, field_fitting_configs)
     args = _common_train_args(tmp_path, xyz)
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    model_path = compiled if compiled.exists() else tmp_path / f"{args.name}_run-{args.seed}.model"
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
 
     calc = _make_macefield_calculator(
         model_path,
@@ -438,6 +450,7 @@ def test_forces_are_energy_gradients_with_field(tmp_path, field_fitting_configs)
     at.calc = calc
     E0 = at.get_potential_energy()
     F = at.get_forces()
+    assert np.isfinite(E0)
 
     h = 1e-3
     i_atom, alpha = 0, 0
@@ -469,8 +482,7 @@ def test_eval_global_field_overrides_per_frame(tmp_path, field_fitting_configs):
 
     args = _common_train_args(tmp_path, xyz)
     mace_run(args)
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    model_path = compiled if compiled.exists() else tmp_path / f"{args.name}_run-{args.seed}.model"
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
 
     out = tmp_path / "out_global.xyz"
     global_field = (0.5, -0.5, 0.25)
@@ -483,7 +495,6 @@ def test_eval_global_field_overrides_per_frame(tmp_path, field_fitting_configs):
         default_dtype="float32",
         batch_size=2,
         compute_stress=False,
-        compute_bec=False,
         compute_polarization=True,
         compute_becs=True,
         compute_polarizability=True,
@@ -531,7 +542,6 @@ def test_eval_field_flags_fail_with_plain_mace(tmp_path, mace_model_path, field_
         default_dtype="float32",
         batch_size=1,
         compute_stress=True,
-        compute_bec=False,
         compute_polarization=True,
         compute_becs=True,
         compute_polarizability=True,
@@ -612,8 +622,7 @@ def test_calculator_respects_per_atoms_electric_field_override(tmp_path, field_f
     args = _common_train_args(tmp_path, xyz)
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    model_path = compiled if compiled.exists() else tmp_path / f"{args.name}_run-{args.seed}.model"
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
 
     calc = _make_macefield_calculator(
         model_path,
@@ -656,9 +665,8 @@ def test_macefield_train_with_foundation(tmp_path, field_fitting_configs):
 
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    tagged = tmp_path / f"{args.name}_run-{args.seed}.model"
-    assert compiled.exists() or tagged.exists()
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
+    assert model_path.exists()
 
 
 @pytest.mark.filterwarnings("ignore::UserWarning")
@@ -678,9 +686,8 @@ def test_macefield_multihead_finetuning_smoke(
 
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    tagged = tmp_path / f"{args.name}_run-{args.seed}.model"
-    assert compiled.exists() or tagged.exists()
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
+    assert model_path.exists()
 
 
 @pytest.mark.filterwarnings("ignore::UserWarning")
@@ -700,11 +707,7 @@ def test_macefield_multihead_calculator_heads(
 
     mace_run(args)
 
-    compiled = tmp_path / f"{args.name}_compiled.model"
-    if compiled.exists():
-        model_path = compiled
-    else:
-        model_path = tmp_path / f"{args.name}_run-{args.seed}.model"
+    model_path = _locate_trained_model(tmp_path, args.name, seed=args.seed)
     assert model_path.exists()
 
     at = field_fitting_configs[0].copy()
@@ -1039,6 +1042,49 @@ def test_foundations_loader_skip_tp_and_field_modules_inherited_when_shapes_matc
         target_field_linear_w_before,
     )
     assert not torch.allclose(
+        target.field_linear[0].bias,
+        target_field_linear_b_before,
+    )
+
+
+def test_foundations_loader_field_modules_not_inherited_when_flag_false():
+    """inherit_field_modules=False must leave field modules unchanged, even if shapes match."""
+    foundation = _FakeModel(
+        atomic_numbers=[1, 8],
+        skip_tp_paths=2048,
+        field_paths=512,
+    )
+    target = _FakeModel(
+        atomic_numbers=[1, 8],
+        skip_tp_paths=2048,
+        field_paths=512,
+    )
+
+    table = AtomicNumberTable([1, 8])
+
+    # snapshots before transfer
+    target_field_feat_before = target.field_feats[0].weight.clone()
+    target_field_linear_w_before = target.field_linear[0].weight.clone()
+    target_field_linear_b_before = target.field_linear[0].bias.clone()
+
+    load_foundations_elements(
+        model=target,
+        model_foundations=foundation,
+        table=table,
+        load_readout=True,
+        inherit_field_modules=False,
+    )
+
+    # Field modules must remain unchanged
+    assert torch.allclose(
+        target.field_feats[0].weight,
+        target_field_feat_before,
+    )
+    assert torch.allclose(
+        target.field_linear[0].weight,
+        target_field_linear_w_before,
+    )
+    assert torch.allclose(
         target.field_linear[0].bias,
         target_field_linear_b_before,
     )

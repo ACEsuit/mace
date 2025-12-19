@@ -3,77 +3,31 @@ import torch
 from mace.tools.utils import AtomicNumberTable
 
 
-def _copy_if_same_shape(dst_module, src_module, name: str):
-    """Copy parameter `name` from src_module to dst_module if shapes match."""
-    if not hasattr(dst_module, name) or not hasattr(src_module, name):
-        return
-    dst_param = getattr(dst_module, name)
-    src_param = getattr(src_module, name)
-    if dst_param is None or src_param is None:
-        return
-    if dst_param.shape == src_param.shape:
-        setattr(dst_module, name, torch.nn.Parameter(src_param.clone()))
-
-
 def load_foundations_elements(
     model: torch.nn.Module,
     model_foundations: torch.nn.Module,
     table: AtomicNumberTable,
-    load_readout: bool = False,
-    use_shift: bool = True,
-    use_scale: bool = True,
-    max_L: int = 2,
-    inherit_field_modules: bool = True,
-):
+    load_readout=False,
+    use_shift=True,
+    use_scale=True,
+    max_L=2,
+):  # pylint: disable=too-many-nested-blocks
     """
-    Load the foundations of a model into a model for fine-tuning, restricting to a
-    subset of elements.
-
-    Supports both plain MACE foundations and MACEField foundations. When both
-    models are MACEField and `inherit_field_modules=True`, the field-specific
-    modules (field_feats, field_linear) are also copied when shape-compatible.
-
-    Parameters
-    ----------
-    model
-        Target model to be fine-tuned (e.g. MACEField with possibly multiple heads).
-    model_foundations
-        Foundation model (single-head) from which to transfer weights.
-    table
-        AtomicNumberTable of the target model (defines the element subset & ordering).
-    load_readout
-        If True, replicate and broadcast foundation readout weights across heads.
-    use_shift, use_scale
-        Whether to copy the foundation scale/shift into the multihead model.
-    max_L
-        Maximum L used for the product basis contraction slice logic (for head 0).
-    inherit_field_modules
-        If True and both models have field-specific modules (MACEField), copy
-        those weights when shapes match.
+    Load the foundations of a model into a model for fine-tuning.
     """
     assert model_foundations.r_max == model.r_max
-
-    # Element tables
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
-    new_z_table = table
-
     model_heads = model.heads
+    new_z_table = table
     num_species_foundations = len(z_table.zs)
-    indices_weights = [z_table.z_to_index(z) for z in new_z_table.zs]
-    num_species = len(indices_weights)
-
-    # Channels per species in foundation node embedding
     num_channels_foundation = (
         model_foundations.node_embedding.linear.weight.shape[0]
         // num_species_foundations
     )
-
-    # Radial basis dimension (for slicing conv_tp_weights layer0)
+    indices_weights = [z_table.z_to_index(z) for z in new_z_table.zs]
     num_radial = model.radial_embedding.out_dim
-
-    # -------------------------------------------------------------------------
-    # Node embedding: slice foundation by species and rescale
-    # -------------------------------------------------------------------------
+    num_species = len(indices_weights)
+    max_ell = model.spherical_harmonics._lmax  # pylint: disable=protected-access
     model.node_embedding.linear.weight = torch.nn.Parameter(
         model_foundations.node_embedding.linear.weight.view(
             num_species_foundations, -1
@@ -82,154 +36,289 @@ def load_foundations_elements(
         .clone()
         / (num_species_foundations / num_species) ** 0.5
     )
-
-    # -------------------------------------------------------------------------
-    # Radial embedding / Bessel basis
-    # -------------------------------------------------------------------------
+    if hasattr(model, "joint_embedding"):
+        for (_, param_1), (_, param_2) in zip(
+            model.joint_embedding.named_parameters(),
+            model_foundations.joint_embedding.named_parameters(),
+        ):
+            param_1.data.copy_(param_2.data)
+    if hasattr(model, "embedding_readout"):
+        for (_, param_1), (_, param_2) in zip(
+            model.embedding_readout.named_parameters(),
+            model_foundations.embedding_readout.named_parameters(),
+        ):
+            param_1.data.copy_(
+                param_2.data.reshape(-1, 1)
+                .repeat(1, len(model_heads))
+                .flatten()
+                .clone()
+            )
     if model.radial_embedding.bessel_fn.__class__.__name__ == "BesselBasis":
         model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
             model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
         )
-
-    # -------------------------------------------------------------------------
-    # Interaction blocks
-    # -------------------------------------------------------------------------
     for i in range(int(model.num_interactions)):
-        # linear_up
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear_up.weight.clone()
         )
-
-        # avg_num_neighbors
         model.interactions[i].avg_num_neighbors = model_foundations.interactions[
             i
         ].avg_num_neighbors
 
-        # conv_tp_weights: only layer0 depends on radial basis dim
-        for j in range(4):  # assuming 4 layers in conv_tp_weights
-            layer_name = f"layer{j}"
-            src_layer = getattr(
-                model_foundations.interactions[i].conv_tp_weights, layer_name
-            )
-            dst_layer = getattr(model.interactions[i].conv_tp_weights, layer_name)
-
-            if j == 0:
-                # layer0 depends on num_radial, so slice in the radial dimension
-                dst_layer.weight = torch.nn.Parameter(
-                    src_layer.weight[:num_radial, :].clone()
-                )
+        for (_, param_1), (_, param_2) in zip(
+            model.interactions[i].conv_tp_weights.named_parameters(),
+            model_foundations.interactions[i].conv_tp_weights.named_parameters(),
+        ):
+            if param_1.shape == param_2.shape:
+                param_1.data.copy_(param_2.data)
             else:
-                dst_layer.weight = torch.nn.Parameter(src_layer.weight.clone())
-
-        # main linear in the interaction block
-        model.interactions[i].linear.weight = torch.nn.Parameter(
-            model_foundations.interactions[i].linear.weight.clone()
-        )
-        src_skip_w = model_foundations.interactions[i].skip_tp.weight
-        dst_skip_w = model.interactions[i].skip_tp.weight
-        if src_skip_w.shape == dst_skip_w.shape:
-            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
-                src_skip_w.clone()
+                param_1.data.copy_(param_2.data[: (num_radial + 2 * num_species), ...])
+        if hasattr(model.interactions[i], "linear"):
+            model.interactions[i].linear.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear.weight.clone()
             )
-
-        # Density networks (where present)
+        if hasattr(model.interactions[i], "linear_1"):
+            model.interactions[i].linear_1.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear_1.weight.clone()
+            )
+        if hasattr(model.interactions[i], "linear_2"):
+            model.interactions[i].linear_2.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear_2.weight.clone()
+            )
+        if hasattr(model.interactions[i], "linear_res"):
+            model.interactions[i].linear_res.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear_res.weight.clone()
+            )
+        if hasattr(model.interactions[i], "source_embedding"):
+            model.interactions[i].source_embedding.weight = torch.nn.Parameter(
+                model_foundations.interactions[i]
+                .source_embedding.weight.view(num_species_foundations, -1)[
+                    indices_weights, :
+                ]
+                .flatten()
+                .clone()
+                / (num_species_foundations / num_species) ** 0.5
+            )
+        if hasattr(model.interactions[i], "target_embedding"):
+            model.interactions[i].target_embedding.weight = torch.nn.Parameter(
+                model_foundations.interactions[i]
+                .target_embedding.weight.view(num_species_foundations, -1)[
+                    indices_weights, :
+                ]
+                .flatten()
+                .clone()
+                / (num_species_foundations / num_species) ** 0.5
+            )
+        if hasattr(model.interactions[i], "alpha"):
+            model.interactions[i].alpha = torch.nn.Parameter(
+                model_foundations.interactions[i].alpha.clone()
+            )
+        if hasattr(model.interactions[i], "beta"):
+            model.interactions[i].beta = torch.nn.Parameter(
+                model_foundations.interactions[i].beta.clone()
+            )
         if model.interactions[i].__class__.__name__ in [
-            "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticResidualInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
         ]:
-            getattr(model.interactions[i].density_fn, "layer0").weight = (
-                torch.nn.Parameter(
-                    getattr(
-                        model_foundations.interactions[i].density_fn,
-                        "layer0",
-                    ).weight.clone()
-                )
+            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
+                model_foundations.interactions[i]
+                .skip_tp.weight.reshape(
+                    num_channels_foundation,
+                    num_species_foundations,
+                    num_channels_foundation,
+                )[:, indices_weights, :]
+                .flatten()
+                .clone()
+                / (num_species_foundations / num_species) ** 0.5
             )
+        elif model.interactions[i].__class__.__name__ in [
+            "RealAgnosticResidualNonLinearInteractionBlock",
+        ]:
+            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].skip_tp.weight
+            )
+        else:
+            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
+                model_foundations.interactions[i]
+                .skip_tp.weight.reshape(
+                    num_channels_foundation,
+                    (max_ell + 1),
+                    num_species_foundations,
+                    num_channels_foundation,
+                )[:, :, indices_weights, :]
+                .flatten()
+                .clone()
+                / (num_species_foundations / num_species) ** 0.5
+            )
+        if hasattr(model.interactions[i], "density_fn"):
+            for (_, param_1), (_, param_2) in zip(
+                model.interactions[i].density_fn.named_parameters(),
+                model_foundations.interactions[i].density_fn.named_parameters(),
+            ):
+                param_1.data.copy_(param_2.data)
 
-    # -------------------------------------------------------------------------
-    # Product basis blocks
-    # -------------------------------------------------------------------------
-    # Assumes two "product groups", with different L coverage.
-    for i in range(2):  # two product module groups
-        max_range = max_L + 1 if i == 0 else 1
-        for j in range(max_range):
-            # weights_max: slice by species
-            model.products[i].symmetric_contractions.contractions[j].weights_max = (
+    # Transferring products
+    for i, product in enumerate(model.products):
+        indices_weights_prod = indices_weights
+        if hasattr(product, "use_agnostic_product"):
+            if product.use_agnostic_product:
+                indices_weights_prod = [0]
+        max_range = max_L + 1 if i < len(model.products) - 1 else 1
+        for j in range(max_range):  # Assuming 3 contractions in symmetric_contractions
+            product.symmetric_contractions.contractions[j].weights_max = (
                 torch.nn.Parameter(
                     model_foundations.products[i]
                     .symmetric_contractions.contractions[j]
-                    .weights_max[indices_weights, :, :]
+                    .weights_max[indices_weights_prod, :, :]
                     .clone()
                 )
             )
 
-            # weights: two weight tensors per contraction, also sliced by species
-            for k in range(2):
-                model.products[i].symmetric_contractions.contractions[j].weights[k] = (
-                    torch.nn.Parameter(
-                        model_foundations.products[i]
-                        .symmetric_contractions.contractions[j]
-                        .weights[k][indices_weights, :, :]
-                        .clone()
-                    )
+            target_weights = product.symmetric_contractions.contractions[j].weights
+            source_weights = (
+                model_foundations.products[i]
+                .symmetric_contractions.contractions[j]
+                .weights
+            )
+            for k, _ in enumerate(target_weights):
+                target_weights[k] = torch.nn.Parameter(
+                    source_weights[k][indices_weights_prod, :, :].clone()
                 )
-
-        # product linear
-        model.products[i].linear.weight = torch.nn.Parameter(
+        product.linear.weight = torch.nn.Parameter(
             model_foundations.products[i].linear.weight.clone()
         )
 
-    # -------------------------------------------------------------------------
-    # Readouts
-    # -------------------------------------------------------------------------
     if load_readout:
-        # We assume the foundation has a 2x0e output and replicate across heads.
+        # Transferring readouts
+        for i, readout in enumerate(model.readouts):
+            if readout.__class__.__name__ == "LinearReadoutBlock":
+                model_readouts_zero_linear_weight = readout.linear.weight.clone()
+                model_readouts_zero_linear_weight = (
+                    model_foundations.readouts[i]
+                    .linear.weight.view(num_channels_foundation, -1)
+                    .repeat(1, len(model_heads))
+                    .flatten()
+                    .clone()
+                )
+                readout.linear.weight = torch.nn.Parameter(
+                    model_readouts_zero_linear_weight
+                )
+            if readout.__class__.__name__ in [
+                "NonLinearBiasReadoutBlock",
+                "NonLinearReadoutBlock",
+            ]:
+                assert hasattr(readout, "linear_1") or hasattr(
+                    readout, "linear_mid"
+                ), "Readout block must have linear_1 or linear_mid"
+                # Determine shapes once to avoid uninitialized use
+                if hasattr(readout, "linear_1"):
+                    shape_input_1 = (
+                        model_foundations.readouts[i]
+                        .linear_1.__dict__["irreps_out"]
+                        .num_irreps
+                    )
+                    shape_output_1 = readout.linear_1.__dict__["irreps_out"].num_irreps
+                else:
+                    raise ValueError("Readout block must have linear_1")
+                if hasattr(readout, "linear_1"):
+                    model_readouts_one_linear_1_weight = readout.linear_1.weight.clone()
+                    model_readouts_one_linear_1_weight = (
+                        model_foundations.readouts[i]
+                        .linear_1.weight.view(num_channels_foundation, -1)
+                        .repeat(1, len(model_heads))
+                        .flatten()
+                        .clone()
+                    )
+                    readout.linear_1.weight = torch.nn.Parameter(
+                        model_readouts_one_linear_1_weight
+                    )
+                    if readout.linear_1.bias is not None:
+                        model_readouts_one_linear_1_bias = readout.linear_1.bias.clone()
+                        model_readouts_one_linear_1_bias = (
+                            model_foundations.readouts[i]
+                            .linear_1.bias.view(-1)
+                            .repeat(len(model_heads))
+                            .clone()
+                        )
+                        readout.linear_1.bias = torch.nn.Parameter(
+                            model_readouts_one_linear_1_bias
+                        )
+                if hasattr(readout, "linear_mid"):
+                    readout.linear_mid.weight = torch.nn.Parameter(
+                        model_foundations.readouts[i]
+                        .linear_mid.weight.view(
+                            shape_input_1,
+                            shape_input_1,
+                        )
+                        .repeat(len(model_heads), len(model_heads))
+                        .flatten()
+                        .clone()
+                        / ((shape_input_1) / (shape_output_1)) ** 0.5
+                    )
+                    # if it has biases transfer them too
+                    if readout.linear_mid.bias is not None:
+                        readout.linear_mid.bias = torch.nn.Parameter(
+                            model_foundations.readouts[i]
+                            .linear_mid.bias.repeat(len(model_heads))
+                            .clone()
+                        )
+                if hasattr(readout, "linear_2"):
+                    model_readouts_one_linear_2_weight = readout.linear_2.weight.clone()
+                    model_readouts_one_linear_2_weight = model_foundations.readouts[
+                        i
+                    ].linear_2.weight.view(shape_input_1, -1).repeat(
+                        len(model_heads), len(model_heads)
+                    ).flatten().clone() / (
+                        ((shape_input_1) / (shape_output_1)) ** 0.5
+                    )
+                    readout.linear_2.weight = torch.nn.Parameter(
+                        model_readouts_one_linear_2_weight
+                    )
+                    if readout.linear_2.bias is not None:
+                        model_readouts_one_linear_2_bias = readout.linear_2.bias.clone()
+                        model_readouts_one_linear_2_bias = (
+                            model_foundations.readouts[i]
+                            .linear_2.bias.view(-1)
+                            .repeat(len(model_heads))
+                            .flatten()
+                            .clone()
+                        )
+                        readout.linear_2.bias = torch.nn.Parameter(
+                            model_readouts_one_linear_2_bias
+                        )
+                if hasattr(model, "field_feats") and hasattr(
+                    model_foundations, "field_feats"
+                ):
+                    n = min(len(model.field_feats), len(model_foundations.field_feats))
+                    for i in range(n):
+                        src = model_foundations.field_feats[i]
+                        dst = model.field_feats[i]
+                        if hasattr(src, "weight") and hasattr(dst, "weight"):
+                            if src.weight.shape == dst.weight.shape:
+                                dst.weight = torch.nn.Parameter(src.weight.clone())
+                if hasattr(model, "field_linear") and hasattr(
+                    model_foundations, "field_linear"
+                ):
+                    n = min(
+                        len(model.field_linear), len(model_foundations.field_linear)
+                    )
+                    for i in range(n):
+                        src = model_foundations.field_linear[i]
+                        dst = model.field_linear[i]
 
-        # Readout 0: LinearReadoutBlock for scalar-like quantities
-        model_readouts_zero_linear_weight = (
-            model_foundations.readouts[0]
-            .linear.weight.view(num_channels_foundation, -1)
-            .repeat(1, len(model_heads))
-            .flatten()
-            .clone()
-        )
-        model.readouts[0].linear.weight = torch.nn.Parameter(
-            model_readouts_zero_linear_weight
-        )
+                        if hasattr(src, "weight") and hasattr(dst, "weight"):
+                            if src.weight.shape == dst.weight.shape:
+                                dst.weight = torch.nn.Parameter(src.weight.clone())
 
-        # Readout 1: NonLinearReadoutBlock
-        shape_input_1 = (
-            model_foundations.readouts[1].linear_1.__dict__["irreps_out"].num_irreps
-        )
-        shape_output_1 = model.readouts[1].linear_1.__dict__["irreps_out"].num_irreps
-
-        # linear_1: replicate across heads (like readout[0])
-        model_readouts_one_linear_1_weight = (
-            model_foundations.readouts[1]
-            .linear_1.weight.view(num_channels_foundation, -1)
-            .repeat(1, len(model_heads))
-            .flatten()
-            .clone()
-        )
-        model.readouts[1].linear_1.weight = torch.nn.Parameter(
-            model_readouts_one_linear_1_weight
-        )
-
-        # linear_2: broadcast in both input and output head dimensions
-        model_readouts_one_linear_2_weight = model_foundations.readouts[
-            1
-        ].linear_2.weight.view(shape_input_1, -1).repeat(
-            len(model_heads), len(model_heads)
-        ).flatten().clone() / (
-            (shape_input_1 / shape_output_1) ** 0.5
-        )
-        model.readouts[1].linear_2.weight = torch.nn.Parameter(
-            model_readouts_one_linear_2_weight
-        )
-
-    # -------------------------------------------------------------------------
-    # Scale & shift
-    # -------------------------------------------------------------------------
+                        if (
+                            hasattr(src, "bias")
+                            and hasattr(dst, "bias")
+                            and src.bias is not None
+                            and dst.bias is not None
+                            and src.bias.shape == dst.bias.shape
+                        ):
+                            dst.bias = torch.nn.Parameter(src.bias.clone())
     if model_foundations.scale_shift is not None:
         if use_scale:
             model.scale_shift.scale = model_foundations.scale_shift.scale.repeat(
@@ -239,44 +328,13 @@ def load_foundations_elements(
             model.scale_shift.shift = model_foundations.scale_shift.shift.repeat(
                 len(model_heads)
             ).clone()
-
-    # -------------------------------------------------------------------------
-    # MACEField-specific modules (field_feats, field_linear)
-    # -------------------------------------------------------------------------
-    if inherit_field_modules:
-        # Only act if both models have these attributes (i.e. both are MACEField).
-        if hasattr(model, "field_feats") and hasattr(model_foundations, "field_feats"):
-            n = min(len(model.field_feats), len(model_foundations.field_feats))
-            for i in range(n):
-                # FullyConnectedTensorProduct typically has a 'weight' parameter
-                _copy_if_same_shape(
-                    model.field_feats[i], model_foundations.field_feats[i], "weight"
-                )
-
-        if hasattr(model, "field_linear") and hasattr(
-            model_foundations, "field_linear"
-        ):
-            n = min(len(model.field_linear), len(model_foundations.field_linear))
-            for i in range(n):
-                # Copy weight and bias when shape-compatible
-                _copy_if_same_shape(
-                    model.field_linear[i], model_foundations.field_linear[i], "weight"
-                )
-                _copy_if_same_shape(
-                    model.field_linear[i], model_foundations.field_linear[i], "bias"
-                )
-
     return model
 
 
 def load_foundations(
-    model: torch.nn.Module,
-    model_foundations: torch.nn.Module,
+    model,
+    model_foundations,
 ):
-    """
-    Simple foundation loader: copy matching parameters from model_foundations
-    into model, skipping anything in 'readouts'.
-    """
     for name, param in model_foundations.named_parameters():
         if name in model.state_dict().keys():
             if "readouts" not in name:
