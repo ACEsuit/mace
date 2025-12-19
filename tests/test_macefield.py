@@ -160,7 +160,7 @@ def _make_macefield_calculator(
     *,
     device: str = "cpu",
     default_dtype_str: str = "float32",
-    head: str | None = None,
+    head: Optional[str] = None,
 ) -> MACECalculator:
     """Create a MACEField calculator with ASE state checking disabled.
 
