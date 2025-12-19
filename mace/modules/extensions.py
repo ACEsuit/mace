@@ -297,7 +297,7 @@ class MACEField(ScaleShiftMACE):
                 irreps_out=hidden_irreps,
                 cueq_config=cueq_config,
             )
-            for _ in range(self.num_interactions)
+            for _ in range(self.num_interactions - 1)
         )
 
         self.field_linear = torch.nn.ModuleList(
@@ -306,7 +306,7 @@ class MACEField(ScaleShiftMACE):
                 irreps_out=hidden_irreps,
                 cueq_config=cueq_config,
             )
-            for _ in range(self.num_interactions)
+            for _ in range(self.num_interactions - 1)
         )
 
     def forward(
@@ -432,8 +432,8 @@ class MACEField(ScaleShiftMACE):
         # Precompute per-atom electric field once
         per_atom_electric_field = electric_field[data["batch"].to(torch.long)]
 
-        for i, (interaction, product, field_block, linear_block) in enumerate(
-            zip(self.interactions, self.products, self.field_feats, self.field_linear)
+        for i, (interaction, product) in enumerate(
+            zip(self.interactions, self.products)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -462,11 +462,11 @@ class MACEField(ScaleShiftMACE):
 
             # Field coupling on all but the last interaction layer
             if i < self.num_interactions - 1:
-                delta_node_feats = field_block(
+                delta_node_feats = self.field_feats[i](
                     node_feats,
                     per_atom_electric_field,
                 )
-                node_feats = node_feats - linear_block(delta_node_feats)
+                node_feats = node_feats - self.field_linear[i](delta_node_feats)
 
             node_feats_list.append(node_feats)
 

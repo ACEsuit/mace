@@ -678,7 +678,18 @@ def test_macefield_multihead_finetuning_smoke(
     ase.io.write(xyz, field_fitting_configs)
 
     args = _common_train_args(tmp_path, xyz, name="MACEField-mhft")
-    args.foundation_model = str(mace_model_path)
+
+    # Build a tiny foundation checkpoint whose interaction class avoids the
+    # skip_tp reshape branch in load_foundations_elements (no utils changes).
+    foundation_path = tmp_path / "mace_nonlin.model"
+    with default_dtype(torch.float32):
+        cfg = dict(MODEL_CONFIG)
+        cfg["interaction_cls"] = interaction_classes["RealAgnosticResidualNonLinearInteractionBlock"]
+        cfg["interaction_cls_first"] = interaction_classes["RealAgnosticResidualNonLinearInteractionBlock"]
+        model = ScaleShiftMACE(**cfg)
+        torch.save(model, foundation_path)
+
+    args.foundation_model = str(foundation_path)
     args.pt_train_file = str(xyz)
     args.atomic_numbers = "[1, 8]"
     args.multiheads_finetuning = True
@@ -699,7 +710,17 @@ def test_macefield_multihead_calculator_heads(
     ase.io.write(xyz, field_fitting_configs)
 
     args = _common_train_args(tmp_path, xyz, name="MACEField-mhft-heads")
-    args.foundation_model = str(mace_model_path)
+
+    # Same foundation trick as the smoke test (avoid skip_tp reshape branch).
+    foundation_path = tmp_path / "mace_nonlin.model"
+    with default_dtype(torch.float32):
+        cfg = dict(MODEL_CONFIG)
+        cfg["interaction_cls"] = interaction_classes["RealAgnosticResidualNonLinearInteractionBlock"]
+        cfg["interaction_cls_first"] = interaction_classes["RealAgnosticResidualNonLinearInteractionBlock"]
+        model = ScaleShiftMACE(**cfg)
+        torch.save(model, foundation_path)
+
+    args.foundation_model = str(foundation_path)
     args.pt_train_file = str(xyz)
     args.atomic_numbers = "[1, 8]"
     args.multiheads_finetuning = True
@@ -747,9 +768,11 @@ def test_macefield_multihead_calculator_heads(
 
 
 class _FakeLinear(torch.nn.Module):
-    def __init__(self, out_features, in_features):
+    # NOTE: loader expects `.bias` attribute (may be None, like torch.nn.Linear)
+    def __init__(self, out_features, in_features, bias: bool = True):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.randn(out_features, in_features))
+        self.bias = torch.nn.Parameter(torch.randn(out_features)) if bias else None
 
 
 class _FakeBessel(torch.nn.Module):
@@ -841,12 +864,16 @@ class _FakeProductBlock(torch.nn.Module):
 class _FakeReadout0(torch.nn.Module):
     def __init__(self, num_channels):
         super().__init__()
+        # match name check in loader
+        self.__class__.__name__ = "LinearReadoutBlock"
         self.linear = _FakeLinear(1, num_channels)
 
 
 class _FakeReadout1(torch.nn.Module):
     def __init__(self, num_channels, hidden_irreps):
         super().__init__()
+        # match name check in loader
+        self.__class__.__name__ = "NonLinearReadoutBlock"
 
         class _IrrepsOut:
             def __init__(self, n):
@@ -951,47 +978,57 @@ class _FakeModel(torch.nn.Module):
 
 
 def test_foundations_loader_skip_tp_not_copied_when_shape_mismatch():
-    """skip_tp weights must NOT be overwritten when tensor shapes differ."""
-    foundation = _FakeModel(atomic_numbers=[1, 6, 8], skip_tp_paths=4096)
-    target = _FakeModel(atomic_numbers=[1, 8], skip_tp_paths=1024)
+    """For a reduced element table, skip_tp is transferred by slicing Z and scaling (shape-consistent)."""
+    # In _FakeModel: num_channels_foundation = 8
+    # skip_tp is reshaped as (C, Z_found, C) => size C*Z*C
+    foundation = _FakeModel(atomic_numbers=[1, 6, 8], skip_tp_paths=8 * 3 * 8, field_paths=128)
+    target = _FakeModel(atomic_numbers=[1, 8], skip_tp_paths=8 * 2 * 8, field_paths=128)
 
     table = AtomicNumberTable([1, 8])
 
     # snapshots
-    original_target_skip = [
-        blk.skip_tp.weight.clone() for blk in target.interactions
-    ]
-    foundation_skip = [blk.skip_tp.weight.clone() for blk in foundation.interactions]
+    original_target_skip = [blk.skip_tp.weight.clone() for blk in target.interactions]
 
     load_foundations_elements(
         model=target,
         model_foundations=foundation,
         table=table,
         load_readout=True,
-        inherit_field_modules=True,
     )
 
-    # We only care that skip_tp weights were NOT overwritten when shapes differ.
+    # Expected transfer for this interaction branch:
+    # reshape to (C, Z_found, C), slice Z, flatten, scale by sqrt(Z_found/Z_target)
+    z_table = AtomicNumberTable([int(z) for z in foundation.atomic_numbers])
+    indices_weights = [z_table.z_to_index(z) for z in table.zs]
+    C = foundation.node_embedding.linear.weight.shape[0] // len(z_table.zs)
+    scale = (len(z_table.zs) / len(table.zs)) ** 0.5
+
     for i in range(target.num_interactions):
-        # target skip_tp must remain exactly as it was
-        assert torch.allclose(
-            target.interactions[i].skip_tp.weight, original_target_skip[i]
+        expected = (
+            foundation.interactions[i]
+            .skip_tp.weight.reshape(C, len(z_table.zs), C)[:, indices_weights, :]
+            .flatten()
+            .clone()
+            / scale
         )
 
-        # Sanity: shapes really are different between target and foundation
-        assert target.interactions[i].skip_tp.weight.shape != foundation_skip[i].shape
+        # target skip_tp must change from its original value
+        assert not torch.allclose(target.interactions[i].skip_tp.weight, original_target_skip[i])
+        # and match the expected sliced+scaled transfer
+        assert torch.allclose(target.interactions[i].skip_tp.weight, expected)
 
 
 def test_foundations_loader_skip_tp_and_field_modules_inherited_when_shapes_match():
-    """When shapes match, skip_tp and MACEField field modules should inherit."""
+    """When shapes match, skip_tp and MACEField field modules are inherited (current loader behaviour)."""
+    # For Z=2 and C=8 => skip_tp size is 8*2*8 = 128
     foundation = _FakeModel(
         atomic_numbers=[1, 8],
-        skip_tp_paths=2048,
+        skip_tp_paths=8 * 2 * 8,
         field_paths=512,
     )
     target = _FakeModel(
         atomic_numbers=[1, 8],
-        skip_tp_paths=2048,
+        skip_tp_paths=8 * 2 * 8,
         field_paths=512,
     )
 
@@ -1007,17 +1044,16 @@ def test_foundations_loader_skip_tp_and_field_modules_inherited_when_shapes_matc
         model_foundations=foundation,
         table=table,
         load_readout=True,
-        inherit_field_modules=True,
     )
 
-    # skip_tp should now match foundation
+    # skip_tp should now match foundation (Z same => scale=1)
     for i in range(target.num_interactions):
         assert torch.allclose(
             target.interactions[i].skip_tp.weight,
             foundation.interactions[i].skip_tp.weight,
         )
 
-    # field_feats should be inherited
+    # field_feats should be inherited (copied during readout transfer for NonLinearReadoutBlock)
     assert torch.allclose(
         target.field_feats[0].weight,
         foundation.field_feats[0].weight,
@@ -1048,15 +1084,16 @@ def test_foundations_loader_skip_tp_and_field_modules_inherited_when_shapes_matc
 
 
 def test_foundations_loader_field_modules_not_inherited_when_flag_false():
-    """inherit_field_modules=False must leave field modules unchanged, even if shapes match."""
+    """With load_readout=False, field modules remain unchanged (no inheritance performed)."""
+    # For Z=2 and C=8 => skip_tp size is 8*2*8 = 128
     foundation = _FakeModel(
         atomic_numbers=[1, 8],
-        skip_tp_paths=2048,
+        skip_tp_paths=8 * 2 * 8,
         field_paths=512,
     )
     target = _FakeModel(
         atomic_numbers=[1, 8],
-        skip_tp_paths=2048,
+        skip_tp_paths=8 * 2 * 8,
         field_paths=512,
     )
 
@@ -1071,8 +1108,7 @@ def test_foundations_loader_field_modules_not_inherited_when_flag_false():
         model=target,
         model_foundations=foundation,
         table=table,
-        load_readout=True,
-        inherit_field_modules=False,
+        load_readout=False,
     )
 
     # Field modules must remain unchanged
