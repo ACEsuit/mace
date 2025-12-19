@@ -148,9 +148,10 @@ class MACECalculator(Calculator):
             "DipoleMACE",
             "EnergyDipoleMACE",
             "DipolePolarizabilityMACE",
+            "MACEField",
         ]:
             raise ValueError(
-                f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
+                f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE, MACEField], {model_type} not supported"
             )
 
         # superclass constructor initializes self.implemented_properties to an empty list
