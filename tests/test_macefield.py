@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from typing import Optional
 
 import ase
 import ase.io
@@ -129,7 +130,7 @@ def _common_train_args(tmp_path: Path, xyz: Path, name: str = "MACEField-mini"):
     return args
 
 
-def _locate_trained_model(tmp_path: Path, name: str, seed: int | None = None) -> Path:
+def _locate_trained_model(tmp_path: Path, name: str, seed: Optional[int] = None) -> Path:
     """Locate a trained model file for a given run name.
 
     Handles both compiled and tagged naming schemes used by MACE.
