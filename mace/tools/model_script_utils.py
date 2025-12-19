@@ -22,7 +22,8 @@ def configure_model(
 ):
     # Selecting outputs
     compute_virials = args.loss == "virials"
-    compute_stress = args.loss in ("stress", "huber", "universal")
+    compute_stress = args.loss in ("stress", "huber", "universal", "universal_field")
+    compute_dielectric = args.loss == "universal_field"
 
     if compute_virials:
         args.compute_virials = True
@@ -31,13 +32,18 @@ def configure_model(
         args.compute_stress = True
         args.error_table = "PerAtomRMSEstressvirials"
 
+    if compute_dielectric:
+        args.error_table = "PerAtomFieldRMSE"
+
     output_args = {
         "energy": args.compute_energy,
         "forces": args.compute_forces,
         "virials": compute_virials,
         "stress": compute_stress,
         "dipoles": args.compute_dipole,
-        "polarizabilities": args.compute_polarizability,
+        "polarization": args.compute_polarization,
+        "becs": args.compute_becs,
+        "polarizability": args.compute_polarizability,
     }
     logging.info(
         f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
@@ -80,6 +86,7 @@ def configure_model(
         "MACE",
         "ScaleShiftMACE",
         "MACELES",
+        "MACEField",
     ]:
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
@@ -114,7 +121,11 @@ def configure_model(
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
         args.model = (
-            "FoundationMACELES" if args.model == "MACELES" else "FoundationMACE"
+            "FoundationMACELES"
+            if args.model == "MACELES"
+            else (
+                "FoundationMACEField" if args.model == "MACEField" else "FoundationMACE"
+            )
         )
         model_config_foundation["heads"] = heads
         model_config = model_config_foundation
@@ -273,6 +284,14 @@ def _build_model(
             les_arguments=args.les_arguments,
             **model_config_foundation,
         )
+    if args.model == "FoundationMACEField":
+        from mace.modules.extensions import MACEField
+
+        args.error_table = "PerAtomFieldRMSE"
+        args.loss = "UniversalField"
+        return MACEField(
+            **model_config_foundation,
+        )
     if args.model == "ScaleShiftBOTNet":
         # say it is deprecated
         raise RuntimeError("ScaleShiftBOTNet is deprecated, use MACE instead")
@@ -335,6 +354,29 @@ def _build_model(
 
         return MACELES(
             les_arguments=args.les_arguments,
+            **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=args.std,
+            atomic_inter_shift=[0.0] * len(heads),
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
+            heads=heads,
+            embedding_specs=args.embedding_specs,
+            use_embedding_readout=args.use_embedding_readout,
+            use_last_readout_only=args.use_last_readout_only,
+            use_agnostic_product=args.use_agnostic_product,
+        )
+    if args.model == "MACEField":
+        from mace.modules.extensions import MACEField
+
+        args.error_table = "PerAtomFieldRMSE"
+        args.loss = "UniversalField"
+        return MACEField(
             **model_config,
             pair_repulsion=args.pair_repulsion,
             distance_transform=args.distance_transform,

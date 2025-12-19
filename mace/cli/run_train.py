@@ -326,6 +326,7 @@ def run(args) -> None:
                     args.pseudolabel_replay
                     and args.multiheads_finetuning
                     and head_config.head_name == "pt_head"
+                    or args.model == "MACEField"
                 ),
                 prefix=args.name,
             )
@@ -363,7 +364,10 @@ def run(args) -> None:
         logging.info(
             "==================Using multiheads finetuning mode=================="
         )
-        args.loss = "universal"
+        if args.model == "MACEField":
+            args.loss = "universal_field"
+        else:
+            args.loss = "universal"
 
         all_ase_readable = all(
             all(check_path_ase_read(f) for f in head_config.train_file)
@@ -516,11 +520,12 @@ def run(args) -> None:
             args.compute_forces = True
             args.compute_virials = False
             args.compute_stress = False
-            args.compute_polarizability = False
+            # args.compute_polarizability = False
         else:
             args.compute_energy = True
             args.compute_dipole = False
-            args.compute_polarizability = False
+            # args.compute_polarizability = False
+
         # atomic_energies: np.ndarray = np.array(
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
@@ -702,7 +707,7 @@ def run(args) -> None:
 
     # Model
     model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
-    model.to(device)
+    model.to(device, dtype={"float32": torch.float32, "float64": torch.float64}[args.default_dtype])
 
     logging.debug(model)
     logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
@@ -727,11 +732,11 @@ def run(args) -> None:
         args.enable_oeq = False
     if args.enable_cueq and not args.only_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES", "MACEField"]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     if args.enable_oeq:
         logging.info("Converting model to OEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
+        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES", "MACEField"]
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
 
     # Optimizer

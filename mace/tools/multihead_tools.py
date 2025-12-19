@@ -315,7 +315,22 @@ def generate_pseudolabels_for_configs(
                     config_copy.properties["charges"] = (
                         out["charges"][node_start:node_end].detach().cpu().numpy()
                     )
+                if "polarization" in out and out["polarization"] is not None:
+                    config_copy.properties["polarization"] = (
+                        out["polarization"][j].detach().cpu().numpy()
+                    )
+                if "becs" in out and out["becs"] is not None:
+                    # BECs are per atom
+                    node_start = batch.ptr[j].item()
+                    node_end = batch.ptr[j + 1].item()
 
+                    config_copy.properties["becs"] = (
+                        out["becs"][node_start:node_end].detach().cpu().numpy()
+                    )
+                if "polarizability" in out and out["polarizability"] is not None:
+                    config_copy.properties["polarizability"] = (
+                        out["polarizability"][j].detach().cpu().numpy()
+                    )
                 updated_configs.append(config_copy)
 
         except Exception as e:  # pylint: disable=broad-except

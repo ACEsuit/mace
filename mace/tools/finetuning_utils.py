@@ -11,7 +11,7 @@ def load_foundations_elements(
     use_shift=True,
     use_scale=True,
     max_L=2,
-):
+):  # pylint: disable=too-many-nested-blocks
     """
     Load the foundations of a model into a model for fine-tuning.
     """
@@ -287,6 +287,38 @@ def load_foundations_elements(
                         readout.linear_2.bias = torch.nn.Parameter(
                             model_readouts_one_linear_2_bias
                         )
+                if hasattr(model, "field_feats") and hasattr(
+                    model_foundations, "field_feats"
+                ):
+                    n = min(len(model.field_feats), len(model_foundations.field_feats))
+                    for i in range(n):
+                        src = model_foundations.field_feats[i]
+                        dst = model.field_feats[i]
+                        if hasattr(src, "weight") and hasattr(dst, "weight"):
+                            if src.weight.shape == dst.weight.shape:
+                                dst.weight = torch.nn.Parameter(src.weight.clone())
+                if hasattr(model, "field_linear") and hasattr(
+                    model_foundations, "field_linear"
+                ):
+                    n = min(
+                        len(model.field_linear), len(model_foundations.field_linear)
+                    )
+                    for i in range(n):
+                        src = model_foundations.field_linear[i]
+                        dst = model.field_linear[i]
+
+                        if hasattr(src, "weight") and hasattr(dst, "weight"):
+                            if src.weight.shape == dst.weight.shape:
+                                dst.weight = torch.nn.Parameter(src.weight.clone())
+
+                        if (
+                            hasattr(src, "bias")
+                            and hasattr(dst, "bias")
+                            and src.bias is not None
+                            and dst.bias is not None
+                            and src.bias.shape == dst.bias.shape
+                        ):
+                            dst.bias = torch.nn.Parameter(src.bias.clone())
     if model_foundations.scale_shift is not None:
         if use_scale:
             model.scale_shift.scale = model_foundations.scale_shift.scale.repeat(

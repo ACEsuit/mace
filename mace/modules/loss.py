@@ -9,7 +9,7 @@ from typing import Optional
 import torch
 import torch.distributed as dist
 
-from mace.tools import TensorDict
+from mace.tools import TensorDict, fold_polarization
 from mace.tools.torch_geometric import Batch
 
 
@@ -622,4 +622,230 @@ class WeightedEnergyForcesL1L2Loss(torch.nn.Module):
         return (
             f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
             f"forces_weight={self.forces_weight:.3f})"
+        )
+
+
+class UniversalFieldLoss(torch.nn.Module):
+    def __init__(
+        self,
+        energy_weight=1.0,
+        forces_weight=1.0,
+        stress_weight=1.0,
+        polarization_weight=1.0,
+        becs_weight=1.0,
+        polarizability_weight=1.0,
+        huber_delta=0.01,
+    ) -> None:
+        super().__init__()
+        self.huber_delta = huber_delta
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "stress_weight",
+            torch.tensor(stress_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "polarization_weight",
+            torch.tensor(polarization_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "becs_weight",
+            torch.tensor(becs_weight, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "polarizability_weight",
+            torch.tensor(polarizability_weight, dtype=torch.get_default_dtype()),
+        )
+
+    def forward(
+        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ) -> torch.Tensor:
+        # Helper: check that a key is present if its global weight is non-zero
+        def _require_key(name: str, weight_buf: torch.Tensor) -> bool:
+            """Return True if this loss term should be used; raise if required but missing."""
+            has_ref = hasattr(ref, name) or (name in ref)
+            has_pred = name in pred
+
+            if float(weight_buf) == 0.0:
+                # Globally disabled: skip regardless of presence.
+                return False
+
+            if not has_ref or not has_pred:
+                missing_side = []
+                if not has_ref:
+                    missing_side.append("ref")
+                if not has_pred:
+                    missing_side.append("pred")
+                raise ValueError(
+                    f"UniversalFieldLoss requires '{name}' when its weight is non-zero, "
+                    f"but it is missing in {', '.join(missing_side)}."
+                )
+            return True
+
+        num_atoms = ref.ptr[1:] - ref.ptr[:-1]
+        configs_stress_weight = ref.stress_weight.view(-1, 1, 1)
+        configs_energy_weight = ref.energy_weight
+        configs_forces_weight = torch.repeat_interleave(
+            ref.forces_weight, num_atoms
+        ).unsqueeze(-1)
+
+        use_polarization = _require_key("polarization", self.polarization_weight)
+        use_becs = _require_key("becs", self.becs_weight)
+        use_polarizability = _require_key("polarizability", self.polarizability_weight)
+
+        if use_polarization:
+            configs_polarization_weight = ref.polarization_weight.view(-1, 3)
+            _, fractional_difference = fold_polarization(
+                pred["polarization"], ref["polarization"], ref["cell"]
+            )
+        else:
+            configs_polarization_weight = None
+            fractional_difference = None
+
+        if use_becs:
+            configs_becs_weight = torch.repeat_interleave(
+                ref.becs_weight,
+                num_atoms,
+                dim=0,
+            ).view(-1, 3, 3)
+        else:
+            configs_becs_weight = None
+
+        if use_polarizability:
+            configs_polarizability_weight = ref.polarizability_weight.view(-1, 3, 3)
+        else:
+            configs_polarizability_weight = None
+
+        # --- energy / forces / stress ---
+        if ddp:
+            loss_energy = torch.nn.functional.huber_loss(
+                configs_energy_weight * ref["energy"] / num_atoms,
+                configs_energy_weight * pred["energy"] / num_atoms,
+                reduction="none",
+                delta=self.huber_delta,
+            )
+            loss_energy = reduce_loss(loss_energy, ddp)
+
+            loss_forces = conditional_huber_forces(
+                configs_forces_weight * ref["forces"],
+                configs_forces_weight * pred["forces"],
+                huber_delta=self.huber_delta,
+                ddp=ddp,
+            )
+
+            loss_stress = torch.nn.functional.huber_loss(
+                configs_stress_weight * ref["stress"],
+                configs_stress_weight * pred["stress"],
+                reduction="none",
+                delta=self.huber_delta,
+            )
+            loss_stress = reduce_loss(loss_stress, ddp)
+
+            if use_polarization:
+                loss_polarization = torch.nn.functional.huber_loss(
+                    configs_polarization_weight * fractional_difference,
+                    configs_polarization_weight
+                    * torch.zeros_like(fractional_difference),
+                    reduction="none",
+                    delta=self.huber_delta,
+                )
+                loss_polarization = reduce_loss(loss_polarization, ddp)
+            else:
+                loss_polarization = torch.tensor(
+                    0.0, device=configs_energy_weight.device
+                )
+
+            if use_becs:
+                loss_becs = torch.nn.functional.huber_loss(
+                    configs_becs_weight * ref["becs"],
+                    configs_becs_weight * pred["becs"],
+                    reduction="none",
+                    delta=self.huber_delta,
+                )
+                loss_becs = reduce_loss(loss_becs, ddp)
+            else:
+                loss_becs = torch.tensor(0.0, device=configs_energy_weight.device)
+
+            if use_polarizability:
+                loss_polarizability = torch.nn.functional.huber_loss(
+                    configs_polarizability_weight * ref["polarizability"],
+                    configs_polarizability_weight * pred["polarizability"],
+                    reduction="none",
+                    delta=self.huber_delta,
+                )
+                loss_polarizability = reduce_loss(loss_polarizability, ddp)
+            else:
+                loss_polarizability = torch.tensor(
+                    0.0, device=configs_energy_weight.device
+                )
+        else:
+            loss_energy = torch.nn.functional.huber_loss(
+                configs_energy_weight * ref["energy"] / num_atoms,
+                configs_energy_weight * pred["energy"] / num_atoms,
+                reduction="mean",
+                delta=self.huber_delta,
+            )
+
+            loss_forces = conditional_huber_forces(
+                configs_forces_weight * ref["forces"],
+                configs_forces_weight * pred["forces"],
+                huber_delta=self.huber_delta,
+                ddp=ddp,
+            )
+
+            loss_stress = torch.nn.functional.huber_loss(
+                configs_stress_weight * ref["stress"],
+                configs_stress_weight * pred["stress"],
+                reduction="mean",
+                delta=self.huber_delta,
+            )
+
+            if use_polarization:
+                loss_polarization = torch.nn.functional.huber_loss(
+                    configs_polarization_weight * fractional_difference,
+                    configs_polarization_weight
+                    * torch.zeros_like(fractional_difference),
+                    reduction="mean",
+                    delta=self.huber_delta,
+                )
+            else:
+                loss_polarization = torch.tensor(
+                    0.0, device=configs_energy_weight.device
+                )
+
+            if use_becs:
+                loss_becs = torch.nn.functional.huber_loss(
+                    configs_becs_weight * ref["becs"],
+                    configs_becs_weight * pred["becs"],
+                    reduction="mean",
+                    delta=self.huber_delta,
+                )
+            else:
+                loss_becs = torch.tensor(0.0, device=configs_energy_weight.device)
+
+            if use_polarizability:
+                loss_polarizability = torch.nn.functional.huber_loss(
+                    configs_polarizability_weight * ref["polarizability"],
+                    configs_polarizability_weight * pred["polarizability"],
+                    reduction="mean",
+                    delta=self.huber_delta,
+                )
+            else:
+                loss_polarizability = torch.tensor(
+                    0.0, device=configs_energy_weight.device
+                )
+
+        return (
+            self.energy_weight * loss_energy
+            + self.forces_weight * loss_forces
+            + self.stress_weight * loss_stress
+            + self.polarization_weight * loss_polarization
+            + self.becs_weight * loss_becs
+            + self.polarizability_weight * loss_polarizability
         )

@@ -225,8 +225,8 @@ def print_git_commit():
 
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
-    if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES"]:
-        return {"error": "Model is not a ScaleShiftMACE or MACELES model"}
+    if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES", "MACEField"]:
+        return {"error": "Model is not a ScaleShiftMACE, MACELES or MACEField model"}
 
     def radial_to_name(radial_type):
         if radial_type == "BesselBasis":
@@ -560,6 +560,10 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                 atomic_energies_dict = data.compute_average_E0s(
                     train_collection, z_table
                 )
+                atomic_energies_dict = {
+                    key: value if not np.isnan(value) else 0.0
+                    for key, value in atomic_energies_dict.items()
+                }
             except Exception as e:
                 raise RuntimeError(
                     f"Could not compute average E0s if no training xyz given, error {e} occured"
@@ -686,6 +690,16 @@ def get_loss_fn(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             dipole_weight=args.dipole_weight,
+        )
+    elif args.loss == "universal_field":
+        loss_fn = modules.UniversalFieldLoss(
+            energy_weight=args.energy_weight,
+            forces_weight=args.forces_weight,
+            stress_weight=args.stress_weight,
+            huber_delta=args.huber_delta,
+            polarization_weight=args.polarization_weight,
+            becs_weight=args.becs_weight,
+            polarizability_weight=args.polarizability_weight,
         )
     else:
         loss_fn = modules.WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
@@ -843,6 +857,22 @@ def get_params_options(
                 "name": "les_readouts",
                 "params": model.les_readouts.parameters(),
                 "weight_decay": 0.0,
+            }
+        )
+    if hasattr(model, "field_feats") and model.field_feats is not None:
+        param_options["params"].append(
+            {
+                "name": "field_feats",
+                "params": model.field_feats.parameters(),
+                "weight_decay": args.weight_decay,
+            }
+        )
+    if hasattr(model, "field_linear") and model.field_linear is not None:
+        param_options["params"].append(
+            {
+                "name": "field_linear",
+                "params": model.field_linear.parameters(),
+                "weight_decay": args.weight_decay,
             }
         )
     return param_options

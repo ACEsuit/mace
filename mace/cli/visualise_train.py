@@ -9,7 +9,7 @@ import torch
 import torch.distributed
 from torchmetrics import Metric
 
-from mace.tools.utils import filter_nonzero_weight
+from mace.tools.utils import filter_nonzero_weight, fold_polarization
 
 plt.rcParams.update({"font.size": 8})
 mpl_logger = logging.getLogger("matplotlib")
@@ -104,6 +104,24 @@ error_type = {
             ("dipole", "Dipole per atom [Debye]"),
         ],
     ),
+    "PerAtomFieldRMSE": (
+        [
+            ("rmse_e_per_atom", "RMSE E/atom [meV]"),
+            ("rmse_f", "RMSE F [meV / A]"),
+            ("rmse_stress", "RMSE Stress [meV / A^3]"),
+            ("rmse_polarization", "RMSE P [me / A^2]"),
+            ("rmse_becs", "RMSE Z* [e]"),
+            ("rmse_polarizability", "RMSE a [e / V / A]"),
+        ],
+        [
+            ("energy", "Energy per atom [eV]"),
+            ("force", "Force [eV / A]"),
+            ("stress", "Stress [eV / A^3]"),
+            ("polarization", "Polarization [e / A^2]"),
+            ("becs", "Born Effective Charges [e]"),
+            ("polarizability", "Polarizability [ε0]"),
+        ],
+    ),
 }
 
 
@@ -158,7 +176,7 @@ class TrainingPlotter:
         labels, quantities = error_type[self.table_type]
 
         for head in self.heads:
-            fig = plt.figure(layout="constrained", figsize=(10, 6))
+            fig = plt.figure(layout="constrained", figsize=(len(quantities) * 3, 6))
             fig.suptitle(
                 f"Model loaded from epoch {model_epoch} ({head} head)", fontsize=16
             )
@@ -372,6 +390,33 @@ def plot_inference_from_results(
                     label=name,
                 )
 
+            elif key == "polarization" and "polarization" in result:
+                scatter = ax.scatter(
+                    result["polarization"]["reference"],
+                    result["polarization"]["predicted"],
+                    marker=marker,
+                    color=fixed_color_train_valid,
+                    label=name,
+                )
+
+            elif key == "becs" and "becs" in result:
+                scatter = ax.scatter(
+                    result["becs"]["reference"],
+                    result["becs"]["predicted"],
+                    marker=marker,
+                    color=fixed_color_train_valid,
+                    label=name,
+                )
+
+            elif key == "polarizability" and "polarizability" in result:
+                scatter = ax.scatter(
+                    result["polarizability"]["reference"],
+                    result["polarizability"]["predicted"],
+                    marker=marker,
+                    color=fixed_color_train_valid,
+                    label=name,
+                )
+
             # Add each train/valid dataset's name to the legend if scatter was assigned
             if scatter is not None:
                 legend_labels[name] = scatter
@@ -429,6 +474,33 @@ def plot_inference_from_results(
                     label="Test",
                 )
 
+            elif key == "polarization" and "polarization" in result:
+                scatter = ax.scatter(
+                    result["polarization"]["reference"],
+                    result["polarization"]["predicted"],
+                    marker="o",
+                    color=fixed_color_train_valid,
+                    label="Test",
+                )
+
+            elif key == "becs" and "becs" in result:
+                scatter = ax.scatter(
+                    result["becs"]["reference"],
+                    result["becs"]["predicted"],
+                    marker="o",
+                    color=fixed_color_train_valid,
+                    label="Test",
+                )
+
+            elif key == "polarizability" and "polarizability" in result:
+                scatter = ax.scatter(
+                    result["polarizability"]["reference"],
+                    result["polarizability"]["predicted"],
+                    marker="o",
+                    color=fixed_color_train_valid,
+                    label="Test",
+                )
+
             # Only add to legend_labels if scatter was assigned
             if scatter is not None:
                 legend_labels["Test"] = scatter
@@ -479,13 +551,29 @@ def model_inference(
         for batch in data_loader:
             batch = batch.to(device)
             batch_dict = batch.to_dict()
-            output = model(
-                batch_dict,
-                training=False,
-                compute_force=output_args.get("forces", False),
-                compute_virials=output_args.get("virials", False),
-                compute_stress=output_args.get("stress", False),
-            )
+            if (
+                output_args.get("polarization", False)
+                or output_args.get("becs", False)
+                or output_args.get("polarizability", False)
+            ):
+                output = model(
+                    batch_dict,
+                    training=True,
+                    compute_force=output_args.get("forces", False),
+                    compute_virials=output_args.get("virials", False),
+                    compute_stress=output_args.get("stress", False),
+                    compute_polarization=output_args.get("polarization", False),
+                    compute_becs=output_args.get("becs", False),
+                    compute_polarizability=output_args.get("polarizability", False),
+                )
+            else:
+                output = model(
+                    batch_dict,
+                    training=False,
+                    compute_force=output_args.get("forces", False),
+                    compute_virials=output_args.get("virials", False),
+                    compute_stress=output_args.get("stress", False),
+                )
 
             results = scatter_metric(batch, output)
 
@@ -526,6 +614,12 @@ class InferenceMetric(Metric):
         self.add_state("pred_virials", default=[], dist_reduce_fx="cat")
         self.add_state("ref_dipole", default=[], dist_reduce_fx="cat")
         self.add_state("pred_dipole", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_polarization", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_polarization", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_becs", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_becs", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_polarizability", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_polarizability", default=[], dist_reduce_fx="cat")
 
         # Per-atom normalized values
         self.add_state("ref_energies_per_atom", default=[], dist_reduce_fx="cat")
@@ -540,6 +634,10 @@ class InferenceMetric(Metric):
         self.add_state("pred_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("ref_dipole_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("pred_dipole_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_polarization_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_polarization_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("ref_polarizability_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("pred_polarizability_per_atom", default=[], dist_reduce_fx="cat")
 
         # Store atom counts for each configuration
         self.add_state("atom_counts", default=[], dist_reduce_fx="cat")
@@ -553,6 +651,13 @@ class InferenceMetric(Metric):
         self.add_state("n_stress", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_virials", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_dipole", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "n_polarization", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.add_state("n_becs", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "n_polarizability", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
 
     def update(self, batch, output):  # pylint: disable=arguments-differ
         """Update metric states with new batch data."""
@@ -708,6 +813,7 @@ class InferenceMetric(Metric):
         if output.get("dipole") is not None and batch.dipole is not None:
             self.ref_dipole.append(batch.dipole)
             self.pred_dipole.append(output["dipole"])
+            # Per-atom normalization
             atoms_per_config_3d = atoms_per_config.view(-1, 1)
             self.ref_dipole_per_atom.append(batch.dipole / atoms_per_config_3d)
             self.pred_dipole_per_atom.append(output["dipole"] / atoms_per_config_3d)
@@ -730,6 +836,117 @@ class InferenceMetric(Metric):
                 self.pred_dipole_per_atom,
                 batch.weight,
                 batch.dipole_weight,
+                spread_quantity_vector=False,
+            )
+
+        # polarization
+        if output.get("polarization") is not None and batch.polarization is not None:
+            polarization_difference, _ = fold_polarization(
+                output["polarization"], batch.polarization, batch.cell
+            )
+            self.ref_polarization.append(batch.polarization)
+            self.pred_polarization.append(polarization_difference + batch.polarization)
+            atoms_per_config_3d = atoms_per_config.view(-1, 1)
+            self.ref_polarization_per_atom.append(
+                batch.polarization / atoms_per_config_3d
+            )
+            self.pred_polarization_per_atom.append(
+                (polarization_difference + batch.polarization) / atoms_per_config_3d
+            )
+
+            self.n_polarization += filter_nonzero_weight(
+                batch,
+                self.ref_polarization,
+                batch.weight,
+                batch.polarization_weight,
+                spread_quantity_vector=False,
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_polarization,
+                batch.weight,
+                batch.polarization_weight,
+                spread_quantity_vector=False,
+            )
+            filter_nonzero_weight(
+                batch,
+                self.ref_polarization_per_atom,
+                batch.weight,
+                batch.polarization_weight,
+                spread_quantity_vector=False,
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_polarization_per_atom,
+                batch.weight,
+                batch.polarization_weight,
+                spread_quantity_vector=False,
+            )
+
+        # Born effective charges
+        if output.get("becs") is not None and batch.becs is not None:
+            self.ref_becs.append(batch.becs)
+            self.pred_becs.append(output["becs"])
+
+            self.n_becs += filter_nonzero_weight(
+                batch,
+                self.ref_becs,
+                batch.weight,
+                batch.becs_weight,
+                spread_atoms=True,
+                spread_quantity_vector=False,
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_becs,
+                batch.weight,
+                batch.becs_weight,
+                spread_atoms=True,
+                spread_quantity_vector=False,
+            )
+
+        # polarizability
+        if (
+            output.get("polarizability") is not None
+            and batch.polarizability is not None
+        ):
+            self.ref_polarizability.append(batch.polarizability)
+            self.pred_polarizability.append(output["polarizability"])
+            # Per-atom normalization
+            atoms_per_config_3d = atoms_per_config.view(-1, 1, 1)
+            self.ref_polarizability_per_atom.append(
+                batch.polarizability / atoms_per_config_3d
+            )
+            self.pred_polarizability_per_atom.append(
+                output["polarizability"] / atoms_per_config_3d
+            )
+
+            self.n_polarizability += filter_nonzero_weight(
+                batch,
+                self.ref_polarizability,
+                batch.weight,
+                batch.polarizability_weight,
+                spread_quantity_vector=False,
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_polarizability,
+                batch.weight,
+                batch.polarizability_weight,
+                spread_quantity_vector=False,
+            )
+            filter_nonzero_weight(
+                batch,
+                self.ref_polarizability_per_atom,
+                batch.weight,
+                batch.polarizability_weight,
+                spread_quantity_vector=False,
+            )
+            filter_nonzero_weight(
+                batch,
+                self.pred_polarizability_per_atom,
+                batch.weight,
+                batch.polarizability_weight,
                 spread_quantity_vector=False,
             )
 
@@ -823,5 +1040,43 @@ class InferenceMetric(Metric):
                 "predicted": pred_d,
                 "reference_per_atom": ref_d_pa,
                 "predicted_per_atom": pred_d_pa,
+            }
+
+        # Process polarization
+        if self.n_polarization:
+            ref_p, pred_p = self._process_data(
+                self.ref_polarization, self.pred_polarization
+            )
+            ref_p_pa, pred_p_pa = self._process_data(
+                self.ref_polarization_per_atom, self.pred_polarization_per_atom
+            )
+            results["polarization"] = {
+                "reference": ref_p,
+                "predicted": pred_p,
+                "reference_per_atom": ref_p_pa,
+                "predicted_per_atom": pred_p_pa,
+            }
+
+        # Process born effective charges
+        if self.n_becs:
+            ref_b, pred_b = self._process_data(self.ref_becs, self.pred_becs)
+            results["becs"] = {
+                "reference": ref_b,
+                "predicted": pred_b,
+            }
+
+        # Process polarizability
+        if self.n_polarizability:
+            ref_a, pred_a = self._process_data(
+                self.ref_polarizability, self.pred_polarizability
+            )
+            ref_a_pa, pred_a_pa = self._process_data(
+                self.ref_polarizability_per_atom, self.pred_polarizability_per_atom
+            )
+            results["polarizability"] = {
+                "reference": ref_a,
+                "predicted": pred_a,
+                "reference_per_atom": ref_a_pa,
+                "predicted_per_atom": pred_a_pa,
             }
         return results

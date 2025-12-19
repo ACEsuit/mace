@@ -26,6 +26,7 @@ from .blocks import (
 from .loss import (
     DipolePolarLoss,
     DipoleSingleLoss,
+    UniversalFieldLoss,
     UniversalLoss,
     WeightedEnergyForcesDipoleLoss,
     WeightedEnergyForcesL1L2Loss,
@@ -124,4 +125,5 @@ __all__ = [
     "compute_fixed_charge_dipole",
     "compute_fixed_charge_dipole_polar",
     "compute_dielectric_gradients",
+    "UniversalFieldLoss",
 ]
