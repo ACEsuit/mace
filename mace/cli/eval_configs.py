@@ -184,7 +184,7 @@ def run(args: argparse.Namespace) -> None:
     stresses_list = []
     bec_list = []
     qs_list = []
-    forces_collection = []
+    forces_list = []
 
     for batch in data_loader:
         batch = batch.to(device)
@@ -262,12 +262,9 @@ def run(args: argparse.Namespace) -> None:
             indices_or_sections=batch.ptr[1:],
             axis=0,
         )
-        forces_collection.append(forces[:-1])  # drop last as its empty
+        forces_list.extend(forces[:-1])  # drop last as its empty
 
     energies = np.concatenate(energies_list, axis=0)
-    forces_list = [
-        forces for forces_list in forces_collection for forces in forces_list
-    ]
     assert len(atoms_list) == len(energies) == len(forces_list)
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)
