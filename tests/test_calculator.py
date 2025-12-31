@@ -10,7 +10,7 @@ import torch
 from ase import build
 from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
-from ase.constraints import ExpCellFilter
+from ase.filters import FrechetCellFilter
 
 from mace.calculators import mace_mp, mace_off
 from mace.calculators.foundations_models import mace_omol
@@ -574,7 +574,7 @@ def test_calculator_stress(tmp_path, fitting_configs, trained_model):
     at.calc = trained_model
 
     # test forces and stress
-    at_wrapped = ExpCellFilter(at)
+    at_wrapped = FrechetCellFilter(at)
     grads = gradient_test(at_wrapped)
 
     assert np.allclose(grads[0], grads[1])
