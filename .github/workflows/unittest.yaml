@@ -3,7 +3,7 @@ on:
   pull_request:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   pytest-general:
@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8','3.9','3.10','3.11','3.12','3.13']
+        python-version: [ '3.8','3.9','3.10','3.11','3.12','3.13' ]
 
     steps:
       - name: checkout
@@ -26,6 +26,34 @@ jobs:
         run: |
           pip install -U pip
           pip install .[dev]
+
+      # Some tests are creating large files that may persist until the end of the test
+      # run, so we are making more space available on the machine by deleting libraries
+      # and frameworks not relevant to us.
+      - name: Show available disk space (originally)
+        run: df -h
+      - name: Free up disk space
+        run: |
+          # Remove Java (JDKs)
+          sudo rm -rf /usr/lib/jvm
+          
+          # Remove .NET SDKs
+          sudo rm -rf /usr/share/dotnet
+          
+          # Remove Swift toolchain
+          sudo rm -rf /usr/share/swift
+          
+          # Remove Haskell (GHC)
+          sudo rm -rf /usr/local/.ghcup
+          
+          # Remove Android SDKs
+          sudo rm -rf /usr/local/lib/android
+          
+          # Remove web browsers
+          sudo rm -rf /usr/local/share/chromium
+          sudo rm -rf /opt/microsoft /opt/google
+      - name: Show available disk space (before tests)
+        run: df -h
 
       - name: Log installed environment (general tests)
         run: |
