@@ -480,6 +480,10 @@ def get_loss_fn(
         loss_fn = modules.WeightedEnergyForcesLoss(
             energy_weight=args.energy_weight, forces_weight=args.forces_weight
         )
+    elif args.loss == "dpose":
+        loss_fn = modules.MixedNllMseLoss(
+            energy_weight=args.energy_weight, forces_weight=args.forces_weight
+        )
     elif args.loss == "forces_only":
         loss_fn = modules.WeightedForcesLoss(forces_weight=args.forces_weight)
     elif args.loss == "virials":

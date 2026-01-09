@@ -14,6 +14,7 @@ from e3nn.util.jit import compile_mode
 from mace.data import AtomicData
 from mace.modules.radial import ZBLBasis
 from mace.tools.scatter import scatter_sum
+from icecream import ic
 
 from .blocks import (
     AtomicEnergiesBlock,
@@ -390,6 +391,9 @@ class ScaleShiftMACE(MACE):
         committee_heads: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
+        # committee_heads = [i for i, head in enumerate(self.heads) if "committee-" in head]
+        # committee_heads = torch.tensor(committee_heads, dtype=int).to(data['batch'].device)
+        
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
         num_atoms_arange = torch.arange(data["positions"].shape[0], device=data['batch'].device)
@@ -485,7 +489,43 @@ class ScaleShiftMACE(MACE):
         total_energy_heads = e0_heads + inter_e_heads
         node_energy_heads = node_e0_heads + node_inter_es_heads
         output = {}
-        if committee_heads is None or training:
+        loss = "dpose"
+        # loss = "normal"
+        if loss == "dpose":
+            inter_e = torch.mean(inter_e_heads[num_graphs_arange], dim=-1)
+            total_energy = torch.mean(total_energy_heads[num_graphs_arange], dim=-1)
+            node_energy = torch.mean(node_energy_heads[num_atoms_arange], dim=-1)
+            energy_contributions = torch.mean(node_es_heads[num_atoms_arange], dim=-1)
+            stds = {
+                "energy": torch.std(total_energy_heads, dim=-1),
+                "node_energy": torch.std(node_energy_heads, dim=-1),
+                "interaction_energy": torch.std(inter_e_heads, dim=-1),
+                "contributions": torch.std(node_es_heads, dim=-1)
+            }
+            forces, virials, stress, hessian = get_outputs(
+                energy=inter_e,
+                positions=data["positions"],
+                displacement=displacement,
+                cell=data["cell"],
+                training=training,
+                compute_force=compute_force,
+                compute_virials=compute_virials,
+                compute_stress=compute_stress,
+                compute_hessian=compute_hessian,
+            )
+            output["energy"] = total_energy
+            output["node_energy"] = node_energy
+            output["interaction_energy"] = inter_e
+            output["contributions"] = energy_contributions
+            output["forces"] = forces
+            output["virials"] = virials
+            output["stress"] = stress
+            output["hessian"] = hessian
+            output["stds"] = stds
+            output["heads"] = None
+            # raise NotImplementedError
+            
+        elif committee_heads is None or training:
             inter_e = inter_e_heads[num_graphs_arange, data['head']]
             total_energy = total_energy_heads[num_graphs_arange, data['head']]
             node_energy = node_energy_heads[num_atoms_arange, node_heads]

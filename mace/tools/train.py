@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.distributed
+from icecream import ic
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch.utils.data import DataLoader
@@ -61,6 +62,13 @@ def valid_err_log(
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
             f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A"
+        )
+    elif log_errors == "PerAtomRMSE+Std":
+        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+        std_e = eval_metrics["std_e_per_atom"] * 1e3
+        error_f = eval_metrics["rmse_f"] * 1e3
+        logging.info(
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, STD_E_per_atom={std_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A",
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -445,6 +453,9 @@ class MACELoss(Metric):
         self.add_state("E_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("delta_es", default=[], dist_reduce_fx="cat")
         self.add_state("delta_es_per_atom", default=[], dist_reduce_fx="cat")
+        self.add_state("Stds_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("std_es", default=[], dist_reduce_fx="cat")
+        self.add_state("std_es_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("Fs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("fs", default=[], dist_reduce_fx="cat")
         self.add_state("delta_fs", default=[], dist_reduce_fx="cat")
@@ -473,6 +484,10 @@ class MACELoss(Metric):
             self.delta_es_per_atom.append(
                 (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
             )
+        if output.get("stds") is not None:
+            self.Stds_computed += 1.0
+            self.std_es.append(output["stds"]["energy"])
+            self.std_es_per_atom.append(output["stds"]["energy"] / (batch.ptr[1:] - batch.ptr[:-1]))
         if output.get("forces") is not None and batch.forces is not None:
             self.Fs_computed += 1.0
             self.fs.append(batch.forces)
@@ -512,6 +527,11 @@ class MACELoss(Metric):
             aux["rmse_e"] = compute_rmse(delta_es)
             aux["rmse_e_per_atom"] = compute_rmse(delta_es_per_atom)
             aux["q95_e"] = compute_q95(delta_es)
+        if self.Stds_computed:
+            std_es = self.convert(self.std_es)
+            std_es_per_atom = self.convert(self.std_es_per_atom)
+            aux["std_e"] = np.mean(std_es).item()
+            aux["std_e_per_atom"] = np.mean(std_es_per_atom).item()
         if self.Fs_computed:
             fs = self.convert(self.fs)
             delta_fs = self.convert(self.delta_fs)
