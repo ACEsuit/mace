@@ -4,7 +4,6 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import Optional
 
 import torch
 import torch.distributed as dist
@@ -20,7 +19,7 @@ def is_ddp_enabled():
     return dist.is_initialized() and dist.get_world_size() > 1
 
 
-def reduce_loss(raw_loss: torch.Tensor, ddp: Optional[bool] = None) -> torch.Tensor:
+def reduce_loss(raw_loss: torch.Tensor, ddp: bool | None = None) -> torch.Tensor:
     """
     Reduces an element-wise loss tensor.
 
@@ -49,14 +48,14 @@ def reduce_loss(raw_loss: torch.Tensor, ddp: Optional[bool] = None) -> torch.Ten
 
 
 def mean_squared_error_energy(
-    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ref: Batch, pred: TensorDict, ddp: bool | None = None
 ) -> torch.Tensor:
     raw_loss = torch.square(ref["energy"] - pred["energy"])
     return reduce_loss(raw_loss, ddp)
 
 
 def weighted_mean_squared_error_energy(
-    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ref: Batch, pred: TensorDict, ddp: bool | None = None
 ) -> torch.Tensor:
     # Calculate per-graph number of atoms.
     num_atoms = ref.ptr[1:] - ref.ptr[:-1]  # shape: [n_graphs]
@@ -69,7 +68,7 @@ def weighted_mean_squared_error_energy(
 
 
 def weighted_mean_absolute_error_energy(
-    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ref: Batch, pred: TensorDict, ddp: bool | None = None
 ) -> torch.Tensor:
     num_atoms = ref.ptr[1:] - ref.ptr[:-1]
     raw_loss = (
@@ -86,7 +85,7 @@ def weighted_mean_absolute_error_energy(
 
 
 def weighted_mean_squared_stress(
-    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ref: Batch, pred: TensorDict, ddp: bool | None = None
 ) -> torch.Tensor:
     configs_weight = ref.weight.view(-1, 1, 1)
     configs_stress_weight = ref.stress_weight.view(-1, 1, 1)
@@ -99,7 +98,7 @@ def weighted_mean_squared_stress(
 
 
 def weighted_mean_squared_virials(
-    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ref: Batch, pred: TensorDict, ddp: bool | None = None
 ) -> torch.Tensor:
     configs_weight = ref.weight.view(-1, 1, 1)
     configs_virials_weight = ref.virials_weight.view(-1, 1, 1)
@@ -118,7 +117,7 @@ def weighted_mean_squared_virials(
 
 
 def mean_squared_error_forces(
-    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ref: Batch, pred: TensorDict, ddp: bool | None = None
 ) -> torch.Tensor:
     # Repeat per-graph weights to per-atom level.
     configs_weight = torch.repeat_interleave(
@@ -136,7 +135,7 @@ def mean_squared_error_forces(
 
 
 def mean_normed_error_forces(
-    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ref: Batch, pred: TensorDict, ddp: bool | None = None
 ) -> torch.Tensor:
     raw_loss = torch.linalg.vector_norm(ref["forces"] - pred["forces"], ord=2, dim=-1)
     return reduce_loss(raw_loss, ddp)
@@ -148,7 +147,7 @@ def mean_normed_error_forces(
 
 
 def weighted_mean_squared_error_dipole(
-    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ref: Batch, pred: TensorDict, ddp: bool | None = None
 ) -> torch.Tensor:
     num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).unsqueeze(-1)
     raw_loss = torch.square((ref["dipole"] - pred["dipole"]) / num_atoms)
@@ -163,9 +162,7 @@ def weighted_mean_squared_error_dipole(
 def weighted_mean_squared_error_polarizability(
     ref: Batch,
     pred: TensorDict,
-    ddp: Optional[
-        bool
-    ] = None,  # ,mean: Optional[torch.Tensor] = None , std: Optional[torch.Tensor] = None
+    ddp: bool | None = None,  # ,mean: Optional[torch.Tensor] = None , std: Optional[torch.Tensor] = None
 ) -> torch.Tensor:
     # polarizability: [n_graphs, ]
     # ref_polar = ref["polarizability"].view(-1, 3, 3) * std.view(1, 3, 3) + mean.view(1, 3, 3) if mean is not None and std is not None else ref["polarizability"]
@@ -182,7 +179,7 @@ def weighted_mean_squared_error_polarizability(
 
 
 def conditional_mse_forces(
-    ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+    ref: Batch, pred: TensorDict, ddp: bool | None = None
 ) -> torch.Tensor:
     configs_weight = torch.repeat_interleave(
         ref.weight, ref.ptr[1:] - ref.ptr[:-1]
@@ -212,7 +209,7 @@ def conditional_huber_forces(
     ref_forces: torch.Tensor,
     pred_forces: torch.Tensor,
     huber_delta: float,
-    ddp: Optional[bool] = None,
+    ddp: bool | None = None,
 ) -> torch.Tensor:
     factors = huber_delta * torch.tensor(
         [1.0, 0.7, 0.4, 0.1], device=ref_forces.device, dtype=ref_forces.dtype
@@ -245,7 +242,7 @@ def conditional_huber_forces(
 
 class WeightedEnergyForcesLoss(torch.nn.Module):
     def __init__(
-        self, energy_weight=1.0, forces_weight=1.0, dtype: Optional[torch.dtype] = None
+        self, energy_weight=1.0, forces_weight=1.0, dtype: torch.dtype | None = None
     ) -> None:
         super().__init__()
         dtype = dtype or torch.get_default_dtype()
@@ -259,7 +256,7 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         loss_energy = weighted_mean_squared_error_energy(ref, pred, ddp)
         loss_forces = mean_squared_error_forces(ref, pred, ddp)
@@ -273,7 +270,7 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
 
 
 class WeightedForcesLoss(torch.nn.Module):
-    def __init__(self, forces_weight=1.0, dtype: Optional[torch.dtype] = None) -> None:
+    def __init__(self, forces_weight=1.0, dtype: torch.dtype | None = None) -> None:
         super().__init__()
         dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
@@ -282,7 +279,7 @@ class WeightedForcesLoss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         loss_forces = mean_squared_error_forces(ref, pred, ddp)
         return self.forces_weight * loss_forces
@@ -297,7 +294,7 @@ class WeightedEnergyForcesStressLoss(torch.nn.Module):
         energy_weight=1.0,
         forces_weight=1.0,
         stress_weight=1.0,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__()
         dtype = dtype or torch.get_default_dtype()
@@ -315,7 +312,7 @@ class WeightedEnergyForcesStressLoss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         loss_energy = weighted_mean_squared_error_energy(ref, pred, ddp)
         loss_forces = mean_squared_error_forces(ref, pred, ddp)
@@ -340,7 +337,7 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
         forces_weight=1.0,
         stress_weight=1.0,
         huber_delta=0.01,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__()
         dtype = dtype or torch.get_default_dtype()
@@ -360,7 +357,7 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
         if ddp:
@@ -412,7 +409,7 @@ class UniversalLoss(torch.nn.Module):
         forces_weight=1.0,
         stress_weight=1.0,
         huber_delta=0.01,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__()
         dtype = dtype or torch.get_default_dtype()
@@ -431,7 +428,7 @@ class UniversalLoss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
         configs_stress_weight = ref.stress_weight.view(-1, 1, 1)
@@ -498,7 +495,7 @@ class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
         energy_weight=1.0,
         forces_weight=1.0,
         virials_weight=1.0,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__()
         dtype = dtype or torch.get_default_dtype()
@@ -516,7 +513,7 @@ class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         loss_energy = weighted_mean_squared_error_energy(ref, pred, ddp)
         loss_forces = mean_squared_error_forces(ref, pred, ddp)
@@ -535,7 +532,7 @@ class WeightedEnergyForcesVirialsLoss(torch.nn.Module):
 
 
 class DipoleSingleLoss(torch.nn.Module):
-    def __init__(self, dipole_weight=1.0, dtype: Optional[torch.dtype] = None) -> None:
+    def __init__(self, dipole_weight=1.0, dtype: torch.dtype | None = None) -> None:
         super().__init__()
         dtype = dtype or torch.get_default_dtype()
         self.register_buffer(
@@ -544,7 +541,7 @@ class DipoleSingleLoss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         loss = (
             weighted_mean_squared_error_dipole(ref, pred, ddp) * 100.0
@@ -560,7 +557,7 @@ class DipolePolarLoss(torch.nn.Module):
         self,
         dipole_weight=1.0,
         polarizability_weight=1.0,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype | None = None,
     ) -> (
         None
     ):  # dipole_mean=None,dipole_std=None,polarizability_mean=None,polarizability_std=None
@@ -577,7 +574,7 @@ class DipolePolarLoss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         loss_dipole = weighted_mean_squared_error_dipole(
             ref, pred, ddp
@@ -604,7 +601,7 @@ class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
         energy_weight=1.0,
         forces_weight=1.0,
         dipole_weight=1.0,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__()
         dtype = dtype or torch.get_default_dtype()
@@ -622,7 +619,7 @@ class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         loss_energy = weighted_mean_squared_error_energy(ref, pred, ddp)
         loss_forces = mean_squared_error_forces(ref, pred, ddp)
@@ -642,7 +639,7 @@ class WeightedEnergyForcesDipoleLoss(torch.nn.Module):
 
 class WeightedEnergyForcesL1L2Loss(torch.nn.Module):
     def __init__(
-        self, energy_weight=1.0, forces_weight=1.0, dtype: Optional[torch.dtype] = None
+        self, energy_weight=1.0, forces_weight=1.0, dtype: torch.dtype | None = None
     ) -> None:
         super().__init__()
         dtype = dtype or torch.get_default_dtype()
@@ -656,7 +653,7 @@ class WeightedEnergyForcesL1L2Loss(torch.nn.Module):
         )
 
     def forward(
-        self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
+        self, ref: Batch, pred: TensorDict, ddp: bool | None = None
     ) -> torch.Tensor:
         loss_energy = weighted_mean_absolute_error_energy(ref, pred, ddp)
         loss_forces = mean_normed_error_forces(ref, pred, ddp)

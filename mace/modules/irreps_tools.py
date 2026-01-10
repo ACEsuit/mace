@@ -4,7 +4,6 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import List, Optional, Tuple
 
 import torch
 from e3nn import o3
@@ -16,11 +15,11 @@ from mace.modules.wrapper_ops import CuEquivarianceConfig
 # Based on mir-group/nequip
 def tp_out_irreps_with_instructions(
     irreps1: o3.Irreps, irreps2: o3.Irreps, target_irreps: o3.Irreps
-) -> Tuple[o3.Irreps, List]:
+) -> tuple[o3.Irreps, list]:
     trainable = True
 
     # Collect possible irreps and their instructions
-    irreps_out_list: List[Tuple[int, o3.Irreps]] = []
+    irreps_out_list: list[tuple[int, o3.Irreps]] = []
     instructions = []
     for i, (mul, ir_in) in enumerate(irreps1):
         for j, (_, ir_edge) in enumerate(irreps2):
@@ -67,7 +66,7 @@ def linear_out_irreps(irreps: o3.Irreps, target_irreps: o3.Irreps) -> o3.Irreps:
 @compile_mode("script")
 class reshape_irreps(torch.nn.Module):
     def __init__(
-        self, irreps: o3.Irreps, cueq_config: Optional[CuEquivarianceConfig] = None
+        self, irreps: o3.Irreps, cueq_config: CuEquivarianceConfig | None = None
     ) -> None:
         super().__init__()
         self.irreps = o3.Irreps(irreps)

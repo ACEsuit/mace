@@ -10,7 +10,6 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import List, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -78,8 +77,8 @@ class MACECalculator(Calculator):
 
     def __init__(
         self,
-        model_paths: Union[list, str, None] = None,
-        models: Union[List[torch.nn.Module], torch.nn.Module, None] = None,
+        model_paths: list | str | None = None,
+        models: list[torch.nn.Module] | torch.nn.Module | None = None,
         device: str = "cpu",
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
@@ -255,10 +254,10 @@ class MACECalculator(Calculator):
         self.charges_key = charges_key
 
         try:
-            self.available_heads: List[str] = self.models[0].heads  # type: ignore
+            self.available_heads: list[str] = self.models[0].heads  # type: ignore
         except AttributeError:
             self.available_heads = ["Default"]
-        kwarg_head = kwargs.get("head", None)
+        kwarg_head = kwargs.get("head")
         if kwarg_head is not None:
             self.head = kwarg_head
             if isinstance(self.head, str):
@@ -420,8 +419,7 @@ class MACECalculator(Calculator):
             shuffle=False,
             drop_last=False,
         )
-        batch = next(iter(data_loader)).to(self.device)
-        return batch
+        return next(iter(data_loader)).to(self.device)
 
     def _clone_batch(self, batch):
         batch_clone = batch.clone()

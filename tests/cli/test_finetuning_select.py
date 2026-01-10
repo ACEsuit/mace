@@ -38,7 +38,7 @@ def train_atom_descriptors(train_atoms_fixture):
 
 
 @pytest.mark.parametrize(
-    "filtering_type, passes_filter, element_sublist",
+    ("filtering_type", "passes_filter", "element_sublist"),
     [
         (FilteringType.NONE, [True] * 6, []),
         (FilteringType.NONE, [True] * 6, ["C", "U", "Anything really"]),

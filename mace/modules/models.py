@@ -4,7 +4,8 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from collections.abc import Callable
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -50,17 +51,17 @@ class MACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         atomic_energies: np.ndarray,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
-        correlation: Union[int, List[int]],
-        gate: Optional[Callable],
+        atomic_numbers: list[int],
+        correlation: int | list[int],
+        gate: Callable | None,
         pair_repulsion: bool = False,
         apply_cutoff: bool = True,
         use_reduced_cg: bool = True,
@@ -69,15 +70,15 @@ class MACE(torch.nn.Module):
         use_last_readout_only: bool = False,
         use_embedding_readout: bool = False,
         distance_transform: str = "None",
-        edge_irreps: Optional[o3.Irreps] = None,
-        radial_MLP: Optional[List[int]] = None,
-        radial_type: Optional[str] = "bessel",
-        heads: Optional[List[str]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,
-        embedding_specs: Optional[Dict[str, Any]] = None,
-        oeq_config: Optional[Dict[str, Any]] = None,
-        lammps_mliap: Optional[bool] = False,
-        readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
+        edge_irreps: o3.Irreps | None = None,
+        radial_MLP: list[int] | None = None,
+        radial_type: str | None = "bessel",
+        heads: list[str] | None = None,
+        cueq_config: dict[str, Any] | None = None,
+        embedding_specs: dict[str, Any] | None = None,
+        oeq_config: dict[str, Any] | None = None,
+        lammps_mliap: bool | None = False,
+        readout_cls: type[NonLinearReadoutBlock] | None = NonLinearReadoutBlock,
     ):
         super().__init__()
         self.register_buffer(
@@ -263,7 +264,7 @@ class MACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -273,7 +274,7 @@ class MACE(torch.nn.Module):
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         # Setup
         ctx = prepare_graph(
             data,
@@ -324,8 +325,8 @@ class MACE(torch.nn.Module):
             pair_energy = torch.zeros_like(e0)
 
         if hasattr(self, "joint_embedding"):
-            embedding_features: Dict[str, torch.Tensor] = {}
-            for name, _ in self.embedding_specs.items():
+            embedding_features: dict[str, torch.Tensor] = {}
+            for name in self.embedding_specs:
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
                 data["batch"],
@@ -346,7 +347,7 @@ class MACE(torch.nn.Module):
         # Interactions
         energies = [e0, pair_energy]
         node_energies_list = [node_e0, pair_node_energy]
-        node_feats_concat: List[torch.Tensor] = []
+        node_feats_concat: list[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products, strict=False)
@@ -400,8 +401,8 @@ class MACE(torch.nn.Module):
             compute_edge_forces=compute_edge_forces,
         )
 
-        atomic_virials: Optional[torch.Tensor] = None
-        atomic_stresses: Optional[torch.Tensor] = None
+        atomic_virials: torch.Tensor | None = None
+        atomic_stresses: torch.Tensor | None = None
         if compute_atomic_stresses and edge_forces is not None:
             atomic_virials, atomic_stresses = get_atomic_virials_stresses(
                 edge_forces=edge_forces,
@@ -442,7 +443,7 @@ class ScaleShiftMACE(MACE):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -452,7 +453,7 @@ class ScaleShiftMACE(MACE):
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         # Setup
         ctx = prepare_graph(
             data,
@@ -503,8 +504,8 @@ class ScaleShiftMACE(MACE):
 
         # Embeddings of additional features
         if hasattr(self, "joint_embedding"):
-            embedding_features: Dict[str, torch.Tensor] = {}
-            for name, _ in self.embedding_specs.items():
+            embedding_features: dict[str, torch.Tensor] = {}
+            for name in self.embedding_specs:
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
                 data["batch"],
@@ -524,7 +525,7 @@ class ScaleShiftMACE(MACE):
 
         # Interactions
         node_es_list = [pair_node_energy]
-        node_feats_list: List[torch.Tensor] = []
+        node_feats_list: list[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products, strict=False)
@@ -580,8 +581,8 @@ class ScaleShiftMACE(MACE):
             compute_edge_forces=compute_edge_forces or compute_atomic_stresses,
         )
 
-        atomic_virials: Optional[torch.Tensor] = None
-        atomic_stresses: Optional[torch.Tensor] = None
+        atomic_virials: torch.Tensor | None = None
+        atomic_stresses: torch.Tensor | None = None
         if compute_atomic_stresses and edge_forces is not None:
             atomic_virials, atomic_stresses = get_atomic_virials_stresses(
                 edge_forces=edge_forces,
@@ -615,16 +616,16 @@ class AtomicDipolesMACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
+        atomic_numbers: list[int],
         correlation: int,
-        gate: Optional[Callable],
+        gate: Callable | None,
         atomic_energies: Optional[
             None
         ],  # Just here to make it compatible with energy models, MUST be None
@@ -632,11 +633,11 @@ class AtomicDipolesMACE(torch.nn.Module):
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
         distance_transform: str = "None",  # pylint: disable=unused-argument
-        radial_type: Optional[str] = "bessel",
-        radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
-        oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
-        edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
+        radial_type: str | None = "bessel",
+        radial_MLP: list[int] | None = None,
+        cueq_config: dict[str, Any] | None = None,  # pylint: disable=unused-argument
+        oeq_config: dict[str, Any] | None = None,  # pylint: disable=unused-argument
+        edge_irreps: o3.Irreps | None = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
@@ -744,7 +745,7 @@ class AtomicDipolesMACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,  # pylint: disable=W0613
         compute_force: bool = False,
         compute_virials: bool = False,
@@ -752,7 +753,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_displacement: bool = False,
         compute_edge_forces: bool = False,  # pylint: disable=W0613
         compute_atomic_stresses: bool = False,  # pylint: disable=W0613
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         assert compute_force is False
         assert compute_virials is False
         assert compute_stress is False
@@ -814,11 +815,10 @@ class AtomicDipolesMACE(torch.nn.Module):
         )  # [n_graphs,3]
         total_dipole = total_dipole + baseline
 
-        output = {
+        return {
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
         }
-        return output
 
 
 @compile_mode("script")
@@ -829,16 +829,16 @@ class AtomicDielectricMACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
+        atomic_numbers: list[int],
         correlation: int,
-        gate: Optional[Callable],
+        gate: Callable | None,
         atomic_energies: Optional[
             None
         ],  # Just here to make it compatible with energy models, MUST be None
@@ -846,14 +846,14 @@ class AtomicDielectricMACE(torch.nn.Module):
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
         distance_transform: str = "None",  # pylint: disable=unused-argument
-        radial_type: Optional[str] = "bessel",
-        radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
-        oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
-        edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
-        dipole_only: Optional[bool] = True,  # pylint: disable=unused-argument
-        use_polarizability: Optional[bool] = True,  # pylint: disable=unused-argument
-        means_stds: Optional[Dict[str, torch.Tensor]] = None,  # pylint: disable=W0613
+        radial_type: str | None = "bessel",
+        radial_MLP: list[int] | None = None,
+        cueq_config: dict[str, Any] | None = None,  # pylint: disable=unused-argument
+        oeq_config: dict[str, Any] | None = None,  # pylint: disable=unused-argument
+        edge_irreps: o3.Irreps | None = None,  # pylint: disable=unused-argument
+        dipole_only: bool | None = True,  # pylint: disable=unused-argument
+        use_polarizability: bool | None = True,  # pylint: disable=unused-argument
+        means_stds: dict[str, torch.Tensor] | None = None,  # pylint: disable=W0613
     ):
         super().__init__()
         self.register_buffer(
@@ -1003,7 +1003,7 @@ class AtomicDielectricMACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,  # pylint: disable=W0613
         compute_force: bool = False,
         compute_virials: bool = False,
@@ -1012,7 +1012,7 @@ class AtomicDielectricMACE(torch.nn.Module):
         compute_dielectric_derivatives: bool = False,  # no training on derivatives
         compute_edge_forces: bool = False,  # pylint: disable=W0613
         compute_atomic_stresses: bool = False,  # pylint: disable=W0613
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         assert compute_force is False
         assert compute_virials is False
         assert compute_stress is False
@@ -1137,7 +1137,7 @@ class AtomicDielectricMACE(torch.nn.Module):
             total_polarizability_spherical = None
             dalpha_dr = None
 
-        output = {
+        return {
             "charges": atomic_charges,
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
@@ -1146,7 +1146,6 @@ class AtomicDielectricMACE(torch.nn.Module):
             "dmu_dr": dmu_dr,
             "dalpha_dr": dalpha_dr,
         }
-        return output
 
 
 @compile_mode("script")
@@ -1157,25 +1156,25 @@ class EnergyDipolesMACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
+        atomic_numbers: list[int],
         correlation: int,
-        gate: Optional[Callable],
-        atomic_energies: Optional[np.ndarray],
+        gate: Callable | None,
+        atomic_energies: np.ndarray | None,
         apply_cutoff: bool = True,  # pylint: disable=unused-argument
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
         distance_transform: str = "None",  # pylint: disable=unused-argument
-        radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
-        oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
-        edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
+        radial_MLP: list[int] | None = None,
+        cueq_config: dict[str, Any] | None = None,  # pylint: disable=unused-argument
+        oeq_config: dict[str, Any] | None = None,  # pylint: disable=unused-argument
+        edge_irreps: o3.Irreps | None = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
@@ -1281,7 +1280,7 @@ class EnergyDipolesMACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -1289,7 +1288,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         compute_displacement: bool = False,
         compute_edge_forces: bool = False,  # pylint: disable=W0613
         compute_atomic_stresses: bool = False,  # pylint: disable=W0613
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         # Setup
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)
@@ -1398,7 +1397,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             compute_stress=compute_stress,
         )
 
-        output = {
+        return {
             "energy": total_energy,
             "node_energy": node_energy,
             "contributions": contributions,
@@ -1409,4 +1408,3 @@ class EnergyDipolesMACE(torch.nn.Module):
             "dipole": total_dipole,
             "atomic_dipoles": atomic_dipoles,
         }
-        return output

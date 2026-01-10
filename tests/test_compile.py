@@ -1,6 +1,6 @@
 import os
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable
 
 import numpy as np
 import pytest
@@ -71,8 +71,7 @@ def create_batch(device: str, dtype: torch.dtype):
     )
     batch = next(iter(data_loader))
     batch = batch.to(device)
-    batch = batch.to_dict()
-    return batch
+    return batch.to_dict()
 
 
 def time_func(func: Callable):

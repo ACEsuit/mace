@@ -34,10 +34,10 @@ def gradient_test(atoms, indices=None, eps_min=1e-1, eps_max=1e-8):
     if indices is None:
         indices = range(len(atoms))
     f = atoms.get_forces()[indices]
-    print('{:>16} {:>20}'.format('eps', 'max(abs(df))'))
+    print("{:>16} {:>20}".format("eps", "max(abs(df))"))
     for eps in np.geomspace(eps_min, eps_max, int(np.log10(eps_min / eps_max) + 1)):
         fn = calculate_numerical_forces(atoms, eps, indices)
-        print(f'{eps:16.12f} {abs(fn - f).max():20.12f}')
+        print(f"{eps:16.12f} {abs(fn - f).max():20.12f}")
     return f, fn
 
 

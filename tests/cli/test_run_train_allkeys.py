@@ -199,7 +199,7 @@ _trial_yamls_and_and_expected = trial_yamls_and_and_expected()
 
 
 @pytest.mark.parametrize(
-    "yaml_contents, name, expected_value", _trial_yamls_and_and_expected
+    ("yaml_contents", "name", "expected_value"), _trial_yamls_and_and_expected
 )
 def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value):
     fitting_configs = configs_numbered_keys()
@@ -244,7 +244,7 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
     assert p.returncode == 0
 
     if "heads" in yaml_contents:
-        headname = list(yaml_contents["heads"].keys())[0]
+        headname = next(iter(yaml_contents["heads"].keys()))
     else:
         headname = "Default"
 

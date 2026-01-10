@@ -1,7 +1,6 @@
 import os
 import urllib.request
 from pathlib import Path
-from typing import Union
 
 import torch
 from ase import units
@@ -32,10 +31,10 @@ mace_mp_urls = {
     "mace-matpes-pbe-0": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-pbe-omat-ft.model",
     "mace-matpes-r2scan-0": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-r2scan-omat-ft.model",
 }
-mace_mp_names = [None] + list(mace_mp_urls.keys())
+mace_mp_names = [None, *list(mace_mp_urls.keys())]
 
 
-def download_mace_mp_checkpoint(model: Union[str, Path, None] = None) -> str:
+def download_mace_mp_checkpoint(model: str | Path | None = None) -> str:
     """
     Downloads or locates the MACE-MP checkpoint file.
 
@@ -90,7 +89,7 @@ def download_mace_mp_checkpoint(model: Union[str, Path, None] = None) -> str:
 
 
 def mace_mp(
-    model: Union[str, Path, None] = None,
+    model: str | Path | None = None,
     device: str = "",
     default_dtype: str = "float32",
     dispersion: bool = False,
@@ -181,7 +180,7 @@ def mace_mp(
 
 
 def mace_off(
-    model: Union[str, Path, None] = None,
+    model: str | Path | None = None,
     device: str = "",
     default_dtype: str = "float64",
     return_raw_model: bool = False,
@@ -255,15 +254,14 @@ def mace_off(
         print(
             "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization."
         )
-    mace_calc = MACECalculator(
+    return MACECalculator(
         model_paths=model, device=device, default_dtype=default_dtype, **kwargs
     )
-    return mace_calc
 
 
 def mace_anicc(
     device: str = "cuda",
-    model_path: Union[str, Path, None] = None,
+    model_path: str | Path | None = None,
     return_raw_model: bool = False,
 ) -> MACECalculator:
     """
@@ -316,7 +314,7 @@ def mace_anicc(
 
 
 def mace_omol(
-    model: Union[str, Path, None] = None,
+    model: str | Path | None = None,
     device: str = "",
     default_dtype: str = "float64",
     return_raw_model: bool = False,

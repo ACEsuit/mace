@@ -4,8 +4,8 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+from collections.abc import Sequence
 from copy import deepcopy
-from typing import Optional, Sequence
 
 import torch.utils.data
 
@@ -57,32 +57,33 @@ class AtomicData(torch_geometric.data.Data):
         positions: torch.Tensor,  # [n_nodes, 3]
         shifts: torch.Tensor,  # [n_edges, 3],
         unit_shifts: torch.Tensor,  # [n_edges, 3]
-        cell: Optional[torch.Tensor],  # [3,3]
-        weight: Optional[torch.Tensor],  # [,]
-        head: Optional[torch.Tensor],  # [,]
-        energy_weight: Optional[torch.Tensor],  # [,]
-        forces_weight: Optional[torch.Tensor],  # [,]
-        stress_weight: Optional[torch.Tensor],  # [,]
-        virials_weight: Optional[torch.Tensor],  # [,]
-        dipole_weight: Optional[torch.Tensor],  # [,]
-        charges_weight: Optional[torch.Tensor],  # [,]
-        polarizability_weight: Optional[torch.Tensor],  # [,]
-        forces: Optional[torch.Tensor],  # [n_nodes, 3]
-        energy: Optional[torch.Tensor],  # [, ]
-        stress: Optional[torch.Tensor],  # [1,3,3]
-        virials: Optional[torch.Tensor],  # [1,3,3]
-        dipole: Optional[torch.Tensor],  # [, 3]
-        charges: Optional[torch.Tensor],  # [n_nodes, ]
-        polarizability: Optional[torch.Tensor],  # [1, 3, 3]
-        elec_temp: Optional[torch.Tensor],  # [,]
-        total_charge: Optional[torch.Tensor] = None,  # [,]
-        total_spin: Optional[torch.Tensor] = None,  # [,]
-        pbc: Optional[torch.Tensor] = None,  # [, 3]
+        cell: torch.Tensor | None,  # [3,3]
+        weight: torch.Tensor | None,  # [,]
+        head: torch.Tensor | None,  # [,]
+        energy_weight: torch.Tensor | None,  # [,]
+        forces_weight: torch.Tensor | None,  # [,]
+        stress_weight: torch.Tensor | None,  # [,]
+        virials_weight: torch.Tensor | None,  # [,]
+        dipole_weight: torch.Tensor | None,  # [,]
+        charges_weight: torch.Tensor | None,  # [,]
+        polarizability_weight: torch.Tensor | None,  # [,]
+        forces: torch.Tensor | None,  # [n_nodes, 3]
+        energy: torch.Tensor | None,  # [, ]
+        stress: torch.Tensor | None,  # [1,3,3]
+        virials: torch.Tensor | None,  # [1,3,3]
+        dipole: torch.Tensor | None,  # [, 3]
+        charges: torch.Tensor | None,  # [n_nodes, ]
+        polarizability: torch.Tensor | None,  # [1, 3, 3]
+        elec_temp: torch.Tensor | None,  # [,]
+        total_charge: torch.Tensor | None = None,  # [,]
+        total_spin: torch.Tensor | None = None,  # [,]
+        pbc: torch.Tensor | None = None,  # [, 3]
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
 
-        assert edge_index.shape[0] == 2 and len(edge_index.shape) == 2
+        assert edge_index.shape[0] == 2
+        assert len(edge_index.shape) == 2
         assert positions.shape == (num_nodes, 3)
         assert shifts.shape[1] == 3
         assert unit_shifts.shape[1] == 3
@@ -145,8 +146,8 @@ class AtomicData(torch_geometric.data.Data):
         config: Configuration,
         z_table: AtomicNumberTable,
         cutoff: float,
-        heads: Optional[list] = None,
-        dtype: Optional[torch.dtype] = None,
+        heads: list | None = None,
+        dtype: torch.dtype | None = None,
         **kwargs,  # pylint: disable=unused-argument
     ) -> "AtomicData":
         dtype = dtype or torch.get_default_dtype()

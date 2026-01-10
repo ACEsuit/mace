@@ -79,15 +79,11 @@ def printenergy(dyn, start_time=None):  # store a reference to atoms in the defi
     a = dyn.atoms
     epot = a.get_potential_energy() / len(a)
     ekin = a.get_kinetic_energy() / len(a)
-    if start_time is None:
-        elapsed_time = 0
-    else:
-        elapsed_time = time.time() - start_time
+    elapsed_time = 0 if start_time is None else time.time() - start_time
     forces_var = np.var(a.calc.results["forces_comm"], axis=0)
     print(
-        "%.1fs: Energy per atom: Epot = %.3feV  Ekin = %.3feV (T=%3.0fK)  "  # pylint: disable=C0209
-        "Etot = %.3feV t=%.1ffs Eerr = %.3feV Ferr = %.3feV/A"
-        % (
+        "{:.1f}s: Energy per atom: Epot = {:.3f}eV  Ekin = {:.3f}eV (T={:3.0f}K)  "  # pylint: disable=C0209
+        "Etot = {:.3f}eV t={:.1f}fs Eerr = {:.3f}eV Ferr = {:.3f}eV/A".format(
             elapsed_time,
             epot,
             ekin,

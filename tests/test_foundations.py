@@ -225,7 +225,7 @@ def test_compile_foundation(calc):
     output_1 = model(batch.to_dict())
     model_compiled = jit.compile(model)
     output = model_compiled(batch.to_dict())
-    for key in output_1.keys():
+    for key in output_1:
         if isinstance(output_1[key], torch.Tensor):
             assert torch.allclose(output_1[key], output[key], atol=1e-5)
 
@@ -275,7 +275,7 @@ def test_extract_config(model):
     output = model(batch.to_dict())
     output_copy = model_copy(batch.to_dict())
     # assert all items of the output dicts are equal
-    for key in output.keys():
+    for key in output:
         if isinstance(output[key], torch.Tensor):
             assert torch.allclose(output[key], output_copy[key], atol=1e-5)
 

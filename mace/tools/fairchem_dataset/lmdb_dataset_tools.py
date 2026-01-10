@@ -26,7 +26,7 @@ except ImportError:
     cache = lru_cache(maxsize=None)
 from glob import glob
 from pathlib import Path
-from typing import Any, Callable, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import ase
 import ase.db.core
@@ -36,6 +36,10 @@ import lmdb
 import numpy as np
 import orjson
 import torch
+from typing_extensions import Self
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # Type variable for generic dataset return type
 T_co = TypeVar("T_co", covariant=True)
@@ -291,7 +295,7 @@ class LMDBDatabase(ase.db.core.Database):
         self.deleted_ids = []
         self._load_ids()
 
-    def __enter__(self) -> "LMDBDatabase":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc_value, tb) -> None:
@@ -751,7 +755,7 @@ class AseAtomsDataset(BaseDataset, ABC):
         self,
         config: dict,
         atoms_transform: Callable[[ase.Atoms, Any], ase.Atoms] = apply_one_tags,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__(config)
 

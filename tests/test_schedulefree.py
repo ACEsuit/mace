@@ -78,8 +78,7 @@ def create_batch(device: str, default_dtype: str):
     )
     batch = next(iter(data_loader))
     batch = batch.to(device)
-    batch = batch.to_dict()
-    return batch
+    return batch.to_dict()
 
 
 def do_optimization_step(

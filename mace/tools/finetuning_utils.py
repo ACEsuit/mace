@@ -195,7 +195,6 @@ def load_foundations(
     model_foundations,
 ):
     for name, param in model_foundations.named_parameters():
-        if name in model.state_dict().keys():
-            if "readouts" not in name:
-                model.state_dict()[name].copy_(param)
+        if name in model.state_dict() and "readouts" not in name:
+            model.state_dict()[name].copy_(param)
     return model

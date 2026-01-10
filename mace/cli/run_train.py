@@ -11,7 +11,6 @@ import logging
 import os
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Optional
 
 import torch.distributed
 from e3nn.util import jit
@@ -126,7 +125,7 @@ def run(args) -> None:
     commit = print_git_commit()
 
     # If foundation model is specified, load it
-    model_foundation: Optional[torch.nn.Module] = None
+    model_foundation: torch.nn.Module | None = None
     foundation_model_avg_num_neighbors = 0
     # Filter out None from mace_mp_names to get valid model names
     valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
@@ -210,7 +209,7 @@ def run(args) -> None:
     # If heads are specified, parse them
     if args.heads is not None:
         args.heads = ast.literal_eval(args.heads)
-        for _, head_dict in args.heads.items():
+        for head_dict in args.heads.values():
             # priority is global args < head property_key values < head info_keys+arrays_keys
             head_keyspec = deepcopy(args.key_specification)
             update_keyspec_from_kwargs(head_keyspec, head_dict)
@@ -241,7 +240,7 @@ def run(args) -> None:
         head_keyspec = head_dict["key_specification"]
         logging.info(f"{name}: {head_keyspec}")
 
-    head_configs: List[HeadConfig] = []
+    head_configs: list[HeadConfig] = []
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)
@@ -262,7 +261,7 @@ def run(args) -> None:
             head_config.statistics_file is not None
             and head_config.head_name != "pt_head"
         ):
-            with open(head_config.statistics_file, "r") as f:  # pylint: disable=W1514
+            with open(head_config.statistics_file) as f:  # pylint: disable=W1514
                 statistics = json.load(f)
             logging.info("Using statistics json file")
             head_config.atomic_numbers = statistics["atomic_numbers"]
@@ -273,7 +272,7 @@ def run(args) -> None:
             if isinstance(statistics["atomic_energies"], str) and statistics[
                 "atomic_energies"
             ].endswith(".json"):
-                with open(statistics["atomic_energies"], "r", encoding="utf-8") as f:
+                with open(statistics["atomic_energies"], encoding="utf-8") as f:
                     atomic_energies = json.load(f)
                 head_config.E0s = atomic_energies
                 head_config.atomic_energies_dict = ast.literal_eval(atomic_energies)
@@ -543,7 +542,7 @@ def run(args) -> None:
             try:
                 logging.info(
                     f"Atomic Energies used (z: eV) for head {head_config.head_name}: "
-                    + "{"
+                     "{"
                     + ", ".join(
                         [
                             f"{z}: {atomic_energies_dict[head_config.head_name][z]}"
@@ -822,7 +821,7 @@ def run(args) -> None:
 
     lr_scheduler = LRScheduler(optimizer, args)
 
-    swa: Optional[tools.SWAContainer] = None
+    swa: tools.SWAContainer | None = None
     swas = [False]
     if args.swa:
         swa, swas = get_swa(args, model, optimizer, swas, dipole_only, dtype=dtype)
@@ -856,7 +855,7 @@ def run(args) -> None:
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
-    ema: Optional[ExponentialMovingAverage] = None
+    ema: ExponentialMovingAverage | None = None
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
     else:
@@ -923,7 +922,7 @@ def run(args) -> None:
         try:
             model, optimizer = ipex.optimize(model, optimizer=optimizer)
         except ImportError:
-            logging.error(
+            logging.exception(
                 "Intel Extension for PyTorch not found, but XPU device was specified. "
                 "Please install it to use XPU device."
             )

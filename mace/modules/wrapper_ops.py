@@ -4,7 +4,6 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 
 import dataclasses
 import types
-from typing import List, Optional
 
 import torch
 from e3nn import o3
@@ -62,7 +61,7 @@ class OEQConfig:
     enabled: bool = False
     optimize_all: bool = False
     optimize_channelwise: bool = False
-    conv_fusion: Optional[str] = "atomic"
+    conv_fusion: str | None = "atomic"
 
     def __post_init__(self):
         if not OEQ_AVAILABLE:
@@ -78,7 +77,7 @@ class Linear:
         irreps_out: o3.Irreps,
         shared_weights: bool = True,
         internal_weights: bool = True,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
+        cueq_config: CuEquivarianceConfig | None = None,
     ):
         if (
             CUET_AVAILABLE
@@ -117,8 +116,7 @@ def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
         num_nodes = node_feats.shape[0]
 
         mji = self.original_forward(node_feats[sender], edge_attrs, tp_weights)
-        message = scatter_sum(src=mji, index=receiver, dim=0, dim_size=num_nodes)
-        return message
+        return scatter_sum(src=mji, index=receiver, dim=0, dim_size=num_nodes)
 
     conv_tp.forward = types.MethodType(forward, conv_tp)
     return conv_tp
@@ -159,11 +157,11 @@ class TensorProduct:
         irreps_in1: o3.Irreps,
         irreps_in2: o3.Irreps,
         irreps_out: o3.Irreps,
-        instructions: Optional[List] = None,
+        instructions: list | None = None,
         shared_weights: bool = False,
         internal_weights: bool = False,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None,
+        cueq_config: CuEquivarianceConfig | None = None,
+        oeq_config: OEQConfig | None = None,
     ):
         if (
             CUET_AVAILABLE
@@ -238,7 +236,7 @@ class FullyConnectedTensorProduct:
         irreps_out: o3.Irreps,
         shared_weights: bool = True,
         internal_weights: bool = True,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
+        cueq_config: CuEquivarianceConfig | None = None,
     ):
         if (
             CUET_AVAILABLE
@@ -273,9 +271,9 @@ class SymmetricContractionWrapper:
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
         correlation: int,
-        num_elements: Optional[int] = None,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
+        num_elements: int | None = None,
+        cueq_config: CuEquivarianceConfig | None = None,
+        oeq_config: OEQConfig | None = None,  # pylint: disable=unused-argument
         use_reduced_cg: bool = True,
     ):
         use_reduced_cg = use_reduced_cg and CUET_AVAILABLE
@@ -312,7 +310,7 @@ class TransposeIrrepsLayoutWrapper:
         irreps: o3.Irreps,
         source: str,
         target: str,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
+        cueq_config: CuEquivarianceConfig | None = None,
     ):
         if CUET_AVAILABLE and cueq_config is not None and cueq_config.enabled:
             return cuet.TransposeIrrepsLayout(

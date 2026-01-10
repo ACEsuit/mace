@@ -1,4 +1,5 @@
-from typing import Callable, Dict, Optional, Type
+from collections.abc import Callable
+from typing import Dict, Optional, Type
 
 import torch
 
@@ -55,7 +56,7 @@ from .utils import (
     compute_statistics,
 )
 
-interaction_classes: Dict[str, Type[InteractionBlock]] = {
+interaction_classes: dict[str, type[InteractionBlock]] = {
     "RealAgnosticResidualInteractionBlock": RealAgnosticResidualInteractionBlock,
     "RealAgnosticAttResidualInteractionBlock": RealAgnosticAttResidualInteractionBlock,
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
@@ -64,7 +65,7 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticResidualNonLinearInteractionBlock": RealAgnosticResidualNonLinearInteractionBlock,
 }
 
-readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
+readout_classes: dict[str, type[LinearReadoutBlock]] = {
     "LinearReadoutBlock": LinearReadoutBlock,
     "LinearDipoleReadoutBlock": LinearDipoleReadoutBlock,
     "NonLinearDipoleReadoutBlock": NonLinearDipoleReadoutBlock,
@@ -72,13 +73,13 @@ readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
     "NonLinearBiasReadoutBlock": NonLinearBiasReadoutBlock,
 }
 
-scaling_classes: Dict[str, Callable] = {
+scaling_classes: dict[str, Callable] = {
     "std_scaling": compute_mean_std_atomic_inter_energy,
     "rms_forces_scaling": compute_mean_rms_energy_forces,
     "rms_dipoles_scaling": compute_rms_dipoles,
 }
 
-gate_dict: Dict[str, Optional[Callable]] = {
+gate_dict: dict[str, Callable | None] = {
     "abs": torch.abs,
     "tanh": torch.tanh,
     "silu": torch.nn.functional.silu,
@@ -86,42 +87,42 @@ gate_dict: Dict[str, Optional[Callable]] = {
 }
 
 __all__ = [
+    "MACE",
+    "AtomicDielectricMACE",
+    "AtomicDipolesMACE",
     "AtomicEnergiesBlock",
-    "RadialEmbeddingBlock",
-    "ZBLBasis",
+    "BesselBasis",
+    "DipoleSingleLoss",
+    "EnergyDipolesMACE",
+    "EquivariantProductBasisBlock",
+    "GaussianBasis",
+    "InteractionBlock",
+    "LinearDipolePolarReadoutBlock",
+    "LinearDipoleReadoutBlock",
     "LinearNodeEmbeddingBlock",
     "LinearReadoutBlock",
-    "EquivariantProductBasisBlock",
-    "ScaleShiftBlock",
-    "LinearDipoleReadoutBlock",
-    "LinearDipolePolarReadoutBlock",
-    "NonLinearDipoleReadoutBlock",
     "NonLinearDipolePolarReadoutBlock",
-    "InteractionBlock",
+    "NonLinearDipoleReadoutBlock",
     "NonLinearReadoutBlock",
     "PolynomialCutoff",
-    "BesselBasis",
-    "GaussianBasis",
-    "MACE",
+    "RadialEmbeddingBlock",
+    "ScaleShiftBlock",
     "ScaleShiftMACE",
-    "AtomicDipolesMACE",
-    "AtomicDielectricMACE",
-    "EnergyDipolesMACE",
-    "WeightedEnergyForcesLoss",
-    "WeightedForcesLoss",
-    "WeightedEnergyForcesVirialsLoss",
-    "WeightedEnergyForcesStressLoss",
-    "DipoleSingleLoss",
-    "WeightedEnergyForcesDipoleLoss",
-    "WeightedHuberEnergyForcesStressLoss",
-    "UniversalLoss",
-    "WeightedEnergyForcesL1L2Loss",
     "SymmetricContraction",
-    "interaction_classes",
-    "compute_mean_std_atomic_inter_energy",
+    "UniversalLoss",
+    "WeightedEnergyForcesDipoleLoss",
+    "WeightedEnergyForcesL1L2Loss",
+    "WeightedEnergyForcesLoss",
+    "WeightedEnergyForcesStressLoss",
+    "WeightedEnergyForcesVirialsLoss",
+    "WeightedForcesLoss",
+    "WeightedHuberEnergyForcesStressLoss",
+    "ZBLBasis",
     "compute_avg_num_neighbors",
-    "compute_statistics",
+    "compute_dielectric_gradients",
     "compute_fixed_charge_dipole",
     "compute_fixed_charge_dipole_polar",
-    "compute_dielectric_gradients",
+    "compute_mean_std_atomic_inter_energy",
+    "compute_statistics",
+    "interaction_classes",
 ]

@@ -69,9 +69,7 @@ def check_args(args):
             len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
         ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
 
-        args.num_channels = list(
-            {irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}
-        )[0]
+        args.num_channels = next(iter({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}))
         args.max_L = o3.Irreps(args.hidden_irreps).lmax
     elif args.max_L is not None and args.num_channels is None:
         assert args.max_L >= 0, "max_L must be non-negative integer"

@@ -5,7 +5,6 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import Dict, Optional, Union
 
 import opt_einsum_fx
 import torch
@@ -26,13 +25,13 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         self,
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
-        correlation: Union[int, Dict[str, int]],
+        correlation: int | dict[str, int],
         irrep_normalization: str = "component",
         path_normalization: str = "element",
         use_reduced_cg: bool = False,
-        internal_weights: Optional[bool] = None,
-        shared_weights: Optional[bool] = None,
-        num_elements: Optional[int] = None,
+        internal_weights: bool | None = None,
+        shared_weights: bool | None = None,
+        num_elements: int | None = None,
     ) -> None:
         super().__init__()
 
@@ -94,8 +93,8 @@ class Contraction(torch.nn.Module):
         correlation: int,
         internal_weights: bool = True,
         use_reduced_cg: bool = False,
-        num_elements: Optional[int] = None,
-        weights: Optional[torch.Tensor] = None,
+        num_elements: int | None = None,
+        weights: torch.Tensor | None = None,
     ) -> None:
         super().__init__()
 

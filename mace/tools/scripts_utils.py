@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import torch
@@ -28,12 +28,12 @@ from mace.tools.train import SWAContainer
 class SubsetCollection:
     train: data.Configurations
     valid: data.Configurations
-    tests: List[Tuple[str, data.Configurations]]
+    tests: list[tuple[str, data.Configurations]]
 
 
 def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> None:
     log_string = f"{dataset_name} ["
-    for prop_name in dataset[0].properties.keys():
+    for prop_name in dataset[0].properties:
         if prop_name == "dipole":
             log_string += f"{prop_name} components: {int(np.sum([np.sum(config.property_weights[prop_name]) for config in dataset]))}, "
         else:
@@ -44,17 +44,17 @@ def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> Non
 
 def get_dataset_from_xyz(
     work_dir: str,
-    train_path: Union[str, List[str]],
-    valid_path: Optional[Union[str, List[str]]],
+    train_path: str | list[str],
+    valid_path: str | list[str] | None,
     valid_fraction: float,
     key_specification: KeySpecification,
-    config_type_weights: Optional[Dict] = None,
-    test_path: Optional[Union[str, List[str]]] = None,
+    config_type_weights: dict | None = None,
+    test_path: str | list[str] | None = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
     no_data_ok: bool = False,
-) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
+) -> tuple[SubsetCollection, dict[int, float] | None]:
     """
     Load training, validation, and test datasets from xyz files.
 
@@ -222,7 +222,7 @@ def print_git_commit():
         return "None"
 
 
-def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
+def extract_config_mace_model(model: torch.nn.Module) -> dict[str, Any]:
     if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES"]:
         return {"error": "Model is not a ScaleShiftMACE or MACELES model"}
 
@@ -330,7 +330,7 @@ def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
 
 
 def remove_pt_head(
-    model: torch.nn.Module, head_to_keep: Optional[str] = None
+    model: torch.nn.Module, head_to_keep: str | None = None
 ) -> torch.nn.Module:
     """Converts a multihead MACE model to a single head model by removing the pretraining head.
 
@@ -380,9 +380,7 @@ def remove_pt_head(
     new_state_dict = {}
 
     for name, param in state_dict.items():
-        if "atomic_energies" in name:
-            new_state_dict[name] = param[head_idx : head_idx + 1]
-        elif "scale" in name or "shift" in name:
+        if "atomic_energies" in name or "scale" in name or "shift" in name:
             new_state_dict[name] = param[head_idx : head_idx + 1]
         elif "readouts" in name:
             channels_per_head = param.shape[0] // len(model.heads)
@@ -521,7 +519,7 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                 ) from e
         elif E0s.endswith(".json"):
             logging.info(f"Loading atomic energies from {E0s}")
-            with open(E0s, "r", encoding="utf-8") as f:
+            with open(E0s, encoding="utf-8") as f:
                 atomic_energies_dict = json.load(f)
                 atomic_energies_dict = {
                     int(key): value for key, value in atomic_energies_dict.items()
@@ -584,7 +582,7 @@ def get_loss_fn(
     args: argparse.Namespace,
     dipole_only: bool,
     compute_dipole: bool,
-    dtype: Optional[torch.dtype] = None,
+    dtype: torch.dtype | None = None,
 ) -> torch.nn.Module:
     dtype = dtype or torch.get_default_dtype()
 
@@ -648,7 +646,8 @@ def get_loss_fn(
             dtype=dtype,
         )
     elif args.loss == "energy_forces_dipole":
-        assert dipole_only is False and compute_dipole is True
+        assert dipole_only is False
+        assert compute_dipole is True
         loss_fn = modules.WeightedEnergyForcesDipoleLoss(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
@@ -666,9 +665,9 @@ def get_swa(
     args: argparse.Namespace,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
-    swas: List[bool],
+    swas: list[bool],
     dipole_only: bool = False,
-    dtype: Optional[torch.dtype] = None,
+    dtype: torch.dtype | None = None,
 ):
     dtype = dtype or torch.get_default_dtype()
     assert dipole_only is False, "Stage Two for dipole fitting not implemented"
@@ -757,7 +756,7 @@ def get_swa(
 
 def get_params_options(
     args: argparse.Namespace, model: torch.nn.Module
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     decay_interactions = {}
     no_decay_interactions = {}
     for name, param in model.interactions.named_parameters():
@@ -826,7 +825,7 @@ def get_params_options(
 
 
 def get_optimizer(
-    args: argparse.Namespace, param_options: Dict[str, Any]
+    args: argparse.Namespace, param_options: dict[str, Any]
 ) -> torch.optim.Optimizer:
     if args.optimizer == "adamw":
         optimizer = torch.optim.AdamW(**param_options)
@@ -874,7 +873,7 @@ def setup_wandb(args: argparse.Namespace):
     wandb.run.summary["params"] = args_dict_json
 
 
-def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
+def get_files_with_suffix(dir_path: str, suffix: str) -> list[str]:
     return [
         os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(suffix)
     ]
@@ -943,7 +942,7 @@ def check_folder_subfolder(folder_path):
     return False
 
 
-def check_path_ase_read(filename: Optional[str]) -> bool:
+def check_path_ase_read(filename: str | None) -> bool:
     if filename is None:
         return False
     filepath = Path(filename)
@@ -966,9 +965,7 @@ def check_path_ase_read(filename: Optional[str]) -> bool:
                 print(file)
             raise RuntimeError(f"No supported files found in directory '{filename}'")
         return False
-    if filepath.suffix in (".h5", ".hdf5", ".lmdb", ".aselmdb", ".mdb"):
-        return False
-    return True
+    return filepath.suffix not in (".h5", ".hdf5", ".lmdb", ".aselmdb", ".mdb")
 
 
 def dict_to_namespace(dictionary):

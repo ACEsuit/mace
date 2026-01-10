@@ -9,7 +9,7 @@ import logging
 import time
 from collections import defaultdict
 from contextlib import nullcontext
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import torch
@@ -58,10 +58,7 @@ def valid_err_log(
     eval_metrics["epoch"] = epoch
     eval_metrics["head"] = valid_loader_name
     logger.log(eval_metrics)
-    if epoch is None:
-        inintial_phrase = "Initial"
-    else:
-        inintial_phrase = f"Epoch {epoch}"
+    inintial_phrase = "Initial" if epoch is None else f"Epoch {epoch}"
     if log_errors == "PerAtomRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
@@ -150,7 +147,7 @@ def train(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     train_loader: DataLoader,
-    valid_loaders: Dict[str, DataLoader],
+    valid_loaders: dict[str, DataLoader],
     optimizer: torch.optim.Optimizer,
     lr_scheduler: torch.optim.lr_scheduler.ExponentialLR,
     start_epoch: int,
@@ -159,19 +156,19 @@ def train(
     checkpoint_handler: CheckpointHandler,
     logger: MetricsLogger,
     eval_interval: int,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     device: torch.device,
     log_errors: str,
-    swa: Optional[SWAContainer] = None,
-    ema: Optional[ExponentialMovingAverage] = None,
-    max_grad_norm: Optional[float] = 10.0,
+    swa: SWAContainer | None = None,
+    ema: ExponentialMovingAverage | None = None,
+    max_grad_norm: float | None = 10.0,
     log_wandb: bool = False,
     distributed: bool = False,
     save_all_checkpoints: bool = False,
     plotter: TrainingPlotter = None,
-    distributed_model: Optional[DistributedDataParallel] = None,
-    train_sampler: Optional[DistributedSampler] = None,
-    rank: Optional[int] = 0,
+    distributed_model: DistributedDataParallel | None = None,
+    train_sampler: DistributedSampler | None = None,
+    rank: int | None = 0,
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
@@ -345,14 +342,14 @@ def train_one_epoch(
     data_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     epoch: int,
-    output_args: Dict[str, bool],
-    max_grad_norm: Optional[float],
-    ema: Optional[ExponentialMovingAverage],
+    output_args: dict[str, bool],
+    max_grad_norm: float | None,
+    ema: ExponentialMovingAverage | None,
     logger: MetricsLogger,
     device: torch.device,
     distributed: bool,
-    distributed_model: Optional[DistributedDataParallel] = None,
-    rank: Optional[int] = 0,
+    distributed_model: DistributedDataParallel | None = None,
+    rank: int | None = 0,
 ) -> None:
     model_to_train = model if distributed_model is None else distributed_model
 
@@ -396,11 +393,11 @@ def take_step(
     loss_fn: torch.nn.Module,
     batch: torch_geometric.batch.Batch,
     optimizer: torch.optim.Optimizer,
-    ema: Optional[ExponentialMovingAverage],
-    output_args: Dict[str, bool],
-    max_grad_norm: Optional[float],
+    ema: ExponentialMovingAverage | None,
+    output_args: dict[str, bool],
+    max_grad_norm: float | None,
     device: torch.device,
-) -> Tuple[float, Dict[str, Any]]:
+) -> tuple[float, dict[str, Any]]:
     start_time = time.time()
     batch = batch.to(device)
     batch_dict = batch.to_dict()
@@ -440,13 +437,13 @@ def take_step_lbfgs(
     loss_fn: torch.nn.Module,
     data_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
-    ema: Optional[ExponentialMovingAverage],
-    output_args: Dict[str, bool],
-    max_grad_norm: Optional[float],
+    ema: ExponentialMovingAverage | None,
+    output_args: dict[str, bool],
+    max_grad_norm: float | None,
     device: torch.device,
     distributed: bool,
     rank: int,
-) -> Tuple[float, Dict[str, Any]]:
+) -> tuple[float, dict[str, Any]]:
     start_time = time.time()
     logging.debug(
         f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB"
@@ -535,9 +532,9 @@ def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     data_loader: DataLoader,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     device: torch.device,
-) -> Tuple[float, Dict[str, Any]]:
+) -> tuple[float, dict[str, Any]]:
     for param in model.parameters():
         param.requires_grad = False
 
@@ -669,7 +666,7 @@ class MACELoss(Metric):
                 spread_quantity_vector=False,
             )
 
-    def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
+    def convert(self, delta: torch.Tensor | list[torch.Tensor]) -> np.ndarray:
         if isinstance(delta, list):
             delta = torch.cat(delta)
         return to_numpy(delta)

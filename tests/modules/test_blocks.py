@@ -16,13 +16,13 @@ def test_atomic_energies_block_to():
 
     # Test device conversion
     if torch.cuda.is_available():
-        block.to(device='cuda')
-        assert block.atomic_energies.device.type == 'cuda'
+        block.to(device="cuda")
+        assert block.atomic_energies.device.type == "cuda"
 
     # Test both dtype and device
-    block.to(dtype=torch.float32, device='cpu')
+    block.to(dtype=torch.float32, device="cpu")
     assert block.atomic_energies.dtype == torch.float32
-    assert block.atomic_energies.device.type == 'cpu'
+    assert block.atomic_energies.device.type == "cpu"
 
     # Test forward pass still works
     x = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=torch.float32)
@@ -45,16 +45,16 @@ def test_scale_shift_block_to():
 
     # Test device conversion
     if torch.cuda.is_available():
-        block.to(device='cuda')
-        assert block.scale.device.type == 'cuda'
-        assert block.shift.device.type == 'cuda'
+        block.to(device="cuda")
+        assert block.scale.device.type == "cuda"
+        assert block.shift.device.type == "cuda"
 
     # Test both dtype and device
-    block.to(dtype=torch.float32, device='cpu')
+    block.to(dtype=torch.float32, device="cpu")
     assert block.scale.dtype == torch.float32
     assert block.shift.dtype == torch.float32
-    assert block.scale.device.type == 'cpu'
-    assert block.shift.device.type == 'cpu'
+    assert block.scale.device.type == "cpu"
+    assert block.shift.device.type == "cpu"
 
     # Test forward pass still works
     x = torch.tensor([1.0, 2.0], dtype=torch.float32)

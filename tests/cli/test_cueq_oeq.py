@@ -1,7 +1,7 @@
 # pylint: disable=wrong-import-position
 import os
 from copy import deepcopy
-from typing import Any, Dict
+from typing import Any
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -44,7 +44,7 @@ class BackendTestBase:
         use_last_readout_only,
         use_reduced_cg,
         default_dtype,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         table = tools.AtomicNumberTable([6])
         return {
             "r_max": 5.0,
@@ -74,7 +74,7 @@ class BackendTestBase:
         }
 
     @pytest.fixture
-    def batch(self, device: str, dtype: torch.dtype) -> Dict[str, torch.Tensor]:
+    def batch(self, device: str, dtype: torch.dtype) -> dict[str, torch.Tensor]:
         from ase import build
 
         table = tools.AtomicNumberTable([6])
@@ -124,8 +124,8 @@ class BackendTestBase:
     @pytest.mark.parametrize("dtype", [torch.float32, torch.float64], ids=["float32", "float64"])
     def test_bidirectional_conversion(
         self,
-        model_config: Dict[str, Any],
-        batch: Dict[str, torch.Tensor],
+        model_config: dict[str, Any],
+        batch: dict[str, torch.Tensor],
         device: str,
         dtype: torch.dtype,
         conversion_functions: tuple,

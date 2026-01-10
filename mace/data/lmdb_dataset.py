@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 import numpy as np
 import torch
@@ -15,14 +14,14 @@ from mace.tools.fairchem_dataset import AseDBDataset
 
 class LMDBDataset(Dataset):
     def __init__(
-        self, file_path, r_max, z_table, dtype: Optional[torch.dtype] = None, **kwargs
+        self, file_path, r_max, z_table, dtype: torch.dtype | None = None, **kwargs
     ):
         dataset_paths = file_path.split(":")  # using : split multiple paths
         # make sure each of the path exist
         for path in dataset_paths:
             assert os.path.exists(path)
         config_kwargs = {}
-        super(LMDBDataset, self).__init__()  # pylint: disable=super-with-arguments
+        super().__init__()  # pylint: disable=super-with-arguments
         self.AseDB = AseDBDataset(
             config=dict(src=dataset_paths, dtype=dtype, **config_kwargs)
         )
@@ -31,7 +30,7 @@ class LMDBDataset(Dataset):
         self.dtype = dtype or torch.get_default_dtype()
 
         self.kwargs = kwargs
-        self.transform = kwargs["transform"] if "transform" in kwargs else None
+        self.transform = kwargs.get("transform")
 
     def __len__(self):
         return len(self.AseDB)

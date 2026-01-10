@@ -5,7 +5,7 @@
 ###########################################################################################
 
 import logging
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -22,7 +22,7 @@ from .blocks import AtomicEnergiesBlock
 def compute_forces(
     energy: torch.Tensor, positions: torch.Tensor, training: bool = True
 ) -> torch.Tensor:
-    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+    grad_outputs: list[torch.Tensor | None] = [torch.ones_like(energy)]
     gradient = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions],  # [n_nodes, 3]
@@ -45,8 +45,8 @@ def compute_forces_virials(
     cell: torch.Tensor,
     training: bool = True,
     compute_stress: bool = False,
-) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
-    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    grad_outputs: list[torch.Tensor | None] = [torch.ones_like(energy)]
     forces, virials = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions, displacement],  # [n_nodes, 3]
@@ -72,11 +72,11 @@ def compute_forces_virials(
 def get_symmetric_displacement(
     positions: torch.Tensor,
     unit_shifts: torch.Tensor,
-    cell: Optional[torch.Tensor],
+    cell: torch.Tensor | None,
     edge_index: torch.Tensor,
     num_graphs: int,
     batch: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if cell is None:
         cell = torch.zeros(
             num_graphs * 3,
@@ -158,28 +158,27 @@ def compute_hessians_loop(
             hessian.append(torch.zeros_like(positions))
         else:
             hessian.append(hess_row)
-    hessian = torch.stack(hessian)
-    return hessian
+    return torch.stack(hessian)
 
 
 def get_outputs(
     energy: torch.Tensor,
     positions: torch.Tensor,
     cell: torch.Tensor,
-    displacement: Optional[torch.Tensor],
-    vectors: Optional[torch.Tensor] = None,
+    displacement: torch.Tensor | None,
+    vectors: torch.Tensor | None = None,
     training: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
     compute_hessian: bool = False,
     compute_edge_forces: bool = False,
-) -> Tuple[
-    Optional[torch.Tensor],
-    Optional[torch.Tensor],
-    Optional[torch.Tensor],
-    Optional[torch.Tensor],
-    Optional[torch.Tensor],
+) -> tuple[
+    torch.Tensor | None,
+    torch.Tensor | None,
+    torch.Tensor | None,
+    torch.Tensor | None,
+    torch.Tensor | None,
 ]:
     if (compute_virials or compute_stress) and displacement is not None:
         forces, virials, stress = compute_forces_virials(
@@ -227,7 +226,7 @@ def get_atomic_virials_stresses(
     num_atoms: int,
     batch: torch.Tensor,
     cell: torch.Tensor,  # [n_graphs, 3, 3]
-) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     """
     Compute atomic virials and optionally atomic stresses from edge forces and vectors.
     From pobo95 PR #528.
@@ -262,7 +261,7 @@ def get_edge_vectors_and_lengths(
     shifts: torch.Tensor,  # [n_edges, 3]
     normalize: bool = False,
     eps: float = 1e-9,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     sender = edge_index[0]
     receiver = edge_index[1]
     vectors = positions[receiver] - positions[sender] + shifts  # [n_edges, 3]
@@ -302,8 +301,8 @@ def extract_invariant(x: torch.Tensor, num_layers: int, num_features: int, l_max
 def compute_mean_std_atomic_inter_energy(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
-    dtype: Optional[torch.dtype] = None,
-) -> Tuple[float, float]:
+    dtype: torch.dtype | None = None,
+) -> tuple[float, float]:
     dtype = dtype or torch.get_default_dtype()
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies).to(
         dtype=dtype
@@ -335,22 +334,21 @@ def compute_mean_std_atomic_inter_energy(
 def _compute_mean_std_atomic_inter_energy(
     batch: Batch,
     atomic_energies_fn: AtomicEnergiesBlock,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     head = batch.head
     node_e0 = atomic_energies_fn(batch.node_attrs)
     graph_e0s = scatter_sum(
         src=node_e0, index=batch.batch, dim=0, dim_size=batch.num_graphs
     )[torch.arange(batch.num_graphs), head]
     graph_sizes = batch.ptr[1:] - batch.ptr[:-1]
-    atom_energies = (batch.energy - graph_e0s) / graph_sizes
-    return atom_energies
+    return (batch.energy - graph_e0s) / graph_sizes
 
 
 def compute_mean_rms_energy_forces(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
-    dtype: Optional[torch.dtype] = None,
-) -> Tuple[float, float]:
+    dtype: torch.dtype | None = None,
+) -> tuple[float, float]:
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies).to(
         dtype=dtype
     )
@@ -395,7 +393,7 @@ def compute_mean_rms_energy_forces(
 def _compute_mean_rms_energy_forces(
     batch: Batch,
     atomic_energies_fn: AtomicEnergiesBlock,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     head = batch.head
     node_e0 = atomic_energies_fn(batch.node_attrs)
     graph_e0s = scatter_sum(
@@ -409,7 +407,7 @@ def _compute_mean_rms_energy_forces(
 
 
 def compute_avg_num_neighbors(
-    data_loader: torch.utils.data.DataLoader, dtype: Optional[torch.dtype] = None
+    data_loader: torch.utils.data.DataLoader, dtype: torch.dtype | None = None
 ) -> float:
     num_neighbors = []
     for batch in data_loader:
@@ -426,8 +424,8 @@ def compute_avg_num_neighbors(
 def compute_statistics(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
-    dtype: Optional[torch.dtype] = None,
-) -> Tuple[float, float, float, float]:
+    dtype: torch.dtype | None = None,
+) -> tuple[float, float, float, float]:
     dtype = dtype or torch.get_default_dtype()
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies).to(
         dtype=dtype
@@ -476,15 +474,14 @@ def compute_statistics(
 
 def compute_rms_dipoles(
     data_loader: torch.utils.data.DataLoader,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     dipoles_list = []
     for batch in data_loader:
         dipoles_list.append(batch.dipole)  # {[n_graphs,3], }
 
     dipoles = torch.cat(dipoles_list, dim=0)  # {[total_n_graphs,3], }
     rms = to_numpy(torch.sqrt(torch.mean(torch.square(dipoles)))).item()
-    rms = _check_non_zero(rms)
-    return rms
+    return _check_non_zero(rms)
 
 
 def compute_fixed_charge_dipole(
@@ -515,7 +512,7 @@ def compute_fixed_charge_dipole_polar(
 def compute_dielectric_gradients(
     dielectric: torch.Tensor,
     positions: torch.Tensor,
-) -> Tuple[torch.tensor, torch.tensor]:
+) -> tuple[torch.tensor, torch.tensor]:
     dielectric_flatten = dielectric.view(-1)
 
     def get_vjp(v):
@@ -553,20 +550,19 @@ def compute_dielectric_gradients_loop(
             allow_unused=False,
         )[0]
         gradients.append(hess_row)
-    gradients = torch.stack(gradients)
-    return gradients
+    return torch.stack(gradients)
 
 
 class InteractionKwargs(NamedTuple):
-    lammps_class: Optional[torch.Tensor]
-    lammps_natoms: Tuple[int, int] = (0, 0)
+    lammps_class: torch.Tensor | None
+    lammps_natoms: tuple[int, int] = (0, 0)
 
 
 class GraphContext(NamedTuple):
     is_lammps: bool
     num_graphs: int
     num_atoms_arange: torch.Tensor
-    displacement: Optional[torch.Tensor]
+    displacement: torch.Tensor | None
     positions: torch.Tensor
     vectors: torch.Tensor
     lengths: torch.Tensor
@@ -576,7 +572,7 @@ class GraphContext(NamedTuple):
 
 
 def prepare_graph(
-    data: Dict[str, torch.Tensor],
+    data: dict[str, torch.Tensor],
     compute_virials: bool = False,
     compute_stress: bool = False,
     compute_displacement: bool = False,

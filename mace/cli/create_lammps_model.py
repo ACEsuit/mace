@@ -46,10 +46,7 @@ def parse_args():
 
 
 def select_head(model):
-    if hasattr(model, "heads"):
-        heads = model.heads
-    else:
-        heads = [None]
+    heads = model.heads if hasattr(model, "heads") else [None]
 
     if len(heads) == 1:
         print(f"Only one head found in the model: {heads[0]}. Skipping selection.")

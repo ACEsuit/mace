@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any
 
 import torch
 from torch.utils.data import ConcatDataset
@@ -12,7 +12,7 @@ from mace.tools.torch_geometric.dataset import Dataset
 from mace.tools.utils import AtomicNumberTable
 
 
-def normalize_file_paths(file_paths: Union[str, List[str]]) -> List[str]:
+def normalize_file_paths(file_paths: str | list[str]) -> list[str]:
     """
     Normalize file paths to a list format.
 
@@ -30,14 +30,14 @@ def normalize_file_paths(file_paths: Union[str, List[str]]) -> List[str]:
 
 
 def load_dataset_for_path(
-    file_path: Union[str, Path, List[str]],
+    file_path: str | Path | list[str],
     r_max: float,
     z_table: AtomicNumberTable,
-    heads: List[str],
+    heads: list[str],
     head_config: Any,
-    collection: Optional[Any] = None,
-    dtype: Optional[torch.dtype] = None,
-) -> Union[Dataset, List]:
+    collection: Any | None = None,
+    dtype: torch.dtype | None = None,
+) -> Dataset | list:
     """
     Load a dataset from a file path based on its format.
 
@@ -53,9 +53,8 @@ def load_dataset_for_path(
         Loaded dataset
     """
     dtype = dtype or torch.get_default_dtype()
-    if isinstance(file_path, list):
-        if len(file_path) == 1:
-            file_path = file_path[0]
+    if isinstance(file_path, list) and len(file_path) == 1:
+        file_path = file_path[0]
     if isinstance(file_path, list):
         is_ase_readable = all(check_path_ase_read(p) for p in file_path)
         if not is_ase_readable:
@@ -80,7 +79,7 @@ def load_dataset_for_path(
     if filepath.is_dir():
 
         if filepath.name.endswith("_lmdb") or any(
-            f.endswith(".lmdb") or f.endswith(".aselmdb") for f in os.listdir(filepath)
+            f.endswith((".lmdb", ".aselmdb")) for f in os.listdir(filepath)
         ):
             logging.info(f"Loading LMDB dataset from {file_path}")
             return data.LMDBDataset(
@@ -105,7 +104,7 @@ def load_dataset_for_path(
                     dtype=dtype,
                 )
             except Exception as e:
-                logging.error(f"Error loading sharded HDF5 dataset: {e}")
+                logging.exception(f"Error loading sharded HDF5 dataset: {e}")
                 raise
 
         if "lmdb" in str(filepath).lower() or "aselmdb" in str(filepath).lower():
@@ -130,7 +129,7 @@ def load_dataset_for_path(
                 dtype=dtype,
             )
         except Exception as e:
-            logging.error(f"Error loading as sharded HDF5: {e}")
+            logging.exception(f"Error loading as sharded HDF5: {e}")
             raise
 
     suffix = filepath.suffix.lower()

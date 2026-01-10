@@ -5,8 +5,9 @@
 ###########################################################################################
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 import ase.data
 import ase.io
@@ -25,13 +26,13 @@ DEFAULT_CONFIG_TYPE_WEIGHTS = {DEFAULT_CONFIG_TYPE: 1.0}
 
 @dataclass
 class KeySpecification:
-    info_keys: Dict[str, str] = field(default_factory=dict)
-    arrays_keys: Dict[str, str] = field(default_factory=dict)
+    info_keys: dict[str, str] = field(default_factory=dict)
+    arrays_keys: dict[str, str] = field(default_factory=dict)
 
     def update(
         self,
-        info_keys: Optional[Dict[str, str]] = None,
-        arrays_keys: Optional[Dict[str, str]] = None,
+        info_keys: dict[str, str] | None = None,
+        arrays_keys: dict[str, str] | None = None,
     ):
         if info_keys is not None:
             self.info_keys.update(info_keys)
@@ -46,7 +47,7 @@ class KeySpecification:
 
 
 def update_keyspec_from_kwargs(
-    keyspec: KeySpecification, keydict: Dict[str, str]
+    keyspec: KeySpecification, keydict: dict[str, str]
 ) -> KeySpecification:
     # convert command line style property_key arguments into a keyspec
     infos = [
@@ -77,22 +78,22 @@ def update_keyspec_from_kwargs(
 class Configuration:
     atomic_numbers: np.ndarray
     positions: Positions  # Angstrom
-    properties: Dict[str, Any]
-    property_weights: Dict[str, float]
-    cell: Optional[Cell] = None
-    pbc: Optional[Pbc] = None
+    properties: dict[str, Any]
+    property_weights: dict[str, float]
+    cell: Cell | None = None
+    pbc: Pbc | None = None
 
     weight: float = 1.0  # weight of config in loss
     config_type: str = DEFAULT_CONFIG_TYPE  # config_type of config
     head: str = "Default"  # head used to compute the config
 
 
-Configurations = List[Configuration]
+Configurations = list[Configuration]
 
 
 def random_train_valid_split(
     items: Sequence, valid_fraction: float, seed: int, work_dir: str
-) -> Tuple[List, List]:
+) -> tuple[list, list]:
     assert 0.0 < valid_fraction < 1.0
 
     size = len(items)
@@ -124,9 +125,9 @@ def random_train_valid_split(
 
 
 def config_from_atoms_list(
-    atoms_list: List[ase.Atoms],
+    atoms_list: list[ase.Atoms],
     key_specification: KeySpecification,
-    config_type_weights: Optional[Dict[str, float]] = None,
+    config_type_weights: dict[str, float] | None = None,
     head_name: str = "Default",
 ) -> Configurations:
     """Convert list of ase.Atoms into Configurations"""
@@ -149,7 +150,7 @@ def config_from_atoms_list(
 def config_from_atoms(
     atoms: ase.Atoms,
     key_specification: KeySpecification = KeySpecification(),
-    config_type_weights: Optional[Dict[str, float]] = None,
+    config_type_weights: dict[str, float] | None = None,
     head_name: str = "Default",
 ) -> Configuration:
     """Convert ase.Atoms to Configuration"""
@@ -196,7 +197,7 @@ def config_from_atoms(
 
 def test_config_types(
     test_configs: Configurations,
-) -> List[Tuple[str, List[Configuration]]]:
+) -> list[tuple[str, list[Configuration]]]:
     """Split test set based on config_type-s"""
     test_by_ct = []
     all_cts = []
@@ -217,11 +218,11 @@ def load_from_xyz(
     file_path: str,
     key_specification: KeySpecification,
     head_name: str = "Default",
-    config_type_weights: Optional[Dict] = None,
+    config_type_weights: dict | None = None,
     extract_atomic_energies: bool = False,
     keep_isolated_atoms: bool = False,
     no_data_ok: bool = False,
-) -> Tuple[Dict[int, float], Configurations]:
+) -> tuple[dict[int, float], Configurations]:
     atoms_list = ase.io.read(file_path, index=":")
     energy_key = key_specification.info_keys["energy"]
     forces_key = key_specification.arrays_keys["forces"]
@@ -241,7 +242,7 @@ def load_from_xyz(
                 atoms.info["REF_energy"] = atoms.get_potential_energy()
                 # print("atoms.info['REF_energy']:", atoms.info["REF_energy"])
             except Exception as e:  # pylint: disable=W0703
-                logging.error(f"Failed to extract energy: {e}")
+                logging.exception(f"Failed to extract energy: {e}")
                 atoms.info["REF_energy"] = None
     if forces_key == "forces":
         logging.warning(
@@ -252,7 +253,7 @@ def load_from_xyz(
             try:
                 atoms.arrays["REF_forces"] = atoms.get_forces()
             except Exception as e:  # pylint: disable=W0703
-                logging.error(f"Failed to extract forces: {e}")
+                logging.exception(f"Failed to extract forces: {e}")
                 atoms.arrays["REF_forces"] = None
     if stress_key == "stress":
         logging.warning(
@@ -304,7 +305,7 @@ def load_from_xyz(
             )
             if isolated_atom_config:
                 atomic_number = int(atoms.get_atomic_numbers()[0])
-                if energy_key in atoms.info.keys():
+                if energy_key in atoms.info:
                     atomic_energies_dict[atomic_number] = float(atoms.info[energy_key])
                 else:
                     logging.warning(
@@ -337,7 +338,7 @@ def load_from_xyz(
 
 def compute_average_E0s(
     collections_train: Configurations, z_table: AtomicNumberTable
-) -> Dict[int, float]:
+) -> dict[int, float]:
     """
     Function to compute the average interaction energy of each chemical element
     returns dictionary of E0s
@@ -356,7 +357,7 @@ def compute_average_E0s(
         for i, z in enumerate(z_table.zs):
             atomic_energies_dict[z] = E0s[i]
     except np.linalg.LinAlgError:
-        logging.error(
+        logging.exception(
             "Failed to compute E0s using least squares regression, using the same for all atoms"
         )
         atomic_energies_dict = {}
@@ -365,7 +366,7 @@ def compute_average_E0s(
     return atomic_energies_dict
 
 
-def save_dataset_as_HDF5(dataset: List, out_name: str) -> None:
+def save_dataset_as_HDF5(dataset: list, out_name: str) -> None:
     with h5py.File(out_name, "w") as f:
         for i, data in enumerate(dataset):
             save_AtomicData_to_HDF5(data, i, f)

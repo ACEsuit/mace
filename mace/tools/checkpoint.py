@@ -8,13 +8,12 @@ import dataclasses
 import logging
 import os
 import re
-from typing import Dict, List, Optional, Tuple
 
 import torch
 
 from .torch_tools import TensorDict
 
-Checkpoint = Dict[str, TensorDict]
+Checkpoint = dict[str, TensorDict]
 
 
 @dataclasses.dataclass
@@ -52,12 +51,12 @@ class CheckpointPathInfo:
 
 class CheckpointIO:
     def __init__(
-        self, directory: str, tag: str, keep: bool = False, swa_start: int = None
+        self, directory: str, tag: str, keep: bool = False, swa_start: int | None = None
     ) -> None:
         self.directory = directory
         self.tag = tag
         self.keep = keep
-        self.old_path: Optional[str] = None
+        self.old_path: str | None = None
         self.swa_start = swa_start
 
         self._epochs_string = "_epoch-"
@@ -81,7 +80,7 @@ class CheckpointIO:
             + self._filename_extension
         )
 
-    def _list_file_paths(self) -> List[str]:
+    def _list_file_paths(self) -> list[str]:
         if not os.path.isdir(self.directory):
             return []
         all_paths = [
@@ -89,7 +88,7 @@ class CheckpointIO:
         ]
         return [path for path in all_paths if os.path.isfile(path)]
 
-    def _parse_checkpoint_path(self, path: str) -> Optional[CheckpointPathInfo]:
+    def _parse_checkpoint_path(self, path: str) -> CheckpointPathInfo | None:
         filename = os.path.basename(path)
         regex = re.compile(
             rf"^(?P<tag>.+){self._epochs_string}(?P<epochs>\d+)\.{self._filename_extension}$"
@@ -113,7 +112,7 @@ class CheckpointIO:
             swa=swa,
         )
 
-    def _get_latest_checkpoint_path(self, swa) -> Optional[str]:
+    def _get_latest_checkpoint_path(self, swa) -> str | None:
         all_file_paths = self._list_file_paths()
         checkpoint_info_list = [
             self._parse_checkpoint_path(path) for path in all_file_paths
@@ -166,8 +165,8 @@ class CheckpointIO:
         self.old_path = path
 
     def load_latest(
-        self, swa: Optional[bool] = False, device: Optional[torch.device] = None
-    ) -> Optional[Tuple[Checkpoint, int]]:
+        self, swa: bool | None = False, device: torch.device | None = None
+    ) -> tuple[Checkpoint, int] | None:
         path = self._get_latest_checkpoint_path(swa=swa)
         if path is None:
             return None
@@ -175,8 +174,8 @@ class CheckpointIO:
         return self.load(path, device=device)
 
     def load(
-        self, path: str, device: Optional[torch.device] = None
-    ) -> Tuple[Checkpoint, int]:
+        self, path: str, device: torch.device | None = None
+    ) -> tuple[Checkpoint, int]:
         checkpoint_info = self._parse_checkpoint_path(path)
 
         if checkpoint_info is None:
@@ -203,10 +202,10 @@ class CheckpointHandler:
     def load_latest(
         self,
         state: CheckpointState,
-        swa: Optional[bool] = False,
-        device: Optional[torch.device] = None,
+        swa: bool | None = False,
+        device: torch.device | None = None,
         strict=False,
-    ) -> Optional[int]:
+    ) -> int | None:
         result = self.io.load_latest(swa=swa, device=device)
         if result is None:
             return None
@@ -220,7 +219,7 @@ class CheckpointHandler:
         state: CheckpointState,
         path: str,
         strict=False,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
     ) -> int:
         checkpoint, epochs = self.io.load(path, device=device)
         self.builder.load_checkpoint(state=state, checkpoint=checkpoint, strict=strict)

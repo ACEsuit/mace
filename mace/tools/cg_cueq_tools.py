@@ -15,8 +15,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 from e3nn import o3
 
@@ -114,7 +112,7 @@ def symmetric_contraction_cached(
 
 
 def _flatten(
-    x: np.ndarray, axis_start: Optional[int] = None, axis_end: Optional[int] = None
+    x: np.ndarray, axis_start: int | None = None, axis_end: int | None = None
 ) -> np.ndarray:
     x = np.asarray(x)
     if axis_start is None:
@@ -123,9 +121,7 @@ def _flatten(
         axis_end = x.ndim
     assert 0 <= axis_start <= axis_end <= x.ndim
     return x.reshape(
-        x.shape[:axis_start]
-        + (np.prod(x.shape[axis_start:axis_end]),)
-        + x.shape[axis_end:]
+        (*x.shape[:axis_start], np.prod(x.shape[axis_start:axis_end]), *x.shape[axis_end:])
     )
 
 

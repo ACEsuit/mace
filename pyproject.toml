@@ -76,25 +76,69 @@ allow-direct-references = true
 [tool.hatch.build.targets.wheel]
 packages = ["mace"]
 
-[tool.ruff]
-target-version = "py310"
-
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "PL", "C4", "B", "G"]
+select = ["ALL"]
 ignore = [
-    "E501",     # line-too-long
-    "PLR0913",  # too-many-arguments
-    "PLR0917",  # too-many-positional-arguments
-    "PLR0914",  # too-many-locals
-    "PLR0911",  # too-many-return-statements
-    "PLR0915",  # too-many-statements
-    "PLR0912",  # too-many-branches
-    "PLC0415",  # import-outside-toplevel
-    "B023",     # function-uses-loop-variable
-    "C408",     # unnecessary-collection-call
-    "G004",     # logging-f-string
+  # Rule families
+  "ANN",  # flake8-annotations (not ready, require types for ALL args)
+  "ARG",  # Check for unused function arguments
+  "BLE",  # General catch of Exception
+  "C90",  # Check for functions with a high McCabe complexity
+  "COM",  # flake8-commas (conflict with line wrapper)
+  "CPY",  # Missing copyright notice at top of file (need preview mode)
+  "D",    # pydocstyle
+  "EM",   # Format nice error messages
+  "ERA",  # Check for commented-out code
+  "FIX",  # Check for FIXME, TODO and other developer notes
+  "FURB", # refurb (need preview mode, too many preview errors)
+  "G",    # validate logging format strings
+  "INP",  # Ban PEP-420 implicit namespace packages
+  "N",    # pep8-naming (many var/arg names are intended)
+  "NPY",  # NumPy-specific rules (TODO: enable this)
+  "PTH",  # Prefer pathlib over os.path
+  "S",    # flake8-bandit (TODO: enable this)
+  "SLF",  # Access "private" class members
+  "T20",  # Check for print/pprint
+  "TD",   # TODO tags related
+
+  # Single rules
+  "B023",    # Function definition does not bind loop variable
+  "B028",    # No explicit stacklevel keyword argument found
+  "B904",    # Within an except clause, raise exceptions with ...
+  "C408",    # unnecessary-collection-call
+  "D105",    # Missing docstring in magic method
+  "D205",    # 1 blank line required between summary line and description
+  "D212",    # Multi-line docstring summary should start at the first line
+  "DTZ003",  # TODO: fix this (issue #3791)
+  "E501",    # Line too long
+  "FBT001",  # Boolean-typed positional argument in function definition
+  "FBT002",  # Boolean default positional argument in function
+  "ISC001",  # Ignore for purpose of auto formatting
+  "N801",    # Invalid Name
+  "PD901",   # pandas-df-variable-name
+  "PERF203", # try-except-in-loop
+  "PERF401", # manual-list-comprehension
+  "PLR0911", # too many return statements
+  "PLR0912", # too many branches
+  "PLR0913", # too many arguments
+  "PLR0915", # too many statements
+  "PLR2004", # magic values in comparison
+  "PLW2901", # Outer for loop variable overwritten by inner assignment target
+  "PT013",   # pytest-incorrect-pytest-import
+  "PYI024",  # Use `typing.NamedTuple` instead of `collections.namedtuple`
+  "RET505",  # Unnecessary `else` after `return` statement
+  "SIM105",  # Use contextlib.suppress() instead of try-except-pass
+  "TRY003",  # Avoid specifying long messages outside the exception class
+  "TRY300",  # Checks for return statements in try blocks
+  "TRY301",  # Checks for raise statements within try blocks
 ]
+pydocstyle.convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "mace/tools/torch_geometric/*" = ["ALL"]
 "mace/tools/scatter.py" = ["ALL"]
+
+[tool.isort]
+split-on-trailing-comma = false
+required-imports = ["from __future__ import annotations"]
+skip = ["__init__.py"]

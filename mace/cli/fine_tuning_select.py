@@ -8,7 +8,6 @@ import ast
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple, Union
 
 import ase.data
 import ase.io
@@ -40,7 +39,7 @@ class SelectionSettings:
     configs_pt: str
     output: str
     configs_ft: str | None = None
-    atomic_numbers: List[int] | None = None
+    atomic_numbers: list[int] | None = None
     num_samples: int | None = None
     subselect: SubselectType = SubselectType.FPS
     model: str = "small"
@@ -56,7 +55,7 @@ class SelectionSettings:
     seed: int = 42
 
 
-def str_to_list(s: str) -> List[int]:
+def str_to_list(s: str) -> list[int]:
     assert isinstance(s, str), "Input must be a string"
     return ast.literal_eval(s)
 
@@ -158,7 +157,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def calculate_descriptors(atoms: List[ase.Atoms], calc: MACECalculator) -> None:
+def calculate_descriptors(atoms: list[ase.Atoms], calc: MACECalculator) -> None:
     logging.info("Calculating descriptors")
     for mol in atoms:
         descriptors = calc.get_descriptors(mol.copy(), invariants_only=True)
@@ -172,7 +171,7 @@ def calculate_descriptors(atoms: List[ase.Atoms], calc: MACECalculator) -> None:
 
 def filter_atoms(
     atoms: ase.Atoms,
-    element_subset: List[str],
+    element_subset: list[str],
     filtering_type: FilteringType = FilteringType.COMBINATIONS,
 ) -> bool:
     """
@@ -216,7 +215,7 @@ def filter_atoms(
 
 
 class FPS:
-    def __init__(self, atoms_list: List[ase.Atoms], n_samples: int):
+    def __init__(self, atoms_list: list[ase.Atoms], n_samples: int):
         self.n_samples = n_samples
         self.atoms_list = atoms_list
         self.species = np.unique([x.symbol for atoms in atoms_list for x in atoms])  # type: ignore
@@ -227,7 +226,7 @@ class FPS:
 
     def run(
         self,
-    ) -> List[int]:
+    ) -> list[int]:
         """
         Run the farthest point sampling algorithm.
         """
@@ -252,7 +251,7 @@ class FPS:
             (
                 len(self.atoms_list),
                 len(self.species),
-                len(list(self.atoms_list[0].info["mace_descriptors"].values())[0]),
+                len(next(iter(self.atoms_list[0].info["mace_descriptors"].values()))),
             ),
             dtype=np.float32,
         ).astype(np.float32)
@@ -267,7 +266,7 @@ class FPS:
 
 def _load_calc(
     model: str, device: str, default_dtype: str, subselect: SubselectType
-) -> Union[MACECalculator, None]:
+) -> MACECalculator | None:
     if subselect == SubselectType.RANDOM:
         return None
     if model in ["small", "medium", "large"]:
@@ -282,8 +281,8 @@ def _load_calc(
 
 
 def _get_finetuning_elements(
-    atoms: List[ase.Atoms], atomic_numbers: List[int] | None
-) -> List[str]:
+    atoms: list[ase.Atoms], atomic_numbers: list[int] | None
+) -> list[str]:
     if atoms:
         logging.debug(
             "Using elements from the finetuning configurations for filtering."
@@ -298,8 +297,8 @@ def _get_finetuning_elements(
 
 
 def _read_finetuning_configs(
-    configs_ft: Union[str, list[str], None],
-) -> List[ase.Atoms]:
+    configs_ft: str | list[str] | None,
+) -> list[ase.Atoms]:
     if isinstance(configs_ft, str):
         path = configs_ft
         return ase.io.read(path, index=":")  # type: ignore
@@ -317,8 +316,8 @@ def _read_finetuning_configs(
 def _filter_pretraining_data(
     atoms: list[ase.Atoms],
     filtering_type: FilteringType,
-    all_species_ft: List[str],
-) -> Tuple[List[ase.Atoms], List[ase.Atoms], list[bool]]:
+    all_species_ft: list[str],
+) -> tuple[list[ase.Atoms], list[ase.Atoms], list[bool]]:
     logging.info(
         "Filtering configurations based on the finetuning set, "
         f"filtering type: {filtering_type}, elements: {all_species_ft}"
@@ -332,7 +331,7 @@ def _filter_pretraining_data(
 
 def _get_random_configs(
     num_samples: int,
-    atoms: List[ase.Atoms],
+    atoms: list[ase.Atoms],
 ) -> list[ase.Atoms]:
     if num_samples > len(atoms):
         raise ValueError(
@@ -343,8 +342,8 @@ def _get_random_configs(
 
 
 def _load_descriptors(
-    atoms: List[ase.Atoms],
-    passes_filter: List[bool],
+    atoms: list[ase.Atoms],
+    passes_filter: list[bool],
     descriptors_path: str | None,
     calc: MACECalculator | None,
     full_data_length: int,
@@ -371,7 +370,7 @@ def _load_descriptors(
 
 
 def _maybe_save_descriptors(
-    atoms: List[ase.Atoms],
+    atoms: list[ase.Atoms],
     output_path: str,
 ) -> None:
     """
@@ -387,27 +386,27 @@ def _maybe_save_descriptors(
             del x.info["mace_descriptors"]
 
 
-def _maybe_fps(atoms: List[ase.Atoms], num_samples: int) -> List[ase.Atoms]:
+def _maybe_fps(atoms: list[ase.Atoms], num_samples: int) -> list[ase.Atoms]:
     try:
         fps_pt = FPS(atoms, num_samples)
         idx_pt = fps_pt.run()
         logging.info(f"Selected {len(idx_pt)} configurations")
         return [atoms[i] for i in idx_pt]
     except Exception as e:  # pylint: disable=W0703
-        logging.error(f"FPS failed, selecting random configurations instead: {e}")
+        logging.exception(f"FPS failed, selecting random configurations instead: {e}")
         return _get_random_configs(num_samples, atoms)
 
 
 def _subsample_data(
-    filtered_atoms: List[ase.Atoms],
-    remaining_atoms: List[ase.Atoms],
-    passes_filter: List[bool],
+    filtered_atoms: list[ase.Atoms],
+    remaining_atoms: list[ase.Atoms],
+    passes_filter: list[bool],
     num_samples: int | None,
     subselect: SubselectType,
     descriptors_path: str | None,
     allow_random_padding: bool,
     calc: MACECalculator | None,
-) -> List[ase.Atoms]:
+) -> list[ase.Atoms]:
     if num_samples is None or num_samples == len(filtered_atoms):
         logging.info(
             f"No subsampling, keeping all {len(filtered_atoms)} filtered configurations"

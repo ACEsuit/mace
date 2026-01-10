@@ -10,7 +10,6 @@ import os
 import random
 from functools import partial
 from glob import glob
-from typing import List, Optional, Tuple
 
 import h5py
 import numpy as np
@@ -31,9 +30,9 @@ def compute_stats_target(
     file: str,
     z_table: AtomicNumberTable,
     r_max: float,
-    atomic_energies: Tuple,
+    atomic_energies: tuple,
     batch_size: int,
-    dtype: Optional[torch.dtype] = None,
+    dtype: torch.dtype | None = None,
 ):
     train_dataset = data.HDF5Dataset(file, z_table=z_table, r_max=r_max, dtype=dtype)
     train_loader = torch_geometric.dataloader.DataLoader(
@@ -46,11 +45,10 @@ def compute_stats_target(
     avg_num_neighbors, mean, std = compute_statistics(
         train_loader, atomic_energies, dtype=dtype
     )
-    output = [avg_num_neighbors, mean, std]
-    return output
+    return [avg_num_neighbors, mean, std]
 
 
-def pool_compute_stats(inputs: List):
+def pool_compute_stats(inputs: list):
     path_to_files, z_table, r_max, atomic_energies, batch_size, num_process, dtype = (
         inputs
     )
@@ -101,7 +99,7 @@ def split_array(a: np.ndarray, max_size: int):
     factors = get_prime_factors(len(a))
     max_factor = 1
     for i in range(1, len(factors) + 1):
-        for j in range(0, len(factors) - i + 1):
+        for j in range(len(factors) - i + 1):
             if np.prod(factors[j : j + i]) <= max_size:
                 test = np.prod(factors[j : j + i])
                 max_factor = max(test, max_factor)
@@ -243,14 +241,14 @@ def run(args: argparse.Namespace):
                 removed_atomic_energies[z] = atomic_energies_dict.pop(z)
         if len(removed_atomic_energies) > 0:
             logging.warning("Atomic energies for elements not present in the atomic number table have been removed.")
-            logging.warning(f"Removed atomic energies (eV): {str(removed_atomic_energies)}")
+            logging.warning(f"Removed atomic energies (eV): {removed_atomic_energies!s}")
             logging.warning("To include these elements in the model, specify all atomic numbers explicitly using the --atomic_numbers argument.")
 
         atomic_energies: np.ndarray = np.array(
             [atomic_energies_dict[z] for z in z_table.zs]
         )
         logging.info(f"Atomic Energies: {atomic_energies.tolist()}")
-        _inputs = [args.h5_prefix+'train', z_table, args.r_max, atomic_energies, args.batch_size, args.num_process, dtype]
+        _inputs = [args.h5_prefix+"train", z_table, args.r_max, atomic_energies, args.batch_size, args.num_process, dtype]
         avg_num_neighbors, mean, std=pool_compute_stats(_inputs)
         logging.info(f"Average number of neighbors: {avg_num_neighbors}")
         logging.info(f"Mean: {mean}")

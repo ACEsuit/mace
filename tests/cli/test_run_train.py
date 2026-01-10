@@ -498,7 +498,7 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
         print(f"STDERR: {e.stderr}")
-        raise e
+        raise
     assert completed_process.returncode == 0
 
     Es = []
@@ -608,7 +608,7 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
         print(f"STDERR: {e.stderr}")
-        raise e
+        raise
     assert completed_process.returncode == 0
 
     Es = []
@@ -797,7 +797,7 @@ def test_run_train_cueq(tmp_path, fitting_configs):
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
         print(f"STDERR: {e.stderr}")
-        raise e
+        raise
     assert completed_process.returncode == 0
 
     calc = MACECalculator(model_paths=tmp_path / "MACE.model", device="cpu")
@@ -920,7 +920,7 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
         print(f"STDERR: {e.stderr}")
-        raise e
+        raise
     assert completed_process.returncode == 0
 
     calc = MACECalculator(
@@ -1169,7 +1169,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
         print(f"STDERR: {e.stderr}")
-        raise e
+        raise
     assert completed_process.returncode == 0
 
     # Load model and check elements
@@ -1260,8 +1260,8 @@ def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs
     ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs_dft)
     ase.io.write(tmp_path / "fit_multihead_mp2.xyz", fitting_configs_mp2)
     heads = {
-        "DFT": {"train_file": f"{str(tmp_path)}/fit_multihead_dft.xyz"},
-        "MP2": {"train_file": f"{str(tmp_path)}/fit_multihead_mp2.xyz"},
+        "DFT": {"train_file": f"{tmp_path!s}/fit_multihead_dft.xyz"},
+        "MP2": {"train_file": f"{tmp_path!s}/fit_multihead_mp2.xyz"},
     }
     yaml_str = "heads:\n"
     for key, value in heads.items():
@@ -1321,7 +1321,7 @@ def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs
         print(f"Command failed with exit code {e.returncode}")
         print(f"STDOUT: {e.stdout}")
         print(f"STDERR: {e.stderr}")
-        raise e
+        raise
     assert completed_process.returncode == 0
 
     Es = []

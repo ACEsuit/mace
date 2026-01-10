@@ -112,7 +112,7 @@ def create_h5_dataset(
     print(f"Running preprocess command: {' '.join(cmd)}")
     try:
         process = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
+            cmd, capture_output=True, check=True
         )
         # Print output for debugging
         print("Preprocess stdout:", process.stdout.decode())
@@ -350,8 +350,7 @@ def test_multifile_training(default_dtype, tmp_path):
     # Run the process
     process = subprocess.run(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,  # Don't raise exception on non-zero exit, we'll check manually
     )
 
@@ -528,8 +527,7 @@ def test_multiple_xyz_per_head(tmp_path):
     # Run the process
     process = subprocess.run(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
 
@@ -705,8 +703,7 @@ def test_single_xyz_per_head(tmp_path):
     # Run the process
     process = subprocess.run(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
 

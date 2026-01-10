@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional
 
 import torch
 from e3nn.util.jit import compile_mode
@@ -29,10 +28,10 @@ class LAMMPS_MACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         local_or_ghost: torch.Tensor,
         compute_virials: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         num_graphs = data["ptr"].numel() - 1
         compute_displacement = False
         if compute_virials:
@@ -56,15 +55,15 @@ class LAMMPS_MACE(torch.nn.Module):
             }
         positions = data["positions"]
         displacement = out["displacement"]
-        forces: Optional[torch.Tensor] = torch.zeros_like(positions)
-        virials: Optional[torch.Tensor] = torch.zeros_like(data["cell"])
+        forces: torch.Tensor | None = torch.zeros_like(positions)
+        virials: torch.Tensor | None = torch.zeros_like(data["cell"])
         # accumulate energies of local atoms
         node_energy_local = node_energy * local_or_ghost
         total_energy_local = scatter_sum(
             src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs
         )
         # compute partial forces and (possibly) partial virials
-        grad_outputs: List[Optional[torch.Tensor]] = [
+        grad_outputs: list[torch.Tensor | None] = [
             torch.ones_like(total_energy_local)
         ]
         if compute_virials and displacement is not None:
@@ -76,10 +75,7 @@ class LAMMPS_MACE(torch.nn.Module):
                 create_graph=False,
                 allow_unused=True,
             )
-            if forces is not None:
-                forces = -1 * forces
-            else:
-                forces = torch.zeros_like(positions)
+            forces = -1 * forces if forces is not None else torch.zeros_like(positions)
             if virials is not None:
                 virials = -1 * virials
             else:
@@ -93,10 +89,7 @@ class LAMMPS_MACE(torch.nn.Module):
                 create_graph=False,
                 allow_unused=True,
             )[0]
-            if forces is not None:
-                forces = -1 * forces
-            else:
-                forces = torch.zeros_like(positions)
+            forces = -1 * forces if forces is not None else torch.zeros_like(positions)
         return {
             "total_energy_local": total_energy_local,
             "node_energy": node_energy,

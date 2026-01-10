@@ -5,7 +5,7 @@ import logging
 import os
 import urllib.request
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import torch
 
@@ -26,32 +26,32 @@ from mace.tools.utils import AtomicNumberTable, get_cache_dir
 class HeadConfig:
     head_name: str
     key_specification: KeySpecification
-    train_file: Optional[Union[str, List[str]]] = None
-    valid_file: Optional[Union[str, List[str]]] = None
-    test_file: Optional[str] = None
-    test_dir: Optional[str] = None
-    E0s: Optional[Any] = None
-    statistics_file: Optional[str] = None
-    valid_fraction: Optional[float] = None
-    config_type_weights: Optional[Dict[str, float]] = None
-    keep_isolated_atoms: Optional[bool] = None
-    atomic_numbers: Optional[Union[List[int], List[str]]] = None
-    mean: Optional[float] = None
-    std: Optional[float] = None
-    avg_num_neighbors: Optional[float] = None
-    compute_avg_num_neighbors: Optional[bool] = None
-    collections: Optional[SubsetCollection] = None
-    train_loader: Optional[torch.utils.data.DataLoader] = None
-    z_table: Optional[Any] = None
-    atomic_energies_dict: Optional[Dict[str, float]] = None
+    train_file: str | list[str] | None = None
+    valid_file: str | list[str] | None = None
+    test_file: str | None = None
+    test_dir: str | None = None
+    E0s: Any | None = None
+    statistics_file: str | None = None
+    valid_fraction: float | None = None
+    config_type_weights: dict[str, float] | None = None
+    keep_isolated_atoms: bool | None = None
+    atomic_numbers: list[int] | list[str] | None = None
+    mean: float | None = None
+    std: float | None = None
+    avg_num_neighbors: float | None = None
+    compute_avg_num_neighbors: bool | None = None
+    collections: SubsetCollection | None = None
+    train_loader: torch.utils.data.DataLoader | None = None
+    z_table: Any | None = None
+    atomic_energies_dict: dict[str, float] | None = None
 
 
 def dict_head_to_dataclass(
-    head: Dict[str, Any], head_name: str, args: argparse.Namespace
+    head: dict[str, Any], head_name: str, args: argparse.Namespace
 ) -> HeadConfig:
     """Convert head dictionary to HeadConfig dataclass."""
     # parser+head args that have no defaults but are required
-    if (args.train_file is None) and (head.get("train_file", None) is None):
+    if (args.train_file is None) and (head.get("train_file") is None):
         raise ValueError(
             "train file is not set in the head config yaml or via command line args"
         )
@@ -60,8 +60,8 @@ def dict_head_to_dataclass(
         head_name=head_name,
         train_file=head.get("train_file", args.train_file),
         valid_file=head.get("valid_file", args.valid_file),
-        test_file=head.get("test_file", None),
-        test_dir=head.get("test_dir", None),
+        test_file=head.get("test_file"),
+        test_dir=head.get("test_dir"),
         E0s=head.get("E0s", args.E0s),
         statistics_file=head.get("statistics_file", args.statistics_file),
         valid_fraction=head.get("valid_fraction", args.valid_fraction),
@@ -78,7 +78,7 @@ def dict_head_to_dataclass(
     )
 
 
-def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
+def prepare_default_head(args: argparse.Namespace) -> dict[str, Any]:
     """Prepare a default head from args."""
     return {
         "Default": {
@@ -100,7 +100,7 @@ def prepare_pt_head(
     args: argparse.Namespace,
     pt_keyspec: KeySpecification,
     foundation_model_num_neighbours: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Prepare a pretraining head from args."""
     if (
         args.foundation_model in ["small", "medium", "large"]
@@ -218,12 +218,12 @@ def assemble_replay_data(
 
 def generate_pseudolabels_for_configs(
     model: torch.nn.Module,
-    configs: List[Configuration],
+    configs: list[Configuration],
     z_table: AtomicNumberTable,
     r_max: float,
     device: torch.device,
     batch_size: int,
-) -> List[Configuration]:
+) -> list[Configuration]:
     """
     Generate pseudolabels for a list of Configuration objects.
 
@@ -318,8 +318,8 @@ def generate_pseudolabels_for_configs(
                 updated_configs.append(config_copy)
 
         except Exception as e:  # pylint: disable=broad-except
-            logging.error(
-                f"Error generating pseudolabels for batch {i//batch_size + 1}: {str(e)}"
+            logging.exception(
+                f"Error generating pseudolabels for batch {i//batch_size + 1}: {e!s}"
             )
             # On error, return the original configs for this batch
             updated_configs.extend([deepcopy(config) for config in batch_configs])
@@ -424,5 +424,5 @@ def apply_pseudolabels_to_pt_head_configs(
         return True
 
     except Exception as e:  # pylint: disable=broad-except
-        logging.error(f"Error applying pseudolabels: {str(e)}")
+        logging.exception(f"Error applying pseudolabels: {e!s}")
         return False

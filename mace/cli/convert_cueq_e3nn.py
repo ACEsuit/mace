@@ -1,7 +1,7 @@
 import argparse
 import logging
 import os
-from typing import Dict, List, Tuple, Union
+from typing import Union
 
 import numpy as np
 import torch
@@ -19,7 +19,7 @@ except (ImportError, ModuleNotFoundError):
     CUEQQ_AVAILABLE = False
     cue = None
 
-SizeLike = Union[torch.Size, List[int]]
+SizeLike = Union[torch.Size, list[int]]
 
 
 def shapes_match_up_to_unsqueeze(a: SizeLike, b: SizeLike) -> bool:
@@ -43,22 +43,20 @@ def reshape_like(src: torch.Tensor, ref_shape: torch.Size) -> torch.Tensor:
 
 def get_kmax_pairs(
     num_product_irreps: int, correlation: int, num_layers: int
-) -> List[Tuple[int, int]]:
+) -> list[tuple[int, int]]:
     """Determine kmax pairs based on num_product_irreps and correlation"""
     if correlation == 2:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
-        kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
-        return kmax_pairs
+        return [*kmax_pairs, [num_layers - 1, 0]]
     if correlation == 3:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
-        kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
-        return kmax_pairs
+        return [*kmax_pairs, [num_layers - 1, 0]]
     raise NotImplementedError(f"Correlation {correlation} not supported")
 
 
 def transfer_symmetric_contractions(
-    source_dict: Dict[str, torch.Tensor],
-    target_dict: Dict[str, torch.Tensor],
+    source_dict: dict[str, torch.Tensor],
+    target_dict: dict[str, torch.Tensor],
     num_product_irreps: int,
     products: torch.nn.Module,
     correlation: int,
@@ -96,7 +94,7 @@ def transfer_symmetric_contractions(
                 if (
                     target_dict.get(
                         f"products.{i}.symmetric_contractions.contractions.{k}.weights{suffix.replace('.', '_')}"
-                        + "_zeroed",
+                         "_zeroed",
                         False,
                     )
                     and not use_reduced_cg

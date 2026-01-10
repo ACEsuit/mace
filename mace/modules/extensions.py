@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional
 
 import torch
 from e3nn.util.jit import compile_mode
@@ -11,7 +10,7 @@ from mace.tools.scatter import scatter_sum
 
 
 def _copy_mace_readout(
-    mace_readout: torch.nn.Module, cueq_config: Optional[CuEquivarianceConfig] = None
+    mace_readout: torch.nn.Module, cueq_config: CuEquivarianceConfig | None = None
 ) -> torch.nn.Module:
     """
     Helper function to copy a MACE readout block.
@@ -46,7 +45,7 @@ def _get_readout_input_dim(block: torch.nn.Module) -> int:
 
 @compile_mode("script")
 class MACELES(ScaleShiftMACE):
-    def __init__(self, les_arguments: Optional[Dict] = None, **kwargs):
+    def __init__(self, les_arguments: dict | None = None, **kwargs):
         super().__init__(**kwargs)
         try:
             from les import Les
@@ -57,13 +56,13 @@ class MACELES(ScaleShiftMACE):
         if les_arguments is None:
             les_arguments = {"use_atomwise": False}
         self.compute_bec = les_arguments.get("compute_bec", False)
-        self.bec_output_index = les_arguments.get("bec_output_index", None)
+        self.bec_output_index = les_arguments.get("bec_output_index")
         self.les = Les(les_arguments=les_arguments)
         self.les_readouts = torch.nn.ModuleList()
         self.readout_input_dims = [
             _get_readout_input_dim(readout) for readout in self.readouts  # type:ignore
         ]
-        cueq_config = kwargs.get("cueq_config", None)
+        cueq_config = kwargs.get("cueq_config")
         for readout in self.readouts:  # type:ignore
             self.les_readouts.append(
                 _copy_mace_readout(readout, cueq_config=cueq_config)
@@ -71,7 +70,7 @@ class MACELES(ScaleShiftMACE):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -82,7 +81,7 @@ class MACELES(ScaleShiftMACE):
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
         compute_bec: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         ctx = prepare_graph(
             data,
             compute_virials=compute_virials,
@@ -141,8 +140,8 @@ class MACELES(ScaleShiftMACE):
 
         # Embeddings of additional features
         if hasattr(self, "joint_embedding"):
-            embedding_features: Dict[str, torch.Tensor] = {}
-            for name, _ in self.embedding_specs.items():
+            embedding_features: dict[str, torch.Tensor] = {}
+            for name in self.embedding_specs:
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
                 data["batch"],
@@ -162,8 +161,8 @@ class MACELES(ScaleShiftMACE):
 
         # Interactions
         node_es_list = [pair_node_energy]
-        node_feats_list: List[torch.Tensor] = []
-        node_qs_list: List[torch.Tensor] = []
+        node_feats_list: list[torch.Tensor] = []
+        node_qs_list: list[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products, strict=False)
@@ -241,8 +240,8 @@ class MACELES(ScaleShiftMACE):
             compute_edge_forces=compute_edge_forces,
         )
 
-        atomic_virials: Optional[torch.Tensor] = None
-        atomic_stresses: Optional[torch.Tensor] = None
+        atomic_virials: torch.Tensor | None = None
+        atomic_stresses: torch.Tensor | None = None
         if compute_atomic_stresses and edge_forces is not None:
             atomic_virials, atomic_stresses = get_atomic_virials_stresses(
                 edge_forces=edge_forces,

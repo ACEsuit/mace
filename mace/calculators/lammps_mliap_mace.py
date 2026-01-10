@@ -3,7 +3,6 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from typing import Dict, Tuple
 
 import torch
 from ase.data import chemical_symbols
@@ -76,8 +75,8 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
             p.requires_grad = False
 
     def forward(
-        self, data: Dict[str, torch.Tensor]
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, data: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute energies and per-pair forces."""
         data["head"] = self.head
 

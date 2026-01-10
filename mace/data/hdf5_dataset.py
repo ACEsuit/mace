@@ -1,5 +1,4 @@
 from glob import glob
-from typing import List, Optional
 
 import h5py
 import torch
@@ -17,13 +16,13 @@ class HDF5Dataset(Dataset):
         r_max,
         z_table,
         atomic_dataclass=AtomicData,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype | None = None,
         **kwargs
     ):
-        super(HDF5Dataset, self).__init__()  # pylint: disable=super-with-arguments
+        super().__init__()  # pylint: disable=super-with-arguments
         self.file_path = file_path
         self._file = None
-        batch_key = list(self.file.keys())[0]
+        batch_key = next(iter(self.file.keys()))
         self.batch_size = len(self.file[batch_key].keys())
         self.length = len(self.file.keys()) * self.batch_size
         self.r_max = r_max
@@ -79,7 +78,7 @@ class HDF5Dataset(Dataset):
         )
         if config.head is None:
             config.head = self.kwargs.get("head")
-        atomic_data = self.atomic_dataclass.from_config(
+        return self.atomic_dataclass.from_config(
             config,
             z_table=self.z_table,
             cutoff=self.r_max,
@@ -87,14 +86,13 @@ class HDF5Dataset(Dataset):
             dtype=self.dtype,
             **{k: v for k, v in self.kwargs.items() if k != "heads"},
         )
-        return atomic_data
 
 
 def dataset_from_sharded_hdf5(
-    files: List,
+    files: list,
     z_table: AtomicNumberTable,
     r_max: float,
-    dtype: Optional[torch.dtype] = None,
+    dtype: torch.dtype | None = None,
     **kwargs
 ):
     dtype = dtype or torch.get_default_dtype()
@@ -104,8 +102,7 @@ def dataset_from_sharded_hdf5(
         datasets.append(
             HDF5Dataset(file, z_table=z_table, r_max=r_max, dtype=dtype, **kwargs)
         )
-    full_dataset = ConcatDataset(datasets)
-    return full_dataset
+    return ConcatDataset(datasets)
 
 
 def unpack_value(value):

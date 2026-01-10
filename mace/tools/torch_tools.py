@@ -6,13 +6,12 @@
 
 import logging
 from contextlib import contextmanager
-from typing import Dict, Union
 
 import numpy as np
 import torch
 from e3nn.io import CartesianTensor
 
-TensorDict = Dict[str, torch.Tensor]
+TensorDict = dict[str, torch.Tensor]
 
 
 def to_one_hot(
@@ -28,7 +27,7 @@ def to_one_hot(
     Returns:
         torch.Tensor: A tensor of shape (N x num_classes) containing the one-hot encodings.
     """
-    shape = indices.shape[:-1] + (num_classes,)
+    shape = (*indices.shape[:-1], num_classes)
     oh = torch.zeros(shape, device=indices.device, dtype=dtype).view(shape)
 
     # scatter_ is the in-place version of scatter
@@ -162,7 +161,7 @@ def init_wandb(project: str, entity: str, name: str, config: dict, directory: st
 
 
 @contextmanager
-def default_dtype(dtype: Union[torch.dtype, str]):
+def default_dtype(dtype: torch.dtype | str):
     """Context manager for configuring the default_dtype used by torch
 
     Args:
@@ -179,7 +178,7 @@ def default_dtype(dtype: Union[torch.dtype, str]):
     torch.set_default_dtype(init)
 
 
-def check_module_dtypes(module: torch.nn.Module) -> Dict[str, torch.dtype]:
+def check_module_dtypes(module: torch.nn.Module) -> dict[str, torch.dtype]:
     """Check the dtype of all parameters and buffers in a torch.nn.Module.
 
     Args:
