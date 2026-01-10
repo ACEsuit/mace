@@ -7,6 +7,7 @@ import ase.io
 import numpy as np
 import pytest
 import torch
+from ase import build
 from ase.atoms import Atoms
 from ase.calculators.test import calculate_numerical_forces
 from ase.constraints import ExpCellFilter

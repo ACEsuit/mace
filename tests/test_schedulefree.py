@@ -6,6 +6,7 @@ import numpy.testing as npt
 import pytest
 import torch
 import torch.nn.functional as F
+from ase import build
 from e3nn import o3
 
 from mace import data, modules, tools
@@ -57,7 +58,6 @@ def create_mace(device: str, default_dtype: str, seed: int = 1702):
 
 
 def create_batch(device: str, default_dtype: str):
-    from ase import build
 
     dtype = dtype_dict[default_dtype]
 
