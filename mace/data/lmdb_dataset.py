@@ -14,8 +14,8 @@ from mace.tools.fairchem_dataset import AseDBDataset
 
 class LMDBDataset(Dataset):
     def __init__(
-        self, file_path, r_max, z_table, dtype: torch.dtype | None = None, **kwargs
-    ):
+        self, file_path, r_max, z_table, dtype: torch.dtype | None = None, **kwargs,
+    ) -> None:
         dataset_paths = file_path.split(":")  # using : split multiple paths
         # make sure each of the path exist
         for path in dataset_paths:
@@ -23,7 +23,7 @@ class LMDBDataset(Dataset):
         config_kwargs = {}
         super().__init__()  # pylint: disable=super-with-arguments
         self.AseDB = AseDBDataset(
-            config=dict(src=dataset_paths, dtype=dtype, **config_kwargs)
+            config=dict(src=dataset_paths, dtype=dtype, **config_kwargs),
         )
         self.r_max = r_max
         self.z_table = z_table
@@ -32,15 +32,13 @@ class LMDBDataset(Dataset):
         self.kwargs = kwargs
         self.transform = kwargs.get("transform")
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.AseDB)
 
     def __getitem__(self, index):
         try:
             atoms = self.AseDB.get_atoms(self.AseDB.ids[index])
-        except Exception as e:  # pylint: disable=broad-except
-            print(f"Error in index {index}")
-            print(e)
+        except Exception:  # pylint: disable=broad-except
             return None
         assert np.sum(atoms.get_cell() == atoms.cell) == 9
 
@@ -69,9 +67,8 @@ class LMDBDataset(Dataset):
                 heads=self.kwargs.get("heads", ["Default"]),
                 dtype=self.dtype,
             )
-        except Exception as e:  # pylint: disable=broad-except
-            print(f"Error in index {index}")
-            print(e)
+        except Exception:  # pylint: disable=broad-except
+            pass
 
         if self.transform:
             atomic_data = self.transform(atomic_data)

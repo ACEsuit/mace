@@ -47,13 +47,14 @@ class HeadConfig:
 
 
 def dict_head_to_dataclass(
-    head: dict[str, Any], head_name: str, args: argparse.Namespace
+    head: dict[str, Any], head_name: str, args: argparse.Namespace,
 ) -> HeadConfig:
     """Convert head dictionary to HeadConfig dataclass."""
     # parser+head args that have no defaults but are required
     if (args.train_file is None) and (head.get("train_file") is None):
+        msg = "train file is not set in the head config yaml or via command line args"
         raise ValueError(
-            "train file is not set in the head config yaml or via command line args"
+            msg,
         )
 
     return HeadConfig(
@@ -67,7 +68,7 @@ def dict_head_to_dataclass(
         valid_fraction=head.get("valid_fraction", args.valid_fraction),
         config_type_weights=head.get("config_type_weights", args.config_type_weights),
         compute_avg_num_neighbors=head.get(
-            "compute_avg_num_neighbors", args.compute_avg_num_neighbors
+            "compute_avg_num_neighbors", args.compute_avg_num_neighbors,
         ),
         atomic_numbers=head.get("atomic_numbers", args.atomic_numbers),
         mean=head.get("mean", args.mean),
@@ -92,7 +93,7 @@ def prepare_default_head(args: argparse.Namespace) -> dict[str, Any]:
             "valid_fraction": args.valid_fraction,
             "config_type_weights": args.config_type_weights,
             "keep_isolated_atoms": args.keep_isolated_atoms,
-        }
+        },
     }
 
 
@@ -107,7 +108,7 @@ def prepare_pt_head(
         or args.pt_train_file == "mp"
     ):
         logging.info(
-            "Using foundation model for multiheads finetuning with Materials Project data"
+            "Using foundation model for multiheads finetuning with Materials Project data",
         )
         pt_keyspec.update(
             info_keys={"energy": "energy", "stress": "stress"},
@@ -152,7 +153,8 @@ def assemble_replay_data(
         elif name == "matpes_r2scan":
             checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-r2scan-replay-data.extxyz"
         else:
-            raise ValueError(f"Unknown replay dataset name {name}")
+            msg = f"Unknown replay dataset name {name}"
+            raise ValueError(msg)
 
         cache_dir = get_cache_dir()
         checkpoint_url_name = "".join(
@@ -164,11 +166,12 @@ def assemble_replay_data(
             # download and save to disk
             logging.info("Downloading MP structures for finetuning")
             _, http_msg = urllib.request.urlretrieve(
-                checkpoint_url, cached_dataset_path
+                checkpoint_url, cached_dataset_path,
             )
             if "Content-Type: text/html" in http_msg:
+                msg = f"Dataset download failed, please check the URL {checkpoint_url}"
                 raise RuntimeError(
-                    f"Dataset download failed, please check the URL {checkpoint_url}"
+                    msg,
                 )
             logging.info(f"Materials Project dataset to {cached_dataset_path}")
         output = f"mp_finetuning-{tag}.xyz"
@@ -211,8 +214,9 @@ def assemble_replay_data(
         )
         return collections_mp
     except Exception as exc:
+        msg = "Foundation model replay data or descriptors cached data not found and download failed"
         raise RuntimeError(
-            "Foundation model replay data or descriptors cached data not found and download failed"
+            msg,
         ) from exc
 
 
@@ -224,8 +228,7 @@ def generate_pseudolabels_for_configs(
     device: torch.device,
     batch_size: int,
 ) -> list[Configuration]:
-    """
-    Generate pseudolabels for a list of Configuration objects.
+    """Generate pseudolabels for a list of Configuration objects.
 
     Args:
         model: The foundation model
@@ -238,7 +241,6 @@ def generate_pseudolabels_for_configs(
     Returns:
         List of Configuration objects with updated properties
     """
-
     model.eval()
     updated_configs = []
 
@@ -317,9 +319,9 @@ def generate_pseudolabels_for_configs(
 
                 updated_configs.append(config_copy)
 
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception:  # pylint: disable=broad-except
             logging.exception(
-                f"Error generating pseudolabels for batch {i//batch_size + 1}: {e!s}"
+                f"Error generating pseudolabels for batch {i//batch_size + 1}.",
             )
             # On error, return the original configs for this batch
             updated_configs.extend([deepcopy(config) for config in batch_configs])
@@ -339,8 +341,7 @@ def apply_pseudolabels_to_pt_head_configs(
     device: torch.device,
     batch_size: int,
 ) -> bool:
-    """
-    Apply pseudolabels to pt_head configurations using the foundation model.
+    """Apply pseudolabels to pt_head configurations using the foundation model.
 
     Args:
         foundation_model: The pre-loaded foundation model
@@ -352,10 +353,9 @@ def apply_pseudolabels_to_pt_head_configs(
     Returns:
         bool: True if pseudolabeling was successful, False otherwise
     """
-
     try:
         logging.info(
-            "Applying pseudolabels to pt_head configurations using foundation model"
+            "Applying pseudolabels to pt_head configurations using foundation model",
         )
 
         foundation_model.to(device)
@@ -363,10 +363,10 @@ def apply_pseudolabels_to_pt_head_configs(
         # Use foundation model's z_table if available
         if hasattr(foundation_model, "atomic_numbers"):
             z_table = AtomicNumberTable(
-                sorted(foundation_model.atomic_numbers.tolist())
+                sorted(foundation_model.atomic_numbers.tolist()),
             )
             logging.info(
-                f"Using foundation model's atomic numbers for pseudolabeling: {z_table.zs}"
+                f"Using foundation model's atomic numbers for pseudolabeling: {z_table.zs}",
             )
         elif hasattr(pt_head_config, "z_table") and pt_head_config.z_table is not None:
             z_table = pt_head_config.z_table
@@ -381,7 +381,7 @@ def apply_pseudolabels_to_pt_head_configs(
             and pt_head_config.collections.train
         ):
             logging.info(
-                f"Generating pseudolabels for {len(pt_head_config.collections.train)} pt_head training configurations"
+                f"Generating pseudolabels for {len(pt_head_config.collections.train)} pt_head training configurations",
             )
             updated_train_configs = generate_pseudolabels_for_configs(
                 model=foundation_model,
@@ -395,7 +395,7 @@ def apply_pseudolabels_to_pt_head_configs(
             # Replace the original configurations with updated ones
             pt_head_config.collections.train = updated_train_configs
             logging.info(
-                f"Successfully applied pseudolabels to {len(updated_train_configs)} training configurations"
+                f"Successfully applied pseudolabels to {len(updated_train_configs)} training configurations",
             )
 
         # Process validation configurations if they exist
@@ -404,7 +404,7 @@ def apply_pseudolabels_to_pt_head_configs(
             and pt_head_config.collections.valid
         ):
             logging.info(
-                f"Generating pseudolabels for {len(pt_head_config.collections.valid)} pt_head validation configurations"
+                f"Generating pseudolabels for {len(pt_head_config.collections.valid)} pt_head validation configurations",
             )
             updated_valid_configs = generate_pseudolabels_for_configs(
                 model=foundation_model,
@@ -418,11 +418,11 @@ def apply_pseudolabels_to_pt_head_configs(
             # Replace the original configurations with updated ones
             pt_head_config.collections.valid = updated_valid_configs
             logging.info(
-                f"Successfully applied pseudolabels to {len(updated_valid_configs)} validation configurations"
+                f"Successfully applied pseudolabels to {len(updated_valid_configs)} validation configurations",
             )
 
         return True
 
-    except Exception as e:  # pylint: disable=broad-except
-        logging.exception(f"Error applying pseudolabels: {e!s}")
+    except Exception:  # pylint: disable=broad-except
+        logging.exception("Error applying pseudolabels.")
         return False

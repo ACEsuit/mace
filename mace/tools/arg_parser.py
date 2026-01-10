@@ -54,10 +54,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=".",
     )
     parser.add_argument(
-        "--log_dir", help="directory for log files", type=str, default=None
+        "--log_dir", help="directory for log files", type=str, default=None,
     )
     parser.add_argument(
-        "--model_dir", help="directory for final model", type=str, default=None
+        "--model_dir", help="directory for final model", type=str, default=None,
     )
     parser.add_argument(
         "--checkpoints_dir",
@@ -66,10 +66,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument(
-        "--results_dir", help="directory for results", type=str, default=None
+        "--results_dir", help="directory for results", type=str, default=None,
     )
     parser.add_argument(
-        "--downloads_dir", help="directory for downloads", type=str, default=None
+        "--downloads_dir", help="directory for downloads", type=str, default=None,
     )
 
     # Device and logging
@@ -158,7 +158,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
+        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0,
     )
     parser.add_argument(
         "--radial_type",
@@ -237,10 +237,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3
+        "--max_ell", help=r"highest \ell of spherical harmonics", type=int, default=3,
     )
     parser.add_argument(
-        "--correlation", help="correlation order at each layer", type=int, default=3
+        "--correlation", help="correlation order at each layer", type=int, default=3,
     )
     parser.add_argument(
         "--use_reduced_cg",
@@ -261,7 +261,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
-        "--num_interactions", help="number of interactions", type=int, default=2
+        "--num_interactions", help="number of interactions", type=int, default=2,
     )
     parser.add_argument(
         "--MLP_irreps",
@@ -617,7 +617,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--embedding_specs",
         help=(
-            "List of feature‐spec dictionaries. "
+            "List of feature-spec dictionaries. "
             "embedding_specs:\n"
             "  - name: total_spin\n"
             "    type: categorical\n"
@@ -664,7 +664,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ],
     )
     parser.add_argument(
-        "--forces_weight", help="weight of forces loss", type=float, default=100.0
+        "--forces_weight", help="weight of forces loss", type=float, default=100.0,
     )
     parser.add_argument(
         "--swa_forces_weight",
@@ -675,7 +675,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_forces_weight",
     )
     parser.add_argument(
-        "--energy_weight", help="weight of energy loss", type=float, default=1.0
+        "--energy_weight", help="weight of energy loss", type=float, default=1.0,
     )
     parser.add_argument(
         "--swa_energy_weight",
@@ -686,7 +686,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_energy_weight",
     )
     parser.add_argument(
-        "--virials_weight", help="weight of virials loss", type=float, default=1.0
+        "--virials_weight", help="weight of virials loss", type=float, default=1.0,
     )
     parser.add_argument(
         "--swa_virials_weight",
@@ -697,7 +697,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_virials_weight",
     )
     parser.add_argument(
-        "--stress_weight", help="weight of stress loss", type=float, default=1.0
+        "--stress_weight", help="weight of stress loss", type=float, default=1.0,
     )
     parser.add_argument(
         "--swa_stress_weight",
@@ -708,7 +708,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_stress_weight",
     )
     parser.add_argument(
-        "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0
+        "--dipole_weight", help="weight of dipoles loss", type=float, default=1.0,
     )
     parser.add_argument(
         "--swa_dipole_weight",
@@ -759,10 +759,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
-        "--valid_batch_size", help="Validation batch size", type=int, default=10
+        "--valid_batch_size", help="Validation batch size", type=int, default=10,
     )
     parser.add_argument(
-        "--lr", help="Learning rate of optimizer", type=float, default=0.01
+        "--lr", help="Learning rate of optimizer", type=float, default=0.01,
     )
     parser.add_argument(
         "--swa_lr",
@@ -773,7 +773,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_lr",
     )
     parser.add_argument(
-        "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
+        "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7,
     )
     parser.add_argument(
         "--amsgrad",
@@ -782,13 +782,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
-        "--scheduler", help="Type of scheduler", type=str, default="ReduceLROnPlateau"
+        "--scheduler", help="Type of scheduler", type=str, default="ReduceLROnPlateau",
     )
     parser.add_argument(
-        "--lr_factor", help="Learning rate factor", type=float, default=0.8
+        "--lr_factor", help="Learning rate factor", type=float, default=0.8,
     )
     parser.add_argument(
-        "--scheduler_patience", help="Learning rate factor", type=int, default=50
+        "--scheduler_patience", help="Learning rate factor", type=int, default=50,
     )
     parser.add_argument(
         "--lr_scheduler_gamma",
@@ -831,7 +831,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=0.99,
     )
     parser.add_argument(
-        "--max_num_epochs", help="Maximum number of epochs", type=int, default=2048
+        "--max_num_epochs", help="Maximum number of epochs", type=int, default=2048,
     )
     parser.add_argument(
         "--patience",
@@ -852,7 +852,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
-        "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
+        "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1,
     )
     parser.add_argument(
         "--keep_checkpoints",
@@ -1035,7 +1035,7 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         default="",
     )
     parser.add_argument(
-        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0
+        "--r_max", help="distance cutoff (in Ang)", type=float, default=5.0,
     )
     parser.add_argument(
         "--config_type_weights",
@@ -1152,8 +1152,9 @@ def check_float_or_none(value: str) -> float | None:
         return float(value)
     except ValueError:
         if value != "None":
+            msg = f"{value} is an invalid value (float or None)"
             raise argparse.ArgumentTypeError(
-                f"{value} is an invalid value (float or None)"
+                msg,
             ) from None
         return None
 
@@ -1165,7 +1166,8 @@ def str2bool(value):
         return True
     if value.lower() in ("no", "false", "f", "n", "0"):
         return False
-    raise argparse.ArgumentTypeError("Boolean value expected.")
+    msg = "Boolean value expected."
+    raise argparse.ArgumentTypeError(msg)
 
 
 def read_yaml(value: str) -> dict:
@@ -1174,11 +1176,13 @@ def read_yaml(value: str) -> dict:
     import yaml
 
     if not Path(value).is_file():
-        raise argparse.ArgumentTypeError(f"File {value} does not exist.")
+        msg = f"File {value} does not exist."
+        raise argparse.ArgumentTypeError(msg)
     with open(value, encoding="utf-8") as file:
         try:
             return yaml.safe_load(file)
         except yaml.YAMLError as exc:
+            msg = f"Error parsing YAML file {value}: {exc}"
             raise argparse.ArgumentTypeError(
-                f"Error parsing YAML file {value}: {exc}"
+                msg,
             ) from exc

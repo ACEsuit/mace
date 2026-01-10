@@ -13,14 +13,14 @@ try:
 except ImportError:
 
     class MLIAPUnified:
-        def __init__(self):
+        def __init__(self) -> None:
             pass
 
 
 class MACELammpsConfig:
     """Configuration settings for MACE-LAMMPS integration."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.debug_time = self._get_env_bool("MACE_TIME", False)
         self.debug_profile = self._get_env_bool("MACE_PROFILE", False)
         self.profile_start_step = int(os.environ.get("MACE_PROFILE_START", "5"))
@@ -57,7 +57,7 @@ def timer(name: str, enabled: bool = True):
 class MACEEdgeForcesWrapper(torch.nn.Module):
     """Wrapper that adds per-pair force computation to a MACE model."""
 
-    def __init__(self, model: torch.nn.Module, **kwargs):
+    def __init__(self, model: torch.nn.Module, **kwargs) -> None:
         super().__init__()
         self.model = model
         self.register_buffer("atomic_numbers", model.atomic_numbers)
@@ -75,7 +75,7 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
             p.requires_grad = False
 
     def forward(
-        self, data: dict[str, torch.Tensor]
+        self, data: dict[str, torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute energies and per-pair forces."""
         data["head"] = self.head
@@ -104,7 +104,7 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
 class LAMMPS_MLIAP_MACE(MLIAPUnified):
     """MACE integration for LAMMPS using the MLIAP interface."""
 
-    def __init__(self, model, **kwargs):
+    def __init__(self, model, **kwargs) -> None:
         super().__init__()
         self.config = MACELammpsConfig()
         self.model = MACEEdgeForcesWrapper(model, **kwargs)
@@ -118,14 +118,15 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         self.initialized = False
         self.step = 0
 
-    def _initialize_device(self, data):
+    def _initialize_device(self, data) -> None:
         using_kokkos = "kokkos" in data.__class__.__module__.lower()
 
         if using_kokkos and not self.config.force_cpu:
             device = torch.as_tensor(data.elems).device
             if device.type == "cpu" and not self.config.allow_cpu:
+                msg = "GPU requested but tensor is on CPU. Set MACE_ALLOW_CPU=true to allow CPU computation."
                 raise ValueError(
-                    "GPU requested but tensor is on CPU. Set MACE_ALLOW_CPU=true to allow CPU computation."
+                    msg,
                 )
         else:
             device = torch.device("cpu")
@@ -135,7 +136,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         logging.info(f"MACE model initialized on device: {device}")
         self.initialized = True
 
-    def compute_forces(self, data):
+    def compute_forces(self, data) -> None:
         natoms = data.nlocal
         ntotal = data.ntotal
         nghosts = ntotal - natoms
@@ -169,7 +170,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         return {
             "vectors": torch.as_tensor(data.rij).to(self.dtype).to(self.device),
             "node_attrs": torch.nn.functional.one_hot(
-                species.to(self.device), num_classes=self.num_species
+                species.to(self.device), num_classes=self.num_species,
             ).to(self.dtype),
             "edge_index": torch.stack(
                 [
@@ -183,7 +184,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
             "natoms": (natoms, nghosts),
         }
 
-    def _update_lammps_data(self, data, atom_energies, pair_forces, natoms):
+    def _update_lammps_data(self, data, atom_energies, pair_forces, natoms) -> None:
         """Update LAMMPS data structures with computed energies and forces."""
         if self.dtype == torch.float32:
             pair_forces = pair_forces.double()
@@ -192,7 +193,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         data.energy = torch.sum(atom_energies[:natoms])
         data.update_pair_forces_gpu(pair_forces)
 
-    def _manage_profiling(self):
+    def _manage_profiling(self) -> None:
         if not self.config.debug_profile:
             return
 
@@ -206,8 +207,8 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
             logging.info("Profiling complete. Exiting.")
             sys.exit()
 
-    def compute_descriptors(self, data):
+    def compute_descriptors(self, data) -> None:
         pass
 
-    def compute_gradients(self, data):
+    def compute_gradients(self, data) -> None:
         pass

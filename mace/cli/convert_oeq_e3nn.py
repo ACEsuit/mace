@@ -52,11 +52,11 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
     return None
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input_model", help="Path to input oeq model")
     parser.add_argument(
-        "--output_model", help="Path to output E3nn model", default="e3nn_model.pt"
+        "--output_model", help="Path to output E3nn model", default="e3nn_model.pt",
     )
     parser.add_argument("--device", default="cpu", help="Device to use")
     parser.add_argument(

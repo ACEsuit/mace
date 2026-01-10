@@ -70,17 +70,13 @@ from mace.tools.utils import AtomicNumberTable
 
 
 def main() -> None:
-    """
-    This script runs the training/fine tuning for mace
-    """
+    """This script runs the training/fine tuning for mace."""
     args = tools.build_default_arg_parser().parse_args()
     run(args)
 
 
 def run(args) -> None:
-    """
-    This script runs the training/fine tuning for mace
-    """
+    """This script runs the training/fine tuning for mace."""
     tag = tools.get_tag(name=args.name, seed=args.seed)
     args, input_log_messages = tools.check_args(args)
 
@@ -94,8 +90,9 @@ def run(args) -> None:
             import intel_extension_for_pytorch as ipex
             import oneccl_bindings_for_pytorch as oneccl  # pylint: disable=unused-import
         except ImportError as e:
+            msg = "Error: Intel extension for PyTorch not found, but XPU device was specified"
             raise ImportError(
-                "Error: Intel extension for PyTorch not found, but XPU device was specified"
+                msg,
             ) from e
     rank, local_rank, world_size = init_distributed(args)
 
@@ -132,7 +129,7 @@ def run(args) -> None:
     if args.foundation_model is not None:
         if args.foundation_model in valid_mace_mp_models:
             logging.info(
-                f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
+                f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint.",
             )
             calc = mace_mp(
                 model=args.foundation_model,
@@ -143,7 +140,7 @@ def run(args) -> None:
         elif args.foundation_model in ["small_off", "medium_off", "large_off"]:
             model_type = args.foundation_model.split("_")[0]
             logging.info(
-                f"Using foundation model mace-off-2023 {model_type} as initial checkpoint. ASL license."
+                f"Using foundation model mace-off-2023 {model_type} as initial checkpoint. ASL license.",
             )
             calc = mace_off(
                 model=model_type,
@@ -153,11 +150,11 @@ def run(args) -> None:
             model_foundation = calc.models[0]
         else:
             model_foundation = torch.load(
-                args.foundation_model, map_location=args.device
+                args.foundation_model, map_location=args.device,
             )
             model_foundation = model_foundation.to(dtype=dtype)
             logging.info(
-                f"Using foundation model {args.foundation_model} as initial checkpoint."
+                f"Using foundation model {args.foundation_model} as initial checkpoint.",
             )
         args.r_max = model_foundation.r_max.item()
         foundation_model_avg_num_neighbors = model_foundation.interactions[
@@ -171,7 +168,7 @@ def run(args) -> None:
             logging.warning(
                 "Using multiheads finetuning with a foundation model that is not "
                 "a Materials Project model, need to provied a path to a pretraining "
-                "file with --pt_train_file."
+                "file with --pt_train_file.",
             )
             args.multiheads_finetuning = False
 
@@ -184,22 +181,22 @@ def run(args) -> None:
                 logging.info(
                     "Multihead finetuning mode, setting learning rate to 0.0001 and "
                     "EMA to True. To use a different learning rate, "
-                    "set --force_mh_ft_lr=True."
+                    "set --force_mh_ft_lr=True.",
                 )
                 args.lr = 0.0001
                 args.ema = True
                 args.ema_decay = 0.99999
             logging.info(
-                "Using multiheads finetuning mode, setting learning rate to 0.0001 and EMA to True"
+                "Using multiheads finetuning mode, setting learning rate to 0.0001 and EMA to True",
             )
             if hasattr(model_foundation, "heads"):
                 if len(model_foundation.heads) > 1:
                     logging.warning(
                         "Mutlihead finetuning with models with more than one head "
-                        "is not supported, using the first head as foundation head."
+                        "is not supported, using the first head as foundation head.",
                     )
                     model_foundation = remove_pt_head(
-                        model_foundation, args.foundation_head
+                        model_foundation, args.foundation_head,
                     )
 
         model_foundation = model_foundation.to(dtype=dtype)
@@ -229,7 +226,7 @@ def run(args) -> None:
             else deepcopy(args.key_specification)
         )
         args.heads["pt_head"] = prepare_pt_head(
-            args, pt_keyspec, foundation_model_avg_num_neighbors
+            args, pt_keyspec, foundation_model_avg_num_neighbors,
         )
 
     logging.info("===========LOADING INPUT DATA===========")
@@ -279,7 +276,7 @@ def run(args) -> None:
             else:
                 head_config.E0s = statistics["atomic_energies"]
                 head_config.atomic_energies_dict = ast.literal_eval(
-                    statistics["atomic_energies"]
+                    statistics["atomic_energies"],
                 )
         if head_config.train_file in (["mp"], ["matpes_pbe"], ["matpes_r2scan"]):
             assert (
@@ -287,10 +284,10 @@ def run(args) -> None:
             ), "Only pt_head should use mp as train_file"
             logging.info(
                 f"Using filtered Materials Project data for replay ({args.num_samples_pt}, {args.filter_type_pt}, {args.subselect_pt}). "
-                "You can also construct a different subset using `fine_tuning_select.py` script."
+                "You can also construct a different subset using `fine_tuning_select.py` script.",
             )
             collections = assemble_replay_data(
-                head_config.train_file[0], args, head_config, tag
+                head_config.train_file[0], args, head_config, tag,
             )
             head_config.collections = collections
         elif any(check_path_ase_read(f) for f in head_config.train_file):
@@ -308,7 +305,7 @@ def run(args) -> None:
                     f for f in head_config.test_file if check_path_ase_read(f)
                 ]
             config_type_weights = get_config_type_weights(
-                head_config.config_type_weights
+                head_config.config_type_weights,
             )
             collections, atomic_energies_dict = get_dataset_from_xyz(
                 work_dir=args.work_dir,
@@ -335,7 +332,7 @@ def run(args) -> None:
             head_config.atomic_energies_dict = atomic_energies_dict
             logging.info(
                 f"Total number of configurations: train={len(collections.train)}, valid={len(collections.valid)}, "
-                f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],"
+                f"tests=[{', '.join([name + ': ' + str(len(test_configs)) for name, test_configs in collections.tests])}],",
             )
         head_configs.append(head_config)
 
@@ -350,16 +347,16 @@ def run(args) -> None:
         )
         if size_collections_train < args.batch_size:
             logging.error(
-                f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train})"
+                f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train})",
             )
         if size_collections_valid < args.valid_batch_size:
             logging.warning(
-                f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({size_collections_valid})"
+                f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({size_collections_valid})",
             )
 
     if args.multiheads_finetuning:
         logging.info(
-            "==================Using multiheads finetuning mode=================="
+            "==================Using multiheads finetuning mode==================",
         )
         args.loss = "universal"
 
@@ -377,7 +374,7 @@ def run(args) -> None:
             if ratio_pt_ft < args.real_pt_data_ratio_threshold:
                 logging.warning(
                     f"Ratio of the number of configurations in the training set and the in the pt_train_file is {ratio_pt_ft}, "
-                    f"increasing the number of configurations in the fine-tuning heads by {int(args.real_pt_data_ratio_threshold / ratio_pt_ft)}"
+                    f"increasing the number of configurations in the fine-tuning heads by {int(args.real_pt_data_ratio_threshold / ratio_pt_ft)}",
                 )
                 for head_config in head_configs:
                     if head_config.head_name == "pt_head":
@@ -387,11 +384,11 @@ def run(args) -> None:
                         * int(args.real_pt_data_ratio_threshold / ratio_pt_ft)
                     )
             logging.info(
-                f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}"
+                f"Total number of configurations in pretraining: train={len(head_config_pt.collections.train)}, valid={len(head_config_pt.collections.valid)}",
             )
         else:
             logging.debug(
-                "Using LMDB/HDF5 datasets for pretraining or fine-tuning - skipping ratio check"
+                "Using LMDB/HDF5 datasets for pretraining or fine-tuning - skipping ratio check",
             )
 
     # Atomic number table
@@ -440,12 +437,12 @@ def run(args) -> None:
                 and head_config.E0s.lower() != "foundation"
             ):
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(
-                    head_config.E0s, head_config.collections.train, head_config.z_table
+                    head_config.E0s, head_config.collections.train, head_config.z_table,
                 )
             elif head_config.E0s.lower() == "foundation":
                 assert args.foundation_model is not None
                 z_table_foundation = AtomicNumberTable(
-                    [int(z) for z in model_foundation.atomic_numbers]
+                    [int(z) for z in model_foundation.atomic_numbers],
                 )
                 foundation_atomic_energies = (
                     model_foundation.atomic_energies_fn.atomic_energies
@@ -455,7 +452,7 @@ def run(args) -> None:
                     if foundation_atomic_energies.ndim == 2:
                         foundation_atomic_energies = foundation_atomic_energies[0]
                         logging.info(
-                            "Foundation model has multiple heads, using the first head as foundation E0s."
+                            "Foundation model has multiple heads, using the first head as foundation E0s.",
                         )
                 atomic_energies_dict[head_config.head_name] = {
                     z: foundation_atomic_energies[
@@ -465,7 +462,7 @@ def run(args) -> None:
                 }
             else:
                 atomic_energies_dict[head_config.head_name] = get_atomic_energies(
-                    head_config.E0s, None, head_config.z_table
+                    head_config.E0s, None, head_config.z_table,
                 )
         else:
             atomic_energies_dict[head_config.head_name] = (
@@ -478,7 +475,7 @@ def run(args) -> None:
             model_foundation is not None
         ), "Model foundation must be provided for multiheads finetuning"
         z_table_foundation = AtomicNumberTable(
-            [int(z) for z in model_foundation.atomic_numbers]
+            [int(z) for z in model_foundation.atomic_numbers],
         )
         foundation_atomic_energies = model_foundation.atomic_energies_fn.atomic_energies
         if foundation_atomic_energies.ndim > 1:
@@ -486,7 +483,7 @@ def run(args) -> None:
             if foundation_atomic_energies.ndim == 2:
                 foundation_atomic_energies = foundation_atomic_energies[0]
                 logging.info(
-                    "Foundation model has multiple heads, using the first head as foundation E0s."
+                    "Foundation model has multiple heads, using the first head as foundation E0s.",
                 )
         atomic_energies_dict["pt_head"] = {
             z: foundation_atomic_energies[z_table_foundation.z_to_index(z)].item()
@@ -547,13 +544,14 @@ def run(args) -> None:
                         [
                             f"{z}: {atomic_energies_dict[head_config.head_name][z]}"
                             for z in head_config.z_table.zs
-                        ]
+                        ],
                     )
-                    + "}"
+                    + "}",
                 )
             except KeyError as e:
+                msg = f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number"
                 raise KeyError(
-                    f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number"
+                    msg,
                 ) from e
 
     # Load datasets for each head, supporting multiple files per head
@@ -580,11 +578,11 @@ def run(args) -> None:
                 batch_size=args.batch_size,
             ):
                 logging.info(
-                    "Successfully applied pseudolabels to pt_head configurations"
+                    "Successfully applied pseudolabels to pt_head configurations",
                 )
             else:
                 logging.warning(
-                    "Pseudolabeling was not successful, continuing with original configurations"
+                    "Pseudolabeling was not successful, continuing with original configurations",
                 )
 
         ase_files = [f for f in head_config.train_file if check_path_ase_read(f)]
@@ -618,12 +616,13 @@ def run(args) -> None:
             logging.debug(f"Successfully loaded dataset from non-ASE file: {file}")
 
         if not train_datasets:
+            msg = f"No valid training datasets found for head {head_config.head_name}"
             raise ValueError(
-                f"No valid training datasets found for head {head_config.head_name}"
+                msg,
             )
 
         train_sets[head_config.head_name] = combine_datasets(
-            train_datasets, head_config.head_name
+            train_datasets, head_config.head_name,
         )
 
         if head_config.valid_file:
@@ -648,7 +647,7 @@ def run(args) -> None:
                 )
                 valid_datasets.append(valid_dataset)
                 logging.debug(
-                    f"Successfully loaded validation dataset from ASE files: {valid_ase_files}"
+                    f"Successfully loaded validation dataset from ASE files: {valid_ase_files}",
                 )
             for valid_file in valid_non_ase_files:
                 valid_dataset = load_dataset_for_path(
@@ -661,16 +660,16 @@ def run(args) -> None:
                 )
                 valid_datasets.append(valid_dataset)
                 logging.debug(
-                    f"Successfully loaded validation dataset from {valid_file}"
+                    f"Successfully loaded validation dataset from {valid_file}",
                 )
 
             # Combine validation datasets
             if valid_datasets:
                 valid_sets[head_config.head_name] = combine_datasets(
-                    valid_datasets, f"{head_config.head_name}_valid"
+                    valid_datasets, f"{head_config.head_name}_valid",
                 )
                 logging.info(
-                    f"Combined validation datasets for {head_config.head_name}"
+                    f"Combined validation datasets for {head_config.head_name}",
                 )
 
         # If no valid file is provided but collection exist, use the validation set from the collection
@@ -686,8 +685,9 @@ def run(args) -> None:
                 for config in head_config.collections.valid
             ]
         if not valid_sets[head_config.head_name]:
+            msg = f"No valid datasets found for head {head_config.head_name}, please provide a valid_file or a valid_fraction"
             raise ValueError(
-                f"No valid datasets found for head {head_config.head_name}, please provide a valid_file or a valid_fraction"
+                msg,
             )
 
         # Create data loader for this head
@@ -696,7 +696,7 @@ def run(args) -> None:
         else:
             dataset_size = len(train_sets[head_config.head_name])
         logging.info(
-            f"Head '{head_config.head_name}' training dataset size: {dataset_size}"
+            f"Head '{head_config.head_name}' training dataset size: {dataset_size}",
         )
 
         train_loader_head = torch_geometric.dataloader.DataLoader(
@@ -762,7 +762,7 @@ def run(args) -> None:
 
     loss_fn = get_loss_fn(args, dipole_only, args.compute_dipole, dtype=dtype)
     args.avg_num_neighbors = get_avg_num_neighbors(
-        head_configs, args, train_loader, device
+        head_configs, args, train_loader, device,
     )
 
     # Model
@@ -787,7 +787,7 @@ def run(args) -> None:
     if args.ema:
         logging.info(f"Using Exponential Moving Average with decay: {args.ema_decay}")
     logging.info(
-        f"Number of gradient updates: {int(args.max_num_epochs*len(train_set)/args.batch_size)}"
+        f"Number of gradient updates: {int(args.max_num_epochs*len(train_set)/args.batch_size)}",
     )
     logging.info(f"Learning rate: {args.lr}, weight decay: {args.weight_decay}")
     logging.info(loss_fn)
@@ -796,7 +796,7 @@ def run(args) -> None:
     if args.enable_cueq and args.enable_oeq:
         logging.warning(
             "Both CUEQ and OEQ are enabled, using CUEQ for training. "
-            "To use OEQ, disable CUEQ with --disable_cueq."
+            "To use OEQ, disable CUEQ with --disable_cueq.",
         )
         args.enable_oeq = False
     if args.enable_cueq and not args.only_cueq:
@@ -816,7 +816,7 @@ def run(args) -> None:
         logging.info("Optimzing model and optimzier for XPU")
         model, optimizer = ipex.optimize(model, optimizer=optimizer)
     logger = tools.MetricsLogger(
-        directory=args.results_dir, tag=tag + "_train"
+        directory=args.results_dir, tag=tag + "_train",
     )  # pylint: disable=E1123
 
     lr_scheduler = LRScheduler(optimizer, args)
@@ -924,7 +924,7 @@ def run(args) -> None:
         except ImportError:
             logging.exception(
                 "Intel Extension for PyTorch not found, but XPU device was specified. "
-                "Please install it to use XPU device."
+                "Please install it to use XPU device.",
             )
 
     tools.train(
@@ -1091,7 +1091,7 @@ def run(args) -> None:
             extra_files = {
                 "commit.txt": commit.encode("utf-8") if commit is not None else b"",
                 "config.yaml": json.dumps(
-                    convert_to_json_format(extract_config_mace_model(model))
+                    convert_to_json_format(extract_config_mace_model(model)),
                 ),
             }
             os.makedirs(args.model_dir, exist_ok=True)

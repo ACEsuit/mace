@@ -29,7 +29,7 @@ def run(
 
     # Add OEQ config
     config["oeq_config"] = OEQConfig(
-        enabled=False, optimize_all=True, conv_fusion="atomic"
+        enabled=False, optimize_all=True, conv_fusion="atomic",
     )
 
     # Create new model with oeq config
@@ -60,7 +60,7 @@ def run(
     return None
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input_model", help="Path to input MACE model")
     parser.add_argument(

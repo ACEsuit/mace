@@ -18,7 +18,7 @@ def zbl_basis():
     return ZBLBasis(p=6, trainable=False).to(torch.float32)
 
 
-def test_zbl_basis_initialization(zbl_basis):
+def test_zbl_basis_initialization(zbl_basis) -> None:
     assert zbl_basis.p == torch.tensor(6.0)
     assert torch.allclose(zbl_basis.c, torch.tensor([0.1818, 0.5099, 0.2802, 0.02817]))
 
@@ -28,7 +28,7 @@ def test_zbl_basis_initialization(zbl_basis):
     assert not zbl_basis.a_prefactor.requires_grad
 
 
-def test_trainable_zbl_basis_initialization(zbl_basis):
+def test_trainable_zbl_basis_initialization(zbl_basis) -> None:
     zbl_basis = ZBLBasis(p=6, trainable=True)
     assert zbl_basis.p == torch.tensor(6.0)
     assert torch.allclose(zbl_basis.c, torch.tensor([0.1818, 0.5099, 0.2802, 0.02817]))
@@ -40,7 +40,7 @@ def test_trainable_zbl_basis_initialization(zbl_basis):
 
 
 @pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_zbl_basis_forward(zbl_basis, dtype):
+def test_zbl_basis_forward(zbl_basis, dtype) -> None:
     zbl_basis = zbl_basis.to(dtype)
     x = torch.tensor([1.0, 1.0, 2.0], dtype=dtype).unsqueeze(-1)
     node_attrs = torch.tensor([[1, 0], [0, 1]], dtype=dtype)
@@ -62,7 +62,7 @@ def agnesi():
     return AgnesiTransform(trainable=False).to(torch.float32)
 
 
-def test_agnesi_transform_initialization(agnesi: AgnesiTransform):
+def test_agnesi_transform_initialization(agnesi: AgnesiTransform) -> None:
     assert agnesi.q.item() == pytest.approx(0.9183, rel=1e-4)
     assert agnesi.p.item() == pytest.approx(4.5791, rel=1e-4)
     assert agnesi.a.item() == pytest.approx(1.0805, rel=1e-4)
@@ -71,7 +71,7 @@ def test_agnesi_transform_initialization(agnesi: AgnesiTransform):
     assert not agnesi.p.requires_grad
 
 
-def test_trainable_agnesi_transform_initialization():
+def test_trainable_agnesi_transform_initialization() -> None:
     agnesi = AgnesiTransform(trainable=True)
 
     assert agnesi.q.item() == pytest.approx(0.9183, rel=1e-4)
@@ -83,7 +83,7 @@ def test_trainable_agnesi_transform_initialization():
 
 
 @pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_agnesi_transform_forward(agnesi, dtype):
+def test_agnesi_transform_forward(agnesi, dtype) -> None:
     agnesi = agnesi.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)
     node_attrs = torch.tensor([[0, 1], [1, 0], [0, 1]], dtype=dtype)
@@ -105,20 +105,20 @@ def bessel_basis():
     return BesselBasis(r_max=5.0, num_basis=8, trainable=False).to(torch.float32)
 
 
-def test_bessel_basis_initialization(bessel_basis):
+def test_bessel_basis_initialization(bessel_basis) -> None:
     assert bessel_basis.r_max == torch.tensor(5.0)
     assert len(bessel_basis.bessel_weights) == 8
     assert bessel_basis.prefactor.item() == pytest.approx(np.sqrt(2.0 / 5.0), rel=1e-4)
     assert not bessel_basis.bessel_weights.requires_grad
 
 
-def test_trainable_bessel_basis_initialization():
+def test_trainable_bessel_basis_initialization() -> None:
     basis = BesselBasis(r_max=5.0, num_basis=8, trainable=True)
     assert basis.bessel_weights.requires_grad
 
 
 @pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_bessel_basis_forward(bessel_basis, dtype):
+def test_bessel_basis_forward(bessel_basis, dtype) -> None:
     bessel_basis = bessel_basis.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)
     output = bessel_basis(x)
@@ -132,14 +132,14 @@ def chebychev_basis():
     return ChebychevBasis(r_max=5.0, num_basis=8).to(torch.float32)
 
 
-def test_chebychev_basis_initialization(chebychev_basis):
+def test_chebychev_basis_initialization(chebychev_basis) -> None:
     assert chebychev_basis.r_max == 5.0
     assert chebychev_basis.num_basis == 8
     assert chebychev_basis.n.shape == (1, 8)
 
 
 @pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_chebychev_basis_forward(chebychev_basis, dtype):
+def test_chebychev_basis_forward(chebychev_basis, dtype) -> None:
     chebychev_basis = chebychev_basis.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)
     output = chebychev_basis(x)
@@ -153,18 +153,18 @@ def gaussian_basis():
     return GaussianBasis(r_max=5.0, num_basis=8, trainable=False).to(torch.float32)
 
 
-def test_gaussian_basis_initialization(gaussian_basis):
+def test_gaussian_basis_initialization(gaussian_basis) -> None:
     assert len(gaussian_basis.gaussian_weights) == 8
     assert not gaussian_basis.gaussian_weights.requires_grad
 
 
-def test_trainable_gaussian_basis_initialization():
+def test_trainable_gaussian_basis_initialization() -> None:
     basis = GaussianBasis(r_max=5.0, num_basis=8, trainable=True)
     assert basis.gaussian_weights.requires_grad
 
 
 @pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_gaussian_basis_forward(gaussian_basis, dtype):
+def test_gaussian_basis_forward(gaussian_basis, dtype) -> None:
     gaussian_basis = gaussian_basis.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)
     output = gaussian_basis(x)
@@ -178,13 +178,13 @@ def polynomial_cutoff():
     return PolynomialCutoff(r_max=5.0, p=6).to(torch.float32)
 
 
-def test_polynomial_cutoff_initialization(polynomial_cutoff):
+def test_polynomial_cutoff_initialization(polynomial_cutoff) -> None:
     assert polynomial_cutoff.r_max == torch.tensor(5.0)
     assert polynomial_cutoff.p == torch.tensor(6)
 
 
 @pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_polynomial_cutoff_forward(polynomial_cutoff, dtype):
+def test_polynomial_cutoff_forward(polynomial_cutoff, dtype) -> None:
     polynomial_cutoff = polynomial_cutoff.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0, 6.0], dtype=dtype)
     output = polynomial_cutoff(x)
@@ -199,18 +199,18 @@ def soft_transform():
     return SoftTransform(alpha=4.0, trainable=False).to(torch.float32)
 
 
-def test_soft_transform_initialization(soft_transform):
+def test_soft_transform_initialization(soft_transform) -> None:
     assert soft_transform.alpha == torch.tensor(4.0)
     assert not soft_transform.alpha.requires_grad
 
 
-def test_trainable_soft_transform_initialization():
+def test_trainable_soft_transform_initialization() -> None:
     transform = SoftTransform(alpha=4.0, trainable=True)
     assert transform.alpha.requires_grad
 
 
 @pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_soft_transform_forward(soft_transform, dtype):
+def test_soft_transform_forward(soft_transform, dtype) -> None:
     soft_transform = soft_transform.to(dtype)
     x = torch.tensor([1.0, 2.0, 3.0], dtype=dtype).unsqueeze(-1)
     node_attrs = torch.tensor([[0, 1], [1, 0], [0, 1]], dtype=dtype)

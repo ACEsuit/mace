@@ -16,7 +16,7 @@ except ImportError:
 
 
 @pytest.mark.parametrize("default_dtype", ["float32", "float64"])
-def test_mace_mp(default_dtype, capsys: pytest.CaptureFixture):
+def test_mace_mp(default_dtype, capsys: pytest.CaptureFixture) -> None:
     mp_mace = mace_mp(default_dtype=default_dtype)
     assert isinstance(mp_mace, MACECalculator)
     assert mp_mace.model_type == "MACE"
@@ -27,7 +27,9 @@ def test_mace_mp(default_dtype, capsys: pytest.CaptureFixture):
     assert stderr == ""
 
 
-def test_mace_mp_stresses(model="medium", device="cpu"):
+def test_mace_mp_stresses() -> None:
+    model = "medium"
+    device = "cpu"
     atoms = build.bulk("Al", "fcc", a=4.05, cubic=True)
     atoms = atoms.repeat((2, 2, 2))
     mace_mp_model = mace_mp(model=model, device=device, compute_atomic_stresses=True)
@@ -40,7 +42,7 @@ def test_mace_mp_stresses(model="medium", device="cpu"):
 
 
 @pytest.mark.parametrize("default_dtype", ["float32", "float64"])
-def test_mace_off(default_dtype):
+def test_mace_off(default_dtype) -> None:
     mace_off_model = mace_off(model="small", device="cpu", default_dtype=default_dtype)
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"
@@ -56,7 +58,9 @@ def test_mace_off(default_dtype):
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-def test_mace_off_cueq(model="medium", device="cpu"):
+def test_mace_off_cueq() -> None:
+    model = "medium"
+    device = "cpu"
     mace_off_model = mace_off(model=model, device=device, enable_cueq=True)
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"

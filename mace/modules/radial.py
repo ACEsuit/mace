@@ -16,16 +16,14 @@ from mace.tools.scatter import scatter_sum
 
 @compile_mode("script")
 class BesselBasis(torch.nn.Module):
-    """
-    Equation (7)
-    """
+    """Equation (7)."""
 
     def __init__(
         self,
         r_max: float,
         num_basis=8,
         trainable=False,
-    ):
+    ) -> None:
         super().__init__()
         bessel_weights = (
             np.pi
@@ -51,7 +49,7 @@ class BesselBasis(torch.nn.Module):
         numerator = torch.sin(self.bessel_weights * x)  # [..., num_basis]
         return self.prefactor * (numerator / x)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}(r_max={self.r_max}, num_basis={len(self.bessel_weights)}, "
             f"trainable={self.bessel_weights.requires_grad})"
@@ -60,11 +58,9 @@ class BesselBasis(torch.nn.Module):
 
 @compile_mode("script")
 class ChebychevBasis(torch.nn.Module):
-    """
-    Equation (7)
-    """
+    """Equation (7)."""
 
-    def __init__(self, r_max: float, num_basis=8):
+    def __init__(self, r_max: float, num_basis=8) -> None:
         super().__init__()
         self.register_buffer(
             "n",
@@ -78,7 +74,7 @@ class ChebychevBasis(torch.nn.Module):
         n = self.n.repeat(len(x), 1)
         return torch.special.chebyshev_polynomial_t(x, n)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}(r_max={self.r_max}, num_basis={self.num_basis},"
         )
@@ -86,21 +82,19 @@ class ChebychevBasis(torch.nn.Module):
 
 @compile_mode("script")
 class GaussianBasis(torch.nn.Module):
-    """
-    Gaussian basis functions
-    """
+    """Gaussian basis functions."""
 
     def __init__(
         self,
         r_max: float,
         num_basis=128,
         trainable=False,
-    ):
+    ) -> None:
         super().__init__()
         gaussian_weights = torch.linspace(start=0.0, end=r_max, steps=num_basis)
         if trainable:
             self.gaussian_weights = torch.nn.Parameter(
-                gaussian_weights, requires_grad=True
+                gaussian_weights, requires_grad=True,
             )
         else:
             self.register_buffer("gaussian_weights", gaussian_weights)
@@ -120,7 +114,7 @@ class PolynomialCutoff(torch.nn.Module):
     p: torch.Tensor
     r_max: torch.Tensor
 
-    def __init__(self, r_max: float, p=6):
+    def __init__(self, r_max: float, p=6) -> None:
         super().__init__()
         self.register_buffer("p", torch.tensor(p))
         self.register_buffer("r_max", torch.tensor(r_max))
@@ -130,7 +124,7 @@ class PolynomialCutoff(torch.nn.Module):
 
     @staticmethod
     def calculate_envelope(
-        x: torch.Tensor, r_max: torch.Tensor, p: torch.Tensor
+        x: torch.Tensor, r_max: torch.Tensor, p: torch.Tensor,
     ) -> torch.Tensor:
         r_over_r_max = x / r_max
         envelope = (
@@ -141,7 +135,7 @@ class PolynomialCutoff(torch.nn.Module):
         )
         return envelope * (x < r_max)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
 
 
@@ -153,11 +147,11 @@ class ZBLBasis(torch.nn.Module):
 
     p: torch.Tensor
 
-    def __init__(self, p=6, trainable=False, **kwargs):
+    def __init__(self, p=6, trainable=False, **kwargs) -> None:
         super().__init__()
         if "r_max" in kwargs:
             logging.warning(
-                "r_max is deprecated. r_max is determined from the covalent radii."
+                "r_max is deprecated. r_max is determined from the covalent radii.",
             )
 
         # Pre-calculate the p coefficients for the ZBL potential
@@ -176,7 +170,7 @@ class ZBLBasis(torch.nn.Module):
         if trainable:
             self.a_exp = torch.nn.Parameter(torch.tensor(0.300, requires_grad=True))
             self.a_prefactor = torch.nn.Parameter(
-                torch.tensor(0.4543, requires_grad=True)
+                torch.tensor(0.4543, requires_grad=True),
             )
         else:
             self.register_buffer("a_exp", torch.tensor(0.300))
@@ -192,7 +186,7 @@ class ZBLBasis(torch.nn.Module):
         sender = edge_index[0]
         receiver = edge_index[1]
         node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
-            -1
+            -1,
         )
         Z_u = node_atomic_numbers[sender].to(torch.int64)
         Z_v = node_atomic_numbers[receiver].to(torch.int64)
@@ -215,7 +209,7 @@ class ZBLBasis(torch.nn.Module):
         V_ZBL = scatter_sum(v_edges, receiver, dim=0, dim_size=node_attrs.size(0))
         return V_ZBL.squeeze(-1)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}(c={self.c})"
 
 
@@ -231,7 +225,7 @@ class AgnesiTransform(torch.nn.Module):
         p: float = 4.5791,
         a: float = 1.0805,
         trainable=False,
-    ):
+    ) -> None:
         super().__init__()
 
         self.register_buffer(
@@ -260,7 +254,7 @@ class AgnesiTransform(torch.nn.Module):
         sender = edge_index[0]
         receiver = edge_index[1]
         node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
-            -1
+            -1,
         )
         Z_u = node_atomic_numbers[sender].to(torch.int64)
         Z_v = node_atomic_numbers[receiver].to(torch.int64)
@@ -275,7 +269,7 @@ class AgnesiTransform(torch.nn.Module):
             )
         ).reciprocal_()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}(a={self.a:.4f}, q={self.q:.4f}, p={self.p:.4f})"
         )
@@ -283,18 +277,16 @@ class AgnesiTransform(torch.nn.Module):
 
 @compile_mode("script")
 class SoftTransform(torch.nn.Module):
-    """
-    Tanh-based smooth transformation:
+    """Tanh-based smooth transformation:
         T(x) = p1 + (x - p1)*0.5*[1 + tanh(alpha*(x - m))],
     which smoothly transitions from ~p1 for x << p1 to ~x for x >> r0.
     """
 
-    def __init__(self, alpha: float = 4.0, trainable=False):
-        """
-        Args:
-            p1 (float): Lower "clamp" point.
-            alpha (float): Steepness; if None, defaults to ~6/(r0-p1).
-            trainable (bool): Whether to make parameters trainable.
+    def __init__(self, alpha: float = 4.0, trainable=False) -> None:
+        """Args:
+        p1 (float): Lower "clamp" point.
+        alpha (float): Steepness; if None, defaults to ~6/(r0-p1).
+        trainable (bool): Whether to make parameters trainable.
         """
         super().__init__()
         self.register_buffer(
@@ -316,8 +308,7 @@ class SoftTransform(torch.nn.Module):
         edge_index: torch.Tensor,
         atomic_numbers: torch.Tensor,
     ) -> torch.Tensor:
-        """
-        Compute r_0 based on atomic information.
+        """Compute r_0 based on atomic information.
 
         Args:
             node_attrs (torch.Tensor): Node attributes (one-hot encoding of atomic numbers).
@@ -330,7 +321,7 @@ class SoftTransform(torch.nn.Module):
         sender = edge_index[0]
         receiver = edge_index[1]
         node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(
-            -1
+            -1,
         )
         Z_u = node_atomic_numbers[sender].to(torch.int64)
         Z_v = node_atomic_numbers[receiver].to(torch.int64)
@@ -353,7 +344,7 @@ class SoftTransform(torch.nn.Module):
         s_x = 0.5 * (1.0 + torch.tanh(alpha * (x - m)))
         return p_0 + (x - p_0) * s_x
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}(alpha={self.alpha.item():.4f})"
 
     def to(self, *args, **kwargs):
@@ -366,8 +357,7 @@ class SoftTransform(torch.nn.Module):
 
 
 class RadialMLP(torch.nn.Module):
-    """
-    Construct a radial MLP (Linear → LayerNorm → SiLU) stack
+    """Construct a radial MLP (Linear → LayerNorm → SiLU) stack
     given a list of channel sizes, following ESEN / FairChem.
     """
 

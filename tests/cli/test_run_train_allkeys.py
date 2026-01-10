@@ -99,8 +99,8 @@ def trial_yamls_and_and_expected():
         "heads": {
             "Default": {
                 "energy_key": "3_energy",
-            }
-        }
+            },
+        },
     }
 
     yamls["one_head_with_dicts"] = {
@@ -112,8 +112,8 @@ def trial_yamls_and_and_expected():
                 "arrays_keys": {
                     "forces": "3_forces",
                 },
-            }
-        }
+            },
+        },
     }
 
     yamls["two_heads_no_dicts"] = {
@@ -126,7 +126,7 @@ def trial_yamls_and_and_expected():
                 "train_file": "fit_multihead_mp2.xyz",
                 "energy_key": "4_energy",
             },
-        }
+        },
     }
 
     yamls["two_heads_mixed"] = {
@@ -145,7 +145,7 @@ def trial_yamls_and_and_expected():
                 "train_file": "fit_multihead_mp2.xyz",
                 "energy_key": "4_energy",
             },
-        }
+        },
     }
     all_arg_sets = {
         "with_command_line": {
@@ -178,7 +178,7 @@ def trial_yamls_and_and_expected():
     for key, value in all_arg_sets.items():
         for key2, value2 in value.items():
             list_of_all.append(
-                (value2, (key, key2), np.asarray(all_expected_outputs[key][key2]))
+                (value2, (key, key2), np.asarray(all_expected_outputs[key][key2])),
             )
 
     return list_of_all
@@ -199,9 +199,9 @@ _trial_yamls_and_and_expected = trial_yamls_and_and_expected()
 
 
 @pytest.mark.parametrize(
-    ("yaml_contents", "name", "expected_value"), _trial_yamls_and_and_expected
+    ("yaml_contents", "name", "expected_value"), _trial_yamls_and_and_expected,
 )
-def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value):
+def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value) -> None:
     fitting_configs = configs_numbered_keys()
 
     ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs)
@@ -236,7 +236,7 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -249,7 +249,7 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
         headname = "Default"
 
     calc = MACECalculator(
-        tmp_path / "MACE_.model", device="cpu", default_dtype="float64", head=headname
+        tmp_path / "MACE_.model", device="cpu", default_dtype="float64", head=headname,
     )
 
     Es = []
@@ -257,13 +257,11 @@ def test_key_specification_methods(tmp_path, yaml_contents, name, expected_value
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print(name)
-    print("Es", Es)
 
     npt.assert_allclose(np.asarray(Es), expected_value, rtol=1e-8, atol=1e-8)
 
 
-def test_multihead_finetuning_does_not_modify_default_keyspec(tmp_path):
+def test_multihead_finetuning_does_not_modify_default_keyspec(tmp_path) -> None:
     fitting_configs = configs_numbered_keys()
     ase.io.write(tmp_path / "fit_multihead_dft.xyz", fitting_configs)
 
@@ -282,7 +280,7 @@ def test_multihead_finetuning_does_not_modify_default_keyspec(tmp_path):
             "--energy_key",
             "2_energy",
             "--dry_run",
-        ]
+        ],
     )
     default_key_spec = KeySpecification.from_defaults()
     default_key_spec.info_keys["energy"] = "2_energy"
@@ -291,13 +289,12 @@ def test_multihead_finetuning_does_not_modify_default_keyspec(tmp_path):
 
 
 # for creating values
-def make_output():
+def make_output() -> None:
     outputs = {}
     for yaml_contents, name, expected_value in _trial_yamls_and_and_expected:
         if name[0] not in outputs:
             outputs[name[0]] = {}
         expected = test_key_specification_methods(
-            Path("."), yaml_contents, name, expected_value, debug_test=False
+            Path(), yaml_contents, name, expected_value, debug_test=False,
         )
         outputs[name[0]][name[1]] = expected
-    print(outputs)

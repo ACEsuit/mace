@@ -53,7 +53,7 @@ def valid_err_log(
     log_errors,
     epoch=None,
     valid_loader_name="Default",
-):
+) -> None:
     eval_metrics["mode"] = "eval"
     eval_metrics["epoch"] = epoch
     eval_metrics["head"] = valid_loader_name
@@ -63,7 +63,7 @@ def valid_err_log(
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A"
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A",
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
@@ -93,7 +93,7 @@ def valid_err_log(
         error_f = eval_metrics["mae_f"] * 1e3
         error_stress = eval_metrics["mae_stress"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_stress={error_stress:8.2f} meV / A^3"
+            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_stress={error_stress:8.2f} meV / A^3",
         )
     elif (
         log_errors == "PerAtomMAEstressvirials"
@@ -103,7 +103,7 @@ def valid_err_log(
         error_f = eval_metrics["mae_f"] * 1e3
         error_virials = eval_metrics["mae_virials"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_virials={error_virials:8.2f} meV"
+            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_virials={error_virials:8.2f} meV",
         )
     elif log_errors == "TotalRMSE":
         error_e = eval_metrics["rmse_e"] * 1e3
@@ -169,7 +169,7 @@ def train(
     distributed_model: DistributedDataParallel | None = None,
     train_sampler: DistributedSampler | None = None,
     rank: int | None = 0,
-):
+) -> None:
     lowest_loss = np.inf
     valid_loss = np.inf
     patience_counter = 0
@@ -197,7 +197,7 @@ def train(
             device=device,
         )
         valid_err_log(
-            valid_loss_head, eval_metrics, logger, log_errors, None, valid_loader_name
+            valid_loss_head, eval_metrics, logger, log_errors, None, valid_loader_name,
         )
     valid_loss = valid_loss_head  # consider only the last head for the checkpoint
 
@@ -206,7 +206,7 @@ def train(
         if swa is None or epoch < swa.start:
             if epoch > start_epoch:
                 lr_scheduler.step(
-                    metrics=valid_loss
+                    metrics=valid_loss,
                 )  # Can break if exponential LR, TODO fix that!
         else:
             if swa_start:
@@ -296,12 +296,12 @@ def train(
                     if patience_counter >= patience:
                         if swa is not None and epoch < swa.start:
                             logging.info(
-                                f"Stopping optimization after {patience_counter} epochs without improvement and starting Stage Two"
+                                f"Stopping optimization after {patience_counter} epochs without improvement and starting Stage Two",
                             )
                             epoch = swa.start
                         else:
                             logging.info(
-                                f"Stopping optimization after {patience_counter} epochs without improvement"
+                                f"Stopping optimization after {patience_counter} epochs without improvement",
                             )
                             break
                     if save_all_checkpoints:
@@ -446,7 +446,7 @@ def take_step_lbfgs(
 ) -> tuple[float, dict[str, Any]]:
     start_time = time.time()
     logging.debug(
-        f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB"
+        f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB",
     )
 
     total_sample_count = 0
@@ -456,7 +456,7 @@ def take_step_lbfgs(
     if distributed:
         global_sample_count = torch.tensor(total_sample_count, device=device)
         torch.distributed.all_reduce(
-            global_sample_count, op=torch.distributed.ReduceOp.SUM
+            global_sample_count, op=torch.distributed.ReduceOp.SUM,
         )
         total_sample_count = global_sample_count.item()
 
@@ -564,7 +564,7 @@ def evaluate(
 
 
 class MACELoss(Metric):
-    def __init__(self, loss_fn: torch.nn.Module):
+    def __init__(self, loss_fn: torch.nn.Module) -> None:
         super().__init__()
         self.loss_fn = loss_fn
         self.add_state("total_loss", default=torch.tensor(0.0), dist_reduce_fx="sum")
@@ -576,11 +576,11 @@ class MACELoss(Metric):
         self.add_state("fs", default=[], dist_reduce_fx="cat")
         self.add_state("delta_fs", default=[], dist_reduce_fx="cat")
         self.add_state(
-            "stress_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+            "stress_computed", default=torch.tensor(0.0), dist_reduce_fx="sum",
         )
         self.add_state("delta_stress", default=[], dist_reduce_fx="cat")
         self.add_state(
-            "virials_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+            "virials_computed", default=torch.tensor(0.0), dist_reduce_fx="sum",
         )
         self.add_state("delta_virials", default=[], dist_reduce_fx="cat")
         self.add_state("delta_virials_per_atom", default=[], dist_reduce_fx="cat")
@@ -589,14 +589,14 @@ class MACELoss(Metric):
         self.add_state("delta_mus", default=[], dist_reduce_fx="cat")
         self.add_state("delta_mus_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state(
-            "polarizability_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+            "polarizability_computed", default=torch.tensor(0.0), dist_reduce_fx="sum",
         )
         self.add_state("delta_polarizability", default=[], dist_reduce_fx="cat")
         self.add_state(
-            "delta_polarizability_per_atom", default=[], dist_reduce_fx="cat"
+            "delta_polarizability_per_atom", default=[], dist_reduce_fx="cat",
         )
 
-    def update(self, batch, output):  # pylint: disable=arguments-differ
+    def update(self, batch, output) -> None:  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
         self.total_loss += loss
         self.num_data += batch.num_graphs
@@ -604,10 +604,10 @@ class MACELoss(Metric):
         if output.get("energy") is not None and batch.energy is not None:
             self.delta_es.append(batch.energy - output["energy"])
             self.delta_es_per_atom.append(
-                (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1])
+                (batch.energy - output["energy"]) / (batch.ptr[1:] - batch.ptr[:-1]),
             )
             self.E_computed += filter_nonzero_weight(
-                batch, self.delta_es, batch.weight, batch.energy_weight
+                batch, self.delta_es, batch.weight, batch.energy_weight,
             )
         if output.get("forces") is not None and batch.forces is not None:
             self.fs.append(batch.forces)
@@ -622,23 +622,23 @@ class MACELoss(Metric):
         if output.get("stress") is not None and batch.stress is not None:
             self.delta_stress.append(batch.stress - output["stress"])
             self.stress_computed += filter_nonzero_weight(
-                batch, self.delta_stress, batch.weight, batch.stress_weight
+                batch, self.delta_stress, batch.weight, batch.stress_weight,
             )
         if output.get("virials") is not None and batch.virials is not None:
             self.delta_virials.append(batch.virials - output["virials"])
             self.delta_virials_per_atom.append(
                 (batch.virials - output["virials"])
-                / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1)
+                / (batch.ptr[1:] - batch.ptr[:-1]).view(-1, 1, 1),
             )
             self.virials_computed += filter_nonzero_weight(
-                batch, self.delta_virials, batch.weight, batch.virials_weight
+                batch, self.delta_virials, batch.weight, batch.virials_weight,
             )
         if output.get("dipole") is not None and batch.dipole is not None:
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
             self.delta_mus_per_atom.append(
                 (batch.dipole - output["dipole"])
-                / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1)
+                / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1),
             )
             self.Mus_computed += filter_nonzero_weight(
                 batch,
@@ -652,11 +652,11 @@ class MACELoss(Metric):
             and batch.polarizability is not None
         ):
             self.delta_polarizability.append(
-                batch.polarizability - output["polarizability"]
+                batch.polarizability - output["polarizability"],
             )
             self.delta_polarizability_per_atom.append(
                 (batch.polarizability - output["polarizability"])
-                / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1).unsqueeze(-1)
+                / (batch.ptr[1:] - batch.ptr[:-1]).unsqueeze(-1).unsqueeze(-1),
             )
             self.polarizability_computed += filter_nonzero_weight(
                 batch,
@@ -683,7 +683,7 @@ class MACELoss(Metric):
             def __imul__(self, other):
                 return NoneMultiply()
 
-            def __format__(self, format_spec):
+            def __format__(self, format_spec) -> str:
                 return str(None)
 
         aux = defaultdict(NoneMultiply)
@@ -730,15 +730,15 @@ class MACELoss(Metric):
         if self.polarizability_computed:
             delta_polarizability = self.convert(self.delta_polarizability)
             delta_polarizability_per_atom = self.convert(
-                self.delta_polarizability_per_atom
+                self.delta_polarizability_per_atom,
             )
             aux["mae_polarizability"] = compute_mae(delta_polarizability)
             aux["mae_polarizability_per_atom"] = compute_mae(
-                delta_polarizability_per_atom
+                delta_polarizability_per_atom,
             )
             aux["rmse_polarizability"] = compute_rmse(delta_polarizability)
             aux["rmse_polarizability_per_atom"] = compute_rmse(
-                delta_polarizability_per_atom
+                delta_polarizability_per_atom,
             )
             aux["q95_polarizability"] = compute_q95(delta_polarizability)
 

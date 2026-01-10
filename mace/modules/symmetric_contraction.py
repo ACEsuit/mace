@@ -76,7 +76,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
                     num_elements=num_elements,
                     weights=self.shared_weights,
                     use_reduced_cg=use_reduced_cg,
-                )
+                ),
             )
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
@@ -134,8 +134,8 @@ class Contraction(torch.nn.Module):
                 )
                 graph_module_main = torch.fx.symbolic_trace(
                     lambda x, y, w, z: torch.einsum(
-                        "".join(parse_subscript_main), x, y, w, z
-                    )
+                        "".join(parse_subscript_main), x, y, w, z,
+                    ),
                 )
 
                 # Optimizing the contractions
@@ -143,7 +143,7 @@ class Contraction(torch.nn.Module):
                     model=graph_module_main,
                     example_inputs=(
                         torch.randn(
-                            [num_equivariance] + [num_ell] * i + [num_params]
+                            [num_equivariance] + [num_ell] * i + [num_params],
                         ).squeeze(0),
                         torch.randn((num_elements, num_params, self.num_features)),
                         torch.randn((BATCH_EXAMPLE, self.num_features, num_ell)),
@@ -153,7 +153,7 @@ class Contraction(torch.nn.Module):
                 # Parameters for the product basis
                 w = torch.nn.Parameter(
                     torch.randn((num_elements, num_params, self.num_features))
-                    / num_params
+                    / num_params,
                 )
                 self.weights_max = w
             else:
@@ -173,11 +173,11 @@ class Contraction(torch.nn.Module):
                 # Symbolic tracing of contractions
                 graph_module_weighting = torch.fx.symbolic_trace(
                     lambda x, y, z: torch.einsum(
-                        "".join(parse_subscript_weighting), x, y, z
-                    )
+                        "".join(parse_subscript_weighting), x, y, z,
+                    ),
                 )
                 graph_module_features = torch.fx.symbolic_trace(
-                    lambda x, y: torch.einsum("".join(parse_subscript_features), x, y)
+                    lambda x, y: torch.einsum("".join(parse_subscript_features), x, y),
                 )
 
                 # Optimizing the contractions
@@ -185,7 +185,7 @@ class Contraction(torch.nn.Module):
                     model=graph_module_weighting,
                     example_inputs=(
                         torch.randn(
-                            [num_equivariance] + [num_ell] * i + [num_params]
+                            [num_equivariance] + [num_ell] * i + [num_params],
                         ).squeeze(0),
                         torch.randn((num_elements, num_params, self.num_features)),
                         torch.randn((BATCH_EXAMPLE, num_elements)),
@@ -196,7 +196,7 @@ class Contraction(torch.nn.Module):
                     example_inputs=(
                         torch.randn(
                             [BATCH_EXAMPLE, self.num_features, num_equivariance]
-                            + [num_ell] * i
+                            + [num_ell] * i,
                         ).squeeze(2),
                         torch.randn((BATCH_EXAMPLE, self.num_features, num_ell)),
                     ),
@@ -206,7 +206,7 @@ class Contraction(torch.nn.Module):
                 # Parameters for the product basis
                 w = torch.nn.Parameter(
                     torch.randn((num_elements, num_params, self.num_features))
-                    / num_params
+                    / num_params,
                 )
                 self.weights.append(w)
 
@@ -240,7 +240,7 @@ class Contraction(torch.nn.Module):
             y,
         )
         for i, (weight, contract_weights, contract_features) in enumerate(
-            zip(self.weights, self.contractions_weighting, self.contractions_features, strict=False)
+            zip(self.weights, self.contractions_weighting, self.contractions_features, strict=False),
         ):
             c_tensor = contract_weights(
                 self.U_tensors(self.correlation - i - 1),

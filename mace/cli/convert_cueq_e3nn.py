@@ -42,16 +42,17 @@ def reshape_like(src: torch.Tensor, ref_shape: torch.Size) -> torch.Tensor:
 
 
 def get_kmax_pairs(
-    num_product_irreps: int, correlation: int, num_layers: int
+    num_product_irreps: int, correlation: int, num_layers: int,
 ) -> list[tuple[int, int]]:
-    """Determine kmax pairs based on num_product_irreps and correlation"""
+    """Determine kmax pairs based on num_product_irreps and correlation."""
     if correlation == 2:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
         return [*kmax_pairs, [num_layers - 1, 0]]
     if correlation == 3:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
         return [*kmax_pairs, [num_layers - 1, 0]]
-    raise NotImplementedError(f"Correlation {correlation} not supported")
+    msg = f"Correlation {correlation} not supported"
+    raise NotImplementedError(msg)
 
 
 def transfer_symmetric_contractions(
@@ -62,8 +63,8 @@ def transfer_symmetric_contractions(
     correlation: int,
     num_layers: int,
     use_reduced_cg: bool,
-):
-    """Transfer symmetric contraction weights from CuEq to E3nn format"""
+) -> None:
+    """Transfer symmetric contraction weights from CuEq to E3nn format."""
     kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
     suffixes = ["_max"] + [f".{i}" for i in range(correlation - 1)]
     for i, kmax in kmax_pairs:
@@ -130,8 +131,8 @@ def transfer_weights(
     correlation: int,
     num_layers: int,
     use_reduced_cg: bool,
-):
-    """Transfer weights from CuEq to E3nn format"""
+) -> None:
+    """Transfer weights from CuEq to E3nn format."""
     # Get state dicts
     source_dict = source_model.state_dict()
     target_dict = target_model.state_dict()
@@ -165,13 +166,13 @@ def transfer_weights(
             elif shapes_match_up_to_unsqueeze(src.shape, tgt.shape):
                 logging.debug(
                     f"Transferring key {key} after adapting shape "
-                    f"{tuple(src.shape)} → {tuple(tgt.shape)}"
+                    f"{tuple(src.shape)} → {tuple(tgt.shape)}",
                 )
                 target_dict[key] = reshape_like(src, tgt.shape)
             else:
                 logging.warning(
                     f"Shape mismatch for key {key}: "
-                    f"source {source_dict[key].shape} vs target {target_dict[key].shape}"
+                    f"source {source_dict[key].shape} vs target {target_dict[key].shape}",
                 )
 
     # Transfer avg_num_neighbors
@@ -207,7 +208,7 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
     # Create new model without CuEq config
     logging.info("Creating new model without CuEq settings")
     target_model = source_model.__class__(**config).to(
-        device=device, dtype=default_dtype
+        device=device, dtype=default_dtype,
     )
 
     # Transfer weights with proper remapping
@@ -233,11 +234,11 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
     return None
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input_model", help="Path to input CuEq model")
     parser.add_argument(
-        "--output_model", help="Path to output E3nn model", default="e3nn_model.pt"
+        "--output_model", help="Path to output E3nn model", default="e3nn_model.pt",
     )
     parser.add_argument("--device", default="cpu", help="Device to use")
     parser.add_argument(

@@ -14,7 +14,7 @@ from mace.tools import (
 )
 
 
-def test_atomic_number_table():
+def test_atomic_number_table() -> None:
     table = AtomicNumberTable(zs=[1, 8])
     array = np.array([8, 8, 1])
     indices = atomic_numbers_to_indices(array, z_table=table)
@@ -23,7 +23,7 @@ def test_atomic_number_table():
 
 
 class MyModel(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.linear = torch.nn.Linear(3, 4)
 
@@ -31,7 +31,7 @@ class MyModel(nn.Module):
         return torch.nn.functional.relu(self.linear(x))
 
 
-def test_save_load():
+def test_save_load() -> None:
     model = MyModel()
     initial_lr = 0.001
     optimizer = optim.SGD(model.parameters(), lr=initial_lr, momentum=0.9)

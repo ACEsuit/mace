@@ -12,7 +12,7 @@ from mace.calculators import MACECalculator
 test_dtype = "float64"
 
 
-def test_run_train_with_elec_temp(tmp_path):
+def test_run_train_with_elec_temp(tmp_path) -> bool:
     """Test run_train.py with electronic temperature embedding."""
     np.random.seed(42)
 
@@ -24,7 +24,7 @@ def test_run_train_with_elec_temp(tmp_path):
         water.positions += np.random.normal(0, 0.1, size=water.positions.shape)
         water.info["REF_energy"] = -10.0 + np.random.normal(0, 0.1)
         water.new_array(
-            "REF_forces", np.random.normal(0, 0.1, size=water.positions.shape)
+            "REF_forces", np.random.normal(0, 0.1, size=water.positions.shape),
         )
         # Add electronic temperature (in K)
         water.info["elec_temp"] = 300.0 + i * 10.0  # Vary temperature
@@ -35,7 +35,7 @@ def test_run_train_with_elec_temp(tmp_path):
     # Add isolated atoms
     for atom_num in [1, 8]:  # H and O
         isolated_atom = Atoms(
-            symbols=[atom_num], positions=[[0, 0, 0]], cell=[10, 10, 10], pbc=False
+            symbols=[atom_num], positions=[[0, 0, 0]], cell=[10, 10, 10], pbc=False,
         )
         isolated_atom.info["REF_energy"] = 0.0
         isolated_atom.info["config_type"] = "IsolatedAtom"
@@ -49,8 +49,7 @@ def test_run_train_with_elec_temp(tmp_path):
         import ase.io
 
         ase.io.write(tmp_path / "fit_with_temp.xyz", configs_with_temp)
-    except Exception as e:
-        print(f"Error writing XYZ file: {e}")
+    except Exception:
         raise
 
     # Create config file with feature specs
@@ -122,24 +121,18 @@ embedding_specs:
     for k, v in mace_params.items():
         cmd_parts.append(f"--{k}={v}")
 
-    cmd = " ".join(cmd_parts)
-    print(f"Running command: {cmd}")
+    " ".join(cmd_parts)
 
     # Run training process
     try:
-        completed_process = subprocess.run(
+        subprocess.run(
             cmd_parts,
             env=run_env,
             check=True,
             capture_output=True,
             text=True,
         )
-        print("STDOUT:", completed_process.stdout)
-        print("STDERR:", completed_process.stderr)
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed with exit code {e.returncode}")
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
+    except subprocess.CalledProcessError:
         raise
 
     # Verify the model was created
@@ -180,10 +173,6 @@ embedding_specs:
     # The energies should be different if the model correctly uses temperature
     assert abs(energy1 - energy2) > 1e-6, "Model is not sensitive to temperature"
 
-    print("Model produces different energies for different temperatures:")
-    print(f"Energy at 300K: {energy1:.6f} eV")
-    print(f"Energy at 600K: {energy2:.6f} eV")
-    print(f"Difference: {abs(energy1 - energy2):.6f} eV")
 
     # Create two test molecules with different total charges
     test_mol3 = molecule("H2O")
@@ -205,9 +194,5 @@ embedding_specs:
     assert np.isfinite(energy3), "Energy calculation failed for total charge 50"
     assert np.isfinite(energy4), "Energy calculation failed for total charge -50"
     assert abs(energy3 - energy4) > 1e-6, "Model is not sensitive to total charge"
-    print("Model produces different energies for different total charges:")
-    print(f"Energy at total charge 50: {energy3:.6f} eV")
-    print(f"Energy at total charge -50: {energy4:.6f} eV")
-    print(f"Difference: {abs(energy3 - energy4):.6f} eV")
 
     return True

@@ -13,8 +13,7 @@ from mace.tools.utils import AtomicNumberTable
 
 
 def normalize_file_paths(file_paths: str | list[str]) -> list[str]:
-    """
-    Normalize file paths to a list format.
+    """Normalize file paths to a list format.
 
     Args:
         file_paths: Either a string or a list of strings representing file paths
@@ -26,7 +25,8 @@ def normalize_file_paths(file_paths: str | list[str]) -> list[str]:
         return [file_paths]
     if isinstance(file_paths, list):
         return file_paths
-    raise ValueError(f"Unexpected file paths format: {type(file_paths)}")
+    msg = f"Unexpected file paths format: {type(file_paths)}"
+    raise ValueError(msg)
 
 
 def load_dataset_for_path(
@@ -38,8 +38,7 @@ def load_dataset_for_path(
     collection: Any | None = None,
     dtype: torch.dtype | None = None,
 ) -> Dataset | list:
-    """
-    Load a dataset from a file path based on its format.
+    """Load a dataset from a file path based on its format.
 
     Args:
         file_path: Path to the dataset file
@@ -58,8 +57,9 @@ def load_dataset_for_path(
     if isinstance(file_path, list):
         is_ase_readable = all(check_path_ase_read(p) for p in file_path)
         if not is_ase_readable:
+            msg = "Not all paths in the list are ASE readable, not supported"
             raise ValueError(
-                "Not all paths in the list are ASE readable, not supported"
+                msg,
             )
     if isinstance(file_path, str):
         is_ase_readable = check_path_ase_read(file_path)
@@ -70,7 +70,7 @@ def load_dataset_for_path(
         ), "Collection must be provided for ASE readable files"
         return [
             data.AtomicData.from_config(
-                config, z_table=z_table, cutoff=r_max, heads=heads, dtype=dtype
+                config, z_table=z_table, cutoff=r_max, heads=heads, dtype=dtype,
             )
             for config in collection
         ]
@@ -103,8 +103,8 @@ def load_dataset_for_path(
                     head=head_config.head_name,
                     dtype=dtype,
                 )
-            except Exception as e:
-                logging.exception(f"Error loading sharded HDF5 dataset: {e}")
+            except Exception:
+                logging.exception("Error loading sharded HDF5 dataset.")
                 raise
 
         if "lmdb" in str(filepath).lower() or "aselmdb" in str(filepath).lower():
@@ -128,8 +128,8 @@ def load_dataset_for_path(
                 head=head_config.head_name,
                 dtype=dtype,
             )
-        except Exception as e:
-            logging.exception(f"Error loading as sharded HDF5: {e}")
+        except Exception:
+            logging.exception("Error loading as sharded HDF5.")
             raise
 
     suffix = filepath.suffix.lower()
@@ -167,8 +167,7 @@ def load_dataset_for_path(
 
 
 def combine_datasets(datasets, head_name):
-    """
-    Combine multiple datasets which might be of different types.
+    """Combine multiple datasets which might be of different types.
 
     Args:
         datasets: List of datasets (can be mixed types)
@@ -186,7 +185,7 @@ def combine_datasets(datasets, head_name):
 
     if all(not isinstance(ds, list) for ds in datasets):
         logging.info(
-            f"Combining {len(datasets)} Dataset objects for head '{head_name}'"
+            f"Combining {len(datasets)} Dataset objects for head '{head_name}'",
         )
         return ConcatDataset(datasets) if len(datasets) > 1 else datasets[0]
 
@@ -211,7 +210,7 @@ def combine_datasets(datasets, head_name):
 
                 # Convert list to a Dataset
                 dataset_objects.append(
-                    TensorDataset(*[torch.tensor([i]) for i in range(len(ds))])
+                    TensorDataset(*[torch.tensor([i]) for i in range(len(ds))]),
                 )
             else:
                 dataset_objects.append(ds)
@@ -220,6 +219,6 @@ def combine_datasets(datasets, head_name):
         logging.warning(f"Failed to convert mixed datasets to ConcatDataset: {e}")
 
     logging.warning(
-        "Could not combine datasets of different types. Using only the first dataset."
+        "Could not combine datasets of different types. Using only the first dataset.",
     )
     return datasets[0]

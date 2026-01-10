@@ -12,9 +12,7 @@ def load_foundations_elements(
     use_scale=True,
     max_L=2,
 ):
-    """
-    Load the foundations of a model into a model for fine-tuning.
-    """
+    """Load the foundations of a model into a model for fine-tuning."""
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
     model_heads = model.heads
@@ -30,19 +28,19 @@ def load_foundations_elements(
     max_ell = model.spherical_harmonics._lmax  # pylint: disable=protected-access
     model.node_embedding.linear.weight = torch.nn.Parameter(
         model_foundations.node_embedding.linear.weight.view(
-            num_species_foundations, -1
+            num_species_foundations, -1,
         )[indices_weights, :]
         .flatten()
         .clone()
-        / (num_species_foundations / num_species) ** 0.5
+        / (num_species_foundations / num_species) ** 0.5,
     )
     if model.radial_embedding.bessel_fn.__class__.__name__ == "BesselBasis":
         model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
-            model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
+            model_foundations.radial_embedding.bessel_fn.bessel_weights.clone(),
         )
     for i in range(int(model.num_interactions)):
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
-            model_foundations.interactions[i].linear_up.weight.clone()
+            model_foundations.interactions[i].linear_up.weight.clone(),
         )
         model.interactions[i].avg_num_neighbors = model_foundations.interactions[
             i
@@ -57,7 +55,7 @@ def load_foundations_elements(
                             layer_name,
                         )
                         .weight[:num_radial, :]
-                        .clone()
+                        .clone(),
                     )
                 )
             else:
@@ -66,12 +64,12 @@ def load_foundations_elements(
                         getattr(
                             model_foundations.interactions[i].conv_tp_weights,
                             layer_name,
-                        ).weight.clone()
+                        ).weight.clone(),
                     )
                 )
 
         model.interactions[i].linear.weight = torch.nn.Parameter(
-            model_foundations.interactions[i].linear.weight.clone()
+            model_foundations.interactions[i].linear.weight.clone(),
         )
         if model.interactions[i].__class__.__name__ in [
             "RealAgnosticResidualInteractionBlock",
@@ -86,7 +84,7 @@ def load_foundations_elements(
                 )[:, indices_weights, :]
                 .flatten()
                 .clone()
-                / (num_species_foundations / num_species) ** 0.5
+                / (num_species_foundations / num_species) ** 0.5,
             )
         else:
             model.interactions[i].skip_tp.weight = torch.nn.Parameter(
@@ -99,7 +97,7 @@ def load_foundations_elements(
                 )[:, :, indices_weights, :]
                 .flatten()
                 .clone()
-                / (num_species_foundations / num_species) ** 0.5
+                / (num_species_foundations / num_species) ** 0.5,
             )
         if model.interactions[i].__class__.__name__ in [
             "RealAgnosticDensityInteractionBlock",
@@ -108,7 +106,7 @@ def load_foundations_elements(
             # Assuming only 1 layer in density_fn
             model.interactions[i].density_fn.layer0.weight = (
                 torch.nn.Parameter(
-                    model_foundations.interactions[i].density_fn.layer0.weight.clone()
+                    model_foundations.interactions[i].density_fn.layer0.weight.clone(),
                 )
             )
     # Transferring products
@@ -120,7 +118,7 @@ def load_foundations_elements(
                     model_foundations.products[i]
                     .symmetric_contractions.contractions[j]
                     .weights_max[indices_weights, :, :]
-                    .clone()
+                    .clone(),
                 )
             )
 
@@ -130,12 +128,12 @@ def load_foundations_elements(
                         model_foundations.products[i]
                         .symmetric_contractions.contractions[j]
                         .weights[k][indices_weights, :, :]
-                        .clone()
+                        .clone(),
                     )
                 )
 
         model.products[i].linear.weight = torch.nn.Parameter(
-            model_foundations.products[i].linear.weight.clone()
+            model_foundations.products[i].linear.weight.clone(),
         )
 
     if load_readout:
@@ -149,7 +147,7 @@ def load_foundations_elements(
             .clone()
         )
         model.readouts[0].linear.weight = torch.nn.Parameter(
-            model_readouts_zero_linear_weight
+            model_readouts_zero_linear_weight,
         )
 
         shape_input_1 = (
@@ -165,27 +163,27 @@ def load_foundations_elements(
             .clone()
         )
         model.readouts[1].linear_1.weight = torch.nn.Parameter(
-            model_readouts_one_linear_1_weight
+            model_readouts_one_linear_1_weight,
         )
         model_readouts_one_linear_2_weight = model.readouts[1].linear_2.weight.clone()
         model_readouts_one_linear_2_weight = model_foundations.readouts[
             1
         ].linear_2.weight.view(shape_input_1, -1).repeat(
-            len(model_heads), len(model_heads)
+            len(model_heads), len(model_heads),
         ).flatten().clone() / (
             ((shape_input_1) / (shape_output_1)) ** 0.5
         )
         model.readouts[1].linear_2.weight = torch.nn.Parameter(
-            model_readouts_one_linear_2_weight
+            model_readouts_one_linear_2_weight,
         )
     if model_foundations.scale_shift is not None:
         if use_scale:
             model.scale_shift.scale = model_foundations.scale_shift.scale.repeat(
-                len(model_heads)
+                len(model_heads),
             ).clone()
         if use_shift:
             model.scale_shift.shift = model_foundations.scale_shift.shift.repeat(
-                len(model_heads)
+                len(model_heads),
             ).clone()
     return model
 

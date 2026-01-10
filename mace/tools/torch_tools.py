@@ -15,7 +15,7 @@ TensorDict = dict[str, torch.Tensor]
 
 
 def to_one_hot(
-    indices: torch.Tensor, num_classes: int, dtype: torch.dtype
+    indices: torch.Tensor, num_classes: int, dtype: torch.dtype,
 ) -> torch.Tensor:
     """Generates one-hot encoding from indices.
 
@@ -60,7 +60,7 @@ def init_device(device_str: str) -> torch.device:
             # Check if the desired device is available
             assert int(device_str.split(":")[-1]) < torch.cuda.device_count()
         logging.info(
-            f"CUDA version: {torch.version.cuda}, CUDA device: {torch.cuda.current_device()}"
+            f"CUDA version: {torch.version.cuda}, CUDA device: {torch.cuda.current_device()}",
         )
         torch.cuda.init()
         return torch.device(device_str)
@@ -105,9 +105,7 @@ def spherical_to_cartesian(t: torch.Tensor, change_of_basis: torch.Tensor):
 
 
 def cartesian_to_spherical(t: torch.Tensor):
-    """
-    Convert cartesian notation to spherical notation
-    """
+    """Convert cartesian notation to spherical notation."""
     stress_cart_tensor = CartesianTensor("ij=ji")
     stress_rtp = stress_cart_tensor.reduced_tensor_products()
     return stress_cart_tensor.to_cartesian(t, rtp=stress_rtp)
@@ -142,12 +140,13 @@ def voigt_to_matrix(t: torch.Tensor):
     if t.shape == (9,):
         return t.view(3, 3)
 
+    msg = f"Stress tensor must be of shape (6,) or (3, 3), or (9,) but has shape {t.shape}"
     raise ValueError(
-        f"Stress tensor must be of shape (6,) or (3, 3), or (9,) but has shape {t.shape}"
+        msg,
     )
 
 
-def init_wandb(project: str, entity: str, name: str, config: dict, directory: str):
+def init_wandb(project: str, entity: str, name: str, config: dict, directory: str) -> None:
     import wandb
 
     wandb.init(
@@ -162,7 +161,7 @@ def init_wandb(project: str, entity: str, name: str, config: dict, directory: st
 
 @contextmanager
 def default_dtype(dtype: torch.dtype | str):
-    """Context manager for configuring the default_dtype used by torch
+    """Context manager for configuring the default_dtype used by torch.
 
     Args:
         dtype (torch.dtype|str): the default dtype to use within this context manager

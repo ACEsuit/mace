@@ -78,7 +78,7 @@ class AtomicData(torch_geometric.data.Data):
         total_charge: torch.Tensor | None = None,  # [,]
         total_spin: torch.Tensor | None = None,  # [,]
         pbc: torch.Tensor | None = None,  # [, 3]
-    ):
+    ) -> None:
         # Check shapes
         num_nodes = node_attrs.shape[0]
 
@@ -253,14 +253,14 @@ class AtomicData(torch_geometric.data.Data):
         )
         stress = (
             voigt_to_matrix(
-                torch.tensor(config.properties.get("stress"), dtype=dtype)
+                torch.tensor(config.properties.get("stress"), dtype=dtype),
             ).unsqueeze(0)
             if config.properties.get("stress") is not None
             else torch.zeros(1, 3, 3, dtype=dtype)
         )
         virials = (
             voigt_to_matrix(
-                torch.tensor(config.properties.get("virials"), dtype=dtype)
+                torch.tensor(config.properties.get("virials"), dtype=dtype),
             ).unsqueeze(0)
             if config.properties.get("virials") is not None
             else torch.zeros(1, 3, 3, dtype=dtype)
@@ -292,7 +292,7 @@ class AtomicData(torch_geometric.data.Data):
 
         polarizability = (
             torch.tensor(config.properties.get("polarizability"), dtype=dtype).view(
-                1, 3, 3
+                1, 3, 3,
             )
             if config.properties.get("polarizability") is not None
             else torch.zeros(1, 3, 3, dtype=dtype)

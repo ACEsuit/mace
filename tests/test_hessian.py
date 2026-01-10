@@ -8,7 +8,7 @@ from mace.calculators import mace_mp
 @pytest.fixture(name="setup_calculator_")
 def setup_calculator():
     return mace_mp(
-        model="medium", dispersion=False, default_dtype="float64", device="cpu"
+        model="medium", dispersion=False, default_dtype="float64", device="cpu",
     )
 
 
@@ -19,13 +19,13 @@ def setup_structure(setup_calculator_):
     return initial
 
 
-def test_potential_energy_and_hessian(setup_structure_):
+def test_potential_energy_and_hessian(setup_structure_) -> None:
     initial = setup_structure_
     h_autograd = initial.calc.get_hessian(atoms=initial)
     assert h_autograd.shape == (len(initial) * 3, len(initial), 3)
 
 
-def test_finite_difference_hessian(setup_structure_):
+def test_finite_difference_hessian(setup_structure_) -> None:
     initial = setup_structure_
     indicies = list(range(len(initial)))
     delta, ndim = 1e-4, 3

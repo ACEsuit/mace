@@ -17,7 +17,7 @@ try:
     import schedulefree
 except ImportError:
     pytest.skip(
-        "Skipping schedulefree tests due to ImportError", allow_module_level=True
+        "Skipping schedulefree tests due to ImportError", allow_module_level=True,
     )
 
 table = tools.AtomicNumberTable([6])
@@ -25,7 +25,7 @@ atomic_energies = np.array([1.0], dtype=float)
 cutoff = 5.0
 
 @pytest.fixture
-def default_dtype_str():
+def default_dtype_str() -> str:
     return "float64"
 
 def create_mace(device: str, default_dtype: str, seed: int = 1702):
@@ -64,7 +64,6 @@ def create_batch(device: str, default_dtype: str):
     size = 2
     atoms = build.bulk("C", "diamond", a=3.567, cubic=True)
     atoms_list = [atoms.repeat((size, size, size))]
-    print("Number of atoms", len(atoms_list[0]))
 
     configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
     data_loader = torch_geometric.dataloader.DataLoader(
@@ -86,7 +85,7 @@ def do_optimization_step(
     optimizer,
     device,
     default_dtype,
-):
+) -> None:
     batch = create_batch(device, default_dtype)
     model.train()
     optimizer.train()
@@ -100,7 +99,7 @@ def do_optimization_step(
 
 
 @pytest.mark.parametrize("device", ["cpu"] + (["cuda"] if torch.cuda.is_available() else []))
-def test_can_load_checkpoint(device, default_dtype_str):
+def test_can_load_checkpoint(device, default_dtype_str) -> None:
     model = create_mace(device, default_dtype_str)
     optimizer = schedulefree.adamw_schedulefree.AdamWScheduleFree(model.parameters())
     args = MagicMock()
@@ -110,7 +109,7 @@ def test_can_load_checkpoint(device, default_dtype_str):
     lr_scheduler = scripts_utils.LRScheduler(optimizer, args)
     with tempfile.TemporaryDirectory() as d:
         checkpoint_handler = tools.CheckpointHandler(
-            directory=d, keep=False, tag="schedulefree"
+            directory=d, keep=False, tag="schedulefree",
         )
         for _ in range(10):
             do_optimization_step(model, optimizer, device, default_dtype_str)
@@ -119,7 +118,7 @@ def test_can_load_checkpoint(device, default_dtype_str):
         energy = output["energy"].detach().cpu().numpy()
 
         state = tools.CheckpointState(
-            model=model, optimizer=optimizer, lr_scheduler=lr_scheduler
+            model=model, optimizer=optimizer, lr_scheduler=lr_scheduler,
         )
         checkpoint_handler.save(state, epochs=0, keep_last=False)
         checkpoint_handler.load_latest(

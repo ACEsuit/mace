@@ -38,7 +38,8 @@ name_re = re.compile(r"(?P<name>.+)_run-(?P<seed>\d+)_train.txt")
 def parse_path(path: str) -> RunInfo:
     match = name_re.match(os.path.basename(path))
     if not match:
-        raise RuntimeError(f"Cannot parse {path}")
+        msg = f"Cannot parse {path}"
+        raise RuntimeError(msg)
 
     return RunInfo(name=match.group("name"), seed=int(match.group("seed")))
 
@@ -62,10 +63,10 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--path", help="Path to results file (.txt) or directory.", required=True
+        "--path", help="Path to results file (.txt) or directory.", required=True,
     )
     parser.add_argument(
-        "--min_epoch", help="Minimum epoch.", default=0, type=int, required=False
+        "--min_epoch", help="Minimum epoch.", default=0, type=int, required=False,
     )
     parser.add_argument(
         "--start_stage_two",
@@ -128,8 +129,7 @@ def plot(
     keys: str,
     heads: str,
 ) -> None:
-    """
-    Plots train,validation loss and errors as a function of epoch.
+    """Plots train,validation loss and errors as a function of epoch.
     min_epoch: minimum epoch to plot.
     output_path: path to save the plot.
     output_format: format to save the plot.
@@ -139,7 +139,6 @@ def plot(
     keys: Values to plot.
     heads: Heads used for multihead training.
     """
-
     labels = {
         "mae_e": "MAE E [meV]",
         "mae_e_per_atom": "MAE E/atom [meV]",
@@ -188,7 +187,7 @@ def plot(
 
     for head, valid_data in valid_data_dict.items():
         fig, axes = plt.subplots(
-            nrows=1, ncols=2, figsize=(10, 3), constrained_layout=True
+            nrows=1, ncols=2, figsize=(10, 3), constrained_layout=True,
         )
 
         # ---- Plot loss ----
@@ -295,7 +294,7 @@ def plot(
         ax.grid(True, linestyle="--", alpha=0.5)
 
         fig.savefig(
-            f"{output_path}_{head}.{output_format}", dpi=300, bbox_inches="tight"
+            f"{output_path}_{head}.{output_format}", dpi=300, bbox_inches="tight",
         )
         plt.close(fig)
 
@@ -306,7 +305,8 @@ def get_paths(path: str) -> list[str]:
     paths = glob.glob(os.path.join(path, "*_train.txt"))
 
     if len(paths) == 0:
-        raise RuntimeError(f"Cannot find results in '{path}'")
+        msg = f"Cannot find results in '{path}'"
+        raise RuntimeError(msg)
 
     return paths
 

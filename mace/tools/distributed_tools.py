@@ -4,9 +4,8 @@ import torch
 
 
 def init_distributed(args):
-    """
-    Returns (rank, local_rank, world_size) and initialises the process-group.
-    Works for: slurm | torchrun | mpi | none
+    """Returns (rank, local_rank, world_size) and initialises the process-group.
+    Works for: slurm | torchrun | mpi | none.
     """
     if not args.distributed:
         return 0, 0, 1  # single-GPU / debug run

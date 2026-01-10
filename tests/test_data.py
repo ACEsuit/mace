@@ -28,7 +28,7 @@ class TestAtomicData:
                 [0.0, -2.0, 0.0],
                 [1.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0],
-            ]
+            ],
         ),
         properties={
             "forces": np.array(
@@ -36,7 +36,7 @@ class TestAtomicData:
                     [0.0, -1.3, 0.0],
                     [1.0, 0.2, 0.0],
                     [0.0, 1.1, 0.3],
-                ]
+                ],
             ),
             "energy": -1.5,
         },
@@ -50,14 +50,14 @@ class TestAtomicData:
 
     table = AtomicNumberTable([1, 8])
 
-    def test_atomic_data(self):
+    def test_atomic_data(self) -> None:
         data = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
 
         assert data.edge_index.shape == (2, 4)
         assert data.forces.shape == (3, 3)
         assert data.node_attrs.shape == (3, 2)
 
-    def test_data_loader(self):
+    def test_data_loader(self) -> None:
         data1 = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
         data2 = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
 
@@ -77,7 +77,7 @@ class TestAtomicData:
             assert batch.energy.shape == (2,)
             assert batch.forces.shape == (6, 3)
 
-    def test_to_atomic_data_dict(self):
+    def test_to_atomic_data_dict(self) -> None:
         data1 = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
         data2 = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
 
@@ -97,13 +97,13 @@ class TestAtomicData:
             assert batch_dict["energy"].shape == (2,)
             assert batch_dict["forces"].shape == (6, 3)
 
-    def test_hdf5_dataloader(self):
+    def test_hdf5_dataloader(self) -> None:
         datasets = [self.config, self.config_2] * 5
         # get path of the mace package
         with h5py.File(str(mace_path) + "test.h5", "w") as f:
             save_configurations_as_HDF5(datasets, 0, f)
         train_dataset = HDF5Dataset(
-            str(mace_path) + "test.h5", z_table=self.table, r_max=3.0
+            str(mace_path) + "test.h5", z_table=self.table, r_max=3.0,
         )
         train_loader = torch_geometric.dataloader.DataLoader(
             dataset=train_dataset,
@@ -121,7 +121,6 @@ class TestAtomicData:
             assert batch.node_attrs.shape == (6, 2)
             assert batch.energy.shape == (2,)
             assert batch.forces.shape == (6, 3)
-        print(batch_count, len(train_loader), len(train_dataset))
         assert batch_count == len(train_loader) == len(train_dataset) / 2
         train_loader_direct = torch_geometric.dataloader.DataLoader(
             dataset=[
@@ -142,13 +141,13 @@ class TestAtomicData:
 
 
 class TestNeighborhood:
-    def test_basic(self):
+    def test_basic(self) -> None:
         positions = np.array(
             [
                 [-1.0, 0.0, 0.0],
                 [+0.0, 0.0, 0.0],
                 [+1.0, 0.0, 0.0],
-            ]
+            ],
         )
 
         indices, shifts, unit_shifts, _ = get_neighborhood(positions, cutoff=1.5)
@@ -156,17 +155,17 @@ class TestNeighborhood:
         assert shifts.shape == (4, 3)
         assert unit_shifts.shape == (4, 3)
 
-    def test_signs(self):
+    def test_signs(self) -> None:
         positions = np.array(
             [
                 [+0.5, 0.5, 0.0],
                 [+1.0, 1.0, 0.0],
-            ]
+            ],
         )
 
         cell = np.array([[2.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
         edge_index, shifts, unit_shifts, _ = get_neighborhood(
-            positions, cutoff=3.5, pbc=(True, False, False), cell=cell
+            positions, cutoff=3.5, pbc=(True, False, False), cell=cell,
         )
         num_edges = 10
         assert edge_index.shape == (2, num_edges)
@@ -175,12 +174,12 @@ class TestNeighborhood:
 
 
 # Based on mir-group/nequip
-def test_periodic_edge():
+def test_periodic_edge() -> None:
     atoms = ase.build.bulk("Cu", "fcc")
     dist = np.linalg.norm(atoms.cell[0]).item()
     config = config_from_atoms(atoms)
     edge_index, shifts, _, _ = get_neighborhood(
-        config.positions, cutoff=1.05 * dist, pbc=(True, True, True), cell=config.cell
+        config.positions, cutoff=1.05 * dist, pbc=(True, True, True), cell=config.cell,
     )
     sender, receiver = edge_index
     vectors = (
@@ -193,12 +192,12 @@ def test_periodic_edge():
     )
 
 
-def test_half_periodic():
+def test_half_periodic() -> None:
     atoms = ase.build.fcc111("Al", size=(3, 3, 1), vacuum=0.0)
     assert all(atoms.pbc == (True, True, False))
     config = config_from_atoms(atoms)  # first shell dist is 2.864A
     edge_index, shifts, _, _ = get_neighborhood(
-        config.positions, cutoff=2.9, pbc=(True, True, False), cell=config.cell
+        config.positions, cutoff=2.9, pbc=(True, True, False), cell=config.cell,
     )
     sender, receiver = edge_index
     vectors = (

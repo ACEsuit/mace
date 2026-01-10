@@ -4,7 +4,7 @@ import torch
 from mace.modules.blocks import AtomicEnergiesBlock, ScaleShiftBlock
 
 
-def test_atomic_energies_block_to():
+def test_atomic_energies_block_to() -> None:
     # Create test data
     energies = np.array([[1.0, 3.0, 4.0]])
     block = AtomicEnergiesBlock(atomic_energies=energies).to(torch.float32)
@@ -30,7 +30,7 @@ def test_atomic_energies_block_to():
     expected = torch.tensor([[1.0], [3.0], [4.0]], dtype=torch.float32)
     assert torch.allclose(output, expected)
 
-def test_scale_shift_block_to():
+def test_scale_shift_block_to() -> None:
     # Create test data
     scale = 2.0
     shift = 1.0

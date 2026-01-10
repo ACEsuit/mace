@@ -5,8 +5,7 @@ from e3nn import o3
 
 
 def check_args(args):
-    """
-    Check input arguments, update them if necessary for valid and consistent inputs, and return a tuple containing
+    """Check input arguments, update them if necessary for valid and consistent inputs, and return a tuple containing
     the (potentially) modified args and a list of log messages.
     """
     log_messages = []
@@ -36,19 +35,19 @@ def check_args(args):
         args.hidden_irreps = o3.Irreps(
             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
             .sort()
-            .irreps.simplify()
+            .irreps.simplify(),
         )
         log_messages.append(
             (
                 "All of hidden_irreps, num_channels and max_L are specified",
                 logging.WARNING,
-            )
+            ),
         )
         log_messages.append(
             (
                 f"Using num_channels and max_L to create hidden_irreps: {args.hidden_irreps}.",
                 logging.WARNING,
-            )
+            ),
         )
         assert (
             len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
@@ -59,7 +58,7 @@ def check_args(args):
         args.hidden_irreps = o3.Irreps(
             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
             .sort()
-            .irreps.simplify()
+            .irreps.simplify(),
         )
         assert (
             len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
@@ -77,7 +76,7 @@ def check_args(args):
         args.hidden_irreps = o3.Irreps(
             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
             .sort()
-            .irreps.simplify()
+            .irreps.simplify(),
         )
     elif args.max_L is None and args.num_channels is not None:
         assert args.num_channels > 0, "num_channels must be positive integer"
@@ -85,7 +84,7 @@ def check_args(args):
         args.hidden_irreps = o3.Irreps(
             (args.num_channels * o3.Irreps.spherical_harmonics(args.max_L))
             .sort()
-            .irreps.simplify()
+            .irreps.simplify(),
         )
 
     # Loss and optimization
@@ -96,7 +95,7 @@ def check_args(args):
             (
                 "Stage Two is activated as start_stage_two was defined",
                 logging.INFO,
-            )
+            ),
         )
 
     if args.swa:
@@ -107,13 +106,13 @@ def check_args(args):
                 (
                     f"start_stage_two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}",
                     logging.WARNING,
-                )
+                ),
             )
             log_messages.append(
                 (
                     "Stage Two will not start, as start_stage_two > max_num_epochs",
                     logging.WARNING,
-                )
+                ),
             )
             args.swa = False
 

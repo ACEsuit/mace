@@ -14,7 +14,7 @@ from mace.modules.wrapper_ops import CuEquivarianceConfig
 
 # Based on mir-group/nequip
 def tp_out_irreps_with_instructions(
-    irreps1: o3.Irreps, irreps2: o3.Irreps, target_irreps: o3.Irreps
+    irreps1: o3.Irreps, irreps2: o3.Irreps, target_irreps: o3.Irreps,
 ) -> tuple[o3.Irreps, list]:
     trainable = True
 
@@ -58,7 +58,8 @@ def linear_out_irreps(irreps: o3.Irreps, target_irreps: o3.Irreps) -> o3.Irreps:
                 break
 
         if not found:
-            raise RuntimeError(f"{ir_in} not in {target_irreps}")
+            msg = f"{ir_in} not in {target_irreps}"
+            raise RuntimeError(msg)
 
     return o3.Irreps(irreps_mid)
 
@@ -66,7 +67,7 @@ def linear_out_irreps(irreps: o3.Irreps, target_irreps: o3.Irreps) -> o3.Irreps:
 @compile_mode("script")
 class reshape_irreps(torch.nn.Module):
     def __init__(
-        self, irreps: o3.Irreps, cueq_config: CuEquivarianceConfig | None = None
+        self, irreps: o3.Irreps, cueq_config: CuEquivarianceConfig | None = None,
     ) -> None:
         super().__init__()
         self.irreps = o3.Irreps(irreps)
@@ -102,8 +103,7 @@ class reshape_irreps(torch.nn.Module):
                 if self.cueq_config.layout_str == "mul_ir":
                     return torch.cat(out, dim=-1)
                 return torch.cat(out, dim=-2)
-            else:
-                return torch.cat(out, dim=-1)
+            return torch.cat(out, dim=-1)
         return torch.cat(out, dim=-1)
 
 

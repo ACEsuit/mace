@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 import torch
 
 
-def main():
+def main() -> None:
     parser = ArgumentParser()
     parser.add_argument(
         "--target_device",

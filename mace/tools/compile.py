@@ -24,7 +24,7 @@ def disable_e3nn_codegen():
 
 
 def prepare(func: ModuleFactory, allow_autograd: bool = True) -> ModuleFactory:
-    """Function transform that prepares a MACE module for torch.compile
+    """Function transform that prepares a MACE module for torch.compile.
 
     Args:
         func (ModuleFactory): A function that creates an nn.Module
@@ -53,7 +53,7 @@ _SIMPLIFY_REGISTRY = set()
 
 
 def simplify_if_compile(module: nn.Module) -> nn.Module:
-    """Decorator to register a module for symbolic simplification
+    """Decorator to register a module for symbolic simplification.
 
     The decorated module will be simplifed using `torch.fx.symbolic_trace`.
     This constrains the module to not have any dynamic control flow, see:

@@ -11,7 +11,7 @@ from mace.tools import AtomicNumberTable, torch_geometric
 from mace.tools.fairchem_dataset.lmdb_dataset_tools import LMDBDatabase
 
 
-def test_lmdb_dataset():
+def test_lmdb_dataset() -> None:
     """Test the LMDBDataset by creating a fake database and verifying batch creation."""
     test_dtype = torch.float64
 
@@ -46,7 +46,7 @@ def test_lmdb_dataset():
 
                     # Add random energy, forces, and stress
                     energy = np.random.uniform(
-                        -15.0, -5.0
+                        -15.0, -5.0,
                     )  # Random energy between -15 and -5 eV
                     forces = (
                         np.random.randn(*atoms.positions.shape) * 0.5
@@ -55,7 +55,7 @@ def test_lmdb_dataset():
 
                     # Add calculator to atoms with results
                     calc = SinglePointCalculator(
-                        atoms, energy=energy, forces=forces, stress=stress
+                        atoms, energy=energy, forces=forces, stress=stress,
                     )
                     atoms.calc = calc
 
@@ -77,7 +77,6 @@ def test_lmdb_dataset():
 
         # Test retrieving a single item
         item = dataset[0]
-        print(item)
         assert item.positions.shape == (3, 3)  # 3 atoms, 3 coordinates
         assert hasattr(item, "energy")
         assert hasattr(item, "forces")
@@ -85,7 +84,7 @@ def test_lmdb_dataset():
 
         # Create a dataloader
         dataloader = torch_geometric.dataloader.DataLoader(
-            dataset=dataset, batch_size=4, shuffle=False, drop_last=False
+            dataset=dataset, batch_size=4, shuffle=False, drop_last=False,
         )
 
         # Get a batch and validate it
@@ -95,7 +94,6 @@ def test_lmdb_dataset():
         assert batch.positions.shape == (12, 3)  # 12 atoms, 3 coordinates
         assert batch.energy.shape[0] == 4  # 4 energies (one per config)
         assert batch.forces.shape == (12, 3)  # Forces for each atom
-        print(batch.stress.shape)
         assert batch.stress.shape == (4, 3, 3)  # Stress for each config
 
         # Check batch has required attributes for MACE model processing

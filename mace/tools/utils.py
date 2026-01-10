@@ -53,7 +53,7 @@ def setup_logger(
     tag: str | None = None,
     directory: str | None = None,
     rank: int | None = 0,
-):
+) -> None:
     # Create a logger
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels
@@ -93,13 +93,13 @@ def setup_logger(
 
 
 class AtomicNumberTable:
-    def __init__(self, zs: Sequence[int]):
+    def __init__(self, zs: Sequence[int]) -> None:
         self.zs = zs
 
     def __len__(self) -> int:
         return len(self.zs)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"AtomicNumberTable: {tuple(s for s in self.zs)}"
 
     def index_to_z(self, index: int) -> int:
@@ -117,7 +117,7 @@ def get_atomic_number_table_from_zs(zs: Iterable[int]) -> AtomicNumberTable:
 
 
 def atomic_numbers_to_indices(
-    atomic_numbers: np.ndarray, z_table: AtomicNumberTable
+    atomic_numbers: np.ndarray, z_table: AtomicNumberTable,
 ) -> np.ndarray:
     to_index_fn = np.vectorize(z_table.z_to_index)
     return to_index_fn(atomic_numbers)
@@ -185,10 +185,10 @@ def filter_nonzero_weight(
     # repeat with interleaving for per-atom quantities
     if spread_atoms:
         weight = torch.repeat_interleave(
-            weight, batch.ptr[1:] - batch.ptr[:-1]
+            weight, batch.ptr[1:] - batch.ptr[:-1],
         ).unsqueeze(-1)
         quantity_weight = torch.repeat_interleave(
-            quantity_weight, batch.ptr[1:] - batch.ptr[:-1]
+            quantity_weight, batch.ptr[1:] - batch.ptr[:-1],
         ).unsqueeze(-1)
 
     # repeat for additional dimensions

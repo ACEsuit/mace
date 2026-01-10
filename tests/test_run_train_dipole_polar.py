@@ -42,7 +42,6 @@ def fixture_fitting_configs():
         c = water.copy()
         c.positions += np.random.normal(0.1, size=c.positions.shape)
         c.info["REF_energy"] = np.random.normal(0.1)
-        print(c.info["REF_energy"])
         c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
         c.info["REF_stress"] = np.random.normal(0.1, size=6)
         c.info["REF_dipoles"] = np.random.normal(0.1, size=(3))
@@ -74,7 +73,7 @@ def fixture_pretraining_configs():
         Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3),
     )
     configs.append(
-        Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3)
+        Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3),
     )
     configs[-2].info["REF_energy"] = -2.0
     configs[-2].info["config_type"] = "IsolatedAtom"
@@ -111,7 +110,7 @@ _mace_params_dipole = {
 }
 
 
-def test_run_train_dipole(tmp_path, fitting_configs):
+def test_run_train_dipole(tmp_path, fitting_configs) -> None:
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     mace_params = _mace_params_dipole.copy()
@@ -123,7 +122,6 @@ def test_run_train_dipole(tmp_path, fitting_configs):
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -134,7 +132,7 @@ def test_run_train_dipole(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -148,7 +146,6 @@ def test_run_train_dipole(tmp_path, fitting_configs):
         at.calc = calc
         Mus.append(at.get_dipole_moment())
 
-    print("Mus", Mus)
     # Obtained for MACE from the 08/08/2025
     ref_Mus = [np.array([0., 0., 0.]),
                np.array([0., 0., 0.]),
@@ -171,7 +168,7 @@ def test_run_train_dipole(tmp_path, fitting_configs):
                np.array([-0.00118423,  0.00119765,  0.0065717 ]),
                np.array([-0.00270274,  0.00782406, -0.01322653]),
                np.array([-0.02180288, -0.02410089,  0.04983753]),
-               np.array([-0.00539038, -0.00231573, -0.01304079])
+               np.array([-0.00539038, -0.00231573, -0.01304079]),
                ]
 
     assert np.allclose(Mus, ref_Mus)
@@ -208,7 +205,7 @@ _mace_params_dipole_polar = {
 }
 
 
-def test_run_train_dipole_polar(tmp_path, fitting_configs):
+def test_run_train_dipole_polar(tmp_path, fitting_configs) -> None:
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     mace_params = _mace_params_dipole_polar.copy()
@@ -220,7 +217,6 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -231,7 +227,7 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -269,7 +265,7 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
         np.array([-0.0009531 ,  0.11478384,  0.01394257]),
         np.array([0.01886107, 0.06399308, 0.03219055]),
         np.array([-0.0578738 , -0.01193058,  0.09853157]),
-        np.array([0.06845842, 0.55215253, 0.16271066])
+        np.array([0.06845842, 0.55215253, 0.16271066]),
     ]
 
     ref_alphas = [
@@ -359,7 +355,7 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
 
         np.array([[-0.11326049,  0.00939965, -0.00715356],
                 [ 0.00939965, -0.2316651 ,  0.03025837],
-                [-0.00715356,  0.03025837, -0.10757094]])
+                [-0.00715356,  0.03025837, -0.10757094]]),
 ]
 
 

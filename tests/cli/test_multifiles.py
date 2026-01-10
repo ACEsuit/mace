@@ -74,10 +74,9 @@ def create_e0s_file(e0s_dict, filename):
 
 
 def create_h5_dataset(
-    xyz_file, output_dir, e0s_file=None, r_max=5.0, seed=42, default_dtype=""
+    xyz_file, output_dir, e0s_file=None, r_max=5.0, seed=42, default_dtype="",
 ):
-    """
-    Run MACE's preprocess_data.py script to convert an xyz file to h5 format.
+    """Run MACE's preprocess_data.py script to convert an xyz file to h5 format.
 
     Args:
         xyz_file: Path to the input xyz file
@@ -109,18 +108,12 @@ def create_h5_dataset(
         cmd.append(f"--E0s={e0s_file}")
 
     # Run the script
-    print(f"Running preprocess command: {' '.join(cmd)}")
     try:
-        process = subprocess.run(
-            cmd, capture_output=True, check=True
+        subprocess.run(
+            cmd, capture_output=True, check=True,
         )
         # Print output for debugging
-        print("Preprocess stdout:", process.stdout.decode())
-        print("Preprocess stderr:", process.stderr.decode())
-    except subprocess.CalledProcessError as e:
-        print("Preprocess failed with error:", e)
-        print("Stdout:", e.stdout.decode() if e.stdout else "")
-        print("Stderr:", e.stderr.decode() if e.stderr else "")
+    except subprocess.CalledProcessError:
         raise
 
     return output_dir
@@ -205,8 +198,8 @@ def create_lmdb_dataset(atoms_list, folder_path, head_name="Default"):
 
 @pytest.mark.slow
 @pytest.mark.parametrize("default_dtype", ["float32", "float64", ""])
-def test_multifile_training(default_dtype, tmp_path):
-    """Test training with multiple file formats per head"""
+def test_multifile_training(default_dtype, tmp_path) -> None:
+    """Test training with multiple file formats per head."""
     # Set up file paths
     xyz_file1 = (tmp_path / "data1.xyz").as_posix()
     xyz_file2 = (tmp_path / "data2.xyz").as_posix()
@@ -239,13 +232,13 @@ def test_multifile_training(default_dtype, tmp_path):
     for z in z_table_elements:
         # Create isolated atom
         atom = Atoms(
-            numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True
+            numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True,
         )
         energy = float(rng.uniform(-5.0, -1.0))  # Random reference energy
         forces = np.zeros((1, 3))
         stress = np.zeros(6)
         calc = SinglePointCalculator(
-            atom, energy=energy, forces=forces, stress=stress
+            atom, energy=energy, forces=forces, stress=stress,
         )
         atom.calc = calc
         atom.info["config_type"] = "IsolatedAtom"
@@ -355,10 +348,6 @@ def test_multifile_training(default_dtype, tmp_path):
     )
 
     # Print output for debugging
-    print("\n" + "=" * 40 + " STDOUT " + "=" * 40)
-    print(process.stdout.decode())
-    print("\n" + "=" * 40 + " STDERR " + "=" * 40)
-    print(process.stderr.decode())
 
     # Check that process completed successfully
     assert process.returncode == 0, (
@@ -393,8 +382,8 @@ def test_multifile_training(default_dtype, tmp_path):
 
 
 @pytest.mark.slow
-def test_multiple_xyz_per_head(tmp_path):
-    """Test training with multiple XYZ files per head for train, valid and test sets"""
+def test_multiple_xyz_per_head(tmp_path) -> None:
+    """Test training with multiple XYZ files per head for train, valid and test sets."""
     # Set up file paths - create multiple xyz files for each dataset
     train_xyz_files = [
         (tmp_path / f"train_data{i}.xyz").as_posix() for i in range(1, 4)
@@ -433,13 +422,13 @@ def test_multiple_xyz_per_head(tmp_path):
     for z in z_table_elements:
         # Create isolated atom
         atom = Atoms(
-            numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True
+            numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True,
         )
         energy = float(rng.uniform(-5.0, -1.0))  # Random reference energy
         forces = np.zeros((1, 3))
         stress = np.zeros(6)
         calc = SinglePointCalculator(
-            atom, energy=energy, forces=forces, stress=stress
+            atom, energy=energy, forces=forces, stress=stress,
         )
         atom.calc = calc
         atom.info["config_type"] = "IsolatedAtom"
@@ -532,10 +521,6 @@ def test_multiple_xyz_per_head(tmp_path):
     )
 
     # Print output for debugging
-    print("\n" + "=" * 40 + " STDOUT " + "=" * 40)
-    print(process.stdout.decode())
-    print("\n" + "=" * 40 + " STDERR " + "=" * 40)
-    print(process.stderr.decode())
 
     # Check that process completed successfully
     assert process.returncode == 0, (
@@ -570,8 +555,8 @@ def test_multiple_xyz_per_head(tmp_path):
 
 
 @pytest.mark.slow
-def test_single_xyz_per_head(tmp_path):
-    """Test training with multiple XYZ files per head for train, valid and test sets"""
+def test_single_xyz_per_head(tmp_path) -> None:
+    """Test training with multiple XYZ files per head for train, valid and test sets."""
     # Set up file paths - create multiple xyz files for each dataset
     train_xyz_files = [
         (tmp_path / f"train_data{i}.xyz").as_posix() for i in range(1, 2)
@@ -609,13 +594,13 @@ def test_single_xyz_per_head(tmp_path):
     for z in z_table_elements:
         # Create isolated atom
         atom = Atoms(
-            numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True
+            numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True,
         )
         energy = float(rng.uniform(-5.0, -1.0))  # Random reference energy
         forces = np.zeros((1, 3))
         stress = np.zeros(6)
         calc = SinglePointCalculator(
-            atom, energy=energy, forces=forces, stress=stress
+            atom, energy=energy, forces=forces, stress=stress,
         )
         atom.calc = calc
         atom.info["config_type"] = "IsolatedAtom"
@@ -708,10 +693,6 @@ def test_single_xyz_per_head(tmp_path):
     )
 
     # Print output for debugging
-    print("\n" + "=" * 40 + " STDOUT " + "=" * 40)
-    print(process.stdout.decode())
-    print("\n" + "=" * 40 + " STDERR " + "=" * 40)
-    print(process.stderr.decode())
 
     # Check that process completed successfully
     assert process.returncode == 0, (
@@ -746,7 +727,7 @@ def test_single_xyz_per_head(tmp_path):
 
 
 @pytest.mark.slow
-def test_multihead_finetuning_different_formats(tmp_path):
+def test_multihead_finetuning_different_formats(tmp_path) -> None:
     """Test multihead finetuning with different file formats for each head."""
     # Set up file paths
     xyz_file = (tmp_path / "finetuning_xyz.xyz").as_posix()
@@ -776,13 +757,13 @@ def test_multihead_finetuning_different_formats(tmp_path):
     e0s_dict = {}
     for z in z_table_elements:
         atom = Atoms(
-            numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True
+            numbers=[z], positions=[[0, 0, 0]], cell=np.eye(3) * 10.0, pbc=True,
         )
         energy = float(rng.uniform(-5.0, -1.0))
         forces = np.zeros((1, 3))
         stress = np.zeros(6)
         calc = SinglePointCalculator(
-            atom, energy=energy, forces=forces, stress=stress
+            atom, energy=energy, forces=forces, stress=stress,
         )
         atom.calc = calc
         atom.info["config_type"] = "IsolatedAtom"

@@ -7,7 +7,7 @@ from mace.tools.scatter import scatter_sum
 
 @compile_mode("script")
 class LAMMPS_MACE(torch.nn.Module):
-    def __init__(self, model, **kwargs):
+    def __init__(self, model, **kwargs) -> None:
         super().__init__()
         self.model = model
         self.register_buffer("atomic_numbers", model.atomic_numbers)
@@ -60,11 +60,11 @@ class LAMMPS_MACE(torch.nn.Module):
         # accumulate energies of local atoms
         node_energy_local = node_energy * local_or_ghost
         total_energy_local = scatter_sum(
-            src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs
+            src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs,
         )
         # compute partial forces and (possibly) partial virials
         grad_outputs: list[torch.Tensor | None] = [
-            torch.ones_like(total_energy_local)
+            torch.ones_like(total_energy_local),
         ]
         if compute_virials and displacement is not None:
             forces, virials = torch.autograd.grad(

@@ -15,6 +15,7 @@ from ase.constraints import ExpCellFilter
 from mace.calculators import mace_mp, mace_off
 from mace.calculators.foundations_models import mace_omol
 from mace.calculators.mace import MACECalculator
+from mace.modules.models import ScaleShiftMACE
 
 try:
     import cuequivariance as cue  # pylint: disable=unused-import
@@ -27,23 +28,20 @@ run_train = "mace_run_train"
 
 
 def gradient_test(atoms, indices=None, eps_min=1e-1, eps_max=1e-8):
-    """
-    Use numeric_force to compare analytical and numerical forces on atoms
+    """Use numeric_force to compare analytical and numerical forces on atoms.
 
     If indices is None, test is done on all atoms.
     """
     if indices is None:
         indices = range(len(atoms))
     f = atoms.get_forces()[indices]
-    print("{:>16} {:>20}".format("eps", "max(abs(df))"))
     for eps in np.geomspace(eps_min, eps_max, int(np.log10(eps_min / eps_max) + 1)):
         fn = calculate_numerical_forces(atoms, eps, indices)
-        print(f"{eps:16.12f} {abs(fn - f).max():20.12f}")
     return f, fn
 
 
 @pytest.fixture(scope="module")
-def default_dtype_str():
+def default_dtype_str() -> str:
     return "float64"
 
 
@@ -130,7 +128,7 @@ def trained_model(tmp_path_factory, fitting_configs, core_mace_params):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -169,7 +167,7 @@ def trained_equivariant_model(tmp_path_factory, fitting_configs, core_mace_param
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -208,7 +206,7 @@ def trained_equivariant_model_cueq(tmp_path_factory, fitting_configs, core_mace_
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -270,7 +268,7 @@ def trained_dipole_model(tmp_path_factory, fitting_configs, default_dtype_str):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -326,7 +324,6 @@ def trained_dipole_polar_fixture(tmp_path_factory, fitting_configs):
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
     cmd = (
         sys.executable
         + " "
@@ -336,13 +333,13 @@ def trained_dipole_polar_fixture(tmp_path_factory, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
     return MACECalculator(
-        tmp_path / "MACE.model", device="cpu", model_type="DipolePolarizabilityMACE"
+        tmp_path / "MACE.model", device="cpu", model_type="DipolePolarizabilityMACE",
     )
 
 
@@ -392,7 +389,7 @@ def trained_energy_dipole_model(tmp_path_factory, fitting_configs, default_dtype
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -435,7 +432,7 @@ def trained_committee(tmp_path_factory, fitting_configs, core_mace_params):
                 [
                     (f"--{k}={v}" if v is not None else f"--{k}")
                     for k, v in mace_params.items()
-                ]
+                ],
             )
         )
 
@@ -453,7 +450,7 @@ def trained_committee(tmp_path_factory, fitting_configs, core_mace_params):
 
 
 @pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_calculator_node_energy(fitting_configs, trained_model, test_dtype):
+def test_calculator_node_energy(fitting_configs, trained_model, test_dtype) -> None:
     trained_model.to(dtype=test_dtype)
     for at in fitting_configs:
         trained_model.calculate(at)
@@ -471,7 +468,7 @@ def test_calculator_node_energy(fitting_configs, trained_model, test_dtype):
 
 
 @pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_calculator_forces(fitting_configs, trained_model, test_dtype):
+def test_calculator_forces(fitting_configs, trained_model, test_dtype) -> None:
     at = fitting_configs[2].copy()
     at.calc = trained_model.to(dtype=test_dtype)
 
@@ -484,7 +481,7 @@ def test_calculator_forces(fitting_configs, trained_model, test_dtype):
 
 
 @pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_calculator_stress(fitting_configs, trained_model, test_dtype):
+def test_calculator_stress(fitting_configs, trained_model, test_dtype) -> None:
     at = fitting_configs[2].copy()
     at.calc = trained_model.to(dtype=test_dtype)
 
@@ -498,7 +495,7 @@ def test_calculator_stress(fitting_configs, trained_model, test_dtype):
 
 
 @pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_calculator_committee(fitting_configs, trained_committee, test_dtype):
+def test_calculator_committee(fitting_configs, trained_committee, test_dtype) -> None:
     at = fitting_configs[2].copy()
     at.calc = trained_committee.to(dtype=test_dtype)
 
@@ -518,7 +515,7 @@ def test_calculator_committee(fitting_configs, trained_committee, test_dtype):
 
 
 @pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_calculator_from_model(fitting_configs, trained_committee, test_dtype):
+def test_calculator_from_model(fitting_configs, trained_committee, test_dtype) -> None:
     # test single model
     test_calculator_forces(
         fitting_configs,
@@ -535,7 +532,7 @@ def test_calculator_from_model(fitting_configs, trained_committee, test_dtype):
 
 
 @pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_calculator_dipole(fitting_configs, trained_dipole_model, test_dtype):
+def test_calculator_dipole(fitting_configs, trained_dipole_model, test_dtype) -> None:
     at = fitting_configs[2].copy()
     at.calc = trained_dipole_model.to(dtype=test_dtype)
 
@@ -545,7 +542,7 @@ def test_calculator_dipole(fitting_configs, trained_dipole_model, test_dtype):
 
 
 @pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
-def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model, test_dtype):
+def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model, test_dtype) -> None:
     at = fitting_configs[2].copy()
     at.calc = trained_energy_dipole_model.to(dtype=test_dtype)
 
@@ -561,7 +558,7 @@ def test_calculator_energy_dipole(fitting_configs, trained_energy_dipole_model, 
 
 @pytest.mark.parametrize("test_dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
 @pytest.mark.parametrize("test_model", ["trained_equivariant_model"] + (["trained_equivariant_model_cueq"] if CUET_AVAILABLE else []))
-def test_calculator_descriptor(fitting_configs, test_model, test_dtype, request):
+def test_calculator_descriptor(fitting_configs, test_model, test_dtype, request) -> None:
     at = fitting_configs[2].copy()
     at_rotated = fitting_configs[2].copy()
     at_rotated.rotate(90, "x")
@@ -570,16 +567,16 @@ def test_calculator_descriptor(fitting_configs, test_model, test_dtype, request)
     desc_invariant = calc.get_descriptors(at, invariants_only=True)
     desc_invariant_rotated = calc.get_descriptors(at_rotated, invariants_only=True)
     desc_invariant_single_layer = calc.get_descriptors(
-        at, invariants_only=True, num_layers=1
+        at, invariants_only=True, num_layers=1,
     )
     desc_invariant_single_layer_rotated = calc.get_descriptors(
-        at_rotated, invariants_only=True, num_layers=1
+        at_rotated, invariants_only=True, num_layers=1,
     )
     desc = calc.get_descriptors(at, invariants_only=False)
     desc_single_layer = calc.get_descriptors(at, invariants_only=False, num_layers=1)
     desc_rotated = calc.get_descriptors(at_rotated, invariants_only=False)
     desc_rotated_single_layer = calc.get_descriptors(
-        at_rotated, invariants_only=False, num_layers=1
+        at_rotated, invariants_only=False, num_layers=1,
     )
 
     assert desc_invariant.shape[0] == 3
@@ -595,22 +592,22 @@ def test_calculator_descriptor(fitting_configs, test_model, test_dtype, request)
 
     np.testing.assert_allclose(desc_invariant, desc_invariant_rotated, atol=1e-6)
     np.testing.assert_allclose(
-        desc_invariant_single_layer, desc_invariant[:, :16], atol=1e-6
+        desc_invariant_single_layer, desc_invariant[:, :16], atol=1e-6,
     )
     np.testing.assert_allclose(
-        desc_invariant_single_layer_rotated, desc_invariant[:, :16], atol=1e-6
+        desc_invariant_single_layer_rotated, desc_invariant[:, :16], atol=1e-6,
     )
     np.testing.assert_allclose(
-        desc_single_layer[:, :16], desc_rotated_single_layer[:, :16], atol=1e-6
+        desc_single_layer[:, :16], desc_rotated_single_layer[:, :16], atol=1e-6,
     )
     assert not np.allclose(
-        desc_single_layer[:, 16:], desc_rotated_single_layer[:, 16:], atol=1e-6
+        desc_single_layer[:, 16:], desc_rotated_single_layer[:, 16:], atol=1e-6,
     )
     assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
 @pytest.mark.parametrize("default_dtype", ["float32", "float64"])
-def test_mace_mp(default_dtype, capsys: pytest.CaptureFixture):
+def test_mace_mp(default_dtype, capsys: pytest.CaptureFixture) -> None:
     mp_mace = mace_mp(default_dtype=default_dtype)
     assert isinstance(mp_mace, MACECalculator)
     assert mp_mace.model_type == "MACE"
@@ -621,7 +618,7 @@ def test_mace_mp(default_dtype, capsys: pytest.CaptureFixture):
     assert stderr == ""
 
 @pytest.mark.parametrize("default_dtype", ["float32", "float64"])
-def test_mace_off(default_dtype):
+def test_mace_off(default_dtype) -> None:
     mace_off_model = mace_off(model="small", device="cpu", default_dtype=default_dtype)
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"
@@ -637,7 +634,9 @@ def test_mace_off(default_dtype):
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-def test_mace_off_cueq(model="medium", device="cpu"):
+def test_mace_off_cueq() -> None:
+    model = "medium"
+    device = "cpu"
     mace_off_model = mace_off(model=model, device=device, enable_cueq=True)
     assert isinstance(mace_off_model, MACECalculator)
     assert mace_off_model.model_type == "MACE"
@@ -652,7 +651,9 @@ def test_mace_off_cueq(model="medium", device="cpu"):
     assert np.allclose(E, -2081.116128586803, atol=1e-9)
 
 
-def test_mace_mp_stresses(model="medium", device="cpu"):
+def test_mace_mp_stresses() -> None:
+    model = "medium"
+    device = "cpu"
     atoms = build.bulk("Al", "fcc", a=4.05, cubic=True)
     atoms = atoms.repeat((2, 2, 2))
     mace_mp_model = mace_mp(model=model, device=device, compute_atomic_stresses=True)
@@ -665,7 +666,8 @@ def test_mace_mp_stresses(model="medium", device="cpu"):
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-def test_mace_omol_cueq(device="cpu"):
+def test_mace_omol_cueq() -> None:
+    device = "cpu"
 
     calc = mace_omol(device=device, default_dtype="float64")
     mol = build.molecule("H2O")

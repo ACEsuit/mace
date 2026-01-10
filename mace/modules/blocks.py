@@ -45,7 +45,7 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
         cueq_config: CuEquivarianceConfig | None = None,
-    ):
+    ) -> None:
         super().__init__()
         self.linear = Linear(
             irreps_in=irreps_in,
@@ -68,7 +68,7 @@ class LinearReadoutBlock(torch.nn.Module):
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         cueq_config: CuEquivarianceConfig | None = None,
         oeq_config: OEQConfig | None = None,  # pylint: disable=unused-argument
-    ):
+    ) -> None:
         super().__init__()
         self.linear = Linear(
             irreps_in=irreps_in,
@@ -96,7 +96,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         num_heads: int = 1,
         cueq_config: CuEquivarianceConfig | None = None,
         oeq_config: OEQConfig | None = None,  # pylint: disable=unused-argument
-    ):
+    ) -> None:
         super().__init__()
         self.hidden_irreps = MLP_irreps
         self.num_heads = num_heads
@@ -113,7 +113,7 @@ class NonLinearReadoutBlock(torch.nn.Module):
         )
 
     def forward(
-        self, x: torch.Tensor, heads: torch.Tensor | None = None
+        self, x: torch.Tensor, heads: torch.Tensor | None = None,
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
         if hasattr(self, "num_heads"):
@@ -134,23 +134,23 @@ class NonLinearBiasReadoutBlock(torch.nn.Module):
         num_heads: int = 1,
         cueq_config: CuEquivarianceConfig | None = None,
         oeq_config: OEQConfig | None = None,  # pylint: disable=unused-argument
-    ):
+    ) -> None:
         super().__init__()
         self.hidden_irreps = MLP_irreps
         self.num_heads = num_heads
         self.linear_1 = Linear(
-            irreps_in=irreps_in, irreps_out=self.hidden_irreps, cueq_config=cueq_config
+            irreps_in=irreps_in, irreps_out=self.hidden_irreps, cueq_config=cueq_config,
         )
         self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=[gate])
         self.linear_mid = o3.Linear(
-            irreps_in=self.hidden_irreps, irreps_out=self.hidden_irreps, biases=True
+            irreps_in=self.hidden_irreps, irreps_out=self.hidden_irreps, biases=True,
         )
         self.linear_2 = o3.Linear(
-            irreps_in=self.hidden_irreps, irreps_out=irrep_out, biases=True
+            irreps_in=self.hidden_irreps, irreps_out=irrep_out, biases=True,
         )
 
     def forward(
-        self, x: torch.Tensor, heads: torch.Tensor | None = None
+        self, x: torch.Tensor, heads: torch.Tensor | None = None,
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.non_linearity(self.linear_1(x))
         x = self.non_linearity(self.linear_mid(x))
@@ -168,7 +168,7 @@ class LinearDipoleReadoutBlock(torch.nn.Module):
         dipole_only: bool = False,
         cueq_config: CuEquivarianceConfig | None = None,
         oeq_config: OEQConfig | None = None,  # pylint: disable=unused-argument
-    ):
+    ) -> None:
         super().__init__()
         if dipole_only:
             self.irreps_out = o3.Irreps("1x1o")
@@ -194,7 +194,7 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         dipole_only: bool = False,
         cueq_config: CuEquivarianceConfig | None = None,
         oeq_config: OEQConfig | None = None,  # pylint: disable=unused-argument
-    ):
+    ) -> None:
         super().__init__()
         self.hidden_irreps = MLP_irreps
         if dipole_only:
@@ -202,10 +202,10 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
         else:
             self.irreps_out = o3.Irreps("1x0e + 1x1o")
         irreps_scalars = o3.Irreps(
-            [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out]
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out],
         )
         irreps_gated = o3.Irreps(
-            [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out],
         )
         irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
         self.equivariant_nonlin = nn.Gate(
@@ -240,20 +240,22 @@ class LinearDipolePolarReadoutBlock(torch.nn.Module):
         use_polarizability: bool = True,
         cueq_config: CuEquivarianceConfig | None = None,
         oeq_config: OEQConfig | None = None,  # pylint: disable=unused-argument
-    ):
+    ) -> None:
         super().__init__()
         if use_polarizability:
-            print("You will calculate the polarizability and dipole.")
             self.irreps_out = o3.Irreps("2x0e + 1x1o + 1x2e")
         else:
-            raise ValueError(
+            msg = (
                 "Invalid configuration for LinearDipolePolarReadoutBlock: "
                 "use_polarizability must be either True."
                 "If you want to calculate only the dipole, use AtomicDipolesMACE."
             )
+            raise ValueError(
+                msg,
+            )
 
         self.linear = Linear(
-            irreps_in=irreps_in, irreps_out=self.irreps_out, cueq_config=cueq_config
+            irreps_in=irreps_in, irreps_out=self.irreps_out, cueq_config=cueq_config,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
@@ -270,23 +272,25 @@ class NonLinearDipolePolarReadoutBlock(torch.nn.Module):
         use_polarizability: bool = True,
         cueq_config: CuEquivarianceConfig | None = None,
         oeq_config: OEQConfig | None = None,  # pylint: disable=unused-argument
-    ):
+    ) -> None:
         super().__init__()
         self.hidden_irreps = MLP_irreps
         if use_polarizability:
-            print("You will calculate the polarizability and dipole.")
             self.irreps_out = o3.Irreps("2x0e + 1x1o + 1x2e")
         else:
-            raise ValueError(
+            msg = (
                 "Invalid configuration for NonLinearDipolePolarReadoutBlock: "
                 "use_polarizability must be either True."
                 "If you want to calculate only the dipole, use AtomicDipolesMACE."
             )
+            raise ValueError(
+                msg,
+            )
         irreps_scalars = o3.Irreps(
-            [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out]
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out],
         )
         irreps_gated = o3.Irreps(
-            [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out],
         )
         irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
         self.equivariant_nonlin = nn.Gate(
@@ -298,7 +302,7 @@ class NonLinearDipolePolarReadoutBlock(torch.nn.Module):
         )
         self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
         self.linear_1 = Linear(
-            irreps_in=irreps_in, irreps_out=self.irreps_nonlin, cueq_config=cueq_config
+            irreps_in=irreps_in, irreps_out=self.irreps_nonlin, cueq_config=cueq_config,
         )
         self.linear_2 = Linear(
             irreps_in=self.hidden_irreps,
@@ -318,7 +322,7 @@ class AtomicEnergiesBlock(torch.nn.Module):
     def __init__(
         self,
         atomic_energies: np.ndarray | torch.Tensor,
-    ):
+    ) -> None:
         super().__init__()
         self.register_buffer(
             "atomic_energies",
@@ -331,12 +335,12 @@ class AtomicEnergiesBlock(torch.nn.Module):
     ) -> torch.Tensor:  # [..., ]
         return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         formatted_energies = ", ".join(
             [
                 "[" + ", ".join([f"{x:.4f}" for x in group]) + "]"
                 for group in torch.atleast_2d(self.atomic_energies)
-            ]
+            ],
         )
         return f"{self.__class__.__name__}(energies=[{formatted_energies}])"
 
@@ -351,7 +355,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         radial_type: str = "bessel",
         distance_transform: str = "None",
         apply_cutoff: bool = True,
-    ):
+    ) -> None:
         super().__init__()
         if radial_type == "bessel":
             self.bessel_fn = BesselBasis(r_max=r_max, num_basis=num_bessel)
@@ -377,7 +381,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         cutoff = self.cutoff_fn(edge_lengths)  # [n_edges, 1]
         if hasattr(self, "distance_transform"):
             edge_lengths = self.distance_transform(
-                edge_lengths, node_attrs, edge_index, atomic_numbers
+                edge_lengths, node_attrs, edge_index, atomic_numbers,
             )
         radial = self.bessel_fn(edge_lengths)  # [n_edges, n_basis]
         if hasattr(self, "apply_cutoff") and not self.apply_cutoff:
@@ -521,7 +525,7 @@ class InteractionBlock(torch.nn.Module):
         return LAMMPS_MP.apply(node_feats, lammps_class)
 
     def truncate_ghosts(
-        self, tensor: torch.Tensor, n_real: int | None = None
+        self, tensor: torch.Tensor, n_real: int | None = None,
     ) -> torch.Tensor:
         """Truncate the tensor to only keep the real atoms in case of presence of ghost atoms during multi-GPU MD simulations."""
         return tensor[:n_real] if n_real is not None else tensor
@@ -629,10 +633,10 @@ class RealAgnosticInteractionBlock(InteractionBlock):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
             mji = self.conv_tp(
-                node_feats[edge_index[0]], edge_attrs, tp_weights
+                node_feats[edge_index[0]], edge_attrs, tp_weights,
             )  # [n_nodes, irreps]
             message = scatter_sum(
-                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0],
             )
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -732,10 +736,10 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
             mji = self.conv_tp(
-                node_feats[edge_index[0]], edge_attrs, tp_weights
+                node_feats[edge_index[0]], edge_attrs, tp_weights,
             )  # [n_nodes, irreps]
             message = scatter_sum(
-                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0],
             )
         message = self.truncate_ghosts(message, n_real)
         node_attrs = self.truncate_ghosts(node_attrs, n_real)
@@ -841,17 +845,17 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
             tp_weights = tp_weights * cutoff
             edge_density = edge_density * cutoff
         density = scatter_sum(
-            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes,
         )  # [n_nodes, 1]
         message = None
         if hasattr(self, "conv_fusion"):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
             mji = self.conv_tp(
-                node_feats[edge_index[0]], edge_attrs, tp_weights
+                node_feats[edge_index[0]], edge_attrs, tp_weights,
             )  # [n_nodes, irreps]
             message = scatter_sum(
-                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0],
             )
 
         message = self.truncate_ghosts(message, n_real)
@@ -961,7 +965,7 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
             tp_weights = tp_weights * cutoff
             edge_density = edge_density * cutoff
         density = scatter_sum(
-            src=edge_density, index=receiver, dim=0, dim_size=num_nodes
+            src=edge_density, index=receiver, dim=0, dim_size=num_nodes,
         )  # [n_nodes, 1]
 
         message = None
@@ -969,10 +973,10 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
             mji = self.conv_tp(
-                node_feats[edge_index[0]], edge_attrs, tp_weights
+                node_feats[edge_index[0]], edge_attrs, tp_weights,
             )  # [n_nodes, irreps]
             message = scatter_sum(
-                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0],
             )
 
         message = self.truncate_ghosts(message, n_real)
@@ -1051,7 +1055,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
 
         # Skip connection.
         self.skip_linear = Linear(
-            self.node_feats_irreps, self.hidden_irreps, cueq_config=self.cueq_config
+            self.node_feats_irreps, self.hidden_irreps, cueq_config=self.cueq_config,
         )
 
     # pylint: disable=unused-argument
@@ -1088,10 +1092,10 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
             message = self.conv_tp(node_feats_up, edge_attrs, tp_weights, edge_index)
         else:
             mji = self.conv_tp(
-                node_feats_up[edge_index[0]], edge_attrs, tp_weights
+                node_feats_up[edge_index[0]], edge_attrs, tp_weights,
             )  # [n_nodes, irreps]
             message = scatter_sum(
-                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0],
             )
         message = self.linear(message) / self.avg_num_neighbors
         return (
@@ -1107,7 +1111,7 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
             self.cueq_config = None
         # First linear
         node_scalar_irreps = o3.Irreps(
-            [(self.node_feats_irreps.count(o3.Irrep(0, 1)), (0, 1))]
+            [(self.node_feats_irreps.count(o3.Irrep(0, 1)), (0, 1))],
         )
         self.source_embedding = Linear(
             self.node_attrs_irreps,
@@ -1152,7 +1156,7 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         # Convolution weights
         input_dim = self.edge_feats_irreps.num_irreps
         self.conv_tp_weights = RadialMLP(
-            [input_dim + 2 * node_scalar_irreps.dim, *self.radial_MLP, self.conv_tp.weight_numel]
+            [input_dim + 2 * node_scalar_irreps.dim, *self.radial_MLP, self.conv_tp.weight_numel],
         )
         self.irreps_out = self.target_irreps
 
@@ -1166,7 +1170,7 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
 
         # Non-linearity
         irreps_scalars = o3.Irreps(
-            [(mul, ir) for mul, ir in self.irreps_out if ir.l == 0]
+            [(mul, ir) for mul, ir in self.irreps_out if ir.l == 0],
         )
         irreps_gated = o3.Irreps([(mul, ir) for mul, ir in self.irreps_out if ir.l > 0])
         irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
@@ -1267,17 +1271,17 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
             tp_weights = tp_weights * cutoff
             edge_density = edge_density * cutoff
         density = scatter_sum(
-            src=edge_density, index=edge_index[1], dim=0, dim_size=num_nodes
+            src=edge_density, index=edge_index[1], dim=0, dim_size=num_nodes,
         )
 
         if hasattr(self, "conv_fusion"):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
         else:
             mji = self.conv_tp(
-                node_feats[edge_index[0]], edge_attrs, tp_weights
+                node_feats[edge_index[0]], edge_attrs, tp_weights,
             )  # [n_edges, irreps]
             message = scatter_sum(
-                src=mji, index=edge_index[1], dim=0, dim_size=num_nodes
+                src=mji, index=edge_index[1], dim=0, dim_size=num_nodes,
             )  # [n_nodes, irreps]
 
         message = self.truncate_ghosts(message, n_real)
@@ -1300,7 +1304,7 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
 
 @compile_mode("script")
 class ScaleShiftBlock(torch.nn.Module):
-    def __init__(self, scale: float, shift: float):
+    def __init__(self, scale: float, shift: float) -> None:
         super().__init__()
         self.register_buffer(
             "scale",
@@ -1316,7 +1320,7 @@ class ScaleShiftBlock(torch.nn.Module):
             torch.atleast_1d(self.scale)[head] * x + torch.atleast_1d(self.shift)[head]
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         formatted_scale = (
             ", ".join([f"{x:.4f}" for x in self.scale])
             if self.scale.numel() > 1

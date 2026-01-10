@@ -41,10 +41,9 @@ except (ImportError, ModuleNotFoundError):
 
 
 def symmetric_contraction_proj(
-    irreps_in: cue.Irreps, irreps_out: cue.Irreps, degrees: tuple[int, ...]
+    irreps_in: cue.Irreps, irreps_out: cue.Irreps, degrees: tuple[int, ...],
 ) -> tuple[cue.EquivariantPolynomial, np.ndarray]:
-    r"""
-    subscripts: ``weights[u],input[u],output[u]``
+    r"""subscripts: ``weights[u],input[u],output[u]``.
 
     Example:
 
@@ -66,7 +65,7 @@ def symmetric_contraction_proj(
 
 
 def symmetric_contraction_cached(
-    irreps_in: cue.Irreps, irreps_out: cue.Irreps, degrees: tuple[int, ...]
+    irreps_in: cue.Irreps, irreps_out: cue.Irreps, degrees: tuple[int, ...],
 ) -> tuple[cue.EquivariantPolynomial, np.ndarray]:
     assert min(degrees) > 0
 
@@ -112,7 +111,7 @@ def symmetric_contraction_cached(
 
 
 def _flatten(
-    x: np.ndarray, axis_start: int | None = None, axis_end: int | None = None
+    x: np.ndarray, axis_start: int | None = None, axis_end: int | None = None,
 ) -> np.ndarray:
     x = np.asarray(x)
     if axis_start is None:
@@ -121,7 +120,7 @@ def _flatten(
         axis_end = x.ndim
     assert 0 <= axis_start <= axis_end <= x.ndim
     return x.reshape(
-        (*x.shape[:axis_start], np.prod(x.shape[axis_start:axis_end]), *x.shape[axis_end:])
+        (*x.shape[:axis_start], np.prod(x.shape[axis_start:axis_end]), *x.shape[axis_end:]),
     )
 
 
@@ -136,7 +135,7 @@ def _stp_to_matrix(
 
 # This function is an adaptation of https://github.com/ACEsuit/mace/blob/bd412319b11c5f56c37cec6c4cfae74b2a49ff43/mace/modules/symmetric_contraction.py
 def _symmetric_contraction(
-    irreps_in: cue.Irreps, irreps_out: cue.Irreps, degree: int
+    irreps_in: cue.Irreps, irreps_out: cue.Irreps, degree: int,
 ) -> cue.EquivariantPolynomial:
     mul = irreps_in.muls[0]
     assert all(mul == m for m in irreps_in.muls)
@@ -149,7 +148,7 @@ def _symmetric_contraction(
 
     abc = "abcdefgh"[:degree]
     d = cue.SegmentedTensorProduct.from_subscripts(
-        f"u_{'_'.join(f'{a}' for a in abc)}_i+{abc}ui"
+        f"u_{'_'.join(f'{a}' for a in abc)}_i+{abc}ui",
     )
 
     for i in input_operands:
@@ -183,6 +182,6 @@ def _symmetric_contraction(
         ],
         [cue.IrrepsAndLayout(mul * irreps_out, cue.ir_mul)],
         cue.SegmentedPolynomial(
-            [w, x], [y], [(cue.Operation([0] + [1] * degree + [2]), d)]
+            [w, x], [y], [(cue.Operation([0] + [1] * degree + [2]), d)],
         ),
     )

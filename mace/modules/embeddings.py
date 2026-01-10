@@ -5,8 +5,7 @@ from torch import nn
 
 
 class GenericJointEmbedding(nn.Module):
-    """
-    Simple concat‐fusion of any set of node‐ or graph‐level features
+    """Simple concat‐fusion of any set of node‐ or graph‐level features
     with a base embedding.  All features are embedded (via Embedding or small MLP),
     then concatenated onto `species_emb`, passed through SiLU+Linear.
     """
@@ -17,7 +16,7 @@ class GenericJointEmbedding(nn.Module):
         base_dim: int,
         embedding_specs: dict[str, Any] | None,
         out_dim: int | None = None,
-    ):
+    ) -> None:
         super().__init__()
         self.base_dim = base_dim
         self.specs = dict(embedding_specs.items())
@@ -37,7 +36,8 @@ class GenericJointEmbedding(nn.Module):
                     nn.Linear(E, E, bias=use_bias),
                 )
             else:
-                raise ValueError(f"Unknown type {spec['type']} for feature {name}")
+                msg = f"Unknown type {spec['type']} for feature {name}"
+                raise ValueError(msg)
 
         # build the single concat→SiLU→Linear head
         total_dim = sum(spec["emb_dim"] for spec in self.specs.values())
@@ -51,10 +51,9 @@ class GenericJointEmbedding(nn.Module):
         batch: torch.Tensor,  # [N_nodes,] graph indices
         features: dict[str, torch.Tensor],
     ) -> torch.Tensor:
-        """
-        features[name] is either [N_graphs, …] or [N_nodes, …]
+        """features[name] is either [N_graphs, …] or [N_nodes, …]
         and we upsample any per‐graph ones via feat[batch].
-        Returns: [N_nodes, out_dim]
+        Returns: [N_nodes, out_dim].
         """
         embs = []
         for name, spec in self.specs.items():

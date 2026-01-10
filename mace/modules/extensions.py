@@ -10,11 +10,9 @@ from mace.tools.scatter import scatter_sum
 
 
 def _copy_mace_readout(
-    mace_readout: torch.nn.Module, cueq_config: CuEquivarianceConfig | None = None
+    mace_readout: torch.nn.Module, cueq_config: CuEquivarianceConfig | None = None,
 ) -> torch.nn.Module:
-    """
-    Helper function to copy a MACE readout block.
-    """
+    """Helper function to copy a MACE readout block."""
     if isinstance(mace_readout, LinearReadoutBlock):
         return LinearReadoutBlock(
             irreps_in=mace_readout.linear.irreps_in,  # type:ignore
@@ -32,7 +30,8 @@ def _copy_mace_readout(
             num_heads=mace_readout.num_heads,
             cueq_config=cueq_config,
         )
-    raise TypeError("Unsupported readout type.")
+    msg = "Unsupported readout type."
+    raise TypeError(msg)
 
 
 def _get_readout_input_dim(block: torch.nn.Module) -> int:
@@ -40,18 +39,20 @@ def _get_readout_input_dim(block: torch.nn.Module) -> int:
         return block.linear.irreps_in.dim  # type:ignore
     if isinstance(block, NonLinearReadoutBlock):  # type:ignore
         return block.linear_1.irreps_in.dim  # type:ignore
-    raise TypeError("Unsupported readout type for input dimension retrieval.")
+    msg = "Unsupported readout type for input dimension retrieval."
+    raise TypeError(msg)
 
 
 @compile_mode("script")
 class MACELES(ScaleShiftMACE):
-    def __init__(self, les_arguments: dict | None = None, **kwargs):
+    def __init__(self, les_arguments: dict | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         try:
             from les import Les
         except ImportError as exc:
+            msg = "Cannot import 'les'. Please install the 'les' library from https://github.com/ChengUCB/les."
             raise ImportError(
-                "Cannot import 'les'. Please install the 'les' library from https://github.com/ChengUCB/les."
+                msg,
             ) from exc
         if les_arguments is None:
             les_arguments = {"use_atomwise": False}
@@ -65,7 +66,7 @@ class MACELES(ScaleShiftMACE):
         cueq_config = kwargs.get("cueq_config")
         for readout in self.readouts:  # type:ignore
             self.les_readouts.append(
-                _copy_mace_readout(readout, cueq_config=cueq_config)
+                _copy_mace_readout(readout, cueq_config=cueq_config),
             )
 
     def forward(
@@ -109,29 +110,29 @@ class MACELES(ScaleShiftMACE):
         no_pbc_mask_cfg = ~pbc_tensor.any(dim=-1)
         no_pbc_mask_rows = no_pbc_mask_cfg.repeat_interleave(3)
         cell_les[no_pbc_mask_rows] = torch.zeros(
-            (no_pbc_mask_rows.sum(), 3), dtype=cell_les.dtype, device=cell_les.device
+            (no_pbc_mask_rows.sum(), 3), dtype=cell_les.dtype, device=cell_les.device,
         )
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
-            num_atoms_arange, node_heads
+            num_atoms_arange, node_heads,
         ]
         e0 = scatter_sum(
-            src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+            src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs,
         ).to(
-            vectors.dtype
+            vectors.dtype,
         )  # [n_graphs, num_heads]
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats, cutoff = self.radial_embedding(
-            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers,
         )
 
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
-                lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+                lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers,
             )
             if is_lammps:
                 pair_node_energy = pair_node_energy[: lammps_natoms[0]]
@@ -149,7 +150,7 @@ class MACELES(ScaleShiftMACE):
             )
             if hasattr(self, "embedding_readout"):
                 embedding_node_energy = self.embedding_readout(
-                    node_feats, node_heads
+                    node_feats, node_heads,
                 ).squeeze(-1)
                 embedding_energy = scatter_sum(
                     src=embedding_node_energy,
@@ -165,7 +166,7 @@ class MACELES(ScaleShiftMACE):
         node_qs_list: list[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
-            zip(self.interactions, self.products, strict=False)
+            zip(self.interactions, self.products, strict=False),
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -184,19 +185,19 @@ class MACELES(ScaleShiftMACE):
             if is_lammps and i == 0:
                 node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
             node_feats = product(
-                node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
+                node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice,
             )
             node_feats_list.append(node_feats)
 
         for i, (readout, les_readout) in enumerate(
-            zip(self.readouts, self.les_readouts, strict=False)
+            zip(self.readouts, self.les_readouts, strict=False),
         ):
             feat_idx = -1 if len(self.readouts) == 1 else i
             node_es = readout(node_feats_list[feat_idx], node_heads)[
-                num_atoms_arange, node_heads
+                num_atoms_arange, node_heads,
             ]
             node_qs = les_readout(node_feats_list[feat_idx], node_heads)[
-                num_atoms_arange, node_heads
+                num_atoms_arange, node_heads,
             ]  # type:ignore
             node_qs_list.append(node_qs)
             node_es_list.append(node_es)

@@ -49,28 +49,24 @@ def select_head(model):
     heads = model.heads if hasattr(model, "heads") else [None]
 
     if len(heads) == 1:
-        print(f"Only one head found in the model: {heads[0]}. Skipping selection.")
         return heads[0]
 
-    print("Available heads in the model:")
-    for i, head in enumerate(heads):
-        print(f"{i + 1}: {head}")
+    for _i, _head in enumerate(heads):
+        pass
 
     # Ask the user to select a head
     selected = input(
-        f"Select a head by number (Defaulting to head: {len(heads)}, press Enter to accept): "
+        f"Select a head by number (Defaulting to head: {len(heads)}, press Enter to accept): ",
     )
 
     if selected.isdigit() and 1 <= int(selected) <= len(heads):
         return heads[int(selected) - 1]
     if selected == "":
-        print("No head selected. Proceeding without specifying a head.")
         return None
-    print(f"No valid selection made. Defaulting to the last head: {heads[-1]}")
     return heads[-1]
 
 
-def main():
+def main() -> None:
     args = parse_args()
     model_path = args.model_path  # takes model name as command-line input
     model = torch.load(
@@ -80,7 +76,6 @@ def main():
     if args.dtype == "float64":
         model = model.double().to("cpu")
     elif args.dtype == "float32":
-        print("Converting model to float32, this may cause loss of precision.")
         model = model.float().to("cpu")
 
     if args.format == "mliap":
@@ -88,13 +83,7 @@ def main():
         model = run_e3nn_to_cueq(copy.deepcopy(model))
         model.lammps_mliap = True
 
-    if args.head is None:
-        head = select_head(model)
-    else:
-        head = args.head
-        print(
-            f"Selected head: {head} from command line in the list available heads: {model.heads}"
-        )
+    head = select_head(model) if args.head is None else args.head
 
     lammps_class = LAMMPS_MLIAP_MACE if args.format == "mliap" else LAMMPS_MACE
     lammps_model = (

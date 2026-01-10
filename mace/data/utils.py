@@ -47,7 +47,7 @@ class KeySpecification:
 
 
 def update_keyspec_from_kwargs(
-    keyspec: KeySpecification, keydict: dict[str, str]
+    keyspec: KeySpecification, keydict: dict[str, str],
 ) -> KeySpecification:
     # convert command line style property_key arguments into a keyspec
     infos = [
@@ -92,7 +92,7 @@ Configurations = list[Configuration]
 
 
 def random_train_valid_split(
-    items: Sequence, valid_fraction: float, seed: int, work_dir: str
+    items: Sequence, valid_fraction: float, seed: int, work_dir: str,
 ) -> tuple[list, list]:
     assert 0.0 < valid_fraction < 1.0
 
@@ -106,16 +106,15 @@ def random_train_valid_split(
     rng.shuffle(indices)
     if len(indices[train_size:]) < 10:
         logging.info(
-            f"Using random {100 * valid_fraction:.0f}% of training set for validation with following indices: {indices[train_size:]}"
+            f"Using random {100 * valid_fraction:.0f}% of training set for validation with following indices: {indices[train_size:]}",
         )
     else:
         # Save indices to file
         with open(work_dir + f"/valid_indices_{seed}.txt", "w", encoding="utf-8") as f:
-            for index in indices[train_size:]:
-                f.write(f"{index}\n")
+            f.writelines(f"{index}\n" for index in indices[train_size:])
 
         logging.info(
-            f"Using random {100 * valid_fraction:.0f}% of training set for validation with indices saved in: {work_dir}/valid_indices_{seed}.txt"
+            f"Using random {100 * valid_fraction:.0f}% of training set for validation with indices saved in: {work_dir}/valid_indices_{seed}.txt",
         )
 
     return (
@@ -130,7 +129,7 @@ def config_from_atoms_list(
     config_type_weights: dict[str, float] | None = None,
     head_name: str = "Default",
 ) -> Configurations:
-    """Convert list of ase.Atoms into Configurations"""
+    """Convert list of ase.Atoms into Configurations."""
     if config_type_weights is None:
         config_type_weights = DEFAULT_CONFIG_TYPE_WEIGHTS
 
@@ -142,7 +141,7 @@ def config_from_atoms_list(
                 key_specification=key_specification,
                 config_type_weights=config_type_weights,
                 head_name=head_name,
-            )
+            ),
         )
     return all_configs
 
@@ -153,18 +152,18 @@ def config_from_atoms(
     config_type_weights: dict[str, float] | None = None,
     head_name: str = "Default",
 ) -> Configuration:
-    """Convert ase.Atoms to Configuration"""
+    """Convert ase.Atoms to Configuration."""
     if config_type_weights is None:
         config_type_weights = DEFAULT_CONFIG_TYPE_WEIGHTS
 
     atomic_numbers = np.array(
-        [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols]
+        [ase.data.atomic_numbers[symbol] for symbol in atoms.symbols],
     )
     pbc = tuple(atoms.get_pbc())
     cell = np.array(atoms.get_cell())
     config_type = atoms.info.get("config_type", "Default")
     weight = atoms.info.get("config_weight", 1.0) * config_type_weights.get(
-        config_type, 1.0
+        config_type, 1.0,
     )
 
     properties = {}
@@ -198,7 +197,7 @@ def config_from_atoms(
 def test_config_types(
     test_configs: Configurations,
 ) -> list[tuple[str, list[Configuration]]]:
-    """Split test set based on config_type-s"""
+    """Split test set based on config_type-s."""
     test_by_ct = []
     all_cts = []
     for conf in test_configs:
@@ -233,7 +232,7 @@ def load_from_xyz(
     original_stress_key = stress_key
     if energy_key == "energy":
         logging.warning(
-            "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'energy' to 'REF_energy'. You need to use --energy_key='REF_energy' to specify the chosen key name."
+            "Since ASE version 3.23.0b1, using energy_key 'energy' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'energy' to 'REF_energy'. You need to use --energy_key='REF_energy' to specify the chosen key name.",
         )
         key_specification.info_keys["energy"] = "REF_energy"
         for atoms in atoms_list:
@@ -241,23 +240,23 @@ def load_from_xyz(
                 # print("OK")
                 atoms.info["REF_energy"] = atoms.get_potential_energy()
                 # print("atoms.info['REF_energy']:", atoms.info["REF_energy"])
-            except Exception as e:  # pylint: disable=W0703
-                logging.exception(f"Failed to extract energy: {e}")
+            except Exception:  # pylint: disable=W0703
+                logging.exception("Failed to extract energy.")
                 atoms.info["REF_energy"] = None
     if forces_key == "forces":
         logging.warning(
-            "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'forces' to 'REF_forces'. You need to use --forces_key='REF_forces' to specify the chosen key name."
+            "Since ASE version 3.23.0b1, using forces_key 'forces' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'forces' to 'REF_forces'. You need to use --forces_key='REF_forces' to specify the chosen key name.",
         )
         key_specification.arrays_keys["forces"] = "REF_forces"
         for atoms in atoms_list:
             try:
                 atoms.arrays["REF_forces"] = atoms.get_forces()
-            except Exception as e:  # pylint: disable=W0703
-                logging.exception(f"Failed to extract forces: {e}")
+            except Exception:  # pylint: disable=W0703
+                logging.exception("Failed to extract forces.")
                 atoms.arrays["REF_forces"] = None
     if stress_key == "stress":
         logging.warning(
-            "Since ASE version 3.23.0b1, using stress_key 'stress' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'stress' to 'REF_stress'. You need to use --stress_key='REF_stress' to specify the chosen key name."
+            "Since ASE version 3.23.0b1, using stress_key 'stress' is no longer safe when communicating between MACE and ASE. We recommend using a different key, rewriting 'stress' to 'REF_stress'. You need to use --stress_key='REF_stress' to specify the chosen key name.",
         )
         key_specification.info_keys["stress"] = "REF_stress"
         for atoms in atoms_list:
@@ -280,15 +279,15 @@ def load_from_xyz(
         else:
             raise ValueError(
                 msg
-                + " Please change the key names in the command line arguments or ensure that the file contains the required data."
+                + " Please change the key names in the command line arguments or ensure that the file contains the required data.",
             )
     if not has_energy:
         logging.warning(
-            f"No energies found with key '{final_energy_key}' in '{file_path}'. If this is unexpected, please change the key name in the command line arguments or ensure that the file contains the required data."
+            f"No energies found with key '{final_energy_key}' in '{file_path}'. If this is unexpected, please change the key name in the command line arguments or ensure that the file contains the required data.",
         )
     if not has_forces:
         logging.warning(
-            f"No forces found with key '{final_forces_key}' in '{file_path}'. If this is unexpected, Please change the key name in the command line arguments or ensure that the file contains the required data."
+            f"No forces found with key '{final_forces_key}' in '{file_path}'. If this is unexpected, Please change the key name in the command line arguments or ensure that the file contains the required data.",
         )
 
     if not isinstance(atoms_list, list):
@@ -310,7 +309,7 @@ def load_from_xyz(
                 else:
                     logging.warning(
                         f"Configuration '{idx}' is marked as 'IsolatedAtom' "
-                        "but does not contain an energy. Zero energy will be used."
+                        "but does not contain an energy. Zero energy will be used.",
                     )
                     atomic_energies_dict[atomic_number] = 0.0
             else:
@@ -337,11 +336,10 @@ def load_from_xyz(
 
 
 def compute_average_E0s(
-    collections_train: Configurations, z_table: AtomicNumberTable
+    collections_train: Configurations, z_table: AtomicNumberTable,
 ) -> dict[int, float]:
-    """
-    Function to compute the average interaction energy of each chemical element
-    returns dictionary of E0s
+    """Function to compute the average interaction energy of each chemical element
+    returns dictionary of E0s.
     """
     len_train = len(collections_train)
     len_zs = len(z_table)
@@ -358,7 +356,7 @@ def compute_average_E0s(
             atomic_energies_dict[z] = E0s[i]
     except np.linalg.LinAlgError:
         logging.exception(
-            "Failed to compute E0s using least squares regression, using the same for all atoms"
+            "Failed to compute E0s using least squares regression, using the same for all atoms",
         )
         atomic_energies_dict = {}
         for i, z in enumerate(z_table.zs):

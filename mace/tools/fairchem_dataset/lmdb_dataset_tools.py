@@ -1,5 +1,4 @@
-"""
-This module contains the AseDBDataset class and its dependencies.
+"""This module contains the AseDBDataset class and its dependencies.
 It is extracted from the fairchem codebase and adapted to remove dependencies on fairchem.
 
 Original code copyright:
@@ -26,7 +25,7 @@ except ImportError:
     cache = lru_cache(maxsize=None)
 from glob import glob
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
 
 import ase
 import ase.db.core
@@ -61,7 +60,7 @@ def _decode_ndarrays(obj):
 
 
 def rename_data_object_keys(data_object, key_mapping: dict[str, str | list[str]]):
-    """Rename data object keys
+    """Rename data object keys.
 
     Args:
         data_object: data object
@@ -90,10 +89,9 @@ def rename_data_object_keys(data_object, key_mapping: dict[str, str | list[str]]
 
 
 def apply_one_tags(
-    atoms: ase.Atoms, skip_if_nonzero: bool = True, skip_always: bool = False
+    atoms: ase.Atoms, skip_if_nonzero: bool = True, skip_always: bool = False,
 ):
-    """
-    This function will apply tags of 1 to an ASE atoms object.
+    """This function will apply tags of 1 to an ASE atoms object.
     It is used as an atoms_transform in the datasets contained in this file.
 
     Certain models will treat atoms differently depending on their tags.
@@ -101,7 +99,7 @@ def apply_one_tags(
     for atoms with non-zero tags. This model throws an error if there are no tagged atoms.
     For this reason, the default behavior is to tag atoms in structures with no tags.
 
-    args:
+    Args:
         skip_if_nonzero (bool): If at least one atom has a nonzero tag, do not tag any atoms
 
         skip_always (bool): Do not apply any tags. This arg exists so that this function can be disabled
@@ -123,8 +121,8 @@ class UnsupportedDatasetError(ValueError):
 class BaseDataset(ABC):
     """Base Dataset class for all ASE datasets."""
 
-    def __init__(self, config: dict):
-        """Initialize
+    def __init__(self, config: dict) -> None:
+        """Initialize.
 
         Args:
             config (dict): dataset configuration
@@ -141,7 +139,7 @@ class BaseDataset(ABC):
         self.lin_ref = None
         if self.config.get("lin_ref", False):
             lin_ref = torch.tensor(
-                np.load(self.config["lin_ref"], allow_pickle=True)["coeff"]
+                np.load(self.config["lin_ref"], allow_pickle=True)["coeff"],
             )
             self.lin_ref = torch.nn.Parameter(lin_ref, requires_grad=False)
 
@@ -161,7 +159,7 @@ class BaseDataset(ABC):
         metadata_npzs = []
         if self.config.get("metadata_path", None) is not None:
             metadata_npzs.append(
-                np.load(self.config["metadata_path"], allow_pickle=True)
+                np.load(self.config["metadata_path"], allow_pickle=True),
             )
 
         else:
@@ -175,7 +173,7 @@ class BaseDataset(ABC):
 
         if len(metadata_npzs) == 0:
             logging.warning(
-                f"Could not find dataset metadata.npz files in '{self.paths}'"
+                f"Could not find dataset metadata.npz files in '{self.paths}'",
             )
             return {}
 
@@ -185,10 +183,10 @@ class BaseDataset(ABC):
         }
 
         assert np.issubdtype(
-            metadata["natoms"].dtype, np.integer
+            metadata["natoms"].dtype, np.integer,
         ), f"Metadata natoms must be an integer type! not {metadata['natoms'].dtype}"
         assert metadata["natoms"].shape[0] == len(
-            self
+            self,
         ), "Loaded metadata and dataset size mismatch."
 
         return metadata
@@ -229,8 +227,7 @@ class Subset(BaseDataset):
 
 
 class LMDBDatabase(ase.db.core.Database):
-    """
-    This module is modified from the ASE db json backend
+    """This module is modified from the ASE db json backend
     and is thus licensed under the corresponding LGPL2.1 license.
 
     The ASE notice for the LGPL2.1 license is available here:
@@ -247,8 +244,7 @@ class LMDBDatabase(ase.db.core.Database):
         *args,
         **kwargs,
     ) -> None:
-        """
-        For the most part, this is identical to the standard ase db initiation
+        """For the most part, this is identical to the standard ase db initiation
         arguments, except that we add a readonly flag.
         """
         super().__init__(
@@ -311,7 +307,7 @@ class LMDBDatabase(ase.db.core.Database):
         atoms: ase.Atoms | ase.db.row.AtomsRow,
         key_value_pairs: dict,
         data: dict | None,
-        id: int | None = None,  # pylint: disable=redefined-builtin
+        idx: int | None = None,  # pylint: disable=redefined-builtin
     ) -> None:
 
         # 1) dump the entire atoms.info dict into key_value_pairs
@@ -349,7 +345,7 @@ class LMDBDatabase(ase.db.core.Database):
 
         # 3) also save all extra calculator results (if any)
         if hasattr(atoms, "calc") and getattr(atoms.calc, "results", None):
-            for k, v in atoms.calc.results.items():
+            for k in atoms.calc.results:
                 if k in ("energy", "forces", "stress", "free_energy"):
                     continue  # ASE already stores these
             data.setdefault(k, v)
@@ -387,11 +383,11 @@ class LMDBDatabase(ase.db.core.Database):
         # json doesn't like Cell objects, so make it an array
         dct["cell"] = np.asarray(dct["cell"])
 
-        if id is None:
-            id = self._nextid
-            nextid = id + 1
+        if idx is None:
+            idx = self._nextid
+            nextid = idx + 1
         else:
-            data = self.txn.get(f"{id}".encode("ascii"))
+            data = self.txn.get(f"{idx}".encode("ascii"))
             assert data is not None
 
         # Add the new entry
@@ -418,19 +414,19 @@ class LMDBDatabase(ase.db.core.Database):
         idx: int,
         key_value_pairs: dict | None = None,
         data: dict | None = None,
-    ):
+    ) -> None:
         # hack this to play nicely with ASE code
         row = self._get_row(idx, include_data=True)
         if data is not None or key_value_pairs is not None:
             self._write(
-                atoms=row, key_value_pairs=key_value_pairs, data=data, id=idx
+                atoms=row, key_value_pairs=key_value_pairs, data=data, id=idx,
             )  # Fixed E1123 by using id=idx
 
-    def _write_deleted_ids(self):
+    def _write_deleted_ids(self) -> None:
         self.txn.put(
             "deleted_ids".encode("ascii"),
             zlib.compress(
-                orjson.dumps(self.deleted_ids, option=orjson.OPT_SERIALIZE_NUMPY)
+                orjson.dumps(self.deleted_ids, option=orjson.OPT_SERIALIZE_NUMPY),
             ),
         )
 
@@ -451,7 +447,8 @@ class LMDBDatabase(ase.db.core.Database):
         if data is not None:
             dct = orjson.loads(zlib.decompress(data))
         else:
-            raise KeyError(f"Id {idx} missing from the database!")
+            msg = f"Id {idx} missing from the database!"
+            raise KeyError(msg)
 
         if not include_data:
             dct.pop("data", None)
@@ -460,13 +457,14 @@ class LMDBDatabase(ase.db.core.Database):
         return ase.db.row.AtomsRow(dct)
 
     def _get_row_by_index(self, index: int, include_data: bool = True):
-        """Auxiliary function to get the ith entry, rather than a specific id"""
+        """Auxiliary function to get the ith entry, rather than a specific id."""
         data = self.txn.get(f"{self.ids[index]}".encode("ascii"))
 
         if data is not None:
             dct = orjson.loads(zlib.decompress(data))
         else:
-            raise KeyError(f"Id {id} missing from the database!")
+            msg = f"Id {id} missing from the database!"
+            raise KeyError(msg)
 
         if not include_data:
             dct.pop("data", None)
@@ -551,7 +549,7 @@ class LMDBDatabase(ase.db.core.Database):
 
     @property
     def db_metadata(self):
-        """Load the metadata from the DB if present"""
+        """Load the metadata from the DB if present."""
         if self._metadata is None:
             metadata = self.txn.get("metadata".encode("ascii"))
             if metadata is None:
@@ -562,7 +560,7 @@ class LMDBDatabase(ase.db.core.Database):
         return self._metadata.copy()
 
     @db_metadata.setter
-    def db_metadata(self, dct):
+    def db_metadata(self, dct) -> None:
         self._metadata = dct
 
         # Put the updated metadata dictionary
@@ -573,7 +571,7 @@ class LMDBDatabase(ase.db.core.Database):
 
     @property
     def _nextid(self):
-        """Get the id of the next row to be written"""
+        """Get the id of the next row to be written."""
         # Get the nextid
         nextid_data = self.txn.get("nextid".encode("ascii"))
         if nextid_data:
@@ -594,7 +592,7 @@ class LMDBDatabase(ase.db.core.Database):
         return len(self.ids)
 
     def _load_ids(self) -> None:
-        """Load ids from the DB
+        """Load ids from the DB.
 
         Since ASE db ids are mostly 1-N integers, but can be missing entries
         if ids have been deleted. To save space and operating under the assumption
@@ -624,7 +622,7 @@ class AtomsToGraphs:
         r_stress=False,
         r_data_keys=None,
         **kwargs,
-    ):
+    ) -> None:
         self.r_edges = r_edges
         self.r_pbc = r_pbc
         self.r_energy = r_energy
@@ -634,9 +632,7 @@ class AtomsToGraphs:
         self.kwargs = kwargs
 
     def convert(self, atoms, sid=None):
-        """
-        Convert ASE atoms to graph data format with proper property handling.
-        """
+        """Convert ASE atoms to graph data format with proper property handling."""
         from mace.tools.torch_geometric.data import Data
 
         # Create a minimal data object with required properties
@@ -726,18 +722,17 @@ class AtomsToGraphs:
 class DataTransforms:
     """Minimal implementation of DataTransforms to satisfy dependencies."""
 
-    def __init__(self, transforms_config=None):
+    def __init__(self, transforms_config=None) -> None:
         self.transforms_config = transforms_config or {}
 
     def __call__(self, data):
-        """Apply transforms to data"""
+        """Apply transforms to data."""
         # No transforms applied in this minimal implementation
         return data
 
 
 class AseAtomsDataset(BaseDataset, ABC):
-    """
-    This is an abstract Dataset that includes helpful utilities for turning
+    """This is an abstract Dataset that includes helpful utilities for turning
     ASE atoms objects into OCP-usable data objects. This should not be instantiated directly
     as get_atoms_object and load_dataset_get_ids are not implemented in this base class.
 
@@ -782,9 +777,12 @@ class AseAtomsDataset(BaseDataset, ABC):
         self.num_samples = len(self.ids)
 
         if len(self.ids) == 0:
-            raise ValueError(
+            msg = (
                 rf"No valid ase data found! \n"
                 f"Double check that the src path and/or glob search pattern gives ASE compatible data: {config['src']}"
+            )
+            raise ValueError(
+                msg,
             )
 
     def __getitem__(self, idx):  # pylint: disable=method-hidden
@@ -798,7 +796,7 @@ class AseAtomsDataset(BaseDataset, ABC):
         # Transform atoms object
         if self.atoms_transform is not None:
             atoms = self.atoms_transform(
-                atoms, **self.config.get("atoms_transform_args", {})
+                atoms, **self.config.get("atoms_transform_args", {}),
             )
 
         sid = atoms.info.get("sid", self.ids[idx])
@@ -827,22 +825,27 @@ class AseAtomsDataset(BaseDataset, ABC):
     @abstractmethod
     def get_atoms(self, idx: str | int) -> ase.Atoms:
         # This function should return an ASE atoms object.
+        msg = "Returns an ASE atoms object. Derived classes should implement this function."
         raise NotImplementedError(
-            "Returns an ASE atoms object. Derived classes should implement this function."
+            msg,
         )
 
     @abstractmethod
-    def _load_dataset_get_ids(self, config):
+    def _load_dataset_get_ids(self, config) -> NoReturn:
         # This function should return a list of ids that can be used to index into the database
+        msg = "Every ASE dataset needs to declare a function to load the dataset and return a list of ids."
         raise NotImplementedError(
-            "Every ASE dataset needs to declare a function to load the dataset and return a list of ids."
+            msg,
         )
 
-    def get_relaxed_energy(self, identifier):
-        raise NotImplementedError(
+    def get_relaxed_energy(self, identifier) -> NoReturn:
+        msg = (
             "Reading relaxed energy from trajectory or file is not implemented with this dataset. "
             "If relaxed energies are saved with the atoms info dictionary, they can be used by passing the keys in "
             "the r_data_keys argument under a2g_args."
+        )
+        raise NotImplementedError(
+            msg,
         )
 
     def get_metadata(self, attr, idx):
@@ -859,8 +862,7 @@ class AseAtomsDataset(BaseDataset, ABC):
 
 
 class AseDBDataset(AseAtomsDataset):
-    """
-    This Dataset connects to an ASE Database, allowing the storage of atoms objects
+    """This Dataset connects to an ASE Database, allowing the storage of atoms objects
     with a variety of backends including JSON, SQLite, and database server options.
     """
 
@@ -873,7 +875,8 @@ class AseDBDataset(AseAtomsDataset):
                 elif os.path.isfile(path):
                     filepaths.append(path)
                 else:
-                    raise RuntimeError(f"Error reading dataset in {path}!")
+                    msg = f"Error reading dataset in {path}!"
+                    raise RuntimeError(msg)
         elif os.path.isfile(config["src"]):
             filepaths = [config["src"]]
         elif os.path.isdir(config["src"]):
@@ -888,7 +891,7 @@ class AseDBDataset(AseAtomsDataset):
                 self.dbs.append(self.connect_db(path, config.get("connect_args", {})))
             except ValueError:
                 logging.debug(
-                    f"Tried to connect to {path} but it's not an ASE database!"
+                    f"Tried to connect to {path} but it's not an ASE database!",
                 )
 
         self.select_args = config.get("select_args", {})
@@ -910,9 +913,8 @@ class AseDBDataset(AseAtomsDataset):
         return list(range(sum(idlens)))
 
     def get_atoms(self, idx: int) -> ase.Atoms:
-        """
-        Return an `ase.Atoms` object for the dataset entry `idx`, decoding any
-        JSON‐encoded ndarrays encountered anywhere in the row.
+        """Return an `ase.Atoms` object for the dataset entry `idx`, decoding any
+        JSON-encoded ndarrays encountered anywhere in the row.
         """
         # ------------------------------------------------------------------ #
         # 1.  Locate the correct database and row                            #
@@ -943,7 +945,7 @@ class AseDBDataset(AseAtomsDataset):
             )
 
         # ------------------------------------------------------------------ #
-        # 4.  Row-level dictionaries (data / key_value_pairs) – deep decode  #
+        # 4.  Row-level dictionaries (data / key_value_pairs) - deep decode  #
         # ------------------------------------------------------------------ #
         data_dict = _decode_ndarrays(row.data) if isinstance(row.data, dict) else {}
         kvp_dict = (
@@ -1003,7 +1005,7 @@ class AseDBDataset(AseAtomsDataset):
 
     @staticmethod
     def connect_db(
-        address: str | Path, connect_args: dict | None = None
+        address: str | Path, connect_args: dict | None = None,
     ) -> ase.db.core.Database:
         if connect_args is None:
             connect_args = {}
@@ -1016,7 +1018,7 @@ class AseDBDataset(AseAtomsDataset):
 
         return ase.db.connect(address, **connect_args)
 
-    def __del__(self):
+    def __del__(self) -> None:
         for db in self.dbs:
             if hasattr(db, "close"):
                 db.close()
@@ -1024,13 +1026,12 @@ class AseDBDataset(AseAtomsDataset):
     def sample_property_metadata(
         self,
     ) -> dict:  # Removed unused argument num_samples (W0613)
-        """
-        Sample property metadata from the database.
+        """Sample property metadata from the database.
 
         This method was previously using the copy module which is now removed.
         """
         logging.warning(
-            "You specified a folder of ASE dbs, so it's impossible to know which metadata to use. Using the first!"
+            "You specified a folder of ASE dbs, so it's impossible to know which metadata to use. Using the first!",
         )
         if self.dbs[0].metadata == {}:
             return {}

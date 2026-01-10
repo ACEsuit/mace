@@ -14,7 +14,7 @@ except ImportError:
 
 
 class DistributedEnvironment:
-    def __init__(self):
+    def __init__(self) -> None:
         self._setup_distr_env()
         self.master_addr = os.environ["MASTER_ADDR"]
         self.master_port = os.environ["MASTER_PORT"]
@@ -22,7 +22,7 @@ class DistributedEnvironment:
         self.local_rank = int(os.environ["LOCAL_RANK"])
         self.rank = int(os.environ["RANK"])
 
-    def _setup_distr_env(self):
+    def _setup_distr_env(self) -> None:
         if "SLURM_JOB_NODELIST" in os.environ:
             hostname = hostlist.expand_hostlist(os.environ["SLURM_JOB_NODELIST"])[0]
             os.environ["MASTER_ADDR"] = hostname
@@ -31,7 +31,7 @@ class DistributedEnvironment:
                 "SLURM_NTASKS",
                 str(
                     int(os.environ["SLURM_NTASKS_PER_NODE"])
-                    * int(os.environ["SLURM_NNODES"])
+                    * int(os.environ["SLURM_NNODES"]),
                 ),
             )
             os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
@@ -44,7 +44,7 @@ class DistributedEnvironment:
             os.environ.setdefault("LOCAL_RANK", "0")
             os.environ.setdefault("RANK", "0")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"DistributedEnvironment(master_addr={self.master_addr}, master_port={self.master_port}, "
             f"world_size={self.world_size}, local_rank={self.local_rank}, rank={self.rank})"

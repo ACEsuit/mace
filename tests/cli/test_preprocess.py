@@ -40,7 +40,7 @@ def sample_configs():
     return configs
 
 
-def test_preprocess_data(tmp_path, sample_configs):
+def test_preprocess_data(tmp_path, sample_configs) -> None:
     ase.io.write(tmp_path / "sample.xyz", sample_configs)
 
     preprocess_params = {
@@ -65,7 +65,7 @@ def test_preprocess_data(tmp_path, sample_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in preprocess_params.items()
-            ]
+            ],
         )
     )
 
@@ -141,10 +141,6 @@ def test_preprocess_data(tmp_path, sample_configs):
                     h5_energies.append(config["properties"]["energy"][()])
                     h5_forces.append(config["properties"]["forces"][()])
 
-    print("Original energies", original_energies)
-    print("H5 energies", h5_energies)
-    print("Original forces", original_forces)
-    print("H5 forces", h5_forces)
     original_energies.sort()
     h5_energies.sort()
     original_forces = np.concatenate(original_forces).flatten()
@@ -156,10 +152,9 @@ def test_preprocess_data(tmp_path, sample_configs):
     np.testing.assert_allclose(original_energies, h5_energies, rtol=1e-5, atol=1e-8)
     np.testing.assert_allclose(original_forces, h5_forces, rtol=1e-5, atol=1e-8)
 
-    print("All checks passed successfully!")
 
 
-def test_preprocess_config(tmp_path, sample_configs):
+def test_preprocess_config(tmp_path, sample_configs) -> None:
     ase.io.write(tmp_path / "sample.xyz", sample_configs)
 
     preprocess_params = {

@@ -55,13 +55,12 @@ def create_batch(device: str, dtype: torch.dtype):
     size = 2
     atoms = build.bulk("C", "diamond", a=3.567, cubic=True)
     atoms_list = [atoms.repeat((size, size, size))]
-    print("Number of atoms", len(atoms_list[0]))
 
     configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
             data.AtomicData.from_config(
-                config, z_table=table, cutoff=cutoff, dtype=dtype
+                config, z_table=table, cutoff=cutoff, dtype=dtype,
             )
             for config in configs
         ],
@@ -94,9 +93,9 @@ def default_dtype(request):
 # skip if on windows
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.parametrize(
-    "device", ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+    "device", ["cpu"] + (["cuda"] if torch.cuda.is_available() else []),
 )
-def test_mace(device, default_dtype):  # pylint: disable=W0621
+def test_mace(device, default_dtype) -> None:  # pylint: disable=W0621
     model_defaults = create_mace(device, default_dtype)
     tmp_model = mace_compile.prepare(create_mace)(device, default_dtype)
     model_compiled = torch.compile(tmp_model, mode="default")
@@ -110,7 +109,7 @@ def test_mace(device, default_dtype):  # pylint: disable=W0621
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
-def test_eager_benchmark(benchmark, default_dtype):  # pylint: disable=W0621
+def test_eager_benchmark(benchmark, default_dtype) -> None:  # pylint: disable=W0621
     batch = create_batch("cuda", default_dtype)
     model = create_mace("cuda", default_dtype)
     model = time_func(model)
@@ -121,7 +120,7 @@ def test_eager_benchmark(benchmark, default_dtype):  # pylint: disable=W0621
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
 @pytest.mark.parametrize("compile_mode", ["default", "reduce-overhead", "max-autotune"])
 @pytest.mark.parametrize("enable_amp", [False, True], ids=["fp32", "mixed"])
-def test_compile_benchmark(benchmark, compile_mode, enable_amp):
+def test_compile_benchmark(benchmark, compile_mode, enable_amp) -> None:
     if enable_amp:
         pytest.skip(reason="autocast compiler assertion aten.slice_scatter.default")
 
@@ -139,7 +138,7 @@ def test_compile_benchmark(benchmark, compile_mode, enable_amp):
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
-def test_graph_breaks():
+def test_graph_breaks() -> None:
     import torch._dynamo as dynamo
 
     dtype = torch.float32
@@ -150,5 +149,4 @@ def test_graph_breaks():
     # these clutter the output but might be useful for investigating graph breaks
     explanation.ops_per_graph = None
     explanation.out_guards = None
-    print(explanation)
     assert explanation.graph_break_count == 0

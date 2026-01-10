@@ -1,6 +1,4 @@
-"""
-Wrapper class for o3.Linear that optionally uses cuet.Linear
-"""
+"""Wrapper class for o3.Linear that optionally uses cuet.Linear."""
 
 import dataclasses
 import types
@@ -30,7 +28,7 @@ except ImportError:
 
 @dataclasses.dataclass
 class CuEquivarianceConfig:
-    """Configuration for cuequivariance acceleration"""
+    """Configuration for cuequivariance acceleration."""
 
     enabled: bool = False
     layout: str = "mul_ir"  # One of: mul_ir, ir_mul
@@ -56,7 +54,7 @@ class CuEquivarianceConfig:
 
 @dataclasses.dataclass
 class OEQConfig:
-    """Configuration for cuequivariance acceleration"""
+    """Configuration for cuequivariance acceleration."""
 
     enabled: bool = False
     optimize_all: bool = False
@@ -69,7 +67,7 @@ class OEQConfig:
 
 
 class Linear:
-    """Returns either a cuet.Linear or o3.Linear based on config"""
+    """Returns either a cuet.Linear or o3.Linear based on config."""
 
     def __new__(
         cls,
@@ -123,7 +121,7 @@ def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
 
 
 def with_cueq_conv_fusion(conv_tp: torch.nn.Module) -> torch.nn.Module:
-    """Wraps a cuet.ConvTensorProduct to use conv fusion"""
+    """Wraps a cuet.ConvTensorProduct to use conv fusion."""
     conv_tp.original_forward = conv_tp.forward
     num_segment = conv_tp.m.buffer_num_segments[0]
     num_operands = conv_tp.m.operand_extent
@@ -150,7 +148,7 @@ def with_cueq_conv_fusion(conv_tp: torch.nn.Module) -> torch.nn.Module:
 
 
 class TensorProduct:
-    """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
+    """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum."""
 
     def __new__(
         cls,
@@ -181,7 +179,7 @@ class TensorProduct:
                         .squeeze_modes()
                         .polynomial,
                         math_dtype=torch.get_default_dtype(),
-                    )
+                    ),
                 )
             return cuet.ChannelWiseTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),
@@ -214,7 +212,8 @@ class TensorProduct:
             if oeq_config.conv_fusion == "atomic":
                 return oeq.TensorProductConv(tpp, deterministic=False)
 
-            raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
+            msg = f"Unknown conv_fusion option: {oeq_config.conv_fusion}"
+            raise ValueError(msg)
 
         return o3.TensorProduct(
             irreps_in1,
@@ -227,7 +226,7 @@ class TensorProduct:
 
 
 class FullyConnectedTensorProduct:
-    """Wrapper around o3.FullyConnectedTensorProduct/cuet.FullyConnectedTensorProduct"""
+    """Wrapper around o3.FullyConnectedTensorProduct/cuet.FullyConnectedTensorProduct."""
 
     def __new__(
         cls,
@@ -264,7 +263,7 @@ class FullyConnectedTensorProduct:
 
 
 class SymmetricContractionWrapper:
-    """Wrapper around SymmetricContraction/cuet.SymmetricContraction"""
+    """Wrapper around SymmetricContraction/cuet.SymmetricContraction."""
 
     def __new__(
         cls,
@@ -303,7 +302,7 @@ class SymmetricContractionWrapper:
 
 
 class TransposeIrrepsLayoutWrapper:
-    """Wrapper around cuet.TransposeIrrepsLayout"""
+    """Wrapper around cuet.TransposeIrrepsLayout."""
 
     def __new__(
         cls,

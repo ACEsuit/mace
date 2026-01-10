@@ -29,7 +29,7 @@ def _config():
                 [0.0, -2.0, 0.0],
                 [1.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0],
-            ]
+            ],
         ),
         properties={
             "forces": np.array(
@@ -37,7 +37,7 @@ def _config():
                     [0.0, -1.3, 0.0],
                     [1.0, 0.2, 0.0],
                     [0.0, 1.1, 0.3],
-                ]
+                ],
             ),
             "energy": -1.5,
             "stress": np.array([1.0, 0.0, 0.5, 0.0, -1.0, 0.0]),
@@ -64,7 +64,7 @@ def _config1():
                 [0.0, -2.0, 0.0],
                 [1.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0],
-            ]
+            ],
         ),
         properties={
             "forces": np.array(
@@ -72,7 +72,7 @@ def _config1():
                     [0.0, -1.3, 0.0],
                     [1.0, 0.2, 0.0],
                     [0.0, 1.1, 0.3],
-                ]
+                ],
             ),
             "energy": -1.5,
         },
@@ -93,7 +93,7 @@ def _config2():
                 [0.1, -1.9, 0.1],
                 [1.1, 0.1, 0.1],
                 [0.1, 1.1, 0.1],
-            ]
+            ],
         ),
         properties={
             "forces": np.array(
@@ -101,7 +101,7 @@ def _config2():
                     [0.1, -1.2, 0.1],
                     [1.1, 0.3, 0.1],
                     [0.1, 1.2, 0.4],
-                ]
+                ],
             ),
             "energy": -1.4,
         },
@@ -116,10 +116,10 @@ def _config2():
 @pytest.fixture(name="atomic_data")
 def _atomic_data(config1, config2, table):
     atomic_data1 = AtomicData.from_config(
-        config1, z_table=table, cutoff=3.0, heads=["DFT", "MP2"], dtype=test_dtype
+        config1, z_table=table, cutoff=3.0, heads=["DFT", "MP2"], dtype=test_dtype,
     )
     atomic_data2 = AtomicData.from_config(
-        config2, z_table=table, cutoff=3.0, heads=["DFT", "MP2"], dtype=test_dtype
+        config2, z_table=table, cutoff=3.0, heads=["DFT", "MP2"], dtype=test_dtype,
     )
     return [atomic_data1, atomic_data2]
 
@@ -144,7 +144,7 @@ def _atomic_energies():
 
 test_dtype = torch.float64
 
-def test_weighted_loss(config, table):
+def test_weighted_loss(config, table) -> None:
     loss1 = WeightedEnergyForcesLoss(energy_weight=1, forces_weight=10, dtype=test_dtype)
     loss2 = WeightedHuberEnergyForcesStressLoss(energy_weight=1, forces_weight=10, dtype=test_dtype)
     data = AtomicData.from_config(config, z_table=table, cutoff=3.0, dtype=test_dtype)
@@ -166,7 +166,7 @@ def test_weighted_loss(config, table):
     assert out2 == 0.0
 
 
-def test_symmetric_contraction():
+def test_symmetric_contraction() -> None:
     operation = SymmetricContraction(
         irreps_in=o3.Irreps("16x0e + 16x1o + 16x2e"),
         irreps_out=o3.Irreps("16x0e + 16x1o"),
@@ -176,28 +176,28 @@ def test_symmetric_contraction():
     torch.manual_seed(123)
     features = torch.randn(30, 16, 9, dtype=test_dtype)
     one_hots = torch.nn.functional.one_hot(torch.arange(0, 30) % 2).to(
-        test_dtype
+        test_dtype,
     )
     out = operation(features, one_hots)
     assert out.shape == (30, 64)
     assert operation.contractions[0].weights_max.shape == (2, 11, 16)
 
 
-def test_bessel_basis():
+def test_bessel_basis() -> None:
     d = torch.linspace(start=0.5, end=5.5, steps=10, dtype=test_dtype)
     bessel_basis = BesselBasis(r_max=6.0, num_basis=5).to(test_dtype)
     output = bessel_basis(d.unsqueeze(-1))
     assert output.shape == (10, 5)
 
 
-def test_polynomial_cutoff():
+def test_polynomial_cutoff() -> None:
     d = torch.linspace(start=0.5, end=5.5, steps=10, dtype=test_dtype)
     cutoff_fn = PolynomialCutoff(r_max=5.0).to(test_dtype)
     output = cutoff_fn(d)
     assert output.shape == (10,)
 
 
-def test_atomic_energies(config, table):
+def test_atomic_energies(config, table) -> None:
     energies_block = AtomicEnergiesBlock(atomic_energies=np.array([1.0, 3.0])).to(test_dtype)
     data = AtomicData.from_config(config, z_table=table, cutoff=3.0, dtype=test_dtype)
     data_loader = torch_geometric.dataloader.DataLoader(
@@ -213,13 +213,13 @@ def test_atomic_energies(config, table):
     npt.assert_allclose(out, np.array([5.0, 5.0]))
 
 
-def test_atomic_energies_multireference(config, table):
+def test_atomic_energies_multireference(config, table) -> None:
     energies_block = AtomicEnergiesBlock(
         atomic_energies=np.array([[1.0, 3.0], [2.0, 4.0]]),
     ).to(test_dtype)
     config.head = "MP2"
     data = AtomicData.from_config(
-        config, z_table=table, cutoff=3.0, heads=["DFT", "MP2"], dtype=test_dtype
+        config, z_table=table, cutoff=3.0, heads=["DFT", "MP2"], dtype=test_dtype,
     )
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[data, data],
@@ -241,7 +241,7 @@ def test_atomic_energies_multireference(config, table):
     npt.assert_allclose(out, np.array([8.0, 8.0]))
 
 
-def test_compute_mean_rms_energy_forces_multi_head(data_loader, atomic_energies):
+def test_compute_mean_rms_energy_forces_multi_head(data_loader, atomic_energies) -> None:
     mean, rms = compute_mean_rms_energy_forces(data_loader, atomic_energies, dtype=test_dtype)
     assert isinstance(mean, np.ndarray)
     assert isinstance(rms, np.ndarray)
@@ -251,7 +251,7 @@ def test_compute_mean_rms_energy_forces_multi_head(data_loader, atomic_energies)
     assert rms[0] != rms[1]
 
 
-def test_compute_statistics(data_loader, atomic_energies):
+def test_compute_statistics(data_loader, atomic_energies) -> None:
     avg_num_neighbors, mean, std = compute_statistics(data_loader, atomic_energies, dtype=test_dtype)
     assert isinstance(avg_num_neighbors, float)
     assert isinstance(mean, np.ndarray)

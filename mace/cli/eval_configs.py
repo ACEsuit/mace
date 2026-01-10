@@ -138,12 +138,12 @@ def run(args: argparse.Namespace) -> None:
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
     if model.__class__.__name__ != "MACELES" and args.compute_bec:
-        raise ValueError("BEC can only be computed with MACELES model. ")
+        msg = "BEC can only be computed with MACELES model. "
+        raise ValueError(msg)
     if args.enable_cueq:
-        print("Converting models to CuEq for acceleration")
         model = run_e3nn_to_cueq(model, device=device)
     model = model.to(
-        args.device
+        args.device,
     )  # shouldn't be necessary but seems to help with CUDA problems
 
     for param in model.parameters():
@@ -192,7 +192,7 @@ def run(args: argparse.Namespace) -> None:
     for batch in data_loader:
         batch = batch.to(device)
         output = get_model_output(
-            model, batch.to_dict(), args.compute_stress, args.compute_bec
+            model, batch.to_dict(), args.compute_stress, args.compute_bec,
         )
         energies_list.append(torch_tools.to_numpy(output["energy"]))
         if args.compute_stress:
@@ -257,7 +257,7 @@ def run(args: argparse.Namespace) -> None:
                     axis=0,
                 )[
                     :-1
-                ]  # drop last as its empty
+                ],  # drop last as its empty
             )
 
         forces = np.split(
@@ -316,7 +316,7 @@ def run(args: argparse.Namespace) -> None:
                 elif args.descriptor_aggregation_method == "per_element_mean":
                     descriptors = {
                         element: np.mean(
-                            descriptors[atoms.symbols == element], axis=0
+                            descriptors[atoms.symbols == element], axis=0,
                         ).tolist()
                         for element in np.unique(atoms.symbols)
                     }

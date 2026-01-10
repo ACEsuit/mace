@@ -75,7 +75,7 @@ def _wigner_nj(
 
                 C = torch.einsum("jk,ijl->ikl", C_left.flatten(1), C)
                 C = C.reshape(
-                    ir_out.dim, *(irreps.dim for irreps in irrepss_left), ir.dim
+                    ir_out.dim, *(irreps.dim for irreps in irrepss_left), ir.dim,
                 )
                 for u in range(mul):
                     E = torch.zeros(
@@ -97,7 +97,7 @@ def _wigner_nj(
                                 ),
                             ),
                             E,
-                        )
+                        ),
                     ]
             i += mul * ir.dim
     return sorted(ret, key=lambda x: x[0])
@@ -122,7 +122,7 @@ def U_matrix_real(
         filter_ir_mid = [(i, 1 if i % 2 == 0 else -1) for i in range(12)]
     if use_cueq_cg and CUET_AVAILABLE:
         return compute_U_cueq(
-            irreps_in, irreps_out=irreps_out, correlation=correlation, dtype=dtype
+            irreps_in, irreps_out=irreps_out, correlation=correlation, dtype=dtype,
         )
 
     try:
@@ -136,8 +136,9 @@ def U_matrix_real(
                 use_nonsymmetric_product=use_nonsymmetric_product,
                 dtype=dtype,
             )
+        msg = "The requested Clebsch-Gordan coefficients are not implemented, please install cuequivariance; pip install cuequivariance"
         raise NotImplementedError(
-            "The requested Clebsch-Gordan coefficients are not implemented, please install cuequivariance; pip install cuequivariance"
+            msg,
         ) from e
 
     current_ir = wigners[0][0]
@@ -170,7 +171,7 @@ def U_matrix_real(
 if CUET_AVAILABLE:
 
     def compute_U_cueq(
-        irreps_in, irreps_out, correlation=2, use_nonsymmetric_product=False, dtype=None
+        irreps_in, irreps_out, correlation=2, use_nonsymmetric_product=False, dtype=None,
     ):
         dtype = dtype or torch.get_default_dtype()
         U = []
@@ -196,7 +197,7 @@ if CUET_AVAILABLE:
                             ).array
                         )
                         U_matrix_full = torch.cat(
-                            (U_matrix_full_symm, U_matrix_full_antisymmetric), dim=-1
+                            (U_matrix_full_symm, U_matrix_full_antisymmetric), dim=-1,
                         )
                     except ValueError:
                         continue
@@ -212,7 +213,7 @@ if CUET_AVAILABLE:
                     torch.zeros(
                         out_shape,
                         dtype=torch.get_default_dtype(),
-                    )
+                    ),
                 ]
             if U_matrix_full.shape[-1] == 0:
                 if ir.dim == 1:
@@ -223,7 +224,7 @@ if CUET_AVAILABLE:
                     torch.zeros(
                         out_shape,
                         dtype=torch.get_default_dtype(),
-                    )
+                    ),
                 ]
             ir_str = str(ir)
             U.append(ir_str)
@@ -239,27 +240,27 @@ if CUET_AVAILABLE:
 
     class O3_e3nn(cue.O3):
         def __mul__(  # pylint: disable=no-self-argument
-            rep1: "O3_e3nn", rep2: "O3_e3nn"
+            self: "O3_e3nn", rep2: "O3_e3nn",
         ) -> Iterator["O3_e3nn"]:
-            return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
+            return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(self, rep2)]
 
         @classmethod
         def clebsch_gordan(
-            cls, rep1: "O3_e3nn", rep2: "O3_e3nn", rep3: "O3_e3nn"
+            cls, rep1: "O3_e3nn", rep2: "O3_e3nn", rep3: "O3_e3nn",
         ) -> np.ndarray:
             rep1, rep2, rep3 = cls._from(rep1), cls._from(rep2), cls._from(rep3)
 
             if rep1.p * rep2.p == rep3.p:
                 return o3.wigner_3j(rep1.l, rep2.l, rep3.l).numpy()[None] * np.sqrt(
-                    rep3.dim
+                    rep3.dim,
                 )
             return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
 
         def __lt__(  # pylint: disable=no-self-argument
-            rep1: "O3_e3nn", rep2: "O3_e3nn"
+            self: "O3_e3nn", rep2: "O3_e3nn",
         ) -> bool:
-            rep2 = rep1._from(rep2)
-            return (rep1.l, rep1.p) < (rep2.l, rep2.p)
+            rep2 = self._from(rep2)
+            return (self.l, self.p) < (rep2.l, rep2.p)
 
         @classmethod
         def iterator(cls) -> Iterator["O3_e3nn"]:
@@ -272,6 +273,3 @@ else:
     class O3_e3nn:
         pass
 
-    print(
-        "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled."
-    )

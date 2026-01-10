@@ -60,21 +60,21 @@ def train_atom_descriptors(train_atoms_fixture):
     ],
 )
 def test_filter_data(
-    train_atoms_fixture, filtering_type, passes_filter, element_sublist
-):
+    train_atoms_fixture, filtering_type, passes_filter, element_sublist,
+) -> None:
     filtered, _, passes = _filter_pretraining_data(
-        train_atoms_fixture, filtering_type, element_sublist
+        train_atoms_fixture, filtering_type, element_sublist,
     )
     assert passes == passes_filter
     assert len(filtered) == sum(passes_filter)
 
 
 @pytest.mark.parametrize(
-    "passes_filter", [[True] * 6, [False, True, False, True, False, True]]
+    "passes_filter", [[True] * 6, [False, True, False, True, False, True]],
 )
 def test_load_descriptors(
-    train_atoms_fixture, train_atom_descriptors_fixture, passes_filter, tmp_path
-):
+    train_atoms_fixture, train_atom_descriptors_fixture, passes_filter, tmp_path,
+) -> None:
     for i, atoms in enumerate(train_atoms_fixture):
         atoms.info["mace_descriptors"] = train_atom_descriptors_fixture[i]
     save_path = tmp_path / "test.xyz"
@@ -103,7 +103,7 @@ def test_load_descriptors(
             npt.assert_allclose(atoms.info["mace_descriptors"][key], value)
 
 
-def test_select_samples_random(train_atoms_fixture, tmp_path):
+def test_select_samples_random(train_atoms_fixture, tmp_path) -> None:
     input_file_path = tmp_path / "input.xyz"
     aio.write(input_file_path, train_atoms_fixture, format="extxyz")
     output_file_path = tmp_path / "output.xyz"
@@ -133,7 +133,7 @@ def test_select_samples_random(train_atoms_fixture, tmp_path):
     )  # combined same as output since no FT data provided
 
 
-def test_select_samples_ft_provided(train_atoms_fixture, tmp_path):
+def test_select_samples_ft_provided(train_atoms_fixture, tmp_path) -> None:
     input_file_path = tmp_path / "input.xyz"
     aio.write(input_file_path, train_atoms_fixture, format="extxyz")
     output_file_path = tmp_path / "output.xyz"

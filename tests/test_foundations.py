@@ -26,7 +26,7 @@ MODEL_PATH = (
 )
 
 @pytest.skip("Problem with the float type", allow_module_level=True)
-def test_foundations():
+def test_foundations() -> None:
     dtype = torch.float64
 
     # Create MACE model
@@ -68,30 +68,30 @@ def test_foundations():
     )
     table = tools.AtomicNumberTable([1, 6, 8])
     atomic_energies = np.array([0.0, 0.0, 0.0], dtype=float)
-    model_config = dict(
-        r_max=6,
-        num_bessel=10,
-        num_polynomial_cutoff=5,
-        max_ell=3,
-        interaction_cls=modules.interaction_classes[
+    model_config = {
+        "r_max": 6,
+        "num_bessel": 10,
+        "num_polynomial_cutoff": 5,
+        "max_ell": 3,
+        "interaction_cls": modules.interaction_classes[
             "RealAgnosticResidualInteractionBlock"
         ],
-        interaction_cls_first=modules.interaction_classes[
+        "interaction_cls_first": modules.interaction_classes[
             "RealAgnosticResidualInteractionBlock"
         ],
-        num_interactions=2,
-        num_elements=3,
-        hidden_irreps=o3.Irreps("128x0e + 128x1o"),
-        MLP_irreps=o3.Irreps("16x0e"),
-        gate=torch.nn.functional.silu,
-        atomic_energies=atomic_energies,
-        avg_num_neighbors=3,
-        atomic_numbers=table.zs,
-        correlation=3,
-        radial_type="bessel",
-        atomic_inter_scale=0.1,
-        atomic_inter_shift=0.0,
-    )
+        "num_interactions": 2,
+        "num_elements": 3,
+        "hidden_irreps": o3.Irreps("128x0e + 128x1o"),
+        "MLP_irreps": o3.Irreps("16x0e"),
+        "gate": torch.nn.functional.silu,
+        "atomic_energies": atomic_energies,
+        "avg_num_neighbors": 3,
+        "atomic_numbers": table.zs,
+        "correlation": 3,
+        "radial_type": "bessel",
+        "atomic_inter_scale": 0.1,
+        "atomic_inter_shift": 0.0,
+    }
     model = modules.ScaleShiftMACE(**model_config).to(dtype=dtype)
     calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
     model_loaded = load_foundations_elements(
@@ -103,10 +103,10 @@ def test_foundations():
         max_L=1,
     )
     atomic_data = data.AtomicData.from_config(
-        config, z_table=table, cutoff=6.0, dtype=dtype
+        config, z_table=table, cutoff=6.0, dtype=dtype,
     )
     atomic_data2 = data.AtomicData.from_config(
-        config_rotated, z_table=table, cutoff=6.0, dtype=dtype
+        config_rotated, z_table=table, cutoff=6.0, dtype=dtype,
     )
 
     data_loader = torch_geometric.dataloader.DataLoader(
@@ -121,7 +121,7 @@ def test_foundations():
     assert torch.allclose(forces, forces_loaded)
 
 
-def test_multi_reference():
+def test_multi_reference() -> None:
     dtype = torch.float64
 
     config_multi = data.Configuration(
@@ -146,32 +146,32 @@ def test_multi_reference():
     table = tools.AtomicNumberTable([1, 6, 8])
 
     # Create MACE model
-    model_config = dict(
-        r_max=6,
-        num_bessel=10,
-        num_polynomial_cutoff=5,
-        max_ell=3,
-        interaction_cls=modules.interaction_classes[
+    model_config = {
+        "r_max": 6,
+        "num_bessel": 10,
+        "num_polynomial_cutoff": 5,
+        "max_ell": 3,
+        "interaction_cls": modules.interaction_classes[
             "RealAgnosticResidualInteractionBlock"
         ],
-        interaction_cls_first=modules.interaction_classes[
+        "interaction_cls_first": modules.interaction_classes[
             "RealAgnosticResidualInteractionBlock"
         ],
-        num_interactions=2,
-        num_elements=3,
-        hidden_irreps=o3.Irreps("128x0e + 128x1o"),
-        MLP_irreps=o3.Irreps("16x0e"),
-        gate=torch.nn.functional.silu,
-        atomic_energies=atomic_energies_multi,
-        avg_num_neighbors=61,
-        atomic_numbers=table.zs,
-        correlation=3,
-        radial_type="bessel",
-        atomic_inter_scale=[1.0, 1.0],
-        atomic_inter_shift=[0.0, 0.0],
-        heads=["MP2", "DFT"],
-        dtype=dtype,
-    )
+        "num_interactions": 2,
+        "num_elements": 3,
+        "hidden_irreps": o3.Irreps("128x0e + 128x1o"),
+        "MLP_irreps": o3.Irreps("16x0e"),
+        "gate": torch.nn.functional.silu,
+        "atomic_energies": atomic_energies_multi,
+        "avg_num_neighbors": 61,
+        "atomic_numbers": table.zs,
+        "correlation": 3,
+        "radial_type": "bessel",
+        "atomic_inter_scale": [1.0, 1.0],
+        "atomic_inter_shift": [0.0, 0.0],
+        "heads": ["MP2", "DFT"],
+        "dtype": dtype,
+    }
     model = modules.ScaleShiftMACE(**model_config)
     calc_foundation = mace_mp(model="medium", device="cpu", default_dtype="float64")
     model_loaded = load_foundations_elements(
@@ -183,7 +183,7 @@ def test_multi_reference():
         max_L=1,
     )
     atomic_data = data.AtomicData.from_config(
-        config_multi, z_table=table_multi, cutoff=6.0, heads=["MP2", "DFT"]
+        config_multi, z_table=table_multi, cutoff=6.0, heads=["MP2", "DFT"],
     )
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[atomic_data, atomic_data],
@@ -199,7 +199,7 @@ def test_multi_reference():
     atoms.calc = calc_foundation
     forces = atoms.get_forces()
     npt.assert_allclose(
-        forces, forces_loaded.detach().numpy()[:5, :], atol=1e-5, rtol=1e-5
+        forces, forces_loaded.detach().numpy()[:5, :], atol=1e-5, rtol=1e-5,
     )
 
 
@@ -217,7 +217,7 @@ def test_multi_reference():
         mace_off(model=MODEL_PATH, device="cpu", default_dtype="float64"),
     ],
 )
-def test_compile_foundation(calc):
+def test_compile_foundation(calc) -> None:
     model = calc.models[0]
     atoms = molecule("CH4")
     atoms.positions += np.random.randn(*atoms.positions.shape) * 0.1
@@ -243,7 +243,7 @@ def test_compile_foundation(calc):
         mace_off(model=MODEL_PATH, device="cpu", default_dtype="float64").models[0],
     ],
 )
-def test_extract_config(model):
+def test_extract_config(model) -> None:
     assert isinstance(model, modules.ScaleShiftMACE)
     config = data.Configuration(
         atomic_numbers=molecule("H2COH").numbers,
@@ -280,7 +280,7 @@ def test_extract_config(model):
             assert torch.allclose(output[key], output_copy[key], atol=1e-5)
 
 
-def test_remove_pt_head():
+def test_remove_pt_head() -> None:
     dtype = torch.float64
     # Set up test data
     torch.manual_seed(42)
@@ -333,7 +333,7 @@ def test_remove_pt_head():
         dtype=dtype,
     )
     dataloader = torch_geometric.dataloader.DataLoader(
-        dataset=[atomic_data], batch_size=1, shuffle=False
+        dataset=[atomic_data], batch_size=1, shuffle=False,
     )
     batch = next(iter(dataloader))
     # Test original mode
@@ -358,19 +358,19 @@ def test_remove_pt_head():
         dtype=dtype,
     )
     dataloader = torch_geometric.dataloader.DataLoader(
-        dataset=[atomic_data], batch_size=1, shuffle=False
+        dataset=[atomic_data], batch_size=1, shuffle=False,
     )
     batch = next(iter(dataloader))
     output_new = new_model(batch.to_dict())
     torch.testing.assert_close(
-        output_orig["energy"], output_new["energy"], rtol=1e-5, atol=1e-5
+        output_orig["energy"], output_new["energy"], rtol=1e-5, atol=1e-5,
     )
     torch.testing.assert_close(
-        output_orig["forces"], output_new["forces"], rtol=1e-5, atol=1e-5
+        output_orig["forces"], output_new["forces"], rtol=1e-5, atol=1e-5,
     )
 
 
-def test_remove_pt_head_multihead():
+def test_remove_pt_head_multihead() -> None:
     dtype = torch.float64
     # Set up test data
     torch.manual_seed(42)
@@ -379,7 +379,7 @@ def test_remove_pt_head_multihead():
             [1.0, 2.0],  # H energies for each head
             [3.0, 4.0],  # O energies for each head
         ]
-        * 2
+        * 2,
     )
     z_table = AtomicNumberTable([1, 8])  # H and O
 
@@ -440,7 +440,7 @@ def test_remove_pt_head_multihead():
         atomic_datas[head] = atomic_data
 
         dataloader = torch_geometric.dataloader.DataLoader(
-            dataset=[atomic_data], batch_size=1, shuffle=False
+            dataset=[atomic_data], batch_size=1, shuffle=False,
         )
         dataloaders[head] = dataloader
 
@@ -468,10 +468,10 @@ def test_remove_pt_head_multihead():
 
         # Verify scale and shift values
         assert torch.allclose(
-            new_model.scale_shift.scale, model.scale_shift.scale[i : i + 1]
+            new_model.scale_shift.scale, model.scale_shift.scale[i : i + 1],
         ), f"Failed for head {head}"
         assert torch.allclose(
-            new_model.scale_shift.shift, model.scale_shift.shift[i : i + 1]
+            new_model.scale_shift.shift, model.scale_shift.shift[i : i + 1],
         ), f"Failed for head {head}"
 
         # Test output consistency
@@ -483,16 +483,12 @@ def test_remove_pt_head_multihead():
             dtype=dtype,
         )
         single_head_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[single_head_data], batch_size=1, shuffle=False
+            dataset=[single_head_data], batch_size=1, shuffle=False,
         )
         batch = next(iter(single_head_loader))
         new_output = new_model(batch.to_dict())
 
         # Compare outputs
-        print(
-            original_outputs[head]["energy"],
-            new_output["energy"],
-        )
         torch.testing.assert_close(
             original_outputs[head]["energy"],
             new_output["energy"],
@@ -529,7 +525,7 @@ def test_remove_pt_head_multihead():
             dtype=dtype,
         )
         single_head_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[single_head_data], batch_size=1, shuffle=False
+            dataset=[single_head_data], batch_size=1, shuffle=False,
         )
         batch = next(iter(single_head_loader))
         results[head] = head_model(batch.to_dict())

@@ -7,10 +7,9 @@ from mace.tools import evaluate
 
 
 def custom_key(key):
-    """
-    Helper function to sort the keys of the data loader dictionary
+    """Helper function to sort the keys of the data loader dictionary
     to ensure that the training set, and validation set
-    are evaluated first
+    are evaluated first.
     """
     if key == "train":
         return (0, key)
@@ -141,7 +140,7 @@ def create_error_table(
                     f"{metrics['rmse_e'] * 1000:8.1f}",
                     f"{metrics['rmse_f'] * 1000:8.1f}",
                     f"{metrics['rel_rmse_f']:8.2f}",
-                ]
+                ],
             )
         elif table_type == "PerAtomRMSE":
             table.add_row(
@@ -150,7 +149,7 @@ def create_error_table(
                     f"{metrics['rmse_e_per_atom'] * 1000:8.1f}",
                     f"{metrics['rmse_f'] * 1000:8.1f}",
                     f"{metrics['rel_rmse_f']:8.2f}",
-                ]
+                ],
             )
         elif (
             table_type == "PerAtomRMSEstressvirials"
@@ -163,7 +162,7 @@ def create_error_table(
                     f"{metrics['rmse_f'] * 1000:8.1f}",
                     f"{metrics['rel_rmse_f']:8.2f}",
                     f"{metrics['rmse_stress'] * 1000:8.1f}",
-                ]
+                ],
             )
         elif (
             table_type == "PerAtomRMSEstressvirials"
@@ -176,7 +175,7 @@ def create_error_table(
                     f"{metrics['rmse_f'] * 1000:8.1f}",
                     f"{metrics['rel_rmse_f']:8.2f}",
                     f"{metrics['rmse_virials'] * 1000:8.1f}",
-                ]
+                ],
             )
         elif (
             table_type == "PerAtomMAEstressvirials"
@@ -189,7 +188,7 @@ def create_error_table(
                     f"{metrics['mae_f'] * 1000:8.1f}",
                     f"{metrics['rel_mae_f']:8.2f}",
                     f"{metrics['mae_stress'] * 1000:8.1f}",
-                ]
+                ],
             )
         elif (
             table_type == "PerAtomMAEstressvirials"
@@ -202,7 +201,7 @@ def create_error_table(
                     f"{metrics['mae_f'] * 1000:8.1f}",
                     f"{metrics['rel_mae_f']:8.2f}",
                     f"{metrics['mae_virials'] * 1000:8.1f}",
-                ]
+                ],
             )
         elif table_type == "TotalMAE":
             table.add_row(
@@ -211,7 +210,7 @@ def create_error_table(
                     f"{metrics['mae_e'] * 1000:8.1f}",
                     f"{metrics['mae_f'] * 1000:8.1f}",
                     f"{metrics['rel_mae_f']:8.2f}",
-                ]
+                ],
             )
         elif table_type == "PerAtomMAE":
             table.add_row(
@@ -220,7 +219,7 @@ def create_error_table(
                     f"{metrics['mae_e_per_atom'] * 1000:8.1f}",
                     f"{metrics['mae_f'] * 1000:8.1f}",
                     f"{metrics['rel_mae_f']:8.2f}",
-                ]
+                ],
             )
         elif table_type == "DipoleRMSE":
             table.add_row(
@@ -228,7 +227,7 @@ def create_error_table(
                     name,
                     f"{metrics['rmse_mu_per_atom'] * 1000:8.2f}",
                     f"{metrics['rel_rmse_mu']:8.1f}",
-                ]
+                ],
             )
         elif table_type == "DipoleMAE":
             table.add_row(
@@ -236,7 +235,7 @@ def create_error_table(
                     name,
                     f"{metrics['mae_mu_per_atom'] * 1000:8.2f}",
                     f"{metrics['rel_mae_mu']:8.1f}",
-                ]
+                ],
             )
         elif table_type == "DipolePolarRMSE":
             table.add_row(
@@ -245,7 +244,7 @@ def create_error_table(
                     f"{metrics['rmse_mu_per_atom'] * 1000:.2f}",
                     f"{metrics['rel_rmse_mu']:.1f}",
                     f"{metrics['rmse_polarizability_per_atom'] * 1000:.2f}",
-                ]
+                ],
             )
         elif table_type == "EnergyDipoleRMSE":
             table.add_row(
@@ -256,6 +255,6 @@ def create_error_table(
                     f"{metrics['rel_rmse_f']:8.1f}",
                     f"{metrics['rmse_mu_per_atom'] * 1000:8.1f}",
                     f"{metrics['rel_rmse_mu']:8.1f}",
-                ]
+                ],
             )
     return table

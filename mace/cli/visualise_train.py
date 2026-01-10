@@ -120,7 +120,7 @@ class TrainingPlotter:
         distributed: bool = False,
         swa_start: int | None = None,
         plot_interaction_e: bool = False,
-    ):
+    ) -> None:
         self.results_dir = results_dir
         self.heads = heads
         self.table_type = table_type
@@ -144,7 +144,7 @@ class TrainingPlotter:
             self.distributed,
         )
         test_dict = model_inference(
-            self.test_data, model, self.output_args, self.device, self.distributed
+            self.test_data, model, self.output_args, self.device, self.distributed,
         )
 
         # Only rank 0 creates and saves plots
@@ -159,7 +159,7 @@ class TrainingPlotter:
         for head in self.heads:
             fig = plt.figure(layout="constrained", figsize=(10, 6))
             fig.suptitle(
-                f"Model loaded from epoch {model_epoch} ({head} head)", fontsize=16
+                f"Model loaded from epoch {model_epoch} ({head} head)", fontsize=16,
             )
 
             subfigs = fig.subfigures(2, 1, height_ratios=[1, 1], hspace=0.05)
@@ -208,14 +208,12 @@ def parse_training_results(path: str) -> list[dict]:
                 d = json.loads(line.strip())  # Ensure it's valid JSON
                 results.append(d)
             except json.JSONDecodeError:
-                print(
-                    f"Skipping invalid line: {line.strip()}"
-                )  # Handle non-JSON lines gracefully
+                pass  # Handle non-JSON lines gracefully
     return results
 
 
 def plot_epoch_dependence(
-    axes: np.ndarray, data: pd.DataFrame, head: str, model_epoch: str, labels: list[str]
+    axes: np.ndarray, data: pd.DataFrame, head: str, model_epoch: str, labels: list[str],
 ) -> None:
 
     valid_data = (
@@ -235,14 +233,14 @@ def plot_epoch_dependence(
     # ---- Plot loss ----
     ax = axes[0]
     ax.plot(
-        train_data["epoch"], train_data["loss"]["mean"], color=colors[1], linewidth=1
+        train_data["epoch"], train_data["loss"]["mean"], color=colors[1], linewidth=1,
     )
     ax.set_ylabel("Training Loss", color=colors[1])
     ax.set_yscale("log")
 
     ax2 = ax.twinx()
     ax2.plot(
-        valid_data["epoch"], valid_data["loss"]["mean"], color=colors[0], linewidth=1
+        valid_data["epoch"], valid_data["loss"]["mean"], color=colors[0], linewidth=1,
     )
     ax2.set_ylabel("Validation Loss", color=colors[0])
     ax2.set_yscale("log")
@@ -446,7 +444,7 @@ def plot_inference_from_results(
         # Set legend with unique entries (Test + individual train/valid names)
         if legend_labels:
             ax.legend(
-                handles=legend_labels.values(), labels=legend_labels.keys(), loc="best"
+                handles=legend_labels.values(), labels=legend_labels.keys(), loc="best",
             )
         if key != "energy" or not plot_interaction_e:
             ax.set_xlabel(f"Reference {label}")
@@ -510,7 +508,7 @@ def to_numpy(tensor: torch.Tensor) -> np.ndarray:
 class InferenceMetric(Metric):
     """Metric class for collecting reference and predicted values for scatterplot visualization."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         # Raw values
         self.add_state("ref_energies", default=[], dist_reduce_fx="cat")
@@ -529,11 +527,11 @@ class InferenceMetric(Metric):
         # Per-atom normalized values
         self.add_state("ref_energies_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state(
-            "ref_interaction_energies_per_atom", default=[], dist_reduce_fx="cat"
+            "ref_interaction_energies_per_atom", default=[], dist_reduce_fx="cat",
         )
         self.add_state("pred_energies_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state(
-            "pred_interaction_energies_per_atom", default=[], dist_reduce_fx="cat"
+            "pred_interaction_energies_per_atom", default=[], dist_reduce_fx="cat",
         )
         self.add_state("ref_virials_per_atom", default=[], dist_reduce_fx="cat")
         self.add_state("pred_virials_per_atom", default=[], dist_reduce_fx="cat")
@@ -546,14 +544,14 @@ class InferenceMetric(Metric):
         # Counters
         self.add_state("n_energy", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state(
-            "n_interaction_energy", default=torch.tensor(0.0), dist_reduce_fx="sum"
+            "n_interaction_energy", default=torch.tensor(0.0), dist_reduce_fx="sum",
         )
         self.add_state("n_forces", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_stress", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_virials", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_dipole", default=torch.tensor(0.0), dist_reduce_fx="sum")
 
-    def update(self, batch, output):  # pylint: disable=arguments-differ
+    def update(self, batch, output) -> None:  # pylint: disable=arguments-differ
         """Update metric states with new batch data."""
         # Calculate number of atoms per configuration
         atoms_per_config = batch.ptr[1:] - batch.ptr[:-1]
@@ -594,16 +592,16 @@ class InferenceMetric(Metric):
 
         if output.get("interaction_energy") is not None and batch.energy is not None:
             E0s = output["energy"].to(torch.float64) - output["interaction_energy"].to(
-                torch.float64
+                torch.float64,
             )
             self.ref_interaction_energies.append(batch.energy - E0s)
             self.pred_interaction_energies.append(output["interaction_energy"])
             # Per-atom normalization
             self.ref_interaction_energies_per_atom.append(
-                (batch.energy - E0s) / atoms_per_config
+                (batch.energy - E0s) / atoms_per_config,
             )
             self.pred_interaction_energies_per_atom.append(
-                output["interaction_energy"] / atoms_per_config
+                output["interaction_energy"] / atoms_per_config,
             )
 
             self.n_interaction_energy += filter_nonzero_weight(
@@ -712,10 +710,10 @@ class InferenceMetric(Metric):
             self.pred_dipole_per_atom.append(output["dipole"] / atoms_per_config_3d)
 
             self.n_dipole += filter_nonzero_weight(
-                batch, self.ref_dipole, batch.weight, batch.dipole_weight, "config"
+                batch, self.ref_dipole, batch.weight, batch.dipole_weight, "config",
             )
             filter_nonzero_weight(
-                batch, self.pred_dipole, batch.weight, batch.dipole_weight, "config"
+                batch, self.pred_dipole, batch.weight, batch.dipole_weight, "config",
             )
             filter_nonzero_weight(
                 batch,
@@ -758,7 +756,7 @@ class InferenceMetric(Metric):
         if self.n_energy:
             ref_e, pred_e = self._process_data(self.ref_energies, self.pred_energies)
             ref_e_pa, pred_e_pa = self._process_data(
-                self.ref_energies_per_atom, self.pred_energies_per_atom
+                self.ref_energies_per_atom, self.pred_energies_per_atom,
             )
             results["energy"] = {
                 "reference": ref_e,
@@ -769,7 +767,7 @@ class InferenceMetric(Metric):
 
         if self.n_interaction_energy:
             ref_interaction_e, pred_interaction_e = self._process_data(
-                self.ref_interaction_energies, self.pred_interaction_energies
+                self.ref_interaction_energies, self.pred_interaction_energies,
             )
             ref_interaction_e_pa, pred_interaction_e_pa = self._process_data(
                 self.ref_interaction_energies_per_atom,
@@ -802,7 +800,7 @@ class InferenceMetric(Metric):
         if self.n_virials:
             ref_v, pred_v = self._process_data(self.ref_virials, self.pred_virials)
             ref_v_pa, pred_v_pa = self._process_data(
-                self.ref_virials_per_atom, self.pred_virials_per_atom
+                self.ref_virials_per_atom, self.pred_virials_per_atom,
             )
             results["virials"] = {
                 "reference": ref_v,
@@ -815,7 +813,7 @@ class InferenceMetric(Metric):
         if self.n_dipole:
             ref_d, pred_d = self._process_data(self.ref_dipole, self.pred_dipole)
             ref_d_pa, pred_d_pa = self._process_data(
-                self.ref_dipole_per_atom, self.pred_dipole_per_atom
+                self.ref_dipole_per_atom, self.pred_dipole_per_atom,
             )
             results["dipole"] = {
                 "reference": ref_d,

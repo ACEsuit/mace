@@ -43,7 +43,7 @@ def compute_stats_target(
     )
 
     avg_num_neighbors, mean, std = compute_statistics(
-        train_loader, atomic_energies, dtype=dtype
+        train_loader, atomic_energies, dtype=dtype,
     )
     return [avg_num_neighbors, mean, std]
 
@@ -75,8 +75,9 @@ def pool_compute_stats(inputs: list):
     results = [r.get() for r in tqdm.tqdm(re)]
 
     if not results:
+        msg = "No results were computed. Check if the input files exist and are readable."
         raise ValueError(
-            "No results were computed. Check if the input files exist and are readable."
+            msg,
         )
 
     # Separate avg_num_neighbors, mean, and std
@@ -116,41 +117,38 @@ def get_prime_factors(n: int):
 
 
 # Define Task for Multiprocessiing
-def multi_train_hdf5(process, args, split_train, drop_last):
+def multi_train_hdf5(process, args, split_train, drop_last) -> None:
     with h5py.File(args.h5_prefix + "train/train_" + str(process) + ".h5", "w") as f:
         f.attrs["drop_last"] = drop_last
         save_configurations_as_HDF5(split_train[process], process, f)
 
 
-def multi_valid_hdf5(process, args, split_valid, drop_last):
+def multi_valid_hdf5(process, args, split_valid, drop_last) -> None:
     with h5py.File(args.h5_prefix + "val/val_" + str(process) + ".h5", "w") as f:
         f.attrs["drop_last"] = drop_last
         save_configurations_as_HDF5(split_valid[process], process, f)
 
 
-def multi_test_hdf5(process, name, args, split_test, drop_last):
+def multi_test_hdf5(process, name, args, split_test, drop_last) -> None:
     with h5py.File(
-        args.h5_prefix + "test/" + name + "_" + str(process) + ".h5", "w"
+        args.h5_prefix + "test/" + name + "_" + str(process) + ".h5", "w",
     ) as f:
         f.attrs["drop_last"] = drop_last
         save_configurations_as_HDF5(split_test[process], process, f)
 
 
 def main() -> None:
-    """
-    This script loads an xyz dataset and prepares
-    new hdf5 file that is ready for training with on-the-fly dataloading
+    """This script loads an xyz dataset and prepares
+    new hdf5 file that is ready for training with on-the-fly dataloading.
     """
     args = tools.build_preprocess_arg_parser().parse_args()
     run(args)
 
 
-def run(args: argparse.Namespace):
+def run(args: argparse.Namespace) -> None:
+    """This script loads an xyz dataset and prepares
+    new hdf5 file that is ready for training with on-the-fly dataloading.
     """
-    This script loads an xyz dataset and prepares
-    new hdf5 file that is ready for training with on-the-fly dataloading
-    """
-
     # currently support only command line property_key syntax
     args.key_specification = KeySpecification()
     update_keyspec_from_kwargs(args.key_specification, vars(args))
@@ -170,7 +168,7 @@ def run(args: argparse.Namespace):
         assert isinstance(config_type_weights, dict)
     except Exception as e:  # pylint: disable=W0703
         logging.warning(
-            f"Config type weights not specified correctly ({e}), using Default"
+            f"Config type weights not specified correctly ({e}), using Default",
         )
         config_type_weights = {"Default": 1.0}
 
@@ -245,7 +243,7 @@ def run(args: argparse.Namespace):
             logging.warning("To include these elements in the model, specify all atomic numbers explicitly using the --atomic_numbers argument.")
 
         atomic_energies: np.ndarray = np.array(
-            [atomic_energies_dict[z] for z in z_table.zs]
+            [atomic_energies_dict[z] for z in z_table.zs],
         )
         logging.info(f"Atomic Energies: {atomic_energies.tolist()}")
         _inputs = [args.h5_prefix+"train", z_table, args.r_max, atomic_energies, args.batch_size, args.num_process, dtype]

@@ -5,7 +5,7 @@ import torch
 from mace.tools.scripts_utils import remove_pt_head
 
 
-def main():
+def main() -> None:
     parser = ArgumentParser()
     grp = parser.add_mutually_exclusive_group()
     grp.add_argument(
@@ -36,8 +36,7 @@ def main():
     model = torch.load(args.model_file, map_location=args.target_device)
 
     if args.list_heads:
-        print("Available heads:")
-        print("\n".join(["  " + h for h in model.heads]))
+        pass
     else:
 
         if args.output_file is None:

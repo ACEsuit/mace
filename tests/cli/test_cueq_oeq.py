@@ -129,7 +129,7 @@ class BackendTestBase:
         device: str,
         dtype: torch.dtype,
         conversion_functions: tuple,
-    ):
+    ) -> None:
         run_e3nn_to_backend, run_backend_to_e3nn = conversion_functions
 
         if device == "cuda" and not CUDA_AVAILABLE:
@@ -150,7 +150,7 @@ class BackendTestBase:
         out_backend = model_backend(deepcopy(batch), training=True, compute_stress=True)
 
         out_e3nn_back = model_e3nn_back(
-            deepcopy(batch), training=True, compute_stress=True
+            deepcopy(batch), training=True, compute_stress=True,
         )
 
         tol = 1e-4 if dtype == torch.float32 else 1e-7
@@ -177,37 +177,36 @@ class BackendTestBase:
         loss_backend.backward()
         loss_e3nn_back.backward()
 
-        def print_gradient_diff(name1, p1, name2, p2, conv_type):
-            if p1.grad is not None and p1.grad.shape == p2.grad.shape:
-                if name1.split(".", 2)[:2] == name2.split(".", 2)[:2]:
-                    error = torch.abs(p1.grad - p2.grad)
-                    print(
-                        f"{conv_type} - Parameter {name1}/{name2}, Max error: {error.max()}"
-                    )
-                    torch.testing.assert_close(p1.grad, p2.grad, atol=tol, rtol=tol)
+        def print_gradient_diff(name1, p1, name2, p2, conv_type) -> None:
+            if (
+                p1.grad is not None and p1.grad.shape == p2.grad.shape
+                and name1.split(".", 2)[:2] == name2.split(".", 2)[:2]
+            ):
+                torch.abs(p1.grad - p2.grad)
+                torch.testing.assert_close(p1.grad, p2.grad, atol=tol, rtol=tol)
 
         # E3nn to CuEq gradients
         for (name_e3nn, p_e3nn), (name_backend, p_backend) in zip(
-            model_e3nn.named_parameters(), model_backend.named_parameters(), strict=False
+            model_e3nn.named_parameters(), model_backend.named_parameters(), strict=False,
         ):
             print_gradient_diff(
-                name_e3nn, p_e3nn, name_backend, p_backend, "E3nn->CuEq"
+                name_e3nn, p_e3nn, name_backend, p_backend, "E3nn->CuEq",
             )
 
         # CuEq to E3nn gradients
         for (name_backend, p_backend), (name_e3nn_back, p_e3nn_back) in zip(
-            model_backend.named_parameters(), model_e3nn_back.named_parameters(), strict=False
+            model_backend.named_parameters(), model_e3nn_back.named_parameters(), strict=False,
         ):
             print_gradient_diff(
-                name_backend, p_backend, name_e3nn_back, p_e3nn_back, "CuEq->E3nn"
+                name_backend, p_backend, name_e3nn_back, p_e3nn_back, "CuEq->E3nn",
             )
 
         # Full circle comparison (E3nn -> E3nn)
         for (name_e3nn, p_e3nn), (name_e3nn_back, p_e3nn_back) in zip(
-            model_e3nn.named_parameters(), model_e3nn_back.named_parameters(), strict=False
+            model_e3nn.named_parameters(), model_e3nn_back.named_parameters(), strict=False,
         ):
             print_gradient_diff(
-                name_e3nn, p_e3nn, name_e3nn_back, p_e3nn_back, "Full circle"
+                name_e3nn, p_e3nn, name_e3nn_back, p_e3nn_back, "Full circle",
             )
 
 

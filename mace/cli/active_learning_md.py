@@ -19,23 +19,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--config", help="path to XYZ configurations", required=True)
     parser.add_argument(
-        "--config_index", help="index of configuration", type=int, default=-1
+        "--config_index", help="index of configuration", type=int, default=-1,
     )
     parser.add_argument(
-        "--error_threshold", help="error threshold", type=float, default=0.1
+        "--error_threshold", help="error threshold", type=float, default=0.1,
     )
     parser.add_argument("--temperature_K", help="temperature", type=float, default=300)
     parser.add_argument("--friction", help="friction", type=float, default=0.01)
     parser.add_argument("--timestep", help="timestep", type=float, default=1)
     parser.add_argument("--nsteps", help="number of steps", type=int, default=1000)
     parser.add_argument(
-        "--nprint", help="number of steps between prints", type=int, default=10
+        "--nprint", help="number of steps between prints", type=int, default=10,
     )
     parser.add_argument(
-        "--nsave", help="number of steps between saves", type=int, default=10
+        "--nsave", help="number of steps between saves", type=int, default=10,
     )
     parser.add_argument(
-        "--ncheckerror", help="number of steps between saves", type=int, default=10
+        "--ncheckerror", help="number of steps between saves", type=int, default=10,
     )
 
     parser.add_argument(
@@ -74,30 +74,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def printenergy(dyn, start_time=None):  # store a reference to atoms in the definition.
+def printenergy(dyn, start_time=None) -> None:  # store a reference to atoms in the definition.
     """Function to print the potential, kinetic and total energy."""
     a = dyn.atoms
-    epot = a.get_potential_energy() / len(a)
-    ekin = a.get_kinetic_energy() / len(a)
-    elapsed_time = 0 if start_time is None else time.time() - start_time
-    forces_var = np.var(a.calc.results["forces_comm"], axis=0)
-    print(
-        "{:.1f}s: Energy per atom: Epot = {:.3f}eV  Ekin = {:.3f}eV (T={:3.0f}K)  "  # pylint: disable=C0209
-        "Etot = {:.3f}eV t={:.1f}fs Eerr = {:.3f}eV Ferr = {:.3f}eV/A".format(
-            elapsed_time,
-            epot,
-            ekin,
-            ekin / (1.5 * units.kB),
-            epot + ekin,
-            dyn.get_time() / units.fs,
-            a.calc.results["energy_var"],
-            np.max(np.linalg.norm(forces_var, axis=1)),
-        ),
-        flush=True,
-    )
+    a.get_potential_energy() / len(a)
+    a.get_kinetic_energy() / len(a)
+    0 if start_time is None else time.time() - start_time
+    np.var(a.calc.results["forces_comm"], axis=0)
 
 
-def save_config(dyn, fname):
+def save_config(dyn, fname) -> None:
     atomsi = dyn.atoms
     ens = atomsi.get_potential_energy()
     frcs = atomsi.get_forces()
@@ -107,19 +93,19 @@ def save_config(dyn, fname):
             "mlff_energy": ens,
             "time": np.round(dyn.get_time() / units.fs, 5),
             "mlff_energy_var": atomsi.calc.results["energy_var"],
-        }
+        },
     )
     atomsi.arrays.update(
         {
             "mlff_forces": frcs,
             "mlff_forces_var": np.var(atomsi.calc.results["forces_comm"], axis=0),
-        }
+        },
     )
 
     ase.io.write(fname, atomsi, append=True)
 
 
-def stop_error(dyn, threshold, reg=0.2):
+def stop_error(dyn, threshold, reg=0.2) -> None:
     atomsi = dyn.atoms
     force_var = np.var(atomsi.calc.results["forces_comm"], axis=0)
     force = atomsi.get_forces()
@@ -127,12 +113,6 @@ def stop_error(dyn, threshold, reg=0.2):
     ferr_rel = ferr / (np.linalg.norm(force, axis=1) + reg)
 
     if np.max(ferr_rel) > threshold:
-        print(
-            "Error too large {:.3}. Stopping t={:.2} fs.".format(  # pylint: disable=C0209
-                np.max(ferr_rel), dyn.get_time() / units.fs
-            ),
-            flush=True,
-        )
         dyn.max_steps = 0
 
 
@@ -155,10 +135,8 @@ def run(args: argparse.Namespace) -> None:
     NSTEPS = args.nsteps
 
     if os.path.exists(args.output):
-        print("Trajectory exists. Continuing from last step.")
         atoms = ase.io.read(args.output, index=-1)
         len_save = len(ase.io.read(args.output, ":"))
-        print("Last step: ", atoms.info["time"], "Number of configs: ", len_save)
         NSTEPS -= len_save * args.nsave
     else:
         atoms = ase.io.read(atoms_fname, index=atoms_index)
@@ -179,7 +157,7 @@ def run(args: argparse.Namespace) -> None:
     dyn.attach(printenergy, interval=args.nsave, dyn=dyn, start_time=time.time())
     dyn.attach(save_config, interval=args.nsave, dyn=dyn, fname=args.output)
     dyn.attach(
-        stop_error, interval=args.ncheckerror, dyn=dyn, threshold=args.error_threshold
+        stop_error, interval=args.ncheckerror, dyn=dyn, threshold=args.error_threshold,
     )
     # Now run the dynamics
     dyn.run(NSTEPS)

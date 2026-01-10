@@ -17,8 +17,8 @@ class HDF5Dataset(Dataset):
         z_table,
         atomic_dataclass=AtomicData,
         dtype: torch.dtype | None = None,
-        **kwargs
-    ):
+        **kwargs,
+    ) -> None:
         super().__init__()  # pylint: disable=super-with-arguments
         self.file_path = file_path
         self._file = None
@@ -49,7 +49,7 @@ class HDF5Dataset(Dataset):
         _d["_file"] = None
         return _d
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.length
 
     def __getitem__(self, index):
@@ -93,14 +93,14 @@ def dataset_from_sharded_hdf5(
     z_table: AtomicNumberTable,
     r_max: float,
     dtype: torch.dtype | None = None,
-    **kwargs
+    **kwargs,
 ):
     dtype = dtype or torch.get_default_dtype()
     files = glob(files + "/*")
     datasets = []
     for file in files:
         datasets.append(
-            HDF5Dataset(file, z_table=z_table, r_max=r_max, dtype=dtype, **kwargs)
+            HDF5Dataset(file, z_table=z_table, r_max=r_max, dtype=dtype, **kwargs),
         )
     return ConcatDataset(datasets)
 

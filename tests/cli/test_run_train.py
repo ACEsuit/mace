@@ -50,7 +50,6 @@ def fixture_fitting_configs():
         c = water.copy()
         c.positions += np.random.normal(0.1, size=c.positions.shape)
         c.info["REF_energy"] = np.random.normal(0.1)
-        print(c.info["REF_energy"])
         c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
         c.info["REF_stress"] = np.random.normal(0.1, size=6)
         fit_configs.append(c)
@@ -77,7 +76,7 @@ def fixture_pretraining_configs():
         Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3),
     )
     configs.append(
-        Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3)
+        Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6] * 3, pbc=[True] * 3),
     )
     configs[-2].info["REF_energy"] = -2.0
     configs[-2].info["config_type"] = "IsolatedAtom"
@@ -114,7 +113,7 @@ _mace_params = {
 }
 
 
-def test_run_train(tmp_path, fitting_configs):
+def test_run_train(tmp_path, fitting_configs) -> None:
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     mace_params = _mace_params.copy()
@@ -129,7 +128,7 @@ def test_run_train(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -147,7 +146,6 @@ def test_run_train(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # UPDATED alongside https://github.com/ACEsuit/mace/pull/1009
     # fmt: off
@@ -157,7 +155,7 @@ def test_run_train(tmp_path, fitting_configs):
     npt.assert_allclose(Es, ref_Es)
 
 
-def test_run_train_direct(tmp_path, fitting_configs):
+def test_run_train_direct(tmp_path, fitting_configs) -> None:
     """This test is here to make debugging easier as it doesn't rely on the
     script being run through a subprocess.
     """
@@ -182,7 +180,6 @@ def test_run_train_direct(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # UPDATED alongside https://github.com/ACEsuit/mace/pull/1009
     # fmt: off
@@ -192,7 +189,7 @@ def test_run_train_direct(tmp_path, fitting_configs):
     npt.assert_allclose(Es, ref_Es)
 
 
-def test_run_train_missing_data(tmp_path, fitting_configs):
+def test_run_train_missing_data(tmp_path, fitting_configs) -> None:
     del fitting_configs[5].info["REF_energy"]
     del fitting_configs[6].arrays["REF_forces"]
     del fitting_configs[7].info["REF_stress"]
@@ -211,7 +208,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -229,7 +226,6 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # UPDATED alongside https://github.com/ACEsuit/mace/pull/1009
     # fmt: off
@@ -239,7 +235,7 @@ def test_run_train_missing_data(tmp_path, fitting_configs):
     npt.assert_allclose(Es, ref_Es)
 
 
-def test_run_train_no_stress(tmp_path, fitting_configs):
+def test_run_train_no_stress(tmp_path, fitting_configs) -> None:
     del fitting_configs[5].info["REF_energy"]
     del fitting_configs[6].arrays["REF_forces"]
     del fitting_configs[7].info["REF_stress"]
@@ -259,7 +255,7 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -277,7 +273,6 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # UPDATED alongside https://github.com/ACEsuit/mace/pull/1009
     # fmt: off
@@ -287,7 +282,7 @@ def test_run_train_no_stress(tmp_path, fitting_configs):
     npt.assert_allclose(Es, ref_Es)
 
 
-def test_run_train_multihead(tmp_path, fitting_configs):
+def test_run_train_multihead(tmp_path, fitting_configs) -> None:
     fitting_configs_dft = []
     fitting_configs_mp2 = []
     fitting_configs_ccd = []
@@ -343,7 +338,7 @@ def test_run_train_multihead(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -362,7 +357,6 @@ def test_run_train_multihead(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # UPDATED alongside https://github.com/ACEsuit/mace/pull/1009
     # fmt: off
@@ -372,7 +366,7 @@ def test_run_train_multihead(tmp_path, fitting_configs):
     npt.assert_allclose(Es, ref_Es)
 
 
-def test_run_train_foundation(tmp_path, fitting_configs):
+def test_run_train_foundation(tmp_path, fitting_configs) -> None:
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     mace_params = _mace_params.copy()
@@ -395,7 +389,7 @@ def test_run_train_foundation(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -403,7 +397,7 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64",
     )
 
     Es = []
@@ -411,7 +405,6 @@ def test_run_train_foundation(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # from a run on 28/03/2023 on repulsion a63434aaab70c84ee016e13e4aca8d57297a0f26
     # fmt: off
@@ -421,11 +414,11 @@ def test_run_train_foundation(tmp_path, fitting_configs):
     npt.assert_allclose(Es, ref_Es, atol=1e-1)
 
 
-def test_run_train_foundation_multihead(tmp_path, fitting_configs):
+def test_run_train_foundation_multihead(tmp_path, fitting_configs) -> None:
     fitting_configs_dft = []
     fitting_configs_mp2 = []
     atomic_numbers = np.unique(
-        np.concatenate([at.numbers for at in fitting_configs])
+        np.concatenate([at.numbers for at in fitting_configs]),
     ).tolist()
     for i, c in enumerate(fitting_configs):
         if i in (0, 1):
@@ -483,21 +476,17 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
     try:
         completed_process = subprocess.run(
-            cmd.split(), capture_output=True, text=True, check=True
+            cmd.split(), capture_output=True, text=True, check=True,
         )
         # Process executed successfully
-        print(completed_process.stdout)
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         # Process failed with non-zero exit code
-        print(f"Command failed with exit code {e.returncode}")
-        print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}")
         raise
     assert completed_process.returncode == 0
 
@@ -513,7 +502,6 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # from a run on 20/08/2024 on commit
     # fmt: off
@@ -523,11 +511,11 @@ def test_run_train_foundation_multihead(tmp_path, fitting_configs):
     npt.assert_allclose(Es, ref_Es, atol=1e-1)
 
 
-def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
+def test_run_train_foundation_multihead_json(tmp_path, fitting_configs) -> None:
     fitting_configs_dft = []
     fitting_configs_mp2 = []
     atomic_numbers = np.unique(
-        np.concatenate([at.numbers for at in fitting_configs])
+        np.concatenate([at.numbers for at in fitting_configs]),
     ).tolist()
     for i, c in enumerate(fitting_configs):
         if i in (0, 1):
@@ -593,21 +581,17 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
     try:
         completed_process = subprocess.run(
-            cmd.split(), capture_output=True, text=True, check=True
+            cmd.split(), capture_output=True, text=True, check=True,
         )
         # Process executed successfully
-        print(completed_process.stdout)
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         # Process failed with non-zero exit code
-        print(f"Command failed with exit code {e.returncode}")
-        print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}")
         raise
     assert completed_process.returncode == 0
 
@@ -623,7 +607,6 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # from a run on 20/08/2024 on commit
     # fmt: off
@@ -634,8 +617,8 @@ def test_run_train_foundation_multihead_json(tmp_path, fitting_configs):
 
 
 def test_run_train_multihead_replay_custom_finetuning(
-    tmp_path, fitting_configs, pretraining_configs
-):
+    tmp_path, fitting_configs, pretraining_configs,
+) -> None:
     ase.io.write(tmp_path / "pretrain.xyz", pretraining_configs)
 
     foundation_params = {
@@ -756,7 +739,6 @@ def test_run_train_multihead_replay_custom_finetuning(
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Energies:", Es)
 
     # Add some basic checks
     assert len(Es) == len(fitting_configs)
@@ -765,7 +747,7 @@ def test_run_train_multihead_replay_custom_finetuning(
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-def test_run_train_cueq(tmp_path, fitting_configs):
+def test_run_train_cueq(tmp_path, fitting_configs) -> None:
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     mace_params = _mace_params.copy()
@@ -782,21 +764,17 @@ def test_run_train_cueq(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
     try:
         completed_process = subprocess.run(
-            cmd.split(), capture_output=True, text=True, check=True
+            cmd.split(), capture_output=True, text=True, check=True,
         )
         # Process executed successfully
-        print(completed_process.stdout)
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         # Process failed with non-zero exit code
-        print(f"Command failed with exit code {e.returncode}")
-        print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}")
         raise
     assert completed_process.returncode == 0
 
@@ -817,8 +795,6 @@ def test_run_train_cueq(tmp_path, fitting_configs):
         at.calc = calc
         Es_cueq.append(at.get_potential_energy())
 
-    print("Es", Es)
-    print("Es_cueq", Es_cueq)
 
     # UPDATED alongside https://github.com/ACEsuit/mace/pull/1009
     # fmt: off
@@ -832,11 +808,11 @@ def test_run_train_cueq(tmp_path, fitting_configs):
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
-def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
+def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs) -> None:
     fitting_configs_dft = []
     fitting_configs_mp2 = []
     atomic_numbers = np.unique(
-        np.concatenate([at.numbers for at in fitting_configs])
+        np.concatenate([at.numbers for at in fitting_configs]),
     ).tolist()
     for i, c in enumerate(fitting_configs):
         if i in (0, 1):
@@ -905,21 +881,17 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
     try:
         completed_process = subprocess.run(
-            cmd.split(), capture_output=True, text=True, check=True
+            cmd.split(), capture_output=True, text=True, check=True,
         )
         # Process executed successfully
-        print(completed_process.stdout)
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         # Process failed with non-zero exit code
-        print(f"Command failed with exit code {e.returncode}")
-        print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}")
         raise
     assert completed_process.returncode == 0
 
@@ -935,7 +907,6 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # UPDATED alongside https://github.com/ACEsuit/mace/pull/1009
     # fmt: off
@@ -945,7 +916,7 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
     npt.assert_allclose(Es, ref_Es)
 
 
-def test_run_train_lbfgs(tmp_path, fitting_configs):
+def test_run_train_lbfgs(tmp_path, fitting_configs) -> None:
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     mace_params = _mace_params.copy()
@@ -962,7 +933,7 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
@@ -980,7 +951,6 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
 
     # UPDATED alongside https://github.com/ACEsuit/mace/pull/1009
     # fmt: off
@@ -990,7 +960,7 @@ def test_run_train_lbfgs(tmp_path, fitting_configs):
     npt.assert_allclose(Es, ref_Es)
 
 
-def test_run_train_foundation_elements(tmp_path, fitting_configs):
+def test_run_train_foundation_elements(tmp_path, fitting_configs) -> None:
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     base_params = {
@@ -1018,7 +988,7 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
     p = subprocess.run(cmd.split(), check=True)
@@ -1040,7 +1010,7 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
     p = subprocess.run(cmd.split(), check=True)
@@ -1063,7 +1033,7 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
 
     # Test filtered model
     calc_filtered = MACECalculator(
-        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64"
+        model_paths=tmp_path / "MACE.model", device="cpu", default_dtype="float64",
     )
     at.calc = calc_filtered
     e1 = at.get_potential_energy()
@@ -1083,11 +1053,11 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
     assert np.isfinite(e2)
 
 
-def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
+def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs) -> None:
     fitting_configs_dft = []
     fitting_configs_mp2 = []
     atomic_numbers = np.unique(
-        np.concatenate([at.numbers for at in fitting_configs])
+        np.concatenate([at.numbers for at in fitting_configs]),
     ).tolist()
     for i, c in enumerate(fitting_configs):
         if i in (0, 1):
@@ -1155,20 +1125,16 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
     try:
         completed_process = subprocess.run(
-            cmd.split(), capture_output=True, text=True, check=True
+            cmd.split(), capture_output=True, text=True, check=True,
         )
         # Process executed successfully
-        print(completed_process.stdout)
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         # Process failed with non-zero exit code
-        print(f"Command failed with exit code {e.returncode}")
-        print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}")
         raise
     assert completed_process.returncode == 0
 
@@ -1189,7 +1155,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
     p = subprocess.run(cmd.split(), check=True)
@@ -1235,12 +1201,12 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
     assert np.isfinite(e2)
 
 
-def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs):
+def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs) -> None:
     """Test multihead foundation finetuning with pseudolabeling enabled."""
     fitting_configs_dft = []
     fitting_configs_mp2 = []
     atomic_numbers = np.unique(
-        np.concatenate([at.numbers for at in fitting_configs])
+        np.concatenate([at.numbers for at in fitting_configs]),
     ).tolist()
     for i, c in enumerate(fitting_configs):
         if i in (0, 1):
@@ -1295,7 +1261,6 @@ def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -1306,21 +1271,17 @@ def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs
             [
                 (f"--{k}={v}" if v is not None else f"--{k}")
                 for k, v in mace_params.items()
-            ]
+            ],
         )
     )
 
     try:
         completed_process = subprocess.run(
-            cmd.split(), env=run_env, capture_output=True, text=True, check=True
+            cmd.split(), env=run_env, capture_output=True, text=True, check=True,
         )
         # Process executed successfully
-        print(completed_process.stdout)
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         # Process failed with non-zero exit code
-        print(f"Command failed with exit code {e.returncode}")
-        print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}")
         raise
     assert completed_process.returncode == 0
 
@@ -1336,7 +1297,6 @@ def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Es", Es)
     # Placeholder reference values - to be updated after first successful run
     ref_Es = [
         1.733670868926674,
@@ -1367,8 +1327,8 @@ def test_run_train_foundation_multihead_pseudolabeling(tmp_path, fitting_configs
 
 @pytest.fixture(name="pretraining_configs_3_elems", scope="module")
 def fixture_pretraining_configs_3_elems():
-    """data for pretraining a mini foundation model with 3 elements
-    returns configurations as list(Atoms)
+    """Data for pretraining a mini foundation model with 3 elements
+    returns configurations as list(Atoms).
     """
     configs = []
     for _ in range(20):
@@ -1393,8 +1353,8 @@ def fixture_pretraining_configs_3_elems():
 
 @pytest.fixture(name="mini_foundation_model", scope="module")
 def fixture_mini_foundation_model(tmp_path_factory, pretraining_configs_3_elems):
-    """fits tiny model that can be used as foundation for multihead replay finetuning
-    returns path of model file and value of XDG_CACHE_HOME where pretraining data is cached
+    """Fits tiny model that can be used as foundation for multihead replay finetuning
+    returns path of model file and value of XDG_CACHE_HOME where pretraining data is cached.
     """
     # generate pretraining data
     tmp_path = tmp_path_factory.mktemp("mini_foundation_model")
@@ -1434,7 +1394,7 @@ def fixture_mini_foundation_model(tmp_path_factory, pretraining_configs_3_elems)
     run_env["XDG_CACHE_HOME"] = str(tmp_path / "cache")
     (tmp_path / "cache" / "mace").mkdir(parents=True)
     with open(
-        tmp_path / "cache" / "mace" / "mp_traj_combinedxyz", "w", encoding="utf-8"
+        tmp_path / "cache" / "mace" / "mp_traj_combinedxyz", "w", encoding="utf-8",
     ) as fout:
         for atoms in pretraining_configs_3_elems:
             if atoms.info.get("config_type") == "IsolatedAtom":
@@ -1454,7 +1414,6 @@ def fixture_mini_foundation_model(tmp_path_factory, pretraining_configs_3_elems)
         else:
             cmd.append(f"--{k}={v}")
 
-    print("pretraining fit cmd", cmd)
     try:
         orig_dir = Path.cwd()
         os.chdir(tmp_path)
@@ -1538,7 +1497,7 @@ def test_run_train_multihead_replay_filtered_pt_data(
     monkeypatch,
     mini_foundation_model,
     multihead_finetuning_config_20,
-):
+) -> None:
     finetuning_params = {
         "name": "finetuned",
         "valid_fraction": 0.1,
@@ -1581,7 +1540,6 @@ def test_run_train_multihead_replay_filtered_pt_data(
         else:
             cmd.append(f"--{k}={v}")
 
-    print("fine-tuning fit cmd", cmd)
     with monkeypatch.context() as m:
         m.chdir(tmp_path)
         p = subprocess.run(cmd, env=run_env, check=True)
@@ -1596,7 +1554,7 @@ def test_run_train_real_pt_data_ratio(
     monkeypatch,
     mini_foundation_model,
     multihead_finetuning_config_5,
-):
+) -> None:
     finetuning_params = {
         "name": "finetuned",
         "valid_fraction": 0.1,
@@ -1643,22 +1601,20 @@ def test_run_train_real_pt_data_ratio(
         return cmd
 
     cmd = _create_cmd(finetuning_params)
-    print("fine-tuning fit cmd", cmd)
     with monkeypatch.context() as m:
         m.chdir(tmp_path)
         p = subprocess.run(cmd, env=run_env, check=True, capture_output=True)
-    print(p.stdout.decode("utf-8"))
     assert p.returncode == 0
 
     # real to pt data ratio should not be triggered by 5 / 20 > default of 0.1
     assert (
         len(
             [
-                l
-                for l in p.stdout.decode("utf-8").splitlines()
+                line
+                for line in p.stdout.decode("utf-8").splitlines()
                 if "Ratio of the number of configurations in the "
-                "training set and the in the pt_train_file" in l
-            ]
+                "training set and the in the pt_train_file" in line
+            ],
         )
         == 0
     )
@@ -1666,19 +1622,17 @@ def test_run_train_real_pt_data_ratio(
     finetuning_params["name"] = "finetuned_repeated_data"
     finetuning_params["real_pt_data_ratio_threshold"] = 0.5
     cmd = _create_cmd(finetuning_params)
-    print("fine-tuning fit cmd", cmd)
     with monkeypatch.context() as m:
         m.chdir(tmp_path)
         p = subprocess.run(cmd, env=run_env, check=True, capture_output=True)
     assert p.returncode == 0
-    print(p.stdout.decode("utf-8"))
 
     # real to pt data ratio should not be triggered by 5 / 20 > default of 0.1
     l_ratio = [
-        l
-        for l in p.stdout.decode("utf-8").splitlines()
+        line
+        for line in p.stdout.decode("utf-8").splitlines()
         if "Ratio of the number of configurations in the "
-        "training set and the in the pt_train_file" in l
+        "training set and the in the pt_train_file" in line
     ]
     assert len(l_ratio) == 1
     assert l_ratio[0].strip().endswith(" 1")
