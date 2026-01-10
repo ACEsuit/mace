@@ -294,7 +294,7 @@ def run(args: argparse.Namespace) -> None:
         assert len(atoms_list) == node_energies.shape[0]
 
     # Store data in atoms objects
-    for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
+    for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list, strict=False)):
         atoms.calc = None  # crucial
         atoms.info[args.info_prefix + "energy"] = energy
         atoms.arrays[args.info_prefix + "forces"] = forces

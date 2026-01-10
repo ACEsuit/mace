@@ -38,3 +38,6 @@ dist/
 
 .benchmarks
 *.png
+
+# Astral
+uv.lock

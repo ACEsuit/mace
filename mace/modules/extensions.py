@@ -166,7 +166,7 @@ class MACELES(ScaleShiftMACE):
         node_qs_list: List[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
-            zip(self.interactions, self.products)
+            zip(self.interactions, self.products, strict=False)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -190,7 +190,7 @@ class MACELES(ScaleShiftMACE):
             node_feats_list.append(node_feats)
 
         for i, (readout, les_readout) in enumerate(
-            zip(self.readouts, self.les_readouts)
+            zip(self.readouts, self.les_readouts, strict=False)
         ):
             feat_idx = -1 if len(self.readouts) == 1 else i
             node_es = readout(node_feats_list[feat_idx], node_heads)[

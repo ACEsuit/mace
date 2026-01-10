@@ -173,12 +173,12 @@ def config_from_atoms(
 
     for name, atoms_key in key_specification.info_keys.items():
         properties[name] = atoms.info.get(atoms_key, None)
-        if not atoms_key in atoms.info:
+        if atoms_key not in atoms.info:
             property_weights[name] = 0.0
 
     for name, atoms_key in key_specification.arrays_keys.items():
         properties[name] = atoms.arrays.get(atoms_key, None)
-        if not atoms_key in atoms.arrays:
+        if atoms_key not in atoms.arrays:
             property_weights[name] = 0.0
 
     return Configuration(
@@ -262,7 +262,7 @@ def load_from_xyz(
         for atoms in atoms_list:
             try:
                 atoms.info["REF_stress"] = atoms.get_stress()
-            except Exception as e:  # pylint: disable=W0703
+            except Exception:  # pylint: disable=W0703
                 atoms.info["REF_stress"] = None
 
     final_energy_key = key_specification.info_keys["energy"]

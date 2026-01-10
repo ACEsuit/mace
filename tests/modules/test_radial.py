@@ -1,15 +1,15 @@
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
 from mace.modules.radial import (
     AgnesiTransform,
-    ZBLBasis,
     BesselBasis,
     ChebychevBasis,
     GaussianBasis,
     PolynomialCutoff,
     SoftTransform,
+    ZBLBasis,
 )
 
 

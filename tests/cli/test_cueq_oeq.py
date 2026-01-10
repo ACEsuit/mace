@@ -188,7 +188,7 @@ class BackendTestBase:
 
         # E3nn to CuEq gradients
         for (name_e3nn, p_e3nn), (name_backend, p_backend) in zip(
-            model_e3nn.named_parameters(), model_backend.named_parameters()
+            model_e3nn.named_parameters(), model_backend.named_parameters(), strict=False
         ):
             print_gradient_diff(
                 name_e3nn, p_e3nn, name_backend, p_backend, "E3nn->CuEq"
@@ -196,7 +196,7 @@ class BackendTestBase:
 
         # CuEq to E3nn gradients
         for (name_backend, p_backend), (name_e3nn_back, p_e3nn_back) in zip(
-            model_backend.named_parameters(), model_e3nn_back.named_parameters()
+            model_backend.named_parameters(), model_e3nn_back.named_parameters(), strict=False
         ):
             print_gradient_diff(
                 name_backend, p_backend, name_e3nn_back, p_e3nn_back, "CuEq->E3nn"
@@ -204,7 +204,7 @@ class BackendTestBase:
 
         # Full circle comparison (E3nn -> E3nn)
         for (name_e3nn, p_e3nn), (name_e3nn_back, p_e3nn_back) in zip(
-            model_e3nn.named_parameters(), model_e3nn_back.named_parameters()
+            model_e3nn.named_parameters(), model_e3nn_back.named_parameters(), strict=False
         ):
             print_gradient_diff(
                 name_e3nn, p_e3nn, name_e3nn_back, p_e3nn_back, "Full circle"

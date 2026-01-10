@@ -83,7 +83,7 @@ class reshape_irreps(torch.nn.Module):
         ix = 0
         out = []
         batch, _ = tensor.shape
-        for mul, d in zip(self.muls, self.dims):
+        for mul, d in zip(self.muls, self.dims, strict=False):
             field = tensor[:, ix : ix + mul * d]  # [batch, sample, mul * repr]
             ix += mul * d
             if hasattr(self, "cueq_config"):

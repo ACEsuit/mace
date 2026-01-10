@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import numpy.testing as npt
 import pytest
 import torch
 import torch.nn.functional
@@ -8,7 +9,6 @@ from ase.build import molecule
 from e3nn import o3
 from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
-import numpy.testing as npt
 
 from mace import data, modules, tools
 from mace.calculators import mace_mp, mace_off

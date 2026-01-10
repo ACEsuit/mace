@@ -423,7 +423,7 @@ def run(args) -> None:
     all_atomic_numbers = set()
     for head_config in head_configs:
         all_atomic_numbers.update(head_config.atomic_numbers)
-    z_table = AtomicNumberTable(sorted(list(all_atomic_numbers)))
+    z_table = AtomicNumberTable(sorted(all_atomic_numbers))
     if args.foundation_model_elements and model_foundation:
         z_table = AtomicNumberTable(sorted(model_foundation.atomic_numbers.tolist()))
     logging.info(f"Atomic Numbers used: {z_table.zs}")
@@ -922,7 +922,7 @@ def run(args) -> None:
     if args.device == "xpu":
         try:
             model, optimizer = ipex.optimize(model, optimizer=optimizer)
-        except ImportError as e:
+        except ImportError:
             logging.error(
                 "Intel Extension for PyTorch not found, but XPU device was specified. "
                 "Please install it to use XPU device."
@@ -1038,7 +1038,7 @@ def run(args) -> None:
                 )
             try:
                 drop_last = test_set.drop_last
-            except AttributeError as e:  # pylint: disable=W0612
+            except AttributeError:  # pylint: disable=W0612
                 drop_last = False
             test_loader = torch_geometric.dataloader.DataLoader(
                 test_set,
@@ -1112,7 +1112,7 @@ def run(args) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0718
+                except Exception:  # pylint: disable=W0718
                     pass
             else:
                 torch.save(model_to_save, Path(args.model_dir) / (args.name + ".model"))
@@ -1127,7 +1127,7 @@ def run(args) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0718
+                except Exception:  # pylint: disable=W0718
                     pass
 
         logging.info("Computing metrics for training, validation, and test sets")

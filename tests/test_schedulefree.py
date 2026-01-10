@@ -2,11 +2,11 @@ import tempfile
 from unittest.mock import MagicMock
 
 import numpy as np
+import numpy.testing as npt
 import pytest
 import torch
 import torch.nn.functional as F
 from e3nn import o3
-import numpy.testing as npt
 
 from mace import data, modules, tools
 from mace.tools import scripts_utils, torch_geometric

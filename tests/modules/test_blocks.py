@@ -1,8 +1,8 @@
-import pytest
-import torch
 import numpy as np
-from mace.modules.blocks import AtomicEnergiesBlock
-from mace.modules.blocks import ScaleShiftBlock
+import torch
+
+from mace.modules.blocks import AtomicEnergiesBlock, ScaleShiftBlock
+
 
 def test_atomic_energies_block_to():
     # Create test data

@@ -1,23 +1,22 @@
 from __future__ import annotations
+
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-import argparse
 
 import ase.io
 import numpy as np
+import numpy.testing as npt
 import pytest
 import torch
 from ase.atoms import Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
-import numpy.testing as npt
-
-from mace.cli.run_train import run
-from mace.tools import build_default_arg_parser, dict_to_arg_list
 
 from mace.calculators import MACECalculator, mace_mp
+from mace.cli.run_train import run
+from mace.tools import build_default_arg_parser, dict_to_arg_list
 
 try:
     import cuequivariance as cue  # pylint: disable=unused-import
@@ -53,7 +52,7 @@ def fixture_fitting_configs():
         c.info["REF_energy"] = np.random.normal(0.1)
         print(c.info["REF_energy"])
         c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
-        c.info["REF_stress"] = np.random.normal(0.1, size=6)        
+        c.info["REF_stress"] = np.random.normal(0.1, size=6)
         fit_configs.append(c)
 
     return fit_configs
@@ -1027,7 +1026,7 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
 
     # Load model and check elements
     model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu")
-    filtered_elements = set(int(z) for z in model_filtered.atomic_numbers)
+    filtered_elements = {int(z) for z in model_filtered.atomic_numbers}
     assert filtered_elements == {1, 8}  # Only H and O should be present
 
     # Second run: with foundation_model_elements
@@ -1049,11 +1048,11 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
 
     # Load model and check elements
     model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu")
-    all_elements = set(int(z) for z in model_all.atomic_numbers)
+    all_elements = {int(z) for z in model_all.atomic_numbers}
 
     # Get elements from foundation model for comparison
     calc = mace_mp(model="small", device="cpu")
-    foundation_elements = set(int(z) for z in calc.models[0].atomic_numbers)
+    foundation_elements = {int(z) for z in calc.models[0].atomic_numbers}
 
     # Check that all foundation model elements are preserved
     assert all_elements == foundation_elements
@@ -1175,7 +1174,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
 
     # Load model and check elements
     model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu")
-    filtered_elements = set(int(z) for z in model_filtered.atomic_numbers)
+    filtered_elements = {int(z) for z in model_filtered.atomic_numbers}
     assert filtered_elements == {1, 8}  # Only H and O should be present
     assert len(model_filtered.heads) == 3  # pt_head + DFT + MP2
 
@@ -1198,11 +1197,11 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
 
     # Load model and check elements
     model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu")
-    all_elements = set(int(z) for z in model_all.atomic_numbers)
+    all_elements = {int(z) for z in model_all.atomic_numbers}
 
     # Get elements from foundation model for comparison
     calc = mace_mp(model="small", device="cpu")
-    foundation_elements = set(int(z) for z in calc.models[0].atomic_numbers)
+    foundation_elements = {int(z) for z in calc.models[0].atomic_numbers}
 
     # Check that all foundation model elements are preserved
     assert all_elements == foundation_elements

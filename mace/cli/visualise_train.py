@@ -306,7 +306,7 @@ def plot_inference_from_results(
     plot_interaction_e: bool = False,
 ) -> None:
 
-    for ax, quantity in zip(axes, quantities):
+    for ax, quantity in zip(axes, quantities, strict=False):
         key, label = quantity
 
         # Store legend handles to avoid duplicates

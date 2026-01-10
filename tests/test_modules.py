@@ -1,9 +1,9 @@
 import numpy as np
+import numpy.testing as npt
 import pytest
 import torch
 import torch.nn.functional
 from e3nn import o3
-import numpy.testing as npt
 
 from mace.data import AtomicData, Configuration
 from mace.modules import (

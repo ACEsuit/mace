@@ -1,6 +1,7 @@
 import tempfile
 
 import numpy as np
+import numpy.testing as npt
 import torch
 import torch.nn.functional
 from torch import nn, optim
@@ -11,8 +12,6 @@ from mace.tools import (
     CheckpointState,
     atomic_numbers_to_indices,
 )
-
-import numpy.testing as npt
 
 
 def test_atomic_number_table():

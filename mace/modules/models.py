@@ -349,7 +349,7 @@ class MACE(torch.nn.Module):
         node_feats_concat: List[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
-            zip(self.interactions, self.products)
+            zip(self.interactions, self.products, strict=False)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -527,7 +527,7 @@ class ScaleShiftMACE(MACE):
         node_feats_list: List[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
-            zip(self.interactions, self.products)
+            zip(self.interactions, self.products, strict=False)
         ):
             node_attrs_slice = data["node_attrs"]
             if is_lammps and i > 0:
@@ -777,7 +777,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         # Interactions
         dipoles = []
         for interaction, product, readout in zip(
-            self.interactions, self.products, self.readouts
+            self.interactions, self.products, self.readouts, strict=False
         ):
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
@@ -1040,7 +1040,7 @@ class AtomicDielectricMACE(torch.nn.Module):
         dipoles = []
         polarizabilities = []
         for interaction, product, readout in zip(
-            self.interactions, self.products, self.readouts
+            self.interactions, self.products, self.readouts, strict=False
         ):
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],
@@ -1339,7 +1339,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         node_energies_list = [node_e0]
         dipoles = []
         for interaction, product, readout in zip(
-            self.interactions, self.products, self.readouts
+            self.interactions, self.products, self.readouts, strict=False
         ):
             node_feats, sc = interaction(
                 node_attrs=data["node_attrs"],

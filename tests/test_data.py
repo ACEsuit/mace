@@ -4,6 +4,7 @@ from pathlib import Path
 import ase.build
 import h5py
 import numpy as np
+import numpy.testing as npt
 import torch
 
 from mace.data import (
@@ -15,8 +16,6 @@ from mace.data import (
     save_configurations_as_HDF5,
 )
 from mace.tools import AtomicNumberTable, torch_geometric
-
-import numpy.testing as npt
 
 mace_path = Path(__file__).parent.parent
 
@@ -133,7 +132,7 @@ class TestAtomicData:
             shuffle=False,
             drop_last=False,
         )
-        for batch_direct, batch in zip(train_loader_direct, train_loader):
+        for batch_direct, batch in zip(train_loader_direct, train_loader, strict=False):
             assert torch.all(batch_direct.edge_index == batch.edge_index)
             assert torch.all(batch_direct.shifts == batch.shifts)
             assert torch.all(batch_direct.positions == batch.positions)

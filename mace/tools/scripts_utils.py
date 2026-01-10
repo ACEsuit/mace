@@ -519,29 +519,28 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                 raise RuntimeError(
                     f"Could not compute average E0s if no training xyz given, error {e} occured"
                 ) from e
+        elif E0s.endswith(".json"):
+            logging.info(f"Loading atomic energies from {E0s}")
+            with open(E0s, "r", encoding="utf-8") as f:
+                atomic_energies_dict = json.load(f)
+                atomic_energies_dict = {
+                    int(key): value for key, value in atomic_energies_dict.items()
+                }
         else:
-            if E0s.endswith(".json"):
-                logging.info(f"Loading atomic energies from {E0s}")
-                with open(E0s, "r", encoding="utf-8") as f:
-                    atomic_energies_dict = json.load(f)
-                    atomic_energies_dict = {
-                        int(key): value for key, value in atomic_energies_dict.items()
-                    }
-            else:
-                try:
-                    atomic_energies_eval = ast.literal_eval(E0s)
-                    if not all(
-                        isinstance(value, dict)
-                        for value in atomic_energies_eval.values()
-                    ):
-                        atomic_energies_dict = atomic_energies_eval
-                    else:
-                        atomic_energies_dict = atomic_energies_eval
-                    assert isinstance(atomic_energies_dict, dict)
-                except Exception as e:
-                    raise RuntimeError(
-                        f"E0s specified invalidly, error {e} occured"
-                    ) from e
+            try:
+                atomic_energies_eval = ast.literal_eval(E0s)
+                if not all(
+                    isinstance(value, dict)
+                    for value in atomic_energies_eval.values()
+                ):
+                    atomic_energies_dict = atomic_energies_eval
+                else:
+                    atomic_energies_dict = atomic_energies_eval
+                assert isinstance(atomic_energies_dict, dict)
+            except Exception as e:
+                raise RuntimeError(
+                    f"E0s specified invalidly, error {e} occured"
+                ) from e
     else:
         raise RuntimeError(
             "E0s not found in training file and not specified in command line"
@@ -676,12 +675,11 @@ def get_swa(
     swas.append(True)
     if args.start_swa is None:
         args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-    else:
-        if args.start_swa >= args.max_num_epochs:
-            logging.warning(
-                f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
-            )
-            swas[-1] = False
+    elif args.start_swa >= args.max_num_epochs:
+        logging.warning(
+            f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+        )
+        swas[-1] = False
     if args.loss == "forces_only":
         raise ValueError("Can not select Stage Two with forces only loss.")
     if args.loss == "virials":

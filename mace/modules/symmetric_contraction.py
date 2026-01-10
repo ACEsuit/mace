@@ -241,7 +241,7 @@ class Contraction(torch.nn.Module):
             y,
         )
         for i, (weight, contract_weights, contract_features) in enumerate(
-            zip(self.weights, self.contractions_weighting, self.contractions_features)
+            zip(self.weights, self.contractions_weighting, self.contractions_features, strict=False)
         ):
             c_tensor = contract_weights(
                 self.U_tensors(self.correlation - i - 1),

@@ -1,15 +1,12 @@
-import os
 import subprocess
-import sys
 from copy import deepcopy
 from pathlib import Path
 
 import ase.io
 import numpy as np
+import numpy.testing as npt
 import pytest
 from ase.atoms import Atoms
-
-import numpy.testing as npt
 
 from mace.calculators.mace import MACECalculator
 from mace.cli.run_train import run as run_mace_train

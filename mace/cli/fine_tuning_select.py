@@ -203,7 +203,7 @@ def filter_atoms(
             x in element_subset for x in atom_symbols
         )  # atoms must *only* contain elements in the subset
     if filtering_type == FilteringType.EXCLUSIVE:
-        atom_symbols = set(list(atoms.symbols))
+        atom_symbols = set(atoms.symbols)
         return atom_symbols == set(element_subset)
     if filtering_type == FilteringType.INCLUSIVE:
         atom_symbols = np.unique(atoms.symbols)
@@ -325,8 +325,8 @@ def _filter_pretraining_data(
     )
     passes_filter = [filter_atoms(x, all_species_ft, filtering_type) for x in atoms]
     assert len(passes_filter) == len(atoms), "Filtering failed"
-    filtered_atoms = [x for x, passes in zip(atoms, passes_filter) if passes]
-    remaining_atoms = [x for x, passes in zip(atoms, passes_filter) if not passes]
+    filtered_atoms = [x for x, passes in zip(atoms, passes_filter, strict=False) if passes]
+    remaining_atoms = [x for x, passes in zip(atoms, passes_filter, strict=False) if not passes]
     return filtered_atoms, remaining_atoms, passes_filter
 
 

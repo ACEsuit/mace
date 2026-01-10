@@ -112,7 +112,7 @@ def get_atomic_number_table_from_zs(zs: Iterable[int]) -> AtomicNumberTable:
     z_set = set()
     for z in zs:
         z_set.add(z)
-    return AtomicNumberTable(sorted(list(z_set)))
+    return AtomicNumberTable(sorted(z_set))
 
 
 def atomic_numbers_to_indices(

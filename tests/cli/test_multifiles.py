@@ -11,9 +11,10 @@ import torch
 import yaml
 from ase.atoms import Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
+
 from mace.calculators import MACECalculator
-from mace.tools import build_default_arg_parser, dict_to_arg_list
 from mace.cli.run_train import run
+from mace.tools import build_default_arg_parser, dict_to_arg_list
 
 preprocess_script = "mace_prepare_data"
 run_train_script = "mace_run_train"
@@ -918,7 +919,7 @@ def test_multihead_finetuning_different_formats(tmp_path):
     # Load model and verify it has the expected heads
     model = torch.load(model_path, map_location="cpu")
     assert hasattr(model, "heads"), "Model does not have heads attribute"
-    assert set(["xyz_head", "h5_head", "pt_head"]).issubset(set(model.heads)), (
+    assert {"xyz_head", "h5_head", "pt_head"}.issubset(set(model.heads)), (
         "Expected heads not found in model"
     )
 

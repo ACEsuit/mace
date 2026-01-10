@@ -106,12 +106,9 @@ def load_foundations_elements(
             "RealAgnosticDensityResidualInteractionBlock",
         ]:
             # Assuming only 1 layer in density_fn
-            getattr(model.interactions[i].density_fn, "layer0").weight = (
+            model.interactions[i].density_fn.layer0.weight = (
                 torch.nn.Parameter(
-                    getattr(
-                        model_foundations.interactions[i].density_fn,
-                        "layer0",
-                    ).weight.clone()
+                    model_foundations.interactions[i].density_fn.layer0.weight.clone()
                 )
             )
     # Transferring products

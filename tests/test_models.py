@@ -1,11 +1,11 @@
 import numpy as np
+import numpy.testing as npt
 import torch
 import torch.nn.functional
 from ase import build
 from e3nn import o3
 from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
-import numpy.testing as npt
 
 from mace import data, modules, tools
 from mace.tools import torch_geometric

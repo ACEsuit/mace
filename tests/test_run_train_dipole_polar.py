@@ -1,4 +1,3 @@
-import json
 import os
 import subprocess
 import sys
@@ -7,11 +6,9 @@ from pathlib import Path
 import ase.io
 import numpy as np
 import pytest
-import torch
 from ase.atoms import Atoms
-from ase.calculators.singlepoint import SinglePointCalculator
 
-from mace.calculators import MACECalculator, mace_mp
+from mace.calculators import MACECalculator
 
 try:
     import cuequivariance as cue  # pylint: disable=unused-import
@@ -50,7 +47,7 @@ def fixture_fitting_configs():
         c.info["REF_stress"] = np.random.normal(0.1, size=6)
         c.info["REF_dipoles"] = np.random.normal(0.1, size=(3))
         c.info["REF_polarizability"] = np.random.normal(0.1, size=(3,3))
-        
+
         fit_configs.append(c)
 
     return fit_configs
@@ -83,8 +80,8 @@ def fixture_pretraining_configs():
     configs[-2].info["config_type"] = "IsolatedAtom"
     configs[-1].info["REF_energy"] = -4.0
     configs[-1].info["config_type"] = "IsolatedAtom"
-    return configs 
-    
+    return configs
+
 _mace_params_dipole = {
     "name": "DipolesMACE",
     "valid_fraction": 0.05,
@@ -145,14 +142,14 @@ def test_run_train_dipole(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(model_paths=tmp_path / "DipolesMACE.model",model_type="DipoleMACE", device="cpu")
-  
+
     Mus = []
     for at in fitting_configs:
         at.calc = calc
         Mus.append(at.get_dipole_moment())
-    
+
     print("Mus", Mus)
-    # Obtained for MACE from the 08/08/2025 
+    # Obtained for MACE from the 08/08/2025
     ref_Mus = [np.array([0., 0., 0.]),
                np.array([0., 0., 0.]),
                np.array([ 0.00187852,  0.00347198, -0.00038684]),
@@ -207,7 +204,7 @@ _mace_params_dipole_polar = {
     "eval_interval": 2,
     "use_reduced_cg": False,
     "compute_polarizability": True,
-    
+
 }
 
 
@@ -242,14 +239,14 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     calc = MACECalculator(model_paths=tmp_path / "DielectricMACE.model",model_type="DipolePolarizabilityMACE", device="cpu")
-  
+
     Mus = []
     alphas = []
     for at in fitting_configs:
         at.calc = calc
         Mus.append(at.get_dipole_moment())
         alphas.append(calc.get_property("polarizability", at))
-    # Obtained for MACE from the 08/08/2025 
+    # Obtained for MACE from the 08/08/2025
     ref_Mus = [
         np.array([0., 0., 0.]),
         np.array([0., 0., 0.]),
@@ -368,4 +365,4 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
 
     assert np.allclose(Mus, ref_Mus)
     assert np.allclose(alphas, ref_alphas)
-    
+
