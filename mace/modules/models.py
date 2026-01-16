@@ -358,13 +358,13 @@ class MACE(torch.nn.Module):
         energies = [e0, pair_energy]
         node_energies_list = [node_e0, pair_node_energy]
         node_feats_concat: List[torch.Tensor] = []
+        node_attrs_slice = data["node_attrs"]
+        if is_lammps:
+            node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)
         ):
-            node_attrs_slice = data["node_attrs"]
-            if is_lammps and i > 0:
-                node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
             node_feats, sc = interaction(
                 node_attrs=node_attrs_slice,
                 node_feats=node_feats,
@@ -376,8 +376,6 @@ class MACE(torch.nn.Module):
                 lammps_class=lammps_class,
                 lammps_natoms=lammps_natoms,
             )
-            if is_lammps and i == 0:
-                node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
@@ -538,13 +536,13 @@ class ScaleShiftMACE(MACE):
         # Interactions
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
+        node_attrs_slice = data["node_attrs"]
+        if is_lammps:
+            node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)
         ):
-            node_attrs_slice = data["node_attrs"]
-            if is_lammps and i > 0:
-                node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
             node_feats, sc = interaction(
                 node_attrs=node_attrs_slice,
                 node_feats=node_feats,
@@ -556,8 +554,6 @@ class ScaleShiftMACE(MACE):
                 lammps_class=lammps_class,
                 lammps_natoms=lammps_natoms,
             )
-            if is_lammps and i == 0:
-                node_attrs_slice = node_attrs_slice[: lammps_natoms[0]]
             node_feats = product(
                 node_feats=node_feats, sc=sc, node_attrs=node_attrs_slice
             )
