@@ -153,17 +153,18 @@ class LAMMPS_MP(torch.autograd.Function):
     @staticmethod
     def forward(ctx, *args):
         feats, data = args  # unpack
-        ctx.vec_len = feats.shape[-1]
+        ctx.vec_len = int(feats.shape[-1])
         ctx.data = data
+
         out = torch.empty_like(feats)
-        data.forward_exchange(feats, out, ctx.vec_len)
+        data.forward_exchange(feats, out, int(ctx.vec_len))
         return out
 
     @staticmethod
     def backward(ctx, *grad_outputs):
         (grad,) = grad_outputs  # unpack
         gout = torch.empty_like(grad)
-        ctx.data.reverse_exchange(grad, gout, ctx.vec_len)
+        ctx.data.reverse_exchange(grad, gout, int(ctx.vec_len))
         return gout, None
 
 
