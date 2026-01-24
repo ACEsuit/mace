@@ -610,6 +610,37 @@ class MACECalculator(Calculator):
         return hessians
 
     def get_hessian_2d_free(self, atoms=None):
+        """
+        Example usage (ASE vibrations with constrained atoms):
+
+        ```python
+        from ase.constraints import FixAtoms
+
+        constraint = FixAtoms(
+            indices=[
+                atom.index
+                for atom in image_TS_initial1
+                if atom.position[2]
+                >= image_TS_initial1.positions[:, 2].mean() * 2 * 1 / 4
+            ]
+        )
+        image_TS_initial1.set_constraint(constraint)
+
+        hessian, free_indices = image_TS_initial1.calc.get_hessian_2d_free(
+            image_TS_initial1
+        )
+
+        from ase.vibrations.data import VibrationsData
+
+        # atoms 為平衡結構；h2d 是形狀 (3*N, 3*N) 的 Hessian
+        vib_data = VibrationsData.from_2d(
+            image_TS_initial1, hessian, indices=free_indices
+        )  # None 自動按約束選自由原子
+        energies = vib_data.get_energies()
+        freq_cm1 = vib_data.get_frequencies()
+        print(vib_data.tabulate())
+        ```
+        """
         if atoms is None and self.atoms is None:
             raise ValueError("atoms not set")
         if atoms is None:
