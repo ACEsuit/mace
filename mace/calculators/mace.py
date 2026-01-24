@@ -632,10 +632,10 @@ class MACECalculator(Calculator):
 
         from ase.vibrations.data import VibrationsData
 
-        # atoms 為平衡結構；h2d 是形狀 (3*N, 3*N) 的 Hessian
+        # atoms is the equilibrium structure; hessian is a (3*N, 3*N) Hessian matrix
         vib_data = VibrationsData.from_2d(
             image_TS_initial1, hessian, indices=free_indices
-        )  # None 自動按約束選自由原子
+        )  # If indices is None, it is inferred from atoms.constraints
         energies = vib_data.get_energies()
         freq_cm1 = vib_data.get_frequencies()
         print(vib_data.tabulate())
