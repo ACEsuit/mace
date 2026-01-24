@@ -111,6 +111,7 @@ def get_symmetric_displacement(
 def compute_hessians_vmap(
     forces: torch.Tensor,
     positions: torch.Tensor,
+    indices: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     forces_flatten = forces.view(-1)
     num_elements = forces_flatten.shape[0]
@@ -125,16 +126,27 @@ def compute_hessians_vmap(
             allow_unused=False,
         )
 
-    I_N = torch.eye(num_elements).to(forces.device)
+    if indices is None:
+        I_N = torch.eye(num_elements).to(forces.device)
+    else:
+        M = indices.shape[0]
+        I_N = torch.zeros(3 * M, num_elements, device=forces.device)
+        row_idx = torch.arange(3 * M, device=forces.device)
+        col_base = indices.repeat_interleave(3) * 3
+        offsets = torch.tensor([0, 1, 2], device=forces.device).repeat(M)
+        col_idx = col_base + offsets
+        I_N[row_idx, col_idx] = 1.0
+
     try:
         chunk_size = 1 if num_elements < 64 else 16
         gradient = torch.vmap(get_vjp, in_dims=0, out_dims=0, chunk_size=chunk_size)(
             I_N
         )[0]
     except RuntimeError:
-        gradient = compute_hessians_loop(forces, positions)
+        gradient = compute_hessians_loop(forces, positions, indices)
     if gradient is None:
-        return torch.zeros((positions.shape[0], forces.shape[0], 3, 3))
+        out_rows = num_elements if indices is None else 3 * indices.shape[0]
+        return torch.zeros((out_rows, positions.shape[0], 3))
     return gradient
 
 
@@ -142,9 +154,21 @@ def compute_hessians_vmap(
 def compute_hessians_loop(
     forces: torch.Tensor,
     positions: torch.Tensor,
+    indices: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     hessian = []
-    for grad_elem in forces.view(-1):
+    forces_flatten = forces.view(-1)
+    
+    if indices is None:
+        loop_indices = torch.arange(forces_flatten.shape[0], device=forces.device)
+    else:
+        M = indices.shape[0]
+        col_base = indices.repeat_interleave(3) * 3
+        offsets = torch.tensor([0, 1, 2], device=forces.device).repeat(M)
+        loop_indices = col_base + offsets
+
+    for i in loop_indices:
+        grad_elem = forces_flatten[i]
         hess_row = torch.autograd.grad(
             outputs=[-1 * grad_elem],
             inputs=[positions],
@@ -173,6 +197,7 @@ def get_outputs(
     compute_virials: bool = True,
     compute_stress: bool = True,
     compute_hessian: bool = False,
+    hessian_indices: Optional[torch.Tensor] = None,
     compute_edge_forces: bool = False,
 ) -> Tuple[
     Optional[torch.Tensor],
@@ -204,7 +229,7 @@ def get_outputs(
         forces, virials, stress = (None, None, None)
     if compute_hessian:
         assert forces is not None, "Forces must be computed to get the hessian"
-        hessian = compute_hessians_vmap(forces, positions)
+        hessian = compute_hessians_vmap(forces, positions, indices=hessian_indices)
     else:
         hessian = None
     if compute_edge_forces and vectors is not None:
@@ -601,7 +626,10 @@ def prepare_graph(
         lengths = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
         ikw = InteractionKwargs(data["lammps_class"], (n_real, n_total))
     else:
-        if not torch.compiler.is_compiling():
+        is_compiling = False
+        if hasattr(torch, "compiler") and hasattr(torch.compiler, "is_compiling"):
+            is_compiling = torch.compiler.is_compiling()
+        if not is_compiling:
             data["positions"].requires_grad_(True)
         positions = data["positions"]
         cell = data["cell"]

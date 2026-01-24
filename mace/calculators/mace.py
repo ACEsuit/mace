@@ -17,7 +17,12 @@ os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 import numpy as np
 import torch
 from ase.calculators.calculator import Calculator, all_changes
+from ase.constraints import FixAtoms
 from ase.stress import full_3x3_to_voigt_6_stress
+try:
+    from ase.vibrations.data import VibrationsData
+except Exception:  # pylint: disable=broad-except
+    VibrationsData = None
 from e3nn import o3
 
 from mace import data as mace_data
@@ -550,6 +555,27 @@ class MACECalculator(Calculator):
             atoms = self.atoms
         if self.model_type != "MACE":
             raise NotImplementedError("Only implemented for MACE models")
+
+        hessian_indices = None
+        free_indices_np = None
+        if VibrationsData is not None:
+            free_indices_np = np.asarray(
+                VibrationsData.indices_from_constraints(atoms), dtype=int
+            )
+            if free_indices_np.shape[0] != len(atoms):
+                hessian_indices = torch.from_numpy(free_indices_np).to(self.device).long()
+        else:
+            fixed_indices = []
+            if atoms.constraints:
+                for constraint in atoms.constraints:
+                    if isinstance(constraint, FixAtoms):
+                        fixed_indices.extend(constraint.get_indices())
+            if fixed_indices:
+                fixed_indices = np.unique(fixed_indices)
+                all_indices = np.arange(len(atoms))
+                free_indices_np = np.setdiff1d(all_indices, fixed_indices)
+                hessian_indices = torch.from_numpy(free_indices_np).to(self.device).long()
+
         batch = self._atoms_to_batch(atoms)
         hessians = [
             model(
@@ -557,13 +583,68 @@ class MACECalculator(Calculator):
                 compute_hessian=True,
                 compute_stress=False,
                 training=self.use_compile,
+                hessian_indices=hessian_indices,
             )["hessian"]
             for model in self.models
         ]
         hessians = [hessian.detach().cpu().numpy() for hessian in hessians]
+
+        if hessian_indices is not None:
+            full_hessians = []
+            n_atoms = len(atoms)
+            if free_indices_np is None:
+                free_indices_np = hessian_indices.cpu().numpy()
+            row_indices = (
+                np.repeat(free_indices_np, 3) * 3
+                + np.tile([0, 1, 2], len(free_indices_np))
+            )
+            for h in hessians:
+                # h shape is (3*n_free, n_atoms, 3)
+                full_h = np.zeros((3 * n_atoms, n_atoms, 3))
+                full_h[row_indices, :, :] = h
+                full_hessians.append(full_h)
+            hessians = full_hessians
+
         if self.num_models == 1:
             return hessians[0]
         return hessians
+
+    def get_hessian_2d_free(self, atoms=None):
+        if atoms is None and self.atoms is None:
+            raise ValueError("atoms not set")
+        if atoms is None:
+            atoms = self.atoms
+        if self.model_type != "MACE":
+            raise NotImplementedError("Only implemented for MACE models")
+
+        if VibrationsData is not None:
+            free_indices = np.asarray(
+                VibrationsData.indices_from_constraints(atoms), dtype=int
+            )
+        else:
+            fixed_indices = []
+            if atoms.constraints:
+                for constraint in atoms.constraints:
+                    if isinstance(constraint, FixAtoms):
+                        fixed_indices.extend(constraint.get_indices())
+            if fixed_indices:
+                fixed_indices = np.unique(fixed_indices)
+                all_indices = np.arange(len(atoms))
+                free_indices = np.setdiff1d(all_indices, fixed_indices)
+            else:
+                free_indices = np.arange(len(atoms))
+
+        def compact_3n_n_3_to_2d(h, free_idx):
+            m = h.shape[1]
+            n = int(len(free_idx))
+            h4 = h.reshape(m, 3, m, 3)
+            h4_sub = h4[np.ix_(free_idx, [0, 1, 2], free_idx, [0, 1, 2])]
+            return h4_sub.reshape(3 * n, 3 * n)
+
+        h = self.get_hessian(atoms)
+        if isinstance(h, list):
+            return [compact_3n_n_3_to_2d(hi, free_indices) for hi in h], free_indices
+        return compact_3n_n_3_to_2d(h, free_indices), free_indices
 
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
         """Extracts the descriptors from MACE model.
