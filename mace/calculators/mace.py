@@ -154,14 +154,16 @@ class MACECalculator(Calculator):
 
         # superclass constructor initializes self.implemented_properties to an empty list
         if model_type in ["MACE", "EnergyDipoleMACE"]:
-            self.implemented_properties.extend([
-                "energy",
-                "energies",
-                "free_energy",
-                "node_energy",
-                "forces",
-                "stress",
-            ])
+            self.implemented_properties.extend(
+                [
+                    "energy",
+                    "energies",
+                    "free_energy",
+                    "node_energy",
+                    "forces",
+                    "stress",
+                ]
+            )
             if kwargs.get("compute_atomic_stresses", False):
                 self.implemented_properties.extend(["stresses", "virials"])
                 self.compute_atomic_stresses = True
@@ -330,8 +332,20 @@ class MACECalculator(Calculator):
         Returns:
             list: A list of changes detected in the system.
         """
+
+        def _infos_equal(a: dict, b: dict) -> bool:
+            if a.keys() != b.keys():
+                return False
+            for k in a:
+                va, vb = a[k], b[k]
+                if isinstance(va, np.ndarray) or isinstance(vb, np.ndarray):
+                    continue
+                if va != vb:
+                    return False
+            return True
+
         state = super().check_state(atoms, tol=tol)
-        if (not state) and (self.atoms.info != atoms.info):
+        if (not state) and (not _infos_equal(self.atoms.info, atoms.info)):
             state.append("info")
         return state
 

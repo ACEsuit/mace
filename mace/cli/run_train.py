@@ -22,7 +22,12 @@ from torch_ema import ExponentialMovingAverage
 
 import mace
 from mace import data, tools
-from mace.calculators.foundations_models import mace_mp, mace_mp_names, mace_off
+from mace.calculators.foundations_models import (
+    mace_mp,
+    mace_mp_names,
+    mace_off,
+    mace_omol,
+)
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
@@ -31,6 +36,7 @@ from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import torch_geometric
 from mace.tools.distributed_tools import init_distributed
+from mace.tools.lora_tools import inject_LoRAs
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -126,17 +132,21 @@ def run(args) -> None:
     foundation_model_avg_num_neighbors = 0
     # Filter out None from mace_mp_names to get valid model names
     valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
+    args.foundation_model_kwargs = ast.literal_eval(args.foundation_model_kwargs)
+    args.foundation_model_kwargs["head"] = args.foundation_head
     if args.foundation_model is not None:
         if args.foundation_model in valid_mace_mp_models:
             logging.info(
-                f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
+                f"Using foundation model mace {args.foundation_model} as initial checkpoint."
             )
             calc = mace_mp(
                 model=args.foundation_model,
                 device=args.device,
                 default_dtype=args.default_dtype,
+                **args.foundation_model_kwargs,
             )
             model_foundation = calc.models[0]
+
         elif args.foundation_model in ["small_off", "medium_off", "large_off"]:
             model_type = args.foundation_model.split("_")[0]
             logging.info(
@@ -144,6 +154,13 @@ def run(args) -> None:
             )
             calc = mace_off(
                 model=model_type,
+                device=args.device,
+                default_dtype=args.default_dtype,
+            )
+            model_foundation = calc.models[0]
+        elif args.foundation_model in ["mace_omol"]:
+            logging.info("Using foundation model mace-omol as initial checkpoint.")
+            calc = mace_omol(
                 device=args.device,
                 default_dtype=args.default_dtype,
             )
@@ -163,9 +180,10 @@ def run(args) -> None:
             args.foundation_model not in ["small", "medium", "large"]
             and args.pt_train_file is None
         ):
-            logging.warning(
-                "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provied a path to a pretraining file with --pt_train_file."
-            )
+            if args.multiheads_finetuning:
+                logging.warning(
+                    "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provied a path to a pretraining file with --pt_train_file."
+                )
             args.multiheads_finetuning = False
         if args.multiheads_finetuning:
             assert (
@@ -182,14 +200,14 @@ def run(args) -> None:
             logging.info(
                 "Using multiheads finetuning mode, setting learning rate to 0.0001 and EMA to True"
             )
-            if hasattr(model_foundation, "heads"):
-                if len(model_foundation.heads) > 1:
-                    logging.warning(
-                        "Mutlihead finetuning with models with more than one head is not supported, using the first head as foundation head."
-                    )
-                    model_foundation = remove_pt_head(
-                        model_foundation, args.foundation_head
-                    )
+        if hasattr(model_foundation, "heads"):
+            if len(model_foundation.heads) > 1:
+                logging.info(
+                    f"Selecting the head {args.foundation_head} as foundation head."
+                )
+                model_foundation = remove_pt_head(
+                    model_foundation, args.foundation_head
+                )
     else:
         args.multiheads_finetuning = False
 
@@ -310,6 +328,7 @@ def run(args) -> None:
                     and args.multiheads_finetuning
                     and head_config.head_name == "pt_head"
                 ),
+                prefix=args.name,
             )
             head_config.collections = SubsetCollection(
                 train=collections.train,
@@ -530,7 +549,8 @@ def run(args) -> None:
                 pt_head_config=head_config,
                 r_max=args.r_max,
                 device=device,
-                batch_size=args.batch_size
+                batch_size=args.batch_size,
+                force_stress=args.pseudolabel_replay_compute_stress,
             ):
                 logging.info("Successfully applied pseudolabels to pt_head configurations")
             else:
@@ -686,9 +706,28 @@ def run(args) -> None:
     model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
     model.to(device)
 
-    logging.debug(model)
-    logging.info(f"Total number of parameters: {tools.count_parameters(model)}")
-    logging.info("")
+    if args.lora:
+        lora_rank = args.lora_rank
+        lora_alpha = args.lora_alpha
+
+        logging.info(
+            "Injecting LoRA layers with rank=%s and alpha=%s",
+            lora_rank,
+            lora_alpha,
+        )
+
+        logging.info(
+            "Original model has %s trainable parameters.",
+            tools.count_parameters(model),
+        )
+
+        model = inject_LoRAs(model, rank=lora_rank, alpha=lora_alpha)
+
+        logging.info(
+            "Model with LoRA has %s trainable parameters.",
+            tools.count_parameters(model),
+        )
+
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
     logging.info(f"Batch size: {args.batch_size}")
@@ -718,8 +757,18 @@ def run(args) -> None:
 
     # Optimizer
     param_options = get_params_options(args, model)
+
     optimizer: torch.optim.Optimizer
     optimizer = get_optimizer(args, param_options)
+    logging.info("=== Layer's learning rates ===")
+    for name, p in model.named_parameters():
+        st = optimizer.state.get(p, {})
+        if st:
+            logging.info(f"Param: {name}: {list(st.keys())}")
+
+    for i, param_group in enumerate(optimizer.param_groups):
+        logging.info(f"Param group {i}: lr = {param_group['lr']}")
+
     if args.device == "xpu":
         logging.info("Optimzing model and optimzier for XPU")
         model, optimizer = ipex.optimize(model, optimizer=optimizer)
@@ -766,9 +815,6 @@ def run(args) -> None:
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
-    else:
-        for group in optimizer.param_groups:
-            group["lr"] = args.lr
 
     if args.lbfgs:
         logging.info("Switching optimizer to LBFGS")

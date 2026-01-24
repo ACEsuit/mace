@@ -68,7 +68,9 @@ def load_mace_mp_medium(dtype, enable_cueq, compile_mode, device):
     return model
 
 
-def create_batch(size: int, model: torch.nn.Module, device: str, is_compiled: bool = False) -> dict:
+def create_batch(
+    size: int, model: torch.nn.Module, device: str, is_compiled: bool = False
+) -> dict:
     cutoff = model.r_max.item()
     z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
     atoms = build.bulk("C", "diamond", a=3.567, cubic=True)

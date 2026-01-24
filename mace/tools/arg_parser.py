@@ -442,6 +442,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--pseudolabel_replay_compute_stress",
+        help="When replay pseudolabels are generated, always generate stress labels even if the original replay data lacked stress",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--foundation_filter_elements",
         help="Filter element during fine-tuning",
         type=str2bool,
@@ -533,6 +539,24 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Keep isolated atoms in the dataset, useful for transfer learning",
         type=str2bool,
         default=False,
+    )
+    parser.add_argument(
+        "--lora",
+        help="Use Low-Rank Adaptation for the fine-tuning",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--lora_rank",
+        help="Rank of the LoRA matrices",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
+        "--lora_alpha",
+        help="Scaling factor for LoRA",
+        type=float,
+        default=1.0,
     )
 
     # Keys
@@ -745,6 +769,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.9,
     )
+    parser.add_argument(
+        "--beta1_schedulefree",
+        help="Beta1 parameter for the ScheduleFree optimizer",
+        type=float,
+        default=0.9,
+    )
+    parser.add_argument(
+        "--beta2_schedulefree",
+        help="Beta2 parameter for the ScheduleFree optimizer",
+        type=float,
+        default=0.98,
+    )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
         "--valid_batch_size", help="Validation batch size", type=int, default=10
@@ -762,6 +798,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
+    )
+    parser.add_argument(
+        "--lr_params_factors",
+        help="Learning rate factors to multiply on the original lr",
+        type=str,
+        default='{"embedding_lr_factor": 1.0, "interactions_lr_factor": 1.0, "products_lr_factor": 1.0, "readouts_lr_factor": 1.0}',
+    )
+    parser.add_argument(
+        "--freeze",
+        help="Freeze layers from 1 to N. Can be positive or negative, e.g. -1 means the last layer is frozen. 0 or None means all layers are active and is a default setting",
+        type=int,
+        default=None,
     )
     parser.add_argument(
         "--amsgrad",
@@ -832,6 +880,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Path to the foundation model for transfer learning",
         type=str,
         default=None,
+    )
+    parser.add_argument(
+        "--foundation_model_kwargs",
+        help="Additional kwargs for the foundation model for transfer learning",
+        type=str,
+        default="{}",
     )
     parser.add_argument(
         "--foundation_model_readout",
