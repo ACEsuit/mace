@@ -1,5 +1,5 @@
 """
-Benchmark inference performance of the MACE medium model on GPU.
+Benchmark inference performance of the original MACE-MP medium model on GPU.
 
 Run benchmarks:
     pytest tests/test_benchmark.py --benchmark-save=<some name>
