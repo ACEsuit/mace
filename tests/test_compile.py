@@ -148,6 +148,7 @@ def test_eager_benchmark(
 def test_compile_benchmark(benchmark, compile_mode, enable_amp, enable_cueq):
     with tools.torch_tools.default_dtype(torch.float32):
         batch = create_batch("cuda")
+        batch["positions"].requires_grad_(True)
         torch.compiler.reset()
         model = mace_compile.prepare(create_mace)("cuda", enable_cueq=enable_cueq)
         model = torch.compile(model, mode=compile_mode)
