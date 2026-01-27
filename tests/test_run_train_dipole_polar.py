@@ -151,6 +151,7 @@ def test_run_train_dipole(tmp_path, fitting_configs):
     for at in fitting_configs:
         at.calc = calc
         Mus.append(at.get_dipole_moment())
+
     print("Mus", Mus)
     # Obtained for MACE from the 08/08/2025
     ref_Mus = [
