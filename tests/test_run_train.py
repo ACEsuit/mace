@@ -1910,6 +1910,10 @@ def test_run_train_real_pt_data_ratio(
     assert l_ratio[0].strip().endswith(" 1")
 
 
+@pytest.mark.skipif(
+    os.getenv("CI"),
+    reason="OMOL foundation model download is large; skip in CI.",
+)
 def test_run_train_omol_foundation(tmp_path, fitting_configs):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
