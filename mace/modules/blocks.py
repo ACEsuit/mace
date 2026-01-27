@@ -505,8 +505,8 @@ class InteractionBlock(torch.nn.Module):
         if lammps_class is None or first_layer or torch.jit.is_scripting():
             return node_feats
         node_feats = node_feats.contiguous()
-        n_real, n_total = lammps_natoms
-        expected_total = n_real + n_total
+        n_real, n_ghost = lammps_natoms
+        expected_total = n_real + n_ghost
         # If input already includes ghost slots, skip padding but still do exchange.
         if node_feats.shape[0] == expected_total:
             # Input already includes ghost slots, just do exchange
@@ -514,7 +514,7 @@ class InteractionBlock(torch.nn.Module):
             return node_feats
         # Normal case: pad with zeros for ghosts, then exchange
         pad = torch.zeros(
-            (n_total, node_feats.shape[1]),
+            (n_ghost, node_feats.shape[1]),
             dtype=node_feats.dtype,
             device=node_feats.device,
         )
@@ -1107,7 +1107,7 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         else:
             mji = self.conv_tp(
                 node_feats_up[edge_index[0]], edge_attrs, tp_weights
-            )  # [n_nodes, irreps]
+            )  # [n_edges, irreps]
             message = scatter_sum(
                 src=mji, index=edge_index[1], dim=0, dim_size=node_feats_up.shape[0]
             )
@@ -1265,23 +1265,18 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         sc = self.skip_tp(node_feats)
         node_feats = self.linear_up(node_feats)
         node_feats_res = self.linear_res(node_feats)
-        node_feats = self.handle_lammps(
-            node_feats,
+        node_feats_attrs = torch.cat(
+            [node_feats, node_attrs],
+            dim=-1,
+        )  # Concatenate features and attributes to do one LAMMPS exchange
+        node_feats_attrs = self.handle_lammps(
+            node_feats_attrs,
             lammps_class=lammps_class,
             lammps_natoms=lammps_natoms,
             first_layer=first_layer,
         )
-
-        # Apply LAMMPS exchange to node_attrs for ghost atom embeddings
-        # This is needed because node_attrs may be truncated in models.py for layers > 0,
-        # but source_embedding[edge_index[0]] requires ghost atom attributes
-        # since edge_index[0] (sender) can reference ghost atoms
-        node_attrs = self.handle_lammps(
-            node_attrs,
-            lammps_class=lammps_class,
-            lammps_natoms=lammps_natoms,
-            first_layer=first_layer,
-        )
+        node_feats = node_feats_attrs[:, : node_feats.shape[-1]]
+        node_attrs = node_feats_attrs[:, node_feats.shape[-1] :]
         source_embedding = self.source_embedding(node_attrs)
         target_embedding = self.target_embedding(node_attrs)
         edge_feats = torch.cat(
