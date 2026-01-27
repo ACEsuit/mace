@@ -504,9 +504,17 @@ class InteractionBlock(torch.nn.Module):
     ) -> torch.Tensor:  # noqa: D401 – internal helper
         if lammps_class is None or first_layer or torch.jit.is_scripting():
             return node_feats
-        _, n_total = lammps_natoms
+        node_feats = node_feats.contiguous()
+        n_real, n_ghost = lammps_natoms
+        expected_total = n_real + n_ghost
+        # If input already includes ghost slots, skip padding but still do exchange.
+        if node_feats.shape[0] == expected_total:
+            # Input already includes ghost slots, just do exchange
+            node_feats = LAMMPS_MP.apply(node_feats, lammps_class)
+            return node_feats
+        # Normal case: pad with zeros for ghosts, then exchange
         pad = torch.zeros(
-            (n_total, node_feats.shape[1]),
+            (n_ghost, node_feats.shape[1]),
             dtype=node_feats.dtype,
             device=node_feats.device,
         )
@@ -1069,9 +1077,19 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
+        n_real = lammps_natoms[0] if lammps_class is not None else None
         sc = self.skip_linear(node_feats)
         node_feats_up = self.linear_up(node_feats)
         node_feats_down = self.linear_down(node_feats)
+        node_feats_combined = torch.cat((node_feats_up, node_feats_down), dim=-1)
+        node_feats_combined = self.handle_lammps(
+            node_feats_combined,
+            lammps_class=lammps_class,
+            lammps_natoms=lammps_natoms,
+            first_layer=first_layer,
+        )
+        node_feats_up = node_feats_combined[:, : node_feats_up.shape[-1]]
+        node_feats_down = node_feats_combined[:, node_feats_up.shape[-1] :]
         augmented_edge_feats = torch.cat(
             [
                 edge_feats,
@@ -1089,10 +1107,12 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         else:
             mji = self.conv_tp(
                 node_feats_up[edge_index[0]], edge_attrs, tp_weights
-            )  # [n_nodes, irreps]
+            )  # [n_edges, irreps]
             message = scatter_sum(
-                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats_up.shape[0]
             )
+        message = self.truncate_ghosts(message, n_real)
+        sc = self.truncate_ghosts(sc, n_real)
         message = self.linear(message) / self.avg_num_neighbors
         return (
             self.reshape(message),
@@ -1245,13 +1265,18 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         sc = self.skip_tp(node_feats)
         node_feats = self.linear_up(node_feats)
         node_feats_res = self.linear_res(node_feats)
-        node_feats = self.handle_lammps(
-            node_feats,
+        node_feats_attrs = torch.cat(
+            [node_feats, node_attrs],
+            dim=-1,
+        )  # Concatenate features and attributes to do one LAMMPS exchange
+        node_feats_attrs = self.handle_lammps(
+            node_feats_attrs,
             lammps_class=lammps_class,
             lammps_natoms=lammps_natoms,
             first_layer=first_layer,
         )
-
+        node_feats = node_feats_attrs[:, : node_feats.shape[-1]]
+        node_attrs = node_feats_attrs[:, node_feats.shape[-1] :]
         source_embedding = self.source_embedding(node_attrs)
         target_embedding = self.target_embedding(node_attrs)
         edge_feats = torch.cat(
