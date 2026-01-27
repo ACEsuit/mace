@@ -1,4 +1,16 @@
+import os
 import shutil
+import tempfile
+from pathlib import Path
+
+
+def pytest_configure():
+    """Isolate cache per xdist worker to avoid concurrent model downloads."""
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if worker:
+        cache_root = Path(tempfile.gettempdir()) / f"mace_cache_{worker}"
+        cache_root.mkdir(parents=True, exist_ok=True)
+        os.environ["XDG_CACHE_HOME"] = str(cache_root)
 
 
 def pytest_runtest_logreport(report):

@@ -8,9 +8,12 @@ on:
 jobs:
   pytest-general:
     runs-on: ubuntu-latest
+    name: pytest-general (py${{ matrix.python-version }}, group ${{ matrix.split-group }})
     strategy:
+      fail-fast: false
       matrix:
         python-version: [ '3.8','3.9','3.10','3.11','3.12','3.13' ]
+        split-group: [ 1, 2, 3, 4 ]
 
     steps:
       - name: checkout
@@ -25,6 +28,7 @@ jobs:
         run: |
           pip install -U pip
           pip install .[dev]
+          pip install pytest-split pytest-xdist
 
       # Some tests are creating large files that may persist until the end of the test
       # run, so we are making more space available on the machine by deleting libraries
@@ -58,9 +62,23 @@ jobs:
         run: |
           python3 -m pip freeze
 
+      - name: Cache test durations
+        uses: actions/cache@v4
+        with:
+          path: tests/.test_durations
+          key: test-durations-${{ github.run_id }}
+          restore-keys: |
+            test-durations-
+
       - name: Run general unit tests
         run: |
-          pytest -v tests --ignore=tests/test_cueq_oeq.py
+          pytest -v tests \
+            --ignore=tests/test_cueq_oeq.py \
+            --splits 4 \
+            --group ${{ matrix.split-group }} \
+            --store-durations \
+            --durations-path=tests/.test_durations \
+            -n auto
 
   pytest-cueq:
     runs-on: ubuntu-latest
