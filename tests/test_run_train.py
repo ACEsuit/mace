@@ -1911,7 +1911,7 @@ def test_run_train_real_pt_data_ratio(
 
 
 @pytest.mark.skipif(
-    os.getenv("CI"),
+    os.getenv("CI", "").lower() in {"1", "true", "yes"},
     reason="OMOL foundation model download is large; skip in CI.",
 )
 def test_run_train_omol_foundation(tmp_path, fitting_configs):
