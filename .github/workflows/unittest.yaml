@@ -5,6 +5,10 @@ on:
   push:
     branches: [ main, develop ]
 
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   pytest-general:
     runs-on: ubuntu-latest
