@@ -19,6 +19,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import LBFGS
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
+from functools import partial
 
 import mace
 from mace import data, tools
@@ -34,6 +35,7 @@ from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
 from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
+from mace.data.atomic_data import atomicdata_collate
 from mace.tools import torch_geometric
 from mace.tools.distributed_tools import init_distributed
 from mace.tools.lora_tools import inject_LoRAs
@@ -638,6 +640,8 @@ def run(args) -> None:
             dataset_size = len(train_sets[head_config.head_name])
         logging.info(f"Head '{head_config.head_name}' training dataset size: {dataset_size}")
 
+        collate = partial(atomicdata_collate, z_table=z_table, cutoff=args.r_max, heads=heads)
+
         train_loader_head = torch_geometric.dataloader.DataLoader(
             dataset=train_sets[head_config.head_name],
             batch_size=args.batch_size,
@@ -646,6 +650,7 @@ def run(args) -> None:
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
+            collate_fn=collate
         )
         head_config.train_loader = train_loader_head
 
@@ -673,6 +678,9 @@ def run(args) -> None:
             )
             valid_samplers[head] = valid_sampler
 
+
+    collate = partial(atomicdata_collate, z_table=z_table, cutoff=args.r_max, heads=heads)
+
     train_loader = torch_geometric.dataloader.DataLoader(
         dataset=train_set,
         batch_size=args.batch_size,
@@ -682,12 +690,21 @@ def run(args) -> None:
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
+        collate_fn=collate
     )
 
     valid_loaders = {heads[i]: None for i in range(len(heads))}
     if not isinstance(valid_sets, dict):
         valid_sets = {"Default": valid_sets}
     for head, valid_set in valid_sets.items():
+
+        collate_valid = partial(
+            atomicdata_collate,
+            z_table=z_table,
+            cutoff=args.r_max,
+            heads=heads,
+        )
+
         valid_loaders[head] = torch_geometric.dataloader.DataLoader(
             dataset=valid_set,
             batch_size=args.valid_batch_size,
@@ -697,6 +714,7 @@ def run(args) -> None:
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
+            collate_fn=collate_valid,
         )
 
     loss_fn = get_loss_fn(args, dipole_only, args.compute_dipole)
@@ -970,6 +988,14 @@ def run(args) -> None:
                 drop_last = test_set.drop_last
             except AttributeError as e:  # pylint: disable=W0612
                 drop_last = False
+
+            collate_test = partial(
+                atomicdata_collate,
+                z_table=z_table,
+                cutoff=args.r_max,
+                heads=heads,
+            )
+
             test_loader = torch_geometric.dataloader.DataLoader(
                 test_set,
                 batch_size=args.valid_batch_size,
@@ -977,6 +1003,7 @@ def run(args) -> None:
                 drop_last=drop_last,
                 num_workers=args.num_workers,
                 pin_memory=args.pin_memory,
+                collate_fn=collate_test,
             )
             test_data_loader[test_name] = test_loader
         if stop_first_test:
