@@ -151,6 +151,8 @@ def assemble_replay_data(
             checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-pbe-replay-data.xyz"
         elif name == "matpes_r2scan":
             checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-r2scan-replay-data.extxyz"
+        elif name == "omat":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_omat_0/mp_traj_combined_omat.xyz"
         else:
             raise ValueError(f"Unknown replay dataset name {name}")
 
