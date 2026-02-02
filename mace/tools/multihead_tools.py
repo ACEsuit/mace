@@ -104,7 +104,7 @@ def prepare_pt_head(
     """Prepare a pretraining head from args."""
     if (
         args.foundation_model in ["small", "medium", "large"]
-        or args.pt_train_file == "mp"
+        or args.pt_train_file in ["mp", "omat", "matpes_pbe", "matpes_r2scan"]
     ):
         logging.info(
             "Using foundation model for multiheads finetuning with Materials Project data"
