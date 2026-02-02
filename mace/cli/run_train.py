@@ -283,7 +283,7 @@ def run(args) -> None:
                 head_config.atomic_energies_dict = ast.literal_eval(
                     statistics["atomic_energies"]
                 )
-        if head_config.train_file in (["mp"], ["matpes_pbe"], ["matpes_r2scan"]):
+        if head_config.train_file in (["mp"], ["matpes_pbe"], ["matpes_r2scan"], ["omat"]):
             assert (
                 head_config.head_name == "pt_head"
             ), "Only pt_head should use mp as train_file"
