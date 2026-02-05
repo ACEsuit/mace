@@ -224,8 +224,12 @@ class LoRAFCLayer(nn.Module):
         self.scaling = float(alpha) / float(rank)
 
         # LoRA matrices: delta = A @ B (e3nn layout: in_f x out_f)
-        self.lora_A = nn.Parameter(torch.empty(in_f, rank, device=w.device, dtype=w.dtype))
-        self.lora_B = nn.Parameter(torch.empty(rank, out_f, device=w.device, dtype=w.dtype))
+        self.lora_A = nn.Parameter(
+            torch.empty(in_f, rank, device=w.device, dtype=w.dtype)
+        )
+        self.lora_B = nn.Parameter(
+            torch.empty(rank, out_f, device=w.device, dtype=w.dtype)
+        )
 
         # Cache for weight delta (used during inference)
         self._cached_delta: torch.Tensor | None = None
@@ -253,13 +257,13 @@ class LoRAFCLayer(nn.Module):
 
         # Temporarily patch weight for forward (dict manipulation preserves gradient flow)
         w_orig = self.base.weight
-        del self.base._parameters["weight"]
+        del self.base._parameters["weight"]  # pylint: disable=protected-access
         self.base.weight = merged_weight
         try:
             return self.base(x)
         finally:
             self.base.weight = w_orig
-            self.base._parameters["weight"] = w_orig
+            self.base._parameters["weight"] = w_orig  # pylint: disable=protected-access
 
     def merge_into_base(self) -> nn.Module:
         """Permanently merge LoRA weights into base and return the base layer."""

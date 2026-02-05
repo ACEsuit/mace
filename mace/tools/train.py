@@ -538,6 +538,7 @@ def take_step_lbfgs(
 
     return loss, loss_dict
 
+
 # Keep parameters frozen/active after evaluation
 @contextmanager
 def preserve_grad_state(model):
@@ -553,6 +554,7 @@ def preserve_grad_state(model):
         for param, requires_grad in requires_grad_backup.items():
             param.requires_grad = requires_grad
 
+
 def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
@@ -560,7 +562,6 @@ def evaluate(
     output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
