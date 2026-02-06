@@ -18,18 +18,18 @@ def _copy_mace_readout(
     """
     if isinstance(mace_readout, LinearReadoutBlock):
         return LinearReadoutBlock(
-            irreps_in=mace_readout.linear.irreps_in,  # type:ignore
-            irrep_out=mace_readout.linear.irreps_out,  # type:ignore
+            irreps_in=mace_readout.linear.irreps_in,  # type: ignore
+            irrep_out=mace_readout.linear.irreps_out,  # type: ignore
             cueq_config=cueq_config,
         )
-    if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
+    if isinstance(mace_readout, NonLinearReadoutBlock):  # type: ignore
         return NonLinearReadoutBlock(
-            irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
+            irreps_in=mace_readout.linear_1.irreps_in,  # type: ignore
             MLP_irreps=mace_readout.hidden_irreps,
             gate=mace_readout.non_linearity._modules["acts"][  # pylint: disable=W0212
                 0
             ].f,
-            irrep_out=mace_readout.linear_2.irreps_out,  # type:ignore
+            irrep_out=mace_readout.linear_2.irreps_out,  # type: ignore
             num_heads=mace_readout.num_heads,
             cueq_config=cueq_config,
         )
@@ -38,9 +38,9 @@ def _copy_mace_readout(
 
 def _get_readout_input_dim(block: torch.nn.Module) -> int:
     if isinstance(block, LinearReadoutBlock):
-        return block.linear.irreps_in.dim  # type:ignore
-    if isinstance(block, NonLinearReadoutBlock):  # type:ignore
-        return block.linear_1.irreps_in.dim  # type:ignore
+        return block.linear.irreps_in.dim  # type: ignore
+    if isinstance(block, NonLinearReadoutBlock):  # type: ignore
+        return block.linear_1.irreps_in.dim  # type: ignore
     raise TypeError("Unsupported readout type for input dimension retrieval.")
 
 
@@ -61,10 +61,10 @@ class MACELES(ScaleShiftMACE):
         self.les = Les(les_arguments=les_arguments)
         self.les_readouts = torch.nn.ModuleList()
         self.readout_input_dims = [
-            _get_readout_input_dim(readout) for readout in self.readouts  # type:ignore
+            _get_readout_input_dim(readout) for readout in self.readouts  # type: ignore
         ]
         cueq_config = kwargs.get("cueq_config", None)
-        for readout in self.readouts:  # type:ignore
+        for readout in self.readouts:  # type: ignore
             self.les_readouts.append(
                 _copy_mace_readout(readout, cueq_config=cueq_config)
             )
@@ -198,7 +198,7 @@ class MACELES(ScaleShiftMACE):
             ]
             node_qs = les_readout(node_feats_list[feat_idx], node_heads)[
                 num_atoms_arange, node_heads
-            ]  # type:ignore
+            ]  # type: ignore
             node_qs_list.append(node_qs)
             node_es_list.append(node_es)
 
