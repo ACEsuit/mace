@@ -34,9 +34,9 @@ from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
 from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
+from mace.modules.lora import inject_LoRAs, merge_lora_weights
 from mace.tools import torch_geometric
 from mace.tools.distributed_tools import init_distributed
-from mace.modules.lora import inject_LoRAs, merge_lora_weights
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
