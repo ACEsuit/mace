@@ -11,7 +11,7 @@ from e3nn import o3
 from mace import data, modules, tools
 from mace.data import Configuration
 from mace.tools import torch_geometric
-from mace.tools.lora_tools import inject_lora, merge_lora_weights
+from mace.modules.lora import inject_lora, merge_lora_weights
 
 
 def _random_config() -> Configuration:
@@ -257,7 +257,7 @@ def test_lora_merge_preserves_outputs(build_lora_model, random_configs) -> None:
 
 def test_lora_merge_removes_wrappers(build_lora_model) -> None:
     """Test that merging removes LoRA wrapper modules."""
-    from mace.tools.lora_tools import LoRADenseLinear, LoRAFCLayer, LoRAO3Linear
+    from mace.modules.lora import LoRADenseLinear, LoRAFCLayer, LoRAO3Linear
 
     model, _ = build_lora_model(rank=2, alpha=0.5, randomize=True)
 
