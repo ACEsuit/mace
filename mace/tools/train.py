@@ -63,14 +63,14 @@ def valid_err_log(
     else:
         inintial_phrase = f"Epoch {epoch}"
     if log_errors == "PerAtomRMSE":
-        #error_e = eval_metrics["rmse_e_per_atom"] * 1e3
+        error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
-        #logging.info(
-        #    f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A"
-        #)
         logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom=N.A meV, RMSE_F={error_f:8.2f} meV / A"
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A"
         )
+        #logging.info(
+        #    f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom=N.A meV, RMSE_F={error_f:8.2f} meV / A"
+        #)
     elif (
         log_errors == "PerAtomRMSEstressvirials"
         and eval_metrics["rmse_stress"] is not None
