@@ -18,7 +18,11 @@ from mace.modules.utils import (
     get_outputs,
     prepare_graph,
 )
-from mace.modules.wrapper_ops import CuEquivarianceConfig, OEQConfig
+from mace.modules.wrapper_ops import (
+    CuEquivarianceConfig,
+    OEQConfig,
+    TransposeIrrepsLayoutWrapper,
+)
 from mace.tools.scatter import scatter_mean, scatter_sum
 
 from .electrostatic_features import PBCAgnosticElectrostaticFeatureBlock
@@ -298,23 +302,6 @@ def _permute_to_e3nn_convention(x: torch.Tensor) -> torch.Tensor:
 class FieldFukuiMACE(ScaleShiftMACE):
     def __init__(
         self,
-        r_max: float,
-        num_bessel: int,
-        num_polynomial_cutoff: int,
-        max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
-        num_interactions: int,
-        num_elements: int,
-        hidden_irreps: o3.Irreps,
-        MLP_irreps: o3.Irreps,
-        atomic_energies: torch.Tensor,
-        avg_num_neighbors: float,
-        atomic_numbers: List[int],
-        correlation: int,
-        gate,
-        radial_MLP: Optional[List[int]] = None,
-        radial_type: Optional[str] = "bessel",
         kspace_cutoff_factor: float = 1.5,
         atomic_multipoles_max_l: int = 0,
         atomic_multipoles_smearing_width: float = 1.0,
@@ -322,57 +309,74 @@ class FieldFukuiMACE(ScaleShiftMACE):
         field_feature_widths: List[float] = (1.0,),
         num_recursion_steps: int = 1,
         field_si: bool = False,
-        edge_irreps: Optional[o3.Irreps] = None,
         include_electrostatic_self_interaction: bool = False,
         add_local_electron_energy: bool = False,
-        use_reduced_cg: bool = True,
-        apply_cutoff: bool = True,
-        field_dependence_type: str = "local_linear",
-        final_field_readout_type: str = "OneBodyMLPFieldReadout",
-        readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
         quadrupole_feature_corrections: bool = False,
         return_electrostatic_potentials: bool = False,
-        heads: Optional[List[str]] = None,
         field_feature_norms: Optional[List[float]] = None,
         field_norm_factor: Optional[float] = 0.02,
         fixedpoint_update_config: Optional[Dict[str, Any]] = None,
         field_readout_config: Optional[Dict[str, Any]] = None,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None,
+        **kwargs,
     ):
-        # Initialize the MACE backbone first (interactions, products, readouts, embeddings)
-        super().__init__(
-            r_max=r_max,
-            num_bessel=num_bessel,
-            num_polynomial_cutoff=num_polynomial_cutoff,
-            max_ell=max_ell,
-            interaction_cls=interaction_cls,
-            interaction_cls_first=interaction_cls_first,
-            num_interactions=num_interactions,
-            num_elements=num_elements,
-            hidden_irreps=hidden_irreps,
-            MLP_irreps=MLP_irreps,
-            atomic_energies=atomic_energies,
-            avg_num_neighbors=avg_num_neighbors,
-            atomic_numbers=atomic_numbers,
-            correlation=correlation,
-            gate=gate,
-            radial_MLP=radial_MLP,
-            radial_type=radial_type,
-            heads=heads if heads is not None else ["Default"],
-            atomic_inter_scale=[1.0] * (len(heads) if heads is not None else 1),
-            atomic_inter_shift=[0.0] * (len(heads) if heads is not None else 1),
-            edge_irreps=edge_irreps,
-            use_reduced_cg=use_reduced_cg,
-            use_agnostic_product=True,
-            apply_cutoff=apply_cutoff,
-            cueq_config=cueq_config,
-            oeq_config=oeq_config,
-            readout_cls=readout_cls,
-            keep_last_layer_irreps=True,
-        )
+        try:
+            hidden_irreps: o3.Irreps = kwargs["hidden_irreps"]
+            MLP_irreps_raw = kwargs["MLP_irreps"]
+            if isinstance(MLP_irreps_raw, int):
+                MLP_irreps = o3.Irreps(f"{int(MLP_irreps_raw)}x0e")
+            else:
+                MLP_irreps = o3.Irreps(str(MLP_irreps_raw))
+            gate = kwargs["gate"]
+            avg_num_neighbors: float = kwargs["avg_num_neighbors"]
+            num_interactions: int = kwargs["num_interactions"]
+            num_elements: int = kwargs["num_elements"]
+        except KeyError as exc:
+            missing = str(exc).strip("'")
+            raise KeyError(
+                f"Missing required argument '{missing}' in kwargs for FieldFukuiMACE. "
+                "Pass all ScaleShiftMACE/MACE constructor args as keyword arguments."
+            ) from exc
+
+        cueq_config: Optional[CuEquivarianceConfig] = kwargs.get("cueq_config", None)
+        oeq_config: Optional[OEQConfig] = kwargs.get("oeq_config", None)
+        # Keep a reference for config extraction tools
+        self.cueq_config = cueq_config
+        self.oeq_config = oeq_config
+
+        # Defaults to mirror previous behavior
+        heads = kwargs.get("heads", ["Default"]) or ["Default"]
+        kwargs.setdefault("heads", heads)
+        kwargs.setdefault("readout_cls", NonLinearReadoutBlock)
+        kwargs.setdefault("use_agnostic_product", True)
+        kwargs.setdefault("apply_cutoff", True)
+        # Provide default atomic_inter_scale/shift if not passed
+        kwargs.setdefault("atomic_inter_scale", [1.0] * len(heads))
+        kwargs.setdefault("atomic_inter_shift", [0.0] * len(heads))
+
+        # Swallow optional convenience args that shouldn't flow to super().__init__
+        kwargs.pop("field_dependence_type", None)
+        kwargs.pop("final_field_readout_type", None)
+        kwargs.pop("keep_last_layer_irreps", None)
+
+        # Initialize the MACE backbone (interactions, products, readouts, embeddings)
+        super().__init__(**kwargs, keep_last_layer_irreps=True)
+
+        self.kspace_cutoff_factor = float(kspace_cutoff_factor)
         self.num_recursion_steps = int(num_recursion_steps)
         self.atomic_multipoles_max_l = int(atomic_multipoles_max_l)
+        self.atomic_multipoles_smearing_width = float(atomic_multipoles_smearing_width)
+        self.field_feature_max_l = int(field_feature_max_l)
+        self.field_feature_widths = list(field_feature_widths)
+        self.field_norm_factor = float(field_norm_factor)
+        self._field_feature_norms = field_feature_norms
+        self.include_electrostatic_self_interaction = (
+            include_electrostatic_self_interaction
+        )
+        self.atomic_multipoles_smearing_width = float(atomic_multipoles_smearing_width)
+        self.add_local_electron_energy = add_local_electron_energy
+        self.quadrupole_feature_corrections = quadrupole_feature_corrections
+        self.field_si = field_si
+        self.keep_last_layer_irreps = True
 
         # k-space cutoff heuristic
         kspace_cutoff = kspace_cutoff_factor * gto_basis_kspace_cutoff(
@@ -406,17 +410,39 @@ class FieldFukuiMACE(ScaleShiftMACE):
 
         self.lr_source_maps = torch.nn.ModuleList(
             EnvironmentDependentSpinSourceBlock(
-                irreps_in=hidden_irreps, max_l=atomic_multipoles_max_l
+                irreps_in=hidden_irreps,
+                max_l=atomic_multipoles_max_l,
+                cueq_config=cueq_config,
             )
             for _ in range(num_interactions)
         )
 
         # Field-dependent components
         self.charges_irreps = 2 * o3.Irreps.spherical_harmonics(atomic_multipoles_max_l)
+        charges_layout = (
+            cueq_config.layout_str
+            if (cueq_config is not None and cueq_config.enabled)
+            else "mul_ir"
+        )
+        self._charges_to_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.charges_irreps,
+            source=charges_layout,
+            target="mul_ir",
+            cueq_config=cueq_config,
+        )
+        self._charges_from_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.charges_irreps,
+            source="mul_ir",
+            target=charges_layout,
+            cueq_config=cueq_config,
+        )
         lr_sh_irreps = o3.Irreps.spherical_harmonics(field_feature_max_l)
-        self.potential_irreps = (lr_sh_irreps * len(field_feature_widths)).sort()[
-            0
-        ].simplify() * 2
+        self.field_irreps = (
+            (lr_sh_irreps * len(field_feature_widths)).sort()[0].simplify()
+        )
+        self.potential_irreps = (
+            self.field_irreps * 2
+        )  # 2 spin channels for the potential irreps
 
         self.electric_potential_descriptor = PBCAgnosticElectrostaticFeatureBlock(
             density_max_l=atomic_multipoles_max_l,
@@ -426,6 +452,8 @@ class FieldFukuiMACE(ScaleShiftMACE):
             kspace_cutoff=kspace_cutoff,
             include_self_interaction=field_si,
             quadrupole_feature_corrections=quadrupole_feature_corrections,
+            field_irreps=self.field_irreps,
+            cueq_config=cueq_config,
         )
 
         self.fukui_source_map = NonLinearBiasReadoutBlock(
@@ -433,13 +461,27 @@ class FieldFukuiMACE(ScaleShiftMACE):
             MLP_irreps.simplify(),
             gate,
             o3.Irreps("2x0e"),
-            cueq_config=cueq_config,
+            cueq_config=None,
             oeq_config=oeq_config,
         )
-
+        fukui_layout = (
+            cueq_config.layout_str
+            if (cueq_config is not None and cueq_config.enabled)
+            else "mul_ir"
+        )
+        self._fukui_to_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=hidden_irreps,
+            source=fukui_layout,
+            target="mul_ir",
+            cueq_config=cueq_config,
+        )
         if fixedpoint_update_config is None:
             fixedpoint_update_config = {}
-        lr_source_cls = fixedpoint_update_config.pop("type")
+        fixedpoint_update_config = fixedpoint_update_config.copy()
+        self._fixedpoint_update_config = fixedpoint_update_config.copy()
+        lr_source_cls = fixedpoint_update_config.pop(
+            "type", "AgnosticEmbeddedOneBodyVariableUpdate"
+        )
         if isinstance(lr_source_cls, str):
             lr_source_cls = field_update_blocks[lr_source_cls]
         # Map optional class names to implementations
@@ -481,6 +523,8 @@ class FieldFukuiMACE(ScaleShiftMACE):
                     charges_irreps=self.charges_irreps,
                     num_elements=num_elements,
                     field_norm_factor=float(field_norm_factor or 1.0),
+                    cueq_config=cueq_config,
+                    oeq_config=oeq_config,
                     **fixedpoint_update_config,
                 )
             )
@@ -489,7 +533,9 @@ class FieldFukuiMACE(ScaleShiftMACE):
         self.add_local_electron_energy = add_local_electron_energy
         if field_readout_config is None:
             field_readout_config = {}
-        field_readout_cls = field_readout_config.pop("type")
+        field_readout_config = field_readout_config.copy()
+        self._field_readout_config = field_readout_config.copy()
+        field_readout_cls = field_readout_config.pop("type", "OneBodyMLPFieldReadout")
         if isinstance(field_readout_cls, str):
             field_readout_cls = field_readout_blocks[field_readout_cls]
         self.local_electron_energy = field_readout_cls(
@@ -502,6 +548,8 @@ class FieldFukuiMACE(ScaleShiftMACE):
             avg_num_neighbors=avg_num_neighbors,
             potential_irreps=self.potential_irreps,
             charges_irreps=self.charges_irreps,
+            cueq_config=cueq_config,
+            oeq_config=oeq_config,
             **field_readout_config,
         )
 
@@ -516,7 +564,9 @@ class FieldFukuiMACE(ScaleShiftMACE):
         )
         self.return_electrostatic_potentials = return_electrostatic_potentials
         self.layer_feature_mixer = MultiLayerFeatureMixer(
-            node_feats_irreps=hidden_irreps, num_interactions=num_interactions
+            node_feats_irreps=hidden_irreps,
+            num_interactions=num_interactions,
+            cueq_config=cueq_config,
         )
 
     def forward(
@@ -563,6 +613,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
         external_potential = torch.hstack(
             (torch.zeros_like(fermi_level).unsqueeze(-1), external_field)
         )
+        charges_to_mul_ir = getattr(self, "_charges_to_mul_ir", None)
 
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
             num_atoms_arange, node_heads
@@ -641,10 +692,20 @@ class FieldFukuiMACE(ScaleShiftMACE):
         spin_charge_density = spin_charge_density.view(
             spin_charge_density.shape[0], 2, -1
         )
-        fukui_sources = self.fukui_source_map(node_feats)
+        fukui_input = node_feats
+        fukui_to_mul_ir = getattr(self, "_fukui_to_mul_ir", None)
+        if fukui_to_mul_ir is not None:
+            fukui_input = fukui_to_mul_ir(fukui_input)
+        fukui_sources = self.fukui_source_map(fukui_input)
         fukui_norm = scatter_sum(
-            src=fukui_sources.double(), index=data["batch"], dim=0, dim_size=num_graphs
+            src=fukui_sources.double(),
+            index=data["batch"],
+            dim=0,
+            dim_size=num_graphs,
         )[data["batch"]].to(vectors.dtype)
+        fukui_norm = torch.where(
+            fukui_norm == 0, torch.ones_like(fukui_norm), fukui_norm
+        )
         fukui_sources = fukui_sources / fukui_norm
         Q_p_S = (data["total_charge"] + (data["total_spin"] - 1))[data["batch"]]
         Q_m_S = (data["total_charge"] - (data["total_spin"] - 1))[data["batch"]]
@@ -661,6 +722,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
         spin_charge_density[:, 1, 0] = spin_charge_density[:, 1, 0] + fukui_sources[
             :, 1
         ] * ((Q_m_S / 2) - pred_total_charges_0[:, 1])
+        # print("spin_charge_density", spin_charge_density)
 
         potential_features = torch.zeros(
             (data["batch"].size(-1), self.potential_irreps.dim),
@@ -671,11 +733,16 @@ class FieldFukuiMACE(ScaleShiftMACE):
         esps: Optional[torch.Tensor] = None
 
         for i in range(self.num_recursion_steps):
-            field_feats_alpha, _, esps = self.electric_potential_descriptor(
+            source_feats_alpha = spin_charge_density[:, 0, :].clone()
+            source_feats_beta = spin_charge_density[:, 1, :].clone()
+            if charges_to_mul_ir is not None:
+                source_feats_alpha = charges_to_mul_ir(source_feats_alpha)
+                source_feats_beta = charges_to_mul_ir(source_feats_beta)
+            field_feats_alpha, esps = self.electric_potential_descriptor(
                 k_vectors=k_vectors,
                 k_vectors_normed_squared=kv_norms_squared,
                 k_vectors_mask=kv_mask,
-                source_feats=spin_charge_density[:, 0, :].clone().unsqueeze(-2),
+                source_feats=source_feats_alpha.unsqueeze(-2),
                 node_positions=positions,
                 batch=data["batch"],
                 volumes=data["volume"],
@@ -683,11 +750,11 @@ class FieldFukuiMACE(ScaleShiftMACE):
                 use_pbc_evaluator=use_pbc_evaluator,
                 return_electrostatic_potentials=self.return_electrostatic_potentials,
             )
-            field_feats_beta, _, esps = self.electric_potential_descriptor(
+            field_feats_beta, esps = self.electric_potential_descriptor(
                 k_vectors=k_vectors,
                 k_vectors_normed_squared=kv_norms_squared,
                 k_vectors_mask=kv_mask,
-                source_feats=spin_charge_density[:, 1, :].clone().unsqueeze(-2),
+                source_feats=source_feats_beta.unsqueeze(-2),
                 node_positions=positions,
                 batch=data["batch"],
                 volumes=data["volume"],
@@ -732,6 +799,8 @@ class FieldFukuiMACE(ScaleShiftMACE):
 
             current_fukui_sources = charge_sources_out[:, -2:]
             charge_sources = charge_sources_out[:, :-2]
+            # print("charge_sources", charge_sources)
+            # print("current_fukui_sources", current_fukui_sources)
             spin_charge_density_sources = charge_sources.view(
                 spin_charge_density.shape[0], 2, -1
             )
@@ -743,6 +812,9 @@ class FieldFukuiMACE(ScaleShiftMACE):
                 dim=0,
                 dim_size=num_graphs,
             )[data["batch"]].to(vectors.dtype)
+            fukui_norm2 = torch.where(
+                fukui_norm2 == 0, torch.ones_like(fukui_norm2), fukui_norm2
+            )
             current_fukui_sources = current_fukui_sources / fukui_norm2
             pred_total_charges = scatter_sum(
                 src=spin_charge_density[:, :, 0].double(),
@@ -781,11 +853,32 @@ class FieldFukuiMACE(ScaleShiftMACE):
 
         charge_density = spin_charge_density.sum(dim=1)
         spin_density = spin_charge_density[:, 0, :] - spin_charge_density[:, 1, :]
+        charge_density_mul_ir = (
+            charges_to_mul_ir(charge_density)
+            if charges_to_mul_ir is not None
+            else charge_density
+        )
+        spin_density_mul_ir = (
+            charges_to_mul_ir(spin_density)
+            if charges_to_mul_ir is not None
+            else spin_density
+        )
+        spin_charge_density_mul_ir = (
+            torch.stack(
+                [
+                    charges_to_mul_ir(spin_charge_density[:, 0, :]),
+                    charges_to_mul_ir(spin_charge_density[:, 1, :]),
+                ],
+                dim=1,
+            )
+            if charges_to_mul_ir is not None
+            else spin_charge_density
+        )
         total_charge, total_dipole = compute_total_charge_dipole_permuted(
-            charge_density, positions, data["batch"], num_graphs
+            charge_density_mul_ir, positions, data["batch"], num_graphs
         )
         electro_energy = self.coulomb_energy(
-            charge_density,
+            charge_density_mul_ir,
             positions,
             data["batch"],
             cell.view(-1, 3, 3),
@@ -842,19 +935,19 @@ class FieldFukuiMACE(ScaleShiftMACE):
             "hessian": hessian,
             "displacement": displacement,
             "node_feats": node_feats_out,
-            "density_coefficients": charge_density,
-            "spin_density": spin_density,
+            "density_coefficients": charge_density_mul_ir,
+            "spin_density": spin_density_mul_ir,
             "charges_history": torch.stack(
-                [spin_charge_density.clone().detach()], dim=-1
+                [spin_charge_density_mul_ir.clone().detach()], dim=-1
             ),
             "fermi_level": external_potential[:, 0],
             "external_field": external_potential[:, 1:],
-            "charges": charge_density[:, 0],
-            "spins": spin_density[:, 0],
+            "charges": charge_density_mul_ir[:, 0],
+            "spins": spin_density_mul_ir[:, 0],
             "dipole": total_dipole,
             "total_charge": total_charge,
             "electrostatic_energy": electro_energy,
             "electron_energy": le_total,
             "electrostatic_potentials": esps,
-            "spin_charge_density": spin_charge_density,
+            "spin_charge_density": spin_charge_density_mul_ir,
         }

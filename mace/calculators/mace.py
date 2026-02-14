@@ -7,6 +7,7 @@
 import logging
 
 # pylint: disable=wrong-import-position
+import importlib.util as importlib_util
 import os
 from glob import glob
 from pathlib import Path
@@ -33,6 +34,8 @@ try:
 except (ImportError, ModuleNotFoundError):
     CUEQQ_AVAILABLE = False
     run_e3nn_to_cueq = None
+
+CUEQ_OPS_AVAILABLE = importlib_util.find_spec("cuequivariance_ops_torch") is not None
 
 try:
     from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
@@ -96,7 +99,10 @@ class MACECalculator(Calculator):
     ):
         Calculator.__init__(self, **kwargs)
         if enable_cueq or enable_oeq:
-            assert model_type == "MACE", "CuEq only supports MACE models"
+            assert model_type in [
+                "MACE",
+                "FieldFukuiMACE",
+            ], "CuEq/OEq only supports MACE and FieldFukuiMACE models"
             if compile_mode is not None:
                 logging.warning(
                     "CuEq or Oeq does not support torch.compile, setting compile_mode to None"
@@ -312,6 +318,11 @@ class MACECalculator(Calculator):
                 self.models = [model.float() for model in self.models]
         torch_tools.set_default_dtype(default_dtype)
         if enable_cueq:
+            if self.model_type == "FieldFukuiMACE" and not CUEQ_OPS_AVAILABLE:
+                logging.warning(
+                    "cuequivariance_ops_torch is not available; "
+                    "CuEq will run with fallback torch kernels on CPU."
+                )
             logging.info("Converting models to CuEq for acceleration")
             self.models = [
                 run_e3nn_to_cueq(model, device=device).to(device)
@@ -350,6 +361,9 @@ class MACECalculator(Calculator):
         # output tensor shape, e.g. stress is returned as 1x3x3 and we want 3x3
         tensor_shapes = {
             "energy": [],
+            "interaction_energy": [],
+            "electrostatic_energy": [],
+            "electron_energy": [],
             "node_energy": [num_atoms],
             "forces": [num_atoms, 3],
             "stress": [3, 3],
@@ -460,6 +474,9 @@ class MACECalculator(Calculator):
         results_store_ensemble = set(["energy", "forces", "stress", "dipole"])
         for results_key, ret_key, unit_conv in [
             ("energy", "energy", self.energy_units_to_eV),
+            ("interaction_energy", "interaction_energy", self.energy_units_to_eV),
+            ("electrostatic_energy", "electrostatic_energy", self.energy_units_to_eV),
+            ("electron_energy", "electron_energy", self.energy_units_to_eV),
             ("node_energy", "node_energy", self.energy_units_to_eV),
             ("forces", "forces", self.energy_units_to_eV / self.length_units_to_A),
             ("stress", "stress", self.energy_units_to_eV / self.length_units_to_A**3),
