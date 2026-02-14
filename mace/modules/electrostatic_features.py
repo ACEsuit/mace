@@ -31,6 +31,7 @@ from graph_longrange.slabs import (
     get_nonperiodic_charge_dipole,
     slab_dipole_correction_total_field,
 )
+from .wrapper_ops import CuEquivarianceConfig, TransposeIrrepsLayoutWrapper
 
 
 @compile_mode("script")
@@ -42,9 +43,11 @@ class PBCAgnosticElectrostaticFeatureBlock(torch.nn.Module):
         projection_max_l: int,
         projection_smearing_widths: List[float],
         kspace_cutoff: float,
+        field_irreps: o3.Irreps,
         include_self_interaction=False,
         integral_normalization="receiver",
         quadrupole_feature_corrections=False,
+        **kwargs,
     ):
         super().__init__()
 
@@ -72,6 +75,18 @@ class PBCAgnosticElectrostaticFeatureBlock(torch.nn.Module):
             projection_smearing_widths=projection_smearing_widths,
             integral_normalization=integral_normalization,
         )
+        self.cueq_config = kwargs.get("cueq_config", None)
+        layout_target = (
+            self.cueq_config.layout_str
+            if (self.cueq_config is not None and hasattr(self.cueq_config, "layout_str"))
+            else "mul_ir"
+        )
+        self.transpose_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=field_irreps,
+            source="mul_ir",
+            target=layout_target,
+            cueq_config=self.cueq_config,
+        )
 
     def forward(
         self,
@@ -87,7 +102,7 @@ class PBCAgnosticElectrostaticFeatureBlock(torch.nn.Module):
         return_electrostatic_potentials: bool = False,
     ) -> torch.Tensor:
         if pbc[0, 0] or use_pbc_evaluator:
-            return self.pbc_features(
+            field_feats, _, esps = self.pbc_features(
                 k_vectors,
                 k_vectors_normed_squared,
                 k_vectors_mask,
@@ -98,8 +113,16 @@ class PBCAgnosticElectrostaticFeatureBlock(torch.nn.Module):
                 pbc,
                 return_electrostatic_potentials,
             )
+            if self.transpose_mul_ir is not None:
+                field_feats = self.transpose_mul_ir(field_feats)
+            return field_feats, esps
         else:
-            return self.realspace_features(source_feats, node_positions, batch)
+            field_feats, _, esps = self.realspace_features(
+                source_feats, node_positions, batch
+            )
+            if self.transpose_mul_ir is not None:
+                field_feats = self.transpose_mul_ir(field_feats)
+            return field_feats, esps
 
 
 @compile_mode("script")

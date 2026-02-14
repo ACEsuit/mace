@@ -140,16 +140,40 @@ class NonLinearBiasReadoutBlock(torch.nn.Module):
         self.linear_2 = o3.Linear(
             irreps_in=self.hidden_irreps, irreps_out=irrep_out, biases=True
         )
+        # For CuEq with non-mul_ir layout, switch to mul_ir for e3nn ops
+        layout_str = (
+            cueq_config.layout_str
+            if (cueq_config is not None and hasattr(cueq_config, "layout_str"))
+            else "mul_ir"
+        )
+        self._tp_to_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.hidden_irreps,
+            source=layout_str,
+            target="mul_ir",
+            cueq_config=cueq_config,
+        )
+        self._tp_from_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.hidden_irreps,
+            source="mul_ir",
+            target=layout_str,
+            cueq_config=cueq_config,
+        )
 
     def forward(
         self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
-        x = self.non_linearity(self.linear_1(x))
+        x = self.linear_1(x)
+        if self._tp_to_mul_ir is not None:
+            x = self._tp_to_mul_ir(x)
+        x = self.non_linearity(x)
         x = self.non_linearity(self.linear_mid(x))
         if hasattr(self, "num_heads"):
             if self.num_heads > 1 and heads is not None:
                 x = mask_head(x, heads, self.num_heads)
-        return self.linear_2(x)  # [n_nodes, len(heads)]
+        x = self.linear_2(x)
+        if self._tp_from_mul_ir is not None:
+            x = self._tp_from_mul_ir(x)
+        return x  # [n_nodes, len(heads)]
 
 
 @compile_mode("script")
@@ -308,6 +332,7 @@ class GeneralNonLinearBiasReadoutBlock(torch.nn.Module):
         gate: Optional[Callable],
         irrep_out: o3.Irreps = o3.Irreps("0e"),
         irreps_out: Optional[o3.Irreps] = None,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         super().__init__()
         self.hidden_irreps = MLP_irreps
@@ -331,12 +356,31 @@ class GeneralNonLinearBiasReadoutBlock(torch.nn.Module):
             irreps_gated=irreps_gated,
         )
         self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
-        self.linear_1 = o3.Linear(irreps_in=irreps_in, irreps_out=self.irreps_nonlin)
+        self.linear_1 = Linear(
+            irreps_in=irreps_in, irreps_out=self.irreps_nonlin, cueq_config=cueq_config
+        )
         self.linear_mid = o3.Linear(
             irreps_in=self.hidden_irreps, irreps_out=self.irreps_nonlin, biases=True
         )
         self.linear_2 = o3.Linear(
             irreps_in=self.hidden_irreps, irreps_out=self.irreps_out, biases=True
+        )
+        layout_str = (
+            cueq_config.layout_str
+            if (cueq_config is not None and hasattr(cueq_config, "layout_str"))
+            else "mul_ir"
+        )
+        self._tp_to_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_nonlin,
+            source=layout_str,
+            target="mul_ir",
+            cueq_config=cueq_config,
+        )
+        self._tp_from_mul_ir_out = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_out,
+            source="mul_ir",
+            target=layout_str,
+            cueq_config=cueq_config,
         )
 
     def forward(
@@ -344,10 +388,15 @@ class GeneralNonLinearBiasReadoutBlock(torch.nn.Module):
         x: torch.Tensor,
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.linear_1(x)
+        if self._tp_to_mul_ir is not None:
+            x = self._tp_to_mul_ir(x)
         x = self.equivariant_nonlin(x)
         x = self.linear_mid(x)
         x = self.equivariant_nonlin(x)
-        return self.linear_2(x)  # [n_nodes, 1]
+        x = self.linear_2(x)
+        if self._tp_from_mul_ir_out is not None:
+            x = self._tp_from_mul_ir_out(x)
+        return x  # [n_nodes, 1]
 
 
 @compile_mode("script")
