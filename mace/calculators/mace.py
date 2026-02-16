@@ -10,7 +10,7 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import List, Union
+from typing import Dict, List, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -92,6 +92,8 @@ class MACECalculator(Calculator):
         fullgraph=True,
         enable_cueq=False,
         enable_oeq=False,
+        pad_num_atoms: int = 0,
+        pad_num_edges: int = 0,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
@@ -238,6 +240,13 @@ class MACECalculator(Calculator):
         else:
             self.use_compile = False
 
+        if pad_num_atoms <= 0:
+            pad_num_atoms = int(os.environ.get("MACE_ASE_PAD_NUM_ATOMS", "0"))
+        if pad_num_edges <= 0:
+            pad_num_edges = int(os.environ.get("MACE_ASE_PAD_NUM_EDGES", "0"))
+        self.pad_num_atoms = max(int(pad_num_atoms), 0)
+        self.pad_num_edges = max(int(pad_num_edges), 0)
+
         # Ensure all models are on the same device
         for model in self.models:
             model.to(device)
@@ -375,17 +384,57 @@ class MACECalculator(Calculator):
 
         node_e0 = None
         if "node_energy" in out:
-            node_heads = batch["head"][batch["batch"]]
-            num_atoms_arange = torch.arange(batch["positions"].shape[0])
+            node_batch = batch["batch"][:num_atoms]
+            node_heads = batch["head"][node_batch]
+            num_atoms_arange = torch.arange(num_atoms, device=batch["positions"].device)
             node_e0 = (
                 self.models[0]
-                .atomic_energies_fn(batch["node_attrs"])[num_atoms_arange, node_heads]
+                .atomic_energies_fn(batch["node_attrs"][:num_atoms])[
+                    num_atoms_arange, node_heads
+                ]
                 .detach()
                 .cpu()
                 .numpy()
             )
 
         return dict_of_tensors, node_e0
+
+    @staticmethod
+    def _slice_real_outputs(
+        out: Dict[str, Union[torch.Tensor, None]], num_real_atoms: int
+    ) -> Dict[str, Union[torch.Tensor, None]]:
+        graph_level_keys = {
+            "energy",
+            "stress",
+            "virials",
+            "dipole",
+            "polarizability",
+            "polarizability_sh",
+            "displacement",
+            "contributions",
+        }
+        atom_level_keys = {
+            "node_energy",
+            "forces",
+            "charges",
+            "atomic_stresses",
+            "atomic_virials",
+            "atomic_dipoles",
+            "node_feats",
+        }
+        sliced_out: Dict[str, Union[torch.Tensor, None]] = {}
+        for key, value in out.items():
+            if value is None or not torch.is_tensor(value):
+                sliced_out[key] = value
+                continue
+            if key in graph_level_keys and value.ndim > 0:
+                sliced_out[key] = value[0]
+                continue
+            if key in atom_level_keys:
+                sliced_out[key] = value[:num_real_atoms]
+                continue
+            sliced_out[key] = value
+        return sliced_out
 
     def _atoms_to_batch(self, atoms):
         self.arrays_keys.update({self.charges_key: "charges"})
@@ -395,20 +444,38 @@ class MACECalculator(Calculator):
         config = mace_data.config_from_atoms(
             atoms, key_specification=keyspec, head_name=self.head
         )
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                mace_data.AtomicData.from_config(
-                    config,
-                    z_table=self.z_table,
-                    cutoff=self.r_max,
-                    heads=self.available_heads,
-                )
-            ],
-            batch_size=1,
-            shuffle=False,
-            drop_last=False,
+        real_graph = mace_data.AtomicData.from_config(
+            config,
+            z_table=self.z_table,
+            cutoff=self.r_max,
+            heads=self.available_heads,
         )
-        batch = next(iter(data_loader)).to(self.device)
+
+        real_num_atoms = int(real_graph["node_attrs"].shape[0])
+        real_num_edges = int(real_graph["edge_index"].shape[1])
+        target_num_atoms = max(real_num_atoms, self.pad_num_atoms)
+        target_num_edges = max(real_num_edges, self.pad_num_edges)
+        pad_num_atoms = target_num_atoms - real_num_atoms
+        pad_num_edges = target_num_edges - real_num_edges
+
+        if pad_num_edges > 0 and pad_num_atoms <= 0:
+            raise ValueError(
+                "Padding edges in ASE calculator requires fake atoms. "
+                "Please set pad_num_atoms > current number of atoms."
+            )
+
+        data_list = [real_graph]
+        if pad_num_atoms > 0 or pad_num_edges > 0:
+            data_list.append(
+                mace_data.build_fake_padding_graph(
+                    real_graph,
+                    num_atoms=pad_num_atoms,
+                    num_edges=pad_num_edges,
+                    r_max=self.r_max,
+                )
+            )
+
+        batch = torch_geometric.Batch.from_data_list(data_list).to(self.device)
         return batch
 
     def _clone_batch(self, batch):
@@ -432,10 +499,7 @@ class MACECalculator(Calculator):
 
         batch_base = self._atoms_to_batch(atoms)
 
-        if self.model_type in ["MACE", "EnergyDipoleMACE"]:
-            compute_stress = not self.use_compile
-        else:
-            compute_stress = False
+        compute_stress = self.model_type in ["MACE", "EnergyDipoleMACE"]
 
         ret_tensors = None
         node_e0 = None
@@ -449,6 +513,7 @@ class MACECalculator(Calculator):
                 compute_edge_forces=self.compute_atomic_stresses,
                 compute_atomic_stresses=self.compute_atomic_stresses,
             )
+            out = self._slice_real_outputs(out, len(atoms))
             if i == 0:
                 ret_tensors, node_e0 = self._create_result_tensors(
                     self.num_models, len(atoms), batch, out

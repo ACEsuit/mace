@@ -10,6 +10,7 @@ from e3nn import o3
 from torch.testing import assert_close
 
 from mace import data, modules, tools
+from mace.calculators.mace import MACECalculator
 from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools import compile as mace_compile
 from mace.tools import torch_geometric
@@ -118,13 +119,14 @@ def test_mace(device, default_dtype):  # pylint: disable=W0621
     model_compiled = torch.compile(tmp_model, mode="default", fullgraph=True)
 
     batch1 = create_batch(device)
-    output1 = model_defaults(batch1, training=True)
+    output1 = model_defaults(batch1, training=True, compute_stress=True)
 
     batch2 = create_batch(device)
     batch2["positions"].requires_grad_(True)
-    output2 = model_compiled(batch2, training=True)
+    output2 = model_compiled(batch2, training=True, compute_stress=True)
     assert_close(output1["energy"], output2["energy"])
     assert_close(output1["forces"], output2["forces"])
+    assert_close(output1["stress"], output2["stress"])
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
@@ -159,7 +161,8 @@ def test_compile_benchmark(benchmark, compile_mode, enable_amp, enable_cueq):
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
-def test_graph_breaks(device):
+@pytest.mark.parametrize("compute_stress", [False, True], ids=["forces", "stress"])
+def test_graph_breaks(device, compute_stress):
     import torch._dynamo as dynamo
 
     if device == "cuda" and not torch.cuda.is_available():
@@ -168,10 +171,34 @@ def test_graph_breaks(device):
     batch = create_batch(device)
     batch["positions"].requires_grad_(True)
     model = mace_compile.prepare(create_mace)(device)
-    explanation = dynamo.explain(model)(batch, training=False)
+    explanation = dynamo.explain(model)(
+        batch, training=False, compute_stress=compute_stress
+    )
 
     # these clutter the output but might be useful for investigating graph breaks
     explanation.ops_per_graph = None
     explanation.out_guards = None
     print(explanation)
     assert explanation.graph_break_count == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_calculator_compiled_stress(device):
+    from ase import build
+
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip(reason="cuda is not available")
+
+    model = create_mace(device)
+    calc = MACECalculator(
+        models=model,
+        device=device,
+        compile_mode="default",
+        fullgraph=True,
+    )
+    atoms = build.bulk("C", "diamond", a=3.567, cubic=True).repeat((2, 2, 2))
+    atoms.calc = calc
+
+    stress = atoms.get_stress()
+    assert stress.shape == (6,)

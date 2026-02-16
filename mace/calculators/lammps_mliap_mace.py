@@ -28,6 +28,11 @@ class MACELammpsConfig:
         self.profile_end_step = int(os.environ.get("MACE_PROFILE_END", "10"))
         self.allow_cpu = self._get_env_bool("MACE_ALLOW_CPU", False)
         self.force_cpu = self._get_env_bool("MACE_FORCE_CPU", False)
+        self.pad_num_atoms = self._get_env_int("MACE_MLIAP_PAD_NUM_ATOMS", 0)
+        self.pad_num_pairs = self._get_env_int(
+            "MACE_MLIAP_PAD_NUM_PAIRS",
+            self._get_env_int("MACE_MLIAP_PAD_NUM_EDGES", 0),
+        )
 
     @staticmethod
     def _get_env_bool(var_name: str, default: bool) -> bool:
@@ -37,6 +42,16 @@ class MACELammpsConfig:
             "t",
             "yes",
         )
+
+    @staticmethod
+    def _get_env_int(var_name: str, default: int) -> int:
+        try:
+            return int(os.environ.get(var_name, str(default)))
+        except ValueError:
+            logging.warning(
+                "Invalid integer value for %s; using default %s.", var_name, default
+            )
+            return default
 
 
 @contextmanager
@@ -52,6 +67,60 @@ def timer(name: str, enabled: bool = True):
     finally:
         elapsed = time.perf_counter() - start
         logging.info(f"Timer - {name}: {elapsed*1000:.3f} ms")
+
+
+class _LammpsExchangeProxy:
+    """Exchange wrapper that keeps padded fake atoms untouched."""
+
+    def __init__(self, base, n_real: int, n_fake: int, n_ghost: int):
+        self._base = base
+        self._n_real = int(n_real)
+        self._n_fake = int(n_fake)
+        self._n_ghost = int(n_ghost)
+
+    def _exchange(self, feats: torch.Tensor, out: torch.Tensor, vec_len: int, reverse: bool):
+        if self._n_fake <= 0:
+            if reverse:
+                self._base.reverse_exchange(feats, out, vec_len)
+            else:
+                self._base.forward_exchange(feats, out, vec_len)
+            return
+
+        expected_with_fake = self._n_real + self._n_fake + self._n_ghost
+        expected_base = self._n_real + self._n_ghost
+        if feats.shape[0] != expected_with_fake:
+            if reverse:
+                self._base.reverse_exchange(feats, out, vec_len)
+            else:
+                self._base.forward_exchange(feats, out, vec_len)
+            return
+
+        base_input = torch.empty(
+            (expected_base, vec_len), dtype=feats.dtype, device=feats.device
+        )
+        base_input[: self._n_real] = feats[: self._n_real]
+        base_input[self._n_real :] = feats[self._n_real + self._n_fake :]
+
+        base_output = torch.empty_like(base_input)
+        if reverse:
+            self._base.reverse_exchange(base_input, base_output, vec_len)
+        else:
+            self._base.forward_exchange(base_input, base_output, vec_len)
+
+        out[: self._n_real] = base_output[: self._n_real]
+        out[self._n_real : self._n_real + self._n_fake] = feats[
+            self._n_real : self._n_real + self._n_fake
+        ]
+        out[self._n_real + self._n_fake :] = base_output[self._n_real :]
+
+    def forward_exchange(self, feats: torch.Tensor, out: torch.Tensor, vec_len: int):
+        self._exchange(feats, out, vec_len, reverse=False)
+
+    def reverse_exchange(self, feats: torch.Tensor, out: torch.Tensor, vec_len: int):
+        self._exchange(feats, out, vec_len, reverse=True)
+
+    def __getattr__(self, item):
+        return getattr(self._base, item)
 
 
 @compile_mode("script")
@@ -91,9 +160,15 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
         self, data: Dict[str, torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute energies and per-pair forces."""
-        data["head"] = self.head
-        data["total_charge"] = self.total_charge
-        data["total_spin"] = self.total_spin
+        # Keep no-padding behavior identical while preserving static-shape tracing.
+        if isinstance(data["lammps_class"], _LammpsExchangeProxy):
+            data["head"] = self.head.repeat(2)
+            data["total_charge"] = self.total_charge.repeat(2)
+            data["total_spin"] = self.total_spin.repeat(2)
+        else:
+            data["head"] = self.head
+            data["total_charge"] = self.total_charge
+            data["total_spin"] = self.total_spin
 
         out = self.model(
             data,
@@ -122,6 +197,13 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
     def __init__(self, model, **kwargs):
         super().__init__()
         self.config = MACELammpsConfig()
+        pad_num_atoms = int(kwargs.pop("pad_num_atoms", self.config.pad_num_atoms))
+        pad_num_pairs = int(
+            kwargs.pop(
+                "pad_num_pairs",
+                kwargs.pop("pad_num_edges", self.config.pad_num_pairs),
+            )
+        )
         self.model = MACEEdgeForcesWrapper(model, **kwargs)
         self.element_types = [chemical_symbols[s] for s in model.atomic_numbers]
         self.num_species = len(self.element_types)
@@ -132,6 +214,10 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         self.device = "cpu"
         self.initialized = False
         self.step = 0
+        self.pad_num_atoms = max(pad_num_atoms, 0)
+        self.pad_num_pairs = max(pad_num_pairs, 0)
+        self.fake_pair_distance = max(float(model.r_max) * 2.0, 1.0)
+        self._warned_pair_padding_without_atoms = False
 
     def _initialize_device(self, data):
         using_kokkos = "kokkos" in data.__class__.__module__.lower()
@@ -168,7 +254,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
 
         with timer("total_step", enabled=self.config.debug_time):
             with timer("prepare_batch", enabled=self.config.debug_time):
-                batch = self._prepare_batch(data, natoms, nghosts, species)
+                batch = self._prepare_batch(data, natoms, nghosts, npairs, species)
 
             with timer("model_forward", enabled=self.config.debug_time):
                 _, atom_energies, pair_forces = self.model(batch)
@@ -177,36 +263,114 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
                     torch.cuda.synchronize()
 
             with timer("update_lammps", enabled=self.config.debug_time):
-                self._update_lammps_data(data, atom_energies, pair_forces, natoms)
+                self._update_lammps_data(
+                    data, atom_energies, pair_forces, natoms, npairs
+                )
 
-    def _prepare_batch(self, data, natoms, nghosts, species):
+    def _prepare_batch(self, data, natoms, nghosts, npairs, species):
         """Prepare the input batch for the MACE model."""
+        # Strict no-padding parity path: return the same structure as the original
+        # MLIAP implementation.
+        if self.pad_num_atoms <= natoms and self.pad_num_pairs <= npairs:
+            return {
+                "vectors": torch.as_tensor(data.rij)
+                .to(self.dtype)
+                .to(self.device)
+                .requires_grad_(True),
+                "node_attrs": torch.nn.functional.one_hot(
+                    species.to(self.device), num_classes=self.num_species
+                ).to(self.dtype),
+                "edge_index": torch.stack(
+                    [
+                        torch.as_tensor(data.pair_j, dtype=torch.int64).to(self.device),
+                        torch.as_tensor(data.pair_i, dtype=torch.int64).to(self.device),
+                    ],
+                    dim=0,
+                ),
+                "batch": torch.zeros(natoms, dtype=torch.int64, device=self.device),
+                "lammps_class": data,
+                "natoms": (natoms, nghosts),
+            }
+
+        target_atoms = max(natoms, self.pad_num_atoms)
+        target_pairs = max(npairs, self.pad_num_pairs)
+        pad_atoms = target_atoms - natoms
+        pad_pairs = target_pairs - npairs
+
+        if pad_pairs > 0 and pad_atoms <= 0:
+            if not self._warned_pair_padding_without_atoms:
+                logging.warning(
+                    "Skipping MLIAP pair padding because no fake atoms are available. "
+                    "Set pad_num_atoms above the runtime atom count to enable fixed-pair padding."
+                )
+                self._warned_pair_padding_without_atoms = True
+            pad_pairs = 0
+            target_pairs = npairs
+
+        node_attrs = torch.nn.functional.one_hot(
+            species[:natoms].to(self.device), num_classes=self.num_species
+        ).to(self.dtype)
+        if pad_atoms > 0:
+            fake_node_attrs = torch.zeros(
+                (pad_atoms, self.num_species), dtype=self.dtype, device=self.device
+            )
+            fake_node_attrs[:, 0] = 1.0
+            node_attrs = torch.cat([node_attrs, fake_node_attrs], dim=0)
+
+        vectors = torch.as_tensor(data.rij).to(self.dtype).to(self.device)
+        if pad_pairs > 0:
+            fake_vectors = torch.zeros((pad_pairs, 3), dtype=self.dtype, device=self.device)
+            fake_vectors[:, 0] = self.fake_pair_distance
+            vectors = torch.cat([vectors, fake_vectors], dim=0)
+
+        real_edge_index = torch.stack(
+            [
+                torch.as_tensor(data.pair_j, dtype=torch.int64).to(self.device),
+                torch.as_tensor(data.pair_i, dtype=torch.int64).to(self.device),
+            ],
+            dim=0,
+        )
+        if pad_pairs > 0:
+            fake_edge_ids = torch.arange(pad_pairs, dtype=torch.int64, device=self.device)
+            fake_senders = natoms + torch.remainder(fake_edge_ids, pad_atoms)
+            fake_receivers = natoms + torch.remainder(fake_edge_ids + 1, pad_atoms)
+            fake_edge_index = torch.stack([fake_senders, fake_receivers], dim=0)
+            edge_index = torch.cat([real_edge_index, fake_edge_index], dim=1)
+        else:
+            edge_index = real_edge_index
+
+        batch = torch.zeros(target_atoms, dtype=torch.int64, device=self.device)
+        if pad_atoms > 0:
+            batch[natoms:] = 1
+
+        lammps_class = data
+        if pad_atoms > 0:
+            lammps_class = _LammpsExchangeProxy(
+                data,
+                n_real=natoms,
+                n_fake=pad_atoms,
+                n_ghost=nghosts,
+            )
+
         return {
-            "vectors": torch.as_tensor(data.rij).to(self.dtype).to(self.device),
-            "node_attrs": torch.nn.functional.one_hot(
-                species.to(self.device), num_classes=self.num_species
-            ).to(self.dtype),
-            "edge_index": torch.stack(
-                [
-                    torch.as_tensor(data.pair_j, dtype=torch.int64).to(self.device),
-                    torch.as_tensor(data.pair_i, dtype=torch.int64).to(self.device),
-                ],
-                dim=0,
-            ),
-            "batch": torch.zeros(natoms, dtype=torch.int64, device=self.device),
-            "lammps_class": data,
-            "natoms": (natoms, nghosts),
+            "vectors": vectors.requires_grad_(True),
+            "node_attrs": node_attrs,
+            "edge_index": edge_index,
+            "batch": batch,
+            "lammps_class": lammps_class,
+            "natoms": (target_atoms, nghosts),
         }
 
-    def _update_lammps_data(self, data, atom_energies, pair_forces, natoms):
+    def _update_lammps_data(self, data, atom_energies, pair_forces, natoms, npairs):
         """Update LAMMPS data structures with computed energies and forces."""
+        pair_forces_real = pair_forces[:npairs].detach()
         if self.dtype == torch.float32:
-            pair_forces = pair_forces.double()
+            pair_forces_real = pair_forces_real.double()
         eatoms = torch.as_tensor(data.eatoms)
         atom_energies_real = atom_energies[:natoms].detach()
         eatoms.copy_(atom_energies_real)
         data.energy = atom_energies_real.sum().item()
-        data.update_pair_forces_gpu(pair_forces)
+        data.update_pair_forces_gpu(pair_forces_real)
 
     def _manage_profiling(self):
         if not self.config.debug_profile:

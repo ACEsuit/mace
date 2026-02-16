@@ -90,7 +90,9 @@ def get_symmetric_displacement(
         dtype=positions.dtype,
         device=positions.device,
     )
-    displacement.requires_grad_(True)
+    # Keep displacement differentiable for virial/stress while avoiding
+    # in-graph requires_grad mutations unsupported by torch.compile.
+    displacement = displacement + positions.sum() * 0.0
     symmetric_displacement = 0.5 * (
         displacement + displacement.transpose(-1, -2)
     )  # From https://github.com/mir-group/nequip
@@ -211,7 +213,7 @@ def get_outputs(
         edge_forces = compute_forces(
             energy=energy,
             positions=vectors,
-            training=(training or compute_hessian),
+            training=(training or compute_hessian or torch.compiler.is_compiling()),
         )
         if edge_forces is not None:
             edge_forces = -1 * edge_forces  # Match LAMMPS sign convention
@@ -597,7 +599,9 @@ def prepare_graph(
             dtype=data["vectors"].dtype,
             device=data["vectors"].device,
         )
-        vectors = data["vectors"].requires_grad_(True)
+        vectors = data["vectors"]
+        if not torch.compiler.is_compiling():
+            vectors = vectors.requires_grad_(True)
         lengths = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
         ikw = InteractionKwargs(data["lammps_class"], (n_real, n_ghost))
     else:
