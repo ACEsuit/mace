@@ -153,9 +153,11 @@ def run(args: argparse.Namespace) -> None:
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, index=":")
     if args.head is not None:
-        for atoms in atoms_list:
-            atoms.info["head"] = args.head
-    configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
+        assert args.head in model.heads
+        head_name = args.head
+    else:
+        head_name = 'Default'
+    configs = [data.config_from_atoms(atoms, head_name=head_name) for atoms in atoms_list]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
