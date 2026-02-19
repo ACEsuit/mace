@@ -778,6 +778,11 @@ def get_swa(
     return swa, swas
 
 
+def freeze_module(module: torch.nn.Module, freeze: bool = True):
+    for p in module.parameters():
+        p.requires_grad = not freeze
+
+
 def get_params_options(
     args: argparse.Namespace, model: torch.nn.Module
 ) -> Dict[str, Any]:
@@ -789,32 +794,57 @@ def get_params_options(
         else:
             no_decay_interactions[name] = param
 
+    lr_params_factors = json.loads(args.lr_params_factors)
+
+    if args.freeze:
+        if args.freeze >= 7:
+            logging.info("Freezing readout weights")
+            lr_params_factors["readouts_lr_factor"] = 0.0
+            freeze_module(model.readouts, True)
+        if args.freeze >= 6:
+            logging.info("Freezing product weights")
+            lr_params_factors["products_lr_factor"] = 0.0
+            freeze_module(model.products, True)
+        if args.freeze >= 5:
+            logging.info("Freezing interaction linear weights")
+            lr_params_factors["interactions_lr_factor"] = 0.0
+            freeze_module(model.interactions, True)
+        if args.freeze >= 1:
+            logging.info("Freezing embedding weights")
+            lr_params_factors["embedding_lr_factor"] = 0.0
+            freeze_module(model.node_embedding, True)
+
     param_options = dict(
         params=[
             {
                 "name": "embedding",
                 "params": model.node_embedding.parameters(),
                 "weight_decay": 0.0,
+                "lr": lr_params_factors.get("embedding_lr_factor", 1.0) * args.lr,
             },
             {
                 "name": "interactions_decay",
                 "params": list(decay_interactions.values()),
                 "weight_decay": args.weight_decay,
+                "lr": lr_params_factors.get("interactions_lr_factor", 1.0) * args.lr,
             },
             {
                 "name": "interactions_no_decay",
                 "params": list(no_decay_interactions.values()),
                 "weight_decay": 0.0,
+                "lr": lr_params_factors.get("interactions_lr_factor", 1.0) * args.lr,
             },
             {
                 "name": "products",
                 "params": model.products.parameters(),
                 "weight_decay": args.weight_decay,
+                "lr": lr_params_factors.get("products_lr_factor", 1.0) * args.lr,
             },
             {
                 "name": "readouts",
                 "params": model.readouts.parameters(),
                 "weight_decay": 0.0,
+                "lr": lr_params_factors.get("readouts_lr_factor", 1.0) * args.lr,
             },
         ],
         lr=args.lr,
@@ -861,7 +891,10 @@ def get_optimizer(
                 "`schedulefree` is not installed. Please install it via `pip install schedulefree` or `pip install mace-torch[schedulefree]`"
             ) from exc
         _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
-        optimizer = adamw_schedulefree.AdamWScheduleFree(**_param_options)
+        _param_options.pop("betas", None)
+        optimizer = adamw_schedulefree.AdamWScheduleFree(
+            **_param_options, betas=(args.beta1_schedulefree, args.beta2_schedulefree)
+        )
     else:
         optimizer = torch.optim.Adam(**param_options)
     return optimizer

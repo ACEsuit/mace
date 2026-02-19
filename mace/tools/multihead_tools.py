@@ -104,7 +104,7 @@ def prepare_pt_head(
     """Prepare a pretraining head from args."""
     if (
         args.foundation_model in ["small", "medium", "large"]
-        or args.pt_train_file == "mp"
+        or args.pt_train_file in ["mp", "omat", "matpes_pbe", "matpes_r2scan"]
     ):
         logging.info(
             "Using foundation model for multiheads finetuning with Materials Project data"
@@ -151,6 +151,8 @@ def assemble_replay_data(
             checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-pbe-replay-data.xyz"
         elif name == "matpes_r2scan":
             checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-r2scan-replay-data.extxyz"
+        elif name == "omat":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_omat_0/mp_traj_combined_omat.xyz"
         else:
             raise ValueError(f"Unknown replay dataset name {name}")
 
@@ -180,7 +182,7 @@ def assemble_replay_data(
         settings = SelectionSettings(
             configs_pt=cached_dataset_path,
             output=f"mp_finetuning-{tag}.xyz",
-            atomic_numbers=atomic_numbers,
+            filter_atomic_numbers_pt=atomic_numbers,
             num_samples=args.num_samples_pt,
             seed=args.seed,
             head_pt="pbe_mp",
@@ -224,6 +226,7 @@ def generate_pseudolabels_for_configs(
     r_max: float,
     device: torch.device,
     batch_size: int,
+    force_stress: bool = False,
 ) -> List[Configuration]:
     """
     Generate pseudolabels for a list of Configuration objects.
@@ -282,6 +285,15 @@ def generate_pseudolabels_for_configs(
                 if not hasattr(config_copy, "properties"):
                     config_copy.properties = {}
 
+                if not hasattr(config_copy, "property_weights"):
+                    config_copy.property_weights = {}
+
+                original_stress_weight = config.property_weights.get("stress", 0.0)
+                had_stress = (
+                    config.properties.get("stress") is not None
+                    and original_stress_weight > 0.0
+                )
+
                 # Update config properties with pseudolabels
                 if "energy" in out and out["energy"] is not None:
                     config_copy.properties["energy"] = (
@@ -296,9 +308,13 @@ def generate_pseudolabels_for_configs(
                         out["forces"][node_start:node_end].detach().cpu().numpy()
                     )
                 if "stress" in out and out["stress"] is not None:
-                    config_copy.properties["stress"] = (
-                        out["stress"][j].detach().cpu().numpy()
-                    )
+                    if had_stress or force_stress:
+                        config_copy.properties["stress"] = (
+                            out["stress"][j].detach().cpu().numpy()
+                        )
+                        config_copy.property_weights["stress"] = (
+                            original_stress_weight if had_stress else 1.0
+                        )
                 if "virials" in out and out["virials"] is not None:
                     config_copy.properties["virials"] = (
                         out["virials"][j].detach().cpu().numpy()
@@ -339,6 +355,7 @@ def apply_pseudolabels_to_pt_head_configs(
     r_max: float,
     device: torch.device,
     batch_size: int,
+    force_stress: bool = False,
 ) -> bool:
     """
     Apply pseudolabels to pt_head configurations using the foundation model.
@@ -391,6 +408,7 @@ def apply_pseudolabels_to_pt_head_configs(
                 r_max=r_max,
                 device=device,
                 batch_size=batch_size,
+                force_stress=force_stress,
             )
 
             # Replace the original configurations with updated ones
@@ -414,6 +432,7 @@ def apply_pseudolabels_to_pt_head_configs(
                 r_max=r_max,
                 device=device,
                 batch_size=batch_size,
+                force_stress=force_stress,
             )
 
             # Replace the original configurations with updated ones
