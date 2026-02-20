@@ -299,7 +299,7 @@ def _permute_to_e3nn_convention(x: torch.Tensor) -> torch.Tensor:
 
 
 @compile_mode("script")
-class FieldFukuiMACE(ScaleShiftMACE):
+class PolarMACE(ScaleShiftMACE):
     def __init__(
         self,
         kspace_cutoff_factor: float = 1.5,
@@ -333,7 +333,7 @@ class FieldFukuiMACE(ScaleShiftMACE):
         except KeyError as exc:
             missing = str(exc).strip("'")
             raise KeyError(
-                f"Missing required argument '{missing}' in kwargs for FieldFukuiMACE. "
+                f"Missing required argument '{missing}' in kwargs for PolarMACE. "
                 "Pass all ScaleShiftMACE/MACE constructor args as keyword arguments."
             ) from exc
 

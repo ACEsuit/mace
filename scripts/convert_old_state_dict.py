@@ -7,11 +7,11 @@ from typing import Dict, Any
 import torch
 
 
-def add_safe_globals_and_aliases(FieldFukuiMACE):
+def add_safe_globals_and_aliases(PolarMACE):
     try:
         from torch.serialization import add_safe_globals
 
-        add_safe_globals([slice, FieldFukuiMACE])
+        add_safe_globals([slice, PolarMACE])
     except Exception:
         pass
     # Alias old module path to new class so pickles referencing it work
@@ -25,7 +25,7 @@ def add_safe_globals_and_aliases(FieldFukuiMACE):
                 "macetools.electrostatics"
             )
         alias_mod = types.ModuleType("macetools.electrostatics.field_fukui")
-        alias_mod.FieldFukuiMACE = FieldFukuiMACE
+        alias_mod.PolarMACE = PolarMACE
         sys.modules["macetools.electrostatics.field_fukui"] = alias_mod
     except Exception:
         pass
@@ -86,7 +86,7 @@ def default_config() -> Dict[str, Any]:
 def build_model_from_cfg(cfg: Dict[str, Any]) -> torch.nn.Module:
     from e3nn import o3
     from mace.modules import interaction_classes
-    from mace.modules.extensions import FieldFukuiMACE
+    from mace.modules.extensions import PolarMACE
 
     # Parse strings
     hidden_irreps = o3.Irreps(cfg["hidden_irreps"]) if isinstance(cfg["hidden_irreps"], str) else cfg["hidden_irreps"]
@@ -98,7 +98,7 @@ def build_model_from_cfg(cfg: Dict[str, Any]) -> torch.nn.Module:
     atomic_numbers = cfg.get("atomic_numbers")
     num_elements = len(atomic_numbers)
 
-    model = FieldFukuiMACE(
+    model = PolarMACE(
         r_max=cfg["r_max"],
         num_bessel=cfg["num_bessel"],
         num_polynomial_cutoff=cfg["num_polynomial_cutoff"],
@@ -138,7 +138,7 @@ def build_model_from_cfg(cfg: Dict[str, Any]) -> torch.nn.Module:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Convert old FieldFukui state_dict to new model layout")
+    parser = argparse.ArgumentParser(description="Convert old Polar state_dict to new model layout")
     parser.add_argument("--old", required=True, help="Path to old state_dict .pt/.model")
     parser.add_argument("--out", required=True, help="Output path for converted state_dict .pt")
     parser.add_argument("--config", help="JSON file with model config (optional)")
@@ -147,9 +147,9 @@ def main():
 
     # Import mace first (helps with PyTorch 2.6 weights_only default and e3nn constants)
     import mace  # noqa: F401
-    from mace.modules.extensions import FieldFukuiMACE
+    from mace.modules.extensions import PolarMACE
 
-    add_safe_globals_and_aliases(FieldFukuiMACE)
+    add_safe_globals_and_aliases(PolarMACE)
 
     old_sd = load_state_dict_any(args.old)
 

@@ -415,6 +415,8 @@ class AtomicEnergiesBlock(torch.nn.Module):
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
+        if x.dtype != self.atomic_energies.dtype:
+            x = x.to(self.atomic_energies.dtype)
         return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
 
     def __repr__(self):

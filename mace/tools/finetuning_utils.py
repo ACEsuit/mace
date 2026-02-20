@@ -25,7 +25,6 @@ def load_foundations_elements(
         // num_species_foundations
     )
     indices_weights = [z_table.z_to_index(z) for z in new_z_table.zs]
-    num_radial = model.radial_embedding.out_dim
     num_species = len(indices_weights)
     max_ell = model.spherical_harmonics._lmax  # pylint: disable=protected-access
     model.node_embedding.linear.weight = torch.nn.Parameter(
@@ -40,6 +39,13 @@ def load_foundations_elements(
         model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
             model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
         )
+    def _copy_matching_state(target_module: torch.nn.Module, source_module: torch.nn.Module):
+        target_state = target_module.state_dict()
+        for key, value in source_module.state_dict().items():
+            if key in target_state and target_state[key].shape == value.shape:
+                target_state[key] = value.clone()
+        target_module.load_state_dict(target_state, strict=False)
+
     for i in range(int(model.num_interactions)):
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear_up.weight.clone()
@@ -47,28 +53,10 @@ def load_foundations_elements(
         model.interactions[i].avg_num_neighbors = model_foundations.interactions[
             i
         ].avg_num_neighbors
-        for j in range(4):  # Assuming 4 layers in conv_tp_weights,
-            layer_name = f"layer{j}"
-            if j == 0:
-                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
-                    torch.nn.Parameter(
-                        getattr(
-                            model_foundations.interactions[i].conv_tp_weights,
-                            layer_name,
-                        )
-                        .weight[:num_radial, :]
-                        .clone()
-                    )
-                )
-            else:
-                getattr(model.interactions[i].conv_tp_weights, layer_name).weight = (
-                    torch.nn.Parameter(
-                        getattr(
-                            model_foundations.interactions[i].conv_tp_weights,
-                            layer_name,
-                        ).weight.clone()
-                    )
-                )
+        _copy_matching_state(
+            model.interactions[i].conv_tp_weights,
+            model_foundations.interactions[i].conv_tp_weights,
+        )
 
         model.interactions[i].linear.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear.weight.clone()
@@ -105,14 +93,9 @@ def load_foundations_elements(
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
         ]:
-            # Assuming only 1 layer in density_fn
-            getattr(model.interactions[i].density_fn, "layer0").weight = (
-                torch.nn.Parameter(
-                    getattr(
-                        model_foundations.interactions[i].density_fn,
-                        "layer0",
-                    ).weight.clone()
-                )
+            _copy_matching_state(
+                model.interactions[i].density_fn,
+                model_foundations.interactions[i].density_fn,
             )
     # Transferring products
     for i in range(2):  # Assuming 2 products modules
@@ -196,9 +179,16 @@ def load_foundations_elements(
 def load_foundations(
     model,
     model_foundations,
+    include_readouts: bool = False,
 ):
-    for name, param in model_foundations.named_parameters():
-        if name in model.state_dict().keys():
-            if "readouts" not in name:
-                model.state_dict()[name].copy_(param)
+    model_state = model.state_dict()
+    foundation_state = model_foundations.state_dict()
+    for name, param in foundation_state.items():
+        if name not in model_state:
+            continue
+        if not include_readouts and name.startswith("readouts."):
+            continue
+        if model_state[name].shape != param.shape:
+            continue
+        model_state[name].copy_(param)
     return model

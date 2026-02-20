@@ -1088,15 +1088,15 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
         raise e
     assert completed_process.returncode == 0
 
-    calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model",
-        device="cpu",
-        default_dtype="float64",
-        head="DFT",
-    )
-
     Es = []
     for at in fitting_configs:
+        config_head = at.info.get("head", "MP2")
+        calc = MACECalculator(
+            model_paths=tmp_path / "MACE.model",
+            device="cpu",
+            default_dtype="float64",
+            head=config_head,
+        )
         at.calc = calc
         Es.append(at.get_potential_energy())
 

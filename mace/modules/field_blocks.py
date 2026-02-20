@@ -290,7 +290,7 @@ def instructions_for_sparse_tp(feat_in1, feat_in2, feat_out):
 
 
 class SparseUvuTensorProduct(torch.nn.Module):
-    """Torch-native specialization of sparse `uvu` TensorProducts used in FieldFukui.
+    """Torch-native specialization of sparse `uvu` TensorProducts used in Polar.
 
     This keeps the same parameter layout as `e3nn.o3.TensorProduct`
     (`weight` + `output_mask`) for checkpoint/weight-transfer compatibility.
