@@ -4,8 +4,12 @@ import tempfile
 from pathlib import Path
 
 
-def pytest_configure():
-    """Isolate cache per xdist worker to avoid concurrent model downloads."""
+def pytest_configure(config):
+    """Isolate cache per xdist worker and guard known plugin reseed issues."""
+    if hasattr(config.option, "randomly_reset_seed"):
+        # Some environments with pytest-randomly + thinc can produce invalid seeds.
+        config.option.randomly_reset_seed = False
+
     worker = os.environ.get("PYTEST_XDIST_WORKER")
     if worker:
         cache_root = Path(tempfile.gettempdir()) / f"mace_cache_{worker}"
