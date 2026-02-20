@@ -26,6 +26,7 @@ from mace.calculators.foundations_models import (
     mace_mp,
     mace_mp_names,
     mace_off,
+    mace_omol,
     mace_polar,
     polar_model_names,
 )
@@ -151,6 +152,7 @@ def run(args) -> None:
                 model=args.foundation_model,
                 device=args.device,
                 default_dtype=args.default_dtype,
+                head=args.foundation_head,
             )
             model_foundation = calc.models[0]
         elif args.foundation_model in ["small_off", "medium_off", "large_off"]:
@@ -160,6 +162,13 @@ def run(args) -> None:
             )
             calc = mace_off(
                 model=model_type,
+                device=args.device,
+                default_dtype=args.default_dtype,
+            )
+            model_foundation = calc.models[0]
+        elif args.foundation_model in ["mace_omol"]:
+            logging.info("Using foundation model mace-omol as initial checkpoint.")
+            calc = mace_omol(
                 device=args.device,
                 default_dtype=args.default_dtype,
             )
@@ -181,11 +190,19 @@ def run(args) -> None:
                 "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provied a path to a pretraining file with --pt_train_file."
             )
             args.multiheads_finetuning = False
+        if hasattr(model_foundation, "heads"):
+            if len(model_foundation.heads) > 1:
+                logging.info(
+                    f"Selecting the head {args.foundation_head} as foundation head."
+                )
+                model_foundation = remove_pt_head(
+                    model_foundation, args.foundation_head
+                )
+
         if args.multiheads_finetuning:
             assert (
                 args.E0s != "average"
             ), "average atomic energies cannot be used for multiheads finetuning"
-            # check that the foundation model has a single head, if not, use the first head
             if not args.force_mh_ft_lr:
                 logging.info(
                     "Multihead finetuning mode, setting learning rate to 0.0001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
@@ -196,14 +213,6 @@ def run(args) -> None:
             logging.info(
                 "Using multiheads finetuning mode, setting learning rate to 0.0001 and EMA to True"
             )
-            if hasattr(model_foundation, "heads"):
-                if len(model_foundation.heads) > 1:
-                    logging.warning(
-                        "Mutlihead finetuning with models with more than one head is not supported, using the first head as foundation head."
-                    )
-                    model_foundation = remove_pt_head(
-                        model_foundation, args.foundation_head
-                    )
     else:
         args.multiheads_finetuning = False
 
