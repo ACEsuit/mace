@@ -101,8 +101,8 @@ class MACECalculator(Calculator):
         if enable_cueq or enable_oeq:
             assert model_type in [
                 "MACE",
-                "FieldFukuiMACE",
-            ], "CuEq/OEq only supports MACE and FieldFukuiMACE models"
+                "PolarMACE",
+            ], "CuEq/OEq only supports MACE and PolarMACE models"
             if compile_mode is not None:
                 logging.warning(
                     "CuEq or Oeq does not support torch.compile, setting compile_mode to None"
@@ -155,14 +155,16 @@ class MACECalculator(Calculator):
             "DipoleMACE",
             "EnergyDipoleMACE",
             "DipolePolarizabilityMACE",
-            "FieldFukuiMACE",
+            "PolarMACE",
         ]:
             raise ValueError(
-                f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
+                "Give a valid model_type: "
+                "[MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], "
+                f"{model_type} not supported"
             )
 
         # superclass constructor initializes self.implemented_properties to an empty list
-        if model_type in ["MACE", "EnergyDipoleMACE", "FieldFukuiMACE"]:
+        if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
             self.implemented_properties.extend(
                 [
                     "energy",
@@ -318,7 +320,7 @@ class MACECalculator(Calculator):
                 self.models = [model.float() for model in self.models]
         torch_tools.set_default_dtype(default_dtype)
         if enable_cueq:
-            if self.model_type == "FieldFukuiMACE" and not CUEQ_OPS_AVAILABLE:
+            if self.model_type == "PolarMACE" and not CUEQ_OPS_AVAILABLE:
                 logging.warning(
                     "cuequivariance_ops_torch is not available; "
                     "CuEq will run with fallback torch kernels on CPU."
@@ -443,7 +445,7 @@ class MACECalculator(Calculator):
 
         batch_base = self._atoms_to_batch(atoms)
 
-        if self.model_type in ["MACE", "EnergyDipoleMACE", "FieldFukuiMACE"]:
+        if self.model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
             compute_stress = not self.use_compile
         else:
             compute_stress = False

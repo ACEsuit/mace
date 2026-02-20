@@ -13,7 +13,7 @@ from ase.calculators.test import gradient_test
 from ase.constraints import ExpCellFilter
 
 from mace.calculators import mace_mp, mace_off
-from mace.calculators.foundations_models import mace_omol
+from mace.calculators.foundations_models import mace_omol, mace_polar, polar_model_paths
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
 
@@ -728,6 +728,18 @@ def test_mace_mp(tmp_path, capsys: pytest.CaptureFixture):
 
     _, stderr = capsys.readouterr()
     assert stderr == ""
+
+
+def test_mace_polar_constructor():
+    model_name = "mace-polar-2L"
+    model_path = polar_model_paths[model_name]
+    if not model_path.exists():
+        pytest.skip(f"Missing Polar foundation model file: {model_path}")
+
+    polar_calc = mace_polar(model=model_name, device="cpu")
+    assert isinstance(polar_calc, MACECalculator)
+    assert len(polar_calc.models) == 1
+    assert polar_calc.models[0].__class__.__name__ == "PolarMACE"
 
 
 def test_mace_off(tmp_path):

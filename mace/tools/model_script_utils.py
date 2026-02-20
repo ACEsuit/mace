@@ -6,7 +6,7 @@ from e3nn import o3
 
 from mace import modules
 from mace.modules.wrapper_ops import CuEquivarianceConfig
-from mace.tools.finetuning_utils import load_foundations_elements
+from mace.tools.finetuning_utils import load_foundations, load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.utils import AtomicNumberTable
 
@@ -20,6 +20,7 @@ def configure_model(
     z_table=None,
     head_configs=None,
 ):
+    requested_model = args.model
     # Selecting outputs
     compute_virials = args.loss == "virials"
     compute_stress = args.loss in ("stress", "huber", "universal")
@@ -81,6 +82,7 @@ def configure_model(
         "MACE",
         "ScaleShiftMACE",
         "MACELES",
+        "PolarMACE",
     ]:
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
@@ -103,9 +105,9 @@ def configure_model(
 
         args.max_L = model_config_foundation["hidden_irreps"].lmax
 
-        if (
-            args.model == "ScaleShiftMACE"
-            or model_foundation.__class__.__name__ == "ScaleShiftMACE"
+        if args.model in ("ScaleShiftMACE", "PolarMACE") or model_foundation.__class__.__name__ in (
+            "ScaleShiftMACE",
+            "PolarMACE",
         ):
             model_config_foundation["atomic_inter_shift"] = (
                 _determine_atomic_inter_shift(args.mean, heads)
@@ -114,9 +116,10 @@ def configure_model(
             model_config_foundation["atomic_inter_shift"] = [0.0] * len(heads)
         model_config_foundation["atomic_inter_scale"] = [1.0] * len(heads)
         args.avg_num_neighbors = model_config_foundation["avg_num_neighbors"]
-        args.model = (
-            "FoundationMACELES" if args.model == "MACELES" else "FoundationMACE"
-        )
+        if args.model == "MACELES":
+            args.model = "FoundationMACELES"
+        elif args.model in ("MACE", "ScaleShiftMACE"):
+            args.model = "FoundationMACE"
         model_config_foundation["heads"] = heads
         model_config = model_config_foundation
 
@@ -192,13 +195,22 @@ def configure_model(
     model = _build_model(args, model_config, model_config_foundation, heads)
 
     if model_foundation is not None:
-        model = load_foundations_elements(
-            model,
-            model_foundation,
-            z_table,
-            load_readout=args.foundation_filter_elements,
-            max_L=args.max_L,
-        )
+        if requested_model == "PolarMACE":
+            foundation_heads = getattr(model_foundation, "heads", [])
+            include_readouts = hasattr(model, "heads") and len(foundation_heads) == len(
+                model.heads
+            )
+            model = load_foundations(
+                model, model_foundation, include_readouts=include_readouts
+            )
+        else:
+            model = load_foundations_elements(
+                model,
+                model_foundation,
+                z_table,
+                load_readout=args.foundation_filter_elements,
+                max_L=args.max_L,
+            )
 
     return model, output_args
 
@@ -217,6 +229,17 @@ def _determine_atomic_inter_shift(mean, heads):
         return [mean] * len(heads)
     logging.info("Mean not in correct format, using default value of 0.0")
     return [0.0] * len(heads)
+
+
+def _parse_literal_or_none(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.lower() in ("none", ""):
+            return None
+        return ast.literal_eval(stripped)
+    return value
 
 
 def _build_model(
@@ -264,6 +287,46 @@ def _build_model(
             use_embedding_readout=args.use_embedding_readout,
             use_last_readout_only=args.use_last_readout_only,
             use_agnostic_product=args.use_agnostic_product,
+        )
+    if args.model == "PolarMACE" and model_config_foundation is not None:
+        return modules.PolarMACE(**model_config_foundation)
+    if args.model == "PolarMACE":
+        field_feature_widths = _parse_literal_or_none(args.field_feature_widths)
+        field_feature_norms = _parse_literal_or_none(args.field_feature_norms)
+        fixedpoint_update_config = _parse_literal_or_none(args.fixedpoint_update_config)
+        field_readout_config = _parse_literal_or_none(args.field_readout_config)
+        return modules.PolarMACE(
+            **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=args.std,
+            atomic_inter_shift=_determine_atomic_inter_shift(args.mean, heads),
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
+            heads=heads,
+            embedding_specs=args.embedding_specs,
+            use_embedding_readout=args.use_embedding_readout,
+            use_last_readout_only=args.use_last_readout_only,
+            use_agnostic_product=args.use_agnostic_product,
+            kspace_cutoff_factor=args.kspace_cutoff_factor,
+            atomic_multipoles_max_l=args.atomic_multipoles_max_l,
+            atomic_multipoles_smearing_width=args.atomic_multipoles_smearing_width,
+            field_feature_max_l=args.field_feature_max_l,
+            field_feature_widths=field_feature_widths if field_feature_widths is not None else [1.0],
+            num_recursion_steps=args.num_recursion_steps,
+            field_si=args.field_si,
+            include_electrostatic_self_interaction=args.include_electrostatic_self_interaction,
+            add_local_electron_energy=args.add_local_electron_energy,
+            quadrupole_feature_corrections=args.quadrupole_feature_corrections,
+            return_electrostatic_potentials=args.return_electrostatic_potentials,
+            field_feature_norms=field_feature_norms,
+            field_norm_factor=args.field_norm_factor,
+            fixedpoint_update_config=fixedpoint_update_config,
+            field_readout_config=field_readout_config,
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)

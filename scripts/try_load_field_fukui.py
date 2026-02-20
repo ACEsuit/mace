@@ -7,7 +7,7 @@ import mace  # import mace first to avoid torch 2.6 weights_only pitfalls
 # Delay heavy imports until after adjusting torch.load globals
 o3 = None
 interaction_classes = None
-FieldFukuiMACE = None
+PolarMACE = None
 
 
 def build_fallback_config():
@@ -68,13 +68,13 @@ def main():
         pass
 
     # Defer imports until globals are set
-    global o3, interaction_classes, FieldFukuiMACE
+    global o3, interaction_classes, PolarMACE
     from e3nn import o3 as _o3
     from mace.modules import interaction_classes as _ic
-    from mace.modules.extensions import FieldFukuiMACE as _FFM
+    from mace.modules.extensions import PolarMACE as _FFM
     o3 = _o3
     interaction_classes = _ic
-    FieldFukuiMACE = _FFM
+    PolarMACE = _FFM
 
     # Create compatibility alias to satisfy checkpoints referencing previous package paths
     try:
@@ -84,11 +84,11 @@ def main():
         if 'macetools.electrostatics' not in sys.modules:
             sys.modules['macetools.electrostatics'] = types.ModuleType('macetools.electrostatics')
         alias_mod = types.ModuleType('macetools.electrostatics.field_fukui')
-        alias_mod.FieldFukuiMACE = FieldFukuiMACE
+        alias_mod.PolarMACE = PolarMACE
         sys.modules['macetools.electrostatics.field_fukui'] = alias_mod
         try:
             from torch.serialization import add_safe_globals as _asg
-            _asg([FieldFukuiMACE])
+            _asg([PolarMACE])
         except Exception:
             pass
     except Exception:
@@ -118,7 +118,7 @@ def main():
     print("Using config:")
     pprint.pprint({k: (str(v) if k.endswith("irreps") else v) for k, v in cfg.items() if k not in ("interaction_cls", "interaction_cls_first")})
 
-    model = FieldFukuiMACE(**cfg)
+    model = PolarMACE(**cfg)
     print("Model instantiated.")
 
     # Try loading state_dict heuristically

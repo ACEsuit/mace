@@ -22,7 +22,13 @@ from torch_ema import ExponentialMovingAverage
 
 import mace
 from mace import data, tools
-from mace.calculators.foundations_models import mace_mp, mace_mp_names, mace_off
+from mace.calculators.foundations_models import (
+    mace_mp,
+    mace_mp_names,
+    mace_off,
+    mace_polar,
+    polar_model_names,
+)
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.cli.convert_e3nn_oeq import run as run_e3nn_to_oeq
@@ -127,7 +133,17 @@ def run(args) -> None:
     # Filter out None from mace_mp_names to get valid model names
     valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
     if args.foundation_model is not None:
-        if args.foundation_model in valid_mace_mp_models:
+        if args.foundation_model in polar_model_names:
+            logging.info(
+                f"Using Polar foundation model {args.foundation_model} as initial checkpoint."
+            )
+            model_foundation = mace_polar(
+                model=args.foundation_model,
+                device=args.device,
+                default_dtype=args.default_dtype,
+                return_raw_model=True,
+            )
+        elif args.foundation_model in valid_mace_mp_models:
             logging.info(
                 f"Using foundation model mace-mp-0 {args.foundation_model} as initial checkpoint."
             )
@@ -707,11 +723,21 @@ def run(args) -> None:
         args.enable_oeq = False
     if args.enable_cueq and not args.only_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
+        assert model.__class__.__name__ in [
+            "MACE",
+            "ScaleShiftMACE",
+            "MACELES",
+            "PolarMACE",
+        ]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     if args.enable_oeq:
         logging.info("Converting model to OEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
+        assert model.__class__.__name__ in [
+            "MACE",
+            "ScaleShiftMACE",
+            "MACELES",
+            "PolarMACE",
+        ]
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
 
     # Optimizer

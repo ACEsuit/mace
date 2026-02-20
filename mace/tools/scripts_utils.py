@@ -223,8 +223,8 @@ def print_git_commit():
 
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
-    if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES", "FieldFukuiMACE"]:
-        return {"error": "Model is not a ScaleShiftMACE or MACELES model"}
+    if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES", "PolarMACE"]:
+        return {"error": "Model is not a ScaleShiftMACE, MACELES, or PolarMACE model"}
 
     def radial_to_name(radial_type):
         if radial_type == "BesselBasis":
@@ -315,7 +315,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         config["use_polarizability"] = model.use_polarizability
         config["only_dipole"] = False  # model.only_dipole
         config["gate"] = torch.nn.functional.silu
-    if model.__class__.__name__ == "FieldFukuiMACE":
+    if model.__class__.__name__ == "PolarMACE":
         if hasattr(model, "fukui_source_map") and hasattr(
             model.fukui_source_map, "hidden_irreps"
         ):

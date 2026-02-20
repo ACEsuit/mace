@@ -36,6 +36,14 @@ mace_mp_urls = {
 }
 mace_mp_names = [None] + list(mace_mp_urls.keys())
 
+repo_root = Path(__file__).resolve().parents[2]
+polar_model_paths = {
+    "mace-polar-1L": repo_root / "mace-polar-spin-1L.model",
+    "mace-polar-2L": repo_root / "mace-polar-spin-2L.model",
+    "mace-polar-3L": repo_root / "mace-polar-spin-3L.model",
+}
+polar_model_names = list(polar_model_paths.keys())
+
 
 def download_mace_mp_checkpoint(model: Optional[Union[str, Path]] = None) -> str:
     """
@@ -191,6 +199,27 @@ def mace_mp(
     )
 
     return SumCalculator([mace_calc, d3_calc])
+
+
+def mace_polar(
+    model: str,
+    device: str = "",
+    default_dtype: str = "float32",
+    return_raw_model: bool = False,
+    **kwargs,
+) -> Union[MACECalculator, torch.nn.Module]:
+    if model not in polar_model_paths:
+        raise ValueError(f"Unknown Polar foundation model: {model}")
+    model_path = polar_model_paths[model]
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    if not model_path.exists():
+        raise FileNotFoundError(f"Polar foundation model not found: {model_path}")
+    loaded = torch.load(model_path, map_location=device)
+    if return_raw_model:
+        return loaded
+    return MACECalculator(
+        model_paths=str(model_path), device=device, default_dtype=default_dtype, **kwargs
+    )
 
 
 @overload
