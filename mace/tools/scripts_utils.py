@@ -54,6 +54,7 @@ def get_dataset_from_xyz(
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
     no_data_ok: bool = False,
+    prefix: Optional[str] = None,
 ) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
     """
     Load training, validation, and test datasets from xyz files.
@@ -67,6 +68,7 @@ def get_dataset_from_xyz(
         key_specification: KeySpecification object for loading data
         test_path: Path or list of paths to test xyz files
         seed: Random seed for train/validation split
+        prefix: Optional filename prefix (e.g., potential name) for saved valid indices
         keep_isolated_atoms: Whether to keep isolated atoms in the dataset
         head_name: Name of the head for multi-head models
         no_data_ok: accept files that have no energy/force/stress data
@@ -150,7 +152,7 @@ def get_dataset_from_xyz(
         # Split training data if no validation files are provided
         logging.info("No validation set provided, splitting training data instead.")
         train_configs, valid_configs = data.random_train_valid_split(
-            all_train_configs, valid_fraction, seed, work_dir
+            all_train_configs, valid_fraction, seed, work_dir, prefix
         )
         log_dataset_contents(train_configs, "Random Split Training set")
         log_dataset_contents(valid_configs, "Random Split Validation set")
@@ -280,6 +282,11 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             model.use_reduced_cg if hasattr(model, "use_reduced_cg") else False
         ),
         "use_so3": model.use_so3 if hasattr(model, "use_so3") else False,
+        "use_edge_irreps_first": (
+            model.use_edge_irreps_first
+            if hasattr(model, "use_edge_irreps_first")
+            else False
+        ),
         "use_agnostic_product": (
             model.use_agnostic_product
             if hasattr(model, "use_agnostic_product")
@@ -304,7 +311,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             model.embedding_specs if hasattr(model, "embedding_specs") else None
         ),
         "apply_cutoff": model.apply_cutoff if hasattr(model, "apply_cutoff") else True,
-        "radial_MLP": model.interactions[0].conv_tp_weights.hs[1:-1],
+        "radial_MLP": extract_radial_MLP(model),
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
         "distance_transform": radial_to_transform(model.radial_embedding),
         "atomic_inter_scale": scale.cpu().numpy(),
@@ -357,6 +364,23 @@ def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     )
 
 
+def extract_radial_MLP(model: torch.nn.Module) -> List[int]:
+    try:
+        return model.interactions[0].conv_tp_weights.hs[1:-1]
+    except AttributeError:
+        try:
+            return [
+                int(
+                    model.interactions[0]
+                    .conv_tp_weights.net[k]
+                    .__dict__["normalized_shape"][0]
+                )
+                for k in range(1, len(model.interactions[0].conv_tp_weights.net), 3)
+            ]
+        except AttributeError:
+            return []
+
+
 def remove_pt_head(
     model: torch.nn.Module, head_to_keep: Optional[str] = None
 ) -> torch.nn.Module:
@@ -401,7 +425,6 @@ def remove_pt_head(
     model_config["atomic_inter_scale"] = model.scale_shift.scale[head_idx].item()
     model_config["atomic_inter_shift"] = model.scale_shift.shift[head_idx].item()
     mlp_count_irreps = model_config["MLP_irreps"].count((0, 1))
-    # model_config["MLP_irreps"] = o3.Irreps(f"{mlp_count_irreps}x0e")
 
     new_model = model.__class__(**model_config)
     state_dict = model.state_dict()
@@ -412,31 +435,53 @@ def remove_pt_head(
             new_state_dict[name] = param[head_idx : head_idx + 1]
         elif "scale" in name or "shift" in name:
             new_state_dict[name] = param[head_idx : head_idx + 1]
+        elif "embedding_readout.linear" in name:
+            new_state_dict[name] = param.reshape(-1, len(model.heads))[
+                :, head_idx
+            ].flatten()
+
         elif "readouts" in name:
             channels_per_head = param.shape[0] // len(model.heads)
             start_idx = head_idx * channels_per_head
             end_idx = start_idx + channels_per_head
             if "linear_2.weight" in name:
                 end_idx = start_idx + channels_per_head // 2
-            # if (
-            #     "readouts.0.linear.weight" in name
-            #     or "readouts.1.linear_2.weight" in name
-            # ):
-            #     new_state_dict[name] = param[start_idx:end_idx] / (
-            #         len(model.heads) ** 0.5
-            #     )
-            if "readouts.0.linear.weight" in name:
+            if "linear.weight" in name:
                 new_state_dict[name] = param.reshape(-1, len(model.heads))[
                     :, head_idx
                 ].flatten()
-            elif "readouts.1.linear_1.weight" in name:
+            elif "linear_1.weight" in name:
                 new_state_dict[name] = param.reshape(
                     -1, len(model.heads), mlp_count_irreps
                 )[:, head_idx, :].flatten()
-            elif "readouts.1.linear_2.weight" in name:
+            elif "linear_1.bias" in name:
+                if param.shape == torch.Size([0]):
+                    continue
+                new_state_dict[name] = param.reshape(
+                    len(model.heads), mlp_count_irreps
+                )[head_idx, :].flatten()
+            elif "linear_mid.weight" in name:
+                new_state_dict[name] = param.reshape(
+                    len(model.heads),
+                    mlp_count_irreps,
+                    len(model.heads),
+                    mlp_count_irreps,
+                )[head_idx, :, head_idx, :].flatten() / (len(model.heads) ** 0.5)
+            elif "linear_mid.bias" in name:
+                if param.shape == torch.Size([0]):
+                    continue
+                new_state_dict[name] = param.reshape(
+                    len(model.heads),
+                    mlp_count_irreps,
+                )[head_idx, :].flatten()
+            elif "linear_2.weight" in name:
                 new_state_dict[name] = param.reshape(
                     len(model.heads), -1, len(model.heads)
                 )[head_idx, :, head_idx].flatten() / (len(model.heads) ** 0.5)
+            elif "linear_2.bias" in name:
+                if param.shape == torch.Size([0]):
+                    continue
+                new_state_dict[name] = param[head_idx].flatten()
             else:
                 new_state_dict[name] = param[start_idx:end_idx]
 
@@ -444,7 +489,7 @@ def remove_pt_head(
             new_state_dict[name] = param
 
     # Load state dict into new model
-    new_model.load_state_dict(new_state_dict)
+    new_model.load_state_dict(new_state_dict, strict=False)
 
     return new_model
 
@@ -761,6 +806,11 @@ def get_swa(
     return swa, swas
 
 
+def freeze_module(module: torch.nn.Module, freeze: bool = True):
+    for p in module.parameters():
+        p.requires_grad = not freeze
+
+
 def get_params_options(
     args: argparse.Namespace, model: torch.nn.Module
 ) -> Dict[str, Any]:
@@ -772,32 +822,57 @@ def get_params_options(
         else:
             no_decay_interactions[name] = param
 
+    lr_params_factors = json.loads(args.lr_params_factors)
+
+    if args.freeze:
+        if args.freeze >= 7:
+            logging.info("Freezing readout weights")
+            lr_params_factors["readouts_lr_factor"] = 0.0
+            freeze_module(model.readouts, True)
+        if args.freeze >= 6:
+            logging.info("Freezing product weights")
+            lr_params_factors["products_lr_factor"] = 0.0
+            freeze_module(model.products, True)
+        if args.freeze >= 5:
+            logging.info("Freezing interaction linear weights")
+            lr_params_factors["interactions_lr_factor"] = 0.0
+            freeze_module(model.interactions, True)
+        if args.freeze >= 1:
+            logging.info("Freezing embedding weights")
+            lr_params_factors["embedding_lr_factor"] = 0.0
+            freeze_module(model.node_embedding, True)
+
     param_options = dict(
         params=[
             {
                 "name": "embedding",
                 "params": model.node_embedding.parameters(),
                 "weight_decay": 0.0,
+                "lr": lr_params_factors.get("embedding_lr_factor", 1.0) * args.lr,
             },
             {
                 "name": "interactions_decay",
                 "params": list(decay_interactions.values()),
                 "weight_decay": args.weight_decay,
+                "lr": lr_params_factors.get("interactions_lr_factor", 1.0) * args.lr,
             },
             {
                 "name": "interactions_no_decay",
                 "params": list(no_decay_interactions.values()),
                 "weight_decay": 0.0,
+                "lr": lr_params_factors.get("interactions_lr_factor", 1.0) * args.lr,
             },
             {
                 "name": "products",
                 "params": model.products.parameters(),
                 "weight_decay": args.weight_decay,
+                "lr": lr_params_factors.get("products_lr_factor", 1.0) * args.lr,
             },
             {
                 "name": "readouts",
                 "params": model.readouts.parameters(),
                 "weight_decay": 0.0,
+                "lr": lr_params_factors.get("readouts_lr_factor", 1.0) * args.lr,
             },
         ],
         lr=args.lr,
@@ -844,7 +919,10 @@ def get_optimizer(
                 "`schedulefree` is not installed. Please install it via `pip install schedulefree` or `pip install mace-torch[schedulefree]`"
             ) from exc
         _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
-        optimizer = adamw_schedulefree.AdamWScheduleFree(**_param_options)
+        _param_options.pop("betas", None)
+        optimizer = adamw_schedulefree.AdamWScheduleFree(
+            **_param_options, betas=(args.beta1_schedulefree, args.beta2_schedulefree)
+        )
     else:
         optimizer = torch.optim.Adam(**param_options)
     return optimizer

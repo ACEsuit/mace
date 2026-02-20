@@ -608,7 +608,7 @@ def prepare_graph(
     )
 
     if lammps_mliap:
-        n_real, n_total = data["natoms"][0], data["natoms"][1]
+        n_real, n_ghost = data["natoms"][0], data["natoms"][1]
         num_graphs = 2
         num_atoms_arange = torch.arange(n_real, device=data["node_attrs"].device)
         displacement = None
@@ -624,8 +624,10 @@ def prepare_graph(
         )
         vectors = data["vectors"].requires_grad_(True)
         lengths = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
-        ikw = InteractionKwargs(data["lammps_class"], (n_real, n_total))
+        ikw = InteractionKwargs(data["lammps_class"], (n_real, n_ghost))
     else:
+        if not torch.compiler.is_compiling():
+            data["positions"].requires_grad_(True)
         positions = data["positions"]
         cell = data["cell"]
         num_atoms_arange = torch.arange(positions.shape[0], device=positions.device)

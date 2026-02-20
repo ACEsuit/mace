@@ -10,7 +10,7 @@ import torch
 from ase import build
 from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
-from ase.constraints import ExpCellFilter
+from ase.filters import FrechetCellFilter
 
 from mace.calculators import mace_mp, mace_off
 from mace.calculators.foundations_models import mace_omol, mace_polar, polar_model_paths
@@ -29,16 +29,33 @@ run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
 
 
 def write_extxyz_test(tmp_path, atoms):
-    assert isinstance(atoms, Atoms), "write_extxyz_test only working for Atoms, not anything else such as list(Atoms)"
+    assert isinstance(
+        atoms, Atoms
+    ), "write_extxyz_test only working for Atoms, not anything else such as list(Atoms)"
     ase.io.write(tmp_path / "test.extxyz", atoms)
     atoms_written = ase.io.read(tmp_path / "test.extxyz")
 
-    nonstd_fields = set(['node_energy', 'energy_var', 'energy_comm', 'stress_var', 'stress_comm', 'forces_var', 'forces_comm', 'virials'])
+    nonstd_fields = set(
+        [
+            "node_energy",
+            "energy_var",
+            "energy_comm",
+            "stress_var",
+            "stress_comm",
+            "forces_var",
+            "forces_comm",
+            "virials",
+        ]
+    )
     # everything that we expect has been written
-    assert set(atoms.calc.results.keys()) - nonstd_fields == set(atoms_written.calc.results.keys())
+    assert set(atoms.calc.results.keys()) - nonstd_fields == set(
+        atoms_written.calc.results.keys()
+    )
     # everything that was written was correct
-    assert all([np.allclose(atoms.calc.results[k], atoms_written.calc.results[k])
-                for k in atoms_written.calc.results])
+    assert all(
+        np.allclose(atoms.calc.results[k], atoms_written.calc.results[k])
+        for k in atoms_written.calc.results
+    )
 
 
 @pytest.fixture(scope="module", name="fitting_configs")
@@ -557,7 +574,7 @@ def test_calculator_stress(tmp_path, fitting_configs, trained_model):
     at.calc = trained_model
 
     # test forces and stress
-    at_wrapped = ExpCellFilter(at)
+    at_wrapped = FrechetCellFilter(at)
     grads = gradient_test(at_wrapped)
 
     assert np.allclose(grads[0], grads[1])
@@ -609,7 +626,9 @@ def test_calculator_dipole(tmp_path, fitting_configs, trained_dipole_model):
     write_extxyz_test(tmp_path, at)
 
 
-def test_calculator_energy_dipole(tmp_path, fitting_configs, trained_energy_dipole_model):
+def test_calculator_energy_dipole(
+    tmp_path, fitting_configs, trained_energy_dipole_model
+):
     at = fitting_configs[2].copy()
     at.calc = trained_energy_dipole_model
 
@@ -719,7 +738,7 @@ def test_calculator_descriptor_cueq(fitting_configs, trained_equivariant_model_c
     assert not np.allclose(desc, desc_rotated, atol=1e-6)
 
 
-def test_mace_mp(tmp_path, capsys: pytest.CaptureFixture):
+def test_mace_mp(capsys: pytest.CaptureFixture):
     mp_mace = mace_mp()
     assert isinstance(mp_mace, MACECalculator)
     assert mp_mace.model_type == "MACE"
@@ -798,6 +817,34 @@ def test_mace_mp_energies(tmp_path, model="medium", device="cpu"):
     assert energies.shape == (len(atoms),)
     assert np.allclose(energy, energies.sum(), atol=1e-6)
     write_extxyz_test(tmp_path, atoms)
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+def test_mace_mh_1_cueq(tmp_path, device="cpu"):
+
+    calc = mace_mp(
+        model="mh-1", device=device, default_dtype="float64", head="omat_pbe"
+    )
+    mol = build.molecule("H2O")
+    mol.set_calculator(calc)
+    energy = mol.get_potential_energy()
+    forces = mol.get_forces()
+
+    # reset the calculator to test CUEQ
+    mol.calc.reset()
+    calc_cueq = mace_mp(
+        model="mh-1",
+        device=device,
+        default_dtype="float64",
+        head="omat_pbe",
+        enable_cueq=True,
+    )
+    mol.set_calculator(calc_cueq)
+    energy_cueq = mol.get_potential_energy()
+    forces_cueq = mol.get_forces()
+    assert np.allclose(energy, energy_cueq, atol=1e-6)
+    assert np.allclose(forces, forces_cueq, atol=1e-6)
+    write_extxyz_test(tmp_path, mol)
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
