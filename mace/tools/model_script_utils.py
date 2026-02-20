@@ -74,7 +74,6 @@ def configure_model(
             train_loader, atomic_energies
         )
     if args.embedding_specs is not None:
-        args.embedding_specs = ast.literal_eval(args.embedding_specs)
         logging.info("Using embedding specifications from command line arguments")
         logging.info(f"Embedding specifications: {args.embedding_specs}")
     # Build model
