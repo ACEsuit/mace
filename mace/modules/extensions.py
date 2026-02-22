@@ -2,12 +2,13 @@ from typing import Any, Dict, List, Optional, Type
 
 from e3nn import o3
 from e3nn.util.jit import compile_mode
-from graph_longrange.gto_electrostatics import (
+from graph_longrange.energy import GTOElectrostaticEnergy
+from graph_longrange.features import GTOElectrostaticFeatures
+from graph_longrange.gto_utils import (
     DisplacedGTOExternalFieldBlock,
-    PBCAgnosticDirectElectrostaticEnergyBlock,
     gto_basis_kspace_cutoff,
 )
-from graph_longrange.kspace import compute_k_vectors
+from graph_longrange.kspace import compute_k_vectors_flat
 import torch
 
 from mace.modules import InteractionBlock, NonLinearBiasReadoutBlock
@@ -25,7 +26,6 @@ from mace.modules.wrapper_ops import (
 )
 from mace.tools.scatter import scatter_mean, scatter_sum
 
-from .electrostatic_features import PBCAgnosticElectrostaticFeatureBlock
 from .field_blocks import (
     EnvironmentDependentSpinSourceBlock,
     MultiLayerFeatureMixer,
@@ -444,15 +444,25 @@ class PolarMACE(ScaleShiftMACE):
             self.field_irreps * 2
         )  # 2 spin channels for the potential irreps
 
-        self.electric_potential_descriptor = PBCAgnosticElectrostaticFeatureBlock(
+        self.electric_potential_descriptor = GTOElectrostaticFeatures(
             density_max_l=atomic_multipoles_max_l,
             density_smearing_width=atomic_multipoles_smearing_width,
-            projection_max_l=field_feature_max_l,
-            projection_smearing_widths=field_feature_widths,
+            feature_max_l=field_feature_max_l,
+            feature_smearing_widths=list(field_feature_widths),
             kspace_cutoff=kspace_cutoff,
             include_self_interaction=field_si,
             quadrupole_feature_corrections=quadrupole_feature_corrections,
-            field_irreps=self.field_irreps,
+            integral_normalization="receiver",
+        )
+        field_layout_target = (
+            cueq_config.layout_str
+            if (cueq_config is not None and cueq_config.enabled)
+            else "mul_ir"
+        )
+        self._field_from_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.field_irreps,
+            source="mul_ir",
+            target=field_layout_target,
             cueq_config=cueq_config,
         )
 
@@ -556,7 +566,7 @@ class PolarMACE(ScaleShiftMACE):
         self.external_field_contribution = DisplacedGTOExternalFieldBlock(
             field_feature_max_l, list(field_feature_widths), "receiver"
         )
-        self.coulomb_energy = PBCAgnosticDirectElectrostaticEnergyBlock(
+        self.coulomb_energy = GTOElectrostaticEnergy(
             density_max_l=atomic_multipoles_max_l,
             density_smearing_width=atomic_multipoles_smearing_width,
             kspace_cutoff=float(kspace_cutoff),
@@ -683,8 +693,25 @@ class PolarMACE(ScaleShiftMACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         # Build k-grid
-        k_vectors, kv_norms_squared, kv_mask = compute_k_vectors(
+        (
+            k_vectors,
+            kv_norms_squared,
+            k_vectors_batch,
+            k_vectors_0mask,
+        ) = compute_k_vectors_flat(
             self.kspace_cutoff, cell.view(-1, 3, 3), data["rcell"].view(-1, 3, 3)
+        )
+
+        field_feature_cache = self.electric_potential_descriptor.precompute_geometry(
+            k_vectors=k_vectors,
+            k_norm2=kv_norms_squared,
+            k_vector_batch=k_vectors_batch,
+            k0_mask=k_vectors_0mask,
+            node_positions=positions,
+            batch=data["batch"],
+            volume=data["volume"],
+            pbc=data["pbc"].view(-1, 3),
+            force_pbc_evaluator=use_pbc_evaluator,
         )
 
         # SCF fixed point
@@ -738,30 +765,21 @@ class PolarMACE(ScaleShiftMACE):
             if charges_to_mul_ir is not None:
                 source_feats_alpha = charges_to_mul_ir(source_feats_alpha)
                 source_feats_beta = charges_to_mul_ir(source_feats_beta)
-            field_feats_alpha, esps = self.electric_potential_descriptor(
-                k_vectors=k_vectors,
-                k_vectors_normed_squared=kv_norms_squared,
-                k_vectors_mask=kv_mask,
+            field_feats_alpha = self.electric_potential_descriptor.forward_dynamic(
+                cache=field_feature_cache,
                 source_feats=source_feats_alpha.unsqueeze(-2),
-                node_positions=positions,
-                batch=data["batch"],
-                volumes=data["volume"],
                 pbc=data["pbc"].view(-1, 3),
-                use_pbc_evaluator=use_pbc_evaluator,
-                return_electrostatic_potentials=self.return_electrostatic_potentials,
             )
-            field_feats_beta, esps = self.electric_potential_descriptor(
-                k_vectors=k_vectors,
-                k_vectors_normed_squared=kv_norms_squared,
-                k_vectors_mask=kv_mask,
+            field_feats_beta = self.electric_potential_descriptor.forward_dynamic(
+                cache=field_feature_cache,
                 source_feats=source_feats_beta.unsqueeze(-2),
-                node_positions=positions,
-                batch=data["batch"],
-                volumes=data["volume"],
                 pbc=data["pbc"].view(-1, 3),
-                use_pbc_evaluator=use_pbc_evaluator,
-                return_electrostatic_potentials=self.return_electrostatic_potentials,
             )
+            field_from_mul_ir = getattr(self, "_field_from_mul_ir", None)
+            if field_from_mul_ir is not None:
+                field_feats_alpha = field_from_mul_ir(field_feats_alpha)
+                field_feats_beta = field_from_mul_ir(field_feats_beta)
+            esps = None
 
             # Add external field contribution and subtract barycenter for gauge invariance
             barycenter = scatter_mean(
@@ -878,15 +896,16 @@ class PolarMACE(ScaleShiftMACE):
             charge_density_mul_ir, positions, data["batch"], num_graphs
         )
         electro_energy = self.coulomb_energy(
-            charge_density_mul_ir,
-            positions,
-            data["batch"],
-            cell.view(-1, 3, 3),
-            data["rcell"].view(-1, 3, 3),
-            data["volume"],
-            data["pbc"].view(-1, 3),
-            num_graphs,
-            use_pbc_evaluator=use_pbc_evaluator,
+            k_vectors=k_vectors,
+            k_norm2=kv_norms_squared,
+            k_vector_batch=k_vectors_batch,
+            k0_mask=k_vectors_0mask,
+            source_feats=charge_density_mul_ir,
+            node_positions=positions,
+            batch=data["batch"],
+            volume=data["volume"],
+            pbc=data["pbc"].view(-1, 3),
+            force_pbc_evaluator=use_pbc_evaluator,
         )
         total_energy = (
             total_energy
