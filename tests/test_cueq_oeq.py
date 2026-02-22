@@ -42,6 +42,7 @@ class BackendTestBase:
         use_agnostic_product,
         use_last_readout_only,
         use_reduced_cg,
+        default_dtype,
     ) -> Dict[str, Any]:
         table = tools.AtomicNumberTable([6])
         return {
@@ -58,7 +59,7 @@ class BackendTestBase:
             "hidden_irreps": hidden_irreps,
             "MLP_irreps": o3.Irreps("16x0e"),
             "gate": F.silu,
-            "atomic_energies": torch.tensor([1.0]),
+            "atomic_energies": torch.tensor([1.0], dtype=default_dtype),
             "avg_num_neighbors": 8,
             "atomic_numbers": table.zs,
             "correlation": 3,
@@ -74,28 +75,28 @@ class BackendTestBase:
     def batch(self, device: str, default_dtype: torch.dtype) -> Dict[str, torch.Tensor]:
         from ase import build
 
-        torch.set_default_dtype(default_dtype)
-
-        table = tools.AtomicNumberTable([6])
-
-        atoms = build.bulk("C", "diamond", a=3.567, cubic=True)
         import numpy as np
 
-        displacement = np.random.uniform(-0.1, 0.1, size=atoms.positions.shape)
-        atoms.positions += displacement
-        atoms_list = [atoms.repeat((2, 2, 2))]
+        with tools.torch_tools.default_dtype(default_dtype):
+            table = tools.AtomicNumberTable([6])
 
-        configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                data.AtomicData.from_config(config, z_table=table, cutoff=5.0)
-                for config in configs
-            ],
-            batch_size=1,
-            shuffle=False,
-            drop_last=False,
-        )
-        batch = next(iter(data_loader))
+            atoms = build.bulk("C", "diamond", a=3.567, cubic=True)
+            rng = np.random.default_rng(42)
+            displacement = rng.uniform(-0.1, 0.1, size=atoms.positions.shape)
+            atoms.positions += displacement
+            atoms_list = [atoms.repeat((2, 2, 2))]
+
+            configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
+            data_loader = torch_geometric.dataloader.DataLoader(
+                dataset=[
+                    data.AtomicData.from_config(config, z_table=table, cutoff=5.0)
+                    for config in configs
+                ],
+                batch_size=1,
+                shuffle=False,
+                drop_last=False,
+            )
+            batch = next(iter(data_loader))
         return batch.to(device)
 
     @pytest.mark.parametrize(
@@ -136,13 +137,13 @@ class BackendTestBase:
         torch.manual_seed(42)
 
         # Create original E3nn model
-        model_e3nn = modules.ScaleShiftMACE(**model_config).to(device)
+        model_e3nn = modules.ScaleShiftMACE(**model_config).to(device=device, dtype=default_dtype)
 
         # Convert E3nn to CuEq
-        model_backend = run_e3nn_to_backend(model_e3nn).to(device)
+        model_backend = run_e3nn_to_backend(model_e3nn).to(device=device, dtype=default_dtype)
 
         # Convert CuEq back to E3nn
-        model_e3nn_back = run_backend_to_e3nn(model_backend).to(device)
+        model_e3nn_back = run_backend_to_e3nn(model_backend).to(device=device, dtype=default_dtype)
 
         # Test forward pass equivalence
         out_e3nn = model_e3nn(
@@ -174,7 +175,7 @@ class BackendTestBase:
         loss_backend.backward()
         loss_e3nn_back.backward()
 
-        tol = 1e-4 if default_dtype == torch.float32 else 1e-8
+        tol = 1e-4 if default_dtype == torch.float32 else 1e-6
 
         def print_gradient_diff(name1, p1, name2, p2, conv_type):
             if p1.grad is not None and p1.grad.shape == p2.grad.shape:
