@@ -79,7 +79,6 @@ class LinearReadoutBlock(torch.nn.Module):
         return self.linear(x)  # [n_nodes, 1]
 
 
-@simplify_if_compile
 @compile_mode("script")
 class NonLinearReadoutBlock(torch.nn.Module):
     def __init__(
@@ -98,8 +97,9 @@ class NonLinearReadoutBlock(torch.nn.Module):
         self.linear_1 = Linear(
             irreps_in=irreps_in, irreps_out=self.hidden_irreps, cueq_config=cueq_config
         )
-        acts = [gate] * len(self.hidden_irreps)
-        self.non_linearity = nn.Activation(irreps_in=self.hidden_irreps, acts=acts)
+        self.non_linearity = simplify_if_compile(nn.Activation)(
+            irreps_in=self.hidden_irreps, acts=[gate]
+        )
         self.linear_2 = Linear(
             irreps_in=self.hidden_irreps, irreps_out=irrep_out, cueq_config=cueq_config
         )
@@ -140,40 +140,19 @@ class NonLinearBiasReadoutBlock(torch.nn.Module):
         self.linear_2 = o3.Linear(
             irreps_in=self.hidden_irreps, irreps_out=irrep_out, biases=True
         )
-        # For CuEq with non-mul_ir layout, switch to mul_ir for e3nn ops
-        layout_str = (
-            cueq_config.layout_str
-            if (cueq_config is not None and hasattr(cueq_config, "layout_str"))
-            else "mul_ir"
-        )
-        self._tp_to_mul_ir = TransposeIrrepsLayoutWrapper(
-            irreps=self.hidden_irreps,
-            source=layout_str,
-            target="mul_ir",
-            cueq_config=cueq_config,
-        )
-        self._tp_from_mul_ir = TransposeIrrepsLayoutWrapper(
-            irreps=self.hidden_irreps,
-            source="mul_ir",
-            target=layout_str,
-            cueq_config=cueq_config,
-        )
 
     def forward(
         self, x: torch.Tensor, heads: Optional[torch.Tensor] = None
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
-        x = self.linear_1(x)
-        if self._tp_to_mul_ir is not None:
-            x = self._tp_to_mul_ir(x)
-        x = self.non_linearity(x)
+        x = self.non_linearity(self.linear_1(x))
+        if hasattr(self, "num_heads"):
+            if self.num_heads > 1 and heads is not None:
+                x = mask_head(x, heads, self.num_heads)
         x = self.non_linearity(self.linear_mid(x))
         if hasattr(self, "num_heads"):
             if self.num_heads > 1 and heads is not None:
                 x = mask_head(x, heads, self.num_heads)
-        x = self.linear_2(x)
-        if self._tp_from_mul_ir is not None:
-            x = self._tp_from_mul_ir(x)
-        return x  # [n_nodes, len(heads)]
+        return self.linear_2(x)  # [n_nodes, len(heads)]
 
 
 @compile_mode("script")
@@ -388,14 +367,16 @@ class GeneralNonLinearBiasReadoutBlock(torch.nn.Module):
         x: torch.Tensor,
     ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.linear_1(x)
-        if self._tp_to_mul_ir is not None:
-            x = self._tp_to_mul_ir(x)
+        tp_to_mul_ir = getattr(self, "_tp_to_mul_ir", None)
+        if tp_to_mul_ir is not None:
+            x = tp_to_mul_ir(x)
         x = self.equivariant_nonlin(x)
         x = self.linear_mid(x)
         x = self.equivariant_nonlin(x)
         x = self.linear_2(x)
-        if self._tp_from_mul_ir_out is not None:
-            x = self._tp_from_mul_ir_out(x)
+        tp_from_mul_ir_out = getattr(self, "_tp_from_mul_ir_out", None)
+        if tp_from_mul_ir_out is not None:
+            x = tp_from_mul_ir_out(x)
         return x  # [n_nodes, 1]
 
 
@@ -415,9 +396,8 @@ class AtomicEnergiesBlock(torch.nn.Module):
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
-        if x.dtype != self.atomic_energies.dtype:
-            x = x.to(self.atomic_energies.dtype)
-        return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
+        energies = torch.atleast_2d(self.atomic_energies).T.to(dtype=x.dtype, device=x.device)
+        return torch.matmul(x, energies)
 
     def __repr__(self):
         formatted_energies = ", ".join(
@@ -602,9 +582,17 @@ class InteractionBlock(torch.nn.Module):
     ) -> torch.Tensor:  # noqa: D401 – internal helper
         if lammps_class is None or first_layer or torch.jit.is_scripting():
             return node_feats
-        _, n_total = lammps_natoms
+        node_feats = node_feats.contiguous()
+        n_real, n_ghost = lammps_natoms
+        expected_total = n_real + n_ghost
+        # If input already includes ghost slots, skip padding but still do exchange.
+        if node_feats.shape[0] == expected_total:
+            # Input already includes ghost slots, just do exchange
+            node_feats = LAMMPS_MP.apply(node_feats, lammps_class)
+            return node_feats
+        # Normal case: pad with zeros for ghosts, then exchange
         pad = torch.zeros(
-            (n_total, node_feats.shape[1]),
+            (n_ghost, node_feats.shape[1]),
             dtype=node_feats.dtype,
             device=node_feats.device,
         )
@@ -1167,9 +1155,19 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
+        n_real = lammps_natoms[0] if lammps_class is not None else None
         sc = self.skip_linear(node_feats)
         node_feats_up = self.linear_up(node_feats)
         node_feats_down = self.linear_down(node_feats)
+        node_feats_combined = torch.cat((node_feats_up, node_feats_down), dim=-1)
+        node_feats_combined = self.handle_lammps(
+            node_feats_combined,
+            lammps_class=lammps_class,
+            lammps_natoms=lammps_natoms,
+            first_layer=first_layer,
+        )
+        node_feats_up = node_feats_combined[:, : node_feats_up.shape[-1]]
+        node_feats_down = node_feats_combined[:, node_feats_up.shape[-1] :]
         augmented_edge_feats = torch.cat(
             [
                 edge_feats,
@@ -1187,10 +1185,12 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         else:
             mji = self.conv_tp(
                 node_feats_up[edge_index[0]], edge_attrs, tp_weights
-            )  # [n_nodes, irreps]
+            )  # [n_edges, irreps]
             message = scatter_sum(
-                src=mji, index=edge_index[1], dim=0, dim_size=node_feats.shape[0]
+                src=mji, index=edge_index[1], dim=0, dim_size=node_feats_up.shape[0]
             )
+        message = self.truncate_ghosts(message, n_real)
+        sc = self.truncate_ghosts(sc, n_real)
         message = self.linear(message) / self.avg_num_neighbors
         return (
             self.reshape(message),
@@ -1343,13 +1343,18 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         sc = self.skip_tp(node_feats)
         node_feats = self.linear_up(node_feats)
         node_feats_res = self.linear_res(node_feats)
-        node_feats = self.handle_lammps(
-            node_feats,
+        node_feats_attrs = torch.cat(
+            [node_feats, node_attrs],
+            dim=-1,
+        )  # Concatenate features and attributes to do one LAMMPS exchange
+        node_feats_attrs = self.handle_lammps(
+            node_feats_attrs,
             lammps_class=lammps_class,
             lammps_natoms=lammps_natoms,
             first_layer=first_layer,
         )
-
+        node_feats = node_feats_attrs[:, : node_feats.shape[-1]]
+        node_attrs = node_feats_attrs[:, node_feats.shape[-1] :]
         source_embedding = self.source_embedding(node_attrs)
         target_embedding = self.target_embedding(node_attrs)
         edge_feats = torch.cat(
@@ -1369,7 +1374,6 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         density = scatter_sum(
             src=edge_density, index=edge_index[1], dim=0, dim_size=num_nodes
         )
-        # print("density", density[0, 0])
 
         if hasattr(self, "conv_fusion"):
             message = self.conv_tp(node_feats, edge_attrs, tp_weights, edge_index)
@@ -1385,19 +1389,14 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         density = self.truncate_ghosts(density, n_real)
         sc = self.truncate_ghosts(sc, n_real)
         node_feats_res = self.truncate_ghosts(node_feats_res, n_real)
-        # print("message before density", message[0, :4])
         message = self.linear_1(message) / (density * self.beta + self.alpha)
-        # print("message after density", message[0, :4])
         message = message + node_feats_res
         if self.transpose_mul_ir is not None:
             message = self.transpose_mul_ir(message)
-        # print("message after skip", message[0, :4])
         message = self.equivariant_nonlin(message)
-        # print("message after nonlin", message[0, :4])
         if self.transpose_ir_mul is not None:
             message = self.transpose_ir_mul(message)
         message = self.linear_2(message)
-        # print("message after linear2", message[0, :4])
         return (
             self.reshape(message),
             sc,

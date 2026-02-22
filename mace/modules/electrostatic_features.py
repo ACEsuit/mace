@@ -306,13 +306,13 @@ class NPCCorrectsFeatureBlock(torch.nn.Module):
             positions=node_positions,
             volumes=volumes,
             batch=batch,
-        )  # [V, Ex, Ey, Ez]
+        ).to(source_feats.dtype)  # [V, Ex, Ey, Ez]
         node_fields_slab = slab_dipole_correction_node_fields(
             source_feats=source_feats.squeeze(-2),
             node_positions=node_positions,
             volumes=volumes,
             batch=batch,
-        )
+        ).to(source_feats.dtype)
         slab = torch.tensor([0, 0, 1], device=pbc.device)
         is_molecule = torch.all(torch.logical_not(pbc), dim=1)
         is_slab = torch.all(torch.logical_xor(slab, pbc), dim=1)

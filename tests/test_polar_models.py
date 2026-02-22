@@ -272,17 +272,21 @@ def build_minimal_batch(device, dtype):
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_energy_invariance_under_rotation_and_translation(dtype):
     device = torch.device("cpu")
+    torch.manual_seed(0)
     model = build_minimal_model(device, dtype)
     data_batch = build_minimal_batch(device, dtype)
 
     out = model(data_batch, training=False, compute_force=False)
     E = out["energy"].detach()
 
+    torch.manual_seed(1)
     R = random_rotation(device, dtype)
     data_rot = {
         k: (v.clone() if isinstance(v, torch.Tensor) else v) for k, v in data_batch.items()
     }
     data_rot["positions"] = data_batch["positions"] @ R.T
+    data_rot["cell"] = (data_batch["cell"].view(-1, 3, 3) @ R.T).view(-1, 9)
+    data_rot["rcell"] = (data_batch["rcell"].view(-1, 3, 3) @ R.T).view(-1, 9)
     out_rot = model(data_rot, training=False, compute_force=False)
     E_rot = out_rot["energy"].detach()
 

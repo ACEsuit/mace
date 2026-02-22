@@ -6,6 +6,14 @@ from pathlib import Path
 
 def pytest_configure(config):
     """Isolate cache per xdist worker and guard known plugin reseed issues."""
+    os.environ.setdefault("TORCHINDUCTOR_DISABLE_PCH", "1")
+    # Ensure inductor does not use stale precompiled headers across test runs.
+    try:
+        import torch._inductor.config as inductor_config
+
+        inductor_config.cpp_cache_precompile_headers = False
+    except Exception:
+        pass
     if hasattr(config.option, "randomly_reset_seed"):
         # Some environments with pytest-randomly + thinc can produce invalid seeds.
         config.option.randomly_reset_seed = False

@@ -218,7 +218,11 @@ def mace_polar(
     if return_raw_model:
         return loaded
     return MACECalculator(
-        model_paths=str(model_path), device=device, default_dtype=default_dtype, **kwargs
+        model_paths=str(model_path),
+        device=device,
+        default_dtype=default_dtype,
+        model_type="PolarMACE",
+        **kwargs,
     )
 
 
