@@ -11,7 +11,7 @@ from e3nn import o3
 from mace import data, modules, tools
 from mace.data import Configuration
 from mace.tools import torch_geometric
-from mace.tools.lora_tools import inject_lora
+from mace.modules.lora import inject_lora, merge_lora_weights
 
 
 def _random_config() -> Configuration:
@@ -228,3 +228,148 @@ def test_lora_symmetry_equivariance(build_lora_model, random_configs) -> None:
         rtol=1e-5,
         atol=1e-5,
     )
+
+
+def test_lora_merge_preserves_outputs(build_lora_model, random_configs) -> None:
+    """Test that merging LoRA weights produces identical outputs."""
+    model, table = build_lora_model(rank=2, alpha=0.5, randomize=True)
+    model.eval()
+
+    # Get outputs before merging
+    configs = list(random_configs)
+    energy_before, forces_before = _forward_energy_forces(model, configs, table)
+
+    # Merge LoRA weights
+    merge_lora_weights(model)
+    model.eval()
+
+    # Get outputs after merging
+    energy_after, forces_after = _forward_energy_forces(model, configs, table)
+
+    # Outputs should be identical (within numerical precision)
+    assert torch.allclose(
+        energy_before, energy_after, rtol=1e-5, atol=1e-6
+    ), f"Energy mismatch after merge: {energy_before} vs {energy_after}"
+    assert torch.allclose(
+        forces_before, forces_after, rtol=1e-5, atol=1e-6
+    ), f"Forces mismatch after merge: max diff = {(forces_before - forces_after).abs().max()}"
+
+
+def test_lora_merge_removes_wrappers(build_lora_model) -> None:
+    """Test that merging removes LoRA wrapper modules."""
+    from mace.modules.lora import LoRADenseLinear, LoRAFCLayer, LoRAO3Linear
+
+    model, _ = build_lora_model(rank=2, alpha=0.5, randomize=True)
+
+    # Count LoRA wrappers before merge
+    def count_lora_wrappers(module):
+        count = 0
+        for child in module.modules():
+            if isinstance(child, (LoRADenseLinear, LoRAFCLayer, LoRAO3Linear)):
+                count += 1
+        return count
+
+    wrappers_before = count_lora_wrappers(model)
+    assert wrappers_before > 0, "Model should have LoRA wrappers before merge"
+
+    # Merge
+    merge_lora_weights(model)
+
+    # Count LoRA wrappers after merge
+    wrappers_after = count_lora_wrappers(model)
+    assert (
+        wrappers_after == 0
+    ), f"Model still has {wrappers_after} LoRA wrappers after merge"
+
+
+def test_lora_merge_enables_gradients(build_lora_model) -> None:
+    """Test that merging re-enables gradients for all parameters."""
+    model, _ = build_lora_model(rank=2, alpha=0.5, randomize=True)
+
+    # Before merge, only LoRA params have gradients
+    non_lora_grads_before = [
+        name
+        for name, p in model.named_parameters()
+        if "lora_" not in name and p.requires_grad
+    ]
+    assert not non_lora_grads_before, "Non-LoRA params should be frozen before merge"
+
+    # Merge
+    merge_lora_weights(model)
+
+    # After merge, all params should have gradients
+    frozen_after = [name for name, p in model.named_parameters() if not p.requires_grad]
+    assert not frozen_after, f"Some parameters frozen after merge: {frozen_after}"
+
+
+def test_lora_merge_preserves_equivariance(build_lora_model, random_configs) -> None:
+    """Test that merged model preserves rotational equivariance."""
+    model, table = build_lora_model(rank=2, alpha=0.5, randomize=True)
+
+    # Merge LoRA weights
+    merge_lora_weights(model)
+    model.eval()
+
+    base_cfg = random_configs[0]
+    energy, forces = _forward_energy_forces(model, [base_cfg], table)
+    energy_val = energy.item()
+    forces_val = forces.squeeze(0).detach().numpy()
+
+    # Test rotation equivariance after merge
+    R = _rotation_matrix()
+    rotated_cfg = _rotate_config(base_cfg, R)
+    energy_rot, forces_rot = _forward_energy_forces(model, [rotated_cfg], table)
+
+    assert np.allclose(
+        energy_rot.item(), energy_val, rtol=1e-6, atol=1e-6
+    ), "Energy not invariant under rotation after merge"
+    assert np.allclose(
+        forces_val @ R.T, forces_rot.squeeze(0).detach().numpy(), rtol=1e-5, atol=1e-5
+    ), "Forces not equivariant under rotation after merge"
+
+
+def test_lora_evaluate_preserves_frozen_state(build_lora_model, random_configs) -> None:
+    """Test that evaluate() preserves requires_grad states for LoRA models."""
+    from mace.tools import evaluate
+    from mace.modules.loss import WeightedEnergyForcesLoss
+
+    model, table = build_lora_model(rank=2, alpha=0.5, randomize=True)
+
+    # Record which parameters should be trainable (only LoRA params)
+    lora_params_before = {name: p.requires_grad for name, p in model.named_parameters()}
+    trainable_before = [name for name, grad in lora_params_before.items() if grad]
+    frozen_before = [name for name, grad in lora_params_before.items() if not grad]
+
+    # Verify initial state: only LoRA params are trainable
+    assert all(
+        "lora_" in name for name in trainable_before
+    ), "Only LoRA params should be trainable initially"
+    assert len(frozen_before) > 0, "Some base params should be frozen"
+
+    # Create a minimal data loader for evaluation
+    configs = list(random_configs)
+    dataset = [_atomic_data_from_config(cfg, table) for cfg in configs]
+    loader = torch_geometric.dataloader.DataLoader(
+        dataset=dataset,
+        batch_size=len(dataset),
+        shuffle=False,
+        drop_last=False,
+    )
+
+    # Run evaluate
+    loss_fn = WeightedEnergyForcesLoss(energy_weight=1.0, forces_weight=1.0)
+    output_args = {"forces": True, "virials": False, "stress": False}
+    evaluate(model, loss_fn, loader, output_args, device=torch.device("cpu"))
+
+    # Check that requires_grad states are preserved
+    lora_params_after = {name: p.requires_grad for name, p in model.named_parameters()}
+
+    for name in trainable_before:
+        assert lora_params_after[
+            name
+        ], f"LoRA param {name} should still be trainable after evaluate()"
+
+    for name in frozen_before:
+        assert not lora_params_after[
+            name
+        ], f"Base param {name} should still be frozen after evaluate()"
