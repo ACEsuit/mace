@@ -38,3 +38,4 @@ dist/
 
 .benchmarks
 *.png
+.trae/

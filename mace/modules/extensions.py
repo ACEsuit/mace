@@ -78,6 +78,7 @@ class MACELES(ScaleShiftMACE):
         compute_stress: bool = False,
         compute_displacement: bool = False,
         compute_hessian: bool = False,
+        hessian_indices: Optional[torch.Tensor] = None,
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
@@ -238,6 +239,7 @@ class MACELES(ScaleShiftMACE):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
             compute_hessian=compute_hessian,
+            hessian_indices=hessian_indices,
             compute_edge_forces=compute_edge_forces,
         )
 
