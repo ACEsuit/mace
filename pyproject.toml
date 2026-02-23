@@ -21,13 +21,13 @@ classifiers = [
 dependencies = [
     "torch>=1.12",
     "e3nn==0.4.4",
-    "numpy",
+    "numpy>=1.20",
     "opt_einsum",
-    "ase",
+    "ase>=3.22.0",
     "torch-ema",
     "prettytable",
     "matscipy",
-    "h5py",
+    "h5py>=3.0",
     "torchmetrics",
     "python-hostlist",
     "configargparse",
@@ -36,8 +36,8 @@ dependencies = [
     "tqdm",
     "lmdb",
     "orjson",
-    "matplotlib",
-    "pandas",
+    "matplotlib>=3.3.0",
+    "pandas>=1.1.0",
 ]
 
 [project.optional-dependencies]
