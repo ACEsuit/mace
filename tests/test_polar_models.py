@@ -726,6 +726,29 @@ def _write_polar_data(tmp_path):
     return path, configs
 
 
+def _write_polar_dipole_data(tmp_path):
+    configs = []
+    atoms = Atoms(
+        numbers=[8, 1, 1],
+        positions=[[0, 0, 0], [0.9572, 0, 0], [-0.2390, 0.9270, 0]],
+        cell=[12.0, 12.0, 12.0],
+        pbc=[False, False, False],
+    )
+    rng = np.random.default_rng(321)
+    for _ in range(6):
+        sample = atoms.copy()
+        sample.positions += rng.normal(0, 0.08, size=sample.positions.shape)
+        sample.info["REF_energy"] = float(rng.normal(0, 1e-2))
+        sample.new_array(
+            "REF_forces", rng.normal(0, 1e-2, size=sample.positions.shape)
+        )
+        sample.info["REF_dipoles"] = rng.normal(0, 1e-2, size=3)
+        configs.append(sample)
+    path = tmp_path / "polar_dipole_smoke.xyz"
+    ase.io.write(path, configs)
+    return path, configs
+
+
 def _write_polar_multihead_data(tmp_path, configs):
     dft_configs = []
     mp2_configs = []
@@ -863,6 +886,47 @@ def test_run_train_polar_finetuning_foundation_model(
     assert model.heads == ["Default"]
     if foundation_model == "polar-1-m":
         _assert_model_predicts(model_path, configs, heads=("Default",))
+
+
+def test_run_train_polar_finetuning_energy_forces_dipole(tmp_path):
+    train_file, configs = _write_polar_dipole_data(tmp_path)
+    params = _base_train_params(tmp_path, train_file, "polar_dipole_ft")
+    params.update(
+        {
+            "foundation_model": "polar-1-m",
+            "force_mh_ft_lr": True,
+            "loss": "energy_forces_dipole",
+            "stress_weight": 0.0,
+            "dipole_key": "REF_dipoles",
+            "dipole_weight": 1.0,
+        }
+    )
+    _run_train(params)
+
+    model_path = tmp_path / "polar_dipole_ft.model"
+    model = torch.load(model_path, map_location="cpu", weights_only=False)
+    assert model.__class__.__name__ == "PolarMACE"
+    assert model.heads == ["Default"]
+
+    calc = MACECalculator(
+        model_paths=model_path,
+        device="cpu",
+        default_dtype="float64",
+        head="Default",
+    )
+    for atoms in configs:
+        test_atoms = atoms.copy()
+        test_atoms.info["charge"] = 0
+        test_atoms.info["spin"] = 1
+        test_atoms.calc = calc
+
+        energy = test_atoms.get_potential_energy()
+        forces = test_atoms.get_forces()
+        dipole = np.asarray(calc.results["dipole"])
+
+        assert np.isfinite(energy)
+        assert np.all(np.isfinite(forces))
+        assert np.all(np.isfinite(dipole))
 
 
 @pytest.mark.parametrize(
