@@ -11,16 +11,14 @@ def load_foundations_elements(
     use_shift=True,
     use_scale=True,
     max_L=2,
+    default_dtype: torch.dtype | None = None,
 ):
     """
     Load the foundations of a model into a model for fine-tuning.
     """
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
-    # Determine the target dtype from the model so we can cast foundation
-    # weights when they were saved in a different precision (e.g. float32
-    # foundation fine-tuned with --default_dtype=float64).
-    target_dtype = next(model.parameters()).dtype
+    target_dtype = default_dtype or next(model.parameters()).dtype
     model_heads = model.heads
     new_z_table = table
     num_species_foundations = len(z_table.zs)
@@ -215,7 +213,6 @@ def load_foundations_elements(
                 assert hasattr(readout, "linear_1") or hasattr(
                     readout, "linear_mid"
                 ), "Readout block must have linear_1 or linear_mid"
-                # Determine shapes once to avoid uninitialized use
                 if hasattr(readout, "linear_1"):
                     shape_input_1 = (
                         model_foundations.readouts[i]
@@ -291,11 +288,6 @@ def load_foundations_elements(
                         readout.linear_2.bias = torch.nn.Parameter(
                             model_readouts_one_linear_2_bias
                         )
-    # Transfer element-dependent embeddings in any remaining submodules
-    # (e.g. field_dependent_charges_maps in PolarMACE).
-    # We walk top-level ModuleLists that are not already handled above
-    # (interactions, products, readouts) and copy source/target embeddings
-    # with element subsetting.
     _handled_attrs = {"interactions", "products", "readouts"}
     for attr_name, module in model.named_children():
         if attr_name in _handled_attrs:
@@ -338,9 +330,6 @@ def load_foundations_elements(
                 len(model_heads)
             ).clone()
 
-    # Fallback: copy any remaining parameters whose shapes already match.
-    # This picks up model-specific weights (e.g. PolarMACE electrostatic
-    # modules) without needing to enumerate every layer explicitly.
     model_state = model.state_dict()
     foundation_state = model_foundations.state_dict()
     for name, param in foundation_state.items():
@@ -350,14 +339,8 @@ def load_foundations_elements(
             continue
         if model_state[name].shape != param.shape:
             continue
-        # Only copy if the parameter was not already set above
-        # (i.e. it still differs from foundation, meaning it was handled).
-        # For safety we unconditionally copy matching-shape params; the
-        # explicit transfers above are idempotent so double-copying is fine.
         model_state[name].copy_(param)
 
-    # Ensure all parameters match the target dtype (e.g. when a float32
-    # foundation model is fine-tuned with --default_dtype=float64).
     model.to(target_dtype)
 
     return model

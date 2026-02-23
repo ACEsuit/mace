@@ -2,12 +2,14 @@ import ast
 import logging
 
 import numpy as np
+import torch
 from e3nn import o3
 
 from mace import modules
 from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import dtype_dict
 from mace.tools.utils import AtomicNumberTable
 
 
@@ -200,6 +202,7 @@ def configure_model(
             z_table,
             load_readout=args.foundation_filter_elements,
             max_L=args.max_L,
+            default_dtype=dtype_dict.get(args.default_dtype, torch.float64),
         )
 
     return model, output_args
