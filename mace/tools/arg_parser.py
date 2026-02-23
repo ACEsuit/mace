@@ -1210,7 +1210,7 @@ def read_yaml(value: str) -> Dict:
 
     if not Path(value).is_file():
         raise argparse.ArgumentTypeError(f"File {value} does not exist.")
-    with open(value, "r", encoding="utf-8") as file:
+    with open(value, encoding="utf-8") as file:
         try:
             return yaml.safe_load(file)
         except yaml.YAMLError as exc:

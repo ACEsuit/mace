@@ -260,9 +260,8 @@ def mace_off(
             model = cached_model_path
             msg = f"Using MACE-OFF23 MODEL for MACECalculator with {model}"
             print(msg)
-        else:
-            if not Path(model).exists():
-                raise FileNotFoundError(f"{model} not found locally")
+        elif not Path(model).exists():
+            raise FileNotFoundError(f"{model} not found locally")
     except Exception as exc:
         raise RuntimeError("Model download failed and no local model found") from exc
 

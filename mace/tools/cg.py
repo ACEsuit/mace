@@ -7,7 +7,8 @@
 import collections
 import itertools
 import os
-from typing import Iterator, List, Union
+from collections.abc import Iterator
+from typing import List, Union
 
 import numpy as np
 import torch

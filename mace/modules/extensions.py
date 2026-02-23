@@ -61,7 +61,8 @@ class MACELES(ScaleShiftMACE):
         self.les = Les(les_arguments=les_arguments)
         self.les_readouts = torch.nn.ModuleList()
         self.readout_input_dims = [
-            _get_readout_input_dim(readout) for readout in self.readouts  # type: ignore
+            _get_readout_input_dim(readout)
+            for readout in self.readouts  # type: ignore
         ]
         cueq_config = kwargs.get("cueq_config", None)
         for readout in self.readouts:  # type: ignore
@@ -119,9 +120,7 @@ class MACELES(ScaleShiftMACE):
         ]
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
-        ).to(
-            vectors.dtype
-        )  # [n_graphs, num_heads]
+        ).to(vectors.dtype)  # [n_graphs, num_heads]
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])

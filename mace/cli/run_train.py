@@ -186,9 +186,9 @@ def run(args) -> None:
                 )
             args.multiheads_finetuning = False
         if args.multiheads_finetuning:
-            assert (
-                args.E0s != "average"
-            ), "average atomic energies cannot be used for multiheads finetuning"
+            assert args.E0s != "average", (
+                "average atomic energies cannot be used for multiheads finetuning"
+            )
             # check that the foundation model has a single head, if not, use the first head
             if not args.force_mh_ft_lr:
                 logging.info(
@@ -263,7 +263,7 @@ def run(args) -> None:
             head_config.statistics_file is not None
             and head_config.head_name != "pt_head"
         ):
-            with open(head_config.statistics_file, "r") as f:  # pylint: disable=W1514
+            with open(head_config.statistics_file) as f:  # pylint: disable=W1514
                 statistics = json.load(f)
             logging.info("Using statistics json file")
             head_config.atomic_numbers = statistics["atomic_numbers"]
@@ -274,7 +274,7 @@ def run(args) -> None:
             if isinstance(statistics["atomic_energies"], str) and statistics[
                 "atomic_energies"
             ].endswith(".json"):
-                with open(statistics["atomic_energies"], "r", encoding="utf-8") as f:
+                with open(statistics["atomic_energies"], encoding="utf-8") as f:
                     atomic_energies = json.load(f)
                 head_config.E0s = atomic_energies
                 head_config.atomic_energies_dict = ast.literal_eval(atomic_energies)
@@ -283,10 +283,15 @@ def run(args) -> None:
                 head_config.atomic_energies_dict = ast.literal_eval(
                     statistics["atomic_energies"]
                 )
-        if head_config.train_file in (["mp"], ["matpes_pbe"], ["matpes_r2scan"], ["omat"]):
-            assert (
-                head_config.head_name == "pt_head"
-            ), "Only pt_head should use mp as train_file"
+        if head_config.train_file in (
+            ["mp"],
+            ["matpes_pbe"],
+            ["matpes_r2scan"],
+            ["omat"],
+        ):
+            assert head_config.head_name == "pt_head", (
+                "Only pt_head should use mp as train_file"
+            )
             logging.info(
                 f"Using filtered Materials Project data for replay ({args.num_samples_pt}, {args.filter_type_pt}, {args.subselect_pt}). "
                 "You can also construct a different subset using `fine_tuning_select.py` script."
@@ -900,7 +905,7 @@ def run(args) -> None:
     if args.device == "xpu":
         try:
             model, optimizer = ipex.optimize(model, optimizer=optimizer)
-        except ImportError as e:
+        except ImportError:
             logging.error(
                 "Intel Extension for PyTorch not found, but XPU device was specified. "
                 "Please install it to use XPU device."
@@ -994,7 +999,7 @@ def run(args) -> None:
                 )
             try:
                 drop_last = test_set.drop_last
-            except AttributeError as e:  # pylint: disable=W0612
+            except AttributeError:  # pylint: disable=W0612
                 drop_last = False
             test_loader = torch_geometric.dataloader.DataLoader(
                 test_set,
@@ -1069,7 +1074,7 @@ def run(args) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0718
+                except Exception:  # pylint: disable=W0718
                     pass
             else:
                 torch.save(model_to_save, Path(args.model_dir) / (args.name + ".model"))
@@ -1084,7 +1089,7 @@ def run(args) -> None:
                         path_complied,
                         _extra_files=extra_files,
                     )
-                except Exception as e:  # pylint: disable=W0718
+                except Exception:  # pylint: disable=W0718
                     pass
 
         logging.info("Computing metrics for training, validation, and test sets")

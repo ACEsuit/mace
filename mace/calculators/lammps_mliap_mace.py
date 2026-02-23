@@ -51,7 +51,7 @@ def timer(name: str, enabled: bool = True):
         yield
     finally:
         elapsed = time.perf_counter() - start
-        logging.info(f"Timer - {name}: {elapsed*1000:.3f} ms")
+        logging.info(f"Timer - {name}: {elapsed * 1000:.3f} ms")
 
 
 @compile_mode("script")

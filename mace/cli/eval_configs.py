@@ -156,8 +156,10 @@ def run(args: argparse.Namespace) -> None:
         assert args.head in model.heads
         head_name = args.head
     else:
-        head_name = 'Default'
-    configs = [data.config_from_atoms(atoms, head_name=head_name) for atoms in atoms_list]
+        head_name = "Default"
+    configs = [
+        data.config_from_atoms(atoms, head_name=head_name) for atoms in atoms_list
+    ]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
@@ -254,9 +256,7 @@ def run(args: argparse.Namespace) -> None:
                     torch_tools.to_numpy(output["node_energy"]),
                     indices_or_sections=batch.ptr[1:],
                     axis=0,
-                )[
-                    :-1
-                ]  # drop last as its empty
+                )[:-1]  # drop last as its empty
             )
 
         forces = np.split(

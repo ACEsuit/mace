@@ -33,7 +33,6 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
             target_dict[key] = source_dict[key]
 
     for i in range(2):
-
         target_model.interactions[i].avg_num_neighbors = source_model.interactions[
             i
         ].avg_num_neighbors

@@ -54,7 +54,9 @@ def init_device(device_str: str) -> torch.device:
         assert torch.cuda.is_available(), "No CUDA device available!"
         if ":" in device_str:
             # Check if the desired device is available
-            assert int(device_str.split(":")[-1]) < torch.cuda.device_count()
+            assert (
+                int(device_str.rsplit(":", maxsplit=1)[-1]) < torch.cuda.device_count()
+            )
         logging.info(
             f"CUDA version: {torch.version.cuda}, CUDA device: {torch.cuda.current_device()}"
         )
