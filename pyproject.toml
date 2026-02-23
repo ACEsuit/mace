@@ -81,9 +81,6 @@ packages = {find = {}}
 [tool.setuptools.dynamic]
 version = {attr = "mace.__version__"}
 
-[tool.uv.extra-build-dependencies]
-matscipy = ["numpy"]
-
 [tool.ruff]
 line-length = 88
 target-version = "py39"

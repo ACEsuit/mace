@@ -111,7 +111,7 @@ class Data:
         return data
 
     def to_dict(self):
-        return dict(self)
+        return {key: item for key, item in self}  # pylint: disable=unnecessary-comprehension
 
     def to_namedtuple(self):
         keys = self.keys

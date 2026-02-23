@@ -19,7 +19,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         version:
-          - { python: '3.9', resolution: lowest-direct }
+          - { python: '3.9', resolution: highest }  # this should be lowest-direct but lower bound pins are pain to identify
           - { python: '3.12', resolution: highest }  # keep py312 for those who cannot upgrade to numpy 2
           - { python: '3.13', resolution: highest }
         split-group: [ 1, 2, 3, 4 ]
