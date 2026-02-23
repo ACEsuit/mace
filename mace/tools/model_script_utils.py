@@ -194,22 +194,13 @@ def configure_model(
     model = _build_model(args, model_config, model_config_foundation, heads)
 
     if model_foundation is not None:
-        if requested_model == "PolarMACE":
-            foundation_heads = getattr(model_foundation, "heads", [])
-            include_readouts = hasattr(model, "heads") and len(foundation_heads) == len(
-                model.heads
-            )
-            model = load_foundations(
-                model, model_foundation, include_readouts=include_readouts
-            )
-        else:
-            model = load_foundations_elements(
-                model,
-                model_foundation,
-                z_table,
-                load_readout=args.foundation_filter_elements,
-                max_L=args.max_L,
-            )
+        model = load_foundations_elements(
+            model,
+            model_foundation,
+            z_table,
+            load_readout=args.foundation_filter_elements,
+            max_L=args.max_L,
+        )
 
     return model, output_args
 

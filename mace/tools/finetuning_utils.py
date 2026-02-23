@@ -17,6 +17,10 @@ def load_foundations_elements(
     """
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
+    # Determine the target dtype from the model so we can cast foundation
+    # weights when they were saved in a different precision (e.g. float32
+    # foundation fine-tuned with --default_dtype=float64).
+    target_dtype = next(model.parameters()).dtype
     model_heads = model.heads
     new_z_table = table
     num_species_foundations = len(z_table.zs)
@@ -287,6 +291,43 @@ def load_foundations_elements(
                         readout.linear_2.bias = torch.nn.Parameter(
                             model_readouts_one_linear_2_bias
                         )
+    # Transfer element-dependent embeddings in any remaining submodules
+    # (e.g. field_dependent_charges_maps in PolarMACE).
+    # We walk top-level ModuleLists that are not already handled above
+    # (interactions, products, readouts) and copy source/target embeddings
+    # with element subsetting.
+    _handled_attrs = {"interactions", "products", "readouts"}
+    for attr_name, module in model.named_children():
+        if attr_name in _handled_attrs:
+            continue
+        submodules = (
+            list(zip(module, model_foundations.__dict__["_modules"][attr_name]))
+            if isinstance(module, torch.nn.ModuleList)
+            else [(module, getattr(model_foundations, attr_name))]
+        )
+        for sub_new, sub_found in submodules:
+            for emb_name in ("source_embedding", "target_embedding"):
+                if not hasattr(sub_new, emb_name):
+                    continue
+                emb_new = getattr(sub_new, emb_name)
+                emb_found = getattr(sub_found, emb_name)
+                if (
+                    hasattr(emb_new, "weight")
+                    and hasattr(emb_found, "weight")
+                    and emb_found.weight.shape[0]
+                    == num_species_foundations * num_channels_foundation
+                    and emb_new.weight.shape[0]
+                    == num_species * num_channels_foundation
+                ):
+                    emb_new.weight = torch.nn.Parameter(
+                        emb_found.weight.view(num_species_foundations, -1)[
+                            indices_weights, :
+                        ]
+                        .flatten()
+                        .clone()
+                        / (num_species_foundations / num_species) ** 0.5
+                    )
+
     if model_foundations.scale_shift is not None:
         if use_scale:
             model.scale_shift.scale = model_foundations.scale_shift.scale.repeat(
@@ -296,6 +337,29 @@ def load_foundations_elements(
             model.scale_shift.shift = model_foundations.scale_shift.shift.repeat(
                 len(model_heads)
             ).clone()
+
+    # Fallback: copy any remaining parameters whose shapes already match.
+    # This picks up model-specific weights (e.g. PolarMACE electrostatic
+    # modules) without needing to enumerate every layer explicitly.
+    model_state = model.state_dict()
+    foundation_state = model_foundations.state_dict()
+    for name, param in foundation_state.items():
+        if name not in model_state:
+            continue
+        if not load_readout and name.startswith("readouts."):
+            continue
+        if model_state[name].shape != param.shape:
+            continue
+        # Only copy if the parameter was not already set above
+        # (i.e. it still differs from foundation, meaning it was handled).
+        # For safety we unconditionally copy matching-shape params; the
+        # explicit transfers above are idempotent so double-copying is fine.
+        model_state[name].copy_(param)
+
+    # Ensure all parameters match the target dtype (e.g. when a float32
+    # foundation model is fine-tuned with --default_dtype=float64).
+    model.to(target_dtype)
+
     return model
 
 
