@@ -46,6 +46,7 @@ fpsample = ["fpsample"]
 dev = [
     "ruff",
     "mypy",
+    "pylint",
     "pre-commit",
     "mace-torch[test]",
 ]
