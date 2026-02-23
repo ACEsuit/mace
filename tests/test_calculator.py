@@ -750,6 +750,7 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
 
 
 def test_mace_polar_constructor():
+    pytest.importorskip("graph_longrange", reason="graph_longrange is not installed")
     model_name = "mace-polar-2L"
     model_path = polar_model_paths[model_name]
     if not model_path.exists():

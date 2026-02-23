@@ -5,7 +5,7 @@
     "mace_field_commit": "1d40b4b",
     "mace_field_worktree": "/Users/Lilyes/Documents/GitHub/mace-field",
     "graph_longrange_path": "/tmp/graph_longrange_refactor_batching",
-    "reference_model_name": "mace-polar-spin-2L.model",
+    "reference_model_name": "maece-polar/mace-polar-2L.model",
     "reference_model_sha256": "fab8b8713c832f31a2a853aaa22fd638be8a369cbf5095e6b3e982a18d10e93a",
     "develop_reference_file": "polar_regression_reference_develop.json",
     "develop_reference_model_sha256": "79358c165698dac456c656520cc2b78feac038e95f40ce14bdbc8db08cdbc60f"

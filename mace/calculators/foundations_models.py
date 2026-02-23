@@ -38,9 +38,9 @@ mace_mp_names = [None] + list(mace_mp_urls.keys())
 
 repo_root = Path(__file__).resolve().parents[2]
 polar_model_paths = {
-    "mace-polar-1L": repo_root / "mace-polar-spin-1L.model",
-    "mace-polar-2L": repo_root / "mace-polar-spin-2L.model",
-    "mace-polar-3L": repo_root / "mace-polar-spin-3L.model",
+    "mace-polar-1L": repo_root / "maece-polar/mace-polar-1L.model",
+    "mace-polar-2L": repo_root / "maece-polar/mace-polar-2L.model",
+    "mace-polar-3L": repo_root / "maece-polar/mace-polar-3L.model",
 }
 polar_model_names = list(polar_model_paths.keys())
 
@@ -214,9 +214,8 @@ def mace_polar(
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     if not model_path.exists():
         raise FileNotFoundError(f"Polar foundation model not found: {model_path}")
-    loaded = torch.load(model_path, map_location=device)
     if return_raw_model:
-        return loaded
+        return torch.load(model_path, map_location=device)
     return MACECalculator(
         model_paths=str(model_path),
         device=device,

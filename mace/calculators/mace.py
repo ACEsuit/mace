@@ -195,7 +195,7 @@ class MACECalculator(Calculator):
                 raise ValueError("No mace file names supplied")
             self.num_models = len(model_paths)
 
-            # Load models from files
+            # Load models from files.
             self.models = [
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
