@@ -19,10 +19,9 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         version:
-          - { python: '3.9', resolution: highest }
-          - { python: '3.12', resolution: highest }
+          - { python: '3.9', resolution: lowest-direct }
+          - { python: '3.12', resolution: highest }  # keep py312 for those who cannot upgrade to numpy 2
           - { python: '3.13', resolution: highest }
-          - { python: '3.13', resolution: lowest-direct }
         split-group: [ 1, 2, 3, 4 ]
     runs-on: ${{ matrix.os }}
 
