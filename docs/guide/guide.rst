@@ -22,6 +22,7 @@ User Guide
     lammps
     lammps_mliap
     foundation_models
+    polar_mace
     finetuning
     multihead_finetuning
     multihead_training
