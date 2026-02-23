@@ -38,9 +38,9 @@ mace_mp_names = [None] + list(mace_mp_urls.keys())
 
 repo_root = Path(__file__).resolve().parents[2]
 polar_model_paths = {
-    "mace-polar-1L": repo_root / "mace-polar/mace-polar-1L.model",
-    "mace-polar-2L": repo_root / "mace-polar/mace-polar-2L.model",
-    "mace-polar-3L": repo_root / "mace-polar/mace-polar-3L.model",
+    "polar-1-s": repo_root / "mace-polar/MACE-POLAR-1-S.model",
+    "polar-1-m": repo_root / "mace-polar/MACE-POLAR-1-M.model",
+    "polar-1-l": repo_root / "mace-polar/MACE-POLAR-1-L.model",
 }
 polar_model_names = list(polar_model_paths.keys())
 
