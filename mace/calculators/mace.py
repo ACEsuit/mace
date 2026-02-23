@@ -336,7 +336,7 @@ class MACECalculator(Calculator):
         def _infos_equal(a: dict, b: dict) -> bool:
             if a.keys() != b.keys():
                 return False
-            for k in a:
+            for k in a:  # noqa: PLC0206
                 va, vb = a[k], b[k]
                 if isinstance(va, np.ndarray) or isinstance(vb, np.ndarray):
                     continue

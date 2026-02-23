@@ -7,7 +7,7 @@ import torch.nn.functional
 from ase.build import molecule
 from e3nn import o3
 from e3nn.util import jit
-from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Rotation as R  # noqa: N817
 
 from mace import data, modules, tools
 from mace.calculators import mace_mp, mace_off, mace_omol

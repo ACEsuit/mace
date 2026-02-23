@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Optional, Type
+from typing import Callable, Optional
 
 import torch
 
@@ -111,6 +111,7 @@ __all__ = [
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
     "WeightedEnergyForcesStressLoss",
+    "DipolePolarLoss",
     "DipoleSingleLoss",
     "WeightedEnergyForcesDipoleLoss",
     "WeightedHuberEnergyForcesStressLoss",

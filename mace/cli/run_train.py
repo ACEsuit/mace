@@ -15,7 +15,7 @@ from typing import Optional
 
 import torch.distributed
 from e3nn.util import jit
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel as DDP  # noqa: N817
 from torch.optim import LBFGS
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
@@ -97,7 +97,7 @@ def run(args) -> None:
     if args.device == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
-            import oneccl_bindings_for_pytorch as oneccl  # pylint: disable=unused-import
+            import oneccl_bindings_for_pytorch as oneccl  # pylint: disable=unused-import  # noqa: F401
         except ImportError as e:
             raise ImportError(
                 "Error: Intel extension for PyTorch not found, but XPU device was specified"

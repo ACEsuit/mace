@@ -7,7 +7,7 @@ name = "mace-torch"
 dynamic = ["version"]
 description = "MACE - Fast and accurate machine learning interatomic potentials with higher order equivariant message passing."
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 license = {text = "MIT License"}
 authors = [
     {name = "ACEsuit development team"},
@@ -95,6 +95,7 @@ select = [
 ]
 ignore = [
     "E501",    # line-too-long (handled by formatter)
+    "E741",    # ambiguous-variable-name (frequently use "l" for angular momentum)
     "PLR0911", # too-many-return-statements
     "PLR0912", # too-many-branches
     "PLR0913", # too-many-arguments

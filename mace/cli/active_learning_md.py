@@ -130,10 +130,10 @@ def stop_error(dyn, threshold, reg=0.2):
     ferr_rel = ferr / (np.linalg.norm(force, axis=1) + reg)
 
     if np.max(ferr_rel) > threshold:
+        max_ferr_rel = np.max(ferr_rel)
+        threshold_time = dyn.get_time() / units.fs
         print(
-            "Error too large {:.3}. Stopping t={:.2} fs.".format(  # pylint: disable=C0209
-                np.max(ferr_rel), dyn.get_time() / units.fs
-            ),
+            f"Error too large {max_ferr_rel:.3}. Stopping t={threshold_time:.2} fs.",
             flush=True,
         )
         dyn.max_steps = 0

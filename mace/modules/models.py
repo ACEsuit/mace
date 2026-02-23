@@ -148,7 +148,7 @@ class MACE(torch.nn.Module):
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
 
         # interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
-        def generate_irreps(l):
+        def generate_irreps(l):  # noqa: E741
             str_irrep = "+".join([f"1x{i}e+1x{i}o" for i in range(l + 1)])
             return o3.Irreps(str_irrep)
 
