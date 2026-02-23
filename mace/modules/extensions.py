@@ -2,14 +2,20 @@ from typing import Any, Dict, List, Optional, Type
 
 from e3nn import o3
 from e3nn.util.jit import compile_mode
-from graph_longrange.energy import GTOElectrostaticEnergy
-from graph_longrange.features import GTOElectrostaticFeatures
-from graph_longrange.gto_utils import (
-    DisplacedGTOExternalFieldBlock,
-    gto_basis_kspace_cutoff,
-)
-from graph_longrange.kspace import compute_k_vectors_flat
 import torch
+
+try:
+    from graph_longrange.energy import GTOElectrostaticEnergy
+    from graph_longrange.features import GTOElectrostaticFeatures
+    from graph_longrange.gto_utils import (
+        DisplacedGTOExternalFieldBlock,
+        gto_basis_kspace_cutoff,
+    )
+    from graph_longrange.kspace import compute_k_vectors_flat
+
+    GRAPH_LONGRANGE_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    GRAPH_LONGRANGE_AVAILABLE = False
 
 from mace.modules import InteractionBlock, NonLinearBiasReadoutBlock
 from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock
@@ -319,6 +325,11 @@ class PolarMACE(ScaleShiftMACE):
         field_readout_config: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
+        if not GRAPH_LONGRANGE_AVAILABLE:
+            raise ImportError(
+                "Cannot import 'graph_longrange'. Please install graph_electrostatics "
+                "from https://github.com/WillBaldwin0/graph_electrostatics."
+            )
         try:
             hidden_irreps: o3.Irreps = kwargs["hidden_irreps"]
             MLP_irreps_raw = kwargs["MLP_irreps"]
@@ -595,6 +606,11 @@ class PolarMACE(ScaleShiftMACE):
         fermi_level: Optional[torch.Tensor] = None,
         external_field: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
+        if not GRAPH_LONGRANGE_AVAILABLE:
+            raise ImportError(
+                "Cannot import 'graph_longrange'. Please install graph_electrostatics "
+                "from https://github.com/WillBaldwin0/graph_electrostatics."
+            )
         ctx = prepare_graph(
             data,
             compute_virials=compute_virials,
