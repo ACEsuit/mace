@@ -84,28 +84,62 @@ Reading Dipole and Charge Density
     # populate calc.results
     _ = atoms.get_potential_energy()
 
-    # total molecular dipole vector
-    mu = calc.results["dipole"]
+Energy and Forces
+~~~~~~~~~~~~~~~~~
 
-    # full atom-centered multipole coefficients
-    rho = calc.results["density_coefficients"]
+Energies and forces are accessed in the usual ASE way via ``atoms.get_potential_energy()``
+and ``atoms.get_forces()``.
 
-    # spin-up / spin-down multipole coefficients
-    rho_spin = calc.results["spin_charge_density"]
+Total Dipole
+~~~~~~~~~~~~
 
-    # atom-resolved monopole charges only
-    q = calc.results["charges"]
+.. code-block:: python
 
-Tensor shapes:
+    mu = calc.results["dipole"]  # shape (3,)
 
-- ``dipole``: ``(3,)``
-- ``charges``: ``(n_atoms,)``
-- ``density_coefficients``: ``(n_atoms, density_dim)``
-- ``spin_charge_density``: ``(n_atoms, 2, density_dim)``
-- ``density_dim = (atomic_multipoles_max_l + 1)^2``
+The total dipole is only a well-defined quantity for **non-periodic systems**. For periodic
+systems it is a meaningless value and should be ignored.
 
-For ``atomic_multipoles_max_l=0``, ``density_dim=1`` (monopoles only).
-For ``atomic_multipoles_max_l=1``, ``density_dim=4`` (monopole + dipole channels).
+Partial Charges and Partial Dipoles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+MACE-POLAR-1 stores atom-centered multipole coefficients as the final values of
+:math:`p^{lm}_i` (spherical multipoles, Condon–Shortley phase convention):
+
+.. code-block:: python
+
+    # full multipole array, shape (n_atoms, 4)
+    p = calc.results["density_coefficients"]
+
+    # atomic monopole charges
+    atomic_charges = p[:, 0]
+
+    # cartesian atomic dipoles (px, py, pz)
+    atomic_dipoles = p[:, [3, 1, 2]]
+
+.. note::
+
+    Partial charges and partial dipoles are **not uniquely defined** quantities. Furthermore,
+    sums of these quantities over clusters or molecules are also not well defined in general.
+    The only exception is summing over isolated fragments, where *isolated* means the fragment
+    does not come within approximately 6 Å of any other atom.
+
+Partial Spins
+~~~~~~~~~~~~~
+
+For models with spin support, a spin-resolved multipole array is also available:
+
+.. code-block:: python
+
+    # shape (n_atoms, 2, 4) — two spin channels, each with 4 multipole coefficients
+    p_spin = calc.results["spin_charge_density"]
+
+    # spin-up and spin-down atomic charges
+    charges_up   = p_spin[:, 0, 0]
+    charges_down = p_spin[:, 1, 0]
+
+The sum across the two spin channels (axis 1) recovers the total ``density_coefficients``
+array above.
 
 Fine-tuning from Polar Foundation Checkpoints
 ----------------------------------------------
