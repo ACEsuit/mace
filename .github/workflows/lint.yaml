@@ -22,6 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          uv pip install "torch>=1.12" --index-url https://download.pytorch.org/whl/cpu --system
           uv pip install .[dev] --system
 
       - name: Run prek
