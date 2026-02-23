@@ -46,13 +46,7 @@ jobs:
         run: |
           # Install CPU-only torch for CI speed
           uv pip install "torch>=1.12" --index-url https://download.pytorch.org/whl/cpu --system
-
-          # Handle numpy>=2 requirement for Python 3.13
-          if [ "${{ matrix.version.python }}" = "3.13" ]; then
-            uv pip install -e ".[test]" "numpy>=2" --resolution=${{ matrix.version.resolution }} --system
-          else
-            uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
-          fi
+          uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
 
       - name: Cache test durations
         uses: actions/cache@v4
