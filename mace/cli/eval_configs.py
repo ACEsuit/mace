@@ -186,7 +186,7 @@ def run(args: argparse.Namespace) -> None:
     stresses_list = []
     bec_list = []
     qs_list = []
-    forces_collection = []
+    forces_list = []
 
     for batch in data_loader:
         batch = batch.to(device)
@@ -249,7 +249,7 @@ def run(args: argparse.Namespace) -> None:
             descriptors_list.extend(descriptors[:-1])  # drop last as its empty
 
         if args.return_node_energies:
-            node_energies_list.append(
+            node_energies_list.extend(
                 np.split(
                     torch_tools.to_numpy(output["node_energy"]),
                     indices_or_sections=batch.ptr[1:],
@@ -264,12 +264,9 @@ def run(args: argparse.Namespace) -> None:
             indices_or_sections=batch.ptr[1:],
             axis=0,
         )
-        forces_collection.append(forces[:-1])  # drop last as its empty
+        forces_list.extend(forces[:-1])  # drop last as its empty
 
     energies = np.concatenate(energies_list, axis=0)
-    forces_list = [
-        forces for forces_list in forces_collection for forces in forces_list
-    ]
     assert len(atoms_list) == len(energies) == len(forces_list)
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)
@@ -283,13 +280,12 @@ def run(args: argparse.Namespace) -> None:
         contributions = np.concatenate(contributions_list, axis=0)
         assert len(atoms_list) == contributions.shape[0]
 
+    # no concatentation  - elements of list have non-uniform shapes (varying number of atoms)
     if args.return_descriptors:
-        # no concatentation  - elements of descriptors_list have non-uniform shapes
         assert len(atoms_list) == len(descriptors_list)
 
     if args.return_node_energies:
-        node_energies = np.concatenate(node_energies_list, axis=0)
-        assert len(atoms_list) == node_energies.shape[0]
+        assert len(atoms_list) == len(node_energies_list)
 
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
@@ -325,7 +321,7 @@ def run(args: argparse.Namespace) -> None:
                 atoms.arrays[args.info_prefix + "descriptors"] = np.array(descriptors)
 
         if args.return_node_energies:
-            atoms.arrays[args.info_prefix + "node_energies"] = node_energies[i]
+            atoms.arrays[args.info_prefix + "node_energies"] = node_energies_list[i]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
