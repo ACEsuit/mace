@@ -283,7 +283,7 @@ def run(args: argparse.Namespace) -> None:
         assert len(atoms_list) == contributions.shape[0]
 
     if args.return_descriptors:
-        # no concatentation  - elements of descriptors_list have non-uniform shapes
+        # no concatenation  - elements of descriptors_list have non-uniform shapes
         assert len(atoms_list) == len(descriptors_list)
 
     if args.return_node_energies:

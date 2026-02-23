@@ -182,7 +182,7 @@ def run(args) -> None:
         ):
             if args.multiheads_finetuning:
                 logging.warning(
-                    "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provied a path to a pretraining file with --pt_train_file."
+                    "Using multiheads finetuning with a foundation model that is not a Materials Project model, need to provide a path to a pretraining file with --pt_train_file."
                 )
             args.multiheads_finetuning = False
         if args.multiheads_finetuning:
@@ -1044,10 +1044,10 @@ def run(args) -> None:
                 logging.info("Merging LoRA weights into base model")
                 merge_lora_weights(model_to_save)
             if args.enable_cueq and not args.only_cueq:
-                logging.info("RUNING CUEQ TO E3NN")
+                logging.info("RUNNING CUEQ TO E3NN")
                 model_to_save = run_cueq_to_e3nn(deepcopy(model), device=device)
             if args.enable_oeq:
-                logging.info("RUNING OEQ TO E3NN")
+                logging.info("RUNNING OEQ TO E3NN")
                 model_to_save = run_oeq_to_e3nn(deepcopy(model), device=device)
             if args.save_cpu:
                 model_to_save = model_to_save.to("cpu")

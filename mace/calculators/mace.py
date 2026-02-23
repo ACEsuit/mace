@@ -457,7 +457,7 @@ class MACECalculator(Calculator):
                 if out.get(key) is not None:
                     val[i] = out[key].detach()
 
-        # covert from ret_tensors to calculator results dict
+        # convert from ret_tensors to calculator results dict
         self.results = {}
         scalar_tensors = set(["energy"])
         results_store_ensemble = set(["energy", "forces", "stress", "dipole"])

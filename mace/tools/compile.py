@@ -56,7 +56,7 @@ _SIMPLIFY_REGISTRY = set()
 def simplify_if_compile(module: nn.Module) -> nn.Module:
     """Decorator to register a module for symbolic simplification
 
-    The decorated module will be simplifed using `torch.fx.symbolic_trace`.
+    The decorated module will be simplified using `torch.fx.symbolic_trace`.
     This constrains the module to not have any dynamic control flow, see:
 
     https://pytorch.org/docs/stable/fx.html#limitations-of-symbolic-tracing

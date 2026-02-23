@@ -554,7 +554,7 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
             logging.info(
                 "Computing average Atomic Energies using least squares regression"
             )
-            # catch if colections.train not defined above
+            # catch if collections.train not defined above
             try:
                 assert train_collection is not None
                 atomic_energies_dict = data.compute_average_E0s(
@@ -562,7 +562,7 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                 )
             except Exception as e:
                 raise RuntimeError(
-                    f"Could not compute average E0s if no training xyz given, error {e} occured"
+                    f"Could not compute average E0s if no training xyz given, error {e} occurred"
                 ) from e
         elif E0s.endswith(".json"):
             logging.info(f"Loading atomic energies from {E0s}")
@@ -582,7 +582,9 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                     atomic_energies_dict = atomic_energies_eval
                 assert isinstance(atomic_energies_dict, dict)
             except Exception as e:
-                raise RuntimeError(f"E0s specified invalidly, error {e} occured") from e
+                raise RuntimeError(
+                    f"E0s specified invalidly, error {e} occurred"
+                ) from e
     else:
         raise RuntimeError(
             "E0s not found in training file and not specified in command line"
