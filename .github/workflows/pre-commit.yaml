@@ -1,9 +1,9 @@
-name: Pre-Commit Checks
+name: pre-commit
 
 on:
-  pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
+  pull_request:
 
 jobs:
   pre-commit:
@@ -13,16 +13,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
-      - name: Install requirements
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Run pre-commit
         run: |
-          pip install -U pip
-          pip install pylint
-          pip install -U black
-          pip install .[dev]
-          pip install wandb
-          pip install tqdm
-      - name: Run black
-        run: |
-          python -m black .
-      - uses: pre-commit/action@v3.0.0
+          uv pip install .[dev] --system
+          pre-commit run --all-files

@@ -1,0 +1,95 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pytest-general:
+    name: pytest-general (py${{ matrix.version.python }}, resolution ${{ matrix.version.resolution }}, group ${{ matrix.split-group }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        version:
+          - { python: '3.9', resolution: highest }
+          - { python: '3.12', resolution: highest }
+          - { python: '3.13', resolution: highest }
+          - { python: '3.13', resolution: lowest-direct }
+        split-group: [ 1, 2, 3, 4 ]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.version.python }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/lib/jvm /usr/share/dotnet /usr/share/swift /usr/local/.ghcup /usr/local/lib/android /usr/local/share/chromium /opt/microsoft /opt/google
+          df -h
+
+      - name: Install dependencies
+        run: |
+          # Install CPU-only torch for CI speed
+          uv pip install "torch>=1.12" --index-url https://download.pytorch.org/whl/cpu --system
+
+          # Handle numpy>=2 requirement for Python 3.13
+          if [ "${{ matrix.version.python }}" = "3.13" ]; then
+            uv pip install -e ".[test]" "numpy>=2" --resolution=${{ matrix.version.resolution }} --system
+          else
+            uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+          fi
+
+      - name: Cache test durations
+        uses: actions/cache@v4
+        with:
+          path: tests/.test_durations
+          key: test-durations-${{ github.run_id }}
+          restore-keys: |
+            test-durations-
+
+      - name: Run general unit tests
+        run: |
+          pytest -v tests \
+            --ignore=tests/test_cueq_oeq.py \
+            --splits 4 \
+            --group ${{ matrix.split-group }} \
+            --store-durations \
+            --durations-path=tests/.test_durations \
+            --cov=mace --cov-report=xml \
+            -n auto
+
+  pytest-cueq:
+    name: pytest-cueq (py3.10)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: |
+          uv pip install "torch>=1.12" --index-url https://download.pytorch.org/whl/cpu --system
+          uv pip install -e ".[test, cueq]" --system
+
+      - name: Run cueq-specific tests
+        run: |
+          pytest -v tests/test_cueq_oeq.py -k TestCueq
+          pytest -v tests/test_calculator.py
