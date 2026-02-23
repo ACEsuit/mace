@@ -35,13 +35,16 @@ class Batch(Data):
         self.__num_graphs__ = None
 
     @classmethod
-    def from_data_list(cls, data_list, follow_batch=[], exclude_keys=[]):
+    def from_data_list(cls, data_list, follow_batch=None, exclude_keys=None):
         r"""Constructs a batch object from a python list holding
         :class:`torch_geometric.data.Data` objects.
         The assignment vector :obj:`batch` is created on the fly.
         Additionally, creates assignment batch vectors for each key in
         :obj:`follow_batch`.
         Will exclude any keys given in :obj:`exclude_keys`."""
+
+        follow_batch = follow_batch or []
+        exclude_keys = exclude_keys or []
 
         keys = list(set(data_list[0].keys) - set(exclude_keys))
         assert "batch" not in keys and "ptr" not in keys
@@ -228,10 +231,10 @@ class Batch(Data):
     def __getitem__(self, idx):
         if isinstance(idx, str):
             return super().__getitem__(idx)
-        elif isinstance(idx, (int, np.integer)):
+        if isinstance(idx, (int, np.integer)):
             return self.get_example(idx)
-        else:
-            return self.index_select(idx)
+
+        return self.index_select(idx)
 
     def to_data_list(self) -> list[Data]:
         r"""Reconstructs the list of :class:`torch_geometric.data.Data` objects
@@ -245,9 +248,9 @@ class Batch(Data):
         """Returns the number of graphs in the batch."""
         if self.__num_graphs__ is not None:
             return self.__num_graphs__
-        elif self.ptr is not None:
+        if self.ptr is not None:
             return self.ptr.numel() - 1
-        elif self.batch is not None:
+        if self.batch is not None:
             return int(self.batch.max()) + 1
-        else:
-            raise ValueError
+
+        raise ValueError

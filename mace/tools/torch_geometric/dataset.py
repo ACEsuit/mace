@@ -82,10 +82,10 @@ class Dataset(torch.utils.data.Dataset):
         self.pre_filter = pre_filter
         self._indices: Optional[Sequence] = None
 
-        if "download" in self.__class__.__dict__.keys():
+        if "download" in self.__class__.__dict__:
             self._download()
 
-        if "process" in self.__class__.__dict__.keys():
+        if "process" in self.__class__.__dict__:
             self._process()
 
     def indices(self) -> Sequence:
@@ -202,8 +202,7 @@ class Dataset(torch.utils.data.Dataset):
             data = data if self.transform is None else self.transform(data)
             return data
 
-        else:
-            return self.index_select(idx)
+        return self.index_select(idx)
 
     def index_select(self, idx: IndexType) -> "Dataset":
         indices = self.indices()
@@ -236,7 +235,7 @@ class Dataset(torch.utils.data.Dataset):
             )
 
         dataset = copy.copy(self)
-        dataset._indices = indices
+        dataset._indices = indices  # pylint: disable=protected-access
         return dataset
 
     def shuffle(
@@ -262,17 +261,16 @@ class Dataset(torch.utils.data.Dataset):
 def to_list(value: Any) -> Sequence:
     if isinstance(value, Sequence) and not isinstance(value, str):
         return value
-    else:
-        return [value]
+    return [value]
 
 
 def files_exist(files: list[str]) -> bool:
     # NOTE: We return `False` in case `files` is empty, leading to a
     # re-processing of files on every instantiation.
-    return len(files) != 0 and all([osp.exists(f) for f in files])
+    return len(files) != 0 and all(osp.exists(f) for f in files)
 
 
 def _repr(obj: Any) -> str:
     if obj is None:
         return "None"
-    return re.sub("(<.*?)\\s.*(>)", r"\1\2", obj.__repr__())
+    return re.sub("(<.*?)\\s.*(>)", r"\1\2", repr(obj))

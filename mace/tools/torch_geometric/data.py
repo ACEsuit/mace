@@ -21,7 +21,7 @@ def size_repr(key, item, indent=0):
         out = item.item()
     elif torch.is_tensor(item):
         out = str(list(item.size()))
-    elif isinstance(item, list) or isinstance(item, tuple):
+    elif isinstance(item, (list, tuple)):
         out = str([len(item)])
     elif isinstance(item, dict):
         lines = [indent_str + size_repr(k, v, 2) for k, v in item.items()]
@@ -111,7 +111,7 @@ class Data:
         return data
 
     def to_dict(self):
-        return {key: item for key, item in self}
+        return dict(self)
 
     def to_namedtuple(self):
         keys = self.keys
@@ -133,7 +133,7 @@ class Data:
     @property
     def keys(self):
         r"""Returns all names of graph attributes."""
-        keys = [key for key in self.__dict__.keys() if self[key] is not None]
+        keys = [key for key in self.__dict__ if self[key] is not None]
         keys = [key for key in keys if key[:2] != "__" and key[-2:] != "__"]
         return keys
 
@@ -161,7 +161,7 @@ class Data:
             if key in self:
                 yield key, self[key]
 
-    def __cat_dim__(self, key, value):
+    def __cat_dim__(self, key, value):  # pylint: disable=unused-argument
         r"""Returns the dimension for which :obj:`value` of attribute
         :obj:`key` will get concatenated when creating batches.
 
@@ -175,7 +175,7 @@ class Data:
             return -1
         return 0
 
-    def __inc__(self, key, value):
+    def __inc__(self, key, value):  # pylint: disable=unused-argument
         r"""Returns the incremental count to cumulatively increase the value
         of the next attribute of :obj:`key` when creating batches.
 
@@ -268,12 +268,11 @@ class Data:
     def __apply__(self, item, func):
         if torch.is_tensor(item):
             return func(item)
-        elif isinstance(item, (tuple, list)):
+        if isinstance(item, (tuple, list)):
             return [self.__apply__(v, func) for v in item]
-        elif isinstance(item, dict):
+        if isinstance(item, dict):
             return {k: self.__apply__(v, func) for k, v in item.items()}
-        else:
-            return item
+        return item
 
     def apply(self, func, *keys):
         r"""Applies the function :obj:`func` to all tensor attributes
@@ -303,7 +302,7 @@ class Data:
         attributes."""
         return self.apply(lambda x: x.cpu(), *keys)
 
-    def cuda(self, device=None, non_blocking=False, *keys):
+    def cuda(self, device=None, non_blocking=False, *keys):  # pylint: disable=keyword-arg-before-vararg
         r"""Copies all attributes :obj:`*keys` to CUDA memory.
         If :obj:`*keys` is not given, the conversion is applied to all present
         attributes."""
@@ -409,11 +408,11 @@ class Data:
 
     def __repr__(self):
         cls = str(self.__class__.__name__)
-        has_dict = any([isinstance(item, dict) for _, item in self])
+        has_dict = any(isinstance(item, dict) for _, item in self)
 
         if not has_dict:
-            info = [size_repr(key, item) for key, item in self]
-            return "{}({})".format(cls, ", ".join(info))
-        else:
-            info = [size_repr(key, item, indent=2) for key, item in self]
-            return "{}(\n{}\n)".format(cls, ",\n".join(info))
+            info = ", ".join([size_repr(key, item) for key, item in self])
+            return f"{cls}({info})"
+
+        info = ",\n".join([size_repr(key, item, indent=2) for key, item in self])
+        return f"{cls}(\n{info}\n)"

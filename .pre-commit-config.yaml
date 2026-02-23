@@ -70,6 +70,7 @@ repos:
           '--disable=cell-var-from-loop',
           '--disable=duplicate-code',
           '--disable=use-dict-literal',
+          '--disable=too-many-return-statements',
           '--max-module-lines=1500',
         ]
         exclude: *exclude_files
