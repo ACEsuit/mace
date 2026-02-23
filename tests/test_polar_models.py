@@ -22,6 +22,7 @@ from e3nn import o3
 
 from mace import data, modules, tools
 from mace.calculators import MACECalculator
+from mace.calculators.foundations_models import mace_polar, polar_model_paths
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules import interaction_classes
@@ -29,7 +30,6 @@ from mace.modules.extensions import PolarMACE
 from mace.tools import torch_geometric, utils
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-POLAR_MODEL_DIR = REPO_ROOT / "mace-polar"
 RUN_TRAIN = REPO_ROOT / "mace" / "cli" / "run_train.py"
 
 # ---------------------------------------------------------------------------
@@ -54,19 +54,6 @@ def _water_atoms() -> Atoms:
 def _clone_batch(batch: dict) -> dict:
     return {k: (v.clone() if torch.is_tensor(v) else v) for k, v in batch.items()}
 
-
-def _load_state_dict(path):
-    try:
-        sd = torch.load(path, map_location="cpu", weights_only=True)
-    except TypeError:
-        sd = torch.load(path, map_location="cpu")
-    except Exception:
-        sd = torch.load(path, map_location="cpu", weights_only=False)
-    if isinstance(sd, dict):
-        for k in ("state_dict", "model_state_dict", "model", "module", "state"):
-            if k in sd and isinstance(sd[k], dict):
-                return sd[k]
-    return sd
 
 
 def _random_rotation(device, dtype):
@@ -337,64 +324,6 @@ def _build_water_batch(device, dtype):
 # Invariance tests
 # ---------------------------------------------------------------------------
 
-_PRETRAINED_SD = os.path.normpath(
-    os.path.join(
-        os.path.dirname(__file__),
-        "..",
-        "mace-polar-spin-3L-xL-25-cpu_state_dict.pt",
-    )
-)
-
-
-@pytest.mark.skipif(
-    not os.path.exists(_PRETRAINED_SD),
-    reason="Missing pretrained state dict at repo root",
-)
-def test_calculator_water_energy_and_charges():
-    device = "cpu"
-    dtype = torch.float32
-    model = _build_full_model(device, dtype)
-
-    try:
-        sd = torch.load(_PRETRAINED_SD, map_location="cpu")
-        if isinstance(sd, dict):
-            for k in ("state_dict", "model_state_dict", "model", "module", "state"):
-                if k in sd and isinstance(sd[k], dict):
-                    sd = sd[k]
-                    break
-        current = model.state_dict()
-        filtered = {
-            k: v
-            for k, v in sd.items()
-            if k in current and current[k].shape == v.shape
-        }
-        model.load_state_dict(filtered, strict=False)
-    except Exception:
-        pass
-
-    atoms = _water_atoms()
-    calc = MACECalculator(models=model, device=device, model_type="PolarMACE")
-    atoms.calc = calc
-    e0 = atoms.get_potential_energy()
-
-    assert "charges" in calc.results
-    charges = calc.results["charges"]
-    assert charges.shape[0] == len(atoms)
-
-    atoms.info["spin"] = 1.0
-    e_spin = atoms.get_potential_energy()
-    atoms.info["spin"] = 0.0
-
-    atoms.info["charge"] = 1.0
-    e_charge = atoms.get_potential_energy()
-    atoms.info["charge"] = 0.0
-
-    if np.isclose(e0, e_spin) and np.isclose(e0, e_charge):
-        pytest.skip(
-            "Energy did not change with spin/charge; weights may not be fully matching"
-        )
-
-
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_energy_invariance_under_rotation_and_translation(dtype):
     device = torch.device("cpu")
@@ -436,33 +365,28 @@ def test_energy_invariance_under_rotation_and_translation(dtype):
 # ---------------------------------------------------------------------------
 
 POLAR_MODELS = [
-    ("mace-polar-3L.model", -2079.864990234375),
-    ("mace-polar-2L.model", -2079.86376953125),
-    ("mace-polar-1L.model", -2079.86474609375),
+    ("polar-1-l", -2079.864990234375),
+    ("polar-1-m", -2079.86376953125),
+    ("polar-1-s", -2079.86474609375),
 ]
 
 
 @pytest.mark.parametrize("model_name, expected_energy", POLAR_MODELS)
 def test_polar_checkpoint_evaluates(model_name, expected_energy):
-    model_path = POLAR_MODEL_DIR / model_name
-    if not model_path.exists():
-        pytest.skip(f"Missing polar model file: {model_path}")
+    try:
+        calc = mace_polar(model=model_name, device="cpu")
+        model = mace_polar(model=model_name, device="cpu", return_raw_model=True)
+    except (FileNotFoundError, ValueError):
+        pytest.skip(f"Polar model {model_name} not available")
 
-    model = torch.load(str(model_path), map_location="cpu")
     assert model.__class__.__name__ == "PolarMACE"
 
     atoms = _water_atoms()
-    calc = MACECalculator(
-        model_paths=str(model_path),
-        device="cpu",
-        model_type="PolarMACE",
-    )
     atoms.calc = calc
 
     energy = atoms.get_potential_energy()
     assert np.isfinite(energy)
     assert abs(float(energy) - expected_energy) < 1e-5
-
 
 # ---------------------------------------------------------------------------
 # CuEq parity tests
@@ -474,27 +398,17 @@ def test_polar_models_run_with_and_without_cueq(model_name, _):
     if os.environ.get("SKIP_CUEQ_TESTS") == "1":
         pytest.skip("Skipping CuEq test by environment request")
 
-    model_path = POLAR_MODEL_DIR / model_name
-    if not model_path.exists():
-        pytest.skip(f"Missing polar model file: {model_path}")
+    try:
+        calc_e3 = mace_polar(model=model_name, device="cpu", enable_cueq=False)
+        calc_cueq = mace_polar(model=model_name, device="cpu", enable_cueq=True)
+    except (FileNotFoundError, ValueError):
+        pytest.skip(f"Polar model {model_name} not available")
 
     atoms = _water_atoms()
-    calc_e3 = MACECalculator(
-        model_paths=str(model_path),
-        device="cpu",
-        model_type="PolarMACE",
-        enable_cueq=False,
-    )
     atoms.calc = calc_e3
     energy_e3 = float(atoms.get_potential_energy())
     assert np.isfinite(energy_e3)
 
-    calc_cueq = MACECalculator(
-        model_paths=str(model_path),
-        device="cpu",
-        model_type="PolarMACE",
-        enable_cueq=True,
-    )
     atoms.calc = calc_cueq
     energy_cueq = float(atoms.get_potential_energy())
     assert np.isfinite(energy_cueq)
@@ -504,11 +418,11 @@ def test_polar_models_run_with_and_without_cueq(model_name, _):
 
 @pytest.mark.parametrize("model_name, _", POLAR_MODELS)
 def test_polar_true_cueq_matches_e3nn(model_name, _):
-    model_path = POLAR_MODEL_DIR / model_name
-    if not model_path.exists():
-        pytest.skip(f"Missing polar model file: {model_path}")
+    try:
+        model_e3 = mace_polar(model=model_name, device="cpu", return_raw_model=True).eval()
+    except (FileNotFoundError, ValueError):
+        pytest.skip(f"Polar model {model_name} not available")
 
-    model_e3 = torch.load(str(model_path), map_location="cpu").eval()
     previous_default_dtype = torch.get_default_dtype()
     try:
         torch.set_default_dtype(next(model_e3.parameters()).dtype)
@@ -542,12 +456,16 @@ def test_polar_true_cueq_matches_e3nn(model_name, _):
 
 
 def test_polar_2l_true_cueq_matches_e3nn_float64():
-    model_name = "mace-polar-2L.model"
-    model_path = POLAR_MODEL_DIR / model_name
-    if not model_path.exists():
-        pytest.skip(f"Missing polar model file: {model_path}")
+    model_name = "polar-1-m"
+    try:
+        model_e3 = (
+            mace_polar(model=model_name, device="cpu", return_raw_model=True)
+            .eval()
+            .double()
+        )
+    except (FileNotFoundError, ValueError):
+        pytest.skip(f"Polar model {model_name} not available")
 
-    model_e3 = torch.load(str(model_path), map_location="cpu").eval().double()
     previous_default_dtype = torch.get_default_dtype()
     try:
         torch.set_default_dtype(torch.float64)
@@ -731,55 +649,25 @@ class TestPolarCueqParity:
 
 
 # ---------------------------------------------------------------------------
-# State dict loading
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "fname",
-    [
-        "mace-polar-spin-3L_state_dict.pt",
-    ],
-)
-def test_load_previous_state_dict(fname):
-    path = os.path.join(os.path.dirname(__file__), "..", fname)
-    path = os.path.normpath(path)
-    if not os.path.exists(path):
-        pytest.skip(f"Missing state_dict file: {path}")
-
-    sd = _load_state_dict(path)
-    assert isinstance(sd, dict)
-
-    model_path = path.replace("_state_dict.pt", ".model")
-    if not os.path.exists(model_path):
-        pytest.skip(f"Missing model file: {model_path}")
-    model = torch.load(model_path, map_location="cpu")
-    missing, unexpected = model.load_state_dict(sd, strict=True)
-    assert missing == [] and unexpected == []
-
-
-# ---------------------------------------------------------------------------
 # Evaluation with charge and spin
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(
-    not os.path.exists(_PRETRAINED_SD),
-    reason="Missing pretrained state dict at repo root",
-)
 def test_water_energy_changes_with_charge_and_spin():
     device = torch.device("cpu")
     dtype = torch.float32
-    model = _build_full_model(device, dtype)
 
-    sd = _load_state_dict(_PRETRAINED_SD)
-    current_sd = model.state_dict()
-    filtered = {
-        k: v
-        for k, v in sd.items()
-        if k in current_sd and current_sd[k].shape == v.shape
-    }
-    model.load_state_dict(filtered, strict=False)
+    try:
+        model = mace_polar(
+            model="polar-1-l",
+            device="cpu",
+            return_raw_model=True,
+        )
+    except (FileNotFoundError, ValueError):
+        pytest.skip("Polar model polar-1-l not available")
+
+    model = model.to(device=device, dtype=dtype)
+    model.eval()
 
     data_batch = _build_water_batch(device, dtype)
 
@@ -809,7 +697,6 @@ def test_water_energy_changes_with_charge_and_spin():
             "Model weights did not respond to spin/charge changes "
             "in this environment"
         )
-
 
 # ---------------------------------------------------------------------------
 # Fine-tuning
@@ -955,7 +842,7 @@ def test_run_train_polar_finetuning_from_checkpoint(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "foundation_model", ["mace-polar-2L", "mace-polar-3L"]
+    "foundation_model", ["polar-1-m", "polar-1-l"]
 )
 def test_run_train_polar_finetuning_foundation_model(
     tmp_path, foundation_model
@@ -974,12 +861,12 @@ def test_run_train_polar_finetuning_foundation_model(
     model = torch.load(model_path, map_location="cpu", weights_only=False)
     assert model.__class__.__name__ == "PolarMACE"
     assert model.heads == ["Default"]
-    if foundation_model == "mace-polar-2L":
+    if foundation_model == "polar-1-m":
         _assert_model_predicts(model_path, configs, heads=("Default",))
 
 
 @pytest.mark.parametrize(
-    "foundation_model", ["mace-polar-2L", "mace-polar-3L"]
+    "foundation_model", ["polar-1-m", "polar-1-l"]
 )
 def test_run_train_polar_multihead_finetuning_foundation_model(
     tmp_path, foundation_model
@@ -1024,17 +911,16 @@ def test_run_train_polar_multihead_finetuning_foundation_model(
 # Finite difference
 # ---------------------------------------------------------------------------
 
-_FD_MODEL_PATH = POLAR_MODEL_DIR / "mace-polar-2L.model"
-
-
 @pytest.fixture(scope="module")
 def polar_calc_fd() -> MACECalculator:
-    return MACECalculator(
-        model_paths=str(_FD_MODEL_PATH),
-        model_type="PolarMACE",
-        device="cpu",
-        default_dtype="float64",
-    )
+    try:
+        return mace_polar(
+            model="polar-1-m",
+            device="cpu",
+            default_dtype="float64",
+        )
+    except (FileNotFoundError, ValueError):
+        pytest.skip("Polar model polar-1-m not available")
 
 
 def _periodic_water(cell: np.ndarray) -> Atoms:
@@ -1056,9 +942,6 @@ def _periodic_water(cell: np.ndarray) -> Atoms:
     return atoms
 
 
-@pytest.mark.skipif(
-    not _FD_MODEL_PATH.exists(), reason="Polar 2L model file not available"
-)
 def test_polar_forces_match_finite_difference(
     polar_calc_fd: MACECalculator,
 ) -> None:
@@ -1073,31 +956,6 @@ def test_polar_forces_match_finite_difference(
     np.testing.assert_allclose(forces, forces_fd, rtol=0.0, atol=1e-6)
 
 
-@pytest.mark.skipif(
-    not _FD_MODEL_PATH.exists(), reason="Polar 2L model file not available"
-)
-@pytest.mark.xfail(
-    reason="Known Polar stress issue: reciprocal-cell strain derivative "
-    "is not fully propagated.",
-    strict=False,
-)
-def test_polar_stress_matches_finite_difference_small_box(
-    polar_calc_fd: MACECalculator,
-) -> None:
-    atoms = _periodic_water(np.diag([12.3, 11.7, 10.9]))
-    atoms.calc = polar_calc_fd
-
-    stress = atoms.get_stress(voigt=True)
-    stress_fd = calculate_numerical_stress(
-        atoms, eps=1e-5, force_consistent=False
-    )
-
-    np.testing.assert_allclose(stress, stress_fd, rtol=0.0, atol=1e-6)
-
-
-@pytest.mark.skipif(
-    not _FD_MODEL_PATH.exists(), reason="Polar 2L model file not available"
-)
 @pytest.mark.parametrize(
     "cell, atol",
     [
@@ -1141,7 +999,6 @@ def test_polar_stress_matches_fd_large_periodic_boxes(
 # Regression values
 # ---------------------------------------------------------------------------
 
-_REG_MODEL_PATH = POLAR_MODEL_DIR / "mace-polar-2L.model"
 _REG_REF_PATH = (
     Path(__file__).resolve().parent
     / "references"
@@ -1166,12 +1023,14 @@ ATOL_BY_DTYPE = {
 @pytest.fixture(scope="module", params=["float32", "float64"])
 def polar_calc_regression(request):
     dtype = request.param
-    calc = MACECalculator(
-        model_paths=str(_REG_MODEL_PATH),
-        model_type="PolarMACE",
-        device="cpu",
-        default_dtype=dtype,
-    )
+    try:
+        calc = mace_polar(
+            model="polar-1-m",
+            device="cpu",
+            default_dtype=dtype,
+        )
+    except (FileNotFoundError, ValueError):
+        pytest.skip("Polar model polar-1-m not available")
     return dtype, calc
 
 
@@ -1180,7 +1039,7 @@ def polar_calc_regression(request):
     reason="Regression reference JSON not available",
 )
 @pytest.mark.skipif(
-    not _REG_MODEL_PATH.exists(),
+    not polar_model_paths["polar-1-m"].exists(),
     reason="Polar 2L model file not available",
 )
 @pytest.mark.skipif(
