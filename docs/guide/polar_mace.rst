@@ -4,7 +4,17 @@
 Electrostatic MACE
 ===================
 
-PolarMACE is the electrostatic, spin-aware MACE variant for the Polar checkpoints (``1L``, ``2L``, ``3L``).
+We introduce **MACE-POLAR-1**, a new family of foundation models that extends the MACE architecture
+with explicit long-range electrostatics. MACE-POLAR-1 augments local atomic energies with a
+non-self-consistent polarisable field formalism, learning atomic charge and spin densities —
+represented as multipole expansions in a Gaussian-type orbital basis — directly from energy and
+force labels alone. Global charge and spin constraints are enforced through learnable Fukui
+equilibration functions, enabling the model to handle arbitrary charge and spin states and respond
+to external electric fields, while providing physically interpretable spin-resolved charge densities.
+
+The models are trained on the OMol25 dataset comprising 100 million structures at the ωB97M-V
+hybrid DFT level of theory. Two variants are available: **MACE-POLAR-1-M** (medium, 12 Å receptive
+field) and **MACE-POLAR-1-L** (large, 18 Å receptive field).
 
 .. figure:: polar_mace_summary.png
    :alt: PolarMACE architecture and capabilities overview
@@ -38,20 +48,21 @@ Install MACE and the electrostatics dependency:
 Available Checkpoints
 ---------------------
 
-- ``mace-polar-spin-1L.model``
-- ``mace-polar-spin-2L.model``
-- ``mace-polar-spin-3L.model``
+- ``polar-1-s`` — small
+- ``polar-1-m`` — medium
+- ``polar-1-l`` — large
 
 Basic Inference
 ---------------
 
+Use the dedicated ``mace_polar`` loader, which handles model type and path resolution automatically:
+
 .. code-block:: python
 
-    from mace.calculators import MACECalculator
+    from mace.calculators import mace_polar
 
-    calc = MACECalculator(
-        model_paths="mace-polar-spin-2L.model",
-        model_type="PolarMACE",
+    calc = mace_polar(
+        model="polar-1-m",
         device="cpu",           # or "cuda"
         default_dtype="float64" # use float32 for faster MD
     )
@@ -99,15 +110,15 @@ For ``atomic_multipoles_max_l=1``, ``density_dim=4`` (monopole + dipole channels
 Fine-tuning from Polar Foundation Checkpoints
 ----------------------------------------------
 
-Use ``--foundation_model="mace-polar-2L"`` or ``--foundation_model="mace-polar-3L"``
+Use ``--foundation_model="polar-1-m"`` or ``--foundation_model="polar-1-l"``
 with ``--model="PolarMACE"`` in ``mace_run_train``.
 
 .. code-block:: bash
 
     mace_run_train \
-      --name="polar_ft_2L" \
+      --name="polar_ft_1m" \
       --model="PolarMACE" \
-      --foundation_model="mace-polar-2L" \
+      --foundation_model="polar-1-m" \
       --train_file="train.xyz" \
       --valid_fraction=0.05 \
       --energy_key="REF_energy" \
