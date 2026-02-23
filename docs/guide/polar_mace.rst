@@ -1,8 +1,8 @@
 .. _polar_mace:
 
-===========
-PolarMACE
-===========
+===================
+Electrostatic MACE
+===================
 
 PolarMACE is the electrostatic, spin-aware MACE variant for the Polar checkpoints (``1L``, ``2L``, ``3L``).
 
