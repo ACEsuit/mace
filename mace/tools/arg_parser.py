@@ -6,7 +6,7 @@
 
 import argparse
 import os
-from typing import Dict, Optional
+from typing import Optional
 
 from .default_keys import DefaultKeys
 
@@ -1203,7 +1203,7 @@ def str2bool(value):
     raise argparse.ArgumentTypeError("Boolean value expected.")
 
 
-def read_yaml(value: str) -> Dict:
+def read_yaml(value: str) -> dict:
     from pathlib import Path
 
     import yaml

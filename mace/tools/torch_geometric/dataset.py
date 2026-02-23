@@ -3,7 +3,7 @@ import os.path as osp
 import re
 import warnings
 from collections.abc import Sequence
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 import numpy as np
 import torch.utils.data
@@ -38,13 +38,13 @@ class Dataset(torch.utils.data.Dataset):
     """
 
     @property
-    def raw_file_names(self) -> Union[str, List[str], Tuple]:
+    def raw_file_names(self) -> Union[str, list[str], tuple]:
         r"""The name of the files to find in the :obj:`self.raw_dir` folder in
         order to skip the download."""
         raise NotImplementedError
 
     @property
-    def processed_file_names(self) -> Union[str, List[str], Tuple]:
+    def processed_file_names(self) -> Union[str, list[str], tuple]:
         r"""The name of the files to find in the :obj:`self.processed_dir`
         folder in order to skip the processing."""
         raise NotImplementedError
@@ -125,13 +125,13 @@ class Dataset(torch.utils.data.Dataset):
         )
 
     @property
-    def raw_paths(self) -> List[str]:
+    def raw_paths(self) -> list[str]:
         r"""The filepaths to find in order to skip the download."""
         files = to_list(self.raw_file_names)
         return [osp.join(self.raw_dir, f) for f in files]
 
     @property
-    def processed_paths(self) -> List[str]:
+    def processed_paths(self) -> list[str]:
         r"""The filepaths to find in the :obj:`self.processed_dir`
         folder in order to skip the processing."""
         files = to_list(self.processed_file_names)
@@ -242,7 +242,7 @@ class Dataset(torch.utils.data.Dataset):
     def shuffle(
         self,
         return_perm: bool = False,
-    ) -> Union["Dataset", Tuple["Dataset", Tensor]]:
+    ) -> Union["Dataset", tuple["Dataset", Tensor]]:
         r"""Randomly shuffles the examples in the dataset.
 
         Args:
@@ -266,7 +266,7 @@ def to_list(value: Any) -> Sequence:
         return [value]
 
 
-def files_exist(files: List[str]) -> bool:
+def files_exist(files: list[str]) -> bool:
     # NOTE: We return `False` in case `files` is empty, leading to a
     # re-processing of files on every instantiation.
     return len(files) != 0 and all([osp.exists(f) for f in files])

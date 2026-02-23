@@ -5,7 +5,7 @@
 ###########################################################################################
 
 from abc import abstractmethod
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 import numpy as np
 import torch.nn.functional
@@ -466,7 +466,7 @@ class InteractionBlock(torch.nn.Module):
         hidden_irreps: o3.Irreps,
         avg_num_neighbors: float,
         edge_irreps: Optional[o3.Irreps] = None,
-        radial_MLP: Optional[List[int]] = None,
+        radial_MLP: Optional[list[int]] = None,
         cueq_config: Optional[CuEquivarianceConfig] = None,
         oeq_config: Optional[OEQConfig] = None,
     ) -> None:
@@ -500,7 +500,7 @@ class InteractionBlock(torch.nn.Module):
         self,
         node_feats: torch.Tensor,
         lammps_class: Optional[Any],
-        lammps_natoms: Tuple[int, int],
+        lammps_natoms: tuple[int, int],
         first_layer: bool,
     ) -> torch.Tensor:  # noqa: D401 – internal helper
         if lammps_class is None or first_layer or torch.jit.is_scripting():
@@ -611,10 +611,10 @@ class RealAgnosticInteractionBlock(InteractionBlock):
         edge_feats: torch.Tensor,
         edge_index: torch.Tensor,
         cutoff: Optional[torch.Tensor] = None,
-        lammps_natoms: Tuple[int, int] = (0, 0),
+        lammps_natoms: tuple[int, int] = (0, 0),
         lammps_class: Optional[Any] = None,
         first_layer: bool = False,
-    ) -> Tuple[torch.Tensor, None]:
+    ) -> tuple[torch.Tensor, None]:
         n_real = lammps_natoms[0] if lammps_class is not None else None
         node_feats = self.linear_up(node_feats)
         node_feats = self.handle_lammps(
@@ -715,9 +715,9 @@ class RealAgnosticResidualInteractionBlock(InteractionBlock):
         edge_index: torch.Tensor,
         cutoff: Optional[torch.Tensor] = None,
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Tuple[int, int] = (0, 0),
+        lammps_natoms: tuple[int, int] = (0, 0),
         first_layer: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         n_real = lammps_natoms[0] if lammps_class is not None else None
         sc = self.skip_tp(node_feats, node_attrs)
         node_feats = self.linear_up(node_feats)
@@ -828,9 +828,9 @@ class RealAgnosticDensityInteractionBlock(InteractionBlock):
         edge_index: torch.Tensor,
         cutoff: Optional[torch.Tensor] = None,
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Tuple[int, int] = (0, 0),
+        lammps_natoms: tuple[int, int] = (0, 0),
         first_layer: bool = False,
-    ) -> Tuple[torch.Tensor, None]:
+    ) -> tuple[torch.Tensor, None]:
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
@@ -950,9 +950,9 @@ class RealAgnosticDensityResidualInteractionBlock(InteractionBlock):
         edge_index: torch.Tensor,
         cutoff: Optional[torch.Tensor] = None,
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Tuple[int, int] = (0, 0),
+        lammps_natoms: tuple[int, int] = (0, 0),
         first_layer: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         receiver = edge_index[1]
         num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
@@ -1073,9 +1073,9 @@ class RealAgnosticAttResidualInteractionBlock(InteractionBlock):
         edge_index: torch.Tensor,
         cutoff: Optional[torch.Tensor] = None,
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Tuple[int, int] = (0, 0),
+        lammps_natoms: tuple[int, int] = (0, 0),
         first_layer: bool = False,
-    ) -> Tuple[torch.Tensor, None]:
+    ) -> tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
         n_real = lammps_natoms[0] if lammps_class is not None else None
@@ -1258,9 +1258,9 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
         edge_index: torch.Tensor,
         cutoff: Optional[torch.Tensor] = None,
         lammps_class: Optional[Any] = None,
-        lammps_natoms: Tuple[int, int] = (0, 0),
+        lammps_natoms: tuple[int, int] = (0, 0),
         first_layer: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         num_nodes = node_feats.shape[0]
         n_real = lammps_natoms[0] if lammps_class is not None else None
         sc = self.skip_tp(node_feats)

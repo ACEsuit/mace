@@ -4,7 +4,7 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 
 import dataclasses
 import types
-from typing import List, Optional
+from typing import Optional
 
 import torch
 from e3nn import o3
@@ -159,7 +159,7 @@ class TensorProduct:
         irreps_in1: o3.Irreps,
         irreps_in2: o3.Irreps,
         irreps_out: o3.Irreps,
-        instructions: Optional[List] = None,
+        instructions: Optional[list] = None,
         shared_weights: bool = False,
         internal_weights: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,

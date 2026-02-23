@@ -94,7 +94,7 @@ def test_preprocess_data(tmp_path, sample_configs):
     # Example of checking statistics file content:
     import json
 
-    with open(tmp_path / "preprocessed_statistics.json", "r", encoding="utf-8") as f:
+    with open(tmp_path / "preprocessed_statistics.json", encoding="utf-8") as f:
         statistics = json.load(f)
     assert "atomic_energies" in statistics
     assert "avg_num_neighbors" in statistics

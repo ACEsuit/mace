@@ -10,7 +10,6 @@ import os
 import random
 from functools import partial
 from glob import glob
-from typing import List, Tuple
 
 import h5py
 import numpy as np
@@ -29,7 +28,7 @@ def compute_stats_target(
     file: str,
     z_table: AtomicNumberTable,
     r_max: float,
-    atomic_energies: Tuple,
+    atomic_energies: tuple,
     batch_size: int,
 ):
     train_dataset = data.HDF5Dataset(file, z_table=z_table, r_max=r_max)
@@ -45,7 +44,7 @@ def compute_stats_target(
     return output
 
 
-def pool_compute_stats(inputs: List):
+def pool_compute_stats(inputs: list):
     path_to_files, z_table, r_max, atomic_energies, batch_size, num_process = inputs
 
     with mp.Pool(processes=num_process) as pool:

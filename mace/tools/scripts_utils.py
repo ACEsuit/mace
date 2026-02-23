@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch
@@ -28,7 +28,7 @@ from mace.tools.train import SWAContainer
 class SubsetCollection:
     train: data.Configurations
     valid: data.Configurations
-    tests: List[Tuple[str, data.Configurations]]
+    tests: list[tuple[str, data.Configurations]]
 
 
 def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> None:
@@ -44,18 +44,18 @@ def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> Non
 
 def get_dataset_from_xyz(
     work_dir: str,
-    train_path: Union[str, List[str]],
-    valid_path: Optional[Union[str, List[str]]],
+    train_path: Union[str, list[str]],
+    valid_path: Optional[Union[str, list[str]]],
     valid_fraction: float,
     key_specification: KeySpecification,
-    config_type_weights: Optional[Dict] = None,
-    test_path: Optional[Union[str, List[str]]] = None,
+    config_type_weights: Optional[dict] = None,
+    test_path: Optional[Union[str, list[str]]] = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
     no_data_ok: bool = False,
     prefix: Optional[str] = None,
-) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
+) -> tuple[SubsetCollection, Optional[dict[int, float]]]:
     """
     Load training, validation, and test datasets from xyz files.
 
@@ -224,7 +224,7 @@ def print_git_commit():
         return "None"
 
 
-def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
+def extract_config_mace_model(model: torch.nn.Module) -> dict[str, Any]:
     if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES"]:
         return {"error": "Model is not a ScaleShiftMACE or MACELES model"}
 
@@ -336,7 +336,7 @@ def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     )
 
 
-def extract_radial_MLP(model: torch.nn.Module) -> List[int]:
+def extract_radial_MLP(model: torch.nn.Module) -> list[int]:
     try:
         return model.interactions[0].conv_tp_weights.hs[1:-1]
     except AttributeError:
@@ -692,7 +692,7 @@ def get_swa(
     args: argparse.Namespace,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
-    swas: List[bool],
+    swas: list[bool],
     dipole_only: bool = False,
 ):
     assert dipole_only is False, "Stage Two for dipole fitting not implemented"
@@ -780,7 +780,7 @@ def freeze_module(module: torch.nn.Module, freeze: bool = True):
 
 def get_params_options(
     args: argparse.Namespace, model: torch.nn.Module
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     decay_interactions = {}
     no_decay_interactions = {}
     for name, param in model.interactions.named_parameters():
@@ -874,7 +874,7 @@ def get_params_options(
 
 
 def get_optimizer(
-    args: argparse.Namespace, param_options: Dict[str, Any]
+    args: argparse.Namespace, param_options: dict[str, Any]
 ) -> torch.optim.Optimizer:
     if args.optimizer == "adamw":
         optimizer = torch.optim.AdamW(**param_options)
@@ -925,7 +925,7 @@ def setup_wandb(args: argparse.Namespace):
     wandb.run.summary["params"] = args_dict_json
 
 
-def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
+def get_files_with_suffix(dir_path: str, suffix: str) -> list[str]:
     return [
         os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(suffix)
     ]

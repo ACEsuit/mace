@@ -11,7 +11,7 @@ import logging
 import os
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import torch.distributed
 from e3nn.util import jit
@@ -242,7 +242,7 @@ def run(args) -> None:
         head_keyspec = head_dict["key_specification"]
         logging.info(f"{name}: {head_keyspec}")
 
-    head_configs: List[HeadConfig] = []
+    head_configs: list[HeadConfig] = []
     for head, head_args in args.heads.items():
         logging.info(f"=============    Processing head {head}     ===========")
         head_config = dict_head_to_dataclass(head_args, head, args)

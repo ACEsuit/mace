@@ -5,7 +5,6 @@
 ###########################################################################################
 
 import argparse
-from typing import Dict
 
 import ase.data
 import ase.io
@@ -113,10 +112,10 @@ def parse_args() -> argparse.Namespace:
 
 def get_model_output(
     model: torch.nn.Module,
-    batch: Dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
     compute_stress: bool,
     compute_bec: bool,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     forward_args = {
         "compute_stress": compute_stress,
     }

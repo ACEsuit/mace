@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from typing import List, Optional
+from typing import Optional
 
 import torch.utils.data
 from torch.utils.data.dataloader import default_collate
@@ -67,8 +67,8 @@ class DataLoader(torch.utils.data.DataLoader):
         dataset: Dataset,
         batch_size: int = 1,
         shuffle: bool = False,
-        follow_batch: Optional[List[str]] = [None],
-        exclude_keys: Optional[List[str]] = [None],
+        follow_batch: Optional[list[str]] = [None],
+        exclude_keys: Optional[list[str]] = [None],
         **kwargs,
     ):
         if "collate_fn" in kwargs:

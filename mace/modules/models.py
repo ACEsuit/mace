@@ -4,7 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Optional, Union
 
 import numpy as np
 import torch
@@ -50,16 +50,16 @@ class MACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         atomic_energies: np.ndarray,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
-        correlation: Union[int, List[int]],
+        atomic_numbers: list[int],
+        correlation: Union[int, list[int]],
         gate: Optional[Callable],
         pair_repulsion: bool = False,
         apply_cutoff: bool = True,
@@ -71,14 +71,14 @@ class MACE(torch.nn.Module):
         distance_transform: str = "None",
         edge_irreps: Optional[o3.Irreps] = None,
         use_edge_irreps_first: bool = False,
-        radial_MLP: Optional[List[int]] = None,
+        radial_MLP: Optional[list[int]] = None,
         radial_type: Optional[str] = "bessel",
-        heads: Optional[List[str]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,
-        embedding_specs: Optional[Dict[str, Any]] = None,
-        oeq_config: Optional[Dict[str, Any]] = None,
+        heads: Optional[list[str]] = None,
+        cueq_config: Optional[dict[str, Any]] = None,
+        embedding_specs: Optional[dict[str, Any]] = None,
+        oeq_config: Optional[dict[str, Any]] = None,
         lammps_mliap: Optional[bool] = False,
-        readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
+        readout_cls: Optional[type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
     ):
         super().__init__()
         self.register_buffer(
@@ -274,7 +274,7 @@ class MACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -284,7 +284,7 @@ class MACE(torch.nn.Module):
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, Optional[torch.Tensor]]:
         # Setup
         ctx = prepare_graph(
             data,
@@ -333,7 +333,7 @@ class MACE(torch.nn.Module):
             pair_energy = torch.zeros_like(e0)
 
         if hasattr(self, "joint_embedding"):
-            embedding_features: Dict[str, torch.Tensor] = {}
+            embedding_features: dict[str, torch.Tensor] = {}
             for name, _ in self.embedding_specs.items():
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
@@ -355,7 +355,7 @@ class MACE(torch.nn.Module):
         # Interactions
         energies = [e0, pair_energy]
         node_energies_list = [node_e0, pair_node_energy]
-        node_feats_concat: List[torch.Tensor] = []
+        node_feats_concat: list[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)
@@ -451,7 +451,7 @@ class ScaleShiftMACE(MACE):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -461,7 +461,7 @@ class ScaleShiftMACE(MACE):
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, Optional[torch.Tensor]]:
         # Setup
         ctx = prepare_graph(
             data,
@@ -510,7 +510,7 @@ class ScaleShiftMACE(MACE):
 
         # Embeddings of additional features
         if hasattr(self, "joint_embedding"):
-            embedding_features: Dict[str, torch.Tensor] = {}
+            embedding_features: dict[str, torch.Tensor] = {}
             for name, _ in self.embedding_specs.items():
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
@@ -533,7 +533,7 @@ class ScaleShiftMACE(MACE):
 
         # Interactions
         node_es_list = [pair_node_energy]
-        node_feats_list: List[torch.Tensor] = []
+        node_feats_list: list[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)
@@ -624,14 +624,14 @@ class AtomicDipolesMACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
+        atomic_numbers: list[int],
         correlation: int,
         gate: Optional[Callable],
         atomic_energies: Optional[
@@ -642,9 +642,9 @@ class AtomicDipolesMACE(torch.nn.Module):
         use_so3: bool = False,  # pylint: disable=unused-argument
         distance_transform: str = "None",  # pylint: disable=unused-argument
         radial_type: Optional[str] = "bessel",
-        radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
-        oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
+        radial_MLP: Optional[list[int]] = None,
+        cueq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
+        oeq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
         edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
@@ -753,7 +753,7 @@ class AtomicDipolesMACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,  # pylint: disable=W0613
         compute_force: bool = False,
         compute_virials: bool = False,
@@ -761,7 +761,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         compute_displacement: bool = False,
         compute_edge_forces: bool = False,  # pylint: disable=W0613
         compute_atomic_stresses: bool = False,  # pylint: disable=W0613
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, Optional[torch.Tensor]]:
         assert compute_force is False
         assert compute_virials is False
         assert compute_stress is False
@@ -838,14 +838,14 @@ class AtomicDielectricMACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
+        atomic_numbers: list[int],
         correlation: int,
         gate: Optional[Callable],
         atomic_energies: Optional[
@@ -856,13 +856,13 @@ class AtomicDielectricMACE(torch.nn.Module):
         use_so3: bool = False,  # pylint: disable=unused-argument
         distance_transform: str = "None",  # pylint: disable=unused-argument
         radial_type: Optional[str] = "bessel",
-        radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
-        oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
+        radial_MLP: Optional[list[int]] = None,
+        cueq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
+        oeq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
         edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
         dipole_only: Optional[bool] = True,  # pylint: disable=unused-argument
         use_polarizability: Optional[bool] = True,  # pylint: disable=unused-argument
-        means_stds: Optional[Dict[str, torch.Tensor]] = None,  # pylint: disable=W0613
+        means_stds: Optional[dict[str, torch.Tensor]] = None,  # pylint: disable=W0613
     ):
         super().__init__()
         self.register_buffer(
@@ -1012,7 +1012,7 @@ class AtomicDielectricMACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,  # pylint: disable=W0613
         compute_force: bool = False,
         compute_virials: bool = False,
@@ -1021,7 +1021,7 @@ class AtomicDielectricMACE(torch.nn.Module):
         compute_dielectric_derivatives: bool = False,  # no training on derivatives
         compute_edge_forces: bool = False,  # pylint: disable=W0613
         compute_atomic_stresses: bool = False,  # pylint: disable=W0613
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, Optional[torch.Tensor]]:
         assert compute_force is False
         assert compute_virials is False
         assert compute_stress is False
@@ -1168,14 +1168,14 @@ class EnergyDipolesMACE(torch.nn.Module):
         num_bessel: int,
         num_polynomial_cutoff: int,
         max_ell: int,
-        interaction_cls: Type[InteractionBlock],
-        interaction_cls_first: Type[InteractionBlock],
+        interaction_cls: type[InteractionBlock],
+        interaction_cls_first: type[InteractionBlock],
         num_interactions: int,
         num_elements: int,
         hidden_irreps: o3.Irreps,
         MLP_irreps: o3.Irreps,
         avg_num_neighbors: float,
-        atomic_numbers: List[int],
+        atomic_numbers: list[int],
         correlation: int,
         gate: Optional[Callable],
         atomic_energies: Optional[np.ndarray],
@@ -1183,9 +1183,9 @@ class EnergyDipolesMACE(torch.nn.Module):
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
         distance_transform: str = "None",  # pylint: disable=unused-argument
-        radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
-        oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
+        radial_MLP: Optional[list[int]] = None,
+        cueq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
+        oeq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
         edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
@@ -1292,7 +1292,7 @@ class EnergyDipolesMACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -1300,7 +1300,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         compute_displacement: bool = False,
         compute_edge_forces: bool = False,  # pylint: disable=W0613
         compute_atomic_stresses: bool = False,  # pylint: disable=W0613
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, Optional[torch.Tensor]]:
         # Setup
         data["node_attrs"].requires_grad_(True)
         data["positions"].requires_grad_(True)

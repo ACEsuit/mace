@@ -10,7 +10,7 @@ import os
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch
@@ -142,7 +142,7 @@ class MetricsLogger:
         self.filename = tag + ".txt"
         self.path = os.path.join(self.directory, self.filename)
 
-    def log(self, d: Dict[str, Any]) -> None:
+    def log(self, d: dict[str, Any]) -> None:
         os.makedirs(name=self.directory, exist_ok=True)
         with open(self.path, mode="a", encoding="utf-8") as f:
             f.write(json.dumps(d, cls=UniversalEncoder))

@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, Optional, Union
 
 import torch
 from torch.utils.data import ConcatDataset
@@ -12,7 +12,7 @@ from mace.tools.torch_geometric.dataset import Dataset
 from mace.tools.utils import AtomicNumberTable
 
 
-def normalize_file_paths(file_paths: Union[str, List[str]]) -> List[str]:
+def normalize_file_paths(file_paths: Union[str, list[str]]) -> list[str]:
     """
     Normalize file paths to a list format.
 
@@ -30,13 +30,13 @@ def normalize_file_paths(file_paths: Union[str, List[str]]) -> List[str]:
 
 
 def load_dataset_for_path(
-    file_path: Union[str, Path, List[str]],
+    file_path: Union[str, Path, list[str]],
     r_max: float,
     z_table: AtomicNumberTable,
-    heads: List[str],
+    heads: list[str],
     head_config: Any,
     collection: Optional[Any] = None,
-) -> Union[Dataset, List]:
+) -> Union[Dataset, list]:
     """
     Load a dataset from a file path based on its format.
 

@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Optional
 
 import torch
 from e3nn.util.jit import compile_mode
@@ -46,7 +46,7 @@ def _get_readout_input_dim(block: torch.nn.Module) -> int:
 
 @compile_mode("script")
 class MACELES(ScaleShiftMACE):
-    def __init__(self, les_arguments: Optional[Dict] = None, **kwargs):
+    def __init__(self, les_arguments: Optional[dict] = None, **kwargs):
         super().__init__(**kwargs)
         try:
             from les import Les
@@ -72,7 +72,7 @@ class MACELES(ScaleShiftMACE):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -83,7 +83,7 @@ class MACELES(ScaleShiftMACE):
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
         compute_bec: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, Optional[torch.Tensor]]:
         ctx = prepare_graph(
             data,
             compute_virials=compute_virials,
@@ -140,7 +140,7 @@ class MACELES(ScaleShiftMACE):
 
         # Embeddings of additional features
         if hasattr(self, "joint_embedding"):
-            embedding_features: Dict[str, torch.Tensor] = {}
+            embedding_features: dict[str, torch.Tensor] = {}
             for name, _ in self.embedding_specs.items():
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
@@ -161,8 +161,8 @@ class MACELES(ScaleShiftMACE):
 
         # Interactions
         node_es_list = [pair_node_energy]
-        node_feats_list: List[torch.Tensor] = []
-        node_qs_list: List[torch.Tensor] = []
+        node_feats_list: list[torch.Tensor] = []
+        node_qs_list: list[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)

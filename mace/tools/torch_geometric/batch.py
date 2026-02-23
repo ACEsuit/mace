@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from typing import List
 
 import numpy as np
 import torch
@@ -198,7 +197,7 @@ class Batch(Data):
 
         return data
 
-    def index_select(self, idx: IndexType) -> List[Data]:
+    def index_select(self, idx: IndexType) -> list[Data]:
         if isinstance(idx, slice):
             idx = list(range(self.num_graphs)[idx])
 
@@ -234,7 +233,7 @@ class Batch(Data):
         else:
             return self.index_select(idx)
 
-    def to_data_list(self) -> List[Data]:
+    def to_data_list(self) -> list[Data]:
         r"""Reconstructs the list of :class:`torch_geometric.data.Data` objects
         from the batch object.
         The batch object must have been created via :meth:`from_data_list` in
