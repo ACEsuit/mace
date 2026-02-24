@@ -1,6 +1,6 @@
 # pylint: disable=wrong-import-position
 import os
-from typing import Any, Dict
+from typing import Any
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -17,14 +17,14 @@ from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.tools import torch_geometric
 
 try:
-    import cuequivariance as cue  # pylint: disable=unused-import
+    import cuequivariance as cue  # pylint: disable=unused-import  # noqa: F401
 
     CUET_AVAILABLE = True
 except ImportError:
     CUET_AVAILABLE = False
 
 try:
-    import openequivariance as oeq  # pylint: disable=unused-import
+    import openequivariance as oeq  # pylint: disable=unused-import  # noqa: F401
 
     OEQ_AVAILABLE = True
 except ImportError:
@@ -42,7 +42,7 @@ class BackendTestBase:
         use_agnostic_product,
         use_last_readout_only,
         use_reduced_cg,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         table = tools.AtomicNumberTable([6])
         return {
             "r_max": 5.0,
@@ -71,7 +71,7 @@ class BackendTestBase:
         }
 
     @pytest.fixture
-    def batch(self, device: str, default_dtype: torch.dtype) -> Dict[str, torch.Tensor]:
+    def batch(self, device: str, default_dtype: torch.dtype) -> dict[str, torch.Tensor]:
         from ase import build
 
         torch.set_default_dtype(default_dtype)
@@ -123,8 +123,8 @@ class BackendTestBase:
     @pytest.mark.parametrize("use_reduced_cg", [True, False])
     def test_bidirectional_conversion(
         self,
-        model_config: Dict[str, Any],
-        batch: Dict[str, torch.Tensor],
+        model_config: dict[str, Any],
+        batch: dict[str, torch.Tensor],
         device: str,
         default_dtype: torch.dtype,
         conversion_functions: tuple,

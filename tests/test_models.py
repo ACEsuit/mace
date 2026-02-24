@@ -4,7 +4,7 @@ import torch.nn.functional
 from ase import build
 from e3nn import o3
 from e3nn.util import jit
-from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Rotation as R  # noqa: N817
 
 from mace import data, modules, tools
 from mace.tools import torch_geometric

@@ -12,7 +12,7 @@ from ase.atoms import Atoms
 from mace.calculators import MACECalculator
 
 try:
-    import cuequivariance as cue  # pylint: disable=unused-import
+    import cuequivariance as cue  # pylint: disable=unused-import  # noqa: F401
 
     CUET_AVAILABLE = True
 except ImportError:

@@ -1,8 +1,9 @@
 import types
+
 import torch
 from e3nn import o3
 
-import mace.modules.blocks as blocks
+from mace.modules import blocks
 from mace.modules.blocks import (
     RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticResidualNonLinearInteractionBlock,

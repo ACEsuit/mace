@@ -4,7 +4,6 @@ import glob
 import json
 import os
 import re
-from typing import List
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -44,10 +43,10 @@ def parse_path(path: str) -> RunInfo:
     return RunInfo(name=match.group("name"), seed=int(match.group("seed")))
 
 
-def parse_training_results(path: str) -> List[dict]:
+def parse_training_results(path: str) -> list[dict]:
     run_info = parse_path(path)
     results = []
-    with open(path, mode="r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             d = json.loads(line)
             d["name"] = run_info.name
@@ -301,7 +300,7 @@ def plot(
         plt.close(fig)
 
 
-def get_paths(path: str) -> List[str]:
+def get_paths(path: str) -> list[str]:
     if os.path.isfile(path):
         return [path]
     paths = glob.glob(os.path.join(path, "*_train.txt"))

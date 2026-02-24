@@ -110,11 +110,11 @@ To give a specific validation set, use the argument `--valid_file`. To set a lar
 
 To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys.
 
-It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. 
+It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields.
 
 When training a model from scratch, if you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression. Note that using fitted E0s corresponds to fitting the deviations of the atomic energies from the average, rather than fitting the atomization energy (which is the case when using isolated-atom E0s), and this will most likely result in less stable potentials for molecular dynamics applications.
 
-When finetuning foundation models, you can use `--E0s="estimated"`, which estimates the atomic reference energies by solving a linear system that optimally corrects the foundation model's predictions on the training data. This approach computes E0 corrections by first running the foundation model on all training configurations, computing the prediction errors (reference energies minus predicted energies), and then solving a least-squares system to find optimal E0 corrections for each element. This is preferable in general over the 'average' option. 
+When finetuning foundation models, you can use `--E0s="estimated"`, which estimates the atomic reference energies by solving a linear system that optimally corrects the foundation model's predictions on the training data. This approach computes E0 corrections by first running the foundation model on all training configurations, computing the prediction errors (reference energies minus predicted energies), and then solving a least-squares system to find optimal E0 corrections for each element. This is preferable in general over the 'average' option.
 
 If the keyword `--stage_two` (previously called swa) is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_stage_two` epochs). This setting usually helps lower the energy errors.
 
@@ -262,7 +262,7 @@ Foundation models are a rapidly evolving field. Please look at the [MACE-MP GitH
 ### MACE-MP: Materials Project Force Fields
 
 We have collaborated with the Materials Project (MP) to train a universal MACE potential covering 89 elements on 1.6 M bulk crystals in the [MPTrj dataset](https://figshare.com/articles/dataset/23713842) selected from MP relaxation trajectories.
-The models are releaed on GitHub at https://github.com/ACEsuit/mace-foundations.
+The models are released on GitHub at https://github.com/ACEsuit/mace-foundations.
 If you use them please cite [our paper](https://arxiv.org/abs/2401.00096) which also contains an large range of example applications and benchmarks.
 
 > [!CAUTION]
@@ -283,7 +283,7 @@ print(atoms.get_potential_energy())
 ### MACE-OFF: Transferable Organic Force Fields
 
 There is a series (small, medium, large) transferable organic force fields. These can be used for the simulation of organic molecules, crystals and molecular liquids, or as a starting point for fine-tuning on a new dataset. The models are released under the [ASL license](https://github.com/gabor1/ASL).
-The models are releaed on GitHub at https://github.com/ACEsuit/mace-off.
+The models are released on GitHub at https://github.com/ACEsuit/mace-off.
 If you use them please cite [our paper](https://arxiv.org/abs/2312.15211) which also contains detailed benchmarks and example applications.
 
 #### Example usage in ASE
@@ -335,7 +335,7 @@ the environment variable XDG_CACHE_HOME. When set, the new cache path expands to
 ## Development
 
 This project uses [pre-commit](https://pre-commit.com/) to execute code formatting and linting on commit.
-We also use `black`, `isort`, `pylint`, and `mypy`.
+We also use `ruff` and `mypy`.
 We recommend setting up your development environment by installing the `dev` packages
 into your python environment:
 
@@ -344,7 +344,7 @@ pip install -e ".[dev]"
 pre-commit install
 ```
 
-The second line will initialise `pre-commit` to automaticaly run code checks on commit.
+The second line will initialise `pre-commit` to automatically run code checks on commit.
 We have CI set up to check this, but we _highly_ recommend that you run those commands
 before you commit (and push) to avoid accidentally committing bad code.
 

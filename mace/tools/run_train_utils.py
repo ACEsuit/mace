@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, Optional, Union
 
 import torch
 from torch.utils.data import ConcatDataset
@@ -12,7 +12,7 @@ from mace.tools.torch_geometric.dataset import Dataset
 from mace.tools.utils import AtomicNumberTable
 
 
-def normalize_file_paths(file_paths: Union[str, List[str]]) -> List[str]:
+def normalize_file_paths(file_paths: Union[str, list[str]]) -> list[str]:
     """
     Normalize file paths to a list format.
 
@@ -30,13 +30,13 @@ def normalize_file_paths(file_paths: Union[str, List[str]]) -> List[str]:
 
 
 def load_dataset_for_path(
-    file_path: Union[str, Path, List[str]],
+    file_path: Union[str, Path, list[str]],
     r_max: float,
     z_table: AtomicNumberTable,
-    heads: List[str],
+    heads: list[str],
     head_config: Any,
     collection: Optional[Any] = None,
-) -> Union[Dataset, List]:
+) -> Union[Dataset, list]:
     """
     Load a dataset from a file path based on its format.
 
@@ -64,9 +64,9 @@ def load_dataset_for_path(
         is_ase_readable = check_path_ase_read(file_path)
 
     if is_ase_readable:
-        assert (
-            collection is not None
-        ), "Collection must be provided for ASE readable files"
+        assert collection is not None, (
+            "Collection must be provided for ASE readable files"
+        )
         return [
             data.AtomicData.from_config(
                 config, z_table=z_table, cutoff=r_max, heads=heads
@@ -76,7 +76,6 @@ def load_dataset_for_path(
 
     filepath = Path(file_path)
     if filepath.is_dir():
-
         if filepath.name.endswith("_lmdb") or any(
             f.endswith(".lmdb") or f.endswith(".aselmdb") for f in os.listdir(filepath)
         ):

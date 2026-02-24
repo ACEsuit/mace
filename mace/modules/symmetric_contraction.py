@@ -5,7 +5,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 import opt_einsum_fx
 import torch
@@ -28,7 +28,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         self,
         irreps_in: o3.Irreps,
         irreps_out: o3.Irreps,
-        correlation: Union[int, Dict[str, int]],
+        correlation: Union[int, dict[str, int]],
         irrep_normalization: str = "component",
         path_normalization: str = "element",
         use_reduced_cg: bool = False,
@@ -266,8 +266,6 @@ class EmptyParam(torch.nn.Parameter):
         zero = torch.zeros_like(data)
         return super().__new__(cls, zero, requires_grad=False)
 
-    def requires_grad_(
-        self, mode: bool = True
-    ):  # pylint: disable=arguments-differ, arguments-renamed
+    def requires_grad_(self, mode: bool = True):  # pylint: disable=arguments-differ, arguments-renamed
         del mode
         return self

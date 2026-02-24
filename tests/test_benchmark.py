@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import pandas as pd
 import pytest
@@ -84,7 +84,7 @@ def log_bench_info(benchmark, dtype, compile_mode, batch):
 
 
 def process_benchmark_file(bench_file: Path) -> pd.DataFrame:
-    with open(bench_file, "r", encoding="utf-8") as f:
+    with open(bench_file, encoding="utf-8") as f:
         bench_data = json.load(f)
 
     records = []
@@ -108,7 +108,7 @@ def process_benchmark_file(bench_file: Path) -> pd.DataFrame:
     return result_df[columns]
 
 
-def read_bench_results(result_files: List[str]) -> pd.DataFrame:
+def read_bench_results(result_files: list[str]) -> pd.DataFrame:
     return pd.concat([process_benchmark_file(Path(f)) for f in result_files])
 
 

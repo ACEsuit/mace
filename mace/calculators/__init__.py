@@ -7,5 +7,6 @@ __all__ = [
     "LAMMPS_MACE",
     "mace_mp",
     "mace_off",
+    "mace_omol",
     "mace_anicc",
 ]

@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch
@@ -28,7 +28,7 @@ from mace.tools.train import SWAContainer
 class SubsetCollection:
     train: data.Configurations
     valid: data.Configurations
-    tests: List[Tuple[str, data.Configurations]]
+    tests: list[tuple[str, data.Configurations]]
 
 
 def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> None:
@@ -44,18 +44,18 @@ def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> Non
 
 def get_dataset_from_xyz(
     work_dir: str,
-    train_path: Union[str, List[str]],
-    valid_path: Optional[Union[str, List[str]]],
+    train_path: Union[str, list[str]],
+    valid_path: Optional[Union[str, list[str]]],
     valid_fraction: float,
     key_specification: KeySpecification,
-    config_type_weights: Optional[Dict] = None,
-    test_path: Optional[Union[str, List[str]]] = None,
+    config_type_weights: Optional[dict] = None,
+    test_path: Optional[Union[str, list[str]]] = None,
     seed: int = 1234,
     keep_isolated_atoms: bool = False,
     head_name: str = "Default",
     no_data_ok: bool = False,
     prefix: Optional[str] = None,
-) -> Tuple[SubsetCollection, Optional[Dict[int, float]]]:
+) -> tuple[SubsetCollection, Optional[dict[int, float]]]:
     """
     Load training, validation, and test datasets from xyz files.
 
@@ -124,7 +124,7 @@ def get_dataset_from_xyz(
                 atomic_energies_values[element].append(energy)
                 atomic_energies_counts[element] += 1
 
-        log_dataset_contents(train_configs, f"Training set {i+1}/{len(train_paths)}")
+        log_dataset_contents(train_configs, f"Training set {i + 1}/{len(train_paths)}")
 
     # Log total training set info
     log_dataset_contents(all_train_configs, "Total Training set")
@@ -141,7 +141,7 @@ def get_dataset_from_xyz(
             )
             all_valid_configs.extend(valid_configs)
             log_dataset_contents(
-                valid_configs, f"Validation set {i+1}/{len(valid_paths)}"
+                valid_configs, f"Validation set {i + 1}/{len(valid_paths)}"
             )
 
         # Log total validation set info
@@ -169,7 +169,7 @@ def get_dataset_from_xyz(
             )
             all_test_configs.extend(test_configs)
 
-            log_dataset_contents(test_configs, f"Test set {i+1}/{len(test_paths)}")
+            log_dataset_contents(test_configs, f"Test set {i + 1}/{len(test_paths)}")
 
         # Create list of tuples (config_type, list(Atoms))
         test_configs_by_type = data.test_config_types(all_test_configs)
@@ -224,7 +224,7 @@ def print_git_commit():
         return "None"
 
 
-def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
+def extract_config_mace_model(model: torch.nn.Module) -> dict[str, Any]:
     if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES"]:
         return {"error": "Model is not a ScaleShiftMACE or MACELES model"}
 
@@ -336,7 +336,7 @@ def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     )
 
 
-def extract_radial_MLP(model: torch.nn.Module) -> List[int]:
+def extract_radial_MLP(model: torch.nn.Module) -> list[int]:
     try:
         return model.interactions[0].conv_tp_weights.hs[1:-1]
     except AttributeError:
@@ -554,7 +554,7 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
             logging.info(
                 "Computing average Atomic Energies using least squares regression"
             )
-            # catch if colections.train not defined above
+            # catch if collections.train not defined above
             try:
                 assert train_collection is not None
                 atomic_energies_dict = data.compute_average_E0s(
@@ -562,31 +562,29 @@ def get_atomic_energies(E0s, train_collection, z_table) -> dict:
                 )
             except Exception as e:
                 raise RuntimeError(
-                    f"Could not compute average E0s if no training xyz given, error {e} occured"
+                    f"Could not compute average E0s if no training xyz given, error {e} occurred"
                 ) from e
+        elif E0s.endswith(".json"):
+            logging.info(f"Loading atomic energies from {E0s}")
+            with open(E0s, encoding="utf-8") as f:
+                atomic_energies_dict = json.load(f)
+                atomic_energies_dict = {
+                    int(key): value for key, value in atomic_energies_dict.items()
+                }
         else:
-            if E0s.endswith(".json"):
-                logging.info(f"Loading atomic energies from {E0s}")
-                with open(E0s, "r", encoding="utf-8") as f:
-                    atomic_energies_dict = json.load(f)
-                    atomic_energies_dict = {
-                        int(key): value for key, value in atomic_energies_dict.items()
-                    }
-            else:
-                try:
-                    atomic_energies_eval = ast.literal_eval(E0s)
-                    if not all(
-                        isinstance(value, dict)
-                        for value in atomic_energies_eval.values()
-                    ):
-                        atomic_energies_dict = atomic_energies_eval
-                    else:
-                        atomic_energies_dict = atomic_energies_eval
-                    assert isinstance(atomic_energies_dict, dict)
-                except Exception as e:
-                    raise RuntimeError(
-                        f"E0s specified invalidly, error {e} occured"
-                    ) from e
+            try:
+                atomic_energies_eval = ast.literal_eval(E0s)
+                if not all(
+                    isinstance(value, dict) for value in atomic_energies_eval.values()
+                ):
+                    atomic_energies_dict = atomic_energies_eval
+                else:
+                    atomic_energies_dict = atomic_energies_eval
+                assert isinstance(atomic_energies_dict, dict)
+            except Exception as e:
+                raise RuntimeError(
+                    f"E0s specified invalidly, error {e} occurred"
+                ) from e
     else:
         raise RuntimeError(
             "E0s not found in training file and not specified in command line"
@@ -669,9 +667,9 @@ def get_loss_fn(
             forces_weight=args.forces_weight,
         )
     elif args.loss == "dipole":
-        assert (
-            dipole_only is True
-        ), "dipole loss can only be used with AtomicDipolesMACE model"
+        assert dipole_only is True, (
+            "dipole loss can only be used with AtomicDipolesMACE model"
+        )
         loss_fn = modules.DipoleSingleLoss(
             dipole_weight=args.dipole_weight,
         )
@@ -696,19 +694,18 @@ def get_swa(
     args: argparse.Namespace,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
-    swas: List[bool],
+    swas: list[bool],
     dipole_only: bool = False,
 ):
     assert dipole_only is False, "Stage Two for dipole fitting not implemented"
     swas.append(True)
     if args.start_swa is None:
         args.start_swa = max(1, args.max_num_epochs // 4 * 3)
-    else:
-        if args.start_swa >= args.max_num_epochs:
-            logging.warning(
-                f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
-            )
-            swas[-1] = False
+    elif args.start_swa >= args.max_num_epochs:
+        logging.warning(
+            f"Start Stage Two must be less than max_num_epochs, got {args.start_swa} > {args.max_num_epochs}"
+        )
+        swas[-1] = False
     if args.loss == "forces_only":
         raise ValueError("Can not select Stage Two with forces only loss.")
     if args.loss == "virials":
@@ -785,7 +782,7 @@ def freeze_module(module: torch.nn.Module, freeze: bool = True):
 
 def get_params_options(
     args: argparse.Namespace, model: torch.nn.Module
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     decay_interactions = {}
     no_decay_interactions = {}
     for name, param in model.interactions.named_parameters():
@@ -879,7 +876,7 @@ def get_params_options(
 
 
 def get_optimizer(
-    args: argparse.Namespace, param_options: Dict[str, Any]
+    args: argparse.Namespace, param_options: dict[str, Any]
 ) -> torch.optim.Optimizer:
     if args.optimizer == "adamw":
         optimizer = torch.optim.AdamW(**param_options)
@@ -930,7 +927,7 @@ def setup_wandb(args: argparse.Namespace):
     wandb.run.summary["params"] = args_dict_json
 
 
-def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
+def get_files_with_suffix(dir_path: str, suffix: str) -> list[str]:
     return [
         os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(suffix)
     ]

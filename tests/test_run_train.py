@@ -14,7 +14,7 @@ from ase.calculators.singlepoint import SinglePointCalculator
 from mace.calculators import MACECalculator, mace_mp
 
 try:
-    import cuequivariance as cue  # pylint: disable=unused-import
+    import cuequivariance as cue  # pylint: disable=unused-import  # noqa: F401
 
     CUET_AVAILABLE = True
 except ImportError:
@@ -1884,10 +1884,10 @@ def test_run_train_real_pt_data_ratio(
     assert (
         len(
             [
-                l
-                for l in p.stdout.decode("utf-8").splitlines()
+                line
+                for line in p.stdout.decode("utf-8").splitlines()
                 if "Ratio of the number of configurations in the "
-                "training set and the in the pt_train_file" in l
+                "training set and the in the pt_train_file" in line
             ]
         )
         == 0
@@ -1905,10 +1905,10 @@ def test_run_train_real_pt_data_ratio(
 
     # real to pt data ratio should not be triggered by 5 / 20 > default of 0.1
     l_ratio = [
-        l
-        for l in p.stdout.decode("utf-8").splitlines()
+        line
+        for line in p.stdout.decode("utf-8").splitlines()
         if "Ratio of the number of configurations in the "
-        "training set and the in the pt_train_file" in l
+        "training set and the in the pt_train_file" in line
     ]
     assert len(l_ratio) == 1
     assert l_ratio[0].strip().endswith(" 1")

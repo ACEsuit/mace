@@ -18,7 +18,7 @@ from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
 
 try:
-    import cuequivariance as cue  # pylint: disable=unused-import
+    import cuequivariance as cue  # pylint: disable=unused-import  # noqa: F401
 
     CUET_AVAILABLE = True
 except ImportError:

@@ -4,7 +4,7 @@ Wrapper class for o3.Linear that optionally uses cuet.Linear
 
 import dataclasses
 import types
-from typing import List, Optional
+from typing import Optional
 
 import torch
 from e3nn import o3
@@ -86,7 +86,7 @@ class Linear:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_linear)
         ):
-            return cuet.Linear(
+            return cuet.Linear(  # pylint: disable=unexpected-keyword-arg
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
@@ -159,7 +159,7 @@ class TensorProduct:
         irreps_in1: o3.Irreps,
         irreps_in2: o3.Irreps,
         irreps_out: o3.Irreps,
-        instructions: Optional[List] = None,
+        instructions: Optional[list] = None,
         shared_weights: bool = False,
         internal_weights: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
@@ -249,7 +249,7 @@ class FullyConnectedTensorProduct:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_fctp)
         ):
-            return cuet.FullyConnectedTensorProduct(
+            return cuet.FullyConnectedTensorProduct(  # pylint: disable=unexpected-keyword-arg
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -320,7 +320,7 @@ class TransposeIrrepsLayoutWrapper:
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         if CUET_AVAILABLE and cueq_config is not None and cueq_config.enabled:
-            return cuet.TransposeIrrepsLayout(
+            return cuet.TransposeIrrepsLayout(  # pylint: disable=unexpected-keyword-arg
                 cue.Irreps(cueq_config.group, irreps),
                 source=getattr(cue, source),
                 target=getattr(cue, target),

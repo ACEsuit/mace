@@ -125,7 +125,7 @@ def configure_model(
             f"Message passing with hidden irreps {model_config_foundation['hidden_irreps']})"
         )
         logging.info(
-            f"{model_config_foundation['num_interactions']} layers, each with correlation order: {model_config_foundation['correlation']} (body order: {model_config_foundation['correlation']+1}) and spherical harmonics up to: l={model_config_foundation['max_ell']}"
+            f"{model_config_foundation['num_interactions']} layers, each with correlation order: {model_config_foundation['correlation']} (body order: {model_config_foundation['correlation'] + 1}) and spherical harmonics up to: l={model_config_foundation['max_ell']}"
         )
         logging.info(
             f"Radial cutoff: {model_config_foundation['r_max']} A (total receptive field for each atom: {model_config_foundation['r_max'] * model_config_foundation['num_interactions']} A)"
@@ -139,7 +139,7 @@ def configure_model(
             f"Message passing with {args.num_channels} channels and max_L={args.max_L} ({args.hidden_irreps})"
         )
         logging.info(
-            f"{args.num_interactions} layers, each with correlation order: {args.correlation} (body order: {args.correlation+1}) and spherical harmonics up to: l={args.max_ell}"
+            f"{args.num_interactions} layers, each with correlation order: {args.correlation} (body order: {args.correlation + 1}) and spherical harmonics up to: l={args.max_ell}"
         )
         logging.info(
             f"{args.num_radial_basis} radial and {args.num_cutoff_basis} basis functions"
@@ -151,9 +151,9 @@ def configure_model(
             f"Distance transform for radial basis functions: {args.distance_transform}"
         )
 
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        assert len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1, (
+            "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        )
 
         logging.info(f"Hidden irreps: {args.hidden_irreps}")
 
@@ -218,9 +218,7 @@ def _determine_atomic_inter_shift(mean, heads):
     return [0.0] * len(heads)
 
 
-def _build_model(
-    args, model_config, model_config_foundation, heads
-):  # pylint: disable=too-many-return-statements
+def _build_model(args, model_config, model_config_foundation, heads):  # pylint: disable=too-many-return-statements
     if args.model == "MACE":
         if args.interaction_first not in [
             "RealAgnosticInteractionBlock",
@@ -280,9 +278,9 @@ def _build_model(
         raise RuntimeError("BOTNet is deprecated, use MACE instead")
     if args.model == "AtomicDipolesMACE":
         assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
-        assert (
-            args.error_table == "DipoleRMSE"
-        ), "Use error_table DipoleRMSE with AtomicDipolesMACE model"
+        assert args.error_table == "DipoleRMSE", (
+            "Use error_table DipoleRMSE with AtomicDipolesMACE model"
+        )
         return modules.AtomicDipolesMACE(
             **model_config,
             correlation=args.correlation,
@@ -296,9 +294,9 @@ def _build_model(
     if args.model == "AtomicDielectricMACE":
         args.error_table = "DipolePolarRMSE"
         # std_df = modules.scaling_classes["rms_dipoles_scaling"](train_loader)
-        assert (
-            args.loss == "dipole_polar"
-        ), "Use dipole_polar loss with AtomicDielectricMACE model"
+        assert args.loss == "dipole_polar", (
+            "Use dipole_polar loss with AtomicDielectricMACE model"
+        )
         assert args.error_table in (
             "DipoleRMSE",
             "DipolePolarRMSE",
@@ -315,12 +313,12 @@ def _build_model(
         )
 
     if args.model == "EnergyDipolesMACE":
-        assert (
-            args.loss == "energy_forces_dipole"
-        ), "Use energy_forces_dipole loss with EnergyDipolesMACE model"
-        assert (
-            args.error_table == "EnergyDipoleRMSE"
-        ), "Use error_table EnergyDipoleRMSE with AtomicDipolesMACE model"
+        assert args.loss == "energy_forces_dipole", (
+            "Use energy_forces_dipole loss with EnergyDipolesMACE model"
+        )
+        assert args.error_table == "EnergyDipoleRMSE", (
+            "Use error_table EnergyDipoleRMSE with AtomicDipolesMACE model"
+        )
         return modules.EnergyDipolesMACE(
             **model_config,
             correlation=args.correlation,

@@ -4,8 +4,9 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+from collections.abc import Sequence
 from copy import deepcopy
-from typing import Optional, Sequence
+from typing import Optional
 
 import torch.utils.data
 

@@ -5,7 +5,6 @@
 ###########################################################################################
 
 import argparse
-from typing import Dict
 
 import ase.data
 import ase.io
@@ -113,10 +112,10 @@ def parse_args() -> argparse.Namespace:
 
 def get_model_output(
     model: torch.nn.Module,
-    batch: Dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
     compute_stress: bool,
     compute_bec: bool,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     forward_args = {
         "compute_stress": compute_stress,
     }
@@ -156,8 +155,10 @@ def run(args: argparse.Namespace) -> None:
         assert args.head in model.heads
         head_name = args.head
     else:
-        head_name = 'Default'
-    configs = [data.config_from_atoms(atoms, head_name=head_name) for atoms in atoms_list]
+        head_name = "Default"
+    configs = [
+        data.config_from_atoms(atoms, head_name=head_name) for atoms in atoms_list
+    ]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
@@ -254,9 +255,7 @@ def run(args: argparse.Namespace) -> None:
                     torch_tools.to_numpy(output["node_energy"]),
                     indices_or_sections=batch.ptr[1:],
                     axis=0,
-                )[
-                    :-1
-                ]  # drop last as its empty
+                )[:-1]  # drop last as its empty
             )
 
         forces = np.split(
@@ -284,7 +283,7 @@ def run(args: argparse.Namespace) -> None:
         assert len(atoms_list) == contributions.shape[0]
 
     if args.return_descriptors:
-        # no concatentation  - elements of descriptors_list have non-uniform shapes
+        # no concatenation  - elements of descriptors_list have non-uniform shapes
         assert len(atoms_list) == len(descriptors_list)
 
     if args.return_node_energies:

@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from typing import List, Optional, Union
+from typing import Optional
 
 import torch.utils.data
 from torch.utils.data.dataloader import default_collate
@@ -22,19 +22,22 @@ class Collater:
                 follow_batch=self.follow_batch,
                 exclude_keys=self.exclude_keys,
             )
-        elif isinstance(elem, torch.Tensor):
+        if isinstance(elem, torch.Tensor):
             return default_collate(batch)
-        elif isinstance(elem, float):
+        if isinstance(elem, float):
             return torch.tensor(batch, dtype=torch.float)
-        elif isinstance(elem, int):
+        if isinstance(elem, int):
             return torch.tensor(batch)
-        elif isinstance(elem, str):
+        if isinstance(elem, str):
             return batch
-        elif isinstance(elem, Mapping):
+
+        # For these types, we can use a more generic approach or keep them as is if needed
+        # but to reduce return statements, we can group them.
+        if isinstance(elem, Mapping):
             return {key: self([data[key] for data in batch]) for key in elem}
-        elif isinstance(elem, tuple) and hasattr(elem, "_fields"):
+        if isinstance(elem, tuple) and hasattr(elem, "_fields"):
             return type(elem)(*(self(s) for s in zip(*batch)))
-        elif isinstance(elem, Sequence) and not isinstance(elem, str):
+        if isinstance(elem, Sequence) and not isinstance(elem, str):
             return [self(s) for s in zip(*batch)]
 
         raise TypeError(f"DataLoader found invalid type: {type(elem)}")
@@ -67,10 +70,14 @@ class DataLoader(torch.utils.data.DataLoader):
         dataset: Dataset,
         batch_size: int = 1,
         shuffle: bool = False,
-        follow_batch: Optional[List[str]] = [None],
-        exclude_keys: Optional[List[str]] = [None],
+        follow_batch: Optional[list[str]] = None,
+        exclude_keys: Optional[list[str]] = None,
         **kwargs,
     ):
+        if follow_batch is None:
+            follow_batch = [None]
+        if exclude_keys is None:
+            exclude_keys = [None]
         if "collate_fn" in kwargs:
             del kwargs["collate_fn"]
 
