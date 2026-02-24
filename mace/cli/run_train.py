@@ -189,6 +189,8 @@ def run(args: argparse.Namespace) -> None:
     else:
         if args.n_committee is None:
             args.heads = prepare_default_head(args)
+        elif args.loss == "dpose":
+            args.heads = {"committee-0": prepare_default_head(args)["default"]}
         else:
             args.heads = {}
             for i in range(args.n_committee):
@@ -196,6 +198,8 @@ def run(args: argparse.Namespace) -> None:
 
     logging.info("===========LOADING INPUT DATA===========")
     heads = list(args.heads.keys())
+    if args.loss == "dpose":
+        heads.extend([f"committee-{i:d}" for i in range(1, args.n_committee)])
     logging.info(f"Using heads: {heads}")
     head_configs: List[HeadConfig] = []
     dataset_seed = args.seed
@@ -481,13 +485,15 @@ def run(args: argparse.Namespace) -> None:
         # atomic_energies: np.ndarray = np.array(
         #     [atomic_energies_dict[z] for z in z_table.zs]
         # )
+        if args.loss == "dpose":
+            for i in range(1, args.n_committee):
+                atomic_energies_dict[f"committee-{i:d}"] = atomic_energies_dict["committee-0"]
         atomic_energies = dict_to_array(atomic_energies_dict, heads)
         for head_config in head_configs:
             try:
                 logging.info(f"Atomic Energies used (z: eV) for head {head_config.head_name}: " + "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}")
             except KeyError as e:
                 raise KeyError(f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number") from e
-
 
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
@@ -541,6 +547,8 @@ def run(args: argparse.Namespace) -> None:
         head_config.train_loader = train_loader_head
     # concatenate all the trainsets
     train_set = ConcatDataset([train_sets[head] for head in heads])
+    if args.loss == "dpose":
+        valid_sets["committee-0"] = ConcatDataset([valid_sets.pop(f"committee-{i:d}") for i in range(args.n_committee)])
     train_sampler, valid_sampler = None, None
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -572,7 +580,8 @@ def run(args: argparse.Namespace) -> None:
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
     )
-    valid_loaders = {heads[i]: None for i in range(len(heads))}
+    # valid_loaders = {heads[i]: None for i in range(len(heads))}
+    valid_loaders = {}
     if not isinstance(valid_sets, dict):
         valid_sets = {"Default": valid_sets}
     for head, valid_set in valid_sets.items():
@@ -586,6 +595,8 @@ def run(args: argparse.Namespace) -> None:
             num_workers=args.num_workers,
             generator=torch.Generator().manual_seed(args.seed),
         )
+    # if args.loss == "dpose":
+    #     valid_loaders = {"committee-0": valid_loaders["committee-0"]}
 
     loss_fn = get_loss_fn(args, dipole_only, args.compute_dipole)
     args.avg_num_neighbors = get_avg_num_neighbors(head_configs, args, train_loader, device)

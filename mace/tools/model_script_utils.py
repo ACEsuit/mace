@@ -38,6 +38,8 @@ def configure_model(
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
         )
+        if args.loss == "dpose":
+            args.std = args.std.repeat(args.n_committee)
 
     # Build model
     if model_foundation is not None and args.model in ["MACE", "ScaleShiftMACE"]:

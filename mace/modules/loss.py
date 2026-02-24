@@ -171,6 +171,31 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
         )
 
 
+class MixedNllMseLoss(torch.nn.Module):
+    def __init__(self, energy_weight=1.0, forces_weight=1.0) -> None:
+        super().__init__()
+        self.register_buffer(
+            "energy_weight",
+            torch.tensor(energy_weight / (energy_weight + forces_weight), dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "forces_weight",
+            torch.tensor(forces_weight / (energy_weight + forces_weight), dtype=torch.get_default_dtype()),
+        )
+
+    def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
+        variance = torch.clamp(torch.square(pred['stds']['energy']), min=1e-6)
+        energy_loss = self.energy_weight * 0.5 * (
+            torch.log(variance) + ((torch.square(ref["energy"] - pred["energy"])) / variance)
+        )
+        return torch.mean(energy_loss) + self.forces_weight * mean_squared_error_forces(ref, pred)
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(energy_weight={self.energy_weight:.3f}, "
+            f"forces_weight={self.forces_weight:.3f})"
+        )
+
 class WeightedForcesLoss(torch.nn.Module):
     def __init__(self, forces_weight=1.0) -> None:
         super().__init__()
