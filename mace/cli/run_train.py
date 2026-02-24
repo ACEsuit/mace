@@ -17,11 +17,9 @@ from typing import List, Optional
 import torch.distributed
 import torch.nn.functional
 from e3nn.util import jit
-from icecream import ic
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import ConcatDataset
 from torch_ema import ExponentialMovingAverage
-
 
 import mace
 from mace import data, tools
@@ -271,9 +269,6 @@ def run(args: argparse.Namespace) -> None:
         if not args.disjoint_committee:
             dataset_seed += 1
 
-    # ic(heads)
-    # ic(len(head_configs))
-
     if all(check_path_ase_read(head_config.train_file) for head_config in head_configs):
         size_collections_train = sum(
             len(head_config.collections.train) for head_config in head_configs
@@ -499,8 +494,6 @@ def run(args: argparse.Namespace) -> None:
                 logging.info(f"Atomic Energies used (z: eV) for head {head_config.head_name}: " + "{" + ", ".join([f"{z}: {atomic_energies_dict[head_config.head_name][z]}" for z in head_config.z_table.zs]) + "}")
             except KeyError as e:
                 raise KeyError(f"Atomic number {e} not found in atomic_energies_dict for head {head_config.head_name}, add E0s for this atomic number") from e
-    # ic(atomic_energies_dict)
-    # ic(atomic_energies)
 
     valid_sets = {head: [] for head in heads}
     train_sets = {head: [] for head in heads}
@@ -553,12 +546,9 @@ def run(args: argparse.Namespace) -> None:
         )
         head_config.train_loader = train_loader_head
     # concatenate all the trainsets
-    # ic(train_sets)
     train_set = ConcatDataset([train_sets[head] for head in heads])
-    # ic(valid_sets)
     if args.loss == "dpose":
         valid_sets["committee-0"] = ConcatDataset([valid_sets.pop(f"committee-{i:d}") for i in range(args.n_committee)])
-    # ic(valid_sets)
     train_sampler, valid_sampler = None, None
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -607,8 +597,6 @@ def run(args: argparse.Namespace) -> None:
         )
     # if args.loss == "dpose":
     #     valid_loaders = {"committee-0": valid_loaders["committee-0"]}
-    # ic(train_loader)
-    # ic(valid_loaders)
 
     loss_fn = get_loss_fn(args, dipole_only, args.compute_dipole)
     args.avg_num_neighbors = get_avg_num_neighbors(head_configs, args, train_loader, device)

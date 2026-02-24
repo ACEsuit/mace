@@ -5,7 +5,6 @@
 ###########################################################################################
 
 import torch
-from icecream import ic
 
 from mace.tools import TensorDict
 from mace.tools.torch_geometric import Batch
@@ -185,23 +184,10 @@ class MixedNllMseLoss(torch.nn.Module):
         )
 
     def forward(self, ref: Batch, pred: TensorDict) -> torch.Tensor:
-        # ic(pred['energy'])
-        # variance = torch.max(torch.tensor([1e-6 * torch.ones_like(pred['stds']['energy']), torch.square(pred['stds']['energy'])], device=pred["energy"].device))
         variance = torch.clamp(torch.square(pred['stds']['energy']), min=1e-6)
         energy_loss = self.energy_weight * 0.5 * (
             torch.log(variance) + ((torch.square(ref["energy"] - pred["energy"])) / variance)
         )
-        # ic(self.energy_weight)
-        # ic(self.forces_weight)
-        # ic(pred['stds']['energy'])
-        # ic(variance)
-        # ic(torch.log(variance))
-        # ic(ref['energy'])
-        # ic(pred['energy'])
-        # ic(torch.square(ref["energy"] - pred["energy"]))
-        # ic((torch.square(ref["energy"] - pred["energy"])) / torch.square(variance))
-        # ic(torch.mean(energy_loss))
-        # ic(mean_squared_error_forces(ref, pred))
         return torch.mean(energy_loss) + self.forces_weight * mean_squared_error_forces(ref, pred)
 
     def __repr__(self):

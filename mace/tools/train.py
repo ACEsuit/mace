@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.distributed
-from icecream import ic
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim.swa_utils import SWALR, AveragedModel
 from torch.utils.data import DataLoader

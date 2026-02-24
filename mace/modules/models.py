@@ -14,7 +14,6 @@ from e3nn.util.jit import compile_mode
 from mace.data import AtomicData
 from mace.modules.radial import ZBLBasis
 from mace.tools.scatter import scatter_sum
-from icecream import ic
 
 from .blocks import (
     AtomicEnergiesBlock,
@@ -391,9 +390,6 @@ class ScaleShiftMACE(MACE):
         committee_heads: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
-        # committee_heads = [i for i, head in enumerate(self.heads) if "committee-" in head]
-        # committee_heads = torch.tensor(committee_heads, dtype=int).to(data['batch'].device)
-        
         data["positions"].requires_grad_(True)
         data["node_attrs"].requires_grad_(True)
         num_atoms_arange = torch.arange(data["positions"].shape[0], device=data['batch'].device)
@@ -489,6 +485,7 @@ class ScaleShiftMACE(MACE):
         total_energy_heads = e0_heads + inter_e_heads
         node_energy_heads = node_e0_heads + node_inter_es_heads
         output = {}
+        # TODO: Sort out the best way to active dpose output
         loss = "dpose"
         # loss = "normal"
         if loss == "dpose":
