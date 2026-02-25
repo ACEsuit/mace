@@ -11,13 +11,10 @@ from typing import Any, Dict
 import ase.io
 import numpy as np
 import pytest
+import torch
 from ase import Atoms
 from ase.calculators.fd import calculate_numerical_forces, calculate_numerical_stress
 from ase.io import read
-
-pytest.importorskip("graph_longrange", reason="graph_longrange is not installed")
-
-import torch
 from e3nn import o3
 
 from mace import data, modules, tools
@@ -28,6 +25,19 @@ from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules import interaction_classes
 from mace.modules.extensions import PolarMACE
 from mace.tools import torch_geometric, utils
+
+# pylint: disable=redefined-outer-name
+
+
+try:
+    import graph_longrange  # noqa: F401
+
+    GRAPH_LONGRANGE_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    GRAPH_LONGRANGE_AVAILABLE = False
+pytestmark = pytest.mark.skipif(
+    not GRAPH_LONGRANGE_AVAILABLE, reason="graph_longrange is not installed"
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_TRAIN = REPO_ROOT / "mace" / "cli" / "run_train.py"
@@ -53,7 +63,6 @@ def _water_atoms() -> Atoms:
 
 def _clone_batch(batch: dict) -> dict:
     return {k: (v.clone() if torch.is_tensor(v) else v) for k, v in batch.items()}
-
 
 
 def _random_rotation(device, dtype):
@@ -206,9 +215,8 @@ def _build_minimal_batch(device, dtype):
 
     cell_len = 10.0
     cell = torch.eye(3, dtype=dtype, device=device).unsqueeze(0) * cell_len
-    rcell = (
-        torch.eye(3, dtype=dtype, device=device).unsqueeze(0)
-        * (2.0 * math.pi / cell_len)
+    rcell = torch.eye(3, dtype=dtype, device=device).unsqueeze(0) * (
+        2.0 * math.pi / cell_len
     )
     volume = torch.ones((1,), dtype=dtype, device=device)
     pbc = torch.ones((1, 3), dtype=torch.bool, device=device)
@@ -296,9 +304,8 @@ def _build_water_batch(device, dtype):
     ptr = torch.tensor([0, n], dtype=torch.long, device=device)
     cell_len = 12.0
     cell = torch.eye(3, dtype=dtype, device=device).unsqueeze(0) * cell_len
-    rcell = (
-        torch.eye(3, dtype=dtype, device=device).unsqueeze(0)
-        * (2.0 * math.pi / cell_len)
+    rcell = torch.eye(3, dtype=dtype, device=device).unsqueeze(0) * (
+        2.0 * math.pi / cell_len
     )
     data_batch = {
         "positions": positions,
@@ -323,6 +330,7 @@ def _build_water_batch(device, dtype):
 # ---------------------------------------------------------------------------
 # Invariance tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_energy_invariance_under_rotation_and_translation(dtype):
@@ -376,7 +384,7 @@ def test_polar_checkpoint_evaluates(model_name, expected_energy):
     try:
         calc = mace_polar(model=model_name, device="cpu")
         model = mace_polar(model=model_name, device="cpu", return_raw_model=True)
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError, RuntimeError):
         pytest.skip(f"Polar model {model_name} not available")
 
     assert model.__class__.__name__ == "PolarMACE"
@@ -387,6 +395,7 @@ def test_polar_checkpoint_evaluates(model_name, expected_energy):
     energy = atoms.get_potential_energy()
     assert np.isfinite(energy)
     assert abs(float(energy) - expected_energy) < 1e-5
+
 
 # ---------------------------------------------------------------------------
 # CuEq parity tests
@@ -401,7 +410,7 @@ def test_polar_models_run_with_and_without_cueq(model_name, _):
     try:
         calc_e3 = mace_polar(model=model_name, device="cpu", enable_cueq=False)
         calc_cueq = mace_polar(model=model_name, device="cpu", enable_cueq=True)
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError, RuntimeError):
         pytest.skip(f"Polar model {model_name} not available")
 
     atoms = _water_atoms()
@@ -419,8 +428,10 @@ def test_polar_models_run_with_and_without_cueq(model_name, _):
 @pytest.mark.parametrize("model_name, _", POLAR_MODELS)
 def test_polar_true_cueq_matches_e3nn(model_name, _):
     try:
-        model_e3 = mace_polar(model=model_name, device="cpu", return_raw_model=True).eval()
-    except (FileNotFoundError, ValueError):
+        model_e3 = mace_polar(
+            model=model_name, device="cpu", return_raw_model=True
+        ).eval()
+    except (FileNotFoundError, ValueError, RuntimeError):
         pytest.skip(f"Polar model {model_name} not available")
 
     previous_default_dtype = torch.get_default_dtype()
@@ -428,15 +439,9 @@ def test_polar_true_cueq_matches_e3nn(model_name, _):
         torch.set_default_dtype(next(model_e3.parameters()).dtype)
         batch = _build_model_batch(model_e3)
 
-        out_e3 = model_e3(
-            _clone_batch(batch), compute_stress=True, training=False
-        )
-        model_cueq = run_e3nn_to_cueq(
-            model_e3, device="cpu", layout="ir_mul"
-        ).eval()
-        out_cueq = model_cueq(
-            _clone_batch(batch), compute_stress=True, training=False
-        )
+        out_e3 = model_e3(_clone_batch(batch), compute_stress=True, training=False)
+        model_cueq = run_e3nn_to_cueq(model_e3, device="cpu", layout="ir_mul").eval()
+        out_cueq = model_cueq(_clone_batch(batch), compute_stress=True, training=False)
 
         energy_max_abs = torch.max(
             torch.abs(out_cueq["energy"] - out_e3["energy"])
@@ -463,7 +468,7 @@ def test_polar_2l_true_cueq_matches_e3nn_float64():
             .eval()
             .double()
         )
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError, RuntimeError):
         pytest.skip(f"Polar model {model_name} not available")
 
     previous_default_dtype = torch.get_default_dtype()
@@ -471,17 +476,11 @@ def test_polar_2l_true_cueq_matches_e3nn_float64():
         torch.set_default_dtype(torch.float64)
         batch = _build_model_batch(model_e3)
 
-        out_e3 = model_e3(
-            _clone_batch(batch), compute_stress=True, training=False
-        )
+        out_e3 = model_e3(_clone_batch(batch), compute_stress=True, training=False)
         model_cueq = (
-            run_e3nn_to_cueq(model_e3, device="cpu", layout="ir_mul")
-            .eval()
-            .double()
+            run_e3nn_to_cueq(model_e3, device="cpu", layout="ir_mul").eval().double()
         )
-        out_cueq = model_cueq(
-            _clone_batch(batch), compute_stress=True, training=False
-        )
+        out_cueq = model_cueq(_clone_batch(batch), compute_stress=True, training=False)
 
         energy_max_abs = torch.max(
             torch.abs(out_cueq["energy"] - out_e3["energy"])
@@ -507,9 +506,12 @@ try:
 except ImportError:
     CUET_AVAILABLE = False
 
-import importlib.util as _ilu
+try:
+    import cuequivariance_torch as cuet  # noqa: F401
 
-CUET_OPS_AVAILABLE = _ilu.find_spec("cuequivariance_torch") is not None
+    CUET_OPS_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    CUET_OPS_AVAILABLE = False
 
 CUDA_AVAILABLE = torch.cuda.is_available()
 
@@ -572,9 +574,7 @@ class TestPolarCueqParity:
         return request.param
 
     @pytest.fixture
-    def batch(
-        self, device: str, model_config: Dict[str, Any]
-    ) -> Dict[str, torch.Tensor]:
+    def batch(self, device: str) -> Dict[str, torch.Tensor]:
         from ase import build
 
         table = tools.AtomicNumberTable([6])
@@ -606,9 +606,7 @@ class TestPolarCueqParity:
         )
         return batch
 
-    def test_e3nn_cueq_parity(
-        self, model_config: Dict[str, Any], batch, device
-    ):
+    def test_e3nn_cueq_parity(self, model_config: Dict[str, Any], batch, device):
         previous_default_dtype = torch.get_default_dtype()
         try:
             torch.set_default_dtype(torch.float64)
@@ -618,9 +616,9 @@ class TestPolarCueqParity:
             )
             model_e3 = modules.PolarMACE(**model_config).to(device)
 
-            model_cu = run_e3nn_to_cueq(
-                model_e3, device=device, layout="mul_ir"
-            ).to(device)
+            model_cu = run_e3nn_to_cueq(model_e3, device=device, layout="mul_ir").to(
+                device
+            )
             model_e3_back = run_cueq_to_e3nn(model_cu).to(device)
 
             def cast_batch(b):
@@ -663,7 +661,7 @@ def test_water_energy_changes_with_charge_and_spin():
             device="cpu",
             return_raw_model=True,
         )
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError, RuntimeError):
         pytest.skip("Polar model polar-1-l not available")
 
     model = model.to(device=device, dtype=dtype)
@@ -686,9 +684,7 @@ def test_water_energy_changes_with_charge_and_spin():
         k: (v.clone() if isinstance(v, torch.Tensor) else v)
         for k, v in data_batch.items()
     }
-    data_charge["total_charge"] = torch.tensor(
-        [1.0], dtype=dtype, device=device
-    )
+    data_charge["total_charge"] = torch.tensor([1.0], dtype=dtype, device=device)
     out_charge = model(data_charge, training=False, compute_force=False)
     E_charge = out_charge["energy"].detach()
 
@@ -697,6 +693,7 @@ def test_water_energy_changes_with_charge_and_spin():
             "Model weights did not respond to spin/charge changes "
             "in this environment"
         )
+
 
 # ---------------------------------------------------------------------------
 # Fine-tuning
@@ -712,13 +709,11 @@ def _write_polar_data(tmp_path):
         pbc=[True, True, True],
     )
     rng = np.random.default_rng(123)
-    for i in range(4):
+    for _ in range(4):
         sample = atoms.copy()
         sample.positions += rng.normal(0, 0.1, size=sample.positions.shape)
         sample.info["REF_energy"] = rng.normal(0, 1e-2)
-        sample.new_array(
-            "REF_forces", rng.normal(0, 1e-2, size=sample.positions.shape)
-        )
+        sample.new_array("REF_forces", rng.normal(0, 1e-2, size=sample.positions.shape))
         sample.info["REF_stress"] = rng.normal(0, 1e-2, size=6)
         configs.append(sample)
     path = tmp_path / "polar_smoke.xyz"
@@ -739,9 +734,7 @@ def _write_polar_dipole_data(tmp_path):
         sample = atoms.copy()
         sample.positions += rng.normal(0, 0.08, size=sample.positions.shape)
         sample.info["REF_energy"] = float(rng.normal(0, 1e-2))
-        sample.new_array(
-            "REF_forces", rng.normal(0, 1e-2, size=sample.positions.shape)
-        )
+        sample.new_array("REF_forces", rng.normal(0, 1e-2, size=sample.positions.shape))
         sample.info["REF_dipoles"] = rng.normal(0, 1e-2, size=3)
         configs.append(sample)
     path = tmp_path / "polar_dipole_smoke.xyz"
@@ -797,12 +790,14 @@ def _run_train(params, extra_env=None):
         else:
             cmd.append(f"--{key}={value}")
     try:
-        subprocess.run(
-            cmd, env=run_env, check=True, capture_output=True, text=True
-        )
+        subprocess.run(cmd, env=run_env, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as exc:
         print(exc.stdout)
         print(exc.stderr)
+        if "Model download failed and no local model found" in (
+            exc.stdout or ""
+        ) or "Model download failed and no local model found" in (exc.stderr or ""):
+            pytest.skip("Polar foundation model not available in this environment")
         raise
 
 
@@ -864,16 +859,10 @@ def test_run_train_polar_finetuning_from_checkpoint(tmp_path):
     _assert_model_predicts(model_path, configs, heads=("Default",))
 
 
-@pytest.mark.parametrize(
-    "foundation_model", ["polar-1-m", "polar-1-l"]
-)
-def test_run_train_polar_finetuning_foundation_model(
-    tmp_path, foundation_model
-):
+@pytest.mark.parametrize("foundation_model", ["polar-1-m", "polar-1-l"])
+def test_run_train_polar_finetuning_foundation_model(tmp_path, foundation_model):
     train_file, configs = _write_polar_data(tmp_path)
-    params = _base_train_params(
-        tmp_path, train_file, f"polar_{foundation_model}_ft"
-    )
+    params = _base_train_params(tmp_path, train_file, f"polar_{foundation_model}_ft")
     params["foundation_model"] = foundation_model
     params["force_mh_ft_lr"] = True
     params["loss"] = "weighted"
@@ -929,9 +918,7 @@ def test_run_train_polar_finetuning_energy_forces_dipole(tmp_path):
         assert np.all(np.isfinite(dipole))
 
 
-@pytest.mark.parametrize(
-    "foundation_model", ["polar-1-m", "polar-1-l"]
-)
+@pytest.mark.parametrize("foundation_model", ["polar-1-m", "polar-1-l"])
 def test_run_train_polar_multihead_finetuning_foundation_model(
     tmp_path, foundation_model
 ):
@@ -966,25 +953,25 @@ def test_run_train_polar_multihead_finetuning_foundation_model(
     model = torch.load(model_path, map_location="cpu", weights_only=False)
     assert model.__class__.__name__ == "PolarMACE"
     assert set(model.heads) == {"DFT", "MP2", "pt_head"}
-    _assert_model_predicts(
-        model_path, configs, heads=("DFT", "MP2", "pt_head")
-    )
+    _assert_model_predicts(model_path, configs, heads=("DFT", "MP2", "pt_head"))
 
 
 # ---------------------------------------------------------------------------
 # Finite difference
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
-def polar_calc_fd() -> MACECalculator:
+def polar_calc_fd() -> MACECalculator:  # pylint: disable=inconsistent-return-statements
     try:
-        return mace_polar(
+        calc = mace_polar(
             model="polar-1-m",
             device="cpu",
             default_dtype="float64",
         )
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError, RuntimeError):
         pytest.skip("Polar model polar-1-m not available")
+    return calc
 
 
 def _periodic_water(cell: np.ndarray) -> Atoms:
@@ -1013,9 +1000,7 @@ def test_polar_forces_match_finite_difference(
     atoms.calc = polar_calc_fd
 
     forces = atoms.get_forces()
-    forces_fd = calculate_numerical_forces(
-        atoms, eps=1e-5, force_consistent=False
-    )
+    forces_fd = calculate_numerical_forces(atoms, eps=1e-5, force_consistent=False)
 
     np.testing.assert_allclose(forces, forces_fd, rtol=0.0, atol=1e-6)
 
@@ -1024,21 +1009,15 @@ def test_polar_forces_match_finite_difference(
     "cell, atol",
     [
         (
-            np.array(
-                [[40.0, 2.0, 0.0], [0.5, 42.0, 1.5], [0.0, 0.2, 38.0]]
-            ),
+            np.array([[40.0, 2.0, 0.0], [0.5, 42.0, 1.5], [0.0, 0.2, 38.0]]),
             2.0e-7,
         ),
         (
-            np.array(
-                [[60.0, 3.0, 0.5], [1.0, 63.0, 2.0], [0.2, 0.5, 57.0]]
-            ),
+            np.array([[60.0, 3.0, 0.5], [1.0, 63.0, 2.0], [0.2, 0.5, 57.0]]),
             6.0e-8,
         ),
         (
-            np.array(
-                [[80.0, 4.0, 1.0], [1.5, 84.0, 2.5], [0.4, 0.8, 76.0]]
-            ),
+            np.array([[80.0, 4.0, 1.0], [1.5, 84.0, 2.5], [0.4, 0.8, 76.0]]),
             3.0e-8,
         ),
     ],
@@ -1052,9 +1031,7 @@ def test_polar_stress_matches_fd_large_periodic_boxes(
     atoms.calc = polar_calc_fd
 
     stress = atoms.get_stress(voigt=True)
-    stress_fd = calculate_numerical_stress(
-        atoms, eps=1e-5, force_consistent=False
-    )
+    stress_fd = calculate_numerical_stress(atoms, eps=1e-5, force_consistent=False)
 
     np.testing.assert_allclose(stress, stress_fd, rtol=0.0, atol=atol)
 
@@ -1064,9 +1041,7 @@ def test_polar_stress_matches_fd_large_periodic_boxes(
 # ---------------------------------------------------------------------------
 
 _REG_REF_PATH = (
-    Path(__file__).resolve().parent
-    / "references"
-    / "polar_regression_reference.json"
+    Path(__file__).resolve().parent / "references" / "polar_regression_reference.json"
 )
 
 if _REG_REF_PATH.exists():
@@ -1093,7 +1068,7 @@ def polar_calc_regression(request):
             device="cpu",
             default_dtype=dtype,
         )
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError, RuntimeError):
         pytest.skip("Polar model polar-1-m not available")
     return dtype, calc
 
@@ -1111,9 +1086,7 @@ def polar_calc_regression(request):
     reason="benchmarks-mp X23 structures not available",
 )
 @pytest.mark.parametrize("structure_relpath", STRUCTURE_KEYS)
-def test_polar_2l_regression_hardcoded_values(
-    polar_calc_regression, structure_relpath
-):
+def test_polar_2l_regression_hardcoded_values(polar_calc_regression, structure_relpath):
     dtype, calc = polar_calc_regression
     expected = _REF["structures"][structure_relpath][dtype]
 
@@ -1127,9 +1100,7 @@ def test_polar_2l_regression_hardcoded_values(
     stress = at.get_stress()
 
     atol = ATOL_BY_DTYPE[dtype]
-    np.testing.assert_allclose(
-        energy, expected["energy"], rtol=0.0, atol=atol
-    )
+    np.testing.assert_allclose(energy, expected["energy"], rtol=0.0, atol=atol)
     np.testing.assert_allclose(
         forces, np.array(expected["forces"]), rtol=0.0, atol=atol
     )

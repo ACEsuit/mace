@@ -325,7 +325,7 @@ class GeneralNonLinearBiasReadoutBlock(torch.nn.Module):
             [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
         )
         irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
-        activation_fn = torch.nn.functional.silu
+        activation_fn = gate if gate is not None else torch.nn.functional.silu
         act_gates_fn = torch.nn.functional.sigmoid
         self.equivariant_nonlin = nn.Gate(
             irreps_scalars=irreps_scalars,
@@ -396,7 +396,9 @@ class AtomicEnergiesBlock(torch.nn.Module):
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
-        energies = torch.atleast_2d(self.atomic_energies).T.to(dtype=x.dtype, device=x.device)
+        energies = torch.atleast_2d(self.atomic_energies).T.to(
+            dtype=x.dtype, device=x.device
+        )
         return torch.matmul(x, energies)
 
     def __repr__(self):

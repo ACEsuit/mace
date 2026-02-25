@@ -5,7 +5,7 @@
 ###########################################################################################
 
 from copy import deepcopy
-from typing import Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 import torch.utils.data
 
@@ -88,6 +88,7 @@ class AtomicData(torch_geometric.data.Data):
         volume: Optional[torch.Tensor] = None,  # [,]
         fermi_level: Optional[torch.Tensor] = None,  # [,]
         external_field: Optional[torch.Tensor] = None,  # [1,3]
+        **extra_data: torch.Tensor,
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -160,6 +161,7 @@ class AtomicData(torch_geometric.data.Data):
             "fermi_level": fermi_level,
             "external_field": external_field,
         }
+        data.update(extra_data)
         super().__init__(**data)
 
     @classmethod
@@ -395,6 +397,39 @@ class AtomicData(torch_geometric.data.Data):
             else torch.zeros(num_atoms, 1, dtype=torch.get_default_dtype())
         )
 
+        known_properties = {
+            "forces",
+            "energy",
+            "stress",
+            "virials",
+            "dipole",
+            "charges",
+            "elec_temp",
+            "total_charge",
+            "polarizability",
+            "total_spin",
+            "density_coefficients",
+            "fermi_level",
+            "external_field",
+        }
+        extra_properties: Dict[str, torch.Tensor] = {}
+        for name, value in config.properties.items():
+            if (
+                name in known_properties
+                or value is None
+                or isinstance(value, (str, bytes))
+            ):
+                continue
+            try:
+                tensor_value = (
+                    value if isinstance(value, torch.Tensor) else torch.as_tensor(value)
+                )
+            except (TypeError, ValueError):
+                continue
+            if tensor_value.dtype.is_floating_point:
+                tensor_value = tensor_value.to(dtype=torch.get_default_dtype())
+            extra_properties[name] = tensor_value
+
         return cls(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
             positions=positions,
@@ -427,6 +462,7 @@ class AtomicData(torch_geometric.data.Data):
             volume=volume,
             fermi_level=fermi_level,
             external_field=external_field,
+            **extra_properties,
         )
 
 

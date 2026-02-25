@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines
+
 import json
 import os
 import subprocess

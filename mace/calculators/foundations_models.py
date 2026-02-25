@@ -101,6 +101,7 @@ def download_mace_mp_checkpoint(model: Optional[Union[str, Path]] = None) -> str
 
     return cached_model_path
 
+
 def download_mace_polar_checkpoint(model: Union[str, Path]) -> str:
     """
     Downloads or locates a MACE-Polar checkpoint file.

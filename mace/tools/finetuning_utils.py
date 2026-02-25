@@ -308,8 +308,7 @@ def load_foundations_elements(
                     and hasattr(emb_found, "weight")
                     and emb_found.weight.shape[0]
                     == num_species_foundations * num_channels_foundation
-                    and emb_new.weight.shape[0]
-                    == num_species * num_channels_foundation
+                    and emb_new.weight.shape[0] == num_species * num_channels_foundation
                 ):
                     emb_new.weight = torch.nn.Parameter(
                         emb_found.weight.view(num_species_foundations, -1)[

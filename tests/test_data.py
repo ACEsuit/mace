@@ -81,7 +81,9 @@ class TestAtomicData:
                 assert batch.forces.shape == (6, 3)
         except RuntimeError as exc:
             if num_workers > 0 and "torch_shm_manager" in str(exc):
-                pytest.skip("Shared-memory dataloader is not permitted in this environment")
+                pytest.skip(
+                    "Shared-memory dataloader is not permitted in this environment"
+                )
             raise
 
     def test_to_atomic_data_dict(self):
@@ -109,9 +111,7 @@ class TestAtomicData:
         dataset_path = tmp_path / "test.h5"
         with h5py.File(str(dataset_path), "w") as f:
             save_configurations_as_HDF5(datasets, 0, f)
-        train_dataset = HDF5Dataset(
-            str(dataset_path), z_table=self.table, r_max=3.0
-        )
+        train_dataset = HDF5Dataset(str(dataset_path), z_table=self.table, r_max=3.0)
         train_loader = torch_geometric.dataloader.DataLoader(
             dataset=train_dataset,
             batch_size=2,

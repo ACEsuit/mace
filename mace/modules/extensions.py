@@ -1,8 +1,8 @@
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
+import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
-import torch
 
 try:
     from graph_longrange.energy import GTOElectrostaticEnergy
@@ -17,7 +17,7 @@ try:
 except (ImportError, ModuleNotFoundError):
     GRAPH_LONGRANGE_AVAILABLE = False
 
-from mace.modules import InteractionBlock, NonLinearBiasReadoutBlock
+from mace.modules import NonLinearBiasReadoutBlock
 from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock
 from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import (
