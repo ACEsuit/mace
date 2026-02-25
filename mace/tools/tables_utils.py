@@ -155,6 +155,7 @@ def create_error_table(
             )
         elif (
             table_type == "PerAtomRMSEstressvirials"
+            and "rmse_stress" in metrics
             and metrics["rmse_stress"] is not None
         ):
             table.add_row(
@@ -168,6 +169,7 @@ def create_error_table(
             )
         elif (
             table_type == "PerAtomRMSEstressvirials"
+            and "rmse_virials" in metrics
             and metrics["rmse_virials"] is not None
         ):
             table.add_row(
@@ -181,6 +183,7 @@ def create_error_table(
             )
         elif (
             table_type == "PerAtomMAEstressvirials"
+            and "mae_stress" in metrics
             and metrics["mae_stress"] is not None
         ):
             table.add_row(
@@ -194,6 +197,7 @@ def create_error_table(
             )
         elif (
             table_type == "PerAtomMAEstressvirials"
+            and "mae_virials" in metrics
             and metrics["mae_virials"] is not None
         ):
             table.add_row(

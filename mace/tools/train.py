@@ -70,6 +70,7 @@ def valid_err_log(
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
+        and "rmse_stress" in eval_metrics
         and eval_metrics["rmse_stress"] is not None
     ):
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
@@ -80,6 +81,7 @@ def valid_err_log(
         )
     elif (
         log_errors == "PerAtomRMSEstressvirials"
+        and "rmse_virials_per_atom" in eval_metrics
         and eval_metrics["rmse_virials_per_atom"] is not None
     ):
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
@@ -90,6 +92,7 @@ def valid_err_log(
         )
     elif (
         log_errors == "PerAtomMAEstressvirials"
+        and "mae_stress_per_atom" in eval_metrics
         and eval_metrics["mae_stress_per_atom"] is not None
     ):
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
@@ -100,6 +103,7 @@ def valid_err_log(
         )
     elif (
         log_errors == "PerAtomMAEstressvirials"
+        and "mae_virials_per_atom" in eval_metrics
         and eval_metrics["mae_virials_per_atom"] is not None
     ):
         error_e = eval_metrics["mae_e_per_atom"] * 1e3
