@@ -6,21 +6,22 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
 import math
+from abc import abstractmethod
 from typing import List, Optional, Tuple, Type
 
-from mace.modules.blocks import GeneralNonLinearBiasReadoutBlock
-from mace.modules.radial import RadialMLP
 import torch
 from e3nn import nn, o3
 from e3nn.util.jit import compile_mode
 
+from mace.modules.blocks import GeneralNonLinearBiasReadoutBlock
 from mace.modules.irreps_tools import tp_out_irreps_with_instructions
+from mace.modules.radial import RadialMLP
+
 from .wrapper_ops import (
     CuEquivarianceConfig,
-    OEQConfig,
     Linear,
+    OEQConfig,
     TransposeIrrepsLayoutWrapper,
 )
 
@@ -77,7 +78,7 @@ def _sparse_dot_instructions(
 ):
     _, instructions = tp_out_irreps_with_instructions(feat_in1, feat_in2, feat_out)
     new = []
-    for i, j, k, mode, trainable in instructions:
+    for i, j, _k, mode, trainable in instructions:
         new.append((i, j, 0, mode, trainable))
     return new
 
@@ -114,8 +115,12 @@ class PotentialEmbeddingBlock(torch.nn.Module):
 
 
 @compile_mode("script")
-class AgnosticChargeBiasedLinearPotentialEmbedding(PotentialEmbeddingBlock):
-    def _setup(self, charges_irreps: o3.Irreps) -> None:
+class AgnosticChargeBiasedLinearPotentialEmbedding(
+    PotentialEmbeddingBlock
+):  # pylint: disable=arguments-differ
+    def _setup(
+        self, charges_irreps: o3.Irreps
+    ) -> None:  # pylint: disable=arguments-differ
         self.potential_linear = o3.Linear(
             irreps_in=self.potential_irreps,
             irreps_out=self.node_feats_irreps,
@@ -171,7 +176,7 @@ class AgnosticChargeBiasedLinearPotentialEmbedding(PotentialEmbeddingBlock):
         node_feats: torch.Tensor,
         node_attrs: torch.Tensor,
         local_charges: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> torch.Tensor:  # pylint: disable=arguments-differ
         potential_to_mul_ir = getattr(self, "_potential_to_mul_ir", None)
         node_feats_to_mul_ir = getattr(self, "_node_feats_to_mul_ir", None)
         charges_to_mul_ir = getattr(self, "_charges_to_mul_ir", None)
@@ -195,11 +200,7 @@ class AgnosticChargeBiasedLinearPotentialEmbedding(PotentialEmbeddingBlock):
             node_feats_emb = node_feats_from_mul_ir(node_feats_emb)
             charges_emb = node_feats_from_mul_ir(charges_emb)
 
-        return (
-            potential_emb
-            + node_feats_emb
-            + charges_emb
-        )
+        return potential_emb + node_feats_emb + charges_emb
 
 
 @compile_mode("script")
@@ -253,6 +254,7 @@ class FieldUpdateBlock(torch.nn.Module):
         self.avg_num_neighbors = avg_num_neighbors
         self.potential_irreps = potential_irreps
         self.charges_irreps = charges_irreps
+        self.radial_MLP = radial_MLP
         self.register_buffer("field_norm_factor", torch.tensor(field_norm_factor))
         self.cueq_config = cueq_config
         self.oeq_config = oeq_config
@@ -284,7 +286,7 @@ def instructions_for_sparse_tp(feat_in1, feat_in2, feat_out):
     _, instructions = tp_out_irreps_with_instructions(feat_in1, feat_in2, feat_out)
     new_instructions = []
     for instr in instructions:
-        i, j, k, mode, trainable = instr
+        i, j, _k, mode, trainable = instr
         new_instructions.append((i, j, 0, mode, trainable))
     return new_instructions
 
@@ -455,7 +457,9 @@ class SparseUvuTensorProduct(torch.nn.Module):
                 scalars = in2_block.view(batch, mul2)
                 w = self.weight[w_start:w_stop].view(mul1, mul2)
                 mixed = torch.einsum("bv,uv->bu", scalars, w)
-                contrib = path_weight * (x1v * mixed.unsqueeze(-1) / math.sqrt(float(d1)))
+                contrib = path_weight * (
+                    x1v * mixed.unsqueeze(-1) / math.sqrt(float(d1))
+                )
                 out_block_mi = to_mul_ir(out_block, mul1, d1)
                 out[:, out_start:out_stop] = from_mul_ir(out_block_mi + contrib)
 
@@ -473,6 +477,7 @@ class AgnosticEmbeddedOneBodyVariableUpdate(FieldUpdateBlock):
         num_elements: Optional[int] = None,
         **kwargs,
     ) -> None:
+        _ = (nonlinearity_cls, num_elements)
         # product irreps is node_feats_irreps but only l=0
         invar_irreps = o3.Irreps(f"{self.node_feats_irreps.count(o3.Irrep(0, 1))}x0e")
         self.potential_embedding = potential_embedding_cls(
@@ -534,7 +539,7 @@ class AgnosticEmbeddedOneBodyVariableUpdate(FieldUpdateBlock):
             irreps_in=self.node_feats_irreps,
             MLP_irreps=MLP_irreps,
             gate=torch.nn.functional.silu,
-            irreps_out=(self.charges_irreps + o3.Irreps(f"2x0e")),
+            irreps_out=(self.charges_irreps + o3.Irreps("2x0e")),
             cueq_config=None,
         )
         layout_str = (
@@ -645,7 +650,8 @@ class PostScfReadout(torch.nn.Module):
 
 @compile_mode("script")
 class OneBodyMLPFieldReadout(PostScfReadout):
-    def _setup(self, **kwargs):
+    def _setup(self, **kwargs) -> None:
+        _ = kwargs
         invar_irreps = o3.Irreps(f"{self.node_feats_irreps.count(o3.Irrep(0, 1))}x0e")
         self.linear_up_q = o3.Linear(
             self.charges_irreps, self.node_feats_irreps, biases=True

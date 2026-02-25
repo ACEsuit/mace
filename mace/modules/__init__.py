@@ -24,6 +24,7 @@ from .blocks import (
     RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
 )
+from .extensions import PolarMACE
 from .loss import (
     DipolePolarLoss,
     DipoleSingleLoss,
@@ -43,7 +44,6 @@ from .models import (
     EnergyDipolesMACE,
     ScaleShiftMACE,
 )
-from .extensions import PolarMACE
 from .radial import BesselBasis, GaussianBasis, PolynomialCutoff, ZBLBasis
 from .symmetric_contraction import SymmetricContraction
 from .utils import (

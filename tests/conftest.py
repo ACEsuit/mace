@@ -12,7 +12,7 @@ def pytest_configure(config):
         import torch._inductor.config as inductor_config
 
         inductor_config.cpp_cache_precompile_headers = False
-    except Exception:
+    except (ImportError, AttributeError):
         pass
     if hasattr(config.option, "randomly_reset_seed"):
         # Some environments with pytest-randomly + thinc can produce invalid seeds.
@@ -28,7 +28,7 @@ def pytest_configure(config):
 def pytest_runtest_logreport(report):
     """Prints a line about available disc space & test duration after each test."""
     if report.when == "call":
-        total, used, free = shutil.disk_usage("/")
+        _total, _used, free = shutil.disk_usage("/")
         print(
             f"\n[METRICS] "
             f"{report.nodeid}: "

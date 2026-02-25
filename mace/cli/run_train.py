@@ -174,7 +174,9 @@ def run(args) -> None:
             )
             model_foundation = calc.models[0]
         else:
-            model_foundation = torch.load(args.foundation_model, map_location=args.device)
+            model_foundation = torch.load(
+                args.foundation_model, map_location=args.device
+            )
             logging.info(
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )

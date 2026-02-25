@@ -750,11 +750,14 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
 
 
 def test_mace_polar_constructor():
-    pytest.importorskip("graph_longrange", reason="graph_longrange is not installed")
+    try:
+        import graph_longrange  # noqa: F401
+    except (ImportError, ModuleNotFoundError):
+        pytest.skip("graph_longrange is not installed")
     model_name = "polar-1-m"
     try:
         polar_calc = mace_polar(model=model_name, device="cpu")
-    except FileNotFoundError:
+    except (FileNotFoundError, RuntimeError):
         pytest.skip(f"Missing Polar foundation model file: {model_name}")
 
     assert isinstance(polar_calc, MACECalculator)

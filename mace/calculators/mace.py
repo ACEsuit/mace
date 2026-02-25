@@ -96,7 +96,10 @@ class MACECalculator(Calculator):
     ):
         Calculator.__init__(self, **kwargs)
         if enable_cueq or enable_oeq:
-            assert model_type in ["MACE", "PolarMACE"], "CuEq only supports MACE and PolarMACE models"
+            assert model_type in [
+                "MACE",
+                "PolarMACE",
+            ], "CuEq only supports MACE and PolarMACE models"
             if compile_mode is not None:
                 logging.warning(
                     "CuEq or Oeq does not support torch.compile, setting compile_mode to None"
@@ -133,7 +136,11 @@ class MACECalculator(Calculator):
 
         self.results = {}
         if info_keys is None:
-            info_keys = {"total_spin": "spin", "total_charge": "charge", "external_field": "external_field"}
+            info_keys = {
+                "total_spin": "spin",
+                "total_charge": "charge",
+                "external_field": "external_field",
+            }
         if arrays_keys is None:
             arrays_keys = {}
         self.info_keys = info_keys
@@ -505,8 +512,16 @@ class MACECalculator(Calculator):
         if self.model_type == "PolarMACE":
             results_map.extend(
                 [
-                    ("interaction_energy", "interaction_energy", self.energy_units_to_eV),
-                    ("electrostatic_energy", "electrostatic_energy", self.energy_units_to_eV),
+                    (
+                        "interaction_energy",
+                        "interaction_energy",
+                        self.energy_units_to_eV,
+                    ),
+                    (
+                        "electrostatic_energy",
+                        "electrostatic_energy",
+                        self.energy_units_to_eV,
+                    ),
                     ("electron_energy", "electron_energy", self.energy_units_to_eV),
                     ("spins", "spins", 1.0),
                     ("density_coefficients", "density_coefficients", 1.0),

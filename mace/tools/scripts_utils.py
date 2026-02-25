@@ -256,7 +256,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
     mlp_scalars_per_head = max(1, model_mlp_irreps.count((0, 1)) // len(heads))
     gate = None
     if hasattr(model.readouts[-1], "non_linearity"):
-        acts = model.readouts[-1].non_linearity._modules.get("acts", None)  # pylint: disable=protected-access
+        acts = getattr(model.readouts[-1].non_linearity, "acts", None)
         if acts is not None and len(acts) > 0 and hasattr(acts[0], "f"):
             gate = acts[0].f
     try:
@@ -330,7 +330,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         if hasattr(model, "fukui_source_map") and hasattr(
             model.fukui_source_map, "non_linearity"
         ):
-            acts = model.fukui_source_map.non_linearity._modules.get("acts", None)  # pylint: disable=protected-access
+            acts = getattr(model.fukui_source_map.non_linearity, "acts", None)
             if acts is not None and len(acts) > 0 and hasattr(acts[0], "f"):
                 config["gate"] = acts[0].f
         config["kspace_cutoff_factor"] = model.kspace_cutoff_factor
@@ -340,7 +340,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         )
         config["field_feature_max_l"] = model.field_feature_max_l
         config["field_feature_widths"] = model.field_feature_widths
-        config["field_feature_norms"] = model._field_feature_norms
+        config["field_feature_norms"] = getattr(model, "_field_feature_norms")
         config["num_recursion_steps"] = model.num_recursion_steps
         config["include_electrostatic_self_interaction"] = (
             model.include_electrostatic_self_interaction
@@ -352,8 +352,10 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         )
         config["field_norm_factor"] = model.field_norm_factor
         config["field_si"] = model.field_si
-        config["fixedpoint_update_config"] = model._fixedpoint_update_config.copy()
-        config["field_readout_config"] = model._field_readout_config.copy()
+        config["fixedpoint_update_config"] = getattr(
+            model, "_fixedpoint_update_config"
+        ).copy()
+        config["field_readout_config"] = getattr(model, "_field_readout_config").copy()
         config["keep_last_layer_irreps"] = model.keep_last_layer_irreps
     return config
 

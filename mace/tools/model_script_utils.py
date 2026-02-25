@@ -22,7 +22,6 @@ def configure_model(
     z_table=None,
     head_configs=None,
 ):
-    requested_model = args.model
     # Selecting outputs
     compute_virials = args.loss == "virials"
     compute_stress = args.loss in ("stress", "huber", "universal")
@@ -106,7 +105,10 @@ def configure_model(
 
         args.max_L = model_config_foundation["hidden_irreps"].lmax
 
-        if args.model in ("ScaleShiftMACE", "PolarMACE") or model_foundation.__class__.__name__ in (
+        if args.model in (
+            "ScaleShiftMACE",
+            "PolarMACE",
+        ) or model_foundation.__class__.__name__ in (
             "ScaleShiftMACE",
             "PolarMACE",
         ):
@@ -309,7 +311,9 @@ def _build_model(
             atomic_multipoles_max_l=args.atomic_multipoles_max_l,
             atomic_multipoles_smearing_width=args.atomic_multipoles_smearing_width,
             field_feature_max_l=args.field_feature_max_l,
-            field_feature_widths=field_feature_widths if field_feature_widths is not None else [1.0],
+            field_feature_widths=(
+                field_feature_widths if field_feature_widths is not None else [1.0]
+            ),
             num_recursion_steps=args.num_recursion_steps,
             field_si=args.field_si,
             include_electrostatic_self_interaction=args.include_electrostatic_self_interaction,

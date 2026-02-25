@@ -1,10 +1,11 @@
-import mace
 import os
+
 import numpy as np
 import torch
 from ase import Atoms
 from e3nn import o3
 
+import mace
 from mace.calculators.mace import MACECalculator
 from mace.modules import interaction_classes
 from mace.modules.blocks import NonLinearBiasReadoutBlock

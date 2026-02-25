@@ -11,6 +11,7 @@ from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
 from mace.calculators import mace_mp, mace_off, mace_omol
+from mace.calculators.foundations_models import mace_polar, polar_model_paths
 from mace.tools import torch_geometric
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model, remove_pt_head
@@ -19,10 +20,8 @@ from mace.tools.utils import AtomicNumberTable
 try:
     import graph_longrange  # noqa: F401
 
-    from mace.calculators.foundations_models import mace_polar, polar_model_paths
-
     GRAPH_LONGRANGE_AVAILABLE = True
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     GRAPH_LONGRANGE_AVAILABLE = False
 
 MODEL_PATH = (
@@ -973,9 +972,7 @@ def test_polar_extract_config_roundtrip():
     Extract config from a PolarMACE foundation model, rebuild the model,
     load state dict, and verify outputs are identical.
     """
-    foundation = mace_polar(
-        model="polar-1-m", device="cpu", return_raw_model=True
-    )
+    foundation = mace_polar(model="polar-1-m", device="cpu", return_raw_model=True)
     config = extract_config_mace_model(foundation)
     assert "kspace_cutoff_factor" in config  # PolarMACE-specific field
 
@@ -991,9 +988,9 @@ def test_polar_extract_config_roundtrip():
     out_copy = model_copy(batch, training=False)
 
     for key in ("energy", "forces"):
-        assert torch.allclose(out_orig[key], out_copy[key], atol=1e-10), (
-            f"{key} mismatch after config roundtrip"
-        )
+        assert torch.allclose(
+            out_orig[key], out_copy[key], atol=1e-10
+        ), f"{key} mismatch after config roundtrip"
 
 
 @_skip_polar
@@ -1009,15 +1006,11 @@ def test_polar_elements_subset_reproduces_energy_forces():
       3. PolarMACE(**config)
       4. load_foundations_elements()
     """
-    foundation = mace_polar(
-        model="polar-1-m", device="cpu", return_raw_model=True
-    )
+    foundation = mace_polar(model="polar-1-m", device="cpu", return_raw_model=True)
 
     # Reference outputs from the full 83-element foundation model
     atoms = _water_atoms()
-    calc_ref = mace_polar(
-        model="polar-1-m", device="cpu", default_dtype="float64"
-    )
+    calc_ref = mace_polar(model="polar-1-m", device="cpu", default_dtype="float64")
     atoms.calc = calc_ref
     energy_ref = atoms.get_potential_energy()
     forces_ref = atoms.get_forces()
@@ -1025,14 +1018,10 @@ def test_polar_elements_subset_reproduces_energy_forces():
     # Extract config and adapt to a 2-element subset (H=1, O=8)
     full_cfg = extract_config_mace_model(foundation)
     subset_table = AtomicNumberTable([1, 8])
-    z_table_full = AtomicNumberTable(
-        [int(z) for z in foundation.atomic_numbers]
-    )
+    z_table_full = AtomicNumberTable([int(z) for z in foundation.atomic_numbers])
     col_idx = [z_table_full.z_to_index(z) for z in subset_table.zs]
 
-    ae_full = (
-        foundation.atomic_energies_fn.atomic_energies.detach().cpu().numpy()
-    )
+    ae_full = foundation.atomic_energies_fn.atomic_energies.detach().cpu().numpy()
     ae_subset = ae_full[col_idx]
 
     model_cfg = dict(full_cfg)
@@ -1076,20 +1065,14 @@ def test_polar_elements_subset_no_readout_finite():
     for a new single-head model). Verify energies/forces are finite and
     reasonably close to the foundation (within the readout re-init error).
     """
-    foundation = mace_polar(
-        model="polar-1-m", device="cpu", return_raw_model=True
-    )
+    foundation = mace_polar(model="polar-1-m", device="cpu", return_raw_model=True)
 
     full_cfg = extract_config_mace_model(foundation)
     subset_table = AtomicNumberTable([1, 8])
-    z_table_full = AtomicNumberTable(
-        [int(z) for z in foundation.atomic_numbers]
-    )
+    z_table_full = AtomicNumberTable([int(z) for z in foundation.atomic_numbers])
     col_idx = [z_table_full.z_to_index(z) for z in subset_table.zs]
 
-    ae_full = (
-        foundation.atomic_energies_fn.atomic_energies.detach().cpu().numpy()
-    )
+    ae_full = foundation.atomic_energies_fn.atomic_energies.detach().cpu().numpy()
     ae_subset = ae_full[col_idx]
 
     model_cfg = dict(full_cfg)
@@ -1128,21 +1111,15 @@ def test_polar_elements_subset_dtype_float64():
     Verify that load_foundations_elements correctly casts a float32 foundation
     model into a float64 finetuning model (the --default_dtype=float64 case).
     """
-    foundation = mace_polar(
-        model="polar-1-m", device="cpu", return_raw_model=True
-    )
+    foundation = mace_polar(model="polar-1-m", device="cpu", return_raw_model=True)
     assert next(foundation.parameters()).dtype == torch.float32
 
     full_cfg = extract_config_mace_model(foundation)
     subset_table = AtomicNumberTable([1, 8])
-    z_table_full = AtomicNumberTable(
-        [int(z) for z in foundation.atomic_numbers]
-    )
+    z_table_full = AtomicNumberTable([int(z) for z in foundation.atomic_numbers])
     col_idx = [z_table_full.z_to_index(z) for z in subset_table.zs]
     ae_subset = (
-        foundation.atomic_energies_fn.atomic_energies.detach().cpu().numpy()[
-            col_idx
-        ]
+        foundation.atomic_energies_fn.atomic_energies.detach().cpu().numpy()[col_idx]
     )
 
     model_cfg = dict(full_cfg)
@@ -1171,9 +1148,9 @@ def test_polar_elements_subset_dtype_float64():
 
     # Verify all params are float64 after loading
     for name, param in model_loaded.named_parameters():
-        assert param.dtype == torch.float64, (
-            f"Parameter {name} has dtype {param.dtype}, expected float64"
-        )
+        assert (
+            param.dtype == torch.float64
+        ), f"Parameter {name} has dtype {param.dtype}, expected float64"
 
     atoms = _water_atoms()
     batch = _polar_batch(model_loaded, atoms)
@@ -1191,9 +1168,7 @@ def test_polar_multihead_finetuning_loads_correctly():
     foundation config, load weights, and verify the pt_head reproduces
     the foundation model's outputs.
     """
-    foundation = mace_polar(
-        model="polar-1-m", device="cpu", return_raw_model=True
-    )
+    foundation = mace_polar(model="polar-1-m", device="cpu", return_raw_model=True)
 
     # Reference from full foundation
     atoms = _water_atoms()
@@ -1205,13 +1180,9 @@ def test_polar_multihead_finetuning_loads_correctly():
     # Build a 2-head model with element subsetting
     full_cfg = extract_config_mace_model(foundation)
     subset_table = AtomicNumberTable([1, 8])
-    z_table_full = AtomicNumberTable(
-        [int(z) for z in foundation.atomic_numbers]
-    )
+    z_table_full = AtomicNumberTable([int(z) for z in foundation.atomic_numbers])
     col_idx = [z_table_full.z_to_index(z) for z in subset_table.zs]
-    ae_full = (
-        foundation.atomic_energies_fn.atomic_energies.detach().cpu().numpy()
-    )
+    ae_full = foundation.atomic_energies_fn.atomic_energies.detach().cpu().numpy()
     ae_subset = ae_full[col_idx]
 
     heads = ["pt_head", "DFT"]
@@ -1237,9 +1208,7 @@ def test_polar_multihead_finetuning_loads_correctly():
     )
 
     # Evaluate the pt_head — should reproduce the foundation
-    batch_pt = _polar_batch(
-        model_loaded, atoms, heads=heads, head_name="pt_head"
-    )
+    batch_pt = _polar_batch(model_loaded, atoms, heads=heads, head_name="pt_head")
     out_pt = model_loaded(batch_pt, training=False)
     energy_pt = out_pt["energy"].detach().cpu().item()
     forces_pt = out_pt["forces"].detach().cpu().numpy()
@@ -1253,8 +1222,6 @@ def test_polar_multihead_finetuning_loads_correctly():
     ), "pt_head forces mismatch"
 
     # Evaluate the DFT head — should also be finite
-    batch_dft = _polar_batch(
-        model_loaded, atoms, heads=heads, head_name="DFT"
-    )
+    batch_dft = _polar_batch(model_loaded, atoms, heads=heads, head_name="DFT")
     out_dft = model_loaded(batch_dft, training=False)
     assert np.isfinite(out_dft["energy"].detach().cpu().item())

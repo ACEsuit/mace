@@ -237,9 +237,9 @@ def test_run_train_with_atom_embed(tmp_path):
         )
         isolated_atom.info["REF_energy"] = 0.0
         isolated_atom.info["config_type"] = "IsolatedAtom"
-        water.arrays["KEY_quant"] = np.zeros(1)
-        water.arrays["quant_v"] = np.zeros((1, 2))
-        water.arrays["cat"] = np.zeros(1).astype(int)
+        isolated_atom.arrays["KEY_quant"] = np.zeros(1)
+        isolated_atom.arrays["quant_v"] = np.zeros((1, 2))
+        isolated_atom.arrays["cat"] = np.zeros(1).astype(int)
         configs_with_atom_embed.append(isolated_atom)
 
     # Save configurations

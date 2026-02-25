@@ -73,9 +73,8 @@ class BackendTestBase:
 
     @pytest.fixture
     def batch(self, device: str, default_dtype: torch.dtype) -> Dict[str, torch.Tensor]:
-        from ase import build
-
         import numpy as np
+        from ase import build
 
         with tools.torch_tools.default_dtype(default_dtype):
             table = tools.AtomicNumberTable([6])
@@ -137,13 +136,19 @@ class BackendTestBase:
         torch.manual_seed(42)
 
         # Create original E3nn model
-        model_e3nn = modules.ScaleShiftMACE(**model_config).to(device=device, dtype=default_dtype)
+        model_e3nn = modules.ScaleShiftMACE(**model_config).to(
+            device=device, dtype=default_dtype
+        )
 
         # Convert E3nn to CuEq
-        model_backend = run_e3nn_to_backend(model_e3nn).to(device=device, dtype=default_dtype)
+        model_backend = run_e3nn_to_backend(model_e3nn).to(
+            device=device, dtype=default_dtype
+        )
 
         # Convert CuEq back to E3nn
-        model_e3nn_back = run_backend_to_e3nn(model_backend).to(device=device, dtype=default_dtype)
+        model_e3nn_back = run_backend_to_e3nn(model_backend).to(
+            device=device, dtype=default_dtype
+        )
 
         # Test forward pass equivalence
         out_e3nn = model_e3nn(
