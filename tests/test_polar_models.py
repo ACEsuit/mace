@@ -11,7 +11,6 @@ import numpy as np
 import pytest
 import torch
 from ase import Atoms
-from ase.calculators.fd import calculate_numerical_forces, calculate_numerical_stress
 from ase.io import read
 from e3nn import o3
 
@@ -23,6 +22,51 @@ from mace.modules.extensions import PolarMACE
 from mace.tools import torch_geometric, utils
 
 # pylint: disable=redefined-outer-name
+
+try:
+    from ase.calculators.fd import (
+        calculate_numerical_forces,
+        calculate_numerical_stress,
+    )
+except (ImportError, ModuleNotFoundError):
+    from ase.calculators.test import calculate_numerical_forces
+
+    def calculate_numerical_stress(
+        atoms: Atoms,
+        eps: float = 1e-6,
+        voigt: bool = True,
+        *,
+        force_consistent: bool = True,
+    ) -> np.ndarray:
+        stress = np.zeros((3, 3), dtype=float)
+        cell = atoms.cell.copy()
+        volume = atoms.get_volume()
+        for i in range(3):
+            x = np.eye(3)
+            x[i, i] = 1.0 + eps
+            atoms.set_cell(cell @ x, scale_atoms=True)
+            eplus = atoms.get_potential_energy(force_consistent=force_consistent)
+
+            x[i, i] = 1.0 - eps
+            atoms.set_cell(cell @ x, scale_atoms=True)
+            eminus = atoms.get_potential_energy(force_consistent=force_consistent)
+
+            stress[i, i] = (eplus - eminus) / (2 * eps * volume)
+            x[i, i] = 1.0
+
+            j = i - 2
+            x[i, j] = x[j, i] = +0.5 * eps
+            atoms.set_cell(cell @ x, scale_atoms=True)
+            eplus = atoms.get_potential_energy(force_consistent=force_consistent)
+
+            x[i, j] = x[j, i] = -0.5 * eps
+            atoms.set_cell(cell @ x, scale_atoms=True)
+            eminus = atoms.get_potential_energy(force_consistent=force_consistent)
+
+            stress[i, j] = stress[j, i] = (eplus - eminus) / (2 * eps * volume)
+
+        atoms.set_cell(cell, scale_atoms=True)
+        return stress.flat[[0, 4, 8, 5, 2, 1]] if voigt else stress
 
 
 try:
