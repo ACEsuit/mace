@@ -19,7 +19,7 @@ from e3nn import o3
 
 from mace import data, modules, tools
 from mace.calculators import MACECalculator
-from mace.calculators.foundations_models import mace_polar, polar_model_paths
+from mace.calculators.foundations_models import mace_polar
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules import interaction_classes
@@ -63,6 +63,14 @@ def _water_atoms() -> Atoms:
 
 def _clone_batch(batch: dict) -> dict:
     return {k: (v.clone() if torch.is_tensor(v) else v) for k, v in batch.items()}
+
+
+def _skip_if_model_unavailable(exc: Exception, model_name: str) -> None:
+    if isinstance(exc, RuntimeError):
+        msg = str(exc)
+        if "Model download failed and no local model found" not in msg:
+            raise exc
+    pytest.skip(f"Polar model {model_name} not available")
 
 
 def _random_rotation(device, dtype):
@@ -373,10 +381,72 @@ def test_energy_invariance_under_rotation_and_translation(dtype):
 # ---------------------------------------------------------------------------
 
 POLAR_MODELS = [
-    ("polar-1-l", -2079.864990234375),
+    # fukui-2 release digests:
+    # 1L: 04379a98b3a6152eb4faa16721a4b4b8256ced50f062b4364ca2a14cdef057d3
+    # 2L: 79358c165698dac456c656520cc2b78feac038e95f40ce14bdbc8db08cdbc60f
+    # 3L: 49d3db53257822a50e6cd5e7d21c104718d4fb520fe618b2e232f090e1eeb409
+    ("polar-1-l", -2079.86474609375),
     ("polar-1-m", -2079.86376953125),
     ("polar-1-s", -2079.86474609375),
 ]
+
+POLAR_MODELS_FLOAT64 = [
+    ("polar-1-l", -2079.8646699254614),
+    ("polar-1-m", -2079.8637632777622),
+    ("polar-1-s", -2079.864637957125),
+]
+
+POLAR_COMPONENTS = {
+    "float32": {
+        "polar-1-l": {
+            "total": -2079.86474609375,
+            "interaction": -0.5236091613769531,
+            "electrostatic": 0.03348321095108986,
+            "electron": 0.198118656873703,
+            "local": -2080.096347961575,
+        },
+        "polar-1-m": {
+            "total": -2079.863525390625,
+            "interaction": -0.4711507260799408,
+            "electrostatic": 0.03635868802666664,
+            "electron": 0.14373645186424255,
+            "local": -2080.043620530516,
+        },
+        "polar-1-s": {
+            "total": -2079.86474609375,
+            "interaction": -0.025278955698013306,
+            "electrostatic": 0.022633790969848633,
+            "electron": -0.2894555926322937,
+            "local": -2079.5979242920876,
+        },
+    },
+    "float64": {
+        "polar-1-l": {
+            "total": -2079.8646699254614,
+            "interaction": -0.5236091496146468,
+            "electrostatic": 0.03335496356847624,
+            "electron": 0.19812072909037864,
+            "local": -2080.0961456181203,
+        },
+        "polar-1-m": {
+            "total": -2079.8637632777622,
+            "interaction": -0.47115078949941797,
+            "electrostatic": 0.03618856259411802,
+            "electron": 0.14373541764930942,
+            "local": -2080.043687257,
+        },
+        "polar-1-s": {
+            "total": -2079.864637957125,
+            "interaction": -0.02527944256184389,
+            "electrostatic": 0.022633475333368347,
+            "electron": -0.28945552139056663,
+            "local": -2079.5978159110675,
+        },
+    },
+}
+
+POLAR_CHECKPOINT_ATOL = {"float32": 5e-4, "float64": 1e-8}
+POLAR_COMPONENT_ATOL = {"float32": 5e-4, "float64": 1e-8}
 
 
 @pytest.mark.parametrize("model_name, expected_energy", POLAR_MODELS)
@@ -384,8 +454,8 @@ def test_polar_checkpoint_evaluates(model_name, expected_energy):
     try:
         calc = mace_polar(model=model_name, device="cpu")
         model = mace_polar(model=model_name, device="cpu", return_raw_model=True)
-    except (FileNotFoundError, ValueError, RuntimeError):
-        pytest.skip(f"Polar model {model_name} not available")
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        _skip_if_model_unavailable(exc, model_name)
 
     assert model.__class__.__name__ == "PolarMACE"
 
@@ -394,7 +464,67 @@ def test_polar_checkpoint_evaluates(model_name, expected_energy):
 
     energy = atoms.get_potential_energy()
     assert np.isfinite(energy)
-    assert abs(float(energy) - expected_energy) < 1e-5
+    assert abs(float(energy) - expected_energy) < POLAR_CHECKPOINT_ATOL["float32"]
+
+
+@pytest.mark.parametrize("model_name, expected_energy", POLAR_MODELS_FLOAT64)
+def test_polar_checkpoint_evaluates_float64(model_name, expected_energy):
+    try:
+        calc = mace_polar(model=model_name, device="cpu", default_dtype="float64")
+        model = mace_polar(model=model_name, device="cpu", return_raw_model=True)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        _skip_if_model_unavailable(exc, model_name)
+
+    assert model.__class__.__name__ == "PolarMACE"
+
+    atoms = _water_atoms()
+    atoms.calc = calc
+
+    energy = atoms.get_potential_energy()
+    assert np.isfinite(energy)
+    assert abs(float(energy) - expected_energy) < POLAR_CHECKPOINT_ATOL["float64"]
+
+
+@pytest.mark.parametrize(
+    "dtype_name,dtype", [("float32", torch.float32), ("float64", torch.float64)]
+)
+@pytest.mark.parametrize("model_name, _", POLAR_MODELS)
+def test_polar_checkpoint_energy_components(dtype_name, dtype, model_name, _):
+    try:
+        model = mace_polar(model=model_name, device="cpu", return_raw_model=True).eval()
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        _skip_if_model_unavailable(exc, model_name)
+
+    if dtype is torch.float64:
+        model = model.double()
+
+    previous_default_dtype = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(dtype)
+        batch = _build_model_batch(model)
+        out = model(_clone_batch(batch), compute_stress=False, training=False)
+    finally:
+        torch.set_default_dtype(previous_default_dtype)
+
+    total = float(out["energy"][0].detach().cpu().item())
+    interaction = float(out["interaction_energy"][0].detach().cpu().item())
+    electrostatic = float(out["electrostatic_energy"][0].detach().cpu().item())
+    electron = float(out["electron_energy"][0].detach().cpu().item())
+    local = total - electrostatic - electron
+
+    values = {
+        "total": total,
+        "interaction": interaction,
+        "electrostatic": electrostatic,
+        "electron": electron,
+        "local": local,
+    }
+    expected = POLAR_COMPONENTS[dtype_name][model_name]
+    atol = POLAR_COMPONENT_ATOL[dtype_name]
+
+    for key, expected_value in expected.items():
+        assert np.isfinite(values[key])
+        assert abs(values[key] - expected_value) < atol
 
 
 # ---------------------------------------------------------------------------
@@ -410,8 +540,8 @@ def test_polar_models_run_with_and_without_cueq(model_name, _):
     try:
         calc_e3 = mace_polar(model=model_name, device="cpu", enable_cueq=False)
         calc_cueq = mace_polar(model=model_name, device="cpu", enable_cueq=True)
-    except (FileNotFoundError, ValueError, RuntimeError):
-        pytest.skip(f"Polar model {model_name} not available")
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        _skip_if_model_unavailable(exc, model_name)
 
     atoms = _water_atoms()
     atoms.calc = calc_e3
@@ -431,8 +561,8 @@ def test_polar_true_cueq_matches_e3nn(model_name, _):
         model_e3 = mace_polar(
             model=model_name, device="cpu", return_raw_model=True
         ).eval()
-    except (FileNotFoundError, ValueError, RuntimeError):
-        pytest.skip(f"Polar model {model_name} not available")
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        _skip_if_model_unavailable(exc, model_name)
 
     previous_default_dtype = torch.get_default_dtype()
     try:
@@ -468,8 +598,8 @@ def test_polar_2l_true_cueq_matches_e3nn_float64():
             .eval()
             .double()
         )
-    except (FileNotFoundError, ValueError, RuntimeError):
-        pytest.skip(f"Polar model {model_name} not available")
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        _skip_if_model_unavailable(exc, model_name)
 
     previous_default_dtype = torch.get_default_dtype()
     try:
@@ -661,8 +791,8 @@ def test_water_energy_changes_with_charge_and_spin():
             device="cpu",
             return_raw_model=True,
         )
-    except (FileNotFoundError, ValueError, RuntimeError):
-        pytest.skip("Polar model polar-1-l not available")
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        _skip_if_model_unavailable(exc, "polar-1-l")
 
     model = model.to(device=device, dtype=dtype)
     model.eval()
@@ -1043,11 +1173,14 @@ def test_polar_stress_matches_fd_large_periodic_boxes(
 _REG_REF_PATH = (
     Path(__file__).resolve().parent / "references" / "polar_regression_reference.json"
 )
+_LOCAL_BENCH_ROOT = Path(__file__).resolve().parent / "references" / "x23_lattice_energy"
 
 if _REG_REF_PATH.exists():
     _REF = json.loads(_REG_REF_PATH.read_text())
     STRUCTURE_KEYS = sorted(_REF.get("structures", {}).keys())
     BENCH_ROOT = Path(_REF.get("bench_root", ""))
+    if not BENCH_ROOT.exists() and _LOCAL_BENCH_ROOT.exists():
+        BENCH_ROOT = _LOCAL_BENCH_ROOT
 else:
     _REF = {"structures": {}}
     STRUCTURE_KEYS = []
@@ -1068,18 +1201,14 @@ def polar_calc_regression(request):
             device="cpu",
             default_dtype=dtype,
         )
-    except (FileNotFoundError, ValueError, RuntimeError):
-        pytest.skip("Polar model polar-1-m not available")
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        _skip_if_model_unavailable(exc, "polar-1-m")
     return dtype, calc
 
 
 @pytest.mark.skipif(
     not _REG_REF_PATH.exists(),
     reason="Regression reference JSON not available",
-)
-@pytest.mark.skipif(
-    not polar_model_paths["polar-1-m"].exists(),
-    reason="Polar 2L model file not available",
 )
 @pytest.mark.skipif(
     not BENCH_ROOT.exists(),

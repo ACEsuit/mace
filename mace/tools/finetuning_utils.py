@@ -1,4 +1,5 @@
 import torch
+from typing import Optional
 
 from mace.tools.utils import AtomicNumberTable
 
@@ -11,7 +12,7 @@ def load_foundations_elements(
     use_shift=True,
     use_scale=True,
     max_L=2,
-    default_dtype: torch.dtype | None = None,
+    default_dtype: Optional[torch.dtype] = None,
 ):
     """
     Load the foundations of a model into a model for fine-tuning.
