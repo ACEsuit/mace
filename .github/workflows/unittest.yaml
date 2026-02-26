@@ -78,6 +78,7 @@ jobs:
         run: |
           pytest -v tests \
             --ignore=tests/test_cueq_oeq.py \
+            --ignore=tests/test_polar_cueq.py \
             --splits 4 \
             --group ${{ matrix.split-group }} \
             --store-durations \
@@ -102,10 +103,33 @@ jobs:
         run: |
           python3 -m pip freeze
 
-      - name: Run cueq-specific tests
+      - name: Run cueq tests (non-polar)
         run: |
           pytest -v tests/test_cueq_oeq.py -k TestCueq
           pytest -v tests/test_calculator.py
+
+  pytest-cueq-polar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install requirements (with cueq + graph_longrange)
+        run: |
+          pip install -U pip
+          pip install ".[dev, cueq]"
+          pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git
+
+      - name: Log installed environment (with cueq + graph_longrange)
+        run: |
+          python3 -m pip freeze
+
+      - name: Run cueq tests (polar)
+        run: |
+          pytest -v tests/test_polar_cueq.py
 
   pytest-polar:
     runs-on: ubuntu-latest
