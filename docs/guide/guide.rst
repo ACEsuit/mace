@@ -25,6 +25,7 @@ User Guide
     polar_mace
     finetuning
     multihead_finetuning
+    lora_finetuning
     multihead_training
     multipreprocessing
     multigpu

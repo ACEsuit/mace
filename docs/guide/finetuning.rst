@@ -10,10 +10,11 @@ Fine-tuning Foundation Models
 Fine-tuning is the process of refining a pre-trained model on a new dataset.
 This is useful when you want better quantitative performance on a specific task than the available pre-trained models.
 Fine-tuning usually leads to significant improvements in performance compared to training a model from scratch.
-We have two types of fine-tuning protocols:
+We have three fine-tuning protocols:
 
  - The **naive** fine-tuning protocol, where the model is trained on the new dataset just by restarting from the foundation model weights.
  - The **multihead replay** fine-tuning protocol, where the model is trained on the new dataset while replaying a part of the original foundational model training data.
+ - The **LoRA** (Low-Rank Adaptation) fine-tuning protocol, where only small low-rank adapters are trained while the base model weights are frozen. See the :ref:`LoRA fine-tuning <lora_finetuning>` guide.
 
 The multihead replay finetuning prevent catastrophic forgetting that occurs sometimes during the naive fine-tuning. 
 It usually leads to a more robust and stable model. It is **recommended** to use this protocol to fine-tune any materials project foundation model.
@@ -61,3 +62,13 @@ The multihead replay fine-tuning protocol prevents catastrophic forgetting that 
 It usually leads to a more robust and stable model. It is the **recommended** way to fine-tune any materials project foundation model.
 
 For more information on the multihead replay fine-tuning protocol, please refer to the `multihead fine-tuning <https://mace-docs.readthedocs.io/en/latest/guide/multihead_finetuning.html>`_ guide.
+
+################
+LoRA Fine-tuning
+################
+
+LoRA (Low-Rank Adaptation) fine-tuning freezes all base model weights and only trains small low-rank adapter matrices injected into each layer. This is particularly useful when you have a small dataset and want to avoid overfitting, or when you want to reduce training memory and compute requirements.
+
+LoRA can be combined with both the naive and multihead replay protocols.
+
+For more information on LoRA fine-tuning, please refer to the :ref:`LoRA fine-tuning <lora_finetuning>` guide.
