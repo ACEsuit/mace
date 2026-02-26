@@ -632,6 +632,9 @@ class MACELoss(Metric):
             self.E_computed += filter_nonzero_weight(
                 batch, self.delta_es, batch.weight, batch.energy_weight
             )
+            _ = filter_nonzero_weight(
+                batch, self.delta_es_per_atom, batch.weight, batch.energy_weight
+            )
         if output.get("forces") is not None and batch.forces is not None:
             self.fs.append(batch.forces)
             self.delta_fs.append(batch.forces - output["forces"])
@@ -656,6 +659,9 @@ class MACELoss(Metric):
             self.virials_computed += filter_nonzero_weight(
                 batch, self.delta_virials, batch.weight, batch.virials_weight
             )
+            _ = filter_nonzero_weight(
+                batch, self.delta_virials_per_atom, batch.weight, batch.virials_weight
+            )
         if output.get("dipole") is not None and batch.dipole is not None:
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
@@ -666,6 +672,13 @@ class MACELoss(Metric):
             self.Mus_computed += filter_nonzero_weight(
                 batch,
                 self.delta_mus,
+                batch.weight,
+                batch.dipole_weight,
+                spread_quantity_vector=False,
+            )
+            _ = filter_nonzero_weight(
+                batch,
+                self.delta_mus_per_atom,
                 batch.weight,
                 batch.dipole_weight,
                 spread_quantity_vector=False,
@@ -684,6 +697,13 @@ class MACELoss(Metric):
             self.polarizability_computed += filter_nonzero_weight(
                 batch,
                 self.delta_polarizability,
+                batch.weight,
+                batch.polarizability_weight,
+                spread_quantity_vector=False,
+            )
+            _ = filter_nonzero_weight(
+                batch,
+                self.delta_polarizability_per_atom,
                 batch.weight,
                 batch.polarizability_weight,
                 spread_quantity_vector=False,
