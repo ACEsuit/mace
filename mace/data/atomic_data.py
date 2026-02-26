@@ -5,7 +5,7 @@
 ###########################################################################################
 
 from copy import deepcopy
-from typing import Any, Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence
 
 import torch.utils.data
 
