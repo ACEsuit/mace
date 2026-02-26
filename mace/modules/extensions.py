@@ -25,6 +25,8 @@ def _copy_mace_readout(
             irrep_out=o3.Irreps(change_irrep_out) if change_irrep_out is not None else mace_readout.linear.irreps_out,  # type:ignore
             cueq_config=cueq_config,
         )
+    if isinstance(mace_readout, NonLinearReadoutBlock) and change_irrep_out is not None:  # type:ignore
+        return None
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
         return NonLinearReadoutBlock(
             irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
@@ -61,10 +63,11 @@ class MACELES(ScaleShiftMACE):
             les_arguments = {"use_atomwise": False}
         self.compute_bec = les_arguments.get("compute_bec", False)
         self.bec_output_index = les_arguments.get("bec_output_index", None)
-        self.use_dipoles = les_arguments.get("use_dipole", False)
+        self.use_dipoles = les_arguments.get("use_dipole", True)
         self.les = Les(les_arguments=les_arguments)
         self.les_readouts = torch.nn.ModuleList()
         self.les_u_readouts = torch.nn.ModuleList()
+        self.les_output_scale = 0.1
         
         self.readout_input_dims = [
             _get_readout_input_dim(readout) for readout in self.readouts  # type:ignore
@@ -74,12 +77,10 @@ class MACELES(ScaleShiftMACE):
             self.les_readouts.append(
                 _copy_mace_readout(readout, cueq_config=cueq_config)
             )
-            if self.use_dipoles and i < len(self.readouts) - 1:
-                self.les_u_readouts.append(
-                    _copy_mace_readout(readout,  change_irrep_out="1x1o", cueq_config=cueq_config)
-                )
-            else:
-                self.les_u_readouts.append(None)
+            self.les_u_readouts.append(
+                #_copy_mace_readout(readout,  change_irrep_out="1x1o", cueq_config=cueq_config)
+                _copy_mace_readout(self.readouts[0],  change_irrep_out="1x1o", cueq_config=cueq_config)
+            )
 
     def forward(
         self,
@@ -230,9 +231,9 @@ class MACELES(ScaleShiftMACE):
         total_energy = e0 + inter_e
         node_energy = node_e0.clone().double() + node_inter_es.clone().double()
 
-        les_q = torch.sum(torch.stack(node_qs_list, dim=1), dim=1)
+        les_q = torch.sum(torch.stack(node_qs_list, dim=1), dim=1) * self.les_output_scale
         if len(node_us_list) > 0:
-            les_u = torch.sum(torch.stack(node_us_list, dim=-1), dim=-1)
+            les_u = torch.sum(torch.stack(node_us_list, dim=-1), dim=-1) * self.les_output_scale
         else:
             les_u = None
 
