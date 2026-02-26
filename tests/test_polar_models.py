@@ -29,7 +29,36 @@ try:
         calculate_numerical_stress,
     )
 except (ImportError, ModuleNotFoundError):
-    from ase.calculators.test import calculate_numerical_forces
+
+    def calculate_numerical_forces(
+        atoms: Atoms,
+        eps: float = 1e-6,
+        iatoms=None,
+        icarts=None,
+        *,
+        force_consistent: bool = False,
+    ) -> np.ndarray:
+        positions = atoms.get_positions().copy()
+        natoms = len(atoms)
+        forces = np.zeros((natoms, 3), dtype=float)
+        atom_indices = range(natoms) if iatoms is None else iatoms
+        cart_indices = range(3) if icarts is None else icarts
+
+        for a in atom_indices:
+            for c in cart_indices:
+                displaced = positions.copy()
+                displaced[a, c] += eps
+                atoms.set_positions(displaced)
+                eplus = atoms.get_potential_energy(force_consistent=force_consistent)
+
+                displaced[a, c] -= 2.0 * eps
+                atoms.set_positions(displaced)
+                eminus = atoms.get_potential_energy(force_consistent=force_consistent)
+
+                forces[a, c] = -(eplus - eminus) / (2.0 * eps)
+
+        atoms.set_positions(positions)
+        return forces
 
     def calculate_numerical_stress(
         atoms: Atoms,
