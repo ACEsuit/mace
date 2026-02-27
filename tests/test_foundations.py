@@ -380,20 +380,27 @@ def test_mace_mh_1_elements_subset_reproduces_energy_forces():
 
 
 @pytest.mark.parametrize(
-    "calc",
+    "calc_spec",
     [
-        mace_mp(device="cpu", default_dtype="float64"),
-        mace_mp(model="small", device="cpu", default_dtype="float64"),
-        mace_mp(model="medium", device="cpu", default_dtype="float64"),
-        mace_mp(model="large", device="cpu", default_dtype="float64"),
-        mace_mp(model=MODEL_PATH, device="cpu", default_dtype="float64"),
-        mace_off(model="small", device="cpu", default_dtype="float64"),
-        mace_off(model="medium", device="cpu", default_dtype="float64"),
-        mace_off(model="large", device="cpu", default_dtype="float64"),
-        mace_off(model=MODEL_PATH, device="cpu", default_dtype="float64"),
+        ("mp", None),
+        ("mp", "small"),
+        ("mp", "medium"),
+        ("mp", "large"),
+        ("mp", MODEL_PATH),
+        ("off", "small"),
+        ("off", "medium"),
+        ("off", "large"),
+        ("off", MODEL_PATH),
     ],
+    ids=lambda spec: f"mace_{spec[0]}-{spec[1] if spec[1] is not None else 'default'}",
 )
-def test_compile_foundation(calc):
+def test_compile_foundation(calc_spec):
+    family, model_spec = calc_spec
+    kwargs = {"device": "cpu", "default_dtype": "float64"}
+    if model_spec is not None:
+        kwargs["model"] = model_spec
+    calc = mace_mp(**kwargs) if family == "mp" else mace_off(**kwargs)
+
     model = calc.models[0]
     atoms = molecule("CH4")
     atoms.positions += np.random.randn(*atoms.positions.shape) * 0.1
@@ -407,19 +414,25 @@ def test_compile_foundation(calc):
 
 
 @pytest.mark.parametrize(
-    "model",
+    "model_spec",
     [
-        mace_mp(model="small", device="cpu", default_dtype="float64").models[0],
-        mace_mp(model="medium", device="cpu", default_dtype="float64").models[0],
-        mace_mp(model="large", device="cpu", default_dtype="float64").models[0],
-        mace_mp(model=MODEL_PATH, device="cpu", default_dtype="float64").models[0],
-        mace_off(model="small", device="cpu", default_dtype="float64").models[0],
-        mace_off(model="medium", device="cpu", default_dtype="float64").models[0],
-        mace_off(model="large", device="cpu", default_dtype="float64").models[0],
-        mace_off(model=MODEL_PATH, device="cpu", default_dtype="float64").models[0],
+        ("mp", "small"),
+        ("mp", "medium"),
+        ("mp", "large"),
+        ("mp", MODEL_PATH),
+        ("off", "small"),
+        ("off", "medium"),
+        ("off", "large"),
+        ("off", MODEL_PATH),
     ],
+    ids=lambda spec: f"mace_{spec[0]}-{spec[1]}",
 )
-def test_extract_config(model):
+def test_extract_config(model_spec):
+    family, model_name = model_spec
+    kwargs = {"model": model_name, "device": "cpu", "default_dtype": "float64"}
+    calc = mace_mp(**kwargs) if family == "mp" else mace_off(**kwargs)
+    model = calc.models[0]
+
     assert isinstance(model, modules.ScaleShiftMACE)
     config = data.Configuration(
         atomic_numbers=molecule("H2COH").numbers,
