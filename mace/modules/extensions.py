@@ -63,11 +63,16 @@ class MACELES(ScaleShiftMACE):
             les_arguments = {"use_atomwise": False}
         self.compute_bec = les_arguments.get("compute_bec", False)
         self.bec_output_index = les_arguments.get("bec_output_index", None)
-        self.use_dipoles = les_arguments.get("use_dipole", True)
+        self.use_dipoles = les_arguments.get("use_dipole", False)
+        self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
+        print("use_dipoles", self.use_dipoles)
+        print("use_induced_dipoles", self.use_induced_dipoles)
         self.les = Les(les_arguments=les_arguments)
+
         self.les_readouts = torch.nn.ModuleList()
         self.les_u_readouts = torch.nn.ModuleList()
-        self.les_output_scale = 0.1
+        self.les_alpha_readouts = torch.nn.ModuleList()
+        self.les_output_scale = les_arguments.get("output_scale", 0.1)
         
         self.readout_input_dims = [
             _get_readout_input_dim(readout) for readout in self.readouts  # type:ignore
@@ -77,10 +82,15 @@ class MACELES(ScaleShiftMACE):
             self.les_readouts.append(
                 _copy_mace_readout(readout, cueq_config=cueq_config)
             )
-            self.les_u_readouts.append(
-                #_copy_mace_readout(readout,  change_irrep_out="1x1o", cueq_config=cueq_config)
-                _copy_mace_readout(self.readouts[0],  change_irrep_out="1x1o", cueq_config=cueq_config)
-            )
+            if self.use_dipoles:
+                self.les_u_readouts.append(
+                    #_copy_mace_readout(readout,  change_irrep_out="1x1o", cueq_config=cueq_config)
+                    _copy_mace_readout(self.readouts[0],  change_irrep_out="1x1o", cueq_config=cueq_config)
+                )
+            if self.use_induced_dipoles:
+                self.les_alpha_readouts.append(
+                    _copy_mace_readout(readout, cueq_config=cueq_config)
+                )
 
     def forward(
         self,
@@ -180,6 +190,7 @@ class MACELES(ScaleShiftMACE):
         node_feats_list: List[torch.Tensor] = []
         node_qs_list: List[torch.Tensor] = []
         node_us_list: List[torch.Tensor] = []
+        node_alphas_list: List[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)
@@ -205,8 +216,8 @@ class MACELES(ScaleShiftMACE):
             )
             node_feats_list.append(node_feats)
 
-        for i, (readout, les_readout, les_u_readouts) in enumerate(
-            zip(self.readouts, self.les_readouts, self.les_u_readouts)
+        for i, (readout, les_readout) in enumerate(
+            zip(self.readouts, self.les_readouts)
         ):
             feat_idx = -1 if len(self.readouts) == 1 else i
             node_es = readout(node_feats_list[feat_idx], node_heads)[
@@ -217,11 +228,19 @@ class MACELES(ScaleShiftMACE):
             ]  # type:ignore
             node_qs_list.append(node_qs)
             node_es_list.append(node_es)
-            if les_u_readouts is not None:
-                node_us = les_u_readouts(node_feats_list[feat_idx])[
-                    num_atoms_arange
-                ]  # type:ignore
-                node_us_list.append(node_us)
+            if hasattr(self, "use_dipoles") and self.use_dipoles:
+                les_u_readout = self.les_u_readouts[i]
+                if les_u_readout is not None:
+                    node_us = les_u_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type:ignore
+                    node_us_list.append(node_us)
+            if hasattr(self, "use_induced_dipoles") and self.use_induced_dipoles:
+                les_alpha_readout = self.les_alpha_readouts[i]
+                node_alphas = les_alpha_readout(node_feats_list[feat_idx], node_heads)[
+                    num_atoms_arange, node_heads
+                    ]  # type:ignore
+                node_alphas_list.append(node_alphas)
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
         node_inter_es = torch.sum(torch.stack(node_es_list, dim=0), dim=0)
@@ -237,9 +256,15 @@ class MACELES(ScaleShiftMACE):
         else:
             les_u = None
 
+        if len(node_alphas_list) > 0:
+            les_alpha = torch.sum(torch.stack(node_alphas_list, dim=1), dim=1) * self.les_output_scale
+        else:
+            les_alpha = None
+
         les_result = self.les(
             latent_charges=les_q,
             latent_dipoles=les_u,
+            latent_alphas=les_alpha,
             positions=positions,
             cell=cell_les.view(-1, 3, 3),
             batch=data["batch"],
@@ -293,5 +318,7 @@ class MACELES(ScaleShiftMACE):
             "node_feats": node_feats_out,
             "les_energy": les_energy,
             "latent_charges": les_q,
+            "latent_dipoles": les_u,
+            "latent_alphas": les_alpha,
             "BEC": les_result["BEC"],
         }

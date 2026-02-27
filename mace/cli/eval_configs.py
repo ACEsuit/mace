@@ -299,7 +299,6 @@ def run(args: argparse.Namespace) -> None:
             atoms.info[args.info_prefix + "stress"] = stresses[i]
 
         if args.compute_bec:
-            print(bec_list[i].shape)
             atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(bec_list[i].shape[0], -1)
             atoms.arrays[args.info_prefix + "latent_charges"] = qs_list[i]
 
