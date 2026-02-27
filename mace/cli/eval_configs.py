@@ -184,6 +184,8 @@ def run(args: argparse.Namespace) -> None:
     stresses_list = []
     bec_list = []
     qs_list = []
+    us_list = []
+    alphas_list = []
     forces_collection = []
 
     for batch in data_loader:
@@ -208,6 +210,22 @@ def run(args: argparse.Namespace) -> None:
                 axis=0,
             )
             qs_list.append(qs[:-1])  # drop last as its empty
+
+            if output["latent_dipoles"] is not None:
+                us = np.split(
+                    torch_tools.to_numpy(output["latent_dipoles"]),
+                    indices_or_sections=batch.ptr[1:],
+                    axis=0,
+                )
+                us_list.append(us[:-1])  # drop last as its empty
+
+            if output["latent_alphas"] is not None:
+                alphas = np.split(
+                    torch_tools.to_numpy(output["latent_alphas"]),
+                    indices_or_sections=batch.ptr[1:],
+                    axis=0,
+                )
+                alphas_list.append(alphas[:-1])  # drop last as its empty
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
@@ -276,6 +294,8 @@ def run(args: argparse.Namespace) -> None:
     if args.compute_bec:
         bec_list = [becs for sublist in bec_list for becs in sublist]
         qs_list = [qs for sublist in qs_list for qs in sublist]
+        us_list = [us for sublist in us_list for us in sublist]
+        alphas_list = [alphas for sublist in alphas_list for alphas in sublist]
 
     if args.return_contributions:
         contributions = np.concatenate(contributions_list, axis=0)
@@ -301,6 +321,10 @@ def run(args: argparse.Namespace) -> None:
         if args.compute_bec:
             atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(bec_list[i].shape[0], -1)
             atoms.arrays[args.info_prefix + "latent_charges"] = qs_list[i]
+            if len(us_list) > 0:
+                atoms.arrays[args.info_prefix + "latent_dipoles"] = us_list[i]
+            if len(alphas_list) > 0:
+                atoms.arrays[args.info_prefix + "latent_alphas"] = alphas_list[i]
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
