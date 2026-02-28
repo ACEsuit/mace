@@ -6,6 +6,7 @@
 
 import dataclasses
 import logging
+import os
 import time
 from collections import defaultdict
 from contextlib import contextmanager, nullcontext
@@ -566,9 +567,15 @@ def evaluate(
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
     start_time = time.time()
+    eval_debug_interval = int(os.environ.get("MACE_EVAL_DEBUG_INTERVAL", "0"))
+    num_batches = len(data_loader)
+    num_graphs = 0
+
+    if eval_debug_interval > 0 and device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device=device)
 
     with preserve_grad_state(model):
-        for batch in data_loader:
+        for batch_idx, batch in enumerate(data_loader, start=1):
             batch = batch.to(device)
             batch_dict = batch.to_dict()
             output = model(
@@ -579,8 +586,48 @@ def evaluate(
                 compute_stress=output_args["stress"],
             )
             avg_loss, aux = metrics(batch, output)
+            num_graphs += batch.num_graphs
+
+            if eval_debug_interval > 0 and batch_idx % eval_debug_interval == 0:
+                elapsed = time.time() - start_time
+                graphs_per_sec = num_graphs / max(elapsed, 1e-6)
+                message = (
+                    f"[eval-debug] batch={batch_idx}/{num_batches}, "
+                    f"graphs={num_graphs}, elapsed={elapsed:.1f}s, "
+                    f"graphs_per_sec={graphs_per_sec:.2f}"
+                )
+                if device.type == "cuda":
+                    alloc_mb = torch.cuda.memory_allocated(device=device) / 1024**2
+                    reserved_mb = torch.cuda.memory_reserved(device=device) / 1024**2
+                    peak_alloc_mb = (
+                        torch.cuda.max_memory_allocated(device=device) / 1024**2
+                    )
+                    peak_reserved_mb = (
+                        torch.cuda.max_memory_reserved(device=device) / 1024**2
+                    )
+                    message += (
+                        ", "
+                        f"alloc={alloc_mb:.1f}MB, reserved={reserved_mb:.1f}MB, "
+                        f"peak_alloc={peak_alloc_mb:.1f}MB, "
+                        f"peak_reserved={peak_reserved_mb:.1f}MB"
+                    )
+                logging.info(message)
+
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time
+    if eval_debug_interval > 0:
+        summary = (
+            f"[eval-debug] completed batches={num_batches}, graphs={num_graphs}, "
+            f"elapsed={aux['time']:.1f}s, graphs_per_sec={num_graphs / max(aux['time'], 1e-6):.2f}"
+        )
+        if device.type == "cuda":
+            peak_alloc_mb = torch.cuda.max_memory_allocated(device=device) / 1024**2
+            peak_reserved_mb = torch.cuda.max_memory_reserved(device=device) / 1024**2
+            summary += (
+                ", "
+                f"peak_alloc={peak_alloc_mb:.1f}MB, peak_reserved={peak_reserved_mb:.1f}MB"
+            )
+        logging.info(summary)
     metrics.reset()
 
     return avg_loss, aux
