@@ -106,3 +106,25 @@ jobs:
         run: |
           pytest -v tests/test_cueq_oeq.py -k TestCueq
           pytest -v tests/test_calculator.py
+
+  pytest-torchsim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install requirements alongside torchsim
+        run: |
+          pip install -U pip
+          pip install ".[dev,torchsim]"
+
+      - name: Log installed environment alongside torchsim
+        run: |
+          python3 -m pip freeze
+
+      - name: Run torchsim tests
+        run: |
+          pytest -v tests/test_torch_sim.py
