@@ -23,6 +23,7 @@ def pytest_configure(config):
         cache_root = Path(tempfile.gettempdir()) / f"mace_cache_{worker}"
         cache_root.mkdir(parents=True, exist_ok=True)
         os.environ["XDG_CACHE_HOME"] = str(cache_root)
+        print(f"[XDIST] Worker {worker} using cache {cache_root}")
 
 
 def pytest_runtest_logreport(report):
