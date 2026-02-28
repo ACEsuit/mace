@@ -35,6 +35,17 @@ MODEL_PATH = (
 torch.set_default_dtype(torch.float64)
 
 
+def _batch_with_float_dtype(batch_dict, dtype):
+    return {
+        key: (
+            value.to(dtype=dtype)
+            if torch.is_tensor(value) and torch.is_floating_point(value)
+            else value
+        )
+        for key, value in batch_dict.items()
+    }
+
+
 # @pytest.skip("Problem with the float type", allow_module_level=True)
 def test_foundations():
     # Create MACE model
@@ -122,9 +133,14 @@ def test_foundations():
         shuffle=True,
         drop_last=False,
     )
-    batch = next(iter(data_loader))
-    forces_loaded = model_loaded(batch.to_dict())["forces"]
-    forces = model(batch.to_dict())["forces"]
+    batch_dict = next(iter(data_loader)).to_dict()
+    model_loaded_dtype = next(model_loaded.parameters()).dtype
+    model_dtype = next(model.parameters()).dtype
+
+    forces_loaded = model_loaded(
+        _batch_with_float_dtype(batch_dict, model_loaded_dtype)
+    )["forces"]
+    forces = model(_batch_with_float_dtype(batch_dict, model_dtype))["forces"]
     assert torch.allclose(forces, forces_loaded)
 
 
