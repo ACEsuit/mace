@@ -30,7 +30,7 @@ def run(
 
     # Add OEQ config
     config["oeq_config"] = OEQConfig(
-        enabled=False, optimize_all=True, conv_fusion="atomic"
+        enabled=True, optimize_all=True, conv_fusion="atomic"
     )
 
     # Create new model with oeq config
@@ -41,7 +41,8 @@ def run(
 
     for key in target_dict:
         if ".conv_tp." not in key:
-            target_dict[key] = source_dict[key]
+            if key in source_dict:
+                target_dict[key] = source_dict[key]
 
     target_model.load_state_dict(target_dict)
 
