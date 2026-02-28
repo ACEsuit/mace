@@ -70,14 +70,21 @@ class TestAtomicData:
             num_workers=num_workers,
         )
 
-        for batch in data_loader:
-            assert batch.batch.shape == (6,)
-            assert batch.edge_index.shape == (2, 8)
-            assert batch.shifts.shape == (8, 3)
-            assert batch.positions.shape == (6, 3)
-            assert batch.node_attrs.shape == (6, 2)
-            assert batch.energy.shape == (2,)
-            assert batch.forces.shape == (6, 3)
+        try:
+            for batch in data_loader:
+                assert batch.batch.shape == (6,)
+                assert batch.edge_index.shape == (2, 8)
+                assert batch.shifts.shape == (8, 3)
+                assert batch.positions.shape == (6, 3)
+                assert batch.node_attrs.shape == (6, 2)
+                assert batch.energy.shape == (2,)
+                assert batch.forces.shape == (6, 3)
+        except RuntimeError as exc:
+            if num_workers > 0 and "torch_shm_manager" in str(exc):
+                pytest.skip(
+                    "Shared-memory dataloader is not permitted in this environment"
+                )
+            raise
 
     def test_to_atomic_data_dict(self):
         data1 = AtomicData.from_config(self.config, z_table=self.table, cutoff=3.0)
@@ -99,14 +106,12 @@ class TestAtomicData:
             assert batch_dict["energy"].shape == (2,)
             assert batch_dict["forces"].shape == (6, 3)
 
-    def test_hdf5_dataloader(self):
+    def test_hdf5_dataloader(self, tmp_path):
         datasets = [self.config, self.config_2] * 5
-        # get path of the mace package
-        with h5py.File(str(mace_path) + "test.h5", "w") as f:
+        dataset_path = tmp_path / "test.h5"
+        with h5py.File(str(dataset_path), "w") as f:
             save_configurations_as_HDF5(datasets, 0, f)
-        train_dataset = HDF5Dataset(
-            str(mace_path) + "test.h5", z_table=self.table, r_max=3.0
-        )
+        train_dataset = HDF5Dataset(str(dataset_path), z_table=self.table, r_max=3.0)
         train_loader = torch_geometric.dataloader.DataLoader(
             dataset=train_dataset,
             batch_size=2,

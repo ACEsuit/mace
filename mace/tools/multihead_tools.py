@@ -102,10 +102,12 @@ def prepare_pt_head(
     foundation_model_num_neighbours: float,
 ) -> Dict[str, Any]:
     """Prepare a pretraining head from args."""
-    if (
-        args.foundation_model in ["small", "medium", "large"]
-        or args.pt_train_file in ["mp", "omat", "matpes_pbe", "matpes_r2scan"]
-    ):
+    if args.foundation_model in ["small", "medium", "large"] or args.pt_train_file in [
+        "mp",
+        "omat",
+        "matpes_pbe",
+        "matpes_r2scan",
+    ]:
         logging.info(
             "Using foundation model for multiheads finetuning with Materials Project data"
         )
