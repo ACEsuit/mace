@@ -1,5 +1,4 @@
 import os
-import shutil
 import urllib.request
 from pathlib import Path
 from typing import Any, Literal, Optional, Union, overload
@@ -18,29 +17,30 @@ _DOWNLOAD_TIMEOUT = 120  # seconds – socket-level read timeout for model downl
 
 def _urlretrieve_with_timeout(url, filename, timeout=_DOWNLOAD_TIMEOUT):
     """Download *url* to *filename* with a per-read socket timeout."""
-    response = urllib.request.urlopen(url, timeout=timeout)
-    total = int(response.headers.get("Content-Length", 0))
-    downloaded = 0
-    block_size = 256 * 1024  # 256 KB
-    with open(filename, "wb") as out:
-        while True:
-            block = response.read(block_size)
-            if not block:
-                break
-            out.write(block)
-            downloaded += len(block)
-            if total > 0:
-                pct = min(100, downloaded * 100 / total)
-                print(
-                    f"\rDownloading: {pct:.1f}% "
-                    f"({downloaded / 1024 / 1024:.1f} MB / "
-                    f"{total / 1024 / 1024:.1f} MB)",
-                    end="",
-                    flush=True,
-                )
+    with urllib.request.urlopen(url, timeout=timeout) as response:
+        total = int(response.headers.get("Content-Length", 0))
+        downloaded = 0
+        block_size = 256 * 1024  # 256 KB
+        info = response.info()
+        with open(filename, "wb") as out:
+            while True:
+                block = response.read(block_size)
+                if not block:
+                    break
+                out.write(block)
+                downloaded += len(block)
+                if total > 0:
+                    pct = min(100, downloaded * 100 / total)
+                    print(
+                        f"\rDownloading: {pct:.1f}% "
+                        f"({downloaded / 1024 / 1024:.1f} MB / "
+                        f"{total / 1024 / 1024:.1f} MB)",
+                        end="",
+                        flush=True,
+                    )
     if total > 0:
         print()  # newline after progress
-    return filename, response.info()
+    return filename, info
 
 module_dir = os.path.dirname(__file__)
 local_model_path = os.path.join(

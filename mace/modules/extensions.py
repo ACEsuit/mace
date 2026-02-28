@@ -17,8 +17,11 @@ try:
 except (ImportError, ModuleNotFoundError):
     GRAPH_LONGRANGE_AVAILABLE = False
 
-from mace.modules import NonLinearBiasReadoutBlock
-from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock
+from mace.modules.blocks import (
+    LinearReadoutBlock,
+    NonLinearBiasReadoutBlock,
+    NonLinearReadoutBlock,
+)
 from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
 from mace.modules.wrapper_ops import (
