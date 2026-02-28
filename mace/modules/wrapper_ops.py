@@ -162,6 +162,7 @@ class TensorProduct:
         instructions: Optional[List] = None,
         shared_weights: bool = False,
         internal_weights: bool = False,
+        use_conv_fusion: bool = True,
         cueq_config: Optional[CuEquivarianceConfig] = None,
         oeq_config: Optional[OEQConfig] = None,
     ):
@@ -171,7 +172,7 @@ class TensorProduct:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_channelwise)
         ):
-            if cueq_config.conv_fusion:
+            if cueq_config.conv_fusion and use_conv_fusion:
                 return with_cueq_conv_fusion(
                     cuet.SegmentedPolynomial(
                         cue.descriptors.channelwise_tensor_product(
@@ -320,6 +321,9 @@ class TransposeIrrepsLayoutWrapper:
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         if CUET_AVAILABLE and cueq_config is not None and cueq_config.enabled:
+            # If layouts are the same, no-op
+            if source == target:
+                return None
             return cuet.TransposeIrrepsLayout(
                 cue.Irreps(cueq_config.group, irreps),
                 source=getattr(cue, source),
