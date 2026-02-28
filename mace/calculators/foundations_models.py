@@ -1,4 +1,5 @@
 import os
+import shutil
 import urllib.request
 from pathlib import Path
 from typing import Any, Literal, Optional, Union, overload
@@ -10,6 +11,36 @@ from ase.calculators.mixing import SumCalculator
 from mace.tools.utils import get_cache_dir
 
 from .mace import MACECalculator
+
+
+_DOWNLOAD_TIMEOUT = 120  # seconds – socket-level read timeout for model downloads
+
+
+def _urlretrieve_with_timeout(url, filename, timeout=_DOWNLOAD_TIMEOUT):
+    """Download *url* to *filename* with a per-read socket timeout."""
+    response = urllib.request.urlopen(url, timeout=timeout)
+    total = int(response.headers.get("Content-Length", 0))
+    downloaded = 0
+    block_size = 256 * 1024  # 256 KB
+    with open(filename, "wb") as out:
+        while True:
+            block = response.read(block_size)
+            if not block:
+                break
+            out.write(block)
+            downloaded += len(block)
+            if total > 0:
+                pct = min(100, downloaded * 100 / total)
+                print(
+                    f"\rDownloading: {pct:.1f}% "
+                    f"({downloaded / 1024 / 1024:.1f} MB / "
+                    f"{total / 1024 / 1024:.1f} MB)",
+                    end="",
+                    flush=True,
+                )
+    if total > 0:
+        print()  # newline after progress
+    return filename, response.info()
 
 module_dir = os.path.dirname(__file__)
 local_model_path = os.path.join(
@@ -92,8 +123,10 @@ def download_mace_mp_checkpoint(model: Optional[Union[str, Path]] = None) -> str
     if not os.path.isfile(cached_model_path):
         os.makedirs(cache_dir, exist_ok=True)
         print(f"Downloading MACE model from {checkpoint_url!r}")
-        _, http_msg = urllib.request.urlretrieve(checkpoint_url, cached_model_path)
-        if "Content-Type: text/html" in http_msg:
+        _, http_msg = _urlretrieve_with_timeout(
+            checkpoint_url, cached_model_path
+        )
+        if "Content-Type: text/html" in str(http_msg):
             raise RuntimeError(
                 f"Model download failed, please check the URL {checkpoint_url}"
             )
@@ -134,8 +167,10 @@ def download_mace_polar_checkpoint(model: Union[str, Path]) -> str:
     if not os.path.isfile(cached_model_path):
         os.makedirs(cache_dir, exist_ok=True)
         print(f"Downloading MACE-Polar model from {checkpoint_url!r}")
-        _, http_msg = urllib.request.urlretrieve(checkpoint_url, cached_model_path)
-        if "Content-Type: text/html" in http_msg:
+        _, http_msg = _urlretrieve_with_timeout(
+            checkpoint_url, cached_model_path
+        )
+        if "Content-Type: text/html" in str(http_msg):
             raise RuntimeError(
                 f"Model download failed, please check the URL {checkpoint_url}"
             )
@@ -333,7 +368,7 @@ def mace_off(
                 print(
                     "ASL is based on the Gnu Public License, but does not permit commercial use"
                 )
-                urllib.request.urlretrieve(checkpoint_url, cached_model_path)
+                _urlretrieve_with_timeout(checkpoint_url, cached_model_path)
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
             msg = f"Using MACE-OFF23 MODEL for MACECalculator with {model}"
@@ -404,20 +439,8 @@ def mace_anicc(
         model_url = "https://github.com/ACEsuit/mace/raw/main/mace/calculators/foundations_models/ani500k_large_CC.model"
 
         try:
-
-            def report_progress(block_num, block_size, total_size):
-                downloaded = block_num * block_size
-                percent = min(100, downloaded * 100 / total_size)
-                if total_size > 0:
-                    print(
-                        f"\rDownloading model: {percent:.1f}% ({downloaded / 1024 / 1024:.1f} MB / {total_size / 1024 / 1024:.1f} MB)",
-                        end="",
-                    )
-
-            urllib.request.urlretrieve(
-                model_url, model_path, reporthook=report_progress
-            )
-            print("\nDownload complete!")
+            _urlretrieve_with_timeout(model_url, model_path)
+            print("Download complete!")
 
         except Exception as e:
             raise RuntimeError(f"Failed to download model: {e}") from e
@@ -493,7 +516,7 @@ def mace_omol(
                     "To use the model, you accept the terms of the license.\n"
                     "ASL is based on the GNU Public License, but does not permit commercial use."
                 )
-                urllib.request.urlretrieve(checkpoint_url, cached_model_path)
+                _urlretrieve_with_timeout(checkpoint_url, cached_model_path)
                 print(f"Cached MACE model to {cached_model_path}")
             model = cached_model_path
         else:

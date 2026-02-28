@@ -32,7 +32,7 @@ jobs:
         run: |
           pip install -U pip
           pip install .[dev]
-          pip install pytest-split pytest-xdist
+          pip install pytest-split pytest-xdist pytest-timeout
 
       # Some tests are creating large files that may persist until the end of the test
       # run, so we are making more space available on the machine by deleting libraries
@@ -86,7 +86,8 @@ jobs:
             --store-durations \
             --durations-path=tests/.test_durations \
             --clean-durations \
-            -n auto
+            --timeout=600 \
+            -n 2
 
   pytest-cueq:
     runs-on: ubuntu-latest
