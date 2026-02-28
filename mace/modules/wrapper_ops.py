@@ -151,6 +151,76 @@ def with_cueq_conv_fusion(conv_tp: torch.nn.Module) -> torch.nn.Module:
     return conv_tp
 
 
+def with_oeq_conv_fusion(
+    conv_tp: torch.nn.Module,
+    transpose_in: Optional[torch.nn.Module] = None,
+    transpose_out: Optional[torch.nn.Module] = None,
+) -> torch.nn.Module:
+    """Wraps an oeq.TensorProductConv to match MACE's conv_tp calling convention.
+
+    oeq.TensorProductConv.forward(X, Y, W, rows, cols) performs a fused
+    tensor-product + scatter.  MACE interaction blocks call
+    conv_tp(node_feats, edge_attrs, tp_weights, edge_index) where
+    edge_index[0]=sender, edge_index[1]=receiver.
+
+    When cueq is active with ir_mul layout, optional transpose modules
+    convert node_feats from ir_mul → mul_ir before the oeq forward and
+    the output from mul_ir → ir_mul after, since oeq always uses mul_ir.
+    """
+    conv_tp.original_forward = conv_tp.forward
+    if not hasattr(conv_tp, "weight_numel"):
+        conv_tp.weight_numel = conv_tp.input_args["problem"].weight_numel
+    conv_tp._transpose_in = transpose_in
+    conv_tp._transpose_out = transpose_out
+
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        tp_weights: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        if self._transpose_in is not None:
+            node_feats = self._transpose_in(node_feats)
+        out = self.original_forward(
+            node_feats,
+            edge_attrs,
+            tp_weights,
+            receiver,
+            sender,
+        )
+        if self._transpose_out is not None:
+            out = self._transpose_out(out)
+        return out
+
+    conv_tp.forward = types.MethodType(forward, conv_tp)
+    return conv_tp
+
+
+def with_oeq_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
+    """Wraps an oeq.TensorProduct (non-fused) to add scatter like e3nn path."""
+    conv_tp.original_forward = conv_tp.forward
+
+    def forward(
+        self,
+        node_feats: torch.Tensor,
+        edge_attrs: torch.Tensor,
+        tp_weights: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        sender = edge_index[0]
+        receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        mji = self.original_forward(node_feats[sender], edge_attrs, tp_weights)
+        message = scatter_sum(src=mji, index=receiver, dim=0, dim_size=num_nodes)
+        return message
+
+    conv_tp.forward = types.MethodType(forward, conv_tp)
+    return conv_tp
+
+
 class TensorProduct:
     """Wrapper around o3.TensorProduct/cuet.ChannelwiseTensorProduct/oeq.TensorProduct followed by a scatter sum"""
 
@@ -216,9 +286,32 @@ class TensorProduct:
             )
 
             if oeq_config.conv_fusion is None:
-                return oeq.TensorProduct(tpp)
+                return with_oeq_scatter_sum(oeq.TensorProduct(tpp))
             if oeq_config.conv_fusion == "atomic":
-                return oeq.TensorProductConv(tpp, deterministic=False)
+                t_in, t_out = None, None
+                if (
+                    CUET_AVAILABLE
+                    and cueq_config is not None
+                    and cueq_config.enabled
+                    and cueq_config.layout_str == "ir_mul"
+                ):
+                    t_in = cuet.TransposeIrrepsLayout(
+                        cue.Irreps(cueq_config.group, irreps_in1),
+                        source=cue.ir_mul,
+                        target=cue.mul_ir,
+                        use_fallback=True,
+                    )
+                    t_out = cuet.TransposeIrrepsLayout(
+                        cue.Irreps(cueq_config.group, irreps_out),
+                        source=cue.mul_ir,
+                        target=cue.ir_mul,
+                        use_fallback=True,
+                    )
+                return with_oeq_conv_fusion(
+                    oeq.TensorProductConv(tpp, deterministic=False),
+                    transpose_in=t_in,
+                    transpose_out=t_out,
+                )
 
             raise ValueError(f"Unknown conv_fusion option: {oeq_config.conv_fusion}")
 
