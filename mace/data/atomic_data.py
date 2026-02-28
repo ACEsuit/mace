@@ -5,7 +5,7 @@
 ###########################################################################################
 
 from copy import deepcopy
-from typing import Dict, Optional, Sequence
+from typing import Optional, Sequence
 
 import torch.utils.data
 
@@ -396,40 +396,7 @@ class AtomicData(torch_geometric.data.Data):
             else torch.zeros(num_atoms, 1, dtype=torch.get_default_dtype())
         )
 
-        known_properties = {
-            "forces",
-            "energy",
-            "stress",
-            "virials",
-            "dipole",
-            "charges",
-            "elec_temp",
-            "total_charge",
-            "polarizability",
-            "total_spin",
-            "density_coefficients",
-            "fermi_level",
-            "external_field",
-        }
-        extra_properties: Dict[str, torch.Tensor] = {}
-        for name, value in config.properties.items():
-            if (
-                name in known_properties
-                or value is None
-                or isinstance(value, (str, bytes))
-            ):
-                continue
-            try:
-                tensor_value = (
-                    value if isinstance(value, torch.Tensor) else torch.as_tensor(value)
-                )
-            except (TypeError, ValueError):
-                continue
-            if tensor_value.dtype.is_floating_point:
-                tensor_value = tensor_value.to(dtype=torch.get_default_dtype())
-            extra_properties[name] = tensor_value
-
-        return cls(
+        cls_kwargs = dict(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
             positions=positions,
             shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),
@@ -461,8 +428,23 @@ class AtomicData(torch_geometric.data.Data):
             volume=volume,
             fermi_level=fermi_level,
             external_field=external_field,
-            **extra_properties,
         )
+
+        # Pass through any extra properties not already handled above.
+        for k, v in config.properties.items():
+            if k in cls_kwargs or v is None or isinstance(v, (str, bytes)):
+                continue
+            try:
+                tv = v if isinstance(v, torch.Tensor) else torch.as_tensor(v)
+            except (TypeError, ValueError):
+                continue
+            if tv.dtype.is_floating_point:
+                tv = tv.to(dtype=torch.get_default_dtype())
+            if len(tv.shape) == 1:
+                tv = tv.unsqueeze(-1)  # promote per-atom (n,) → (n, 1)
+            cls_kwargs[k] = tv
+
+        return cls(**cls_kwargs)
 
 
 def get_data_loader(
