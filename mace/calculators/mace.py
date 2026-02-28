@@ -5,12 +5,13 @@
 ###########################################################################################
 
 import logging
+import time
 
 # pylint: disable=wrong-import-position
 import os
 from glob import glob
 from pathlib import Path
-from typing import List, Union
+from typing import Dict, List, Optional, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -23,8 +24,13 @@ from e3nn import o3
 from mace import data as mace_data
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
-from mace.tools.compile import prepare
+from mace.tools.compile import prepare, disable_e3nn_codegen, simplify
 from mace.tools.scripts_utils import extract_model
+
+try:
+    import torch._dynamo as dynamo
+except ImportError:
+    dynamo = None
 
 try:
     from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
@@ -43,11 +49,26 @@ except (ImportError, ModuleNotFoundError):
     run_e3nn_to_oeq = None
 
 try:
+    from mace.cli.convert_e3nn_hybrid import run as run_e3nn_to_hybrid
+
+    HYBRID_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    HYBRID_AVAILABLE = False
+    run_e3nn_to_hybrid = None
+
+try:
     import intel_extension_for_pytorch as ipex
 
     has_ipex = True
 except ImportError:
     has_ipex = False
+
+_EDGE_PAD_MULTIPLE = 64
+_EDGE_PAD_HEADROOM = 1.25
+
+
+def _round_up(value: int, multiple: int) -> int:
+    return ((value + multiple - 1) // multiple) * multiple
 
 
 def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
@@ -62,18 +83,22 @@ def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
 
 class MACECalculator(Calculator):
     """MACE ASE Calculator
-    args:
-        model_paths: str, path to model or models if a committee is produced
-                to make a committee use a wild card notation like mace_*.model
-        device: str, device to run on (cuda or cpu or xpu)
-        energy_units_to_eV: float, conversion factor from model energy units to eV
-        length_units_to_A: float, conversion factor from model length units to Angstroms
-        default_dtype: str, default dtype of model
-        charges_key: str, Array field of atoms object where atomic charges are stored
-        model_type: str, type of model to load
-                    Options: [MACE, DipoleMACE, EnergyDipoleMACE]
 
-    Dipoles are returned in units of Debye
+    Supports accelerated backends (cueq, openequivariance, hybrid) and
+    torch.compile with automatic graph padding to avoid recompilation
+    during geometry relaxation / MD.
+
+    Args:
+        model_paths: path(s) to model file(s); supports wildcards for committees
+        models: pre-loaded model(s) as an alternative to model_paths
+        device: 'cuda', 'cpu', or 'xpu'
+        compile_mode: torch.compile mode ('default', 'reduce-overhead', etc.)
+                      or None to disable compilation
+        enable_cueq: use cuequivariance for symmetric contractions / linear
+        enable_oeq: use openequivariance for channelwise tensor product
+        pad_num_atoms: fixed atom count for padding (0 = auto-estimate on first call)
+        pad_num_edges: fixed edge count for padding (0 = auto-estimate on first call)
+        warmup: if True, run one dummy forward pass after init to trigger compilation
     """
 
     def __init__(
@@ -92,28 +117,33 @@ class MACECalculator(Calculator):
         fullgraph=True,
         enable_cueq=False,
         enable_oeq=False,
+        pad_num_atoms: int = 0,
+        pad_num_edges: int = 0,
+        warmup: bool = False,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
-        if enable_cueq or enable_oeq:
+
+        self._enable_cueq = enable_cueq
+        self._enable_oeq = enable_oeq
+        self._uses_accelerated_backend = enable_cueq or enable_oeq
+
+        if self._uses_accelerated_backend:
             assert model_type in [
                 "MACE",
                 "PolarMACE",
-            ], "CuEq only supports MACE and PolarMACE models"
-            if compile_mode is not None:
-                logging.warning(
-                    "CuEq or Oeq does not support torch.compile, setting compile_mode to None"
-                )
-                compile_mode = None
+            ], "CuEq/OEq only supports MACE and PolarMACE models"
         if enable_cueq and enable_oeq:
-            raise ValueError(
-                "CuEq and OEq cannot be used together, please choose one of them"
-            )
-        if enable_cueq and not CUEQQ_AVAILABLE:
+            if not HYBRID_AVAILABLE:
+                raise ImportError(
+                    "Hybrid cueq+oeq mode requires both cuequivariance and "
+                    "openequivariance to be installed"
+                )
+        elif enable_cueq and not CUEQQ_AVAILABLE:
             raise ImportError(
                 "cuequivariance is not installed so CuEq acceleration cannot be used"
             )
-        if enable_oeq and not OEQ_AVAILABLE:
+        elif enable_oeq and not OEQ_AVAILABLE:
             raise ImportError(
                 "openequivariance is not installed so OEq acceleration cannot be used"
             )
@@ -160,7 +190,6 @@ class MACECalculator(Calculator):
                 f"Give a valid model_type: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
-        # superclass constructor initializes self.implemented_properties to an empty list
         if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
             self.implemented_properties.extend(
                 [
@@ -186,14 +215,12 @@ class MACECalculator(Calculator):
                 ]
             )
 
+        # ── Load models ──────────────────────────────────────────────────
         if model_paths is not None:
             if isinstance(model_paths, str):
-                # Find all models that satisfy the wildcard (e.g. mace_model_*.pt)
                 model_paths_glob = glob(model_paths)
-
                 if len(model_paths_glob) == 0:
                     raise ValueError(f"Couldn't find MACE model files: {model_paths}")
-
                 model_paths = model_paths_glob
             elif isinstance(model_paths, Path):
                 model_paths = [model_paths]
@@ -201,20 +228,15 @@ class MACECalculator(Calculator):
             if len(model_paths) == 0:
                 raise ValueError("No mace file names supplied")
             self.num_models = len(model_paths)
-
-            # Load models from files.
             self.models = [
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
             ]
-
         elif models is not None:
             if not isinstance(models, list):
                 models = [models]
-
             if len(models) == 0:
                 raise ValueError("No models supplied")
-
             self.models = models
             self.num_models = len(models)
 
@@ -232,21 +254,7 @@ class MACECalculator(Calculator):
             ]:
                 self.implemented_properties.extend(["dipole_var"])
 
-        if compile_mode is not None:
-            logging.info(f"Torch compile is enabled with mode: {compile_mode}")
-            self.models = [
-                torch.compile(
-                    prepare(extract_model)(model=model, map_location=device),
-                    mode=compile_mode,
-                    fullgraph=fullgraph,
-                )
-                for model in self.models
-            ]
-            self.use_compile = True
-        else:
-            self.use_compile = False
-
-        # Ensure all models are on the same device
+        # ── Ensure dtype consistency ─────────────────────────────────────
         for model in self.models:
             model.to(device)
 
@@ -317,21 +325,81 @@ class MACECalculator(Calculator):
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
         torch_tools.set_default_dtype(default_dtype)
-        if enable_cueq:
+
+        # ── Backend conversion (cueq / oeq / hybrid) ────────────────────
+        if enable_cueq and enable_oeq:
+            logging.info(
+                "Converting models to hybrid cueq+oeq: "
+                "cueq for symmetric contractions/linear, oeq for conv TP"
+            )
+            self.models = [
+                run_e3nn_to_hybrid(model, device=device).to(device)
+                for model in self.models
+            ]
+        elif enable_cueq:
             logging.info("Converting models to CuEq for acceleration")
             self.models = [
                 run_e3nn_to_cueq(model, device=device).to(device)
                 for model in self.models
             ]
-        if enable_oeq:
+        elif enable_oeq:
             logging.info("Converting models to OEq for acceleration")
             self.models = [
                 run_e3nn_to_oeq(model, device=device).to(device)
                 for model in self.models
             ]
+
+        # ── torch.compile ────────────────────────────────────────────────
+        self.use_compile = False
+        if compile_mode is not None:
+            logging.info(f"Torch compile is enabled with mode: {compile_mode}")
+            if self._enable_oeq:
+                # oeq custom ops break when autograd.grad is inlined in the
+                # compiled graph.  Ensure it is a graph break instead.
+                if dynamo is not None:
+                    try:
+                        dynamo.disallow_in_graph(torch.autograd.grad)
+                    except Exception:
+                        pass
+            else:
+                if dynamo is not None:
+                    dynamo.allow_in_graph(torch.autograd.grad)
+            if self._uses_accelerated_backend:
+                with disable_e3nn_codegen():
+                    self.models = [simplify(m) for m in self.models]
+                self.models = [
+                    torch.compile(m, mode=compile_mode, fullgraph=False)
+                    for m in self.models
+                ]
+            else:
+                self.models = [
+                    torch.compile(
+                        prepare(extract_model)(model=model, map_location=device),
+                        mode=compile_mode,
+                        fullgraph=fullgraph,
+                    )
+                    for model in self.models
+                ]
+            self.use_compile = True
+
         for model in self.models:
             for param in model.parameters():
                 param.requires_grad = False
+
+        # ── Padding ──────────────────────────────────────────────────────
+        if pad_num_atoms <= 0:
+            pad_num_atoms = int(os.environ.get("MACE_ASE_PAD_NUM_ATOMS", "0"))
+        if pad_num_edges <= 0:
+            pad_num_edges = int(os.environ.get("MACE_ASE_PAD_NUM_EDGES", "0"))
+        self.pad_num_atoms = max(int(pad_num_atoms), 0)
+        self.pad_num_edges = max(int(pad_num_edges), 0)
+        self._padding_initialized = self.pad_num_atoms > 0 and self.pad_num_edges > 0
+
+        # ── Warmup ───────────────────────────────────────────────────────
+        if warmup and self.use_compile:
+            logging.info(
+                "Warmup requested -- will trigger on first calculate() call"
+            )
 
     def check_state(self, atoms, tol: float = 1e-15) -> list:
         """
@@ -361,11 +429,36 @@ class MACECalculator(Calculator):
             state.append("info")
         return state
 
+    @staticmethod
+    def _slice_real_outputs(
+        out: Dict[str, Union[torch.Tensor, None]], num_real_atoms: int
+    ) -> Dict[str, Union[torch.Tensor, None]]:
+        """Strip padding from model outputs, keeping only real-atom results."""
+        graph_level_keys = {
+            "energy", "stress", "virials", "dipole",
+            "polarizability", "polarizability_sh",
+            "displacement", "contributions",
+        }
+        atom_level_keys = {
+            "node_energy", "forces", "charges",
+            "atomic_stresses", "atomic_virials",
+            "atomic_dipoles", "node_feats",
+        }
+        sliced: Dict[str, Union[torch.Tensor, None]] = {}
+        for key, value in out.items():
+            if value is None or not torch.is_tensor(value):
+                sliced[key] = value
+            elif key in graph_level_keys and value.ndim > 0:
+                sliced[key] = value[0]
+            elif key in atom_level_keys:
+                sliced[key] = value[:num_real_atoms]
+            else:
+                sliced[key] = value
+        return sliced
+
     def _create_result_tensors(
         self, num_models: int, num_atoms: int, batch, out: dict
     ) -> dict:
-        # unfortunately, code is expecting shape that isn't always same as underlying model
-        # output tensor shape, e.g. stress is returned as 1x3x3 and we want 3x3
         tensor_shapes = {
             "energy": [],
             "node_energy": [num_atoms],
@@ -398,17 +491,33 @@ class MACECalculator(Calculator):
 
         node_e0 = None
         if "node_energy" in out:
-            node_heads = batch["head"][batch["batch"]]
-            num_atoms_arange = torch.arange(batch["positions"].shape[0])
+            node_heads = batch["head"][batch["batch"]][:num_atoms]
+            num_atoms_arange = torch.arange(num_atoms)
             node_e0 = (
                 self.models[0]
-                .atomic_energies_fn(batch["node_attrs"])[num_atoms_arange, node_heads]
+                .atomic_energies_fn(batch["node_attrs"][:num_atoms])[
+                    num_atoms_arange, node_heads
+                ]
                 .detach()
                 .cpu()
                 .numpy()
             )
 
         return dict_of_tensors, node_e0
+
+    def _auto_estimate_padding(self, real_num_atoms: int, real_num_edges: int):
+        """Set padding targets on first call based on actual graph size."""
+        if self._padding_initialized:
+            return
+        self.pad_num_atoms = real_num_atoms
+        self.pad_num_edges = _round_up(
+            int(real_num_edges * _EDGE_PAD_HEADROOM), _EDGE_PAD_MULTIPLE
+        )
+        self._padding_initialized = True
+        logging.info(
+            "Auto-estimated padding: %d atoms, %d edges (real: %d atoms, %d edges)",
+            self.pad_num_atoms, self.pad_num_edges, real_num_atoms, real_num_edges,
+        )
 
     def _atoms_to_batch(self, atoms):
         self.arrays_keys.update({self.charges_key: "charges"})
@@ -418,20 +527,51 @@ class MACECalculator(Calculator):
         config = mace_data.config_from_atoms(
             atoms, key_specification=keyspec, head_name=self.head
         )
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                mace_data.AtomicData.from_config(
-                    config,
-                    z_table=self.z_table,
-                    cutoff=self.r_max,
-                    heads=self.available_heads,
-                )
-            ],
-            batch_size=1,
-            shuffle=False,
-            drop_last=False,
+        real_graph = mace_data.AtomicData.from_config(
+            config,
+            z_table=self.z_table,
+            cutoff=self.r_max,
+            heads=self.available_heads,
         )
-        batch = next(iter(data_loader)).to(self.device)
+
+        real_num_atoms = int(real_graph["node_attrs"].shape[0])
+        real_num_edges = int(real_graph["edge_index"].shape[1])
+
+        if self.use_compile and not self._padding_initialized:
+            self._auto_estimate_padding(real_num_atoms, real_num_edges)
+
+        if real_num_edges > self.pad_num_edges and self._padding_initialized:
+            old = self.pad_num_edges
+            self.pad_num_edges = _round_up(
+                int(real_num_edges * _EDGE_PAD_HEADROOM), _EDGE_PAD_MULTIPLE
+            )
+            logging.warning(
+                "Edge count %d exceeded pad budget %d -- bumping to %d "
+                "(will trigger one recompile)",
+                real_num_edges, old, self.pad_num_edges,
+            )
+
+        target_num_atoms = max(real_num_atoms, self.pad_num_atoms)
+        target_num_edges = max(real_num_edges, self.pad_num_edges)
+        pad_atoms = target_num_atoms - real_num_atoms
+        pad_edges = target_num_edges - real_num_edges
+
+        data_list = [real_graph]
+        if pad_atoms > 0 or pad_edges > 0:
+            from mace.data.padding_tools import build_fake_padding_graph
+
+            if pad_edges > 0 and pad_atoms <= 0:
+                pad_atoms = 1
+            data_list.append(
+                build_fake_padding_graph(
+                    real_graph,
+                    num_atoms=pad_atoms,
+                    num_edges=pad_edges,
+                    r_max=self.r_max,
+                )
+            )
+
+        batch = torch_geometric.Batch.from_data_list(data_list).to(self.device)
         return batch
 
     def _clone_batch(self, batch):
@@ -450,19 +590,20 @@ class MACECalculator(Calculator):
         :param system_changes: [str], system changes since last calculation, used by ASE internally
         :return:
         """
-        # call to base-class to set atoms attribute
         Calculator.calculate(self, atoms)
 
         batch_base = self._atoms_to_batch(atoms)
+        num_real_atoms = len(atoms)
+        is_padded = self.pad_num_atoms > 0 or self.pad_num_edges > 0
 
-        if self.model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
-            compute_stress = not self.use_compile
-        else:
-            compute_stress = False
+        compute_stress = self.model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]
+        # For oeq/hybrid + compile: create displacement outside the compiled
+        # graph so autograd.grad (which runs as a graph break) can
+        # differentiate energy w.r.t. displacement for stress.
+        oeq_compile = self.use_compile and self._enable_oeq
 
         ret_tensors = None
         node_e0 = None
-        # copy from output of model() call to ret_tensors
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
             model_dtype = next(model.parameters()).dtype
@@ -470,16 +611,31 @@ class MACECalculator(Calculator):
                 value = batch[key]
                 if torch.is_tensor(value) and torch.is_floating_point(value):
                     batch[key] = value.to(dtype=model_dtype)
+            batch_dict = batch.to_dict()
+
+            if oeq_compile and compute_stress:
+                positions = batch_dict["positions"]
+                num_graphs = int(batch_dict["ptr"].numel() - 1)
+                displacement = torch.zeros(
+                    (num_graphs, 3, 3),
+                    dtype=positions.dtype,
+                    device=positions.device,
+                )
+                displacement = displacement + positions.sum() * 0.0
+                batch_dict["displacement"] = displacement
+
             out = model(
-                batch.to_dict(),
+                batch_dict,
                 compute_stress=compute_stress,
-                training=self.use_compile,
+                training=self.use_compile and not oeq_compile,
                 compute_edge_forces=self.compute_atomic_stresses,
                 compute_atomic_stresses=self.compute_atomic_stresses,
             )
+            if is_padded:
+                out = self._slice_real_outputs(out, num_real_atoms)
             if i == 0:
                 ret_tensors, node_e0 = self._create_result_tensors(
-                    self.num_models, len(atoms), batch, out
+                    self.num_models, num_real_atoms, batch, out
                 )
             for key, val in ret_tensors.items():
                 if out.get(key) is not None:

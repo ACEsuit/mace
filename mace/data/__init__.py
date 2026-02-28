@@ -1,4 +1,5 @@
 from .atomic_data import AtomicData
+from .padding_tools import build_fake_padding_graph
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
 from .lmdb_dataset import LMDBDataset
 from .neighborhood import get_neighborhood
@@ -39,4 +40,5 @@ __all__ = [
     "KeySpecification",
     "update_keyspec_from_kwargs",
     "LMDBDataset",
+    "build_fake_padding_graph",
 ]

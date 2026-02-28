@@ -1247,6 +1247,7 @@ class RealAgnosticResidualNonLinearInteractionBlock(InteractionBlock):
             shared_weights=False,
             internal_weights=False,
             cueq_config=self.cueq_config,
+            oeq_config=self.oeq_config,
         )
 
         # Convolution weights
