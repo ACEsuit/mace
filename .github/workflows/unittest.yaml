@@ -32,7 +32,7 @@ jobs:
         run: |
           pip install -U pip
           pip install .[dev]
-          pip install pytest-split pytest-xdist
+          pip install pytest-split pytest-xdist pytest-timeout
 
       # Some tests are creating large files that may persist until the end of the test
       # run, so we are making more space available on the machine by deleting libraries
@@ -70,19 +70,24 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tests/.test_durations
-          key: test-durations-${{ github.run_id }}
+          key: test-durations-py${{ matrix.python-version }}-${{ github.run_id }}
           restore-keys: |
+            test-durations-py${{ matrix.python-version }}-
             test-durations-
 
       - name: Run general unit tests
         run: |
           pytest -v tests \
             --ignore=tests/test_cueq_oeq.py \
+            --ignore=tests/test_polar_cueq.py \
             --splits 4 \
             --group ${{ matrix.split-group }} \
+            --splitting-algorithm=least_duration \
             --store-durations \
             --durations-path=tests/.test_durations \
-            -n auto
+            --clean-durations \
+            --timeout=600 \
+            -n 2
 
   pytest-cueq:
     runs-on: ubuntu-latest
@@ -102,7 +107,57 @@ jobs:
         run: |
           python3 -m pip freeze
 
-      - name: Run cueq-specific tests
+      - name: Run cueq tests (non-polar)
         run: |
           pytest -v tests/test_cueq_oeq.py -k TestCueq
           pytest -v tests/test_calculator.py
+
+  pytest-cueq-polar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install requirements (with cueq + graph_longrange)
+        run: |
+          pip install -U pip
+          pip install ".[dev, cueq]"
+          pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git
+
+      - name: Log installed environment (with cueq + graph_longrange)
+        run: |
+          python3 -m pip freeze
+
+      - name: Run cueq tests (polar)
+        run: |
+          pytest -v tests/test_polar_cueq.py
+
+  pytest-polar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install requirements (with graph_longrange)
+        run: |
+          pip install -U pip
+          pip install ".[dev]"
+          pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git
+
+      - name: Log installed environment (with graph_longrange)
+        run: |
+          python3 -m pip freeze
+
+      - name: Run polar-specific tests
+        run: |
+          pytest -v tests/test_polar_models.py
+          pytest -v tests/test_run_train_dipole_polar.py
+          pytest -v tests/test_calculator.py::test_mace_polar_constructor
+          pytest -v tests/test_models.py::test_dipole_polar_mace
+          pytest -v tests/test_foundations.py -k polar

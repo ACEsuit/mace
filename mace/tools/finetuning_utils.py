@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 
 from mace.tools.utils import AtomicNumberTable
@@ -11,12 +13,14 @@ def load_foundations_elements(
     use_shift=True,
     use_scale=True,
     max_L=2,
+    default_dtype: Optional[torch.dtype] = None,
 ):
     """
     Load the foundations of a model into a model for fine-tuning.
     """
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
+    target_dtype = default_dtype or next(model.parameters()).dtype
     model_heads = model.heads
     new_z_table = table
     num_species_foundations = len(z_table.zs)
@@ -211,7 +215,6 @@ def load_foundations_elements(
                 assert hasattr(readout, "linear_1") or hasattr(
                     readout, "linear_mid"
                 ), "Readout block must have linear_1 or linear_mid"
-                # Determine shapes once to avoid uninitialized use
                 if hasattr(readout, "linear_1"):
                     shape_input_1 = (
                         model_foundations.readouts[i]
@@ -287,6 +290,37 @@ def load_foundations_elements(
                         readout.linear_2.bias = torch.nn.Parameter(
                             model_readouts_one_linear_2_bias
                         )
+    _handled_attrs = {"interactions", "products", "readouts"}
+    for attr_name, module in model.named_children():
+        if attr_name in _handled_attrs:
+            continue
+        submodules = (
+            list(zip(module, model_foundations.__dict__["_modules"][attr_name]))
+            if isinstance(module, torch.nn.ModuleList)
+            else [(module, getattr(model_foundations, attr_name))]
+        )
+        for sub_new, sub_found in submodules:
+            for emb_name in ("source_embedding", "target_embedding"):
+                if not hasattr(sub_new, emb_name):
+                    continue
+                emb_new = getattr(sub_new, emb_name)
+                emb_found = getattr(sub_found, emb_name)
+                if (
+                    hasattr(emb_new, "weight")
+                    and hasattr(emb_found, "weight")
+                    and emb_found.weight.shape[0]
+                    == num_species_foundations * num_channels_foundation
+                    and emb_new.weight.shape[0] == num_species * num_channels_foundation
+                ):
+                    emb_new.weight = torch.nn.Parameter(
+                        emb_found.weight.view(num_species_foundations, -1)[
+                            indices_weights, :
+                        ]
+                        .flatten()
+                        .clone()
+                        / (num_species_foundations / num_species) ** 0.5
+                    )
+
     if model_foundations.scale_shift is not None:
         if use_scale:
             model.scale_shift.scale = model_foundations.scale_shift.scale.repeat(
@@ -296,15 +330,36 @@ def load_foundations_elements(
             model.scale_shift.shift = model_foundations.scale_shift.shift.repeat(
                 len(model_heads)
             ).clone()
+
+    model_state = model.state_dict()
+    foundation_state = model_foundations.state_dict()
+    for name, param in foundation_state.items():
+        if name not in model_state:
+            continue
+        if not load_readout and name.startswith("readouts."):
+            continue
+        if model_state[name].shape != param.shape:
+            continue
+        model_state[name].copy_(param)
+
+    model.to(target_dtype)
+
     return model
 
 
 def load_foundations(
     model,
     model_foundations,
+    include_readouts: bool = False,
 ):
-    for name, param in model_foundations.named_parameters():
-        if name in model.state_dict().keys():
-            if "readouts" not in name:
-                model.state_dict()[name].copy_(param)
+    model_state = model.state_dict()
+    foundation_state = model_foundations.state_dict()
+    for name, param in foundation_state.items():
+        if name not in model_state:
+            continue
+        if not include_readouts and name.startswith("readouts."):
+            continue
+        if model_state[name].shape != param.shape:
+            continue
+        model_state[name].copy_(param)
     return model

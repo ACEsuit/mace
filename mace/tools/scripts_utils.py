@@ -225,8 +225,8 @@ def print_git_commit():
 
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
-    if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES"]:
-        return {"error": "Model is not a ScaleShiftMACE or MACELES model"}
+    if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES", "PolarMACE"]:
+        return {"error": "Model is not a ScaleShiftMACE, MACELES, or PolarMACE model"}
 
     def radial_to_name(radial_type):
         if radial_type == "BesselBasis":
@@ -249,11 +249,16 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
     scale = model.scale_shift.scale
     shift = model.scale_shift.shift
     heads = model.heads if hasattr(model, "heads") else ["default"]
-    model_mlp_irreps = (
-        o3.Irreps(str(model.readouts[-1].hidden_irreps))
-        if model.num_interactions.item() > 1
-        else 1
-    )
+    if hasattr(model.readouts[-1], "hidden_irreps"):
+        model_mlp_irreps = o3.Irreps(str(model.readouts[-1].hidden_irreps))
+    else:
+        model_mlp_irreps = o3.Irreps("1x0e")
+    mlp_scalars_per_head = max(1, model_mlp_irreps.count((0, 1)) // len(heads))
+    gate = None
+    if hasattr(model.readouts[-1], "non_linearity"):
+        acts = getattr(model.readouts[-1].non_linearity, "acts", None)
+        if acts is not None and len(acts) > 0 and hasattr(acts[0], "f"):
+            gate = acts[0].f
     try:
         correlation = (
             len(model.products[0].symmetric_contractions.contractions[0].weights) + 1
@@ -271,18 +276,8 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "num_elements": len(model.atomic_numbers),
         "hidden_irreps": o3.Irreps(str(model.products[0].linear.irreps_out)),
         "edge_irreps": model.edge_irreps if hasattr(model, "edge_irreps") else None,
-        "MLP_irreps": (
-            o3.Irreps(f"{model_mlp_irreps.count((0, 1)) // len(heads)}x0e")
-            if model.num_interactions.item() > 1
-            else 1
-        ),
-        "gate": (
-            model.readouts[-1]  # pylint: disable=protected-access
-            .non_linearity._modules["acts"][0]
-            .f
-            if model.num_interactions.item() > 1
-            else None
-        ),
+        "MLP_irreps": o3.Irreps(f"{mlp_scalars_per_head}x0e"),
+        "gate": gate,
         "use_reduced_cg": (
             model.use_reduced_cg if hasattr(model, "use_reduced_cg") else False
         ),
@@ -327,6 +322,41 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         config["use_polarizability"] = model.use_polarizability
         config["only_dipole"] = False  # model.only_dipole
         config["gate"] = torch.nn.functional.silu
+    if model.__class__.__name__ == "PolarMACE":
+        if hasattr(model, "fukui_source_map") and hasattr(
+            model.fukui_source_map, "hidden_irreps"
+        ):
+            config["MLP_irreps"] = o3.Irreps(str(model.fukui_source_map.hidden_irreps))
+        if hasattr(model, "fukui_source_map") and hasattr(
+            model.fukui_source_map, "non_linearity"
+        ):
+            acts = getattr(model.fukui_source_map.non_linearity, "acts", None)
+            if acts is not None and len(acts) > 0 and hasattr(acts[0], "f"):
+                config["gate"] = acts[0].f
+        config["kspace_cutoff_factor"] = model.kspace_cutoff_factor
+        config["atomic_multipoles_max_l"] = model.atomic_multipoles_max_l
+        config["atomic_multipoles_smearing_width"] = (
+            model.atomic_multipoles_smearing_width
+        )
+        config["field_feature_max_l"] = model.field_feature_max_l
+        config["field_feature_widths"] = model.field_feature_widths
+        config["field_feature_norms"] = getattr(model, "_field_feature_norms")
+        config["num_recursion_steps"] = model.num_recursion_steps
+        config["include_electrostatic_self_interaction"] = (
+            model.include_electrostatic_self_interaction
+        )
+        config["add_local_electron_energy"] = model.add_local_electron_energy
+        config["quadrupole_feature_corrections"] = model.quadrupole_feature_corrections
+        config["return_electrostatic_potentials"] = (
+            model.return_electrostatic_potentials
+        )
+        config["field_norm_factor"] = model.field_norm_factor
+        config["field_si"] = model.field_si
+        config["fixedpoint_update_config"] = getattr(
+            model, "_fixedpoint_update_config"
+        ).copy()
+        config["field_readout_config"] = getattr(model, "_field_readout_config").copy()
+        config["keep_last_layer_irreps"] = model.keep_last_layer_irreps
     return config
 
 

@@ -13,7 +13,7 @@ from ase.calculators.test import gradient_test
 from ase.filters import FrechetCellFilter
 
 from mace.calculators import mace_mp, mace_off
-from mace.calculators.foundations_models import mace_omol
+from mace.calculators.foundations_models import mace_omol, mace_polar
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
 
@@ -747,6 +747,22 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
 
     _, stderr = capsys.readouterr()
     assert stderr == ""
+
+
+def test_mace_polar_constructor():
+    try:
+        import graph_longrange  # noqa: F401
+    except (ImportError, ModuleNotFoundError):
+        pytest.skip("graph_longrange is not installed")
+    model_name = "polar-1-m"
+    try:
+        polar_calc = mace_polar(model=model_name, device="cpu")
+    except (FileNotFoundError, RuntimeError):
+        pytest.skip(f"Missing Polar foundation model file: {model_name}")
+
+    assert isinstance(polar_calc, MACECalculator)
+    assert len(polar_calc.models) == 1
+    assert polar_calc.models[0].__class__.__name__ == "PolarMACE"
 
 
 def test_mace_off(tmp_path):
