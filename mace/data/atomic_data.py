@@ -366,7 +366,6 @@ class AtomicData(torch_geometric.data.Data):
             else torch.tensor([[False, False, False]], dtype=torch.bool)
         )
         positions = torch.tensor(config.positions, dtype=torch.get_default_dtype())
-        positions.requires_grad_(True)
         volume = torch.linalg.det(cell)
         if torch.abs(volume) > 0:
             rcell = 2 * torch.pi * torch.linalg.inv(cell.mT)
