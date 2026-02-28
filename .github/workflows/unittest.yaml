@@ -70,8 +70,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tests/.test_durations
-          key: test-durations-${{ github.run_id }}
+          key: test-durations-py${{ matrix.python-version }}-${{ github.run_id }}
           restore-keys: |
+            test-durations-py${{ matrix.python-version }}-
             test-durations-
 
       - name: Run general unit tests
@@ -81,8 +82,10 @@ jobs:
             --ignore=tests/test_polar_cueq.py \
             --splits 4 \
             --group ${{ matrix.split-group }} \
+            --splitting-algorithm=least_duration \
             --store-durations \
             --durations-path=tests/.test_durations \
+            --clean-durations \
             -n auto
 
   pytest-cueq:

@@ -392,7 +392,7 @@ def test_mace_mh_1_elements_subset_reproduces_energy_forces():
         ("off", "large"),
         ("off", MODEL_PATH),
     ],
-    ids=lambda spec: f"mace_{spec[0]}-{spec[1] if spec[1] is not None else 'default'}",
+    ids=[f"calc{i}" for i in range(9)],
 )
 def test_compile_foundation(calc_spec):
     family, model_spec = calc_spec
@@ -425,7 +425,7 @@ def test_compile_foundation(calc_spec):
         ("off", "large"),
         ("off", MODEL_PATH),
     ],
-    ids=lambda spec: f"mace_{spec[0]}-{spec[1]}",
+    ids=[f"model{i}" for i in range(8)],
 )
 def test_extract_config(model_spec):
     family, model_name = model_spec
