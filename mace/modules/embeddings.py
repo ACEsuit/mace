@@ -63,6 +63,8 @@ class GenericJointEmbedding(nn.Module):
                 feat = feat[batch].unsqueeze(-1)  # now [N_nodes, …]
             if spec["type"] == "categorical":
                 feat = (feat + spec.get("offset", 0)).long().squeeze(-1)  # [N_nodes, 1]
+            elif spec["type"] == "continuous" and feat.dim() == 1:
+                feat = feat.unsqueeze(-1)
             emb = self.embedders[name](feat)
             embs.append(emb)
         x = torch.cat(embs, dim=-1)

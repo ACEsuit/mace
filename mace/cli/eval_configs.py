@@ -156,8 +156,10 @@ def run(args: argparse.Namespace) -> None:
         assert args.head in model.heads
         head_name = args.head
     else:
-        head_name = 'Default'
-    configs = [data.config_from_atoms(atoms, head_name=head_name) for atoms in atoms_list]
+        head_name = "Default"
+    configs = [
+        data.config_from_atoms(atoms, head_name=head_name) for atoms in atoms_list
+    ]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 

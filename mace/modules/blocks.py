@@ -303,6 +303,83 @@ class NonLinearDipolePolarReadoutBlock(torch.nn.Module):
         return self.linear_2(x)  # [n_nodes, 1]
 
 
+class GeneralNonLinearBiasReadoutBlock(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        gate: Optional[Callable],
+        irrep_out: o3.Irreps = o3.Irreps("0e"),
+        irreps_out: Optional[o3.Irreps] = None,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+    ):
+        super().__init__()
+        self.hidden_irreps = MLP_irreps
+        self.irreps_out = irrep_out
+        if irreps_out is not None:
+            self.irreps_out = irreps_out
+        irreps_scalars = o3.Irreps(
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l == 0 and ir in self.irreps_out]
+        )
+        irreps_gated = o3.Irreps(
+            [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
+        )
+        irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
+        activation_fn = gate if gate is not None else torch.nn.functional.silu
+        act_gates_fn = torch.nn.functional.sigmoid
+        self.equivariant_nonlin = nn.Gate(
+            irreps_scalars=irreps_scalars,
+            act_scalars=[activation_fn for _, ir in irreps_scalars],
+            irreps_gates=irreps_gates,
+            act_gates=[act_gates_fn] * len(irreps_gates),
+            irreps_gated=irreps_gated,
+        )
+        self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
+        self.linear_1 = Linear(
+            irreps_in=irreps_in, irreps_out=self.irreps_nonlin, cueq_config=cueq_config
+        )
+        self.linear_mid = o3.Linear(
+            irreps_in=self.hidden_irreps, irreps_out=self.irreps_nonlin, biases=True
+        )
+        self.linear_2 = o3.Linear(
+            irreps_in=self.hidden_irreps, irreps_out=self.irreps_out, biases=True
+        )
+        layout_str = (
+            cueq_config.layout_str
+            if (cueq_config is not None and hasattr(cueq_config, "layout_str"))
+            else "mul_ir"
+        )
+        self._tp_to_mul_ir = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_nonlin,
+            source=layout_str,
+            target="mul_ir",
+            cueq_config=cueq_config,
+        )
+        self._tp_from_mul_ir_out = TransposeIrrepsLayoutWrapper(
+            irreps=self.irreps_out,
+            source="mul_ir",
+            target=layout_str,
+            cueq_config=cueq_config,
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+    ) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        x = self.linear_1(x)
+        tp_to_mul_ir = getattr(self, "_tp_to_mul_ir", None)
+        if tp_to_mul_ir is not None:
+            x = tp_to_mul_ir(x)
+        x = self.equivariant_nonlin(x)
+        x = self.linear_mid(x)
+        x = self.equivariant_nonlin(x)
+        x = self.linear_2(x)
+        tp_from_mul_ir_out = getattr(self, "_tp_from_mul_ir_out", None)
+        if tp_from_mul_ir_out is not None:
+            x = tp_from_mul_ir_out(x)
+        return x  # [n_nodes, 1]
+
+
 @compile_mode("script")
 class AtomicEnergiesBlock(torch.nn.Module):
     atomic_energies: torch.Tensor
@@ -319,7 +396,10 @@ class AtomicEnergiesBlock(torch.nn.Module):
     def forward(
         self, x: torch.Tensor  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
-        return torch.matmul(x, torch.atleast_2d(self.atomic_energies).T)
+        energies = torch.atleast_2d(self.atomic_energies).T.to(
+            dtype=x.dtype, device=x.device
+        )
+        return torch.matmul(x, energies)
 
     def __repr__(self):
         formatted_energies = ", ".join(
