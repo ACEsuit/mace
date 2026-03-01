@@ -10,8 +10,8 @@ from e3nn import o3
 
 from mace import data, modules, tools
 from mace.data import Configuration
-from mace.tools import torch_geometric
 from mace.modules.lora import inject_lora, merge_lora_weights
+from mace.tools import torch_geometric
 
 
 def _random_config() -> Configuration:
@@ -330,8 +330,8 @@ def test_lora_merge_preserves_equivariance(build_lora_model, random_configs) -> 
 
 def test_lora_evaluate_preserves_frozen_state(build_lora_model, random_configs) -> None:
     """Test that evaluate() preserves requires_grad states for LoRA models."""
-    from mace.tools import evaluate
     from mace.modules.loss import WeightedEnergyForcesLoss
+    from mace.tools import evaluate
 
     model, table = build_lora_model(rank=2, alpha=0.5, randomize=True)
 

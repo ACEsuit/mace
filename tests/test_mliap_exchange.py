@@ -1,20 +1,23 @@
 import types
+
 import torch
 from e3nn import o3
 
-import mace.modules.blocks as blocks
+from mace.modules import blocks
 from mace.modules.blocks import (
     RealAgnosticDensityResidualInteractionBlock,
     RealAgnosticResidualNonLinearInteractionBlock,
 )
 
 
-class DummyMP(torch.autograd.Function):
+class DummyMP(
+    torch.autograd.Function
+):  # pylint: disable=abstract-method,arguments-differ
     calls = 0
     last_shape = None
 
     @staticmethod
-    def forward(ctx, x, lammps_class):
+    def forward(_ctx, x, lammps_class):
         DummyMP.calls += 1
         DummyMP.last_shape = x.shape
         expected_total = lammps_class.expected_total
@@ -26,7 +29,7 @@ class DummyMP(torch.autograd.Function):
         return out
 
 
-def _make_block_inputs(n_real, n_ghost, node_feat_dim, node_attr_dim, num_edges):
+def _make_block_inputs(n_real, _n_ghost, node_feat_dim, node_attr_dim, num_edges):
     node_feats = torch.randn(n_real, node_feat_dim)
     node_attrs = torch.randn(n_real, node_attr_dim)
     edge_attrs = torch.randn(num_edges, 1)
