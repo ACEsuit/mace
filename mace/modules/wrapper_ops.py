@@ -170,8 +170,8 @@ def with_oeq_conv_fusion(
     conv_tp.original_forward = conv_tp.forward
     if not hasattr(conv_tp, "weight_numel"):
         conv_tp.weight_numel = conv_tp.input_args["problem"].weight_numel
-    conv_tp._transpose_in = transpose_in
-    conv_tp._transpose_out = transpose_out
+    conv_tp.layout_transpose_in = transpose_in
+    conv_tp.layout_transpose_out = transpose_out
 
     def forward(
         self,
@@ -182,8 +182,8 @@ def with_oeq_conv_fusion(
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
-        if self._transpose_in is not None:
-            node_feats = self._transpose_in(node_feats)
+        if self.layout_transpose_in is not None:
+            node_feats = self.layout_transpose_in(node_feats)
         out = self.original_forward(
             node_feats,
             edge_attrs,
@@ -191,8 +191,8 @@ def with_oeq_conv_fusion(
             receiver,
             sender,
         )
-        if self._transpose_out is not None:
-            out = self._transpose_out(out)
+        if self.layout_transpose_out is not None:
+            out = self.layout_transpose_out(out)
         return out
 
     conv_tp.forward = types.MethodType(forward, conv_tp)

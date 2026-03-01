@@ -1,5 +1,3 @@
-"""Helpers for fixed-shape graph padding."""
-
 import torch
 
 from mace.tools import torch_geometric
@@ -43,17 +41,31 @@ def build_fake_padding_graph(
         }
     )
 
-    # Pad explicit mandatory node fields first.
-    for key in ("node_attrs", "positions", "forces", "charges"):
-        if key in fake_graph and torch.is_tensor(fake_graph[key]) and fake_graph[key].dim() > 0:
+    node_attrs = _zeros_with_size0(fake_graph["node_attrs"], num_atoms)
+    node_attrs[:, 0] = 1.0
+    fake_graph["node_attrs"] = node_attrs
+    for key in ("positions", "forces", "charges"):
+        if (
+            key in fake_graph
+            and torch.is_tensor(fake_graph[key])
+            and fake_graph[key].dim() > 0
+        ):
             fake_graph[key] = _zeros_with_size0(fake_graph[key], num_atoms)
-    fake_graph["node_attrs"][:, 0] = 1.0
 
     # Pad other per-node / per-edge tensor fields generically so new AtomicData keys
     # usually don't require changing this helper.
     for key, value in fake_graph.to_dict().items():
         if (
-            key in {"edge_index", "node_attrs", "positions", "forces", "charges", "shifts", "unit_shifts"}
+            key
+            in {
+                "edge_index",
+                "node_attrs",
+                "positions",
+                "forces",
+                "charges",
+                "shifts",
+                "unit_shifts",
+            }
             or key in _GRAPH_LEVEL_TENSOR_KEYS
             or not torch.is_tensor(value)
             or value.dim() == 0
@@ -79,27 +91,24 @@ def build_fake_padding_graph(
         edge_index[1] = torch.remainder(edge_ids + 1, num_atoms)
     fake_graph["edge_index"] = edge_index
 
+    cell_scale = max(float(r_max) * 2.0, 1.0)
+
     for key in ("shifts", "unit_shifts"):
         if key in fake_graph and torch.is_tensor(fake_graph[key]):
-            fake_graph[key] = _zeros_with_size0(fake_graph[key], num_edges)
+            t = _zeros_with_size0(fake_graph[key], num_edges)
+            if num_edges > 0:
+                if key == "unit_shifts":
+                    t[:, 0] = 1.0
+                elif key == "shifts":
+                    t[:, 0] = cell_scale
+            fake_graph[key] = t
 
-    cell_scale = max(float(r_max) * 2.0, 1.0)
     cell_ref = reference_graph["cell"]
-    fake_graph["cell"] = torch.eye(
-        3, dtype=cell_ref.dtype, device=cell_ref.device
-    ) * cell_scale
+    fake_graph["cell"] = (
+        torch.eye(3, dtype=cell_ref.dtype, device=cell_ref.device) * cell_scale
+    )
     if "pbc" in fake_graph and torch.is_tensor(fake_graph["pbc"]):
         fake_graph["pbc"] = torch.zeros_like(fake_graph["pbc"], dtype=torch.bool)
-
-    if (
-        num_edges > 0
-        and "unit_shifts" in fake_graph
-        and torch.is_tensor(fake_graph["unit_shifts"])
-        and "shifts" in fake_graph
-        and torch.is_tensor(fake_graph["shifts"])
-    ):
-        fake_graph["unit_shifts"][:, 0] = 1.0
-        fake_graph["shifts"][:, 0] = cell_scale
 
     if "total_charge" in fake_graph and torch.is_tensor(fake_graph["total_charge"]):
         fake_graph["total_charge"] = torch.zeros_like(fake_graph["total_charge"])
