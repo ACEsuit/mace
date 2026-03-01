@@ -1,16 +1,8 @@
-"""
-Hybrid cueq + openequivariance model converter.
-
-Uses cuequivariance for symmetric contractions and linear layers (which work
-fine regardless of segment uniformity) and openequivariance for the
-channelwise tensor product in the convolution (which handles non-uniform
-irreps like 128x0e+128x1o without requiring uniform_1d).
-"""
+"""Hybrid cueq + openequivariance model converter."""
 
 import argparse
 import logging
 import os
-from typing import Optional
 
 import torch
 
@@ -19,7 +11,6 @@ from mace.tools.scripts_utils import extract_config_mace_model
 
 try:
     from mace.cli.convert_e3nn_cueq import transfer_symmetric_contractions
-    from mace.tools.cg import O3_e3nn
 
     CUEQ_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
@@ -95,6 +86,7 @@ def run(
         correlation,
         num_layers,
         use_reduced_cg,
+        keep_last_layer_irreps=False,
     )
 
     transferred_keys = set()
@@ -114,15 +106,17 @@ def run(
         else:
             logging.warning(
                 "Shape mismatch for key %s: source %s vs target %s",
-                key, src.shape, tgt.shape,
+                key,
+                src.shape,
+                tgt.shape,
             )
 
     target_model.load_state_dict(target_dict)
 
     for i in range(num_layers):
-        target_model.interactions[i].avg_num_neighbors = (
-            source_model.interactions[i].avg_num_neighbors
-        )
+        target_model.interactions[i].avg_num_neighbors = source_model.interactions[
+            i
+        ].avg_num_neighbors
 
     if return_model:
         return target_model
@@ -138,6 +132,7 @@ def run(
 def _shapes_match_up_to_unsqueeze(a, b):
     def drop(s):
         return tuple(d for d in s if d != 1)
+
     return drop(a) == drop(b)
 
 
@@ -145,7 +140,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_model", help="Path to input MACE model")
     parser.add_argument(
-        "--output_model", default="hybrid_model.pt",
+        "--output_model",
+        default="hybrid_model.pt",
         help="Path to output hybrid model",
     )
     parser.add_argument("--device", default="cpu")
