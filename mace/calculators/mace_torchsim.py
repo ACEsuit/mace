@@ -1,13 +1,14 @@
-"""TorchSim-compatible MACE model wrapper with cueq/oeq acceleration and torch.compile."""
+"""MACE TorchSim model interface."""
 
 from __future__ import annotations
 
 import logging
-import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Union
 
 import torch
+
+from mace.tools import atomic_numbers_to_indices, utils
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +34,8 @@ except ImportError as exc:
     class ModelInterface(torch.nn.Module):  # type: ignore[no-redef]
         """Fallback base class when torch-sim is not installed."""
 
-from mace.tools import atomic_numbers_to_indices, utils
+        def forward(self, state):
+            raise NotImplementedError
 
 
 def to_one_hot(
@@ -88,6 +90,15 @@ class MaceTorchSimModel(ModelInterface):
         self._edge_budget = 0
         self._system_budget = 0
         self._budgets_ready = False
+        self._buf_positions = None
+        self._buf_node_attrs = None
+        self._buf_batch = None
+        self._buf_edge_index = None
+        self._buf_shifts = None
+        self._buf_unit_shifts = None
+        self._buf_ptr = None
+        self._buf_cell = None
+        self._buf_head = None
 
         if isinstance(model, (str, Path)):
             self.model = torch.load(
@@ -104,12 +115,23 @@ class MaceTorchSimModel(ModelInterface):
 
         if enable_cueq and enable_oeq:
             from mace.cli.convert_e3nn_hybrid import run as run_hybrid
+
             self.model = run_hybrid(self.model, device=self._device.type)
         elif enable_cueq:
             from mace.cli.convert_e3nn_cueq import run as run_cueq
-            self.model = run_cueq(self.model, device=self._device.type)
+
+            try:
+                self.model = run_cueq(self.model, device=self._device.type)
+            except (RuntimeError, ValueError):
+                log.warning(
+                    "cueq conv_fusion failed (non-uniform irreps), "
+                    "falling back to conv_fusion=False"
+                )
+                self.model = run_cueq(self.model, device="cpu")
+                self.model = self.model.to(self._device)
         elif enable_oeq:
             from mace.cli.convert_e3nn_oeq import run as run_oeq
+
             self.model = run_oeq(self.model, device=self._device.type)
 
         self.model = self.model.to(device=self._device).eval()
@@ -139,6 +161,7 @@ class MaceTorchSimModel(ModelInterface):
 
     def _setup_compile(self, compile_mode: str) -> None:
         import torch._dynamo as dynamo
+
         from mace.tools.compile import simplify
 
         if self._enable_oeq:
@@ -146,7 +169,7 @@ class MaceTorchSimModel(ModelInterface):
             try:
                 dynamo.allow_in_graph(torch.autograd.grad)
                 dynamo.disallow_in_graph(torch.autograd.grad)
-            except Exception:
+            except (TypeError, AttributeError):
                 pass
         else:
             dynamo.allow_in_graph(torch.autograd.grad)
@@ -195,9 +218,7 @@ class MaceTorchSimModel(ModelInterface):
             dtype=self._dtype,
         )
 
-    def _ensure_budgets(
-        self, n_atoms: int, n_edges: int, n_systems: int
-    ) -> None:
+    def _ensure_budgets(self, n_atoms: int, n_edges: int, n_systems: int) -> None:
         changed = False
         if n_atoms > self._atom_budget:
             old = self._atom_budget
@@ -213,19 +234,26 @@ class MaceTorchSimModel(ModelInterface):
             changed = True
         if n_systems > self._system_budget:
             old = self._system_budget
-            self._system_budget = _round_up(int(n_systems * _PAD_HEADROOM), _PAD_MULTIPLE)
+            self._system_budget = _round_up(
+                int(n_systems * _PAD_HEADROOM), _PAD_MULTIPLE
+            )
             if old:
-                log.warning("System budget %d -> %d (recompile)", old, self._system_budget)
+                log.warning(
+                    "System budget %d -> %d (recompile)", old, self._system_budget
+                )
             changed = True
 
         if changed or not self._budgets_ready:
             self._allocate_buffers()
             self._budgets_ready = True
             log.info(
-                "Padding budgets: %d atoms, %d edges, %d systems "
-                "(real: %d, %d, %d)",
-                self._atom_budget, self._edge_budget, self._system_budget,
-                n_atoms, n_edges, n_systems,
+                "Padding budgets: %d atoms, %d edges, %d systems (real: %d, %d, %d)",
+                self._atom_budget,
+                self._edge_budget,
+                self._system_budget,
+                n_atoms,
+                n_edges,
+                n_systems,
             )
 
     def _allocate_buffers(self) -> None:
@@ -282,7 +310,8 @@ class MaceTorchSimModel(ModelInterface):
 
         self._buf_cell[:n_real_systems] = data_dict["cell"]
         self._buf_head[:n_real_systems] = (
-            data_dict["head"] if "head" in data_dict
+            data_dict["head"]
+            if "head" in data_dict
             else torch.zeros(n_real_systems, dtype=torch.long, device=self._device)
         )
 
@@ -405,9 +434,7 @@ class MaceTorchSimModel(ModelInterface):
             "ptr": self.ptr,
             "node_attrs": self.node_attrs,
             "batch": sim_state.system_idx,
-            "head": torch.zeros(
-                self.n_systems, dtype=torch.long, device=self._device
-            ),
+            "head": torch.zeros(self.n_systems, dtype=torch.long, device=self._device),
             "pbc": sim_state.pbc,
             "cell": sim_state.row_vector_cell,
             "positions": wrapped_positions,
@@ -431,7 +458,10 @@ class MaceTorchSimModel(ModelInterface):
         if self._use_compile:
             self._ensure_budgets(n_real_atoms, n_real_edges, self.n_systems)
             data_dict = self._fill_padded_data(
-                data_dict, n_real_atoms, n_real_edges, self.n_systems,
+                data_dict,
+                n_real_atoms,
+                n_real_edges,
+                self.n_systems,
             )
 
         training = self._use_compile and not oeq_compile
