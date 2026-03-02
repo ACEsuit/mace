@@ -128,6 +128,29 @@ def test_mace(device, default_dtype):  # pylint: disable=W0621
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_mace_compile_stress(device, default_dtype):  # pylint: disable=W0621
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip(reason="cuda is not available")
+
+    model_eager = create_mace(device)
+    batch_eager = create_batch(device)
+    output_eager = model_eager(batch_eager, compute_stress=True)
+
+    tmp_model = mace_compile.prepare(create_mace)(device)
+    model_compiled = torch.compile(tmp_model, mode="default", fullgraph=True)
+    batch_compiled = create_batch(device)
+    batch_compiled["positions"].requires_grad_(True)
+    output_compiled = model_compiled(batch_compiled, training=True, compute_stress=True)
+
+    assert_close(output_eager["energy"], output_compiled["energy"])
+    assert_close(output_eager["forces"], output_compiled["forces"])
+    assert output_eager["stress"] is not None
+    assert output_compiled["stress"] is not None
+    assert_close(output_eager["stress"], output_compiled["stress"])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Not supported on Windows")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
 @pytest.mark.parametrize("enable_cueq", [True, False])
 def test_eager_benchmark(

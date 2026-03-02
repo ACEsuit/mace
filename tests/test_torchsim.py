@@ -168,6 +168,8 @@ def test_torchsim_no_stress(trained_model_path, water_atoms):
 
 
 def test_torchsim_matches_ase_calculator(trained_model_path, water_atoms):
+    from ase.stress import full_3x3_to_voigt_6_stress
+
     from mace.calculators.mace import MACECalculator
     from mace.calculators.mace_torchsim import MaceTorchSimModel
 
@@ -178,6 +180,7 @@ def test_torchsim_matches_ase_calculator(trained_model_path, water_atoms):
     atoms_ase.calc = ase_calc
     ase_energy = atoms_ase.get_potential_energy()
     ase_forces = atoms_ase.get_forces()
+    ase_stress = atoms_ase.get_stress()
 
     ts_model = MaceTorchSimModel(
         model=trained_model_path,
@@ -195,6 +198,10 @@ def test_torchsim_matches_ase_calculator(trained_model_path, water_atoms):
     np.testing.assert_allclose(
         ts_results["forces"].detach().cpu().numpy(), ase_forces, atol=1e-5, rtol=1e-5
     )
+    ts_stress_voigt = full_3x3_to_voigt_6_stress(
+        ts_results["stress"].detach().cpu().numpy().reshape(3, 3)
+    )
+    np.testing.assert_allclose(ts_stress_voigt, ase_stress, atol=1e-5, rtol=1e-5)
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
