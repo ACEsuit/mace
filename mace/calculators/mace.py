@@ -96,7 +96,10 @@ class MACECalculator(Calculator):
     ):
         Calculator.__init__(self, **kwargs)
         if enable_cueq or enable_oeq:
-            assert model_type == "MACE", "CuEq only supports MACE models"
+            assert model_type in [
+                "MACE",
+                "PolarMACE",
+            ], "CuEq only supports MACE and PolarMACE models"
             if compile_mode is not None:
                 logging.warning(
                     "CuEq or Oeq does not support torch.compile, setting compile_mode to None"
@@ -133,7 +136,11 @@ class MACECalculator(Calculator):
 
         self.results = {}
         if info_keys is None:
-            info_keys = {"total_spin": "spin", "total_charge": "charge"}
+            info_keys = {
+                "total_spin": "spin",
+                "total_charge": "charge",
+                "external_field": "external_field",
+            }
         if arrays_keys is None:
             arrays_keys = {}
         self.info_keys = info_keys
@@ -147,13 +154,14 @@ class MACECalculator(Calculator):
             "DipoleMACE",
             "EnergyDipoleMACE",
             "DipolePolarizabilityMACE",
+            "PolarMACE",
         ]:
             raise ValueError(
-                f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
+                f"Give a valid model_type: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
         # superclass constructor initializes self.implemented_properties to an empty list
-        if model_type in ["MACE", "EnergyDipoleMACE"]:
+        if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
             self.implemented_properties.extend(
                 [
                     "energy",
@@ -194,7 +202,7 @@ class MACECalculator(Calculator):
                 raise ValueError("No mace file names supplied")
             self.num_models = len(model_paths)
 
-            # Load models from files
+            # Load models from files.
             self.models = [
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
@@ -213,7 +221,7 @@ class MACECalculator(Calculator):
         if self.num_models > 1:
             logging.info(f"Running committee mace with {self.num_models} models")
 
-            if model_type in ["MACE", "EnergyDipoleMACE"]:
+            if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
                 self.implemented_properties.extend(
                     ["energy_comm", "energy_var", "forces_comm", "stress_var"]
                 )
@@ -259,6 +267,10 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+        if self.model_type == "PolarMACE":
+            self.density_dim = (
+                getattr(self.models[0], "atomic_multipoles_max_l", 0) + 1
+            ) ** 2
 
         try:
             self.available_heads: List[str] = self.models[0].heads  # type: ignore
@@ -366,6 +378,17 @@ class MACECalculator(Calculator):
             "polarizability": [3, 3],
             "polarizability_sh": [6],
         }
+        if self.model_type == "PolarMACE":
+            tensor_shapes.update(
+                {
+                    "interaction_energy": [],
+                    "electrostatic_energy": [],
+                    "electron_energy": [],
+                    "spins": [num_atoms],
+                    "density_coefficients": [num_atoms, self.density_dim],
+                    "spin_charge_density": [num_atoms, 2, self.density_dim],
+                }
+            )
         dict_of_tensors = {}
         for key in out:
             if key not in tensor_shapes or out.get(key) is None:
@@ -432,7 +455,7 @@ class MACECalculator(Calculator):
 
         batch_base = self._atoms_to_batch(atoms)
 
-        if self.model_type in ["MACE", "EnergyDipoleMACE"]:
+        if self.model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
             compute_stress = not self.use_compile
         else:
             compute_stress = False
@@ -442,6 +465,11 @@ class MACECalculator(Calculator):
         # copy from output of model() call to ret_tensors
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
+            model_dtype = next(model.parameters()).dtype
+            for key in batch.keys:
+                value = batch[key]
+                if torch.is_tensor(value) and torch.is_floating_point(value):
+                    batch[key] = value.to(dtype=model_dtype)
             out = model(
                 batch.to_dict(),
                 compute_stress=compute_stress,
@@ -461,7 +489,7 @@ class MACECalculator(Calculator):
         self.results = {}
         scalar_tensors = set(["energy"])
         results_store_ensemble = set(["energy", "forces", "stress", "dipole"])
-        for results_key, ret_key, unit_conv in [
+        results_map = [
             ("energy", "energy", self.energy_units_to_eV),
             ("node_energy", "node_energy", self.energy_units_to_eV),
             ("forces", "forces", self.energy_units_to_eV / self.length_units_to_A),
@@ -480,7 +508,27 @@ class MACECalculator(Calculator):
             ("charges", "charges", 1.0),
             ("polarizability", "polarizability", 1.0),
             ("polarizability_sh", "polarizability_sh", 1.0),
-        ]:
+        ]
+        if self.model_type == "PolarMACE":
+            results_map.extend(
+                [
+                    (
+                        "interaction_energy",
+                        "interaction_energy",
+                        self.energy_units_to_eV,
+                    ),
+                    (
+                        "electrostatic_energy",
+                        "electrostatic_energy",
+                        self.energy_units_to_eV,
+                    ),
+                    ("electron_energy", "electron_energy", self.energy_units_to_eV),
+                    ("spins", "spins", 1.0),
+                    ("density_coefficients", "density_coefficients", 1.0),
+                    ("spin_charge_density", "spin_charge_density", 1.0),
+                ]
+            )
+        for results_key, ret_key, unit_conv in results_map:
             if ret_tensors.get(ret_key) is not None:
                 data = torch.mean(ret_tensors[ret_key], dim=0).cpu()
                 if ret_key in scalar_tensors:

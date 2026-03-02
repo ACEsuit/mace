@@ -27,6 +27,7 @@
       - [Example usage in ASE](#example-usage-in-ase)
     - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
       - [Example usage in ASE](#example-usage-in-ase-1)
+    - [MACE-Polar: Electrostatics foundation models](#mace-polar-electrostatics-foundation-models)
     - [Finetuning foundation models](#finetuning-foundation-models)
     - [Latest recommended foundation models](#latest-recommended-foundation-models)
   - [Caching](#caching)
@@ -297,6 +298,13 @@ calc = mace_off(model="medium", device='cuda')
 atoms.calc = calc
 print(atoms.get_potential_energy())
 ```
+
+### MACE-Polar: Electrostatics foundation models
+
+PolarMACE checkpoints are electrostatics foundation models for molecular chemistry, trained on the OMol25 dataset.
+For usage, outputs, and training/finetuning details, see the PolarMACE guide:
+
+- https://mace-docs.readthedocs.io/en/latest/guide/polar_mace.html
 
 ### Finetuning foundation models
 

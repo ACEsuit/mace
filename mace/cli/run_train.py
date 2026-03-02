@@ -27,6 +27,8 @@ from mace.calculators.foundations_models import (
     mace_mp_names,
     mace_off,
     mace_omol,
+    mace_polar,
+    polar_model_names,
 )
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
@@ -135,7 +137,17 @@ def run(args) -> None:
     args.foundation_model_kwargs = ast.literal_eval(args.foundation_model_kwargs)
     args.foundation_model_kwargs["head"] = args.foundation_head
     if args.foundation_model is not None:
-        if args.foundation_model in valid_mace_mp_models:
+        if args.foundation_model in polar_model_names:
+            logging.info(
+                f"Using Polar foundation model {args.foundation_model} as initial checkpoint."
+            )
+            model_foundation = mace_polar(
+                model=args.foundation_model,
+                device=args.device,
+                default_dtype=args.default_dtype,
+                return_raw_model=True,
+            )
+        elif args.foundation_model in valid_mace_mp_models:
             logging.info(
                 f"Using foundation model mace {args.foundation_model} as initial checkpoint."
             )
@@ -189,7 +201,6 @@ def run(args) -> None:
             assert (
                 args.E0s != "average"
             ), "average atomic energies cannot be used for multiheads finetuning"
-            # check that the foundation model has a single head, if not, use the first head
             if not args.force_mh_ft_lr:
                 logging.info(
                     "Multihead finetuning mode, setting learning rate to 0.0001 and EMA to True. To use a different learning rate, set --force_mh_ft_lr=True."
@@ -283,7 +294,12 @@ def run(args) -> None:
                 head_config.atomic_energies_dict = ast.literal_eval(
                     statistics["atomic_energies"]
                 )
-        if head_config.train_file in (["mp"], ["matpes_pbe"], ["matpes_r2scan"], ["omat"]):
+        if head_config.train_file in (
+            ["mp"],
+            ["matpes_pbe"],
+            ["matpes_r2scan"],
+            ["omat"],
+        ):
             assert (
                 head_config.head_name == "pt_head"
             ), "Only pt_head should use mp as train_file"
@@ -544,6 +560,13 @@ def run(args) -> None:
             args.compute_virials = False
             args.compute_stress = False
             args.compute_polarizability = False
+        elif args.model == "PolarMACE" and args.loss == "energy_forces_dipole":
+            args.compute_dipole = True
+            args.compute_energy = True
+            args.compute_forces = True
+            args.compute_virials = False
+            args.compute_stress = False
+            args.compute_polarizability = False
         else:
             args.compute_energy = True
             args.compute_dipole = False
@@ -774,11 +797,21 @@ def run(args) -> None:
         args.enable_oeq = False
     if args.enable_cueq and not args.only_cueq:
         logging.info("Converting model to CUEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
+        assert model.__class__.__name__ in [
+            "MACE",
+            "ScaleShiftMACE",
+            "MACELES",
+            "PolarMACE",
+        ]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     if args.enable_oeq:
         logging.info("Converting model to OEQ for accelerated training")
-        assert model.__class__.__name__ in ["MACE", "ScaleShiftMACE", "MACELES"]
+        assert model.__class__.__name__ in [
+            "MACE",
+            "ScaleShiftMACE",
+            "MACELES",
+            "PolarMACE",
+        ]
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
 
     # Optimizer
