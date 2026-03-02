@@ -123,12 +123,15 @@ class MaceTorchSimModel(ModelInterface):
             try:
                 self.model = run_cueq(self.model, device=self._device.type)
             except (RuntimeError, ValueError):
+                from mace.cli.convert_e3nn_hybrid import run as run_hybrid
+
                 log.warning(
                     "cueq conv_fusion failed (non-uniform irreps), "
-                    "falling back to conv_fusion=False"
+                    "falling back to hybrid (cueq + oeq)"
                 )
-                self.model = run_cueq(self.model, device="cpu")
-                self.model = self.model.to(self._device)
+                self.model = run_hybrid(self.model, device=self._device.type)
+                self._enable_oeq = True
+                self._uses_accelerated = True
         elif enable_oeq:
             from mace.cli.convert_e3nn_oeq import run as run_oeq
 
