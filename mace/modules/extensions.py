@@ -64,15 +64,20 @@ class MACELES(ScaleShiftMACE):
         self.compute_bec = les_arguments.get("compute_bec", False)
         self.bec_output_index = les_arguments.get("bec_output_index", None)
         self.use_dipoles = les_arguments.get("use_dipole", False)
+        self.use_induced_charges = les_arguments.get("use_induced_charge", False)
         self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
         print("use_dipoles", self.use_dipoles)
+        print("use_induced_charges", self.use_induced_charges)
         print("use_induced_dipoles", self.use_induced_dipoles)
         self.les = Les(les_arguments=les_arguments)
 
         self.les_readouts = torch.nn.ModuleList()
         self.les_u_readouts = torch.nn.ModuleList()
         self.les_alpha_readouts = torch.nn.ModuleList()
+        self.les_kappa_readouts = torch.nn.ModuleList()
         self.les_output_scale = les_arguments.get("output_scale", 0.1)
+        self.les_kappa_scale = les_arguments.get("kappa_scale", 0.01)
+        self.les_alpha_scale = les_arguments.get("alpha_scale", 0.001)
         
         self.readout_input_dims = [
             _get_readout_input_dim(readout) for readout in self.readouts  # type:ignore
@@ -86,6 +91,10 @@ class MACELES(ScaleShiftMACE):
                 self.les_u_readouts.append(
                     #_copy_mace_readout(readout,  change_irrep_out="1x1o", cueq_config=cueq_config)
                     _copy_mace_readout(self.readouts[0],  change_irrep_out="1x1o", cueq_config=cueq_config)
+                )
+            if self.use_induced_charges:
+                self.les_kappa_readouts.append(
+                    _copy_mace_readout(readout, cueq_config=cueq_config)
                 )
             if self.use_induced_dipoles:
                 self.les_alpha_readouts.append(
@@ -190,6 +199,7 @@ class MACELES(ScaleShiftMACE):
         node_feats_list: List[torch.Tensor] = []
         node_qs_list: List[torch.Tensor] = []
         node_us_list: List[torch.Tensor] = []
+        node_kappas_list: List[torch.Tensor] = []
         node_alphas_list: List[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
@@ -235,6 +245,12 @@ class MACELES(ScaleShiftMACE):
                         num_atoms_arange
                     ]  # type:ignore
                     node_us_list.append(node_us)
+            if hasattr(self, "use_induced_charges") and self.use_induced_charges:
+                les_kappa_readout = self.les_kappa_readouts[i]
+                node_kappas = les_kappa_readout(node_feats_list[feat_idx], node_heads)[
+                    num_atoms_arange, node_heads
+                    ]  # type:ignore
+                node_kappas_list.append(node_kappas)
             if hasattr(self, "use_induced_dipoles") and self.use_induced_dipoles:
                 les_alpha_readout = self.les_alpha_readouts[i]
                 node_alphas = les_alpha_readout(node_feats_list[feat_idx], node_heads)[
@@ -256,8 +272,13 @@ class MACELES(ScaleShiftMACE):
         else:
             les_u = None
 
+        if len(node_kappas_list) > 0:
+            les_kappa = torch.sum(torch.stack(node_kappas_list, dim=1), dim=1) * self.les_kappa_scale
+        else:
+            les_kappa = None
+
         if len(node_alphas_list) > 0:
-            les_alpha = torch.sum(torch.stack(node_alphas_list, dim=1), dim=1) * self.les_output_scale
+            les_alpha = torch.sum(torch.stack(node_alphas_list, dim=1), dim=1) * self.les_alpha_scale
         else:
             les_alpha = None
 
@@ -265,6 +286,7 @@ class MACELES(ScaleShiftMACE):
             latent_charges=les_q,
             latent_dipoles=les_u,
             latent_alphas=les_alpha,
+            latent_kappas=les_kappa,
             positions=positions,
             cell=cell_les.view(-1, 3, 3),
             batch=data["batch"],
@@ -319,6 +341,7 @@ class MACELES(ScaleShiftMACE):
             "les_energy": les_energy,
             "latent_charges": les_q,
             "latent_dipoles": les_u,
+            "latent_kappas": les_kappa,
             "latent_alphas": les_alpha,
             "BEC": les_result["BEC"],
         }
