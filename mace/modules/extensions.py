@@ -136,6 +136,14 @@ class MACELES(ScaleShiftMACE):
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
 
+        # for backward compatibility
+        if not hasattr(self, "les_output_scale"):
+            self.les_output_scale = 1.
+        if not hasattr(self, "les_kappa_scale"):
+            self.les_kappa_scale = 1.
+        if not hasattr(self, "les_alpha_scale"):
+            self.les_alpha_scale = 1.
+
         # Setting LES cell input to zero when boundary conditions are not periodic
         cell_les = cell.clone()
         pbc_tensor = data["pbc"].to(device=data["cell"].device)
