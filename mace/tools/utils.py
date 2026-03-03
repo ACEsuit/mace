@@ -9,10 +9,11 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Sequence, Union
+from typing import Any, Dict, Iterable, Optional, Sequence, Union, List
 
 import numpy as np
 import torch
+from glob import glob
 
 from .torch_tools import to_numpy
 
@@ -205,3 +206,19 @@ def filter_nonzero_weight(
 
     quantity_l[-1] = filtered_q
     return 1.0
+
+
+def expand_glob(file_path: Optional[Union[str, List[str]]]):
+    if file_path is None:
+        return file_path
+    if isinstance(file_path, str):
+        file_path = [file_path]
+    if not isinstance(file_path, list):
+        return file_path
+    expanded_paths = []
+    for path in file_path:
+        _files = glob(path)
+        if not _files:
+            raise FileNotFoundError(f"No files matched the pattern: {path}")
+        expanded_paths.extend(_files)
+    return expanded_paths
