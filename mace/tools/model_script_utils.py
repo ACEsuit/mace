@@ -244,6 +244,7 @@ def _build_model(
         if args.interaction_first not in [
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticResidualNonLinearInteractionBlock",
         ]:
             args.interaction_first = "RealAgnosticInteractionBlock"
         return modules.ScaleShiftMACE(
