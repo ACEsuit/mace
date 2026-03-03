@@ -301,6 +301,9 @@ and the main MACE papers:
 }
 ```
 
+# Acknowledgments
+This work has been supported by UKRI funding (EP/Y000552/1 and EP/Y014405/1).
+
 ---
 
 ## Contact
