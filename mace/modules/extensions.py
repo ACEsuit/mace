@@ -77,7 +77,7 @@ class MACELES(ScaleShiftMACE):
         self.les_kappa_readouts = torch.nn.ModuleList()
         self.les_output_scale = les_arguments.get("output_scale", 0.1)
         self.les_kappa_scale = les_arguments.get("kappa_scale", 0.01)
-        self.les_alpha_scale = les_arguments.get("alpha_scale", 0.001)
+        self.les_alpha_scale = les_arguments.get("alpha_scale", 0.01)
         
         self.readout_input_dims = [
             _get_readout_input_dim(readout) for readout in self.readouts  # type:ignore
