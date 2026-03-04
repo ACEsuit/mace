@@ -186,6 +186,7 @@ def run(args: argparse.Namespace) -> None:
     qs_list = []
     us_list = []
     alphas_list = []
+    kappas_list = []
     forces_collection = []
 
     for batch in data_loader:
@@ -218,6 +219,14 @@ def run(args: argparse.Namespace) -> None:
                     axis=0,
                 )
                 us_list.append(us[:-1])  # drop last as its empty
+
+            if output["latent_kappas"] is not None:
+                kappas = np.split(
+                    torch_tools.to_numpy(output["latent_kappas"]),
+                    indices_or_sections=batch.ptr[1:],
+                    axis=0,
+                )
+                kappas_list.append(kappas[:-1])  # drop last as its empty
 
             if output["latent_alphas"] is not None:
                 alphas = np.split(
@@ -295,6 +304,7 @@ def run(args: argparse.Namespace) -> None:
         bec_list = [becs for sublist in bec_list for becs in sublist]
         qs_list = [qs for sublist in qs_list for qs in sublist]
         us_list = [us for sublist in us_list for us in sublist]
+        kappas_list = [kappas for sublist in kappas_list for kappas in sublist]
         alphas_list = [alphas for sublist in alphas_list for alphas in sublist]
 
     if args.return_contributions:
@@ -323,6 +333,8 @@ def run(args: argparse.Namespace) -> None:
             atoms.arrays[args.info_prefix + "latent_charges"] = qs_list[i]
             if len(us_list) > 0:
                 atoms.arrays[args.info_prefix + "latent_dipoles"] = us_list[i]
+            if len(kappas_list) > 0:
+                atoms.arrays[args.info_prefix + "latent_kappas"] = kappas_list[i]
             if len(alphas_list) > 0:
                 atoms.arrays[args.info_prefix + "latent_alphas"] = alphas_list[i]
 
