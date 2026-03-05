@@ -86,3 +86,22 @@ jobs:
         run: |
           pytest -v tests/test_cueq_oeq.py -k TestCueq
           pytest -v tests/test_calculator.py
+
+  pytest-torchsim:
+    name: pytest-torchsim (py3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: |
+          uv pip install "torch>=1.12" --index-url https://download.pytorch.org/whl/cpu --system
+          uv pip install -e ".[test, torchsim]" --system
+
+      - name: Run torchsim tests
+        run: |
+          pytest -v tests/test_torchsim.py
