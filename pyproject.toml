@@ -51,6 +51,7 @@ dev = [
     "pre-commit",
     "mace-torch[test]",
 ]
+torchsim = ["torch-sim-atomistic>=0.5.2"]
 test = [
     "pytest",
     "pytest-benchmark",
@@ -112,6 +113,7 @@ ignore = [
     "N803",    # invalid-name (argument)
     "N806",    # invalid-name (variable)
     "N812",    # invalid-name (lowercase-imported-as-non-lowercase)
+    "N814",    # invalid-name (camelCase)
     "D100",    # missing-module-docstring
     "D101",    # missing-class-docstring
     "D102",    # missing-function-docstring

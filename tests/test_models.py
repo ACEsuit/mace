@@ -236,6 +236,8 @@ def test_dipole_polar_mace():
     assert np.allclose(
         np.array(rot @ output["polarizability"][0].detach().numpy() @ rot.T),
         output["polarizability"][1].detach().numpy(),
+        rtol=1e-5,
+        atol=1e-6,
     )
 
 

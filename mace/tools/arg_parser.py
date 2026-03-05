@@ -138,6 +138,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "BOTNet",
             "MACE",
             "ScaleShiftMACE",
+            "PolarMACE",
             "MACELES",
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
@@ -294,6 +295,96 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="silu",
         choices=["silu", "tanh", "abs", "None"],
+    )
+    parser.add_argument(
+        "--kspace_cutoff_factor",
+        help="k-space cutoff factor used by PolarMACE",
+        type=float,
+        default=1.5,
+    )
+    parser.add_argument(
+        "--atomic_multipoles_max_l",
+        help="maximum l for atomic multipoles in PolarMACE",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--atomic_multipoles_smearing_width",
+        help="Gaussian smearing width for atomic multipoles in PolarMACE",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--field_feature_max_l",
+        help="maximum l for projected field features in PolarMACE",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--field_feature_widths",
+        help="list of field feature widths for PolarMACE",
+        type=str,
+        default="[1.0]",
+    )
+    parser.add_argument(
+        "--field_feature_norms",
+        help="optional list of field feature norms for PolarMACE",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--num_recursion_steps",
+        help="number of fixed-point recursion steps in PolarMACE",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--field_si",
+        help="include self-interaction when projecting local fields in PolarMACE",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--include_electrostatic_self_interaction",
+        help="include electrostatic self interaction in PolarMACE",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--add_local_electron_energy",
+        help="add local electron energy correction in PolarMACE",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--quadrupole_feature_corrections",
+        help="enable quadrupole feature corrections in PolarMACE",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--return_electrostatic_potentials",
+        help="return electrostatic potentials from PolarMACE forward pass",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--field_norm_factor",
+        help="global normalization factor for field features in PolarMACE",
+        type=float,
+        default=0.02,
+    )
+    parser.add_argument(
+        "--fixedpoint_update_config",
+        help="dict-like config for PolarMACE fixed-point update block",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--field_readout_config",
+        help="dict-like config for PolarMACE field readout block",
+        type=str,
+        default=None,
     )
     parser.add_argument(
         "--scaling",

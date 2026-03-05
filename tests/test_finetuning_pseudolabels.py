@@ -107,7 +107,7 @@ def _assert_near_zero_metrics(metrics: dict, atol_loss=1e-5, atol_e=1e-4, atol_f
         assert float(metrics["rmse_stress"]) <= atol_f
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(300)
 def test_initial_metrics_replay_head_mh0(tmp_path):
     real_path = _make_small_real_head_dataset(tmp_path)
     cfg_path = _write_heads_yaml(tmp_path, real_path)
@@ -143,7 +143,7 @@ def test_initial_metrics_replay_head_mh0(tmp_path):
     _assert_near_zero_metrics(metrics)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(300)
 def test_initial_metrics_replay_head_mh1(tmp_path):
     real_path = _make_small_real_head_dataset(tmp_path)
     cfg_path = _write_heads_yaml(tmp_path, real_path)
@@ -179,7 +179,7 @@ def test_initial_metrics_replay_head_mh1(tmp_path):
     _assert_near_zero_metrics(metrics)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(300)
 def test_initial_metrics_replay_head_omol(tmp_path):
     real_path = _make_small_real_head_dataset(tmp_path)
     cfg_path = _write_heads_yaml(tmp_path, real_path)

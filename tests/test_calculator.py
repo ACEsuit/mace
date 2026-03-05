@@ -13,7 +13,7 @@ from ase.calculators.test import gradient_test
 from ase.filters import FrechetCellFilter
 
 from mace.calculators import mace_mp, mace_off
-from mace.calculators.foundations_models import mace_omol
+from mace.calculators.foundations_models import mace_omol, mace_polar
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
 
@@ -749,6 +749,22 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
     assert stderr == ""
 
 
+def test_mace_polar_constructor():
+    try:
+        import graph_longrange  # noqa: F401
+    except (ImportError, ModuleNotFoundError):
+        pytest.skip("graph_longrange is not installed")
+    model_name = "polar-1-m"
+    try:
+        polar_calc = mace_polar(model=model_name, device="cpu")
+    except (FileNotFoundError, RuntimeError):
+        pytest.skip(f"Missing Polar foundation model file: {model_name}")
+
+    assert isinstance(polar_calc, MACECalculator)
+    assert len(polar_calc.models) == 1
+    assert polar_calc.models[0].__class__.__name__ == "PolarMACE"
+
+
 def test_mace_off(tmp_path):
     mace_off_model = mace_off(model="small", device="cpu")
     assert isinstance(mace_off_model, MACECalculator)
@@ -854,3 +870,34 @@ def test_mace_omol_cueq(tmp_path, device="cpu"):
     assert np.allclose(forces, forces_cueq, atol=1e-6)
     assert np.allclose(energy, -2079.863496758961, atol=1e-9)
     write_extxyz_test(tmp_path, mol)
+
+
+def test_calculator_padding(trained_model, fitting_configs):
+    """Calculator with graph padding should give the same results as without."""
+    water = fitting_configs[2].copy()
+
+    calc_no_pad = MACECalculator(
+        models=trained_model.models[0], device="cpu", default_dtype="float64"
+    )
+    water_no_pad = water.copy()
+    water_no_pad.calc = calc_no_pad
+    e_no_pad = water_no_pad.get_potential_energy()
+    f_no_pad = water_no_pad.get_forces()
+    s_no_pad = water_no_pad.get_stress()
+
+    calc_pad = MACECalculator(
+        models=trained_model.models[0],
+        device="cpu",
+        default_dtype="float64",
+        pad_num_atoms=10,
+        pad_num_edges=128,
+    )
+    water_pad = water.copy()
+    water_pad.calc = calc_pad
+    e_pad = water_pad.get_potential_energy()
+    f_pad = water_pad.get_forces()
+    s_pad = water_pad.get_stress()
+
+    assert np.allclose(e_no_pad, e_pad, atol=1e-6)
+    assert np.allclose(f_no_pad, f_pad, atol=1e-6)
+    assert np.allclose(s_no_pad, s_pad, atol=1e-6)
