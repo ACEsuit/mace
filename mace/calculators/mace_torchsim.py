@@ -62,6 +62,7 @@ class MaceTorchSimModel(ModelInterface):
         enable_cueq: bool = False,
         enable_oeq: bool = False,
         compile_mode: Optional[str] = None,
+        cudagraphs: bool = True,
         atomic_numbers: Optional[torch.Tensor] = None,
         system_idx: Optional[torch.Tensor] = None,
     ) -> None:
@@ -83,6 +84,7 @@ class MaceTorchSimModel(ModelInterface):
         self._enable_oeq = enable_oeq
         self._uses_accelerated = enable_cueq or enable_oeq
         self._use_compile = compile_mode is not None
+        self._use_cudagraphs = cudagraphs and compile_mode is not None
         self._memory_scales_with = "n_atoms_x_density"
         self.neighbor_list_fn = neighbor_list_fn or torchsim_nl
 
@@ -140,7 +142,7 @@ class MaceTorchSimModel(ModelInterface):
         self.model = self.model.to(device=self._device).eval()
 
         if compile_mode is not None:
-            self._setup_compile(compile_mode)
+            self._setup_compile(compile_mode, cudagraphs)
 
         for p in self.model.parameters():
             p.requires_grad = False
@@ -162,10 +164,14 @@ class MaceTorchSimModel(ModelInterface):
                 )
             self.setup_from_system_idx(atomic_numbers, system_idx)
 
-    def _setup_compile(self, compile_mode: str) -> None:
+    def _setup_compile(self, compile_mode: str, cudagraphs: bool = True) -> None:
         import torch._dynamo as dynamo
 
         from mace.tools.compile import simplify
+
+        if not cudagraphs:
+            inductor_cfg = torch._inductor.config  # pylint: disable=protected-access
+            inductor_cfg.triton.cudagraphs = False
 
         if self._enable_oeq:
             # oeq ops are opaque to AOTAutograd; autograd.grad must run in eager
@@ -365,6 +371,9 @@ class MaceTorchSimModel(ModelInterface):
                 "torch-sim is required to call MaceTorchSimModel.forward"
             )
 
+        if self._use_cudagraphs:
+            torch.compiler.cudagraph_mark_step_begin()
+
         if isinstance(state, ts.SimState):
             sim_state = state.clone()
         else:
@@ -408,7 +417,7 @@ class MaceTorchSimModel(ModelInterface):
                 self.setup_from_system_idx(state_atomic_numbers, sim_state.system_idx)
 
         wrapped_positions = (
-            ts.transforms.pbc_wrap_batched(
+            ts.transforms.pbc_wrap_batched(  # pylint: disable=too-many-function-args
                 sim_state.positions,
                 sim_state.cell,
                 sim_state.system_idx,
@@ -485,13 +494,15 @@ class MaceTorchSimModel(ModelInterface):
                 n_systems, device=self.device, dtype=self.dtype
             )
         else:
-            results["energy"] = energy[:n_systems].detach()
+            e = energy[:n_systems].detach()
+            results["energy"] = e.clone() if self._use_cudagraphs else e
 
         if self._compute_forces:
             forces = out.get("forces")
             if forces is None:
                 forces = torch.zeros_like(sim_state.positions)
-            results["forces"] = forces[:n_real_atoms].detach()
+            f = forces[:n_real_atoms].detach()
+            results["forces"] = f.clone() if self._use_cudagraphs else f
 
         if self._compute_stress:
             stress = out.get("stress")
@@ -499,6 +510,7 @@ class MaceTorchSimModel(ModelInterface):
                 stress = torch.zeros(
                     n_systems, 3, 3, device=self.device, dtype=self.dtype
                 )
-            results["stress"] = stress[:n_systems].detach()
+            s = stress[:n_systems].detach()
+            results["stress"] = s.clone() if self._use_cudagraphs else s
 
         return results

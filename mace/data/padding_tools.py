@@ -78,17 +78,19 @@ def build_fake_padding_graph(
         elif value.shape[0] == real_num_atoms:
             fake_graph[key] = _zeros_with_size0(value, num_atoms)
 
+    # Self-loop edges on the last fake atom.  Combined with shifts at
+    # 2*r_max the edge length is always >= r_max so PolynomialCutoff
+    # returns exactly 0, contributing nothing to the real computation.
+    # This mirrors the isolated-system padding used in the TorchSim wrapper.
     edge_index = torch.zeros(
         (2, num_edges),
         dtype=reference_graph["edge_index"].dtype,
         device=reference_graph["edge_index"].device,
     )
     if num_edges > 0:
-        edge_ids = torch.arange(
-            num_edges, dtype=edge_index.dtype, device=edge_index.device
-        )
-        edge_index[0] = torch.remainder(edge_ids, num_atoms)
-        edge_index[1] = torch.remainder(edge_ids + 1, num_atoms)
+        last_atom = num_atoms - 1
+        edge_index[0] = last_atom
+        edge_index[1] = last_atom
     fake_graph["edge_index"] = edge_index
 
     cell_scale = max(float(r_max) * 2.0, 1.0)
