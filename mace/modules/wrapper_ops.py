@@ -295,13 +295,13 @@ class TensorProduct:
                     and cueq_config.enabled
                     and cueq_config.layout_str == "ir_mul"
                 ):
-                    t_in = cuet.TransposeIrrepsLayout(
+                    t_in = cuet.TransposeIrrepsLayout(  # pylint: disable=unexpected-keyword-arg
                         cue.Irreps(cueq_config.group, irreps_in1),
                         source=cue.ir_mul,
                         target=cue.mul_ir,
                         use_fallback=True,
                     )
-                    t_out = cuet.TransposeIrrepsLayout(
+                    t_out = cuet.TransposeIrrepsLayout(  # pylint: disable=unexpected-keyword-arg
                         cue.Irreps(cueq_config.group, irreps_out),
                         source=cue.mul_ir,
                         target=cue.ir_mul,
@@ -417,7 +417,7 @@ class TransposeIrrepsLayoutWrapper:
             # If layouts are the same, no-op
             if source == target:
                 return None
-            return cuet.TransposeIrrepsLayout(
+            return cuet.TransposeIrrepsLayout(  # pylint: disable=unexpected-keyword-arg
                 cue.Irreps(cueq_config.group, irreps),
                 source=getattr(cue, source),
                 target=getattr(cue, target),
