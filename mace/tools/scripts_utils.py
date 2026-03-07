@@ -937,9 +937,22 @@ def setup_wandb(args: argparse.Namespace):
     wandb_config = {}
     args_dict = vars(args)
 
+    # Clean args_dict of non-serializable objects
+    cleaned_args = {}
     for key, value in args_dict.items():
         if isinstance(value, np.ndarray):
-            args_dict[key] = value.tolist()
+            cleaned_args[key] = value.tolist()
+        elif isinstance(value, (str, int, float, bool, type(None))):
+            cleaned_args[key] = value
+        elif isinstance(value, (list, tuple)):
+            cleaned_args[key] = str(value)
+        elif isinstance(value, dict):
+            cleaned_args[key] = str(value)
+        elif isinstance(value, KeySpecification):
+            cleaned_args[key] = value.__dict__
+        else:
+            # Skip generators, callables, and other non-serializable objects
+            cleaned_args[key] = f"<{type(value).__name__}>"
 
     class CustomEncoder(json.JSONEncoder):
         def default(self, o):
@@ -947,7 +960,7 @@ def setup_wandb(args: argparse.Namespace):
                 return o.__dict__
             return super().default(o)
 
-    args_dict_json = json.dumps(args_dict, cls=CustomEncoder)
+    args_dict_json = json.dumps(cleaned_args, cls=CustomEncoder)
     for key in args.wandb_log_hypers:
         wandb_config[key] = args_dict[key]
     tools.init_wandb(
