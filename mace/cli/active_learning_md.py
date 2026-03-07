@@ -85,9 +85,8 @@ def printenergy(dyn, start_time=None):  # store a reference to atoms in the defi
         elapsed_time = time.time() - start_time
     forces_var = np.var(a.calc.results["forces_comm"], axis=0)
     print(
-        "%.1fs: Energy per atom: Epot = %.3feV  Ekin = %.3feV (T=%3.0fK)  "  # pylint: disable=C0209
-        "Etot = %.3feV t=%.1ffs Eerr = %.3feV Ferr = %.3feV/A"
-        % (
+        "{:.1f}s: Energy per atom: Epot = {:.3f}eV  Ekin = {:.3f}eV (T={:3.0f}K)  "  # pylint: disable=C0209
+        "Etot = {:.3f}eV t={:.1f}fs Eerr = {:.3f}eV Ferr = {:.3f}eV/A".format(
             elapsed_time,
             epot,
             ekin,
@@ -131,10 +130,10 @@ def stop_error(dyn, threshold, reg=0.2):
     ferr_rel = ferr / (np.linalg.norm(force, axis=1) + reg)
 
     if np.max(ferr_rel) > threshold:
+        max_ferr_rel = np.max(ferr_rel)
+        threshold_time = dyn.get_time() / units.fs
         print(
-            "Error too large {:.3}. Stopping t={:.2} fs.".format(  # pylint: disable=C0209
-                np.max(ferr_rel), dyn.get_time() / units.fs
-            ),
+            f"Error too large {max_ferr_rel:.3}. Stopping t={threshold_time:.2} fs.",
             flush=True,
         )
         dyn.max_steps = 0

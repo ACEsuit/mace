@@ -1,6 +1,5 @@
 """Tests for graph padding utilities and padded calculator inference."""
 
-import numpy as np
 import pytest
 import torch
 from ase import build

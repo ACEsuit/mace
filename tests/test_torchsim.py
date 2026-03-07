@@ -8,7 +8,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from ase import build
 
 try:
     import torch_sim as ts

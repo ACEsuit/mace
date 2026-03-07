@@ -7,27 +7,42 @@ exclude: &exclude_files >
         README.md|
     )$
 
+ci:
+  autoupdate_schedule: quarterly
+
+default_stages: [pre-commit]
+
+default_install_hook_types: [pre-commit, commit-msg]
+
 repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v2.5.0
+    rev: v6.0.0
     hooks:
-    -   id: mixed-line-ending
-    -   id: trailing-whitespace
-        exclude: *exclude_files
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: check-yaml
+      - id: destroyed-symlinks
+      - id: end-of-file-fixer
+      - id: forbid-new-submodules
+      - id: mixed-line-ending
+      - id: trailing-whitespace
 
-  - repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 24.4.0
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.47.0
     hooks:
-      - id: black
-        name: Black Formating
-        exclude: *exclude_files
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-        name: Sort imports
-        exclude: *exclude_files
+      - id: markdownlint
+        # MD013: line length
+        # MD033: no inline HTML
+        # MD041: first line in a file should be a top-level heading
+        # MD034: bare URL used
+        args: [--disable, MD013, MD033, MD041, MD034, '--']
 
   - repo: https://github.com/PyCQA/pylint
     rev: pylint-2.5.2
@@ -55,6 +70,7 @@ repos:
           '--disable=cell-var-from-loop',
           '--disable=duplicate-code',
           '--disable=use-dict-literal',
+          '--disable=too-many-return-statements',
           '--max-module-lines=1500',
         ]
         exclude: *exclude_files

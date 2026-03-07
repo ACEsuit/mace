@@ -15,8 +15,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 from e3nn import o3
 
@@ -103,7 +101,7 @@ def symmetric_contraction_cached(
         for pol in [poly1, poly2]
     ]
 
-    # This nonzeros selection is just for lightening the inversion
+    # This nonzeros selection is just for lightning the inversion
     nonzeros = np.nonzero(np.any(a1 != 0, axis=0) | np.any(a2 != 0, axis=0))[0]
     a1, a2 = a1[:, nonzeros], a2[:, nonzeros]
     projection_1_2 = a1 @ np.linalg.pinv(a2)
@@ -114,7 +112,7 @@ def symmetric_contraction_cached(
 
 
 def _flatten(
-    x: np.ndarray, axis_start: Optional[int] = None, axis_end: Optional[int] = None
+    x: np.ndarray, axis_start: int | None = None, axis_end: int | None = None
 ) -> np.ndarray:
     x = np.asarray(x)
     if axis_start is None:

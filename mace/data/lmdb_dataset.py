@@ -16,7 +16,7 @@ class LMDBDataset(Dataset):
         for path in dataset_paths:
             assert os.path.exists(path)
         config_kwargs = {}
-        super(LMDBDataset, self).__init__()  # pylint: disable=super-with-arguments
+        super().__init__()  # pylint: disable=super-with-arguments
         self.AseDB = AseDBDataset(config=dict(src=dataset_paths, **config_kwargs))
         self.r_max = r_max
         self.z_table = z_table

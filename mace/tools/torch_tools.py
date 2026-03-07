@@ -6,13 +6,13 @@
 
 import logging
 from contextlib import contextmanager
-from typing import Dict, Union
+from typing import Union
 
 import numpy as np
 import torch
 from e3nn.io import CartesianTensor
 
-TensorDict = Dict[str, torch.Tensor]
+TensorDict = dict[str, torch.Tensor]
 
 
 def to_one_hot(indices: torch.Tensor, num_classes: int) -> torch.Tensor:
@@ -54,7 +54,9 @@ def init_device(device_str: str) -> torch.device:
         assert torch.cuda.is_available(), "No CUDA device available!"
         if ":" in device_str:
             # Check if the desired device is available
-            assert int(device_str.split(":")[-1]) < torch.cuda.device_count()
+            assert (
+                int(device_str.rsplit(":", maxsplit=1)[-1]) < torch.cuda.device_count()
+            )
         logging.info(
             f"CUDA version: {torch.version.cuda}, CUDA device: {torch.cuda.current_device()}"
         )
