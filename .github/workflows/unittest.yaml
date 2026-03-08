@@ -182,4 +182,4 @@ jobs:
 
       - name: Run torchsim tests
         run: |
-          pytest -v tests/test_torch_sim.py
+          pytest -v tests/test_torchsim.py

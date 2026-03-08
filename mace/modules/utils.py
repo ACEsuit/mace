@@ -76,6 +76,7 @@ def get_symmetric_displacement(
     edge_index: torch.Tensor,
     num_graphs: int,
     batch: torch.Tensor,
+    displacement: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if cell is None:
         cell = torch.zeros(
@@ -85,12 +86,13 @@ def get_symmetric_displacement(
             device=positions.device,
         )
     sender = edge_index[0]
-    displacement = torch.zeros(
-        (num_graphs, 3, 3),
-        dtype=positions.dtype,
-        device=positions.device,
-    )
-    displacement.requires_grad_(True)
+    if displacement is None:
+        displacement = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=positions.dtype,
+            device=positions.device,
+        )
+        displacement = displacement + positions.sum() * 0.0
     symmetric_displacement = 0.5 * (
         displacement + displacement.transpose(-1, -2)
     )  # From https://github.com/mir-group/nequip
@@ -643,6 +645,7 @@ def prepare_graph(
                 edge_index=data["edge_index"],
                 num_graphs=num_graphs,
                 batch=data["batch"],
+                displacement=data.get("displacement"),
             )
             data["positions"], data["shifts"] = p, s
         vectors, lengths = get_edge_vectors_and_lengths(

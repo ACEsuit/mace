@@ -870,3 +870,34 @@ def test_mace_omol_cueq(tmp_path, device="cpu"):
     assert np.allclose(forces, forces_cueq, atol=1e-6)
     assert np.allclose(energy, -2079.863496758961, atol=1e-9)
     write_extxyz_test(tmp_path, mol)
+
+
+def test_calculator_padding(trained_model, fitting_configs):
+    """Calculator with graph padding should give the same results as without."""
+    water = fitting_configs[2].copy()
+
+    calc_no_pad = MACECalculator(
+        models=trained_model.models[0], device="cpu", default_dtype="float64"
+    )
+    water_no_pad = water.copy()
+    water_no_pad.calc = calc_no_pad
+    e_no_pad = water_no_pad.get_potential_energy()
+    f_no_pad = water_no_pad.get_forces()
+    s_no_pad = water_no_pad.get_stress()
+
+    calc_pad = MACECalculator(
+        models=trained_model.models[0],
+        device="cpu",
+        default_dtype="float64",
+        pad_num_atoms=10,
+        pad_num_edges=128,
+    )
+    water_pad = water.copy()
+    water_pad.calc = calc_pad
+    e_pad = water_pad.get_potential_energy()
+    f_pad = water_pad.get_forces()
+    s_pad = water_pad.get_stress()
+
+    assert np.allclose(e_no_pad, e_pad, atol=1e-6)
+    assert np.allclose(f_no_pad, f_pad, atol=1e-6)
+    assert np.allclose(s_no_pad, s_pad, atol=1e-6)
