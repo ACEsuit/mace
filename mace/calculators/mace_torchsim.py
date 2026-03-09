@@ -64,6 +64,7 @@ class MaceTorchSimModel(ModelInterface):
         compile_mode: Optional[str] = None,
         atomic_numbers: Optional[torch.Tensor] = None,
         system_idx: Optional[torch.Tensor] = None,
+        head: Optional[str] = None,
     ) -> None:
         if _TORCHSIM_IMPORT_ERROR is not None:
             raise ImportError(
@@ -138,6 +139,21 @@ class MaceTorchSimModel(ModelInterface):
             self.model = run_oeq(self.model, device=self._device.type)
 
         self.model = self.model.to(device=self._device).eval()
+
+        # Resolve the head name to an integer index for multi-head models.
+        available_heads = getattr(self.model, "heads", ["Default"])
+        if head is not None:
+            if head not in available_heads:
+                raise ValueError(
+                    f"Head '{head}' not found. Available heads: {available_heads}"
+                )
+            self._head_index = available_heads.index(head)
+        else:
+            self._head_index = 0
+        log.info(
+            f"Using head '{available_heads[self._head_index]}' "
+            f"(index {self._head_index}) out of {available_heads}"
+        )
 
         if compile_mode is not None:
             self._setup_compile(compile_mode)
@@ -315,7 +331,12 @@ class MaceTorchSimModel(ModelInterface):
         self._buf_head[:n_real_systems] = (
             data_dict["head"]
             if "head" in data_dict
-            else torch.zeros(n_real_systems, dtype=torch.long, device=self._device)
+            else torch.full(
+                (n_real_systems,),
+                self._head_index,
+                dtype=torch.long,
+                device=self._device,
+            )
         )
 
         pad_count = A - n_real_atoms
@@ -437,7 +458,12 @@ class MaceTorchSimModel(ModelInterface):
             "ptr": self.ptr,
             "node_attrs": self.node_attrs,
             "batch": sim_state.system_idx,
-            "head": torch.zeros(self.n_systems, dtype=torch.long, device=self._device),
+            "head": torch.full(
+                (self.n_systems,),
+                self._head_index,
+                dtype=torch.long,
+                device=self._device,
+            ),
             "pbc": sim_state.pbc,
             "cell": sim_state.row_vector_cell,
             "positions": wrapped_positions,
