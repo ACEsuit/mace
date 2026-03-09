@@ -62,6 +62,7 @@ class MaceTorchSimModel(ModelInterface):
         enable_cueq: bool = False,
         enable_oeq: bool = False,
         compile_mode: Optional[str] = None,
+        head: Optional[Union[str, int]] = None,
         atomic_numbers: Optional[torch.Tensor] = None,
         system_idx: Optional[torch.Tensor] = None,
     ) -> None:
@@ -140,6 +141,9 @@ class MaceTorchSimModel(ModelInterface):
 
         self.model = self.model.to(device=self._device).eval()
 
+        available_heads = list(getattr(self.model, "heads", ["Default"]))
+        self._head_index = self._resolve_head(head, available_heads)
+
         if compile_mode is not None:
             self._setup_compile(compile_mode)
 
@@ -162,6 +166,33 @@ class MaceTorchSimModel(ModelInterface):
                     len(atomic_numbers), dtype=torch.long, device=self._device
                 )
             self.setup_from_system_idx(atomic_numbers, system_idx)
+
+    @staticmethod
+    def _resolve_head(head: Optional[Union[str, int]], available_heads: list) -> int:
+        if isinstance(head, int):
+            if head < 0 or head >= len(available_heads):
+                raise ValueError(
+                    f"Head index {head} out of range for {available_heads}"
+                )
+            return head
+        if isinstance(head, str):
+            if head not in available_heads:
+                raise ValueError(
+                    f"Head {head!r} not in available heads {available_heads}"
+                )
+            return available_heads.index(head)
+        if len(available_heads) == 1:
+            return 0
+        default = [h for h in available_heads if h.lower() == "default"]
+        if default:
+            return available_heads.index(default[0])
+        log.warning(
+            "No head specified for multi-head model, defaulting to '%s'. "
+            "Available heads: %s",
+            available_heads[0],
+            available_heads,
+        )
+        return 0
 
     def _setup_compile(self, compile_mode: str) -> None:
         import torch._dynamo as dynamo
@@ -285,7 +316,9 @@ class MaceTorchSimModel(ModelInterface):
             torch.eye(3, device=dev, dtype=dt).unsqueeze(0).expand(S, -1, -1).clone()
             * cell_scale
         )
-        self._buf_head = torch.zeros(S, dtype=torch.long, device=dev)
+        self._buf_head = torch.full(
+            (S,), self._head_index, dtype=torch.long, device=dev
+        )
 
     def _fill_padded_data(
         self,
@@ -313,11 +346,8 @@ class MaceTorchSimModel(ModelInterface):
         self._buf_ptr[S] = A
 
         self._buf_cell[:n_real_systems] = data_dict["cell"]
-        self._buf_head[:n_real_systems] = (
-            data_dict["head"]
-            if "head" in data_dict
-            else torch.zeros(n_real_systems, dtype=torch.long, device=self._device)
-        )
+        self._buf_head.fill_(self._head_index)
+        self._buf_head[:n_real_systems] = data_dict["head"]
 
         pad_count = A - n_real_atoms
         pad_pos = torch.zeros(pad_count, 3, device=self._device, dtype=self._dtype)
@@ -438,7 +468,12 @@ class MaceTorchSimModel(ModelInterface):
             "ptr": self.ptr,
             "node_attrs": self.node_attrs,
             "batch": sim_state.system_idx,
-            "head": torch.zeros(self.n_systems, dtype=torch.long, device=self._device),
+            "head": torch.full(
+                (self.n_systems,),
+                self._head_index,
+                dtype=torch.long,
+                device=self._device,
+            ),
             "pbc": sim_state.pbc,
             "cell": sim_state.row_vector_cell,
             "positions": wrapped_positions,
