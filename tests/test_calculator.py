@@ -1,3 +1,4 @@
+import copy
 import os
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from mace.calculators import mace_mp, mace_off
 from mace.calculators.foundations_models import mace_omol, mace_polar
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
+from mace.tools.torch_tools import default_dtype
 
 try:
     import cuequivariance as cue  # pylint: disable=unused-import
@@ -615,6 +617,51 @@ def test_calculator_from_model(tmp_path, fitting_configs, trained_committee):
         fitting_configs,
         trained_committee=MACECalculator(models=trained_committee.models, device="cpu"),
     )
+
+
+def test_calculator_dtype_is_instance_local(fitting_configs, trained_model):
+    atoms = fitting_configs[2].copy()
+
+    with default_dtype(torch.float64):
+        calc32 = MACECalculator(
+            models=copy.deepcopy(trained_model.models[0]),
+            device="cpu",
+            default_dtype="float32",
+        )
+        assert torch.get_default_dtype() == torch.float64
+
+        calc64 = MACECalculator(
+            models=copy.deepcopy(trained_model.models[0]),
+            device="cpu",
+            default_dtype="float64",
+        )
+        assert torch.get_default_dtype() == torch.float64
+
+        assert next(calc32.models[0].parameters()).dtype == torch.float32
+        assert next(calc64.models[0].parameters()).dtype == torch.float64
+
+        batch32 = calc32._atoms_to_batch(atoms)  # pylint: disable=protected-access
+        batch64 = calc64._atoms_to_batch(atoms)  # pylint: disable=protected-access
+        assert torch.get_default_dtype() == torch.float64
+
+        assert batch32["positions"].dtype == torch.float32
+        assert batch32["node_attrs"].dtype == torch.float32
+        assert batch64["positions"].dtype == torch.float64
+        assert batch64["node_attrs"].dtype == torch.float64
+
+        atoms32 = atoms.copy()
+        atoms32.calc = calc32
+        atoms64 = atoms.copy()
+        atoms64.calc = calc64
+
+        forces32 = atoms32.get_forces()
+        forces64 = atoms64.get_forces()
+        assert torch.get_default_dtype() == torch.float64
+
+        assert calc32.results["forces"].dtype == np.float32
+        assert calc64.results["forces"].dtype == np.float64
+        assert np.isfinite(forces32).all()
+        assert np.isfinite(forces64).all()
 
 
 def test_calculator_dipole(tmp_path, fitting_configs, trained_dipole_model):

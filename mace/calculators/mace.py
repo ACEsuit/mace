@@ -312,7 +312,7 @@ class MACECalculator(Calculator):
                 self.models = [model.double() for model in self.models]
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
-        torch_tools.set_default_dtype(default_dtype)
+        self.default_dtype = default_dtype
 
         if enable_cueq and enable_oeq:
             logging.info(
@@ -480,7 +480,11 @@ class MACECalculator(Calculator):
             if key not in tensor_shapes or out.get(key) is None:
                 continue
             shape = [num_models] + tensor_shapes[key]
-            dict_of_tensors[key] = torch.zeros(*shape, device=self.device)
+            dict_of_tensors[key] = torch.zeros(
+                *shape,
+                device=self.device,
+                dtype=out[key].dtype,
+            )
 
         node_e0 = None
         if "node_energy" in out:
@@ -520,15 +524,16 @@ class MACECalculator(Calculator):
         keyspec = mace_data.KeySpecification(
             info_keys=self.info_keys, arrays_keys=self.arrays_keys
         )
-        config = mace_data.config_from_atoms(
-            atoms, key_specification=keyspec, head_name=self.head
-        )
-        real_graph = mace_data.AtomicData.from_config(
-            config,
-            z_table=self.z_table,
-            cutoff=self.r_max,
-            heads=self.available_heads,
-        )
+        with torch_tools.default_dtype(self.default_dtype):
+            config = mace_data.config_from_atoms(
+                atoms, key_specification=keyspec, head_name=self.head
+            )
+            real_graph = mace_data.AtomicData.from_config(
+                config,
+                z_table=self.z_table,
+                cutoff=self.r_max,
+                heads=self.available_heads,
+            )
 
         real_num_atoms = int(real_graph["node_attrs"].shape[0])
         real_num_edges = int(real_graph["edge_index"].shape[1])
