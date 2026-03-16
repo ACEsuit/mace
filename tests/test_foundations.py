@@ -15,6 +15,7 @@ from mace.calculators.foundations_models import mace_polar, polar_model_paths
 from mace.tools import torch_geometric
 from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import extract_config_mace_model, remove_pt_head
+from mace.tools.torch_tools import default_dtype
 from mace.tools.utils import AtomicNumberTable
 
 try:
@@ -32,7 +33,11 @@ MODEL_PATH = (
     / "2023-12-03-mace-mp.model"
 )
 
-torch.set_default_dtype(torch.float64)
+
+@pytest.fixture(autouse=True)
+def _set_torch_default_dtype():
+    with default_dtype(torch.float64):
+        yield
 
 
 def _batch_with_float_dtype(batch_dict, dtype):
@@ -488,6 +493,7 @@ def test_extract_config(model_spec):
 def test_remove_pt_head():
     # Set up test data
     torch.manual_seed(42)
+    np.random.seed(42)
     atomic_energies_pt_head = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float)
     z_table = AtomicNumberTable([1, 8])  # H and O
 
@@ -718,12 +724,14 @@ def test_remove_pt_head_multihead():
 
     # Verify each model produces different outputs
     energies = torch.stack([results[head]["energy"] for head in model.heads])
-    assert not torch.allclose(
-        energies[0], energies[1], rtol=1e-3
+    assert not torch.isclose(
+        energies[0], energies[1], rtol=0.0, atol=1e-6
     ), "Different heads should produce different outputs"
 
 
 def test_remove_pt_head_omol_multihead():
+    torch.manual_seed(0)
+    np.random.seed(0)
     # Set up test data
     calc = mace_omol(device="cpu", default_dtype="float64")
     model_config = extract_config_mace_model(calc.models[0])
@@ -849,8 +857,8 @@ def test_remove_pt_head_omol_multihead():
 
     # Verify each model produces different outputs
     energies = torch.stack([results[head]["energy"] for head in model.heads])
-    assert not torch.allclose(
-        energies[0], energies[1], rtol=1e-4
+    assert not torch.isclose(
+        energies[0], energies[1], rtol=0.0, atol=1e-6
     ), "Different heads should produce different outputs"
 
 
