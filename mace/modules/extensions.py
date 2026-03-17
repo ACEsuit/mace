@@ -352,12 +352,9 @@ class MACEField(ScaleShiftMACE):
         # Setting electric field
         if electric_field is not None:
             # Might be a single global field (shape [3] or [1, 3]) or per-graph
-            electric_field = (
-                electric_field.detach()
-                .clone()
-                .to(device=vectors.device, dtype=vectors.dtype)
-                .view(-1, 3)
-            )
+            electric_field = electric_field.to(
+                device=vectors.device, dtype=vectors.dtype
+            ).reshape(-1, 3)
         else:
             electric_field = (
                 data["electric_field"]

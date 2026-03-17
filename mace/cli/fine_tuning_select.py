@@ -263,7 +263,7 @@ class FPS:
 
 
 def _load_calc(
-    model: str, device: str, default_dtype: str, subselect: SubselectType
+    model: str, device: str, default_dtype: str, head: str, subselect: SubselectType
 ) -> Union[MACECalculator, None]:
     if subselect == SubselectType.RANDOM:
         return None
@@ -274,6 +274,7 @@ def _load_calc(
             model_paths=model,
             device=device,
             default_dtype=default_dtype,
+            head=head,
         )
     return calc
 
@@ -461,7 +462,11 @@ def select_samples(
     np.random.seed(settings.seed)
     torch.manual_seed(settings.seed)
     calc = _load_calc(
-        settings.model, settings.device, settings.default_dtype, settings.subselect
+        settings.model,
+        settings.device,
+        settings.default_dtype,
+        settings.head_pt,
+        settings.subselect,
     )
     atoms_list_ft = _read_finetuning_configs(settings.configs_ft)
     all_species_ft = _get_finetuning_elements(atoms_list_ft, settings.atomic_numbers)
