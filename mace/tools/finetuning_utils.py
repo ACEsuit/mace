@@ -41,11 +41,17 @@ def load_foundations_elements(
         / (num_species_foundations / num_species) ** 0.5
     )
     if hasattr(model, "joint_embedding"):
-        for (_, param_1), (_, param_2) in zip(
-            model.joint_embedding.named_parameters(),
-            model_foundations.joint_embedding.named_parameters(),
-        ):
-            param_1.data.copy_(param_2.data)
+        
+        embedding_foundations = getattr(model_foundations, "joint_embedding", None)
+        found_params_dict = {n: p for n, p in embedding_foundations.named_parameters()} if embedding_foundations else {}
+
+        for name, param in model.joint_embedding.named_parameters():
+            if name in found_params_dict:
+                param.data.copy_(found_params_dict[name].data)
+            else:
+                print(f'Param {name} not found in foundation model, initializing with uniform weights')
+                torch.nn.init.uniform_(param.data, -0.05, 0.05)
+
     if hasattr(model, "embedding_readout"):
         for (_, param_1), (_, param_2) in zip(
             model.embedding_readout.named_parameters(),
@@ -293,6 +299,8 @@ def load_foundations_elements(
     _handled_attrs = {"interactions", "products", "readouts"}
     for attr_name, module in model.named_children():
         if attr_name in _handled_attrs:
+            continue
+        if not hasattr(model_foundations, "joint_embedding"):
             continue
         submodules = (
             list(zip(module, model_foundations.__dict__["_modules"][attr_name]))

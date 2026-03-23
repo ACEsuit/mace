@@ -183,6 +183,12 @@ def train(
 
     if max_grad_norm is not None:
         logging.info(f"Using gradient clipping with tolerance={max_grad_norm:.3f}")
+        
+    warm_up = True
+    warmup_epochs = 3
+    if warm_up:
+        warmup_lambda = lambda ep: min(1.0, float(ep) / float(warmup_epochs)) #linear
+        warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup_lambda)
 
     logging.info("")
     logging.info("===========TRAINING===========")
@@ -209,7 +215,12 @@ def train(
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
-            if epoch > start_epoch:
+            if epoch < warmup_epochs:
+                warmup_scheduler.step()
+                if rank == 0:
+                    logging.info(f"Warmup: Setting LR to {optimizer.param_groups[0]['lr']:.2e}")
+            
+            elif epoch > start_epoch:
                 lr_scheduler.step(
                     metrics=valid_loss
                 )  # Can break if exponential LR, TODO fix that!

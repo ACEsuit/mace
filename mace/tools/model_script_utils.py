@@ -87,6 +87,9 @@ def configure_model(
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
+        
+        if args.embedding_specs:
+            model_config_foundation['embedding_specs'] = args.embedding_specs
 
         if args.foundation_model_elements:
             foundation_z_table = AtomicNumberTable(
