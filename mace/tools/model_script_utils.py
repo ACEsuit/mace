@@ -191,6 +191,7 @@ def configure_model(
             atomic_numbers=z_table.zs,
             use_reduced_cg=args.use_reduced_cg,
             use_so3=args.use_so3,
+            use_edge_irreps_first=args.use_edge_irreps_first,
             cueq_config=cueq_config,
         )
         model_config_foundation = None
