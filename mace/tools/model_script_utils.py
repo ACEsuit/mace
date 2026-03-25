@@ -28,10 +28,12 @@ def configure_model(
 
     if compute_virials:
         args.compute_virials = True
-        args.error_table = "PerAtomRMSEstressvirials"
     elif compute_stress:
         args.compute_stress = True
-        args.error_table = "PerAtomRMSEstressvirials"
+
+    if compute_virials or compute_stress:
+        if args.error_table in ['PerAtomRMSE','PerAtomMAE','TotalRMSE', 'TotalMAE']:
+            args.error_table = "PerAtomRMSEstressvirials" if 'RMSE' in args.error_table else 'PerAtomMAEstressvirials'
 
     output_args = {
         "energy": args.compute_energy,
