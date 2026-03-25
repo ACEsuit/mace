@@ -55,6 +55,13 @@ class CuEquivarianceConfig:
             self.enabled = False
 
 
+def get_layout(cueq_config: Optional["CuEquivarianceConfig"] = None) -> str:
+    """Return the irreps layout string for the active backend."""
+    if cueq_config is not None and cueq_config.enabled:
+        return getattr(cueq_config, "layout_str", "mul_ir")
+    return "mul_ir"
+
+
 @dataclasses.dataclass
 class OEQConfig:
     """Configuration for cuequivariance acceleration"""

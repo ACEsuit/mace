@@ -169,10 +169,22 @@ def test_eager_benchmark(
 @pytest.mark.parametrize("enable_amp", [False, True], ids=["fp32", "mixed"])
 @pytest.mark.parametrize("enable_cueq", [False, True])
 def test_compile_benchmark(benchmark, compile_mode, enable_amp, enable_cueq):
+    _torch_version = tuple(
+        int(x) for x in torch.__version__.split("+")[0].split(".")[:2]
+    )
+    if (
+        enable_cueq
+        and compile_mode in ("reduce-overhead", "max-autotune")
+        and _torch_version < (2, 10)
+    ):
+        pytest.skip("cueq + CUDA graphs requires PyTorch >= 2.10")
     with tools.torch_tools.default_dtype(torch.float32):
-        batch = create_batch("cuda")
-        batch["positions"].requires_grad_(True)  # since compile_mode is not None
         torch.compiler.reset()
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
+        batch = create_batch("cuda")
+        batch["positions"].requires_grad_(True)
         model = mace_compile.prepare(create_mace)("cuda", enable_cueq=enable_cueq)
         model = torch.compile(model, mode=compile_mode)
         model = time_func(model)
