@@ -418,11 +418,19 @@ class MaceTorchSimModel(ModelInterface):
             else sim_state.positions
         )
 
+        cutoff = self.r_max
+        if self.neighbor_list_fn is torchsim_nl:
+            cutoff = torch.as_tensor(
+                self.r_max,
+                device=wrapped_positions.device,
+                dtype=wrapped_positions.dtype,
+            )
+
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             wrapped_positions,
             sim_state.row_vector_cell,
             sim_state.pbc,
-            self.r_max,
+            cutoff,
             sim_state.system_idx,
         )
         shifts = ts.transforms.compute_cell_shifts(
