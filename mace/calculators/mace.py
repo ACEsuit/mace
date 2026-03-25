@@ -23,7 +23,12 @@ from e3nn import o3
 from mace import data as mace_data
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
-from mace.tools.compile import disable_e3nn_codegen, prepare, simplify
+from mace.tools.compile import (
+    configure_autograd_for_compile,
+    disable_e3nn_codegen,
+    prepare,
+    simplify,
+)
 from mace.tools.scripts_utils import extract_model
 
 try:
@@ -346,12 +351,12 @@ class MACECalculator(Calculator):
             if self._enable_oeq:
                 if dynamo is not None:
                     try:
-                        dynamo.disallow_in_graph(torch.autograd.grad)
+                        configure_autograd_for_compile(allow_autograd=False)
                     except (TypeError, AttributeError):
                         pass
             else:
                 if dynamo is not None:
-                    dynamo.allow_in_graph(torch.autograd.grad)
+                    configure_autograd_for_compile(allow_autograd=True)
             if self._uses_accelerated_backend:
                 with disable_e3nn_codegen():
                     self.models = [simplify(m) for m in self.models]
