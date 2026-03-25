@@ -14,6 +14,23 @@ ModuleFactory = Callable[..., nn.Module]
 TypeTuple = Tuple[type, ...]
 
 
+def configure_autograd_for_compile(allow_autograd: bool = True) -> None:
+    """Align Dynamo autograd settings with MACE's compile strategy.
+
+    Recent PyTorch releases require `trace_autograd_ops=True` when
+    `torch.autograd.grad` is traced into the compiled graph.
+    """
+    if dynamo is None:
+        return
+
+    if allow_autograd:
+        dynamo.allow_in_graph(autograd.grad)
+        if hasattr(dynamo.config, "trace_autograd_ops"):
+            dynamo.config.trace_autograd_ops = True
+    else:
+        dynamo.disallow_in_graph(autograd.grad)
+
+
 @contextmanager
 def disable_e3nn_codegen():
     """Context manager that disables the legacy PyTorch code generation used in e3nn."""
@@ -34,10 +51,7 @@ def prepare(func: ModuleFactory, allow_autograd: bool = True) -> ModuleFactory:
     Returns:
         ModuleFactory: Decorated function that creates a torch.compile compatible module
     """
-    if allow_autograd:
-        dynamo.allow_in_graph(autograd.grad)
-    else:
-        dynamo.disallow_in_graph(autograd.grad)
+    configure_autograd_for_compile(allow_autograd=allow_autograd)
 
     @wraps(func)
     def wrapper(*args, **kwargs):

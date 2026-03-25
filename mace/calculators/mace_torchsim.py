@@ -165,17 +165,17 @@ class MaceTorchSimModel(ModelInterface):
     def _setup_compile(self, compile_mode: str) -> None:
         import torch._dynamo as dynamo
 
-        from mace.tools.compile import simplify
+        from mace.tools.compile import configure_autograd_for_compile, simplify
 
         if self._enable_oeq:
             # oeq ops are opaque to AOTAutograd; autograd.grad must run in eager
             try:
-                dynamo.allow_in_graph(torch.autograd.grad)
-                dynamo.disallow_in_graph(torch.autograd.grad)
+                configure_autograd_for_compile(allow_autograd=True)
+                configure_autograd_for_compile(allow_autograd=False)
             except (TypeError, AttributeError):
                 pass
         else:
-            dynamo.allow_in_graph(torch.autograd.grad)
+            configure_autograd_for_compile(allow_autograd=True)
 
         self.model = simplify(self.model)
         self.model = torch.compile(
