@@ -369,7 +369,8 @@ class AtomicEnergiesBlock(torch.nn.Module):
         )  # [n_elements, n_heads]
 
     def forward(
-        self, x: torch.Tensor  # one-hot of elements [..., n_elements]
+        self,
+        x: torch.Tensor,  # one-hot of elements [..., n_elements]
     ) -> torch.Tensor:  # [..., ]
         energies = torch.atleast_2d(self.atomic_energies).T.to(
             dtype=x.dtype, device=x.device

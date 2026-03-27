@@ -354,9 +354,8 @@ class MACECalculator(Calculator):
                         configure_autograd_for_compile(allow_autograd=False)
                     except (TypeError, AttributeError):
                         pass
-            else:
-                if dynamo is not None:
-                    configure_autograd_for_compile(allow_autograd=True)
+            elif dynamo is not None:
+                configure_autograd_for_compile(allow_autograd=True)
             if self._uses_accelerated_backend:
                 with disable_e3nn_codegen():
                     self.models = [simplify(m) for m in self.models]

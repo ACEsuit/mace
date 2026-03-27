@@ -10,7 +10,8 @@ Supports both mul_ir (e3nn default) and ir_mul (cuequivariance) layouts,
 so callers can drop TransposeIrrepsLayout layers around the gate.
 """
 
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
 from e3nn import o3

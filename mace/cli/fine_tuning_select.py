@@ -252,10 +252,8 @@ class FPS:
         """
         Run the farthest point sampling algorithm.
         """
-        descriptor_dataset_reshaped = (
-            self.descriptors_dataset.reshape(  # pylint: disable=E1121
-                (len(self.atoms_list), -1)
-            )
+        descriptor_dataset_reshaped = self.descriptors_dataset.reshape(  # pylint: disable=E1121
+            (len(self.atoms_list), -1)
         )
         logging.info(f"{descriptor_dataset_reshaped.shape=}")
         logging.info(f"n_samples: {self.n_samples}")

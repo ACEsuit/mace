@@ -115,12 +115,8 @@ class PotentialEmbeddingBlock(torch.nn.Module):
 
 
 @compile_mode("script")
-class AgnosticChargeBiasedLinearPotentialEmbedding(
-    PotentialEmbeddingBlock
-):  # pylint: disable=arguments-differ
-    def _setup(
-        self, charges_irreps: o3.Irreps
-    ) -> None:  # pylint: disable=arguments-differ
+class AgnosticChargeBiasedLinearPotentialEmbedding(PotentialEmbeddingBlock):  # pylint: disable=arguments-differ
+    def _setup(self, charges_irreps: o3.Irreps) -> None:  # pylint: disable=arguments-differ
         self.potential_linear = o3.Linear(
             irreps_in=self.potential_irreps,
             irreps_out=self.node_feats_irreps,

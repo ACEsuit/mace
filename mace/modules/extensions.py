@@ -91,7 +91,8 @@ class MACELES(ScaleShiftMACE):
         self.les = Les(les_arguments=les_arguments)
         self.les_readouts = torch.nn.ModuleList()
         self.readout_input_dims = [
-            _get_readout_input_dim(readout) for readout in self.readouts  # type: ignore
+            _get_readout_input_dim(readout)
+            for readout in self.readouts  # type: ignore
         ]
         cueq_config = kwargs.get("cueq_config", None)
         for readout in self.readouts:  # type: ignore
@@ -148,9 +149,7 @@ class MACELES(ScaleShiftMACE):
         ]
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
-        ).to(
-            vectors.dtype
-        )  # [n_graphs, num_heads]
+        ).to(vectors.dtype)  # [n_graphs, num_heads]
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -402,7 +401,9 @@ class PolarMACE(ScaleShiftMACE):
         if field_feature_norms is not None:
             assert len(field_feature_norms) == len(field_feature_widths) * (
                 field_feature_max_l + 1
-            ), f"{len(field_feature_widths) * (field_feature_max_l+1)}, {len(field_feature_norms)}"
+            ), (
+                f"{len(field_feature_widths) * (field_feature_max_l + 1)}, {len(field_feature_norms)}"
+            )
         else:
             field_feature_norms = (
                 [1.0] * len(field_feature_widths) * (field_feature_max_l + 1)

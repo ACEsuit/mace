@@ -47,7 +47,7 @@ def parse_path(path: str) -> RunInfo:
 def parse_training_results(path: str) -> List[dict]:
     run_info = parse_path(path)
     results = []
-    with open(path, mode="r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             d = json.loads(line)
             d["name"] = run_info.name

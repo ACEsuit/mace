@@ -13,7 +13,7 @@ class HDF5Dataset(Dataset):
     def __init__(
         self, file_path, r_max, z_table, atomic_dataclass=AtomicData, **kwargs
     ):
-        super(HDF5Dataset, self).__init__()  # pylint: disable=super-with-arguments
+        super().__init__()  # pylint: disable=super-with-arguments
         self.file_path = file_path
         self._file = None
         batch_key = list(self.file.keys())[0]

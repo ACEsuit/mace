@@ -338,7 +338,7 @@ def generate_pseudolabels_for_configs(
 
         except Exception as e:  # pylint: disable=broad-except
             logging.error(
-                f"Error generating pseudolabels for batch {i//batch_size + 1}: {str(e)}"
+                f"Error generating pseudolabels for batch {i // batch_size + 1}: {str(e)}"
             )
             # On error, return the original configs for this batch
             updated_configs.extend([deepcopy(config) for config in batch_configs])

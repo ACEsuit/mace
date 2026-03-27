@@ -30,9 +30,7 @@ def compute_forces(
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,  # For complete dissociation turn to true
-    )[
-        0
-    ]  # [n_nodes, 3]
+    )[0]  # [n_nodes, 3]
     if gradient is None:
         return torch.zeros_like(positions)
     return -1 * gradient
@@ -292,9 +290,7 @@ def extract_invariant(x: torch.Tensor, num_layers: int, num_features: int, l_max
         out.append(
             x[
                 :,
-                i
-                * (l_max + 1) ** 2
-                * num_features : (i * (l_max + 1) ** 2 + 1)
+                i * (l_max + 1) ** 2 * num_features : (i * (l_max + 1) ** 2 + 1)
                 * num_features,
             ]
         )
@@ -523,7 +519,9 @@ def compute_total_charge_dipole_permuted(
         dipole = dipole + dipole_p[..., [2, 0, 1]]  # CS phase convention
 
     total_charge = scatter_sum(
-        src=density_coefficients[:, 0], index=batch, dim=-1  # , dim_size=num_graphs
+        src=density_coefficients[:, 0],
+        index=batch,
+        dim=-1,  # , dim_size=num_graphs
     )
 
     return total_charge, dipole

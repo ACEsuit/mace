@@ -313,9 +313,7 @@ class MACE(torch.nn.Module):
         ]
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
-        ).to(
-            vectors.dtype
-        )  # [n_graphs, n_heads]
+        ).to(vectors.dtype)  # [n_graphs, n_heads]
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
         edge_attrs = self.spherical_harmonics(vectors)
@@ -493,9 +491,7 @@ class ScaleShiftMACE(MACE):
         ]
         e0 = scatter_sum(
             src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
-        ).to(
-            vectors.dtype
-        )  # [n_graphs, num_heads]
+        ).to(vectors.dtype)  # [n_graphs, num_heads]
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -719,9 +715,9 @@ class AtomicDipolesMACE(torch.nn.Module):
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
-                assert (
-                    len(hidden_irreps) > 1
-                ), "To predict dipoles use at least l=1 hidden_irreps"
+                assert len(hidden_irreps) > 1, (
+                    "To predict dipoles use at least l=1 hidden_irreps"
+                )
                 hidden_irreps_out = str(
                     hidden_irreps[1]
                 )  # Select only l=1 vectors for last layer
@@ -967,9 +963,9 @@ class AtomicDielectricMACE(torch.nn.Module):
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
                 # does it always do polar and dipole together?
-                assert (
-                    len(hidden_irreps) > 1
-                ), "To predict dipoles use at least l=1 hidden_irreps"
+                assert len(hidden_irreps) > 1, (
+                    "To predict dipoles use at least l=1 hidden_irreps"
+                )
                 # hidden_irreps_out = str(
                 #     hidden_irreps[1]
                 # )  # Select only l=1 vectors for last layer
@@ -1260,9 +1256,9 @@ class EnergyDipolesMACE(torch.nn.Module):
 
         for i in range(num_interactions - 1):
             if i == num_interactions - 2:
-                assert (
-                    len(hidden_irreps) > 1
-                ), "To predict dipoles use at least l=1 hidden_irreps"
+                assert len(hidden_irreps) > 1, (
+                    "To predict dipoles use at least l=1 hidden_irreps"
+                )
                 hidden_irreps_out = str(
                     hidden_irreps[:2]
                 )  # Select scalars and l=1 vectors for last layer

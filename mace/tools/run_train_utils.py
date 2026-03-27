@@ -64,9 +64,9 @@ def load_dataset_for_path(
         is_ase_readable = check_path_ase_read(file_path)
 
     if is_ase_readable:
-        assert (
-            collection is not None
-        ), "Collection must be provided for ASE readable files"
+        assert collection is not None, (
+            "Collection must be provided for ASE readable files"
+        )
         return [
             data.AtomicData.from_config(
                 config, z_table=z_table, cutoff=r_max, heads=heads
@@ -76,7 +76,6 @@ def load_dataset_for_path(
 
     filepath = Path(file_path)
     if filepath.is_dir():
-
         if filepath.name.endswith("_lmdb") or any(
             f.endswith(".lmdb") or f.endswith(".aselmdb") for f in os.listdir(filepath)
         ):

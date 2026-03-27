@@ -529,9 +529,7 @@ class DipoleSingleLoss(torch.nn.Module):
 class DipolePolarLoss(torch.nn.Module):
     def __init__(
         self, dipole_weight=1.0, polarizability_weight=1.0
-    ) -> (
-        None
-    ):  # dipole_mean=None,dipole_std=None,polarizability_mean=None,polarizability_std=None
+    ) -> None:  # dipole_mean=None,dipole_std=None,polarizability_mean=None,polarizability_std=None
         super().__init__()
         self.register_buffer(
             "dipole_weight",

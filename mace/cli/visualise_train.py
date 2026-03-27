@@ -203,7 +203,7 @@ class TrainingPlotter:
 
 def parse_training_results(path: str) -> List[dict]:
     results = []
-    with open(path, mode="r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             try:
                 d = json.loads(line.strip())  # Ensure it's valid JSON
