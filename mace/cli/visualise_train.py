@@ -477,7 +477,7 @@ def model_inference(
 
     results_dict = {}
 
-    for name in all_data_loaders:
+    for name in all_data_loaders:  # noqa: PLC0206
         data_loader = all_data_loaders[name]
         logging.debug(f"Running inference on {name} dataset")
         scatter_metric = InferenceMetric().to(device)

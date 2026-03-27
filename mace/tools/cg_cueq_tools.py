@@ -101,7 +101,7 @@ def symmetric_contraction_cached(
         for pol in [poly1, poly2]
     ]
 
-    # This nonzeros selection is just for lightening the inversion
+    # This nonzeros selection is just for lightning the inversion
     nonzeros = np.nonzero(np.any(a1 != 0, axis=0) | np.any(a2 != 0, axis=0))[0]
     a1, a2 = a1[:, nonzeros], a2[:, nonzeros]
     projection_1_2 = a1 @ np.linalg.pinv(a2)

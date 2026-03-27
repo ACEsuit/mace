@@ -8,6 +8,7 @@ import torch
 from ase import units
 from ase.calculators.mixing import SumCalculator
 
+from mace.modules.models import MACE
 from mace.tools.utils import get_cache_dir
 
 from .mace import MACECalculator
@@ -207,7 +208,16 @@ def download_mace_polar_checkpoint(model: Union[str, Path]) -> str:
 
 
 @overload
-def mace_mp(*, return_raw_model: Literal[True], **kwargs: Any) -> torch.nn.Module: ...
+def mace_mp(*, return_raw_model: Literal[True], **kwargs: Any) -> MACE: ...
+
+
+@overload
+def mace_mp(
+    *,
+    dispersion: Literal[True],
+    return_raw_model: Literal[False] = False,
+    **kwargs: Any,
+) -> SumCalculator: ...
 
 
 @overload
@@ -226,7 +236,7 @@ def mace_mp(
     dispersion_cutoff: float = 40.0 * units.Bohr,
     return_raw_model: bool = False,
     **kwargs,
-) -> Union[MACECalculator, torch.nn.Module, SumCalculator]:
+) -> Union[MACECalculator, SumCalculator, MACE]:
     """
     Constructs a MACECalculator with a pretrained model based on the Materials Project (89 elements).
     The model is released under the MIT license. See https://github.com/ACEsuit/mace-foundations for all models.
@@ -254,7 +264,8 @@ def mace_mp(
         **kwargs: Passed to MACECalculator and TorchDFTD3Calculator.
 
     Returns:
-        MACECalculator: trained on the MPtrj dataset (unless model otherwise specified).
+        MACECalculator when ``dispersion`` is False; SumCalculator (MACE + D3) when
+        ``dispersion`` is True; or the raw ``MACE`` module if ``return_raw_model`` is True.
     """
     try:
         if model in mace_mp_names or str(model).startswith("https:"):
@@ -314,7 +325,7 @@ def mace_polar(
     default_dtype: str = "float32",
     return_raw_model: bool = False,
     **kwargs,
-) -> Union[MACECalculator, torch.nn.Module]:
+) -> Union[MACECalculator, MACE]:
     try:
         model_path = download_mace_polar_checkpoint(model)
         print(f"Using MACE-Polar model for MACECalculator with {model_path}")
@@ -334,7 +345,7 @@ def mace_polar(
 
 
 @overload
-def mace_off(*, return_raw_model: Literal[True], **kwargs: Any) -> torch.nn.Module: ...
+def mace_off(*, return_raw_model: Literal[True], **kwargs: Any) -> MACE: ...
 
 
 @overload
@@ -418,9 +429,7 @@ def mace_off(
 
 
 @overload
-def mace_anicc(
-    *, return_raw_model: Literal[True], **kwargs: Any
-) -> torch.nn.Module: ...
+def mace_anicc(*, return_raw_model: Literal[True], **kwargs: Any) -> MACE: ...
 
 
 @overload
@@ -433,7 +442,7 @@ def mace_anicc(
     device: str = "cuda",
     model_path: Optional[str] = None,
     return_raw_model: bool = False,
-) -> Union[MACECalculator, torch.nn.Module]:
+) -> Union[MACECalculator, MACE]:
     """
     Constructs a MACECalculator with a pretrained model based on the ANI (H, C, N, O).
     The model is released under the MIT license.
@@ -472,7 +481,7 @@ def mace_anicc(
 
 
 @overload
-def mace_omol(*, return_raw_model: Literal[True], **kwargs: Any) -> torch.nn.Module: ...
+def mace_omol(*, return_raw_model: Literal[True], **kwargs: Any) -> MACE: ...
 
 
 @overload
@@ -487,7 +496,7 @@ def mace_omol(
     default_dtype: str = "float64",
     return_raw_model: bool = False,
     **kwargs,
-) -> Union[MACECalculator, torch.nn.Module]:
+) -> Union[MACECalculator, MACE]:
     """
     Constructs a MACECalculator with a pretrained model based on the MACE-OMOL models.
     The model is released under the ASL license.

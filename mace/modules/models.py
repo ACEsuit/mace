@@ -4,7 +4,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Literal, Optional, Union
 
 import numpy as np
 import torch
@@ -44,6 +44,10 @@ from .utils import (
 
 @compile_mode("script")
 class MACE(torch.nn.Module):
+    atomic_numbers: torch.Tensor  # type hint the torch buffers.
+    r_max: torch.Tensor
+    num_interactions: torch.Tensor
+
     def __init__(
         self,
         r_max: float,
@@ -68,11 +72,11 @@ class MACE(torch.nn.Module):
         use_agnostic_product: bool = False,
         use_last_readout_only: bool = False,
         use_embedding_readout: bool = False,
-        distance_transform: str = "None",
+        distance_transform: Optional[Literal["Agnesi", "Soft"]] = None,
         edge_irreps: Optional[o3.Irreps] = None,
         use_edge_irreps_first: bool = False,
         radial_MLP: Optional[list[int]] = None,
-        radial_type: Optional[str] = "bessel",
+        radial_type: Literal["bessel", "gaussian", "chebyshev"] = "bessel",
         heads: Optional[list[str]] = None,
         cueq_config: Optional[dict[str, Any]] = None,
         embedding_specs: Optional[dict[str, Any]] = None,
@@ -149,7 +153,7 @@ class MACE(torch.nn.Module):
         num_features = hidden_irreps.count(o3.Irrep(0, 1))
 
         # interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
-        def generate_irreps(l):
+        def generate_irreps(l):  # noqa: E741
             str_irrep = "+".join([f"1x{i}e+1x{i}o" for i in range(l + 1)])
             return o3.Irreps(str_irrep)
 
@@ -641,8 +645,8 @@ class AtomicDipolesMACE(torch.nn.Module):
         apply_cutoff: bool = True,  # pylint: disable=unused-argument
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
-        distance_transform: str = "None",  # pylint: disable=unused-argument
-        radial_type: Optional[str] = "bessel",
+        distance_transform: Optional[Literal["Agnesi", "Soft"]] = None,  # pylint: disable=unused-argument
+        radial_type: Literal["bessel", "gaussian", "chebyshev"] = "bessel",
         radial_MLP: Optional[list[int]] = None,
         cueq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
         oeq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
@@ -856,8 +860,8 @@ class AtomicDielectricMACE(torch.nn.Module):
         apply_cutoff: bool = True,  # pylint: disable=unused-argument
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
-        distance_transform: str = "None",  # pylint: disable=unused-argument
-        radial_type: Optional[str] = "bessel",
+        distance_transform: Optional[Literal["Agnesi", "Soft"]] = None,  # pylint: disable=unused-argument
+        radial_type: Literal["bessel", "gaussian", "chebyshev"] = "bessel",
         radial_MLP: Optional[list[int]] = None,
         cueq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
         oeq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
@@ -1185,7 +1189,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         apply_cutoff: bool = True,  # pylint: disable=unused-argument
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
-        distance_transform: str = "None",  # pylint: disable=unused-argument
+        distance_transform: Optional[Literal["Agnesi", "Soft"]] = None,  # pylint: disable=unused-argument
         radial_MLP: Optional[list[int]] = None,
         cueq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
         oeq_config: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument

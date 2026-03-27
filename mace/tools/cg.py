@@ -158,7 +158,7 @@ def U_matrix_real(
             current_ir = ir
     try:
         out += [last_ir, stack]
-    except:  # pylint: disable=bare-except
+    except:  # pylint: disable=bare-except  # noqa: E722
         first_dim = irreps_out.dim
         if first_dim != 1:
             size = [first_dim] + [o3.Irreps(irreps_in).dim] * correlation + [1]
@@ -265,7 +265,7 @@ if CUET_AVAILABLE:
 
         @classmethod
         def iterator(cls) -> Iterator["O3_e3nn"]:
-            for l in itertools.count(0):
+            for l in itertools.count(0):  # noqa: E741
                 yield O3_e3nn(l=l, p=1 * (-1) ** l)
                 yield O3_e3nn(l=l, p=-1 * (-1) ** l)
 

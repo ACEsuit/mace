@@ -188,7 +188,7 @@ def test_polar_2l_true_cueq_matches_e3nn_float64():
 
 
 try:
-    import cuequivariance as cue  # pylint: disable=unused-import
+    import cuequivariance as cue  # pylint: disable=unused-import  # noqa: F401
 
     CUET_AVAILABLE = True
 except ImportError:

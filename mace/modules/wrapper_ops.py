@@ -93,7 +93,7 @@ class Linear:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_linear)
         ):
-            return cuet.Linear(
+            return cuet.Linear(  # pylint: disable=unexpected-keyword-arg
                 cue.Irreps(cueq_config.group, irreps_in),
                 cue.Irreps(cueq_config.group, irreps_out),
                 layout=cueq_config.layout,
@@ -302,13 +302,13 @@ class TensorProduct:
                     and cueq_config.enabled
                     and cueq_config.layout_str == "ir_mul"
                 ):
-                    t_in = cuet.TransposeIrrepsLayout(
+                    t_in = cuet.TransposeIrrepsLayout(  # pylint: disable=unexpected-keyword-arg
                         cue.Irreps(cueq_config.group, irreps_in1),
                         source=cue.ir_mul,
                         target=cue.mul_ir,
                         use_fallback=True,
                     )
-                    t_out = cuet.TransposeIrrepsLayout(
+                    t_out = cuet.TransposeIrrepsLayout(  # pylint: disable=unexpected-keyword-arg
                         cue.Irreps(cueq_config.group, irreps_out),
                         source=cue.mul_ir,
                         target=cue.ir_mul,
@@ -350,7 +350,7 @@ class FullyConnectedTensorProduct:
             and cueq_config.enabled
             and (cueq_config.optimize_all or cueq_config.optimize_fctp)
         ):
-            return cuet.FullyConnectedTensorProduct(
+            return cuet.FullyConnectedTensorProduct(  # pylint: disable=unexpected-keyword-arg
                 cue.Irreps(cueq_config.group, irreps_in1),
                 cue.Irreps(cueq_config.group, irreps_in2),
                 cue.Irreps(cueq_config.group, irreps_out),
@@ -424,7 +424,7 @@ class TransposeIrrepsLayoutWrapper:
             # If layouts are the same, no-op
             if source == target:
                 return None
-            return cuet.TransposeIrrepsLayout(
+            return cuet.TransposeIrrepsLayout(  # pylint: disable=unexpected-keyword-arg
                 cue.Irreps(cueq_config.group, irreps),
                 source=getattr(cue, source),
                 target=getattr(cue, target),

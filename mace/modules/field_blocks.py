@@ -165,13 +165,13 @@ class AgnosticChargeBiasedLinearPotentialEmbedding(PotentialEmbeddingBlock):  # 
             cueq_config=self.cueq_config,
         )
 
-    def forward(
+    def forward(  # pylint: disable=arguments-differ
         self,
         potential_feats: torch.Tensor,
         node_feats: torch.Tensor,
         node_attrs: torch.Tensor,
         local_charges: torch.Tensor,
-    ) -> torch.Tensor:  # pylint: disable=arguments-differ
+    ) -> torch.Tensor:
         potential_to_mul_ir = getattr(self, "_potential_to_mul_ir", None)
         node_feats_to_mul_ir = getattr(self, "_node_feats_to_mul_ir", None)
         charges_to_mul_ir = getattr(self, "_charges_to_mul_ir", None)

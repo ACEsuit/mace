@@ -5,7 +5,7 @@
 ###########################################################################################
 
 from abc import abstractmethod
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Literal, Optional, Union
 
 import numpy as np
 import torch.nn.functional
@@ -394,8 +394,8 @@ class RadialEmbeddingBlock(torch.nn.Module):
         r_max: float,
         num_bessel: int,
         num_polynomial_cutoff: int,
-        radial_type: str = "bessel",
-        distance_transform: str = "None",
+        radial_type: Literal["bessel", "gaussian", "chebyshev"] = "bessel",
+        distance_transform: Optional[Literal["Agnesi", "Soft"]] = None,
         apply_cutoff: bool = True,
     ):
         super().__init__()
@@ -405,10 +405,12 @@ class RadialEmbeddingBlock(torch.nn.Module):
             self.bessel_fn = GaussianBasis(r_max=r_max, num_basis=num_bessel)
         elif radial_type == "chebyshev":
             self.bessel_fn = ChebychevBasis(r_max=r_max, num_basis=num_bessel)
+
         if distance_transform == "Agnesi":
             self.distance_transform = AgnesiTransform()
         elif distance_transform == "Soft":
             self.distance_transform = SoftTransform()
+
         self.cutoff_fn = PolynomialCutoff(r_max=r_max, p=num_polynomial_cutoff)
         self.out_dim = num_bessel
         self.apply_cutoff = apply_cutoff

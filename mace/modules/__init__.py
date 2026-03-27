@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Optional, Type
+from typing import Callable, Optional
 
 import torch
 
@@ -106,6 +106,7 @@ __all__ = [
     "PolynomialCutoff",
     "BesselBasis",
     "GaussianBasis",
+    "GatedEquivariantBlock",
     "MACE",
     "ScaleShiftMACE",
     "AtomicDipolesMACE",
@@ -116,6 +117,7 @@ __all__ = [
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
     "WeightedEnergyForcesStressLoss",
+    "DipolePolarLoss",
     "DipoleSingleLoss",
     "WeightedEnergyForcesDipoleLoss",
     "WeightedHuberEnergyForcesStressLoss",

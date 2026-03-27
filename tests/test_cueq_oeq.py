@@ -17,14 +17,14 @@ from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.tools import torch_geometric
 
 try:
-    import cuequivariance as cue  # pylint: disable=unused-import
+    import cuequivariance as cue  # pylint: disable=unused-import  # noqa: F401
 
     CUET_AVAILABLE = True
 except ImportError:
     CUET_AVAILABLE = False
 
 try:
-    import openequivariance as oeq  # pylint: disable=unused-import
+    import openequivariance as oeq  # pylint: disable=unused-import  # noqa: F401
 
     OEQ_AVAILABLE = True
 except ImportError:

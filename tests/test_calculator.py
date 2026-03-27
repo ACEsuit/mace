@@ -20,7 +20,7 @@ from mace.modules.models import ScaleShiftMACE
 from mace.tools.torch_tools import default_dtype
 
 try:
-    import cuequivariance as cue  # pylint: disable=unused-import
+    import cuequivariance as cue  # pylint: disable=unused-import  # noqa: F401
 
     CUET_AVAILABLE = True
 except ImportError:

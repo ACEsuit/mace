@@ -69,7 +69,7 @@ def rename_data_object_keys(data_object, key_mapping: dict[str, str | list[str]]
 
         This is currently required when we use a single target/label for multiple tasks
     """
-    for _property in key_mapping:
+    for _property in key_mapping:  # noqa: PLC0206
         # catch for test data not containing labels
         if _property in data_object:
             list_of_new_keys = key_mapping[_property]
