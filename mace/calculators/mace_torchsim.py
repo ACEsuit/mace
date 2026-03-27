@@ -168,6 +168,10 @@ class MaceTorchSimModel(_TSModelInterface):
         self._cached_z: torch.Tensor | None = None
         self._cached_system_idx: torch.Tensor | None = None
         self._z_fixed = atomic_numbers is not None
+        self.node_attrs: torch.Tensor = torch.empty(0)
+        self.n_systems: int = 0
+        self.n_atoms_per_system: list[int] = []
+        self.ptr: torch.Tensor = torch.empty(0)
 
         if atomic_numbers is not None:
             if system_idx is None:
@@ -442,7 +446,7 @@ class MaceTorchSimModel(_TSModelInterface):
             self._setup_ptr(state.system_idx)
             self._cached_system_idx = state.system_idx
 
-    def forward(self, state: SimState, **kwargs) -> dict[str, torch.Tensor]:  # ty:ignore[invalid-method-override]
+    def forward(self, state: SimState, **_kwargs) -> dict[str, torch.Tensor]:  # ty:ignore[invalid-method-override]
         self._ensure_layout(state)
 
         wrapped_positions = (

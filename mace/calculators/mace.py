@@ -10,7 +10,7 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -462,7 +462,7 @@ class MACECalculator(Calculator):
         num_models: int,
         num_atoms: int,
         batch,
-        out: dict[str, torch.Tensor | None],
+        out: dict[str, Optional[torch.Tensor]],
     ) -> dict:
         tensor_shapes = {
             "energy": [],
