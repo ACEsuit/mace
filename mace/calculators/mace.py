@@ -10,7 +10,7 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -99,7 +99,7 @@ class MACECalculator(Calculator):
     def __init__(
         self,
         model_paths: Union[list, str, None] = None,
-        models: Union[List[torch.nn.Module], torch.nn.Module, None] = None,
+        models: Union[list[torch.nn.Module], torch.nn.Module, None] = None,
         device: str = "cpu",
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
@@ -274,7 +274,7 @@ class MACECalculator(Calculator):
             ) ** 2
 
         try:
-            self.available_heads: List[str] = self.models[0].heads  # type: ignore
+            self.available_heads: list[str] = self.models[0].heads  # type: ignore
         except AttributeError:
             self.available_heads = ["Default"]
         kwarg_head = kwargs.get("head", None)
@@ -419,8 +419,8 @@ class MACECalculator(Calculator):
 
     @staticmethod
     def _slice_real_outputs(
-        out: Dict[str, Union[torch.Tensor, None]], num_real_atoms: int
-    ) -> Dict[str, Union[torch.Tensor, None]]:
+        out: dict[str, Union[torch.Tensor, None]], num_real_atoms: int
+    ) -> dict[str, Union[torch.Tensor, None]]:
         """Strip padding from model outputs, keeping only real-atom results."""
         graph_level_keys = {
             "energy",
@@ -441,7 +441,7 @@ class MACECalculator(Calculator):
             "atomic_dipoles",
             "node_feats",
         }
-        sliced: Dict[str, Union[torch.Tensor, None]] = {}
+        sliced: dict[str, Union[torch.Tensor, None]] = {}
         for key, value in out.items():
             if value is None or not torch.is_tensor(value):
                 sliced[key] = value

@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -111,10 +111,10 @@ class TrainingPlotter:
     def __init__(
         self,
         results_dir: str,
-        heads: List[str],
+        heads: list[str],
         table_type: str,
-        train_valid_data: Dict,
-        test_data: Dict,
+        train_valid_data: dict,
+        test_data: dict,
         output_args: str,
         device: str,
         plot_frequency: int,
@@ -201,7 +201,7 @@ class TrainingPlotter:
             plt.close(fig)
 
 
-def parse_training_results(path: str) -> List[dict]:
+def parse_training_results(path: str) -> list[dict]:
     results = []
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -216,7 +216,7 @@ def parse_training_results(path: str) -> List[dict]:
 
 
 def plot_epoch_dependence(
-    axes: np.ndarray, data: pd.DataFrame, head: str, model_epoch: str, labels: List[str]
+    axes: np.ndarray, data: pd.DataFrame, head: str, model_epoch: str, labels: list[str]
 ) -> None:
 
     valid_data = (
@@ -308,7 +308,7 @@ def plot_inference_from_results(
     train_valid_dict: dict,
     test_dict: dict,
     head: str,
-    quantities: List[str],
+    quantities: list[str],
     plot_interaction_e: bool = False,
 ) -> None:
 
@@ -467,7 +467,7 @@ def plot_inference_from_results(
 def model_inference(
     all_data_loaders: dict,
     model: torch.nn.Module,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     device: str,
     distributed: bool = False,
 ):

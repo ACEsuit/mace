@@ -5,7 +5,7 @@ import logging
 import os
 import urllib.request
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 import torch
 
@@ -26,16 +26,16 @@ from mace.tools.utils import AtomicNumberTable, get_cache_dir
 class HeadConfig:
     head_name: str
     key_specification: KeySpecification
-    train_file: Optional[Union[str, List[str]]] = None
-    valid_file: Optional[Union[str, List[str]]] = None
+    train_file: Optional[Union[str, list[str]]] = None
+    valid_file: Optional[Union[str, list[str]]] = None
     test_file: Optional[str] = None
     test_dir: Optional[str] = None
     E0s: Optional[Any] = None
     statistics_file: Optional[str] = None
     valid_fraction: Optional[float] = None
-    config_type_weights: Optional[Dict[str, float]] = None
+    config_type_weights: Optional[dict[str, float]] = None
     keep_isolated_atoms: Optional[bool] = None
-    atomic_numbers: Optional[Union[List[int], List[str]]] = None
+    atomic_numbers: Optional[Union[list[int], list[str]]] = None
     mean: Optional[float] = None
     std: Optional[float] = None
     avg_num_neighbors: Optional[float] = None
@@ -43,11 +43,11 @@ class HeadConfig:
     collections: Optional[SubsetCollection] = None
     train_loader: Optional[torch.utils.data.DataLoader] = None
     z_table: Optional[Any] = None
-    atomic_energies_dict: Optional[Dict[str, float]] = None
+    atomic_energies_dict: Optional[dict[str, float]] = None
 
 
 def dict_head_to_dataclass(
-    head: Dict[str, Any], head_name: str, args: argparse.Namespace
+    head: dict[str, Any], head_name: str, args: argparse.Namespace
 ) -> HeadConfig:
     """Convert head dictionary to HeadConfig dataclass."""
     # parser+head args that have no defaults but are required
@@ -78,7 +78,7 @@ def dict_head_to_dataclass(
     )
 
 
-def prepare_default_head(args: argparse.Namespace) -> Dict[str, Any]:
+def prepare_default_head(args: argparse.Namespace) -> dict[str, Any]:
     """Prepare a default head from args."""
     return {
         "Default": {
@@ -100,7 +100,7 @@ def prepare_pt_head(
     args: argparse.Namespace,
     pt_keyspec: KeySpecification,
     foundation_model_num_neighbours: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Prepare a pretraining head from args."""
     if args.foundation_model in ["small", "medium", "large"] or args.pt_train_file in [
         "mp",
@@ -223,13 +223,13 @@ def assemble_replay_data(
 
 def generate_pseudolabels_for_configs(
     model: torch.nn.Module,
-    configs: List[Configuration],
+    configs: list[Configuration],
     z_table: AtomicNumberTable,
     r_max: float,
     device: torch.device,
     batch_size: int,
     force_stress: bool = False,
-) -> List[Configuration]:
+) -> list[Configuration]:
     """
     Generate pseudolabels for a list of Configuration objects.
 

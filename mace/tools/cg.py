@@ -8,7 +8,7 @@ import collections
 import itertools
 import os
 from collections.abc import Iterator
-from typing import List, Union
+from typing import Union
 
 import numpy as np
 import torch
@@ -33,7 +33,7 @@ _INPUT = collections.namedtuple("_INPUT", "tensor, start, stop")
 
 
 def _wigner_nj(
-    irrepss: List[o3.Irreps],
+    irrepss: list[o3.Irreps],
     normalization: str = "component",
     filter_ir_mid=None,
     dtype=None,
@@ -241,9 +241,9 @@ if CUET_AVAILABLE:
 
     class O3_e3nn(cue.O3):
         def __mul__(  # pylint: disable=no-self-argument
-            rep1: "O3_e3nn", rep2: "O3_e3nn"
+            self: "O3_e3nn", rep2: "O3_e3nn"
         ) -> Iterator["O3_e3nn"]:
-            return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)]
+            return [O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(self, rep2)]
 
         @classmethod
         def clebsch_gordan(
@@ -258,10 +258,10 @@ if CUET_AVAILABLE:
             return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))
 
         def __lt__(  # pylint: disable=no-self-argument
-            rep1: "O3_e3nn", rep2: "O3_e3nn"
+            self: "O3_e3nn", rep2: "O3_e3nn"
         ) -> bool:
-            rep2 = rep1._from(rep2)
-            return (rep1.l, rep1.p) < (rep2.l, rep2.p)
+            rep2 = self._from(rep2)
+            return (self.l, self.p) < (rep2.l, rep2.p)
 
         @classmethod
         def iterator(cls) -> Iterator["O3_e3nn"]:

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import torch
 from e3nn import o3
@@ -76,7 +76,7 @@ def _get_readout_input_dim(block: torch.nn.Module) -> int:
 
 @compile_mode("script")
 class MACELES(ScaleShiftMACE):
-    def __init__(self, les_arguments: Optional[Dict] = None, **kwargs):
+    def __init__(self, les_arguments: Optional[dict] = None, **kwargs):
         super().__init__(**kwargs)
         try:
             from les import Les
@@ -102,7 +102,7 @@ class MACELES(ScaleShiftMACE):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -113,7 +113,7 @@ class MACELES(ScaleShiftMACE):
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
         compute_bec: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, Optional[torch.Tensor]]:
         ctx = prepare_graph(
             data,
             compute_virials=compute_virials,
@@ -169,7 +169,7 @@ class MACELES(ScaleShiftMACE):
 
         # Embeddings of additional features
         if hasattr(self, "joint_embedding"):
-            embedding_features: Dict[str, torch.Tensor] = {}
+            embedding_features: dict[str, torch.Tensor] = {}
             for name, _ in self.embedding_specs.items():
                 embedding_features[name] = data[name]
             node_feats += self.joint_embedding(
@@ -190,8 +190,8 @@ class MACELES(ScaleShiftMACE):
 
         # Interactions
         node_es_list = [pair_node_energy]
-        node_feats_list: List[torch.Tensor] = []
-        node_qs_list: List[torch.Tensor] = []
+        node_feats_list: list[torch.Tensor] = []
+        node_qs_list: list[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)
@@ -310,17 +310,17 @@ class PolarMACE(ScaleShiftMACE):
         atomic_multipoles_max_l: int = 0,
         atomic_multipoles_smearing_width: float = 1.0,
         field_feature_max_l: int = 0,
-        field_feature_widths: List[float] = (1.0,),
+        field_feature_widths: list[float] = (1.0,),
         num_recursion_steps: int = 1,
         field_si: bool = False,
         include_electrostatic_self_interaction: bool = False,
         add_local_electron_energy: bool = False,
         quadrupole_feature_corrections: bool = False,
         return_electrostatic_potentials: bool = False,
-        field_feature_norms: Optional[List[float]] = None,
+        field_feature_norms: Optional[list[float]] = None,
         field_norm_factor: Optional[float] = 0.02,
-        fixedpoint_update_config: Optional[Dict[str, Any]] = None,
-        field_readout_config: Optional[Dict[str, Any]] = None,
+        fixedpoint_update_config: Optional[dict[str, Any]] = None,
+        field_readout_config: Optional[dict[str, Any]] = None,
         **kwargs,
     ):
         if not GRAPH_LONGRANGE_AVAILABLE:
@@ -408,7 +408,7 @@ class PolarMACE(ScaleShiftMACE):
             field_feature_norms = (
                 [1.0] * len(field_feature_widths) * (field_feature_max_l + 1)
             )
-        expanded: List[float] = []
+        expanded: list[float] = []
         for l in range(field_feature_max_l + 1):
             for j in range(len(field_feature_widths)):
                 expanded += [field_feature_norms[l * len(field_feature_widths) + j]] * (
@@ -592,7 +592,7 @@ class PolarMACE(ScaleShiftMACE):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         training: bool = False,
         compute_force: bool = True,
         compute_virials: bool = False,
@@ -605,7 +605,7 @@ class PolarMACE(ScaleShiftMACE):
         use_pbc_evaluator: bool = False,
         fermi_level: Optional[torch.Tensor] = None,
         external_field: Optional[torch.Tensor] = None,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, Optional[torch.Tensor]]:
         if not GRAPH_LONGRANGE_AVAILABLE:
             raise ImportError(
                 "Cannot import 'graph_longrange'. Please install graph_electrostatics "
@@ -662,8 +662,8 @@ class PolarMACE(ScaleShiftMACE):
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
-        node_es_list: List[torch.Tensor] = []
-        node_feats_list: List[torch.Tensor] = []
+        node_es_list: list[torch.Tensor] = []
+        node_feats_list: list[torch.Tensor] = []
         spin_charge_density = torch.zeros(
             (data["batch"].size(-1), self.charges_irreps.dim),
             device=data["batch"].device,

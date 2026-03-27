@@ -6,13 +6,13 @@
 
 import logging
 from contextlib import contextmanager
-from typing import Dict, Union
+from typing import Union
 
 import numpy as np
 import torch
 from e3nn.io import CartesianTensor
 
-TensorDict = Dict[str, torch.Tensor]
+TensorDict = dict[str, torch.Tensor]
 
 
 def to_one_hot(indices: torch.Tensor, num_classes: int) -> torch.Tensor:

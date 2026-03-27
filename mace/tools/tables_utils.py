@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional
+from typing import Optional
 
 import torch
 from prettytable import PrettyTable
@@ -25,11 +25,11 @@ def create_error_table(
     all_data_loaders: dict,
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     log_wandb: bool,
     device: str,
     distributed: bool = False,
-    skip_heads: Optional[List[str]] = None,
+    skip_heads: Optional[list[str]] = None,
 ) -> PrettyTable:
     if log_wandb:
         import wandb

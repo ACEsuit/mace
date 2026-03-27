@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import torch
 from torch import nn
@@ -15,7 +15,7 @@ class GenericJointEmbedding(nn.Module):
         self,
         *,
         base_dim: int,
-        embedding_specs: Optional[Dict[str, Any]],
+        embedding_specs: Optional[dict[str, Any]],
         out_dim: Optional[int] = None,
     ):
         super().__init__()
@@ -49,7 +49,7 @@ class GenericJointEmbedding(nn.Module):
     def forward(
         self,
         batch: torch.Tensor,  # [N_nodes,] graph indices
-        features: Dict[str, torch.Tensor],
+        features: dict[str, torch.Tensor],
     ) -> torch.Tensor:
         """
         features[name] is either [N_graphs, …] or [N_nodes, …]

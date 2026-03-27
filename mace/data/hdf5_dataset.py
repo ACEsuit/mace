@@ -1,5 +1,4 @@
 from glob import glob
-from typing import List
 
 import h5py
 from torch.utils.data import ConcatDataset, Dataset
@@ -82,7 +81,7 @@ class HDF5Dataset(Dataset):
 
 
 def dataset_from_sharded_hdf5(
-    files: List, z_table: AtomicNumberTable, r_max: float, **kwargs
+    files: list, z_table: AtomicNumberTable, r_max: float, **kwargs
 ):
     files = glob(files + "/*")
     datasets = []
