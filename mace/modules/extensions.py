@@ -306,7 +306,7 @@ class MACELES(ScaleShiftMACE):
                 les_alpha = spherical_to_cartesian(
                     les_alpha, self.change_of_basis
                 )
-                print('alphas cartesian', les_alpha[:3])
+                #print('alphas cartesian', les_alpha[:3])
         else:
             les_alpha = None
 
