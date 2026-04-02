@@ -4,12 +4,12 @@ import torch
 from e3nn.util.jit import compile_mode
 from e3nn import nn, o3
 
-from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock
+from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock, LinearDipolePolarReadoutBlock, NonLinearDipolePolarReadoutBlock
 from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
 from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.scatter import scatter_sum
-
+from mace.tools.torch_tools import get_change_of_basis, spherical_to_cartesian
 
 def _copy_mace_readout(
     mace_readout: torch.nn.Module, 
@@ -25,8 +25,6 @@ def _copy_mace_readout(
             irrep_out=o3.Irreps(change_irrep_out) if change_irrep_out is not None else mace_readout.linear.irreps_out,  # type:ignore
             cueq_config=cueq_config,
         )
-    if isinstance(mace_readout, NonLinearReadoutBlock) and change_irrep_out is not None:  # type:ignore
-        return None
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
         return NonLinearReadoutBlock(
             irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
@@ -66,6 +64,8 @@ class MACELES(ScaleShiftMACE):
         self.use_dipoles = les_arguments.get("use_dipole", False)
         self.use_induced_charges = les_arguments.get("use_induced_charge", False)
         self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
+        self.use_anisotropic_polarizability = les_arguments.get("use_anisotropic_polarizability", True)
+
         print("use_dipoles", self.use_dipoles)
         print("use_induced_charges", self.use_induced_charges)
         print("use_induced_dipoles", self.use_induced_dipoles)
@@ -97,9 +97,14 @@ class MACELES(ScaleShiftMACE):
                     _copy_mace_readout(readout, cueq_config=cueq_config)
                 )
             if self.use_induced_dipoles:
-                self.les_alpha_readouts.append(
-                    _copy_mace_readout(readout, cueq_config=cueq_config)
-                )
+                if self.use_anisotropic_polarizability:
+                    self.les_alpha_readouts.append(
+                        _copy_mace_readout(self.readouts[0],  change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
+                    )
+                else:
+                    self.les_alpha_readouts.append(
+                        _copy_mace_readout(readout, cueq_config=cueq_config)
+                    )
 
     def forward(
         self,
@@ -136,6 +141,8 @@ class MACELES(ScaleShiftMACE):
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
 
+        self.register_buffer("change_of_basis", get_change_of_basis())
+
         # for backward compatibility
         if not hasattr(self, "les_output_scale"):
             self.les_output_scale = 1.
@@ -143,6 +150,8 @@ class MACELES(ScaleShiftMACE):
             self.les_kappa_scale = 1.
         if not hasattr(self, "les_alpha_scale"):
             self.les_alpha_scale = 1.
+        if not hasattr(self, "use_anisotropic_polarizability"):
+            self.use_anisotropic_polarizability = False
 
         # Setting LES cell input to zero when boundary conditions are not periodic
         cell_les = cell.clone()
@@ -248,11 +257,11 @@ class MACELES(ScaleShiftMACE):
             node_es_list.append(node_es)
             if hasattr(self, "use_dipoles") and self.use_dipoles:
                 les_u_readout = self.les_u_readouts[i]
-                if les_u_readout is not None:
-                    node_us = les_u_readout(node_feats_list[feat_idx])[
-                        num_atoms_arange
-                    ]  # type:ignore
-                    node_us_list.append(node_us)
+                node_us = les_u_readout(node_feats_list[feat_idx])[
+                    num_atoms_arange
+                ]  # type:ignore
+                node_us_list.append(node_us)
+                #print('dipoles', i, node_us[:3])
             if hasattr(self, "use_induced_charges") and self.use_induced_charges:
                 les_kappa_readout = self.les_kappa_readouts[i]
                 node_kappas = les_kappa_readout(node_feats_list[feat_idx], node_heads)[
@@ -261,9 +270,15 @@ class MACELES(ScaleShiftMACE):
                 node_kappas_list.append(node_kappas)
             if hasattr(self, "use_induced_dipoles") and self.use_induced_dipoles:
                 les_alpha_readout = self.les_alpha_readouts[i]
-                node_alphas = les_alpha_readout(node_feats_list[feat_idx], node_heads)[
-                    num_atoms_arange, node_heads
-                    ]  # type:ignore
+                if self.use_anisotropic_polarizability:
+                    node_alphas = les_alpha_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                        ]  # type:ignore
+                else:
+                    node_alphas = les_alpha_readout(node_feats_list[feat_idx], node_heads)[
+                        num_atoms_arange, node_heads
+                        ]  # type:ignore
+                #print('alphas', i, node_alphas[:3])
                 node_alphas_list.append(node_alphas)
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
@@ -287,6 +302,11 @@ class MACELES(ScaleShiftMACE):
 
         if len(node_alphas_list) > 0:
             les_alpha = torch.sum(torch.stack(node_alphas_list, dim=1), dim=1) * self.les_alpha_scale
+            if self.use_anisotropic_polarizability:
+                les_alpha = spherical_to_cartesian(
+                    les_alpha, self.change_of_basis
+                )
+                print('alphas cartesian', les_alpha[:3])
         else:
             les_alpha = None
 

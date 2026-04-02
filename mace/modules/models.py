@@ -209,12 +209,14 @@ class MACE(torch.nn.Module):
             )
 
         for i in range(num_interactions - 1):
-            #if i == num_interactions - 2:
-            #    hidden_irreps_out = str(
-            #        hidden_irreps[0]
-            #    )  # Select only scalars for last layer
-            #else:
-            #    hidden_irreps_out = hidden_irreps
+            # !!!
+            if i == num_interactions - 2:
+                hidden_irreps_out = str(
+                    hidden_irreps[0]
+                )  # Select only scalars for last layer
+            else:
+                hidden_irreps_out = hidden_irreps
+            # !!!
             hidden_irreps_out = hidden_irreps
             inter = interaction_cls(
                 node_attrs_irreps=node_attr_irreps,
