@@ -105,6 +105,7 @@ class MACELES(ScaleShiftMACE):
                     self.les_alpha_readouts.append(
                         _copy_mace_readout(readout, cueq_config=cueq_config)
                     )
+                self.register_buffer("change_of_basis", get_change_of_basis())
 
     def forward(
         self,
@@ -141,7 +142,6 @@ class MACELES(ScaleShiftMACE):
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
 
-        self.register_buffer("change_of_basis", get_change_of_basis())
 
         # for backward compatibility
         if not hasattr(self, "les_output_scale"):
