@@ -1,3 +1,4 @@
+import ast
 import logging
 import os
 
@@ -118,5 +119,8 @@ def check_args(args):
                 )
             )
             args.swa = False
+
+    if args.embedding_specs:
+        args.embedding_specs = ast.literal_eval(args.embedding_specs)
 
     return args, log_messages

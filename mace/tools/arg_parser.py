@@ -138,6 +138,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "BOTNet",
             "MACE",
             "ScaleShiftMACE",
+            "PolarMACE",
             "MACELES",
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
@@ -296,6 +297,96 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=["silu", "tanh", "abs", "None"],
     )
     parser.add_argument(
+        "--kspace_cutoff_factor",
+        help="k-space cutoff factor used by PolarMACE",
+        type=float,
+        default=1.5,
+    )
+    parser.add_argument(
+        "--atomic_multipoles_max_l",
+        help="maximum l for atomic multipoles in PolarMACE",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--atomic_multipoles_smearing_width",
+        help="Gaussian smearing width for atomic multipoles in PolarMACE",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--field_feature_max_l",
+        help="maximum l for projected field features in PolarMACE",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--field_feature_widths",
+        help="list of field feature widths for PolarMACE",
+        type=str,
+        default="[1.0]",
+    )
+    parser.add_argument(
+        "--field_feature_norms",
+        help="optional list of field feature norms for PolarMACE",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--num_recursion_steps",
+        help="number of fixed-point recursion steps in PolarMACE",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--field_si",
+        help="include self-interaction when projecting local fields in PolarMACE",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--include_electrostatic_self_interaction",
+        help="include electrostatic self interaction in PolarMACE",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--add_local_electron_energy",
+        help="add local electron energy correction in PolarMACE",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--quadrupole_feature_corrections",
+        help="enable quadrupole feature corrections in PolarMACE",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--return_electrostatic_potentials",
+        help="return electrostatic potentials from PolarMACE forward pass",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--field_norm_factor",
+        help="global normalization factor for field features in PolarMACE",
+        type=float,
+        default=0.02,
+    )
+    parser.add_argument(
+        "--fixedpoint_update_config",
+        help="dict-like config for PolarMACE fixed-point update block",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--field_readout_config",
+        help="dict-like config for PolarMACE field readout block",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         "--scaling",
         help="type of scaling to the output",
         type=str,
@@ -442,6 +533,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
+        "--pseudolabel_replay_compute_stress",
+        help="When replay pseudolabels are generated, always generate stress labels even if the original replay data lacked stress",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--foundation_filter_elements",
         help="Filter element during fine-tuning",
         type=str2bool,
@@ -534,6 +631,24 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
+    parser.add_argument(
+        "--lora",
+        help="Use Low-Rank Adaptation for the fine-tuning",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--lora_rank",
+        help="Rank of the LoRA matrices",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
+        "--lora_alpha",
+        help="Scaling factor for LoRA",
+        type=float,
+        default=1.0,
+    )
 
     # Keys
     parser.add_argument(
@@ -605,19 +720,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--embedding_specs",
         help=(
-            "List of feature‐spec dictionaries. "
+            "Dict of feature‐spec dictionaries. "
             "embedding_specs:\n"
-            "  - name: total_spin\n"
+            "  total_spin:\n"
             "    type: categorical\n"
             "    per: graph\n"
             "    num_classes: 101\n"
             "    emb_dim: 64\n"
-            "  - name: total_charge\n"
+            "  total_charge:\n"
             "    type: categorical\n"
             "    per: graph\n"
             "    num_classes: 201\n"
             "    emb_dim: 64\n"
-            "  - name: temperature\n"
+            "  temperature:\n"
             "    type: continuous\n"
             "    per: graph\n"
             "    in_dim: 1\n"
@@ -745,6 +860,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.9,
     )
+    parser.add_argument(
+        "--beta1_schedulefree",
+        help="Beta1 parameter for the ScheduleFree optimizer",
+        type=float,
+        default=0.9,
+    )
+    parser.add_argument(
+        "--beta2_schedulefree",
+        help="Beta2 parameter for the ScheduleFree optimizer",
+        type=float,
+        default=0.98,
+    )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
         "--valid_batch_size", help="Validation batch size", type=int, default=10
@@ -762,6 +889,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
+    )
+    parser.add_argument(
+        "--lr_params_factors",
+        help="Learning rate factors to multiply on the original lr",
+        type=str,
+        default='{"embedding_lr_factor": 1.0, "interactions_lr_factor": 1.0, "products_lr_factor": 1.0, "readouts_lr_factor": 1.0}',
+    )
+    parser.add_argument(
+        "--freeze",
+        help="Freeze layers from 1 to N. Can be positive or negative, e.g. -1 means the last layer is frozen. 0 or None means all layers are active and is a default setting",
+        type=int,
+        default=None,
     )
     parser.add_argument(
         "--amsgrad",
@@ -832,6 +971,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Path to the foundation model for transfer learning",
         type=str,
         default=None,
+    )
+    parser.add_argument(
+        "--foundation_model_kwargs",
+        help="Additional kwargs for the foundation model for transfer learning",
+        type=str,
+        default="{}",
     )
     parser.add_argument(
         "--foundation_model_readout",

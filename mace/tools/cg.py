@@ -121,7 +121,7 @@ def U_matrix_real(
     if correlation == 4 and not use_cueq_cg:
         filter_ir_mid = [(i, 1 if i % 2 == 0 else -1) for i in range(12)]
     if use_cueq_cg and CUET_AVAILABLE:
-        return compute_U_cueq(
+        return compute_U_cueq(  # pylint: disable=possibly-used-before-assignment
             irreps_in, irreps_out=irreps_out, correlation=correlation, dtype=dtype
         )
 
@@ -129,7 +129,7 @@ def U_matrix_real(
         wigners = _wigner_nj(irrepss, normalization, filter_ir_mid, dtype)
     except NotImplementedError as e:
         if CUET_AVAILABLE:
-            return compute_U_cueq(
+            return compute_U_cueq(  # pylint: disable=possibly-used-before-assignment
                 irreps_in,
                 irreps_out=irreps_out,
                 correlation=correlation,

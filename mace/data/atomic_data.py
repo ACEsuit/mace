@@ -49,6 +49,11 @@ class AtomicData(torch_geometric.data.Data):
     dipole_weight: torch.Tensor
     charges_weight: torch.Tensor
     polarizability_weight: torch.Tensor
+    density_coefficients: torch.Tensor
+    rcell: torch.Tensor
+    volume: torch.Tensor
+    fermi_level: torch.Tensor
+    external_field: torch.Tensor
 
     def __init__(
         self,
@@ -77,7 +82,13 @@ class AtomicData(torch_geometric.data.Data):
         elec_temp: Optional[torch.Tensor],  # [,]
         total_charge: Optional[torch.Tensor] = None,  # [,]
         total_spin: Optional[torch.Tensor] = None,  # [,]
-        pbc: Optional[torch.Tensor] = None, # [, 3]
+        pbc: Optional[torch.Tensor] = None,  # [, 3]
+        density_coefficients: Optional[torch.Tensor] = None,  # [n_nodes, k]
+        rcell: Optional[torch.Tensor] = None,  # [3,3]
+        volume: Optional[torch.Tensor] = None,  # [,]
+        fermi_level: Optional[torch.Tensor] = None,  # [,]
+        external_field: Optional[torch.Tensor] = None,  # [1,3]
+        **extra_data: torch.Tensor,
     ):
         # Check shapes
         num_nodes = node_attrs.shape[0]
@@ -107,6 +118,14 @@ class AtomicData(torch_geometric.data.Data):
         assert total_spin is None or len(total_spin.shape) == 0
         assert polarizability is None or polarizability.shape == (1, 3, 3)
         assert pbc is None or (pbc.shape[-1] == 3 and pbc.dtype == torch.bool)
+        assert (
+            density_coefficients is None or density_coefficients.shape[0] == num_nodes
+        )
+        assert rcell is None or rcell.shape == (3, 3)
+        assert volume is None or len(volume.shape) == 0
+        assert fermi_level is None or len(fermi_level.shape) == 0
+        assert external_field is None or external_field.shape == (1, 3)
+
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
@@ -136,7 +155,13 @@ class AtomicData(torch_geometric.data.Data):
             "total_charge": total_charge,
             "total_spin": total_spin,
             "pbc": pbc,
+            "density_coefficients": density_coefficients,
+            "rcell": rcell,
+            "volume": volume,
+            "fermi_level": fermi_level,
+            "external_field": external_field,
         }
+        data.update(extra_data)
         super().__init__(**data)
 
     @classmethod
@@ -331,16 +356,49 @@ class AtomicData(torch_geometric.data.Data):
             if config.properties.get("total_spin") is not None
             else torch.tensor(1.0, dtype=torch.get_default_dtype())
         )
-
+        if config.pbc is not None:
+            pbc = list(bool(pbc_) for pbc_ in config.pbc)
+        else:
+            pbc = None
         pbc = (
-            torch.tensor([config.pbc], dtype=torch.bool)
-            if config.pbc is not None
+            torch.tensor([pbc], dtype=torch.bool)
+            if pbc is not None
             else torch.tensor([[False, False, False]], dtype=torch.bool)
         )
+        positions = torch.tensor(config.positions, dtype=torch.get_default_dtype())
+        volume = torch.linalg.det(cell)
+        if torch.abs(volume) > 0:
+            rcell = 2 * torch.pi * torch.linalg.inv(cell.mT)
+        else:
+            rcell = torch.zeros(3, 3, dtype=torch.get_default_dtype())
+        fermi_level = (
+            torch.tensor(
+                config.properties.get("fermi_level"), dtype=torch.get_default_dtype()
+            )
+            if config.properties.get("fermi_level") is not None
+            else torch.tensor(0.0, dtype=torch.get_default_dtype())
+        )
+        #
+        external_field = (
+            torch.tensor(
+                config.properties.get("external_field"),
+                dtype=torch.get_default_dtype(),
+            ).view(1, 3)
+            if config.properties.get("external_field") is not None
+            else torch.zeros(1, 3, dtype=torch.get_default_dtype())
+        )
+        density_coefficients = (
+            torch.tensor(
+                config.properties.get("density_coefficients"),
+                dtype=torch.get_default_dtype(),
+            )
+            if config.properties.get("density_coefficients") is not None
+            else torch.zeros(num_atoms, 1, dtype=torch.get_default_dtype())
+        )
 
-        return cls(
+        cls_kwargs = dict(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
-            positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
+            positions=positions,
             shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),
             unit_shifts=torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),
             cell=cell,
@@ -365,7 +423,28 @@ class AtomicData(torch_geometric.data.Data):
             polarizability=polarizability,
             total_spin=total_spin,
             pbc=pbc,
+            density_coefficients=density_coefficients,
+            rcell=rcell,
+            volume=volume,
+            fermi_level=fermi_level,
+            external_field=external_field,
         )
+
+        # Pass through any extra properties not already handled above.
+        for k, v in config.properties.items():
+            if k in cls_kwargs or v is None or isinstance(v, (str, bytes)):
+                continue
+            try:
+                tv = v if isinstance(v, torch.Tensor) else torch.as_tensor(v)
+            except (TypeError, ValueError):
+                continue
+            if tv.dtype.is_floating_point:
+                tv = tv.to(dtype=torch.get_default_dtype())
+            if len(tv.shape) == 1:
+                tv = tv.unsqueeze(-1)  # promote per-atom (n,) → (n, 1)
+            cls_kwargs[k] = tv
+
+        return cls(**cls_kwargs)
 
 
 def get_data_loader(
