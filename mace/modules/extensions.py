@@ -65,6 +65,8 @@ class MACELES(ScaleShiftMACE):
         self.use_induced_charges = les_arguments.get("use_induced_charge", False)
         self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
         self.use_anisotropic_polarizability = les_arguments.get("use_anisotropic_polarizability", True)
+        self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
+        self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
 
         print("use_dipoles", self.use_dipoles)
         print("use_induced_charges", self.use_induced_charges)
@@ -309,6 +311,15 @@ class MACELES(ScaleShiftMACE):
                 #print('alphas cartesian', les_alpha[:3])
         else:
             les_alpha = None
+
+
+        if hasattr(self, 'make_alpha_positive') and self.make_alpha_positive and les_alpha is not None:
+            if les_alpha.dim() == 2:
+                les_alpha = les_alpha**2
+            if les_alpha.dim() == 3 and les_alpha.shape[1] == 3 and les_alpha.shape[2] == 3:
+                les_alpha = torch.einsum("nij,nkj->nik",les_alpha, les_alpha)
+        if hasattr(self, 'make_kappa_positive') and self.make_kappa_positive and les_kappa is not None:
+            les_kappa = les_kappa**2
 
         les_result = self.les(
             latent_charges=les_q,
