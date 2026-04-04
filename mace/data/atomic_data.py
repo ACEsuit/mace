@@ -52,6 +52,7 @@ class AtomicData(torch_geometric.data.Data):
 
     def __init__(
         self,
+        atomic_numbers: torch.Tensor,
         edge_index: torch.Tensor,  # [2, n_edges]
         node_attrs: torch.Tensor,  # [n_nodes, n_node_feats]
         positions: torch.Tensor,  # [n_nodes, 3]
@@ -110,6 +111,7 @@ class AtomicData(torch_geometric.data.Data):
         # Aggregate data
         data = {
             "num_nodes": num_nodes,
+            "atomic_numbers": atomic_numbers,
             "edge_index": edge_index,
             "positions": positions,
             "shifts": shifts,
@@ -339,6 +341,7 @@ class AtomicData(torch_geometric.data.Data):
         )
 
         return cls(
+            atomic_numbers=torch.tensor(config.atomic_numbers),
             edge_index=torch.tensor(edge_index, dtype=torch.long),
             positions=torch.tensor(config.positions, dtype=torch.get_default_dtype()),
             shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),

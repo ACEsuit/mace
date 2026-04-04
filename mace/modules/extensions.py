@@ -322,6 +322,7 @@ class MACELES(ScaleShiftMACE):
             les_kappa = les_kappa**2
 
         les_result = self.les(
+            atomic_numbers=data["atomic_numbers"],
             latent_charges=les_q,
             latent_dipoles=les_u,
             latent_alphas=les_alpha,
