@@ -40,3 +40,6 @@ dist/
 *.png
 /scripts
 *.cube
+
+# uv
+uv.lock

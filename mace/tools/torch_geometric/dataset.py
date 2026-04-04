@@ -3,7 +3,7 @@ import os.path as osp
 import re
 import warnings
 from collections.abc import Sequence
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 import numpy as np
 import torch.utils.data
@@ -38,13 +38,13 @@ class Dataset(torch.utils.data.Dataset):
     """
 
     @property
-    def raw_file_names(self) -> Union[str, List[str], Tuple]:
+    def raw_file_names(self) -> Union[str, list[str], tuple]:
         r"""The name of the files to find in the :obj:`self.raw_dir` folder in
         order to skip the download."""
         raise NotImplementedError
 
     @property
-    def processed_file_names(self) -> Union[str, List[str], Tuple]:
+    def processed_file_names(self) -> Union[str, list[str], tuple]:
         r"""The name of the files to find in the :obj:`self.processed_dir`
         folder in order to skip the processing."""
         raise NotImplementedError
@@ -82,10 +82,10 @@ class Dataset(torch.utils.data.Dataset):
         self.pre_filter = pre_filter
         self._indices: Optional[Sequence] = None
 
-        if "download" in self.__class__.__dict__.keys():
+        if "download" in self.__class__.__dict__:
             self._download()
 
-        if "process" in self.__class__.__dict__.keys():
+        if "process" in self.__class__.__dict__:
             self._process()
 
     def indices(self) -> Sequence:
@@ -106,8 +106,7 @@ class Dataset(torch.utils.data.Dataset):
         if hasattr(data, "num_node_features"):
             return data.num_node_features
         raise AttributeError(
-            f"'{data.__class__.__name__}' object has no "
-            f"attribute 'num_node_features'"
+            f"'{data.__class__.__name__}' object has no attribute 'num_node_features'"
         )
 
     @property
@@ -122,18 +121,17 @@ class Dataset(torch.utils.data.Dataset):
         if hasattr(data, "num_edge_features"):
             return data.num_edge_features
         raise AttributeError(
-            f"'{data.__class__.__name__}' object has no "
-            f"attribute 'num_edge_features'"
+            f"'{data.__class__.__name__}' object has no attribute 'num_edge_features'"
         )
 
     @property
-    def raw_paths(self) -> List[str]:
+    def raw_paths(self) -> list[str]:
         r"""The filepaths to find in order to skip the download."""
         files = to_list(self.raw_file_names)
         return [osp.join(self.raw_dir, f) for f in files]
 
     @property
-    def processed_paths(self) -> List[str]:
+    def processed_paths(self) -> list[str]:
         r"""The filepaths to find in the :obj:`self.processed_dir`
         folder in order to skip the processing."""
         files = to_list(self.processed_file_names)
@@ -204,8 +202,7 @@ class Dataset(torch.utils.data.Dataset):
             data = data if self.transform is None else self.transform(data)
             return data
 
-        else:
-            return self.index_select(idx)
+        return self.index_select(idx)
 
     def index_select(self, idx: IndexType) -> "Dataset":
         indices = self.indices()
@@ -238,13 +235,13 @@ class Dataset(torch.utils.data.Dataset):
             )
 
         dataset = copy.copy(self)
-        dataset._indices = indices
+        dataset._indices = indices  # pylint: disable=protected-access
         return dataset
 
     def shuffle(
         self,
         return_perm: bool = False,
-    ) -> Union["Dataset", Tuple["Dataset", Tensor]]:
+    ) -> Union["Dataset", tuple["Dataset", Tensor]]:
         r"""Randomly shuffles the examples in the dataset.
 
         Args:
@@ -264,17 +261,16 @@ class Dataset(torch.utils.data.Dataset):
 def to_list(value: Any) -> Sequence:
     if isinstance(value, Sequence) and not isinstance(value, str):
         return value
-    else:
-        return [value]
+    return [value]
 
 
-def files_exist(files: List[str]) -> bool:
+def files_exist(files: list[str]) -> bool:
     # NOTE: We return `False` in case `files` is empty, leading to a
     # re-processing of files on every instantiation.
-    return len(files) != 0 and all([osp.exists(f) for f in files])
+    return len(files) != 0 and all(osp.exists(f) for f in files)
 
 
 def _repr(obj: Any) -> str:
     if obj is None:
         return "None"
-    return re.sub("(<.*?)\\s.*(>)", r"\1\2", obj.__repr__())
+    return re.sub("(<.*?)\\s.*(>)", r"\1\2", repr(obj))

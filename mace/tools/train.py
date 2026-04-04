@@ -9,7 +9,7 @@ import logging
 import time
 from collections import defaultdict
 from contextlib import contextmanager, nullcontext
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch
@@ -150,7 +150,7 @@ def train(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     train_loader: DataLoader,
-    valid_loaders: Dict[str, DataLoader],
+    valid_loaders: dict[str, DataLoader],
     optimizer: torch.optim.Optimizer,
     lr_scheduler: torch.optim.lr_scheduler.ExponentialLR,
     start_epoch: int,
@@ -159,7 +159,7 @@ def train(
     checkpoint_handler: CheckpointHandler,
     logger: MetricsLogger,
     eval_interval: int,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     device: torch.device,
     log_errors: str,
     swa: Optional[SWAContainer] = None,
@@ -353,7 +353,7 @@ def train_one_epoch(
     data_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     epoch: int,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     max_grad_norm: Optional[float],
     ema: Optional[ExponentialMovingAverage],
     logger: MetricsLogger,
@@ -405,10 +405,10 @@ def take_step(
     batch: torch_geometric.batch.Batch,
     optimizer: torch.optim.Optimizer,
     ema: Optional[ExponentialMovingAverage],
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     max_grad_norm: Optional[float],
     device: torch.device,
-) -> Tuple[float, Dict[str, Any]]:
+) -> tuple[float, dict[str, Any]]:
     start_time = time.time()
     batch = batch.to(device)
     batch_dict = batch.to_dict()
@@ -449,12 +449,12 @@ def take_step_lbfgs(
     data_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     ema: Optional[ExponentialMovingAverage],
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     max_grad_norm: Optional[float],
     device: torch.device,
     distributed: bool,
     rank: int,
-) -> Tuple[float, Dict[str, Any]]:
+) -> tuple[float, dict[str, Any]]:
     start_time = time.time()
     logging.debug(
         f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB"
@@ -559,9 +559,9 @@ def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     data_loader: DataLoader,
-    output_args: Dict[str, bool],
+    output_args: dict[str, bool],
     device: torch.device,
-) -> Tuple[float, Dict[str, Any]]:
+) -> tuple[float, dict[str, Any]]:
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
@@ -689,7 +689,7 @@ class MACELoss(Metric):
                 spread_quantity_vector=False,
             )
 
-    def convert(self, delta: Union[torch.Tensor, List[torch.Tensor]]) -> np.ndarray:
+    def convert(self, delta: Union[torch.Tensor, list[torch.Tensor]]) -> np.ndarray:
         if isinstance(delta, list):
             delta = torch.cat(delta)
         return to_numpy(delta)

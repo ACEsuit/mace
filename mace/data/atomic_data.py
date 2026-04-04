@@ -4,8 +4,9 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+from collections.abc import Sequence
 from copy import deepcopy
-from typing import Optional, Sequence
+from typing import Optional
 
 import torch.utils.data
 
@@ -378,7 +379,6 @@ class AtomicData(torch_geometric.data.Data):
             if config.properties.get("fermi_level") is not None
             else torch.tensor(0.0, dtype=torch.get_default_dtype())
         )
-        #
         external_field = (
             torch.tensor(
                 config.properties.get("external_field"),

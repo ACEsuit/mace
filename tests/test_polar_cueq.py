@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 import pytest
@@ -188,7 +188,7 @@ def test_polar_2l_true_cueq_matches_e3nn_float64():
 
 
 try:
-    import cuequivariance as cue  # pylint: disable=unused-import
+    import cuequivariance as cue  # pylint: disable=unused-import  # noqa: F401
 
     CUET_AVAILABLE = True
 except ImportError:
@@ -210,7 +210,7 @@ CUDA_AVAILABLE = torch.cuda.is_available()
 )
 class TestPolarCueqParity:
     @pytest.fixture
-    def model_config(self) -> Dict[str, Any]:
+    def model_config(self) -> dict[str, Any]:
         table = tools.AtomicNumberTable([6])
         hidden_irreps = o3.Irreps("16x0e + 16x1o")
         MLP_irreps = o3.Irreps("8x0e")
@@ -262,7 +262,7 @@ class TestPolarCueqParity:
         return request.param
 
     @pytest.fixture
-    def batch(self, device: str) -> Dict[str, torch.Tensor]:
+    def batch(self, device: str) -> dict[str, torch.Tensor]:
         from ase import build
 
         table = tools.AtomicNumberTable([6])
@@ -294,7 +294,7 @@ class TestPolarCueqParity:
         )
         return batch
 
-    def test_e3nn_cueq_parity(self, model_config: Dict[str, Any], batch, device):
+    def test_e3nn_cueq_parity(self, model_config: dict[str, Any], batch, device):
         previous_default_dtype = torch.get_default_dtype()
         try:
             torch.set_default_dtype(torch.float64)

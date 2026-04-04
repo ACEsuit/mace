@@ -51,9 +51,9 @@ def check_args(args):
                 logging.WARNING,
             )
         )
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        assert len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1, (
+            "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        )
     elif args.num_channels is not None and args.max_L is not None:
         assert args.num_channels > 0, "num_channels must be positive integer"
         assert args.max_L >= 0, "max_L must be non-negative integer"
@@ -62,13 +62,13 @@ def check_args(args):
             .sort()
             .irreps.simplify()
         )
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        assert len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1, (
+            "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        )
     elif args.hidden_irreps is not None:
-        assert (
-            len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1
-        ), "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        assert len({irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}) == 1, (
+            "All channels must have the same dimension, use the num_channels and max_L keywords to specify the number of channels and the maximum L"
+        )
 
         args.num_channels = list(
             {irrep.mul for irrep in o3.Irreps(args.hidden_irreps)}

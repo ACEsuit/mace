@@ -4,12 +4,30 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
+from typing import TYPE_CHECKING, Callable, cast
 
 import torch
 
+from mace.modules.models import MACE
 from mace.tools import atomic_numbers_to_indices, utils
 
+try:
+    from torch_sim.models.interface import ModelInterface
+    from torch_sim.neighbors import torchsim_nl
+    from torch_sim.transforms import compute_cell_shifts, pbc_wrap_batched
+
+    _TORCHSIM_IMPORT_ERROR: ImportError | None = None
+except ImportError as exc:
+    _TORCHSIM_IMPORT_ERROR = exc
+    ModelInterface = None  # type: ignore[assignment]
+    torchsim_nl = None  # type: ignore[assignment]
+    compute_cell_shifts = None  # type: ignore[assignment]
+    pbc_wrap_batched = None  # type: ignore[assignment]
+
+_TSModelInterface = ModelInterface if ModelInterface is not None else object
+
+if TYPE_CHECKING:
+    from torch_sim.state import SimState
 log = logging.getLogger(__name__)
 
 _PAD_MULTIPLE = 64
@@ -17,25 +35,8 @@ _PAD_HEADROOM = 1.25
 
 
 def _round_up(value: int, multiple: int) -> int:
+    """Round up to the nearest multiple."""
     return ((value + multiple - 1) // multiple) * multiple
-
-
-try:
-    import torch_sim as ts
-    from torch_sim.models.interface import ModelInterface
-    from torch_sim.neighbors import torchsim_nl
-
-    _TORCHSIM_IMPORT_ERROR: Optional[ImportError] = None
-except ImportError as exc:
-    ts = None  # type: ignore[assignment]
-    torchsim_nl = None  # type: ignore[assignment]
-    _TORCHSIM_IMPORT_ERROR = exc
-
-    class ModelInterface(torch.nn.Module):  # type: ignore[no-redef]
-        """Fallback base class when torch-sim is not installed."""
-
-        def forward(self, state):
-            raise NotImplementedError
 
 
 def to_one_hot(
@@ -48,23 +49,23 @@ def to_one_hot(
     return out.view(*shape)
 
 
-class MaceTorchSimModel(ModelInterface):
+class MaceTorchSimModel(_TSModelInterface):
     """TorchSim wrapper around a MACE model."""
 
     def __init__(
         self,
-        model: Union[str, Path, torch.nn.Module],
-        device: Optional[torch.device] = None,
+        model: str | Path | MACE,
+        device: torch.device | None = None,
         dtype: torch.dtype = torch.float64,
-        neighbor_list_fn: Optional[Callable] = None,
+        neighbor_list_fn: Callable | None = None,
         compute_forces: bool = True,
         compute_stress: bool = True,
         enable_cueq: bool = False,
         enable_oeq: bool = False,
-        compile_mode: Optional[str] = None,
-        head: Optional[Union[str, int]] = None,
-        atomic_numbers: Optional[torch.Tensor] = None,
-        system_idx: Optional[torch.Tensor] = None,
+        compile_mode: str | None = None,
+        head: str | int | None = None,
+        atomic_numbers: torch.Tensor | None = None,
+        system_idx: torch.Tensor | None = None,
     ) -> None:
         if _TORCHSIM_IMPORT_ERROR is not None:
             raise ImportError(
@@ -92,15 +93,16 @@ class MaceTorchSimModel(ModelInterface):
         self._edge_budget = 0
         self._system_budget = 0
         self._budgets_ready = False
-        self._buf_positions = None
-        self._buf_node_attrs = None
-        self._buf_batch = None
-        self._buf_edge_index = None
-        self._buf_shifts = None
-        self._buf_unit_shifts = None
-        self._buf_ptr = None
-        self._buf_cell = None
-        self._buf_head = None
+        self._buf_node_attrs: torch.Tensor | None = None
+        self._buf_batch: torch.Tensor | None = None
+        self._buf_edge_index: torch.Tensor | None = None
+        self._buf_shifts: torch.Tensor | None = None
+        self._buf_unit_shifts: torch.Tensor | None = None
+        self._buf_ptr: torch.Tensor | None = None
+        self._buf_cell: torch.Tensor | None = None
+        self._buf_head: torch.Tensor | None = None
+        self._buf_total_charge: torch.Tensor | None = None
+        self._buf_total_spin: torch.Tensor | None = None
 
         if isinstance(model, (str, Path)):
             self.model = torch.load(
@@ -141,16 +143,11 @@ class MaceTorchSimModel(ModelInterface):
 
         self.model = self.model.to(device=self._device).eval()
 
-        available_heads = list(getattr(self.model, "heads", ["Default"]))
-        self._head_index = self._resolve_head(head, available_heads)
+        assert isinstance(self.model, MACE), (
+            "model must be derived from MACE base class"
+        )
 
-        if compile_mode is not None:
-            self._setup_compile(compile_mode)
-
-        for p in self.model.parameters():
-            p.requires_grad = False
-
-        self.r_max = float(self.model.r_max)
+        self.r_max = self.model.r_max
         self.z_table = utils.AtomicNumberTable(
             [int(z) for z in self.model.atomic_numbers]
         )
@@ -159,16 +156,32 @@ class MaceTorchSimModel(ModelInterface):
         )
         self._n_elements = len(self.z_table)
 
-        self.atomic_numbers_in_init = atomic_numbers is not None
+        available_heads = list(getattr(self.model, "heads", ["Default"]))
+        self._head_index = self._resolve_head(head, available_heads)
+
+        for p in self.model.parameters():
+            p.requires_grad = False
+
+        if compile_mode is not None:
+            self._setup_compile(compile_mode)
+
+        self._cached_z: torch.Tensor | None = None
+        self._cached_system_idx: torch.Tensor | None = None
+        self._z_fixed = atomic_numbers is not None
+        self.node_attrs: torch.Tensor = torch.empty(0)
+        self.n_systems: int = 0
+        self.n_atoms_per_system: list[int] = []
+        self.ptr: torch.Tensor = torch.empty(0)
+
         if atomic_numbers is not None:
             if system_idx is None:
                 system_idx = torch.zeros(
                     len(atomic_numbers), dtype=torch.long, device=self._device
                 )
-            self.setup_from_system_idx(atomic_numbers, system_idx)
+            self._update_system_layout(atomic_numbers, system_idx)
 
     @staticmethod
-    def _resolve_head(head: Optional[Union[str, int]], available_heads: list) -> int:
+    def _resolve_head(head: str | int | None, available_heads: list) -> int:
         if isinstance(head, int):
             if head < 0 or head >= len(available_heads):
                 raise ValueError(
@@ -195,7 +208,8 @@ class MaceTorchSimModel(ModelInterface):
         return 0
 
     def _setup_compile(self, compile_mode: str) -> None:
-        import torch._dynamo as dynamo
+        # Side effect: ensure Dynamo is initialized before torch.compile.
+        import torch._dynamo as dynamo  # pylint: disable=unused-import  # noqa: F401
 
         from mace.tools.compile import configure_autograd_for_compile, simplify
 
@@ -210,48 +224,45 @@ class MaceTorchSimModel(ModelInterface):
             configure_autograd_for_compile(allow_autograd=True)
 
         self.model = simplify(self.model)
-        self.model = torch.compile(
-            self.model,
-            mode=compile_mode,
-            fullgraph=False,
+        self.model = cast(  # make type checker happy that this acts like a MACE model
+            MACE,
+            torch.compile(self.model, mode=compile_mode, fullgraph=False),
         )
 
-    def setup_from_system_idx(
+    def _setup_node_attrs(self, atomic_numbers: torch.Tensor) -> None:
+        self.node_attrs = to_one_hot(
+            torch.tensor(
+                atomic_numbers_to_indices(
+                    atomic_numbers.detach().cpu().numpy(), z_table=self.z_table
+                ),
+                dtype=torch.long,
+                device=self._device,
+            ).unsqueeze(-1),
+            num_classes=self._n_elements,
+            dtype=self._dtype,
+        )
+
+    def _setup_ptr(self, system_idx: torch.Tensor) -> None:
+        counts = torch.bincount(system_idx)
+        self.n_systems = len(counts)
+        self.n_atoms_per_system = counts.tolist()
+        self.ptr = torch.cat([counts.new_zeros(1), counts.cumsum(0)]).to(
+            device=self._device
+        )
+
+    def _update_system_layout(
         self, atomic_numbers: torch.Tensor, system_idx: torch.Tensor
     ) -> None:
         if atomic_numbers.shape[0] != system_idx.shape[0]:
             raise ValueError("atomic_numbers and system_idx must have same shape[0]")
-
-        self.atomic_numbers = atomic_numbers.to(device=self._device, dtype=torch.long)
-        self.system_idx = system_idx.to(device=self._device, dtype=torch.long)
-
-        if self.system_idx.numel() == 0:
+        if atomic_numbers.numel() == 0:
             raise ValueError("at least one atom is required")
-
-        self.n_systems = int(self.system_idx.max().item()) + 1
-        self.n_atoms_per_system = []
-        ptr = [0]
-        for idx in range(self.n_systems):
-            n_atoms = int((self.system_idx == idx).sum().item())
-            self.n_atoms_per_system.append(n_atoms)
-            ptr.append(ptr[-1] + n_atoms)
-
-        self.ptr = torch.tensor(ptr, dtype=torch.long, device=self._device)
-        self.total_atoms = int(self.atomic_numbers.shape[0])
-
-        atomic_indices = torch.tensor(
-            atomic_numbers_to_indices(
-                self.atomic_numbers.detach().cpu().numpy(), z_table=self.z_table
-            ),
-            dtype=torch.long,
-            device=self._device,
-        ).unsqueeze(-1)
-
-        self.node_attrs = to_one_hot(
-            atomic_indices,
-            num_classes=self._n_elements,
-            dtype=self._dtype,
-        )
+        z = atomic_numbers.to(device=self._device, dtype=torch.long)
+        idx = system_idx.to(device=self._device, dtype=torch.long)
+        self._cached_z = z
+        self._cached_system_idx = idx
+        self._setup_node_attrs(z)
+        self._setup_ptr(idx)
 
     def _ensure_budgets(self, n_atoms: int, n_edges: int, n_systems: int) -> None:
         changed = False
@@ -299,7 +310,6 @@ class MaceTorchSimModel(ModelInterface):
         dt = self._dtype
         cell_scale = self.r_max * 2.0
 
-        self._buf_positions = torch.zeros(A, 3, device=dev, dtype=dt)
         self._buf_node_attrs = torch.zeros(A, self._n_elements, device=dev, dtype=dt)
         self._buf_node_attrs[:, 0] = 1.0
         self._buf_batch = torch.zeros(A, dtype=torch.long, device=dev)
@@ -319,15 +329,28 @@ class MaceTorchSimModel(ModelInterface):
         self._buf_head = torch.full(
             (S,), self._head_index, dtype=torch.long, device=dev
         )
+        self._buf_total_charge = torch.zeros(S, device=dev, dtype=dt)
+        self._buf_total_spin = torch.ones(S, device=dev, dtype=dt)
 
     def _fill_padded_data(
         self,
-        data_dict: Dict[str, torch.Tensor],
+        data_dict: dict[str, torch.Tensor],
+        optionals: dict[str, torch.Tensor | None],
         n_real_atoms: int,
         n_real_edges: int,
         n_real_systems: int,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor | None]]:
         """Copy real data into fixed-size buffers; padding tail is pre-filled."""
+        assert (
+            self._buf_node_attrs is not None
+            and self._buf_batch is not None
+            and self._buf_edge_index is not None
+            and self._buf_shifts is not None
+            and self._buf_unit_shifts is not None
+            and self._buf_ptr is not None
+            and self._buf_cell is not None
+            and self._buf_head is not None
+        ), "_allocate_buffers() must be called before _fill_padded_data()"
         A = self._atom_budget
         S = self._system_budget
 
@@ -353,7 +376,7 @@ class MaceTorchSimModel(ModelInterface):
         pad_pos = torch.zeros(pad_count, 3, device=self._device, dtype=self._dtype)
         padded_positions = torch.cat([data_dict["positions"], pad_pos])
 
-        padded: Dict[str, torch.Tensor] = {
+        padded: dict[str, torch.Tensor] = {
             "positions": padded_positions,
             "node_attrs": self._buf_node_attrs,
             "batch": self._buf_batch,
@@ -367,12 +390,29 @@ class MaceTorchSimModel(ModelInterface):
         }
 
         if "displacement" in data_dict:
+            disp = data_dict["displacement"]
+            assert disp is not None
             pad_disp = torch.zeros(
                 S - n_real_systems, 3, 3, device=self._device, dtype=self._dtype
             )
-            padded["displacement"] = torch.cat([data_dict["displacement"], pad_disp])
+            padded["displacement"] = torch.cat([disp, pad_disp])
 
-        return padded
+        assert self._buf_total_charge is not None and self._buf_total_spin is not None
+        buf_map: dict[str, tuple[torch.Tensor, float]] = {
+            "total_charge": (self._buf_total_charge, 0.0),
+            "total_spin": (self._buf_total_spin, 1.0),
+        }
+        padded_opt: dict[str, torch.Tensor | None] = {}
+        for key, (buf, pad_fill) in buf_map.items():
+            val = optionals.get(key)
+            if val is None:
+                padded_opt[key] = None
+            else:
+                buf[:n_real_systems] = val[:n_real_systems]
+                buf[n_real_systems:] = pad_fill
+                padded_opt[key] = buf
+
+        return padded, padded_opt
 
     @property
     def device(self) -> torch.device:
@@ -390,106 +430,69 @@ class MaceTorchSimModel(ModelInterface):
     def compute_stress(self) -> bool:
         return self._compute_stress
 
-    def forward(self, state: Any) -> Dict[str, torch.Tensor]:
-        if ts is None:
-            raise RuntimeError(
-                "torch-sim is required to call MaceTorchSimModel.forward"
-            )
-
-        if isinstance(state, ts.SimState):
-            sim_state = state.clone()
-        else:
-            state_dict = dict(state)
-            if "masses" not in state_dict:
-                state_dict["masses"] = torch.ones_like(state_dict["positions"])
-            sim_state = ts.SimState(**state_dict)
-
-        if sim_state.device != self.device or sim_state.dtype != self.dtype:
-            sim_state = sim_state.to(self.device, self.dtype)
-
-        state_atomic_numbers = getattr(sim_state, "atomic_numbers", None)
-        if state_atomic_numbers is None and not self.atomic_numbers_in_init:
-            raise ValueError(
-                "atomic_numbers must be provided in the constructor or in forward."
-            )
-
-        if state_atomic_numbers is not None and self.atomic_numbers_in_init:
-            if not torch.equal(state_atomic_numbers, self.atomic_numbers):
+    def _ensure_layout(self, state: SimState) -> None:
+        state_z = state.atomic_numbers
+        if self._z_fixed:
+            if self._cached_z is not None and not torch.equal(state_z, self._cached_z):
                 raise ValueError(
                     "atomic_numbers in state do not match constructor values."
                 )
+            return
+        if self._cached_z is None or not torch.equal(state_z, self._cached_z):
+            self._update_system_layout(state_z, state.system_idx)
+        elif self._cached_system_idx is None or not torch.equal(
+            state.system_idx, self._cached_system_idx
+        ):
+            self._setup_ptr(state.system_idx)
+            self._cached_system_idx = state.system_idx
 
-        if sim_state.system_idx is None:
-            if not hasattr(self, "system_idx"):
-                raise ValueError(
-                    "system_idx must be provided if not set during initialization"
-                )
-            sim_state.system_idx = self.system_idx
-
-        if not self.atomic_numbers_in_init:
-            cached_atomic_numbers = getattr(self, "atomic_numbers", None)
-            cached_system_idx = getattr(self, "system_idx", None)
-            needs_setup = state_atomic_numbers is not None and (
-                cached_atomic_numbers is None
-                or cached_system_idx is None
-                or not torch.equal(state_atomic_numbers, cached_atomic_numbers)
-                or not torch.equal(sim_state.system_idx, cached_system_idx)
-            )
-            if needs_setup:
-                self.setup_from_system_idx(state_atomic_numbers, sim_state.system_idx)
+    def forward(self, state: SimState, **_kwargs) -> dict[str, torch.Tensor]:  # ty:ignore[invalid-method-override]
+        self._ensure_layout(state)
 
         wrapped_positions = (
-            ts.transforms.pbc_wrap_batched(  # pylint: disable=too-many-function-args
-                sim_state.positions,
-                sim_state.cell,
-                sim_state.system_idx,
-                sim_state.pbc,
+            pbc_wrap_batched(
+                state.positions,
+                state.cell,
+                state.system_idx,
+                state.pbc,
             )
-            if sim_state.pbc.any()
-            else sim_state.positions
+            if state.pbc.any()
+            else state.positions
         )
-
-        cutoff = self.r_max
-        if self.neighbor_list_fn is torchsim_nl:
-            cutoff = torch.as_tensor(
-                self.r_max,
-                device=wrapped_positions.device,
-                dtype=wrapped_positions.dtype,
-            )
 
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             wrapped_positions,
-            sim_state.row_vector_cell,
-            sim_state.pbc,
-            cutoff,
-            sim_state.system_idx,
+            state.row_vector_cell,
+            state.pbc,
+            self.r_max,
+            state.system_idx,
         )
-        shifts = ts.transforms.compute_cell_shifts(
-            sim_state.row_vector_cell, unit_shifts, mapping_system
-        )
+        shifts = compute_cell_shifts(state.row_vector_cell, unit_shifts, mapping_system)
 
         n_real_atoms = wrapped_positions.shape[0]
         n_real_edges = edge_index.shape[1]
         wrapped_positions = wrapped_positions.requires_grad_(True)
 
-        data_dict: Dict[str, torch.Tensor] = {
+        data_dict: dict[str, torch.Tensor] = {
             "ptr": self.ptr,
             "node_attrs": self.node_attrs,
-            "batch": sim_state.system_idx,
+            "batch": state.system_idx,
             "head": torch.full(
                 (self.n_systems,),
                 self._head_index,
                 dtype=torch.long,
                 device=self._device,
             ),
-            "pbc": sim_state.pbc,
-            "cell": sim_state.row_vector_cell,
+            "pbc": state.pbc,
+            "cell": state.row_vector_cell,
             "positions": wrapped_positions,
             "edge_index": edge_index,
             "unit_shifts": unit_shifts,
             "shifts": shifts,
-            "total_charge": sim_state.charge,
-            "total_spin": sim_state.spin,
+        }
+        optionals: dict[str, torch.Tensor | None] = {
+            "total_charge": getattr(state, "charge", None),
+            "total_spin": getattr(state, "spin", None),
         }
 
         oeq_compile = self._use_compile and self._enable_oeq
@@ -504,12 +507,15 @@ class MaceTorchSimModel(ModelInterface):
 
         if self._use_compile:
             self._ensure_budgets(n_real_atoms, n_real_edges, self.n_systems)
-            data_dict = self._fill_padded_data(
+            data_dict, optionals = self._fill_padded_data(
                 data_dict,
+                optionals,
                 n_real_atoms,
                 n_real_edges,
                 self.n_systems,
             )
+
+        data_dict: dict[str, torch.Tensor | None] = {**data_dict, **optionals}
 
         training = self._use_compile and not oeq_compile
 
@@ -524,7 +530,7 @@ class MaceTorchSimModel(ModelInterface):
         )
 
         n_systems = self.n_systems
-        results: Dict[str, torch.Tensor] = {}
+        results: dict[str, torch.Tensor] = {}
 
         energy = out.get("energy")
         if energy is None:
@@ -538,7 +544,7 @@ class MaceTorchSimModel(ModelInterface):
         if self._compute_forces:
             forces = out.get("forces")
             if forces is None:
-                forces = torch.zeros_like(sim_state.positions)
+                forces = torch.zeros_like(state.positions)
             f = forces[:n_real_atoms].detach()
             results["forces"] = f.clone() if self._use_cudagraphs else f
 

@@ -170,13 +170,13 @@ def load_foundations_elements(
                 indices_weights_prod = [0]
         max_range = max_L + 1 if i < len(model.products) - 1 else 1
         for j in range(max_range):  # Assuming 3 contractions in symmetric_contractions
-            product.symmetric_contractions.contractions[j].weights_max = (
-                torch.nn.Parameter(
-                    model_foundations.products[i]
-                    .symmetric_contractions.contractions[j]
-                    .weights_max[indices_weights_prod, :, :]
-                    .clone()
-                )
+            product.symmetric_contractions.contractions[
+                j
+            ].weights_max = torch.nn.Parameter(
+                model_foundations.products[i]
+                .symmetric_contractions.contractions[j]
+                .weights_max[indices_weights_prod, :, :]
+                .clone()
             )
 
             target_weights = product.symmetric_contractions.contractions[j].weights
@@ -212,9 +212,9 @@ def load_foundations_elements(
                 "NonLinearBiasReadoutBlock",
                 "NonLinearReadoutBlock",
             ]:
-                assert hasattr(readout, "linear_1") or hasattr(
-                    readout, "linear_mid"
-                ), "Readout block must have linear_1 or linear_mid"
+                assert hasattr(readout, "linear_1") or hasattr(readout, "linear_mid"), (
+                    "Readout block must have linear_1 or linear_mid"
+                )
                 if hasattr(readout, "linear_1"):
                     shape_input_1 = (
                         model_foundations.readouts[i]
@@ -236,7 +236,10 @@ def load_foundations_elements(
                     readout.linear_1.weight = torch.nn.Parameter(
                         model_readouts_one_linear_1_weight
                     )
-                    if readout.linear_1.bias is not None and readout.linear_1.bias.numel() > 0:
+                    if (
+                        readout.linear_1.bias is not None
+                        and readout.linear_1.bias.numel() > 0
+                    ):
                         model_readouts_one_linear_1_bias = (
                             model_foundations.readouts[i]
                             .linear_1.bias.view(-1)
@@ -259,7 +262,10 @@ def load_foundations_elements(
                         / ((shape_input_1) / (shape_output_1)) ** 0.5
                     )
                     # if it has biases transfer them too
-                    if readout.linear_mid.bias is not None and readout.linear_mid.bias.numel() > 0:
+                    if (
+                        readout.linear_mid.bias is not None
+                        and readout.linear_mid.bias.numel() > 0
+                    ):
                         readout.linear_mid.bias = torch.nn.Parameter(
                             model_foundations.readouts[i]
                             .linear_mid.bias.repeat(len(model_heads))
@@ -271,13 +277,14 @@ def load_foundations_elements(
                         i
                     ].linear_2.weight.view(shape_input_1, -1).repeat(
                         len(model_heads), len(model_heads)
-                    ).flatten().clone() / (
-                        ((shape_input_1) / (shape_output_1)) ** 0.5
-                    )
+                    ).flatten().clone() / (((shape_input_1) / (shape_output_1)) ** 0.5)
                     readout.linear_2.weight = torch.nn.Parameter(
                         model_readouts_one_linear_2_weight
                     )
-                    if readout.linear_2.bias is not None and readout.linear_2.bias.numel() > 0:
+                    if (
+                        readout.linear_2.bias is not None
+                        and readout.linear_2.bias.numel() > 0
+                    ):
                         model_readouts_one_linear_2_bias = (
                             model_foundations.readouts[i]
                             .linear_2.bias.view(-1)

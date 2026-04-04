@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Optional
 
 import torch
 from e3nn.util.jit import compile_mode
@@ -29,10 +29,10 @@ class LAMMPS_MACE(torch.nn.Module):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
         local_or_ghost: torch.Tensor,
         compute_virials: bool = False,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, Optional[torch.Tensor]]:
         num_graphs = data["ptr"].numel() - 1
         compute_displacement = False
         if compute_virials:
@@ -64,7 +64,7 @@ class LAMMPS_MACE(torch.nn.Module):
             src=node_energy_local, index=data["batch"], dim=-1, dim_size=num_graphs
         )
         # compute partial forces and (possibly) partial virials
-        grad_outputs: List[Optional[torch.Tensor]] = [
+        grad_outputs: list[Optional[torch.Tensor]] = [
             torch.ones_like(total_energy_local)
         ]
         if compute_virials and displacement is not None:

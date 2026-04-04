@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, List, Tuple
+from typing import Callable
 
 import numpy as np
 import pytest
@@ -32,7 +32,7 @@ def _random_config() -> Configuration:
     )
 
 
-def _build_model() -> Tuple[modules.MACE, tools.AtomicNumberTable]:
+def _build_model() -> tuple[modules.MACE, tools.AtomicNumberTable]:
     table = tools.AtomicNumberTable([1, 6])
     model = modules.MACE(
         r_max=4.5,
@@ -69,9 +69,9 @@ def _atomic_data_from_config(
 
 def _forward_energy_forces(
     model: torch.nn.Module,
-    configs: List[Configuration],
+    configs: list[Configuration],
     table: tools.AtomicNumberTable,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     dataset = [_atomic_data_from_config(cfg, table) for cfg in configs]
     loader = torch_geometric.dataloader.DataLoader(
         dataset=dataset,
@@ -138,7 +138,7 @@ def _translate_config(config: Configuration, shift: np.ndarray) -> Configuration
 
 def _reflect_config(
     config: Configuration, normal: np.ndarray
-) -> Tuple[Configuration, np.ndarray]:
+) -> tuple[Configuration, np.ndarray]:
     normal = normal / np.linalg.norm(normal)
     R = np.eye(3) - 2.0 * np.outer(normal, normal)
     reflected = _rotate_config(config, R)
@@ -146,19 +146,19 @@ def _reflect_config(
 
 
 @pytest.fixture(name="random_configs")
-def _random_configs() -> Tuple[Configuration, Configuration]:
+def _random_configs() -> tuple[Configuration, Configuration]:
     return _random_config(), _random_config()
 
 
 @pytest.fixture(name="build_lora_model")
 def _build_lora_model_fixture() -> (
-    Callable[[int, float, bool], Tuple[modules.MACE, tools.AtomicNumberTable]]
+    Callable[[int, float, bool], tuple[modules.MACE, tools.AtomicNumberTable]]
 ):
     def _builder(
         rank: int = 2,
         alpha: float = 0.5,
         randomize: bool = True,
-    ) -> Tuple[modules.MACE, tools.AtomicNumberTable]:
+    ) -> tuple[modules.MACE, tools.AtomicNumberTable]:
         model, table = _build_model()
         inject_lora(model, rank=rank, alpha=alpha)
         if randomize:
