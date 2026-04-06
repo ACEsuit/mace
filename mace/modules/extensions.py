@@ -86,7 +86,7 @@ class MACELES(ScaleShiftMACE):
         self.use_dipoles = les_arguments.get("use_dipole", False)
         self.use_induced_charges = les_arguments.get("use_induced_charge", False)
         self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
-        self.use_anisotropic_polarizability = les_arguments.get("use_anisotropic_polarizability", True)
+        self.use_anisotropic_polarizability = les_arguments.get("use_anisotropic_polarizability", False)
         self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
         self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
 
@@ -135,12 +135,14 @@ class MACELES(ScaleShiftMACE):
                                 _copy_mace_readout(self.readouts[0], change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
                             )
                         self.register_buffer("change_of_basis", change_of_basis)
-                    else:
+                    elif "1o" in mace_irreps:
                         #Obtain 2e from l=1 outer products
                         make_w_pos = (not self.make_alpha_positive)
                         self.les_alpha_readouts.append(
                             _copy_mace_readout_tp(self.readouts[0], make_w_pos=make_w_pos, cueq_config=cueq_config)
                         )
+                    else:
+                        raise ValueError("Unsupported irreps for anisotropic polarizability. Expected '1o' or '2e' in the readout irreps.")
                 else:
                     self.les_alpha_readouts.append(
                         _copy_mace_readout(readout, cueq_config=cueq_config)
