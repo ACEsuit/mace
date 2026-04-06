@@ -92,7 +92,7 @@ If you prefer not to use or do not know the energies of the isolated atoms, you 
 SWA and EMA
 -----------
 
-If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_swa` epochs).
+If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~25% of the training epochs (or from `--start_swa` epochs).
 This setting usually helps lower the energy errors.
 
 
