@@ -303,12 +303,12 @@ class LinearLesReadoutBlock(torch.nn.Module):
     def __init__(
         self,
         irreps_in: o3.Irreps,
-        use_polarizability: bool = True,
+        make_w_pos: bool = True,
         cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.cdim = int(str(irreps_in).split("x")[0])
+        self.make_w_pos = make_w_pos
         irreps_out = irreps_in
         self.linear = Linear(
             irreps_in=irreps_in, irreps_out=irreps_out, cueq_config=cueq_config
@@ -316,9 +316,10 @@ class LinearLesReadoutBlock(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, heads: Optional[torch.Tensor] = None) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         y = self.linear(x)
-        w = y[:,:self.cdim]**2 #l=0
+        w = y[:,:self.cdim] #l=0
+        w = w**2 if self.make_w_pos else w
         x = y[:,self.cdim:].reshape(y.shape[0],-1,3) #l=1
-        #Alpha via sum over outer products w/ positive coeffs (enforces psd):
+        #Alpha via sum over outer products w/ positive coeffs (if w pos enforces psd):
         a = (w[:,:,None,None] * x[:,:,None,:] * x[:,:,:,None]).sum(dim=1)
         return a
 

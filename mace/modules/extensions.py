@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 import torch
 from e3nn.util.jit import compile_mode
 from e3nn import nn, o3
+from e3nn.io import CartesianTensor
 
 from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock, LinearDipolePolarReadoutBlock, NonLinearDipolePolarReadoutBlock, LinearLesReadoutBlock
 from mace.modules.models import ScaleShiftMACE
@@ -39,7 +40,8 @@ def _copy_mace_readout(
     raise TypeError("Unsupported readout type.")
 
 def _copy_mace_readout_tp(
-    mace_readout: torch.nn.Module, 
+    mace_readout: torch.nn.Module,
+    make_w_pos: bool = True, 
     cueq_config: Optional[CuEquivarianceConfig] = None
 ) -> torch.nn.Module:
     """
@@ -48,11 +50,13 @@ def _copy_mace_readout_tp(
     if isinstance(mace_readout, LinearReadoutBlock):
         return LinearLesReadoutBlock(
             irreps_in=mace_readout.linear.irreps_in,  # type:ignore
+            make_w_pos = make_w_pos,
             cueq_config=cueq_config,
         )
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
         return LinearLesReadoutBlock(
             irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
+            make_w_pos = make_w_pos,
             cueq_config=cueq_config,
         )
     raise TypeError("Unsupported readout type.")
@@ -120,14 +124,22 @@ class MACELES(ScaleShiftMACE):
                 if self.use_anisotropic_polarizability:
                     mace_irreps = str(self.readouts[0].linear.irreps_in)
                     if "2e" in mace_irreps:
-                        self.les_alpha_readouts.append(
-                            _copy_mace_readout(self.readouts[0],  change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
-                        )
-                        self.register_buffer("change_of_basis", get_change_of_basis())
+                        if "1e" in mace_irreps:
+                            change_of_basis = CartesianTensor("ij").reduced_tensor_products().change_of_basis
+                            self.les_alpha_readouts.append(
+                                _copy_mace_readout(self.readouts[0], change_irrep_out="1x0e + 1x1e + 1x2e", cueq_config=cueq_config)
+                            )
+                        else:
+                            change_of_basis = CartesianTensor("ij=ji").reduced_tensor_products().change_of_basis
+                            self.les_alpha_readouts.append(
+                                _copy_mace_readout(self.readouts[0], change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
+                            )
+                        self.register_buffer("change_of_basis", change_of_basis)
                     else:
                         #Obtain 2e from l=1 outer products
+                        make_w_pos = (not self.make_alpha_positive)
                         self.les_alpha_readouts.append(
-                            _copy_mace_readout_tp(self.readouts[0], cueq_config=cueq_config)
+                            _copy_mace_readout_tp(self.readouts[0], make_w_pos=make_w_pos, cueq_config=cueq_config)
                         )
                 else:
                     self.les_alpha_readouts.append(
@@ -343,8 +355,7 @@ class MACELES(ScaleShiftMACE):
             if les_alpha.dim() == 2:
                 les_alpha = les_alpha**2
             if les_alpha.dim() == 3 and les_alpha.shape[1] == 3 and les_alpha.shape[2] == 3:
-                if hasattr(self, "change_of_basis"):
-                    les_alpha = torch.einsum("nij,nkj->nik",les_alpha, les_alpha)
+                les_alpha = torch.einsum("nij,nkj->nik",les_alpha, les_alpha)
         if hasattr(self, 'make_kappa_positive') and self.make_kappa_positive and les_kappa is not None:
             les_kappa = les_kappa**2
 
