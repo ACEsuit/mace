@@ -3,8 +3,9 @@ from typing import Dict, List, Optional
 import torch
 from e3nn.util.jit import compile_mode
 from e3nn import nn, o3
+from e3nn.io import CartesianTensor
 
-from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock, LinearDipolePolarReadoutBlock, NonLinearDipolePolarReadoutBlock
+from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock, LinearDipolePolarReadoutBlock, NonLinearDipolePolarReadoutBlock, LinearLesReadoutBlock
 from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
 from mace.modules.wrapper_ops import CuEquivarianceConfig
@@ -38,6 +39,27 @@ def _copy_mace_readout(
         )
     raise TypeError("Unsupported readout type.")
 
+def _copy_mace_readout_tp(
+    mace_readout: torch.nn.Module,
+    make_w_pos: bool = True, 
+    cueq_config: Optional[CuEquivarianceConfig] = None
+) -> torch.nn.Module:
+    """
+    Helper function to copy a MACE readout block.
+    """
+    if isinstance(mace_readout, LinearReadoutBlock):
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear.irreps_in,  # type:ignore
+            make_w_pos = make_w_pos,
+            cueq_config=cueq_config,
+        )
+    if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
+            make_w_pos = make_w_pos,
+            cueq_config=cueq_config,
+        )
+    raise TypeError("Unsupported readout type.")
 
 def _get_readout_input_dim(block: torch.nn.Module) -> int:
     if isinstance(block, LinearReadoutBlock):
@@ -100,14 +122,29 @@ class MACELES(ScaleShiftMACE):
                 )
             if self.use_induced_dipoles:
                 if self.use_anisotropic_polarizability:
-                    self.les_alpha_readouts.append(
-                        _copy_mace_readout(self.readouts[0],  change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
-                    )
+                    mace_irreps = str(self.readouts[0].linear.irreps_in)
+                    if "2e" in mace_irreps:
+                        if "1e" in mace_irreps:
+                            change_of_basis = CartesianTensor("ij").reduced_tensor_products().change_of_basis
+                            self.les_alpha_readouts.append(
+                                _copy_mace_readout(self.readouts[0], change_irrep_out="1x0e + 1x1e + 1x2e", cueq_config=cueq_config)
+                            )
+                        else:
+                            change_of_basis = CartesianTensor("ij=ji").reduced_tensor_products().change_of_basis
+                            self.les_alpha_readouts.append(
+                                _copy_mace_readout(self.readouts[0], change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
+                            )
+                        self.register_buffer("change_of_basis", change_of_basis)
+                    else:
+                        #Obtain 2e from l=1 outer products
+                        make_w_pos = (not self.make_alpha_positive)
+                        self.les_alpha_readouts.append(
+                            _copy_mace_readout_tp(self.readouts[0], make_w_pos=make_w_pos, cueq_config=cueq_config)
+                        )
                 else:
                     self.les_alpha_readouts.append(
                         _copy_mace_readout(readout, cueq_config=cueq_config)
                     )
-                self.register_buffer("change_of_basis", get_change_of_basis())
 
     def forward(
         self,
@@ -305,9 +342,10 @@ class MACELES(ScaleShiftMACE):
         if len(node_alphas_list) > 0:
             les_alpha = torch.sum(torch.stack(node_alphas_list, dim=1), dim=1) * self.les_alpha_scale
             if self.use_anisotropic_polarizability:
-                les_alpha = spherical_to_cartesian(
-                    les_alpha, self.change_of_basis
-                )
+                if hasattr(self, "change_of_basis"):
+                    les_alpha = spherical_to_cartesian(
+                        les_alpha, self.change_of_basis
+                    )
                 #print('alphas cartesian', les_alpha[:3])
         else:
             les_alpha = None
