@@ -309,6 +309,8 @@ class LinearLesReadoutBlock(torch.nn.Module):
         super().__init__()
         self.cdim = int(str(irreps_in).split("x")[0])
         self.make_w_pos = make_w_pos
+        str_irreps_in = str(irreps_in).split('+')
+        assert str_irreps_in[0].endswith('0e') and str_irreps_in[1].endswith('1o'), "Irreps in does not have 0e and 1o first"
         irreps_out = irreps_in
         self.linear = Linear(
             irreps_in=irreps_in, irreps_out=irreps_out, cueq_config=cueq_config
@@ -318,7 +320,8 @@ class LinearLesReadoutBlock(torch.nn.Module):
         y = self.linear(x)
         w = y[:,:self.cdim] #l=0
         w = w**2 if self.make_w_pos else w
-        x = y[:,self.cdim:].reshape(y.shape[0],-1,3) #l=1
+        #Assumes 0e 1o are first in output:
+        x = y[:,self.cdim:self.cdim*4].reshape(y.shape[0],-1,3) #l=1
         #Alpha via sum over outer products w/ positive coeffs (if w pos enforces psd):
         a = (w[:,:,None,None] * x[:,:,None,:] * x[:,:,:,None]).sum(dim=1)
         return a
