@@ -4,7 +4,7 @@ import torch
 from e3nn.util.jit import compile_mode
 from e3nn import nn, o3
 
-from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock, LinearDipolePolarReadoutBlock, NonLinearDipolePolarReadoutBlock
+from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock, LinearDipolePolarReadoutBlock, NonLinearDipolePolarReadoutBlock, LinearLesReadoutBlock
 from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
 from mace.modules.wrapper_ops import CuEquivarianceConfig
@@ -38,6 +38,24 @@ def _copy_mace_readout(
         )
     raise TypeError("Unsupported readout type.")
 
+def _copy_mace_readout_tp(
+    mace_readout: torch.nn.Module, 
+    cueq_config: Optional[CuEquivarianceConfig] = None
+) -> torch.nn.Module:
+    """
+    Helper function to copy a MACE readout block.
+    """
+    if isinstance(mace_readout, LinearReadoutBlock):
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear.irreps_in,  # type:ignore
+            cueq_config=cueq_config,
+        )
+    if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
+            cueq_config=cueq_config,
+        )
+    raise TypeError("Unsupported readout type.")
 
 def _get_readout_input_dim(block: torch.nn.Module) -> int:
     if isinstance(block, LinearReadoutBlock):
@@ -100,14 +118,21 @@ class MACELES(ScaleShiftMACE):
                 )
             if self.use_induced_dipoles:
                 if self.use_anisotropic_polarizability:
-                    self.les_alpha_readouts.append(
-                        _copy_mace_readout(self.readouts[0],  change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
-                    )
+                    mace_irreps = str(self.readouts[0].linear.irreps_in)
+                    if "2e" in mace_irreps:
+                        self.les_alpha_readouts.append(
+                            _copy_mace_readout(self.readouts[0],  change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
+                        )
+                        self.register_buffer("change_of_basis", get_change_of_basis())
+                    else:
+                        #Obtain 2e from l=1 outer products
+                        self.les_alpha_readouts.append(
+                            _copy_mace_readout_tp(self.readouts[0], cueq_config=cueq_config)
+                        )
                 else:
                     self.les_alpha_readouts.append(
                         _copy_mace_readout(readout, cueq_config=cueq_config)
                     )
-                self.register_buffer("change_of_basis", get_change_of_basis())
 
     def forward(
         self,
@@ -305,9 +330,10 @@ class MACELES(ScaleShiftMACE):
         if len(node_alphas_list) > 0:
             les_alpha = torch.sum(torch.stack(node_alphas_list, dim=1), dim=1) * self.les_alpha_scale
             if self.use_anisotropic_polarizability:
-                les_alpha = spherical_to_cartesian(
-                    les_alpha, self.change_of_basis
-                )
+                if hasattr(self, "change_of_basis"):
+                    les_alpha = spherical_to_cartesian(
+                        les_alpha, self.change_of_basis
+                    )
                 #print('alphas cartesian', les_alpha[:3])
         else:
             les_alpha = None
@@ -317,7 +343,8 @@ class MACELES(ScaleShiftMACE):
             if les_alpha.dim() == 2:
                 les_alpha = les_alpha**2
             if les_alpha.dim() == 3 and les_alpha.shape[1] == 3 and les_alpha.shape[2] == 3:
-                les_alpha = torch.einsum("nij,nkj->nik",les_alpha, les_alpha)
+                if hasattr(self, "change_of_basis"):
+                    les_alpha = torch.einsum("nij,nkj->nik",les_alpha, les_alpha)
         if hasattr(self, 'make_kappa_positive') and self.make_kappa_positive and les_kappa is not None:
             les_kappa = les_kappa**2
 
