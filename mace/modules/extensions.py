@@ -41,7 +41,8 @@ def _copy_mace_readout(
 
 def _copy_mace_readout_tp(
     mace_readout: torch.nn.Module,
-    make_w_pos: bool = True, 
+    make_w_pos: bool = True,
+    add_scalar_alpha: bool = True,
     cueq_config: Optional[CuEquivarianceConfig] = None
 ) -> torch.nn.Module:
     """
@@ -51,12 +52,14 @@ def _copy_mace_readout_tp(
         return LinearLesReadoutBlock(
             irreps_in=mace_readout.linear.irreps_in,  # type:ignore
             make_w_pos = make_w_pos,
+            add_scalar_alpha = add_scalar_alpha,
             cueq_config=cueq_config,
         )
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
         return LinearLesReadoutBlock(
             irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
             make_w_pos = make_w_pos,
+            add_scalar_alpha = add_scalar_alpha,
             cueq_config=cueq_config,
         )
     raise TypeError("Unsupported readout type.")
@@ -89,6 +92,9 @@ class MACELES(ScaleShiftMACE):
         self.use_anisotropic_polarizability = les_arguments.get("use_anisotropic_polarizability", True)
         self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
         self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
+
+        #Only relevant for l=1, necessary for single-atom alpha:
+        self.add_scalar_alpha = les_arguments.get("add_scalar_alpha", False) 
 
         print("use_dipoles", self.use_dipoles)
         print("use_induced_charges", self.use_induced_charges)
@@ -139,7 +145,7 @@ class MACELES(ScaleShiftMACE):
                         #Obtain 2e from l=1 outer products
                         make_w_pos = (not self.make_alpha_positive)
                         self.les_alpha_readouts.append(
-                            _copy_mace_readout_tp(self.readouts[0], make_w_pos=make_w_pos, cueq_config=cueq_config)
+                            _copy_mace_readout_tp(self.readouts[0], make_w_pos=make_w_pos, add_scalar_alpha=self.add_scalar_alpha, cueq_config=cueq_config)
                         )
                 else:
                     self.les_alpha_readouts.append(
