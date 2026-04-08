@@ -335,7 +335,7 @@ class LinearLesReadoutBlock(torch.nn.Module):
         v = y[:,self.cdim:self.cdim*4].reshape(y.shape[0],-1,3) #l=1
         #Alpha via sum over outer products w/ positive coeffs (if w pos enforces psd):
         a = (w[:,:,None,None] * v[:,:,None,:] * v[:,:,:,None]).sum(dim=1)
-        if self.add_scalar_alpha:
+        if hasattr(self, "add_scalar_alpha") and self.add_scalar_alpha:
             a2 = self.linear_1(x)
             a2 = self.non_linearity(a2)
             a2 = self.linear_2(a2).squeeze()
