@@ -322,7 +322,7 @@ class LinearLesReadoutBlock(torch.nn.Module):
             self.linear_1 = Linear(
                 irreps_in=irreps_in, irreps_out=e0_rep, cueq_config=cueq_config
             )
-            self.non_linearity = torch.nn.ReLU()
+            self.non_linearity = torch.nn.SiLU()
             self.linear_2 = Linear(
                 irreps_in=e0_rep, irreps_out="1x0e", cueq_config=cueq_config
             )
