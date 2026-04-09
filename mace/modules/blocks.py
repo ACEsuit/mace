@@ -304,28 +304,17 @@ class LinearLesReadoutBlock(torch.nn.Module):
         self,
         irreps_in: o3.Irreps,
         make_w_pos: bool = True,
-        add_scalar_alpha: bool = False,
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         super().__init__()
         self.cdim = int(str(irreps_in).split("x")[0])
         self.make_w_pos = make_w_pos
-        self.add_scalar_alpha = add_scalar_alpha
         str_irreps_in = str(irreps_in).split('+')
         assert str_irreps_in[0].endswith('0e') and str_irreps_in[1].endswith('1o'), "Irreps in does not have 0e and 1o first"
         irreps_out = irreps_in
         self.linear = Linear(
             irreps_in=irreps_in, irreps_out=irreps_out, cueq_config=cueq_config
         )
-        if self.add_scalar_alpha:
-            e0_rep = str_irreps_in[0]
-            self.linear_1 = Linear(
-                irreps_in=irreps_in, irreps_out=e0_rep, cueq_config=cueq_config
-            )
-            self.non_linearity = torch.nn.SiLU()
-            self.linear_2 = Linear(
-                irreps_in=e0_rep, irreps_out="1x0e", cueq_config=cueq_config
-            )
 
     def forward(self, x: torch.Tensor, heads: Optional[torch.Tensor] = None) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         y = self.linear(x)
@@ -335,14 +324,6 @@ class LinearLesReadoutBlock(torch.nn.Module):
         v = y[:,self.cdim:self.cdim*4].reshape(y.shape[0],-1,3) #l=1
         #Alpha via sum over outer products w/ positive coeffs (if w pos enforces psd):
         a = (w[:,:,None,None] * v[:,:,None,:] * v[:,:,:,None]).sum(dim=1)
-        if hasattr(self, "add_scalar_alpha") and self.add_scalar_alpha:
-            a2 = self.linear_1(x)
-            a2 = self.non_linearity(a2)
-            a2 = self.linear_2(a2).squeeze()
-            a2 = a2**2 if self.make_w_pos else a2
-            eye = torch.eye(3,device=a2.device)
-            a2 = eye[None,:,:] * a2[:,None,None]
-            a = a + a2
         return a
 
 @compile_mode("script")

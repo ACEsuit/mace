@@ -52,14 +52,12 @@ def _copy_mace_readout_tp(
         return LinearLesReadoutBlock(
             irreps_in=mace_readout.linear.irreps_in,  # type:ignore
             make_w_pos = make_w_pos,
-            add_scalar_alpha = add_scalar_alpha,
             cueq_config=cueq_config,
         )
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
         return LinearLesReadoutBlock(
             irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
             make_w_pos = make_w_pos,
-            add_scalar_alpha = add_scalar_alpha,
             cueq_config=cueq_config,
         )
     raise TypeError("Unsupported readout type.")
@@ -90,6 +88,7 @@ class MACELES(ScaleShiftMACE):
         self.use_induced_charges = les_arguments.get("use_induced_charge", False)
         self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
         self.use_anisotropic_polarizability = les_arguments.get("use_anisotropic_polarizability", False)
+        self.alpha_irreps = les_arguments.get("alpha_irreps", '1o+2e')
         self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
         self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
 
@@ -104,6 +103,8 @@ class MACELES(ScaleShiftMACE):
         self.les_readouts = torch.nn.ModuleList()
         self.les_u_readouts = torch.nn.ModuleList()
         self.les_alpha_readouts = torch.nn.ModuleList()
+        self.les_alpha_1o_readouts = torch.nn.ModuleList()
+        self.les_alpha_2e_readouts = torch.nn.ModuleList()
         self.les_kappa_readouts = torch.nn.ModuleList()
         self.les_output_scale = les_arguments.get("output_scale", 0.1)
         self.les_kappa_scale = les_arguments.get("kappa_scale", 0.01)
@@ -129,27 +130,23 @@ class MACELES(ScaleShiftMACE):
             if self.use_induced_dipoles:
                 if self.use_anisotropic_polarizability:
                     mace_irreps = str(self.readouts[0].linear.irreps_in)
-                    if "2e" in mace_irreps:
-                        if "1e" in mace_irreps:
-                            change_of_basis = CartesianTensor("ij").reduced_tensor_products().change_of_basis
-                            self.les_alpha_readouts.append(
-                                _copy_mace_readout(self.readouts[0], change_irrep_out="1x0e + 1x1e + 1x2e", cueq_config=cueq_config)
-                            )
-                        else:
-                            change_of_basis = CartesianTensor("ij=ji").reduced_tensor_products().change_of_basis
-                            self.les_alpha_readouts.append(
-                                _copy_mace_readout(self.readouts[0], change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
-                            )
+                    if "2e" in mace_irreps and "2e" in self.alpha_irreps:
+                        print("Using l=2 readout to predict anisotropic polarizability.")
+                        change_of_basis = CartesianTensor("ij=ji").reduced_tensor_products().change_of_basis
+                        self.les_alpha_2e_readouts.append(
+                            _copy_mace_readout(self.readouts[0], change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
+                        )
                         self.register_buffer("change_of_basis", change_of_basis)
-                    elif "1o" in mace_irreps:
+                    if "1o" in mace_irreps and "1o" in self.alpha_irreps:
                         #Obtain 2e from l=1 outer products
+                        print("Using l=1 readout to predict anisotropic polarizability.")
                         make_w_pos = (not self.make_alpha_positive)
-                        self.les_alpha_readouts.append(
+                        self.les_alpha_1o_readouts.append(
                             _copy_mace_readout_tp(self.readouts[0], make_w_pos=make_w_pos, add_scalar_alpha=self.add_scalar_alpha, cueq_config=cueq_config)
                         )
-                    else:
+                    if not ("1o" in mace_irreps or "2e" in mace_irreps):
                         raise ValueError("Unsupported irreps for anisotropic polarizability. Expected '1o' or '2e' in the readout irreps.")
-                else:
+                if not self.use_anisotropic_polarizability or self.add_scalar_alpha:
                     self.les_alpha_readouts.append(
                         _copy_mace_readout(readout, cueq_config=cueq_config)
                     )
@@ -316,17 +313,30 @@ class MACELES(ScaleShiftMACE):
                     ]  # type:ignore
                 node_kappas_list.append(node_kappas)
             if hasattr(self, "use_induced_dipoles") and self.use_induced_dipoles:
-                les_alpha_readout = self.les_alpha_readouts[i]
-                if self.use_anisotropic_polarizability:
+                if hasattr(self, "les_alpha_1o_readouts") and len(self.les_alpha_1o_readouts) > i:
+                    les_alpha_readout = self.les_alpha_1o_readouts[i]
                     node_alphas = les_alpha_readout(node_feats_list[feat_idx])[
                         num_atoms_arange
                         ]  # type:ignore
-                else:
+                    node_alphas_list.append(node_alphas)
+                if hasattr(self, "les_alpha_2e_readouts") and len(self.les_alpha_2e_readouts) > i:
+                    les_alpha_readout = self.les_alpha_2e_readouts[i]
+                    node_alphas = les_alpha_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                        ]  # type:ignore
+                    node_alphas = spherical_to_cartesian(
+                        node_alphas, self.change_of_basis
+                    )
+                    node_alphas_list.append(node_alphas)
+                if len(self.les_alpha_readouts) > i:
+                    les_alpha_readout = self.les_alpha_readouts[i]
                     node_alphas = les_alpha_readout(node_feats_list[feat_idx], node_heads)[
                         num_atoms_arange, node_heads
                         ]  # type:ignore
-                #print('alphas', i, node_alphas[:3])
-                node_alphas_list.append(node_alphas)
+                    if hasattr(self, "use_anisotropic_polarizability") and self.use_anisotropic_polarizability:
+                        eye = torch.eye(3,device=node_alphas.device)
+                        node_alphas = node_alphas.unsqueeze(-1).unsqueeze(-1) * eye.unsqueeze(0)
+                    node_alphas_list.append(node_alphas)
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
         node_inter_es = torch.sum(torch.stack(node_es_list, dim=0), dim=0)
@@ -349,12 +359,7 @@ class MACELES(ScaleShiftMACE):
 
         if len(node_alphas_list) > 0:
             les_alpha = torch.sum(torch.stack(node_alphas_list, dim=1), dim=1) * self.les_alpha_scale
-            if self.use_anisotropic_polarizability:
-                if hasattr(self, "change_of_basis"):
-                    les_alpha = spherical_to_cartesian(
-                        les_alpha, self.change_of_basis
-                    )
-                #print('alphas cartesian', les_alpha[:3])
+            #print('les_alpha', les_alpha.shape, les_alpha[:3])
         else:
             les_alpha = None
 
