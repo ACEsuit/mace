@@ -91,7 +91,7 @@ class MACECalculator(Calculator):
         default_dtype: str, default dtype of model
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
-                    Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+                    Options: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE]
 
     Dipoles are returned in units of Debye
     """
@@ -127,7 +127,8 @@ class MACECalculator(Calculator):
             assert model_type in [
                 "MACE",
                 "PolarMACE",
-            ], "CuEq/OEq only supports MACE and PolarMACE models"
+                "DipolePolarizabilityMACE",
+            ], "CuEq/OEq only supports MACE, PolarMACE, and DipolePolarizabilityMACE models"
         if enable_cueq and enable_oeq:
             if not HYBRID_AVAILABLE:
                 raise ImportError(

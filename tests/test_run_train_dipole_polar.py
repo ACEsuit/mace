@@ -213,19 +213,11 @@ _mace_params_dipole_polar = {
 }
 
 
-def test_run_train_dipole_polar(tmp_path, fitting_configs):
-    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
-
-    mace_params = _mace_params_dipole_polar.copy()
-    mace_params["checkpoints_dir"] = str(tmp_path)
-    mace_params["model_dir"] = str(tmp_path)
-    mace_params["train_file"] = tmp_path / "fit.xyz"
-
+def _run_train_subprocess(mace_params):
     # make sure run_train.py is using the mace that is currently being tested
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
     run_env["PYTHONPATH"] = ":".join(sys.path)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
     cmd = (
         sys.executable
@@ -243,20 +235,19 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
     p = subprocess.run(cmd.split(), env=run_env, check=True)
     assert p.returncode == 0
 
-    calc = MACECalculator(
-        model_paths=tmp_path / "DielectricMACE.model",
-        model_type="DipolePolarizabilityMACE",
-        device="cpu",
-    )
 
-    Mus = []
+def _evaluate_dielectric_predictions(calc, fitting_configs):
+    mus = []
     alphas = []
     for at in fitting_configs:
         at.calc = calc
-        Mus.append(at.get_dipole_moment())
+        mus.append(at.get_dipole_moment())
         alphas.append(calc.get_property("polarizability", at))
-    # Obtained for MACE from the 08/08/2025
-    ref_Mus = [
+    return mus, alphas
+
+
+def _reference_dielectric_predictions():
+    ref_mus = [
         np.array([0.0, 0.0, 0.0]),
         np.array([0.0, 0.0, 0.0]),
         np.array([-0.00405055, 0.04989444, -0.03235187]),
@@ -425,6 +416,75 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
             ]
         ),
     ]
+    return ref_mus, ref_alphas
 
-    assert np.allclose(Mus, ref_Mus)
+
+def _assert_dielectric_reference_predictions(calc, fitting_configs):
+    mus, alphas = _evaluate_dielectric_predictions(calc, fitting_configs)
+    ref_mus, ref_alphas = _reference_dielectric_predictions()
+    assert np.allclose(mus, ref_mus)
     assert np.allclose(alphas, ref_alphas)
+    return mus, alphas
+
+
+def test_run_train_dipole_polar(tmp_path, fitting_configs):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    mace_params = _mace_params_dipole_polar.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+
+    _run_train_subprocess(mace_params)
+
+    calc = MACECalculator(
+        model_paths=tmp_path / "DielectricMACE.model",
+        model_type="DipolePolarizabilityMACE",
+        device="cpu",
+    )
+    _assert_dielectric_reference_predictions(calc, fitting_configs)
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+@pytest.mark.parametrize("train_enable_cueq", [False, True])
+def test_run_train_dipole_polar_cueq_matrix(
+    tmp_path, fitting_configs, train_enable_cueq
+):
+    ase.io.write(tmp_path / "fit.xyz", fitting_configs)
+
+    model_dir = tmp_path / ("cueq_train" if train_enable_cueq else "e3nn_train")
+    model_dir.mkdir()
+
+    model_name = (
+        "DielectricMACE_cueq_train" if train_enable_cueq else "DielectricMACE_e3nn_train"
+    )
+    mace_params = _mace_params_dipole_polar.copy()
+    mace_params["name"] = model_name
+    mace_params["enable_cueq"] = train_enable_cueq
+    mace_params["checkpoints_dir"] = str(model_dir)
+    mace_params["model_dir"] = str(model_dir)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+
+    _run_train_subprocess(mace_params)
+
+    model_path = model_dir / f"{model_name}.model"
+    backend_predictions = {}
+    for eval_enable_cueq in [False, True]:
+        calc = MACECalculator(
+            model_paths=model_path,
+            model_type="DipolePolarizabilityMACE",
+            device="cpu",
+            enable_cueq=eval_enable_cueq,
+        )
+        backend_predictions[eval_enable_cueq] = _assert_dielectric_reference_predictions(
+            calc, fitting_configs
+        )
+
+    assert np.allclose(
+        backend_predictions[False][0],
+        backend_predictions[True][0],
+    )
+    assert np.allclose(
+        backend_predictions[False][1],
+        backend_predictions[True][1],
+    )

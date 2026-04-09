@@ -802,6 +802,7 @@ def run(args) -> None:
             "ScaleShiftMACE",
             "MACELES",
             "PolarMACE",
+            "AtomicDielectricMACE",
         ]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     if args.enable_oeq:
