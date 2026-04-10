@@ -207,6 +207,11 @@ class MACELES(ScaleShiftMACE):
             dtype=cell_les.dtype,
             device=cell_les.device
         )
+        if displacement is not None:
+            symmetric_displacement = 0.5 * (displacement + displacement.transpose(-1, -2))
+            cell_les_view = cell_les.view(-1, 3, 3)
+            cell_les_view = cell_les_view + torch.matmul(cell_les_view, symmetric_displacement)
+            cell_les = cell_les_view.view_as(cell_les)
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
