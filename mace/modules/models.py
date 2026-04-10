@@ -878,14 +878,11 @@ class AtomicDielectricMACE(torch.nn.Module):
         pair_repulsion: bool = False,  # pylint: disable=unused-argument
         heads: Optional[List[str]] = None,  # pylint: disable=unused-argument
         only_dipole: bool = False,  # pylint: disable=unused-argument
-        atomic_energies_fn: Optional[
-            Callable
-        ] = None,  # pylint: disable=unused-argument
-        embedding_specs: Optional[
-            Dict[str, Any]
-        ] = None,  # pylint: disable=unused-argument
+        atomic_energies_fn: Optional[Callable] = None,
+        embedding_specs: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
+        _ = atomic_energies_fn, embedding_specs
         self.register_buffer(
             "atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64)
         )

@@ -195,8 +195,6 @@ class MaceTorchSimModel(ModelInterface):
         return 0
 
     def _setup_compile(self, compile_mode: str) -> None:
-        import torch._dynamo as dynamo
-
         from mace.tools.compile import configure_autograd_for_compile, simplify
 
         if self._enable_oeq:

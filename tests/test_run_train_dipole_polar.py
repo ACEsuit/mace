@@ -456,7 +456,9 @@ def test_run_train_dipole_polar_cueq_matrix(
     model_dir.mkdir()
 
     model_name = (
-        "DielectricMACE_cueq_train" if train_enable_cueq else "DielectricMACE_e3nn_train"
+        "DielectricMACE_cueq_train"
+        if train_enable_cueq
+        else "DielectricMACE_e3nn_train"
     )
     mace_params = _mace_params_dipole_polar.copy()
     mace_params["name"] = model_name
@@ -476,8 +478,8 @@ def test_run_train_dipole_polar_cueq_matrix(
             device="cpu",
             enable_cueq=eval_enable_cueq,
         )
-        backend_predictions[eval_enable_cueq] = _assert_dielectric_reference_predictions(
-            calc, fitting_configs
+        backend_predictions[eval_enable_cueq] = (
+            _assert_dielectric_reference_predictions(calc, fitting_configs)
         )
 
     assert np.allclose(
