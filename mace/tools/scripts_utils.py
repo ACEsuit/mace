@@ -324,7 +324,9 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "heads": heads,
     }
     if hasattr(model, "atomic_energies_fn"):
-        config["atomic_energies"] = model.atomic_energies_fn.atomic_energies.cpu().numpy()
+        config["atomic_energies"] = (
+            model.atomic_energies_fn.atomic_energies.cpu().numpy()
+        )
     if hasattr(model, "scale_shift"):
         config["atomic_inter_scale"] = scale.cpu().numpy()
         config["atomic_inter_shift"] = shift.cpu().numpy()
