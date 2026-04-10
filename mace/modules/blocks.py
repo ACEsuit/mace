@@ -308,46 +308,78 @@ class LinearLesReadoutBlock(torch.nn.Module):
     ):
         super().__init__()
         self.irreps_in = o3.Irreps(irreps_in)
-        self.cdim = int(str(irreps_in).split("x")[0])
         self.make_w_pos = make_w_pos
 
-        irreps_out = self.irreps_in
         self.linear = Linear(
             irreps_in=self.irreps_in,
-            irreps_out=irreps_out,
+            irreps_out=self.irreps_in,
             cueq_config=cueq_config,
         )
 
-        # Find slices for:
-        #   - scalar weights from 0e channels
-        #   - vector features from both 1o and 1e channels
         self.scalar_slices: List[Tuple[int, int]] = []
-        self.vector_slices: List[Tuple[int, int]] = []
+        self.vector_1o_slices: List[Tuple[int, int]] = []
+        self.vector_1e_slices: List[Tuple[int, int]] = []
 
+        n_scalar = 0
+        n_1o = 0
+        n_1e = 0
         offset = 0
+
         for mul, ir in self.irreps_in:
             block_dim = mul * ir.dim
 
             if ir.l == 0 and ir.p == 1:  # 0e
                 self.scalar_slices.append((offset, offset + block_dim))
+                n_scalar += mul
 
-            elif ir.l == 1:  # both 1o and 1e
-                # block layout is [n_nodes, mul * 3]
-                self.vector_slices.append((offset, offset + block_dim))
+            elif ir.l == 1 and ir.p == -1:  # 1o
+                self.vector_1o_slices.append((offset, offset + block_dim))
+                n_1o += mul
+
+            elif ir.l == 1 and ir.p == 1:  # 1e
+                self.vector_1e_slices.append((offset, offset + block_dim))
+                n_1e += mul
 
             offset += block_dim
 
-        if len(self.scalar_slices) == 0:
+        if n_scalar == 0:
             raise ValueError("Need at least one 0e block for weights.")
+        if n_1o + n_1e == 0:
+            raise ValueError("Need at least one 1o or 1e block.")
 
-        if len(self.vector_slices) == 0:
-            raise ValueError("Need at least one l=1 block (1o and/or 1e).")
+        self.n_scalar = n_scalar
+        self.n_1o = n_1o
+        self.n_1e = n_1e
 
-        self.out_dim = offset
+        # Separate scalar -> weight maps for 1o and 1e sectors
+        self.scalar_to_weight_1o = (
+            torch.nn.Linear(n_scalar, n_1o, bias=True) if n_1o > 0 else None
+        )
+        self.scalar_to_weight_1e = (
+            torch.nn.Linear(n_scalar, n_1e, bias=True) if n_1e > 0 else None
+        )
 
-    def forward(self, x: torch.Tensor, heads: Optional[torch.Tensor] = None):
+    def _collect_scalars(self, y: torch.Tensor) -> torch.Tensor:
+        return torch.cat([y[:, s:e] for s, e in self.scalar_slices], dim=-1)
+
+    def _collect_vectors(
+        self, y: torch.Tensor, slices: List[Tuple[int, int]]
+    ) -> torch.Tensor:
+        return torch.cat(
+            [y[:, s:e].reshape(y.shape[0], -1, 3) for s, e in slices],
+            dim=1,
+        )
+
+    def _dyadic_sum(self, w: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+        # w: [n, C], v: [n, C, 3]
+        return (w[:, :, None, None] * v[:, :, None, :] * v[:, :, :, None]).sum(dim=1)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        heads: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         y = self.linear(x)
-
         # ---- fallback: original behavior ----
         if not hasattr(self, "scalar_slices") or self.scalar_slices is None:
             w = y[:, :self.cdim]
@@ -359,20 +391,25 @@ class LinearLesReadoutBlock(torch.nn.Module):
             return (w[:, :, None, None] * v[:, :, None, :] * v[:, :, :, None]).sum(dim=1)
 
         # ---- new behavior (1o + 1e) ----
-        w = torch.cat([y[:, s:e] for s, e in self.scalar_slices], dim=-1)
-        if self.make_w_pos:
-            w = w**2
 
-        v = torch.cat(
-            [y[:, s:e].reshape(y.shape[0], -1, 3) for s, e in self.vector_slices],
-            dim=1,
-        )
+        s = self._collect_scalars(y)  # [n, n_scalar]
 
-        # optional check
-        if w.shape[1] != v.shape[1]:
-            raise ValueError(f"{w.shape[1]} scalars vs {v.shape[1]} vectors")
+        a = y.new_zeros((y.shape[0], 3, 3))
 
-        return (w[:, :, None, None] * v[:, :, None, :] * v[:, :, :, None]).sum(dim=1)
+        if self.n_1o > 0:
+            v_1o = self._collect_vectors(y, self.vector_1o_slices)   # [n, n_1o, 3]
+            w_1o = self.scalar_to_weight_1o(s)                        # [n, n_1o]
+            if self.make_w_pos:
+                w_1o = w_1o**2
+            a = a + self._dyadic_sum(w_1o, v_1o)
+
+        if self.n_1e > 0:
+            v_1e = self._collect_vectors(y, self.vector_1e_slices)   # [n, n_1e, 3]
+            w_1e = self.scalar_to_weight_1e(s)                        # [n, n_1e]
+            a = a + self._dyadic_sum(w_1e, v_1e)
+
+        return a
+
 
 @compile_mode("script")
 class NonLinearLesReadoutBlock(torch.nn.Module):
