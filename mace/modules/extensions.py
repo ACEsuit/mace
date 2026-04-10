@@ -5,7 +5,7 @@ from e3nn.util.jit import compile_mode
 from e3nn import nn, o3
 from e3nn.io import CartesianTensor
 
-from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock, LinearDipolePolarReadoutBlock, NonLinearDipolePolarReadoutBlock, LinearLesReadoutBlock
+from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock, LinearDipolePolarReadoutBlock, NonLinearDipolePolarReadoutBlock, LinearLesReadoutBlock, NonLinearLesReadoutBlock
 from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
 from mace.modules.wrapper_ops import CuEquivarianceConfig
@@ -42,23 +42,37 @@ def _copy_mace_readout(
 def _copy_mace_readout_tp(
     mace_readout: torch.nn.Module,
     make_w_pos: bool = True,
-    cueq_config: Optional[CuEquivarianceConfig] = None
+    cueq_config: Optional[CuEquivarianceConfig] = None,
+    use_nonlinear_readout: bool = False,
 ) -> torch.nn.Module:
     """
     Helper function to copy a MACE readout block.
     """
+    print("use_nonlinear_readout for alpha?", use_nonlinear_readout)
     if isinstance(mace_readout, LinearReadoutBlock):
-        return LinearLesReadoutBlock(
-            irreps_in=mace_readout.linear.irreps_in,  # type:ignore
-            make_w_pos = make_w_pos,
-            cueq_config=cueq_config,
-        )
+        if use_nonlinear_readout:
+            return NonLinearLesReadoutBlock(
+                irreps_in=mace_readout.linear.irreps_in,  # type:ignore
+                cueq_config=cueq_config,
+            )
+        else:
+            return LinearLesReadoutBlock(
+                irreps_in=mace_readout.linear.irreps_in,  # type:ignore
+                make_w_pos = make_w_pos,
+                cueq_config=cueq_config,
+            )
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
-        return LinearLesReadoutBlock(
-            irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
-            make_w_pos = make_w_pos,
-            cueq_config=cueq_config,
-        )
+        if use_nonlinear_readout:
+            return NonLinearLesReadoutBlock(
+                irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
+                cueq_config=cueq_config,
+            )
+        else:
+            return LinearLesReadoutBlock(
+                irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
+                make_w_pos = make_w_pos,
+                cueq_config=cueq_config,
+            )
     raise TypeError("Unsupported readout type.")
 
 def _get_readout_input_dim(block: torch.nn.Module) -> int:
@@ -88,6 +102,7 @@ class MACELES(ScaleShiftMACE):
         self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
         self.use_anisotropic_polarizability = les_arguments.get("use_anisotropic_polarizability", False)
         self.alpha_irreps = les_arguments.get("alpha_irreps", '0e+1o+2e')
+        self.alpha_1o_nonlinear_readout = les_arguments.get("alpha_1o_nonlinear_readout", False)
         self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
         self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
 
@@ -138,7 +153,11 @@ class MACELES(ScaleShiftMACE):
                         print("Using l=1 readout to predict anisotropic polarizability.")
                         make_w_pos = (not self.make_alpha_positive)
                         self.les_alpha_1o_readouts.append(
-                            _copy_mace_readout_tp(self.readouts[0], make_w_pos=make_w_pos, cueq_config=cueq_config)
+                            _copy_mace_readout_tp(self.readouts[0], 
+                            use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
+                            make_w_pos=make_w_pos, 
+                            cueq_config=cueq_config
+                            )
                         )
                     if not ("1o" in mace_irreps or "2e" in mace_irreps):
                         raise ValueError("Unsupported irreps for anisotropic polarizability. Expected '1o' or '2e' in the readout irreps.")

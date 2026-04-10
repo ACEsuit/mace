@@ -307,23 +307,112 @@ class LinearLesReadoutBlock(torch.nn.Module):
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         super().__init__()
+        self.irreps_in = o3.Irreps(irreps_in)
         self.cdim = int(str(irreps_in).split("x")[0])
         self.make_w_pos = make_w_pos
-        str_irreps_in = str(irreps_in).split('+')
-        assert str_irreps_in[0].endswith('0e') and str_irreps_in[1].endswith('1o'), "Irreps in does not have 0e and 1o first"
-        irreps_out = irreps_in
+
+        irreps_out = self.irreps_in
         self.linear = Linear(
-            irreps_in=irreps_in, irreps_out=irreps_out, cueq_config=cueq_config
+            irreps_in=self.irreps_in,
+            irreps_out=irreps_out,
+            cueq_config=cueq_config,
         )
 
-    def forward(self, x: torch.Tensor, heads: Optional[torch.Tensor] = None) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
+        # Find slices for:
+        #   - scalar weights from 0e channels
+        #   - vector features from both 1o and 1e channels
+        self.scalar_slices: List[Tuple[int, int]] = []
+        self.vector_slices: List[Tuple[int, int]] = []
+
+        offset = 0
+        for mul, ir in self.irreps_in:
+            block_dim = mul * ir.dim
+
+            if ir.l == 0 and ir.p == 1:  # 0e
+                self.scalar_slices.append((offset, offset + block_dim))
+
+            elif ir.l == 1:  # both 1o and 1e
+                # block layout is [n_nodes, mul * 3]
+                self.vector_slices.append((offset, offset + block_dim))
+
+            offset += block_dim
+
+        if len(self.scalar_slices) == 0:
+            raise ValueError("Need at least one 0e block for weights.")
+
+        if len(self.vector_slices) == 0:
+            raise ValueError("Need at least one l=1 block (1o and/or 1e).")
+
+        self.out_dim = offset
+
+    def forward(self, x: torch.Tensor, heads: Optional[torch.Tensor] = None):
         y = self.linear(x)
-        w = y[:,:self.cdim] #l=0
-        w = w**2 if self.make_w_pos else w
-        #Assumes 0e 1o are first in output:
-        v = y[:,self.cdim:self.cdim*4].reshape(y.shape[0],-1,3) #l=1
-        #Alpha via sum over outer products w/ positive coeffs (if w pos enforces psd):
-        a = (w[:,:,None,None] * v[:,:,None,:] * v[:,:,:,None]).sum(dim=1)
+
+        # ---- fallback: original behavior ----
+        if not hasattr(self, "scalar_slices") or self.scalar_slices is None:
+            w = y[:, :self.cdim]
+            if self.make_w_pos:
+                w = w**2
+
+            v = y[:, self.cdim:self.cdim * 4].reshape(y.shape[0], -1, 3)
+
+            return (w[:, :, None, None] * v[:, :, None, :] * v[:, :, :, None]).sum(dim=1)
+
+        # ---- new behavior (1o + 1e) ----
+        w = torch.cat([y[:, s:e] for s, e in self.scalar_slices], dim=-1)
+        if self.make_w_pos:
+            w = w**2
+
+        v = torch.cat(
+            [y[:, s:e].reshape(y.shape[0], -1, 3) for s, e in self.vector_slices],
+            dim=1,
+        )
+
+        # optional check
+        if w.shape[1] != v.shape[1]:
+            raise ValueError(f"{w.shape[1]} scalars vs {v.shape[1]} vectors")
+
+        return (w[:, :, None, None] * v[:, :, None, :] * v[:, :, :, None]).sum(dim=1)
+
+@compile_mode("script")
+class NonLinearLesReadoutBlock(torch.nn.Module):
+    def __init__(
+        self,
+        irreps_in: o3.Irreps,
+        hidden_dim: int = 32,
+        cueq_config: Optional[CuEquivarianceConfig] = None,
+    ):
+        super().__init__()
+        self.irreps_in = irreps_in
+        self.cdim = int(str(irreps_in).split("x")[0])
+
+        self.linear = Linear(
+            irreps_in=irreps_in,
+            irreps_out=irreps_in,
+            cueq_config=cueq_config,
+        )
+
+        # predict channel-mixing matrix from scalar part
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(self.cdim, hidden_dim),
+            torch.nn.SiLU(),
+            torch.nn.Linear(hidden_dim, self.cdim * self.cdim),
+        )
+
+    def forward(self, x, heads=None):
+        y = self.linear(x)
+
+        s = y[:, :self.cdim]                              # [n, C]
+        v = y[:, self.cdim:self.cdim * 4].reshape(y.shape[0], self.cdim, 3)  # [n, C, 3]
+
+        M = self.mlp(s).reshape(y.shape[0], self.cdim, self.cdim)            # [n, C, C]
+
+        # symmetric channel mixing
+        M = 0.5 * (M + M.transpose(-1, -2))
+
+        tmp = torch.einsum("ncd,ndj->ncj", M, v)         # [n, C, 3]
+        a = torch.einsum("nci,ncj->nij", tmp, v)         # [n, 3, 3]
+        a = 0.5 * (a + a.transpose(-1, -2))
         return a
 
 @compile_mode("script")
