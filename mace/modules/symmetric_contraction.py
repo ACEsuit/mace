@@ -15,11 +15,13 @@ from e3nn.util.codegen import CodeGenMixin
 from e3nn.util.jit import compile_mode
 
 from mace.tools.cg import U_matrix_real
+from mace.tools.compile import simplify_if_compile
 
 BATCH_EXAMPLE = 10
 ALPHABET = ["w", "x", "v", "n", "z", "r", "t", "y", "u", "o", "p", "s"]
 
 
+@simplify_if_compile
 @compile_mode("script")
 class SymmetricContraction(CodeGenMixin, torch.nn.Module):
     def __init__(
@@ -264,5 +266,8 @@ class EmptyParam(torch.nn.Parameter):
         zero = torch.zeros_like(data)
         return super().__new__(cls, zero, requires_grad=False)
 
-    def requires_grad_(self):
+    def requires_grad_(
+        self, mode: bool = True
+    ):  # pylint: disable=arguments-differ, arguments-renamed
+        del mode
         return self

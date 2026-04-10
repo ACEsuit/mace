@@ -76,6 +76,7 @@ def get_symmetric_displacement(
     edge_index: torch.Tensor,
     num_graphs: int,
     batch: torch.Tensor,
+    displacement: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if cell is None:
         cell = torch.zeros(
@@ -85,12 +86,13 @@ def get_symmetric_displacement(
             device=positions.device,
         )
     sender = edge_index[0]
-    displacement = torch.zeros(
-        (num_graphs, 3, 3),
-        dtype=positions.dtype,
-        device=positions.device,
-    )
-    displacement.requires_grad_(True)
+    if displacement is None:
+        displacement = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=positions.dtype,
+            device=positions.device,
+        )
+        displacement = displacement + positions.sum() * 0.0
     symmetric_displacement = 0.5 * (
         displacement + displacement.transpose(-1, -2)
     )  # From https://github.com/mir-group/nequip
@@ -502,6 +504,31 @@ def compute_fixed_charge_dipole_polar(
     return scatter_sum(src=mu, index=batch.unsqueeze(-1), dim=0, dim_size=num_graphs)
 
 
+def compute_total_charge_dipole_permuted(
+    density_coefficients: torch.Tensor,
+    positions: torch.Tensor,
+    batch: torch.Tensor,
+    num_graphs: int,
+):
+    dipole_contribution = positions * density_coefficients[:, :1]
+
+    dipole = scatter_sum(
+        src=dipole_contribution, index=batch.unsqueeze(-1), dim=0, dim_size=num_graphs
+    )
+
+    if density_coefficients.shape[1] > 1:
+        dipole_p = scatter_sum(
+            src=density_coefficients[..., 1:4], index=batch, dim=-2, dim_size=num_graphs
+        )
+        dipole = dipole + dipole_p[..., [2, 0, 1]]  # CS phase convention
+
+    total_charge = scatter_sum(
+        src=density_coefficients[:, 0], index=batch, dim=-1  # , dim_size=num_graphs
+    )
+
+    return total_charge, dipole
+
+
 @torch.jit.ignore
 def compute_dielectric_gradients(
     dielectric: torch.Tensor,
@@ -583,7 +610,7 @@ def prepare_graph(
     )
 
     if lammps_mliap:
-        n_real, n_total = data["natoms"][0], data["natoms"][1]
+        n_real, n_ghost = data["natoms"][0], data["natoms"][1]
         num_graphs = 2
         num_atoms_arange = torch.arange(n_real, device=data["node_attrs"].device)
         displacement = None
@@ -599,9 +626,10 @@ def prepare_graph(
         )
         vectors = data["vectors"].requires_grad_(True)
         lengths = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
-        ikw = InteractionKwargs(data["lammps_class"], (n_real, n_total))
+        ikw = InteractionKwargs(data["lammps_class"], (n_real, n_ghost))
     else:
-        data["positions"].requires_grad_(True)
+        if not torch.compiler.is_compiling():
+            data["positions"].requires_grad_(True)
         positions = data["positions"]
         cell = data["cell"]
         num_atoms_arange = torch.arange(positions.shape[0], device=positions.device)
@@ -617,6 +645,7 @@ def prepare_graph(
                 edge_index=data["edge_index"],
                 num_graphs=num_graphs,
                 batch=data["batch"],
+                displacement=data.get("displacement"),
             )
             data["positions"], data["shifts"] = p, s
         vectors, lengths = get_edge_vectors_and_lengths(

@@ -8,7 +8,7 @@ import dataclasses
 import logging
 import time
 from collections import defaultdict
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -204,6 +204,8 @@ def train(
         )
     valid_loss = valid_loss_head  # consider only the last head for the checkpoint
 
+    # variable used for broadcast by rank == 0 if epoch loop is exited early, e.g. patience
+    exit_now = torch.zeros(1, device=device) if distributed else None
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
@@ -306,7 +308,8 @@ def train(
                             logging.info(
                                 f"Stopping optimization after {patience_counter} epochs without improvement"
                             )
-                            break
+                            if exit_now is not None:
+                                exit_now.fill_(1)
                     if save_all_checkpoints:
                         param_context = (
                             ema.average_parameters()
@@ -334,6 +337,11 @@ def train(
                         keep_last = False or save_all_checkpoints
         if distributed:
             torch.distributed.barrier()
+        if exit_now is not None:
+            torch.distributed.broadcast(exit_now, src=0)
+            if exit_now == 1:
+                break
+
         epoch += 1
 
     logging.info("Training complete")
@@ -531,6 +539,22 @@ def take_step_lbfgs(
     return loss, loss_dict
 
 
+# Keep parameters frozen/active after evaluation
+@contextmanager
+def preserve_grad_state(model):
+    # save the original requires_grad state for all parameters
+    requires_grad_backup = {param: param.requires_grad for param in model.parameters()}
+    try:
+        # temporarily disable gradients for all parameters
+        for param in model.parameters():
+            param.requires_grad = False
+        yield  # perform evaluation here
+    finally:
+        # restore the original requires_grad states
+        for param, requires_grad in requires_grad_backup.items():
+            param.requires_grad = requires_grad
+
+
 def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
@@ -538,30 +562,26 @@ def evaluate(
     output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-    for param in model.parameters():
-        param.requires_grad = False
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 
     start_time = time.time()
-    for batch in data_loader:
-        batch = batch.to(device)
-        batch_dict = batch.to_dict()
-        output = model(
-            batch_dict,
-            training=False,
-            compute_force=output_args["forces"],
-            compute_virials=output_args["virials"],
-            compute_stress=output_args["stress"],
-        )
-        avg_loss, aux = metrics(batch, output)
 
+    with preserve_grad_state(model):
+        for batch in data_loader:
+            batch = batch.to(device)
+            batch_dict = batch.to_dict()
+            output = model(
+                batch_dict,
+                training=False,
+                compute_force=output_args["forces"],
+                compute_virials=output_args["virials"],
+                compute_stress=output_args["stress"],
+            )
+            avg_loss, aux = metrics(batch, output)
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time
     metrics.reset()
-
-    for param in model.parameters():
-        param.requires_grad = True
 
     return avg_loss, aux
 
@@ -611,7 +631,7 @@ class MACELoss(Metric):
             )
             self.E_computed += filter_nonzero_weight(
                 batch, self.delta_es, batch.weight, batch.energy_weight
-            )  # DEBUG , label="delta_es")
+            )
         if output.get("forces") is not None and batch.forces is not None:
             self.fs.append(batch.forces)
             self.delta_fs.append(batch.forces - output["forces"])
@@ -621,12 +641,12 @@ class MACELoss(Metric):
                 batch.weight,
                 batch.forces_weight,
                 spread_atoms=True,
-            )  # DEBUG , label="delta_fs")
+            )
         if output.get("stress") is not None and batch.stress is not None:
             self.delta_stress.append(batch.stress - output["stress"])
             self.stress_computed += filter_nonzero_weight(
                 batch, self.delta_stress, batch.weight, batch.stress_weight
-            )  # DEBUG , label="delta_stress")
+            )
         if output.get("virials") is not None and batch.virials is not None:
             self.delta_virials.append(batch.virials - output["virials"])
             self.delta_virials_per_atom.append(
@@ -635,7 +655,7 @@ class MACELoss(Metric):
             )
             self.virials_computed += filter_nonzero_weight(
                 batch, self.delta_virials, batch.weight, batch.virials_weight
-            )  # DEBUG , label="delta_virials")
+            )
         if output.get("dipole") is not None and batch.dipole is not None:
             self.mus.append(batch.dipole)
             self.delta_mus.append(batch.dipole - output["dipole"])
@@ -649,7 +669,7 @@ class MACELoss(Metric):
                 batch.weight,
                 batch.dipole_weight,
                 spread_quantity_vector=False,
-            )  # DEBUG , label="delta_mus")
+            )
         if (
             output.get("polarizability") is not None
             and batch.polarizability is not None

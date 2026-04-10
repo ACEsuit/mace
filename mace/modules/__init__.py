@@ -5,6 +5,7 @@ import torch
 from .blocks import (
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
+    GeneralNonLinearBiasReadoutBlock,
     InteractionBlock,
     LinearDipolePolarReadoutBlock,
     LinearDipoleReadoutBlock,
@@ -23,6 +24,8 @@ from .blocks import (
     RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
 )
+from .extensions import PolarMACE
+from .gate import GatedEquivariantBlock
 from .loss import (
     DipolePolarLoss,
     DipoleSingleLoss,
@@ -70,6 +73,7 @@ readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
     "NonLinearDipoleReadoutBlock": NonLinearDipoleReadoutBlock,
     "NonLinearReadoutBlock": NonLinearReadoutBlock,
     "NonLinearBiasReadoutBlock": NonLinearBiasReadoutBlock,
+    "GeneralNonLinearBiasReadoutBlock": GeneralNonLinearBiasReadoutBlock,
 }
 
 scaling_classes: Dict[str, Callable] = {
@@ -107,6 +111,7 @@ __all__ = [
     "AtomicDipolesMACE",
     "AtomicDielectricMACE",
     "EnergyDipolesMACE",
+    "PolarMACE",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
