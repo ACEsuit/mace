@@ -103,6 +103,7 @@ class MACELES(ScaleShiftMACE):
         self.use_anisotropic_polarizability = les_arguments.get("use_anisotropic_polarizability", False)
         self.alpha_irreps = les_arguments.get("alpha_irreps", '0e+1o+2e')
         self.alpha_1o_nonlinear_readout = les_arguments.get("alpha_1o_nonlinear_readout", False)
+        self.alpha_1o_linear_w_pos = les_arguments.get("alpha_1o_linear_w_pos", True)
         self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
         self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
 
@@ -151,11 +152,10 @@ class MACELES(ScaleShiftMACE):
                     if "1o" in mace_irreps and "1o" in self.alpha_irreps:
                         #Obtain 2e from l=1 outer products
                         print("Using l=1 readout to predict anisotropic polarizability.")
-                        make_w_pos = (not self.make_alpha_positive)
                         self.les_alpha_1o_readouts.append(
                             _copy_mace_readout_tp(self.readouts[0], 
                             use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
-                            make_w_pos=make_w_pos, 
+                            make_w_pos=self.alpha_1o_linear_w_pos,
                             cueq_config=cueq_config
                             )
                         )
