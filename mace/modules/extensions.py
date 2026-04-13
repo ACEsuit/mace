@@ -361,6 +361,9 @@ class MACELES(ScaleShiftMACE):
                     node_quads = les_quad_readout(node_feats_list[feat_idx])[
                         num_atoms_arange
                     ]  # type:ignore
+                    node_quads = spherical_to_cartesian(
+                        node_quads, self.change_of_basis_quads
+                    )
                     node_quads_list.append(node_quads)
                 if hasattr(self, "les_quad_1o_readouts") and len(self.les_quad_1o_readouts) > i:
                     les_quad_readout = self.les_quad_1o_readouts[i]
@@ -415,6 +418,7 @@ class MACELES(ScaleShiftMACE):
 
         if len(node_quads_list) > 0:
             les_quads = torch.sum(torch.stack(node_quads_list, dim=1), dim=1) * self.les_output_scale
+            print(les_quads.shape)
             #Make quads traceless:
             traces = les_quads.diagonal(dim1=-1,dim2=-2).sum(dim=1)
             eye = torch.eye(3,device=les_quads.device)
