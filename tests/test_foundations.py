@@ -10,7 +10,7 @@ from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
-from mace.calculators import mace_mp, mace_off, mace_omol
+from mace.calculators import mace_mdp, mace_mp, mace_off, mace_omol
 from mace.calculators.foundations_models import mace_polar, polar_model_paths
 from mace.tools import torch_geometric
 from mace.tools.finetuning_utils import load_foundations_elements
@@ -1262,3 +1262,51 @@ def test_polar_multihead_finetuning_loads_correctly():
     batch_dft = _polar_batch(model_loaded, atoms, heads=heads, head_name="DFT")
     out_dft = model_loaded(batch_dft, training=False)
     assert np.isfinite(out_dft["energy"].detach().cpu().item())
+
+
+def test_extract_config_mace_mdp_local_model(tmp_path):
+    table = AtomicNumberTable([1, 6])
+    model = modules.AtomicDielectricMACE(
+        r_max=5.0,
+        num_bessel=4,
+        num_polynomial_cutoff=3,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=len(table),
+        hidden_irreps=o3.Irreps("4x0e + 4x1o + 4x2e"),
+        MLP_irreps=o3.Irreps("4x0e + 4x1o + 4x2e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=None,
+        avg_num_neighbors=2.0,
+        atomic_numbers=table.zs,
+        correlation=3,
+        radial_type="bessel",
+    )
+    model_path = tmp_path / "mace_mdp_test.model"
+    torch.save(model, model_path)
+
+    with pytest.warns(
+        UserWarning,
+        match="The MACE-MDP model is designed for predicting dipoles and polarizabilities of organic systems only",
+    ):
+        loaded_model = mace_mdp(
+            model=model_path,
+            device="cpu",
+            default_dtype="float64",
+            return_raw_model=True,
+        )
+
+    assert isinstance(loaded_model, modules.AtomicDielectricMACE)
+
+    config = extract_config_mace_model(loaded_model)
+    model_copy = modules.AtomicDielectricMACE(**config)
+    model_copy.load_state_dict(loaded_model.state_dict())
+
+    assert isinstance(model_copy, modules.AtomicDielectricMACE)
+    assert torch.equal(model_copy.atomic_numbers, loaded_model.atomic_numbers)
