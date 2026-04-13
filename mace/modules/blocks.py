@@ -203,13 +203,18 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
             [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
         )
         irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
+        # GatedEquivariantBlock always receives data in "mul_ir" format: either
+        # directly from an e3nn Linear (non-CuEq path) or after transpose_mul_ir
+        # converts from "ir_mul" → "mul_ir" (CuEq path). Using get_layout() here
+        # would wrongly set layout="ir_mul", causing incorrect gate multiplication
+        # for non-scalar irreps when CuEq is enabled.
         self.equivariant_nonlin = GatedEquivariantBlock(
             irreps_scalars=irreps_scalars,
             act_scalars=[gate for _, ir in irreps_scalars],
             irreps_gates=irreps_gates,
             act_gates=[gate] * len(irreps_gates),
             irreps_gated=irreps_gated,
-            layout=get_layout(cueq_config),
+            layout="mul_ir",
         )
         self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
         self.linear_1 = Linear(
@@ -301,13 +306,18 @@ class NonLinearDipolePolarReadoutBlock(torch.nn.Module):
             [(mul, ir) for mul, ir in MLP_irreps if ir.l > 0 and ir in self.irreps_out]
         )
         irreps_gates = o3.Irreps([mul, "0e"] for mul, _ in irreps_gated)
+        # GatedEquivariantBlock always receives data in "mul_ir" format: either
+        # directly from an e3nn Linear (non-CuEq path) or after transpose_mul_ir
+        # converts from "ir_mul" → "mul_ir" (CuEq path). Using get_layout() here
+        # would wrongly set layout="ir_mul", causing incorrect gate multiplication
+        # for non-scalar irreps when CuEq is enabled.
         self.equivariant_nonlin = GatedEquivariantBlock(
             irreps_scalars=irreps_scalars,
             act_scalars=[gate for _, ir in irreps_scalars],
             irreps_gates=irreps_gates,
             act_gates=[gate] * len(irreps_gates),
             irreps_gated=irreps_gated,
-            layout=get_layout(cueq_config),
+            layout="mul_ir",
         )
         self.irreps_nonlin = self.equivariant_nonlin.irreps_in.simplify()
         self.linear_1 = Linear(

@@ -445,6 +445,44 @@ def test_run_train_dipole_polar(tmp_path, fitting_configs):
     _assert_dielectric_reference_predictions(calc, fitting_configs)
 
 
+def _random_rotation():
+    """Return a reproducible random SO(3) rotation matrix."""
+    rng = np.random.default_rng(seed=42)
+    q, r = np.linalg.qr(rng.standard_normal((3, 3)))
+    q = q @ np.diag(np.sign(np.diag(r)))
+    if np.linalg.det(q) < 0:
+        q[:, 0] *= -1
+    return q
+
+
+def _rotate_atoms(atoms, R):
+    rotated = atoms.copy()
+    center = rotated.get_center_of_mass()
+    rotated.positions = (rotated.positions - center) @ R.T + center
+    return rotated
+
+
+def _check_equivariance(calc, atoms, R, atol=1e-5):
+    """Assert that dipole and polarizability transform correctly under R."""
+    original = atoms.copy()
+    original.calc = calc
+    mu = np.asarray(original.get_dipole_moment())
+    alpha = np.asarray(calc.get_property("polarizability", original))
+
+    rotated = _rotate_atoms(atoms, R)
+    rotated.calc = calc
+    mu_rot = np.asarray(rotated.get_dipole_moment())
+    alpha_rot = np.asarray(calc.get_property("polarizability", rotated))
+
+    assert np.allclose(mu_rot, R @ mu, atol=atol), (
+        f"dipole equivariance failed: |R·μ - μ(R·x)| = {np.linalg.norm(mu_rot - R @ mu):.2e}"
+    )
+    assert np.allclose(alpha_rot, R @ alpha @ R.T, atol=atol), (
+        f"polarizability equivariance failed: |R·α·Rᵀ - α(R·x)| = "
+        f"{np.linalg.norm(alpha_rot - R @ alpha @ R.T):.2e}"
+    )
+
+
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
 @pytest.mark.parametrize("train_enable_cueq", [False, True])
 def test_run_train_dipole_polar_cueq_matrix(
@@ -466,10 +504,17 @@ def test_run_train_dipole_polar_cueq_matrix(
     mace_params["checkpoints_dir"] = str(model_dir)
     mace_params["model_dir"] = str(model_dir)
     mace_params["train_file"] = tmp_path / "fit.xyz"
+    # Use non-scalar MLP_irreps to exercise the GatedEquivariantBlock layout for
+    # both the dipole (1o) and polarizability (2e) gated components.  The default
+    # "16x0e" is purely scalar and skips all gating, masking layout bugs in the
+    # cueq path.  irreps_out of NonLinearDipolePolarReadoutBlock is "2x0e+1x1o+1x2e",
+    # so 1o covers the dipole channel and 2e covers the polarizability channel.
+    mace_params["MLP_irreps"] = "16x0e+16x1o+16x2e"
 
     _run_train_subprocess(mace_params)
 
     model_path = model_dir / f"{model_name}.model"
+    R = _random_rotation()
     backend_predictions = {}
     for eval_enable_cueq in [False, True]:
         calc = MACECalculator(
@@ -478,15 +523,20 @@ def test_run_train_dipole_polar_cueq_matrix(
             device="cpu",
             enable_cueq=eval_enable_cueq,
         )
-        backend_predictions[eval_enable_cueq] = (
-            _assert_dielectric_reference_predictions(calc, fitting_configs)
+        backend_predictions[eval_enable_cueq] = _evaluate_dielectric_predictions(
+            calc, fitting_configs
         )
+        # Equivariance: check every config individually with this backend.
+        for atoms in fitting_configs:
+            _check_equivariance(calc, atoms, R)
 
     assert np.allclose(
         backend_predictions[False][0],
         backend_predictions[True][0],
-    )
+        atol=1e-5,
+    ), "dipole mismatch between cueq=False and cueq=True"
     assert np.allclose(
         backend_predictions[False][1],
         backend_predictions[True][1],
-    )
+        atol=1e-5,
+    ), "polarizability mismatch between cueq=False and cueq=True"
