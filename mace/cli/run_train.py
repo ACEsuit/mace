@@ -154,7 +154,11 @@ def run(args) -> None:
                 "--finetune_dipoles_polarizabilities requires --loss dipole_polar"
             )
         args.loss = "dipole_polar"
-        logging.info("MDP fine-tuning mode: loss forced to dipole_polar")
+        # multiheads_finetuning defaults to True and would override loss to "universal"
+        args.multiheads_finetuning = False
+        logging.info(
+            "MDP fine-tuning mode: loss=dipole_polar, multiheads_finetuning disabled"
+        )
 
     if args.foundation_model is not None:
         if args.foundation_model in polar_model_names:
@@ -205,6 +209,13 @@ def run(args) -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
+        if args.finetune_dipoles_polarizabilities:
+            foundation_cls = model_foundation.__class__.__name__
+            if foundation_cls != "AtomicDielectricMACE":
+                raise ValueError(
+                    f"--finetune_dipoles_polarizabilities requires an AtomicDielectricMACE "
+                    f"checkpoint, but --foundation_model contains a {foundation_cls} model."
+                )
         foundation_model_avg_num_neighbors = model_foundation.interactions[
             0
         ].avg_num_neighbors
@@ -774,17 +785,6 @@ def run(args) -> None:
     # Model
     model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
     model.to(device)
-
-    # MDP fine-tuning: freeze everything except the readout layers
-    if args.finetune_dipoles_polarizabilities:
-        for name, param in model.named_parameters():
-            param.requires_grad = name.startswith("readouts")
-        n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        n_total = sum(p.numel() for p in model.parameters())
-        logging.info(
-            f"MDP fine-tuning: froze all parameters except readouts "
-            f"({n_trainable} / {n_total} trainable)"
-        )
 
     if args.lora:
         lora_rank = args.lora_rank

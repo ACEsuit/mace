@@ -1,9 +1,8 @@
 """Tests for MACE-MDP (AtomicDielectricMACE) fine-tuning support.
 
 Covers:
-  - test_mdp_finetune_readouts_only_trained: verifies that a short fine-tuning run
-    (1) completes without error, (2) leaves non-readout params unchanged, and
-    (3) updates readout params.
+  - test_mdp_finetune_updates_params: verifies that a short fine-tuning run
+    completes without error and that at least some model parameters change.
   - test_mdp_finetune_wrong_model_type_raises: verifies that passing a non-MDP
     model type with --finetune_dipoles_polarizabilities raises an error.
 """
@@ -63,19 +62,12 @@ def fixture_fitting_configs():
 def _run_subprocess(params: dict, check: bool = True) -> subprocess.CompletedProcess:
     run_env = os.environ.copy()
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    run_env["PYTHONPATH"] = ":".join(sys.path)
+    run_env["PYTHONPATH"] = os.pathsep.join(sys.path)
 
-    cmd = (
-        sys.executable
-        + " "
-        + str(run_train)
-        + " "
-        + " ".join(
-            (f"--{k}={v}" if v is not None else f"--{k}")
-            for k, v in params.items()
-        )
-    )
-    return subprocess.run(cmd.split(), env=run_env, check=check, capture_output=True)
+    cmd = [sys.executable, str(run_train)] + [
+        f"--{k}={v}" if v is not None else f"--{k}" for k, v in params.items()
+    ]
+    return subprocess.run(cmd, env=run_env, check=check, capture_output=True)
 
 
 # ---------------------------------------------------------------------------
@@ -112,11 +104,11 @@ _BASE_MDP_PARAMS = {
 # Tests
 # ---------------------------------------------------------------------------
 
-def test_mdp_finetune_readouts_only_trained(fitting_configs, tmp_path):
+def test_mdp_finetune_updates_params(fitting_configs, tmp_path):
     """
     1. Train a tiny AtomicDielectricMACE model from scratch as the 'foundation'.
-    2. Fine-tune it with --finetune_dipoles_polarizabilities=True.
-    3. Verify non-readout params are unchanged; readout params have changed.
+    2. Fine-tune it with --finetune_dipoles_polarizabilities=True (naive: all params trainable).
+    3. Verify the fine-tuned model exists and at least some parameters changed.
     """
     # Write data
     train_file = tmp_path / "train.xyz"
@@ -153,38 +145,19 @@ def test_mdp_finetune_readouts_only_trained(fitting_configs, tmp_path):
     ft_model_path = tmp_path / "finetuned" / "mdp_finetuned.model"
     assert ft_model_path.exists(), "Fine-tuned model not saved"
 
-    # --- Verify frozen / unfrozen params ---
+    # Verify at least some parameters changed after fine-tuning
     foundation = torch.load(str(foundation_model_path), map_location="cpu", weights_only=False)
     finetuned = torch.load(str(ft_model_path), map_location="cpu", weights_only=False)
 
     foundation_sd = foundation.state_dict()
     finetuned_sd = finetuned.state_dict()
 
-    readout_changed = []
-    non_readout_changed = []
-
-    for name in foundation_sd:
-        if name not in finetuned_sd:
-            continue
-        if foundation_sd[name].shape != finetuned_sd[name].shape:
-            continue
-        changed = not torch.allclose(foundation_sd[name], finetuned_sd[name])
-        if name.startswith("readouts"):
-            readout_changed.append(changed)
-        else:
-            non_readout_changed.append(changed)
-
-    # Non-readout params must all be identical (frozen)
-    assert non_readout_changed, "Expected non-readout params to be checked"
-    assert not any(non_readout_changed), (
-        f"{sum(non_readout_changed)} non-readout params changed — should have been frozen"
+    any_changed = any(
+        not torch.allclose(foundation_sd[k], finetuned_sd[k])
+        for k in foundation_sd
+        if k in finetuned_sd and foundation_sd[k].shape == finetuned_sd[k].shape
     )
-
-    # At least some readout params must have been updated
-    assert readout_changed, "Expected readout params to be checked"
-    assert any(readout_changed), (
-        "No readout params changed after fine-tuning — training may not have run"
-    )
+    assert any_changed, "No parameters changed after fine-tuning — training may not have run"
 
 
 def test_mdp_finetune_wrong_model_type_raises(fitting_configs, tmp_path):
@@ -214,4 +187,8 @@ def test_mdp_finetune_wrong_model_type_raises(fitting_configs, tmp_path):
     result = _run_subprocess(params, check=False)
     assert result.returncode != 0, (
         "Expected non-zero exit when using wrong model type with finetune_dipoles_polarizabilities"
+    )
+    stderr = result.stderr.decode("utf-8", errors="replace")
+    assert "AtomicDielectricMACE" in stderr, (
+        f"Expected error mentioning AtomicDielectricMACE, got:\n{stderr}"
     )
