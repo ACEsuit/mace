@@ -136,6 +136,26 @@ def run(args) -> None:
     valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
     args.foundation_model_kwargs = ast.literal_eval(args.foundation_model_kwargs)
     args.foundation_model_kwargs["head"] = args.foundation_head
+
+    # MDP fine-tuning validation
+    if args.finetune_dipoles_polarizabilities:
+        if args.model != "AtomicDielectricMACE":
+            raise ValueError(
+                "--finetune_dipoles_polarizabilities only supports "
+                "--model AtomicDielectricMACE"
+            )
+        if args.foundation_model is None:
+            raise ValueError(
+                "--foundation_model must be provided when using "
+                "--finetune_dipoles_polarizabilities"
+            )
+        if args.loss not in (None, "dipole_polar"):
+            raise ValueError(
+                "--finetune_dipoles_polarizabilities requires --loss dipole_polar"
+            )
+        args.loss = "dipole_polar"
+        logging.info("MDP fine-tuning mode: loss forced to dipole_polar")
+
     if args.foundation_model is not None:
         if args.foundation_model in polar_model_names:
             logging.info(
@@ -754,6 +774,17 @@ def run(args) -> None:
     # Model
     model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
     model.to(device)
+
+    # MDP fine-tuning: freeze everything except the readout layers
+    if args.finetune_dipoles_polarizabilities:
+        for name, param in model.named_parameters():
+            param.requires_grad = name.startswith("readouts")
+        n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        n_total = sum(p.numel() for p in model.parameters())
+        logging.info(
+            f"MDP fine-tuning: froze all parameters except readouts "
+            f"({n_trainable} / {n_total} trainable)"
+        )
 
     if args.lora:
         lora_rank = args.lora_rank
