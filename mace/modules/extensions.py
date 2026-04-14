@@ -418,7 +418,6 @@ class MACELES(ScaleShiftMACE):
 
         if len(node_quads_list) > 0:
             les_quads = torch.sum(torch.stack(node_quads_list, dim=1), dim=1) * self.les_output_scale
-            print(les_quads.shape)
             #Make quads traceless:
             traces = les_quads.diagonal(dim1=-1,dim2=-2).sum(dim=1)
             eye = torch.eye(3,device=les_quads.device)
