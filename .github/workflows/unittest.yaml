@@ -3,7 +3,7 @@ on:
   pull_request:
   workflow_dispatch:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, mdp ]
 
 concurrency:
   group: unit-tests-${{ github.ref }}

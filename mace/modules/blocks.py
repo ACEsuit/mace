@@ -20,7 +20,6 @@ from mace.modules.wrapper_ops import (
     OEQConfig,
     SymmetricContractionWrapper,
     TensorProduct,
-    TransposeIrrepsLayoutWrapper,
     get_layout,
 )
 from mace.tools.compile import simplify_if_compile
@@ -220,26 +219,10 @@ class NonLinearDipoleReadoutBlock(torch.nn.Module):
             irreps_out=self.irreps_out,
             cueq_config=cueq_config,
         )
-        self.transpose_mul_ir = TransposeIrrepsLayoutWrapper(
-            irreps=self.irreps_nonlin,
-            source="ir_mul",
-            target="mul_ir",
-            cueq_config=cueq_config,
-        )
-        self.transpose_ir_mul = TransposeIrrepsLayoutWrapper(
-            irreps=self.hidden_irreps,
-            source="mul_ir",
-            target="ir_mul",
-            cueq_config=cueq_config,
-        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.linear_1(x)
-        if self.transpose_mul_ir is not None:
-            x = self.transpose_mul_ir(x)
         x = self.equivariant_nonlin(x)
-        if self.transpose_ir_mul is not None:
-            x = self.transpose_ir_mul(x)
         return self.linear_2(x)  # [n_nodes, 1]
 
 
@@ -318,26 +301,10 @@ class NonLinearDipolePolarReadoutBlock(torch.nn.Module):
             irreps_out=self.irreps_out,
             cueq_config=cueq_config,
         )
-        self.transpose_mul_ir = TransposeIrrepsLayoutWrapper(
-            irreps=self.irreps_nonlin,
-            source="ir_mul",
-            target="mul_ir",
-            cueq_config=cueq_config,
-        )
-        self.transpose_ir_mul = TransposeIrrepsLayoutWrapper(
-            irreps=self.hidden_irreps,
-            source="mul_ir",
-            target="ir_mul",
-            cueq_config=cueq_config,
-        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [n_nodes, irreps]  # [..., ]
         x = self.linear_1(x)
-        if self.transpose_mul_ir is not None:
-            x = self.transpose_mul_ir(x)
         x = self.equivariant_nonlin(x)
-        if self.transpose_ir_mul is not None:
-            x = self.transpose_ir_mul(x)
         return self.linear_2(x)  # [n_nodes, 1]
 
 
