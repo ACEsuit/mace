@@ -149,9 +149,10 @@ def run(args) -> None:
                 "--foundation_model must be provided when using "
                 "--finetune_dipoles_polarizabilities"
             )
-        if args.loss not in (None, "dipole_polar"):
+        if args.loss not in ("weighted", "dipole_polar"):
             raise ValueError(
-                "--finetune_dipoles_polarizabilities requires --loss dipole_polar"
+                "--finetune_dipoles_polarizabilities requires --loss dipole_polar "
+                f"(got --loss={args.loss})"
             )
         args.loss = "dipole_polar"
         # multiheads_finetuning defaults to True and would override loss to "universal"
