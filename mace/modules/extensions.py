@@ -4,6 +4,7 @@ import torch
 from e3nn.util.jit import compile_mode
 from e3nn import nn, o3
 from e3nn.io import CartesianTensor
+from e3nn.o3._reduce import ReducedTensorProducts
 
 from mace.modules.blocks import LinearReadoutBlock, NonLinearReadoutBlock, LinearDipoleReadoutBlock, LinearDipolePolarReadoutBlock, NonLinearDipolePolarReadoutBlock, LinearLesReadoutBlock, NonLinearLesReadoutBlock
 from mace.modules.models import ScaleShiftMACE
@@ -98,6 +99,7 @@ class MACELES(ScaleShiftMACE):
         self.compute_bec = les_arguments.get("compute_bec", False)
         self.bec_output_index = les_arguments.get("bec_output_index", None)
         self.use_dipoles = les_arguments.get("use_dipole", False)
+        self.use_quads = les_arguments.get("use_quad", False)
         self.use_induced_charges = les_arguments.get("use_induced_charge", False)
         self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
         self.use_anisotropic_polarizability = les_arguments.get("use_anisotropic_polarizability", False)
@@ -114,6 +116,8 @@ class MACELES(ScaleShiftMACE):
 
         self.les_readouts = torch.nn.ModuleList()
         self.les_u_readouts = torch.nn.ModuleList()
+        self.les_quad_2e_readouts = torch.nn.ModuleList()
+        self.les_quad_1o_readouts = torch.nn.ModuleList()
         self.les_alpha_readouts = torch.nn.ModuleList()
         self.les_alpha_1o_readouts = torch.nn.ModuleList()
         self.les_alpha_2e_readouts = torch.nn.ModuleList()
@@ -135,6 +139,24 @@ class MACELES(ScaleShiftMACE):
                     #_copy_mace_readout(readout,  change_irrep_out="1x1o", cueq_config=cueq_config)
                     _copy_mace_readout(self.readouts[0],  change_irrep_out="1x1o", cueq_config=cueq_config)
                 )
+            if self.use_quads:
+                mace_irreps = str(self.readouts[0].linear.irreps_in)
+                if "2e" in mace_irreps:
+                    print("Using l=2 readout to predict quadrupoles.")
+                    change_of_basis_quads = ReducedTensorProducts('ij=ji', i="1o", filter_ir_out=['2e']).change_of_basis
+                    self.les_quad_2e_readouts.append(
+                        _copy_mace_readout(self.readouts[0], change_irrep_out="1x2e", cueq_config=cueq_config)
+                    )
+                    self.register_buffer("change_of_basis_quads", change_of_basis_quads)
+                if "1o" in mace_irreps:
+                    print("Using l=1 readout to predict quadrupoles.")
+                    self.les_quad_1o_readouts.append(
+                        _copy_mace_readout_tp(self.readouts[0], 
+                        use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
+                        make_w_pos=False,
+                        cueq_config=cueq_config
+                        )
+                    )
             if self.use_induced_charges:
                 self.les_kappa_readouts.append(
                     _copy_mace_readout(readout, cueq_config=cueq_config)
@@ -280,6 +302,7 @@ class MACELES(ScaleShiftMACE):
         node_feats_list: List[torch.Tensor] = []
         node_qs_list: List[torch.Tensor] = []
         node_us_list: List[torch.Tensor] = []
+        node_quads_list: List[torch.Tensor] = []
         node_kappas_list: List[torch.Tensor] = []
         node_alphas_list: List[torch.Tensor] = []
 
@@ -332,6 +355,22 @@ class MACELES(ScaleShiftMACE):
                     num_atoms_arange, node_heads
                     ]  # type:ignore
                 node_kappas_list.append(node_kappas)
+            if hasattr(self, "use_quads"):
+                if hasattr(self, "les_quad_2e_readouts") and len(self.les_quad_2e_readouts) > i:
+                    les_quad_readout = self.les_quad_2e_readouts[i]
+                    node_quads = les_quad_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type:ignore
+                    node_quads = spherical_to_cartesian(
+                        node_quads, self.change_of_basis_quads
+                    )
+                    node_quads_list.append(node_quads)
+                if hasattr(self, "les_quad_1o_readouts") and len(self.les_quad_1o_readouts) > i:
+                    les_quad_readout = self.les_quad_1o_readouts[i]
+                    node_quads = les_quad_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type:ignore
+                    node_quads_list.append(node_quads)
             if hasattr(self, "use_induced_dipoles") and self.use_induced_dipoles:
                 if hasattr(self, "les_alpha_1o_readouts") and len(self.les_alpha_1o_readouts) > i:
                     les_alpha_readout = self.les_alpha_1o_readouts[i]
@@ -377,18 +416,26 @@ class MACELES(ScaleShiftMACE):
         else:
             les_kappa = None
 
+        if len(node_quads_list) > 0:
+            les_quad = torch.sum(torch.stack(node_quads_list, dim=1), dim=1) * self.les_output_scale
+            #Make quads traceless:
+            traces = les_quad.diagonal(dim1=-1, dim2=-2).sum(dim=1)
+            eye = torch.eye(3, device=les_quad.device)
+            les_quad = les_quad - eye[None, :, :] * traces[:, None, None] / 3
+        else:
+            les_quad = None
+
         if len(node_alphas_list) > 0:
             les_alpha = torch.sum(torch.stack(node_alphas_list, dim=1), dim=1) * self.les_alpha_scale
             #print('les_alpha', les_alpha.shape, les_alpha[:3])
         else:
             les_alpha = None
 
-
         if hasattr(self, 'make_alpha_positive') and self.make_alpha_positive and les_alpha is not None:
             if les_alpha.dim() == 2:
                 les_alpha = les_alpha**2
             if les_alpha.dim() == 3 and les_alpha.shape[1] == 3 and les_alpha.shape[2] == 3:
-                les_alpha = torch.einsum("nij,nkj->nik",les_alpha, les_alpha)
+                les_alpha = torch.einsum("nij,nkj->nik", les_alpha, les_alpha)
         if hasattr(self, 'make_kappa_positive') and self.make_kappa_positive and les_kappa is not None:
             les_kappa = les_kappa**2
 
@@ -396,6 +443,7 @@ class MACELES(ScaleShiftMACE):
             atomic_numbers=data["atomic_numbers"],
             latent_charges=les_q,
             latent_dipoles=les_u,
+            latent_quads=les_quad,
             latent_alphas=les_alpha,
             latent_kappas=les_kappa,
             positions=positions,
@@ -454,5 +502,6 @@ class MACELES(ScaleShiftMACE):
             "latent_dipoles": les_result["latent_dipoles"],
             "latent_kappas": les_kappa,
             "latent_alphas": les_result["latent_alphas"],
+            "latent_quads": les_quad,
             "BEC": les_result["BEC"],
         }
