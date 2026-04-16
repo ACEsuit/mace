@@ -12,6 +12,11 @@ from mace.modules.models import MACE
 from mace.tools import atomic_numbers_to_indices, utils
 
 try:
+    from mace.modules.extensions import PolarMACE
+except ImportError:
+    PolarMACE = None
+
+try:
     from torch_sim.models.interface import ModelInterface
     from torch_sim.neighbors import torchsim_nl
     from torch_sim.transforms import compute_cell_shifts, pbc_wrap_batched
@@ -147,6 +152,14 @@ class MaceTorchSimModel(_TSModelInterface):
             "model must be derived from MACE base class"
         )
 
+        self._is_polar = PolarMACE is not None and isinstance(
+            self.model, PolarMACE
+        )
+        if self._is_polar:
+            self._density_dim = (
+                getattr(self.model, "atomic_multipoles_max_l", 0) + 1
+            ) ** 2
+
         self.r_max = self.model.r_max
         self.z_table = utils.AtomicNumberTable(
             [int(z) for z in self.model.atomic_numbers]
@@ -263,6 +276,52 @@ class MaceTorchSimModel(_TSModelInterface):
         self._cached_system_idx = idx
         self._setup_node_attrs(z)
         self._setup_ptr(idx)
+
+    def _build_polar_data(
+        self,
+        state: SimState,
+        cell_3x3: torch.Tensor,
+        n_systems: int,
+        n_atoms: int,
+    ) -> dict[str, torch.Tensor]:
+        """Compute PolarMACE-specific data_dict entries."""
+        volume = torch.linalg.det(cell_3x3)
+        # Guard against zero-volume cells (non-periodic / molecular systems).
+        # AtomicData.from_config() falls back to zeros(3, 3) for rcell in this case.
+        has_volume = volume.abs() > 1e-10
+        if has_volume.all():
+            rcell = 2 * torch.pi * torch.linalg.inv(cell_3x3.transpose(-1, -2))
+        else:
+            rcell = torch.zeros_like(cell_3x3)
+            if has_volume.any():
+                mask = has_volume.nonzero(as_tuple=True)[0]
+                rcell[mask] = 2 * torch.pi * torch.linalg.inv(
+                    cell_3x3[mask].transpose(-1, -2)
+                )
+
+        external_field = getattr(state, "external_E_field", None)
+        if external_field is None:
+            external_field = torch.zeros(
+                n_systems, 3, device=self._device, dtype=self._dtype
+            )
+
+        fermi_level = torch.zeros(
+            n_systems, device=self._device, dtype=self._dtype
+        )
+
+        density_coefficients = getattr(state, "density_coefficients", None)
+        if density_coefficients is None:
+            density_coefficients = torch.zeros(
+                n_atoms, self._density_dim, device=self._device, dtype=self._dtype
+            )
+
+        return {
+            "rcell": rcell,
+            "volume": volume,
+            "external_field": external_field,
+            "fermi_level": fermi_level,
+            "density_coefficients": density_coefficients,
+        }
 
     def _ensure_budgets(self, n_atoms: int, n_edges: int, n_systems: int) -> None:
         changed = False
@@ -412,6 +471,56 @@ class MaceTorchSimModel(_TSModelInterface):
                 buf[n_real_systems:] = pad_fill
                 padded_opt[key] = buf
 
+        if "rcell" in data_dict:
+            dev = self._device
+            dt = self._dtype
+            cell_scale = self.r_max * 2.0
+            pad_sys = S - n_real_systems
+            padded["rcell"] = torch.cat(
+                [
+                    data_dict["rcell"],
+                    (
+                        2
+                        * torch.pi
+                        * torch.eye(3, device=dev, dtype=dt)
+                        / cell_scale
+                    )
+                    .unsqueeze(0)
+                    .expand(pad_sys, -1, -1),
+                ]
+            )
+            padded["volume"] = torch.cat(
+                [
+                    data_dict["volume"],
+                    torch.full((pad_sys,), cell_scale**3, device=dev, dtype=dt),
+                ]
+            )
+            padded["external_field"] = torch.cat(
+                [
+                    data_dict["external_field"],
+                    torch.zeros(pad_sys, 3, device=dev, dtype=dt),
+                ]
+            )
+            padded["fermi_level"] = torch.cat(
+                [
+                    data_dict["fermi_level"],
+                    torch.zeros(pad_sys, device=dev, dtype=dt),
+                ]
+            )
+        if "density_coefficients" in data_dict:
+            pad_atoms = A - n_real_atoms
+            padded["density_coefficients"] = torch.cat(
+                [
+                    data_dict["density_coefficients"],
+                    torch.zeros(
+                        pad_atoms,
+                        data_dict["density_coefficients"].shape[1],
+                        device=self._device,
+                        dtype=self._dtype,
+                    ),
+                ]
+            )
+
         return padded, padded_opt
 
     @property
@@ -498,6 +607,19 @@ class MaceTorchSimModel(_TSModelInterface):
             "total_spin": getattr(state, "total_spin", getattr(state, "spin", None)),
         }
 
+        if self._is_polar:
+            spin = optionals.get("total_spin")
+            if spin is not None and (spin == 0).all():
+                log.warning(
+                    "PolarMACE detected with total_spin=0 for all systems. "
+                    "MACE's default total_spin is 1.0; if this is unintentional, "
+                    "set state.spin = torch.ones(...) before calling forward()."
+                )
+            polar_data = self._build_polar_data(
+                state, state.row_vector_cell, self.n_systems, n_real_atoms
+            )
+            data_dict.update(polar_data)
+
         oeq_compile = self._use_compile and self._enable_oeq
         if oeq_compile and self._compute_stress:
             displacement = torch.zeros(
@@ -559,5 +681,39 @@ class MaceTorchSimModel(_TSModelInterface):
                 )
             s = stress[:n_systems].detach()
             results["stress"] = s.clone() if self._use_cudagraphs else s
+
+        if self._is_polar:
+            per_system_keys = {
+                "dipole",
+                "electrostatic_energy",
+                "electron_energy",
+                "interaction_energy",
+                "total_charge",
+                "fermi_level",
+                "external_field",
+                "polarizability",
+                "polarizability_sh",
+            }
+            per_atom_keys = {
+                "charges",
+                "density_coefficients",
+                "spin_density",
+                "spin_charge_density",
+                "spins",
+                "node_energy",
+            }
+            for key, val in out.items():
+                if (
+                    key in ("energy", "forces", "stress")
+                    or not isinstance(val, torch.Tensor)
+                ):
+                    continue
+                if key in per_system_keys:
+                    v = val[:n_systems].detach()
+                elif key in per_atom_keys:
+                    v = val[:n_real_atoms].detach()
+                else:
+                    v = val.detach()
+                results[key] = v.clone() if self._use_cudagraphs else v
 
         return results
