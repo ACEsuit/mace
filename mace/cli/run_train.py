@@ -157,6 +157,13 @@ def run(args) -> None:
         args.loss = "dipole_polar"
         # multiheads_finetuning defaults to True and would override loss to "universal"
         args.multiheads_finetuning = False
+        # AtomicDielectricMACE has no atomic_energies_fn, so E0s="foundation"/"estimated" crash
+        if args.E0s is not None and args.E0s.lower() in ("foundation", "estimated"):
+            logging.warning(
+                f"--E0s={args.E0s} is not supported for AtomicDielectricMACE "
+                "(no atomic_energies_fn); falling back to --E0s=average"
+            )
+            args.E0s = "average"
         logging.info(
             "MDP fine-tuning mode: loss=dipole_polar, multiheads_finetuning disabled"
         )
