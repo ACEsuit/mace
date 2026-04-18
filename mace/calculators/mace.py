@@ -92,9 +92,11 @@ class MACECalculator(Calculator):
         fullgraph=True,
         enable_cueq=False,
         enable_oeq=False,
+        compute_bec: bool = False,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
+        self.compute_bec = compute_bec
         if enable_cueq or enable_oeq:
             assert model_type == "MACE", "CuEq only supports MACE models"
             if compile_mode is not None:
@@ -175,6 +177,8 @@ class MACECalculator(Calculator):
             raise ValueError(
                 f"Give a valid model_type: [MACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
+        if getattr(self, "compute_bec", False):
+            self.implemented_properties.append("bec")
 
         if model_paths is not None:
             if isinstance(model_paths, str):
@@ -432,13 +436,16 @@ class MACECalculator(Calculator):
         )
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
-            out = model(
-                batch.to_dict(),
-                compute_stress=compute_stress,
-                training=self.use_compile,
-                compute_edge_forces=self.compute_atomic_stresses,
-                compute_atomic_stresses=self.compute_atomic_stresses,
-            )
+            forward_kwargs = {
+                "compute_stress": compute_stress,
+                "training": self.use_compile,
+                "compute_edge_forces": self.compute_atomic_stresses,
+                "compute_atomic_stresses": self.compute_atomic_stresses,
+            }
+            if getattr(self, "compute_bec", False):
+                forward_kwargs["compute_bec"] = True
+
+            out = model(batch.to_dict(), **forward_kwargs)
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
@@ -464,6 +471,12 @@ class MACECalculator(Calculator):
                     ret_tensors.setdefault("atomic_virials", []).append(
                         out["atomic_virials"].detach()
                     )
+            if "latent_alphas" in out and out["latent_alphas"] is not None:
+                ret_tensors.setdefault("latent_alphas", []).append(out["latent_alphas"].detach())
+            if "latent_kappas" in out and out["latent_kappas"] is not None:
+                ret_tensors.setdefault("latent_kappas", []).append(out["latent_kappas"].detach())
+            if getattr(self, "compute_bec", False) and out.get("BEC") is not None:
+                ret_tensors.setdefault("bec", []).append(out["BEC"].detach())
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
@@ -471,6 +484,10 @@ class MACECalculator(Calculator):
                 torch.mean(ret_tensors["energies"], dim=0).cpu().item()
                 * self.energy_units_to_eV
             )
+            if "latent_alphas" in ret_tensors:
+               self.results["LES_alphas"] = (torch.mean(torch.stack(ret_tensors["latent_alphas"]), dim=0).cpu().numpy())
+            if "latent_kappas" in ret_tensors:
+                self.results["LES_kappas"] = (torch.mean(torch.stack(ret_tensors["latent_kappas"]), dim=0).cpu().numpy())
             self.results["free_energy"] = self.results["energy"]
             self.results["node_energy"] = (
                 torch.mean(ret_tensors["node_energy"], dim=0).cpu().numpy()
@@ -524,6 +541,10 @@ class MACECalculator(Calculator):
                     .numpy()
                     * self.energy_units_to_eV
                 )
+        if getattr(self, "compute_bec", False) and "bec" in ret_tensors:
+            self.results["bec"] = (
+                torch.mean(torch.stack(ret_tensors["bec"]), dim=0).cpu().numpy()
+            )
         if self.model_type in [
             "DipoleMACE",
             "EnergyDipoleMACE",
