@@ -438,7 +438,8 @@ class MACELES(ScaleShiftMACE):
                 les_alpha = torch.einsum("nij,nkj->nik", les_alpha, les_alpha)
         if hasattr(self, 'make_kappa_positive') and self.make_kappa_positive and les_kappa is not None:
             les_kappa = les_kappa**2
-
+        
+        les_positions = data["positions"] if displacement is not None else positions
         les_result = self.les(
             atomic_numbers=data["atomic_numbers"],
             latent_charges=les_q,
@@ -446,7 +447,7 @@ class MACELES(ScaleShiftMACE):
             latent_quads=les_quad,
             latent_alphas=les_alpha,
             latent_kappas=les_kappa,
-            positions=positions,
+            positions=les_positions,
             cell=cell_les.view(-1, 3, 3),
             batch=data["batch"],
             compute_energy=True,
