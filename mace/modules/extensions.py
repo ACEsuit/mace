@@ -223,6 +223,7 @@ class MACELES(ScaleShiftMACE):
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
 
+        e_ext = data.get("external_field", None)
 
         # for backward compatibility
         if not hasattr(self, "les_output_scale"):
@@ -453,6 +454,7 @@ class MACELES(ScaleShiftMACE):
             compute_energy=True,
             compute_bec=(compute_bec or self.compute_bec),
             bec_output_index=self.bec_output_index,
+            e_ext=e_ext,
         )
         les_energy_opt = les_result["E_lr"]
         if les_energy_opt is None:
