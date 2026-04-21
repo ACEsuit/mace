@@ -386,8 +386,11 @@ def plot_inference_from_results(
 
         # Plot test data (single legend entry)
         for name, result in test_dict.items():
+            if head not in name:
+                continue
             # Initialize scatter to None to avoid possibly used before assignment
             scatter = None
+            test_label = f"Test ({name})"
 
             if key == "energy" and "energy" in result:
                 e_key = "energy" if not plot_interaction_e else "interaction_energy"
@@ -396,7 +399,7 @@ def plot_inference_from_results(
                     result[e_key]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
+                    label=test_label,
                 )
 
             elif key == "force" and "forces" in result:
@@ -405,7 +408,7 @@ def plot_inference_from_results(
                     result["forces"]["predicted"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
+                    label=test_label,
                 )
 
             elif key == "stress" and "stress" in result:
@@ -414,7 +417,7 @@ def plot_inference_from_results(
                     result["stress"]["predicted"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
+                    label=test_label,
                 )
 
             elif key == "virials" and "virials" in result:
@@ -423,7 +426,7 @@ def plot_inference_from_results(
                     result["virials"]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
+                    label=test_label,
                 )
 
             elif key == "dipole" and "dipole" in result:
@@ -432,7 +435,7 @@ def plot_inference_from_results(
                     result["dipole"]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
+                    label=test_label,
                 )
 
             # Only add to legend_labels if scatter was assigned

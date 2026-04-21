@@ -993,7 +993,7 @@ def run(args) -> None:
     for head_config in head_configs:
         if all(check_path_ase_read(f) for f in head_config.train_file):
             for name, subset in head_config.collections.tests:
-                test_sets[name] = [
+                test_sets[head_config.head_name + "_" + name] = [
                     data.AtomicData.from_config(
                         config, z_table=z_table, cutoff=args.r_max, heads=heads
                     )
