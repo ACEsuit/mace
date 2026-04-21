@@ -384,13 +384,12 @@ def plot_inference_from_results(
 
         fixed_color_test = colors[2]  # Color for test dataset
 
-        # Plot test data (single legend entry)
+        # Plot test data (single legend entry per head)
         for name, result in test_dict.items():
             if head not in name:
                 continue
             # Initialize scatter to None to avoid possibly used before assignment
             scatter = None
-            test_label = f"Test ({name})"
 
             if key == "energy" and "energy" in result:
                 e_key = "energy" if not plot_interaction_e else "interaction_energy"
@@ -399,7 +398,6 @@ def plot_inference_from_results(
                     result[e_key]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
-                    label=test_label,
                 )
 
             elif key == "force" and "forces" in result:
@@ -408,7 +406,6 @@ def plot_inference_from_results(
                     result["forces"]["predicted"],
                     marker="o",
                     color=fixed_color_test,
-                    label=test_label,
                 )
 
             elif key == "stress" and "stress" in result:
@@ -417,7 +414,6 @@ def plot_inference_from_results(
                     result["stress"]["predicted"],
                     marker="o",
                     color=fixed_color_test,
-                    label=test_label,
                 )
 
             elif key == "virials" and "virials" in result:
@@ -426,7 +422,6 @@ def plot_inference_from_results(
                     result["virials"]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
-                    label=test_label,
                 )
 
             elif key == "dipole" and "dipole" in result:
@@ -435,12 +430,11 @@ def plot_inference_from_results(
                     result["dipole"]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
-                    label=test_label,
                 )
 
             # Only add to legend_labels if scatter was assigned
             if scatter is not None:
-                legend_labels["Test"] = scatter
+                legend_labels[f"Test {head}"] = scatter
 
         # Add diagonal line for guide
         min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
