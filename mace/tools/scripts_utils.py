@@ -770,7 +770,21 @@ def get_swa(
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
         )
+    elif args.loss == "UniversalField":
+        loss_fn_energy = modules.UniversalFieldLoss(
+            energy_weight=args.swa_energy_weight,
+            forces_weight=args.swa_forces_weight,
+            stress_weight=args.swa_stress_weight,
+            polarization_weight=args.swa_polarization_weight,
+            becs_weight=args.swa_becs_weight,
+            polarizability_weight=args.swa_polarizability_weight,
+            huber_delta=args.huber_delta,
+        )
+        logging.info(
+            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight}, polarization weight : {args.swa_polarization_weight}, becs weight : {args.swa_becs_weight}, polarizability weight : {args.swa_polarizability_weight} and learning rate : {args.swa_lr}"
+        )
     else:
+        print(args.loss)
         loss_fn_energy = modules.WeightedEnergyForcesLoss(
             energy_weight=args.swa_energy_weight,
             forces_weight=args.swa_forces_weight,
