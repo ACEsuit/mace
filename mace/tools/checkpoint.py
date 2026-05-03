@@ -8,13 +8,13 @@ import dataclasses
 import logging
 import os
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import torch
 
 from .torch_tools import TensorDict
 
-Checkpoint = Dict[str, TensorDict]
+Checkpoint = dict[str, TensorDict]
 
 
 @dataclasses.dataclass
@@ -81,7 +81,7 @@ class CheckpointIO:
             + self._filename_extension
         )
 
-    def _list_file_paths(self) -> List[str]:
+    def _list_file_paths(self) -> list[str]:
         if not os.path.isdir(self.directory):
             return []
         all_paths = [
@@ -167,7 +167,7 @@ class CheckpointIO:
 
     def load_latest(
         self, swa: Optional[bool] = False, device: Optional[torch.device] = None
-    ) -> Optional[Tuple[Checkpoint, int]]:
+    ) -> Optional[tuple[Checkpoint, int]]:
         path = self._get_latest_checkpoint_path(swa=swa)
         if path is None:
             return None
@@ -176,7 +176,7 @@ class CheckpointIO:
 
     def load(
         self, path: str, device: Optional[torch.device] = None
-    ) -> Tuple[Checkpoint, int]:
+    ) -> tuple[Checkpoint, int]:
         checkpoint_info = self._parse_checkpoint_path(path)
 
         if checkpoint_info is None:

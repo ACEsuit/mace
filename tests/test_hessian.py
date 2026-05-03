@@ -28,11 +28,11 @@ def test_potential_energy_and_hessian(setup_structure_):
 
 def test_finite_difference_hessian(setup_structure_):
     initial = setup_structure_
-    indicies = list(range(len(initial)))
+    indices = list(range(len(initial)))
     delta, ndim = 1e-4, 3
-    hessian = np.zeros((len(indicies) * ndim, len(indicies) * ndim))
+    hessian = np.zeros((len(indices) * ndim, len(indices) * ndim))
     atoms_h = initial.copy()
-    for i, index in enumerate(indicies):
+    for i, index in enumerate(indices):
         for j in range(ndim):
             atoms_i = atoms_h.copy()
             atoms_i.positions[index, j] += delta
@@ -44,7 +44,7 @@ def test_finite_difference_hessian(setup_structure_):
             atoms_j.calc = initial.calc
             forces_j = atoms_j.get_forces()
 
-            hessian[:, i * ndim + j] = -(forces_i - forces_j)[indicies].flatten() / (
+            hessian[:, i * ndim + j] = -(forces_i - forces_j)[indices].flatten() / (
                 2 * delta
             )
 

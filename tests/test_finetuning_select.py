@@ -78,7 +78,7 @@ def test_load_descriptors(
         atoms.info["mace_descriptors"] = train_atom_descriptors_fixture[i]
     save_path = tmp_path / "test.xyz"
     _maybe_save_descriptors(train_atoms_fixture, save_path.as_posix())
-    assert all(not "mace_descriptors" in atoms.info for atoms in train_atoms_fixture)
+    assert all("mace_descriptors" not in atoms.info for atoms in train_atoms_fixture)
     filtered_atoms = [
         x for x, passes in zip(train_atoms_fixture, passes_filter) if passes
     ]

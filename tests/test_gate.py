@@ -12,7 +12,7 @@ import torch.serialization
 torch.serialization.add_safe_globals([slice])
 
 from e3nn import nn as e3nn_nn  # noqa: E402
-from e3nn import o3
+from e3nn import o3  # noqa: E402
 
 from mace.modules.gate import GatedEquivariantBlock  # noqa: E402
 

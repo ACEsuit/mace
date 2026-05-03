@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Optional, Type
+from typing import Callable, Optional
 
 import torch
 
@@ -58,7 +58,7 @@ from .utils import (
     compute_statistics,
 )
 
-interaction_classes: Dict[str, Type[InteractionBlock]] = {
+interaction_classes: dict[str, type[InteractionBlock]] = {
     "RealAgnosticResidualInteractionBlock": RealAgnosticResidualInteractionBlock,
     "RealAgnosticAttResidualInteractionBlock": RealAgnosticAttResidualInteractionBlock,
     "RealAgnosticInteractionBlock": RealAgnosticInteractionBlock,
@@ -67,7 +67,7 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticResidualNonLinearInteractionBlock": RealAgnosticResidualNonLinearInteractionBlock,
 }
 
-readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
+readout_classes: dict[str, type[LinearReadoutBlock]] = {
     "LinearReadoutBlock": LinearReadoutBlock,
     "LinearDipoleReadoutBlock": LinearDipoleReadoutBlock,
     "NonLinearDipoleReadoutBlock": NonLinearDipoleReadoutBlock,
@@ -76,13 +76,13 @@ readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
     "GeneralNonLinearBiasReadoutBlock": GeneralNonLinearBiasReadoutBlock,
 }
 
-scaling_classes: Dict[str, Callable] = {
+scaling_classes: dict[str, Callable] = {
     "std_scaling": compute_mean_std_atomic_inter_energy,
     "rms_forces_scaling": compute_mean_rms_energy_forces,
     "rms_dipoles_scaling": compute_rms_dipoles,
 }
 
-gate_dict: Dict[str, Optional[Callable]] = {
+gate_dict: dict[str, Optional[Callable]] = {
     "abs": torch.abs,
     "tanh": torch.tanh,
     "silu": torch.nn.functional.silu,
@@ -106,6 +106,7 @@ __all__ = [
     "PolynomialCutoff",
     "BesselBasis",
     "GaussianBasis",
+    "GatedEquivariantBlock",
     "MACE",
     "ScaleShiftMACE",
     "AtomicDipolesMACE",
@@ -116,6 +117,7 @@ __all__ = [
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
     "WeightedEnergyForcesStressLoss",
+    "DipolePolarLoss",
     "DipoleSingleLoss",
     "WeightedEnergyForcesDipoleLoss",
     "WeightedHuberEnergyForcesStressLoss",

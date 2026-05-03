@@ -94,7 +94,19 @@ def do_optimization_step(
     optimizer.eval()
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(),
+                reason="CUDA not available",
+            ),
+        ),
+    ],
+)
 def test_can_load_checkpoint(device):
     model = create_mace(device)
     optimizer = schedulefree.adamw_schedulefree.AdamWScheduleFree(model.parameters())

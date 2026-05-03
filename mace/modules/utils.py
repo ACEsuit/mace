@@ -5,7 +5,7 @@
 ###########################################################################################
 
 import logging
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import NamedTuple, Optional
 
 import numpy as np
 import torch
@@ -22,7 +22,7 @@ from .blocks import AtomicEnergiesBlock
 def compute_forces(
     energy: torch.Tensor, positions: torch.Tensor, training: bool = True
 ) -> torch.Tensor:
-    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+    grad_outputs: list[Optional[torch.Tensor]] = [torch.ones_like(energy)]
     gradient = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions],  # [n_nodes, 3]
@@ -30,9 +30,7 @@ def compute_forces(
         retain_graph=training,  # Make sure the graph is not destroyed during training
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,  # For complete dissociation turn to true
-    )[
-        0
-    ]  # [n_nodes, 3]
+    )[0]  # [n_nodes, 3]
     if gradient is None:
         return torch.zeros_like(positions)
     return -1 * gradient
@@ -45,8 +43,8 @@ def compute_forces_virials(
     cell: torch.Tensor,
     training: bool = True,
     compute_stress: bool = False,
-) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
-    grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
+) -> tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+    grad_outputs: list[Optional[torch.Tensor]] = [torch.ones_like(energy)]
     forces, virials = torch.autograd.grad(
         outputs=[energy],  # [n_graphs, ]
         inputs=[positions, displacement],  # [n_nodes, 3]
@@ -77,7 +75,7 @@ def get_symmetric_displacement(
     num_graphs: int,
     batch: torch.Tensor,
     displacement: Optional[torch.Tensor] = None,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if cell is None:
         cell = torch.zeros(
             num_graphs * 3,
@@ -176,7 +174,7 @@ def get_outputs(
     compute_stress: bool = True,
     compute_hessian: bool = False,
     compute_edge_forces: bool = False,
-) -> Tuple[
+) -> tuple[
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
@@ -229,7 +227,7 @@ def get_atomic_virials_stresses(
     num_atoms: int,
     batch: torch.Tensor,
     cell: torch.Tensor,  # [n_graphs, 3, 3]
-) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
     Compute atomic virials and optionally atomic stresses from edge forces and vectors.
     From pobo95 PR #528.
@@ -264,7 +262,7 @@ def get_edge_vectors_and_lengths(
     shifts: torch.Tensor,  # [n_edges, 3]
     normalize: bool = False,
     eps: float = 1e-9,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     sender = edge_index[0]
     receiver = edge_index[1]
     vectors = positions[receiver] - positions[sender] + shifts  # [n_edges, 3]
@@ -292,9 +290,7 @@ def extract_invariant(x: torch.Tensor, num_layers: int, num_features: int, l_max
         out.append(
             x[
                 :,
-                i
-                * (l_max + 1) ** 2
-                * num_features : (i * (l_max + 1) ** 2 + 1)
+                i * (l_max + 1) ** 2 * num_features : (i * (l_max + 1) ** 2 + 1)
                 * num_features,
             ]
         )
@@ -304,7 +300,7 @@ def extract_invariant(x: torch.Tensor, num_layers: int, num_features: int, l_max
 def compute_mean_std_atomic_inter_energy(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
 
     avg_atom_inter_es_list = []
@@ -335,7 +331,7 @@ def compute_mean_std_atomic_inter_energy(
 def _compute_mean_std_atomic_inter_energy(
     batch: Batch,
     atomic_energies_fn: AtomicEnergiesBlock,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     head = batch.head
     node_e0 = atomic_energies_fn(batch.node_attrs)
     graph_e0s = scatter_sum(
@@ -349,7 +345,7 @@ def _compute_mean_std_atomic_inter_energy(
 def compute_mean_rms_energy_forces(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
 
     atom_energy_list = []
@@ -392,7 +388,7 @@ def compute_mean_rms_energy_forces(
 def _compute_mean_rms_energy_forces(
     batch: Batch,
     atomic_energies_fn: AtomicEnergiesBlock,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     head = batch.head
     node_e0 = atomic_energies_fn(batch.node_attrs)
     graph_e0s = scatter_sum(
@@ -421,7 +417,7 @@ def compute_avg_num_neighbors(data_loader: torch.utils.data.DataLoader) -> float
 def compute_statistics(
     data_loader: torch.utils.data.DataLoader,
     atomic_energies: np.ndarray,
-) -> Tuple[float, float, float, float]:
+) -> tuple[float, float, float, float]:
     atomic_energies_fn = AtomicEnergiesBlock(atomic_energies=atomic_energies)
 
     atom_energy_list = []
@@ -469,7 +465,7 @@ def compute_statistics(
 
 def compute_rms_dipoles(
     data_loader: torch.utils.data.DataLoader,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     dipoles_list = []
     for batch in data_loader:
         dipoles_list.append(batch.dipole)  # {[n_graphs,3], }
@@ -523,7 +519,9 @@ def compute_total_charge_dipole_permuted(
         dipole = dipole + dipole_p[..., [2, 0, 1]]  # CS phase convention
 
     total_charge = scatter_sum(
-        src=density_coefficients[:, 0], index=batch, dim=-1  # , dim_size=num_graphs
+        src=density_coefficients[:, 0],
+        index=batch,
+        dim=-1,  # , dim_size=num_graphs
     )
 
     return total_charge, dipole
@@ -533,7 +531,7 @@ def compute_total_charge_dipole_permuted(
 def compute_dielectric_gradients(
     dielectric: torch.Tensor,
     positions: torch.Tensor,
-) -> Tuple[torch.tensor, torch.tensor]:
+) -> tuple[torch.tensor, torch.tensor]:
     dielectric_flatten = dielectric.view(-1)
 
     def get_vjp(v):
@@ -577,7 +575,7 @@ def compute_dielectric_gradients_loop(
 
 class InteractionKwargs(NamedTuple):
     lammps_class: Optional[torch.Tensor]
-    lammps_natoms: Tuple[int, int] = (0, 0)
+    lammps_natoms: tuple[int, int] = (0, 0)
 
 
 class GraphContext(NamedTuple):
@@ -594,7 +592,7 @@ class GraphContext(NamedTuple):
 
 
 def prepare_graph(
-    data: Dict[str, torch.Tensor],
+    data: dict[str, torch.Tensor],
     compute_virials: bool = False,
     compute_stress: bool = False,
     compute_displacement: bool = False,

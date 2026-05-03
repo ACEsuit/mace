@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import math
 from abc import abstractmethod
-from typing import List, Optional, Tuple, Type
 
 import torch
 from e3nn import nn, o3
@@ -32,7 +31,7 @@ class MultiLayerFeatureMixer(torch.nn.Module):
         self,
         node_feats_irreps: o3.Irreps,
         num_interactions: int,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
+        cueq_config: CuEquivarianceConfig | None = None,
     ):
         super().__init__()
         self.linears = torch.nn.ModuleList(
@@ -57,7 +56,7 @@ class EnvironmentDependentSpinSourceBlock(torch.nn.Module):
         irreps_in: o3.Irreps,
         max_l: int,
         zero_charges: bool = False,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
+        cueq_config: CuEquivarianceConfig | None = None,
     ):
         super().__init__()
         self.zero_charges = zero_charges
@@ -89,7 +88,7 @@ class PotentialEmbeddingBlock(torch.nn.Module):
         potential_irreps: o3.Irreps,
         node_feats_irreps: o3.Irreps,
         node_attrs_irreps: o3.Irreps,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
+        cueq_config: CuEquivarianceConfig | None = None,
         **kwargs,
     ):
         super().__init__()
@@ -115,12 +114,8 @@ class PotentialEmbeddingBlock(torch.nn.Module):
 
 
 @compile_mode("script")
-class AgnosticChargeBiasedLinearPotentialEmbedding(
-    PotentialEmbeddingBlock
-):  # pylint: disable=arguments-differ
-    def _setup(
-        self, charges_irreps: o3.Irreps
-    ) -> None:  # pylint: disable=arguments-differ
+class AgnosticChargeBiasedLinearPotentialEmbedding(PotentialEmbeddingBlock):  # pylint: disable=arguments-differ
+    def _setup(self, charges_irreps: o3.Irreps) -> None:  # pylint: disable=arguments-differ
         self.potential_linear = o3.Linear(
             irreps_in=self.potential_irreps,
             irreps_out=self.node_feats_irreps,
@@ -170,13 +165,13 @@ class AgnosticChargeBiasedLinearPotentialEmbedding(
             cueq_config=self.cueq_config,
         )
 
-    def forward(
+    def forward(  # pylint: disable=arguments-differ
         self,
         potential_feats: torch.Tensor,
         node_feats: torch.Tensor,
         node_attrs: torch.Tensor,
         local_charges: torch.Tensor,
-    ) -> torch.Tensor:  # pylint: disable=arguments-differ
+    ) -> torch.Tensor:
         potential_to_mul_ir = getattr(self, "_potential_to_mul_ir", None)
         node_feats_to_mul_ir = getattr(self, "_node_feats_to_mul_ir", None)
         charges_to_mul_ir = getattr(self, "_charges_to_mul_ir", None)
@@ -239,9 +234,9 @@ class FieldUpdateBlock(torch.nn.Module):
         potential_irreps: o3.Irreps,
         charges_irreps: o3.Irreps,
         field_norm_factor: float,
-        radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None,
+        radial_MLP: list[int] | None = None,
+        cueq_config: CuEquivarianceConfig | None = None,
+        oeq_config: OEQConfig | None = None,
         **kwargs,
     ):
         super().__init__()
@@ -306,7 +301,7 @@ class SparseUvuTensorProduct(torch.nn.Module):
         irreps_in1: o3.Irreps,
         irreps_in2: o3.Irreps,
         irreps_out: o3.Irreps,
-        instructions: List[Tuple[int, int, int, str, bool]],
+        instructions: list[tuple[int, int, int, str, bool]],
         layout: str = "mul_ir",
     ) -> None:
         super().__init__()
@@ -349,8 +344,8 @@ class SparseUvuTensorProduct(torch.nn.Module):
         in1_slices = self.irreps_in1.slices()
         in2_slices = self.irreps_in2.slices()
         out_slices = self.irreps_out.slices()
-        self._path_meta: List[
-            Tuple[int, int, int, int, int, int, int, int, float, int, int, int, int]
+        self._path_meta: list[
+            tuple[int, int, int, int, int, int, int, int, float, int, int, int, int]
         ] = []
         w_offset = 0
         for ins in self.instructions:
@@ -470,11 +465,11 @@ class SparseUvuTensorProduct(torch.nn.Module):
 class AgnosticEmbeddedOneBodyVariableUpdate(FieldUpdateBlock):
     def _setup(
         self,
-        potential_embedding_cls: Type[
+        potential_embedding_cls: type[
             PotentialEmbeddingBlock
         ] = AgnosticChargeBiasedLinearPotentialEmbedding,
-        nonlinearity_cls: Type[torch.nn.Module] = NoNonLinearity,
-        num_elements: Optional[int] = None,
+        nonlinearity_cls: type[torch.nn.Module] = NoNonLinearity,
+        num_elements: int | None = None,
         **kwargs,
     ) -> None:
         _ = (nonlinearity_cls, num_elements)
@@ -606,9 +601,9 @@ class PostScfReadout(torch.nn.Module):
         avg_num_neighbors: float,
         potential_irreps: o3.Irreps,
         charges_irreps: o3.Irreps,
-        radial_MLP: Optional[List[int]] = None,
-        cueq_config: Optional[CuEquivarianceConfig] = None,
-        oeq_config: Optional[OEQConfig] = None,
+        radial_MLP: list[int] | None = None,
+        cueq_config: CuEquivarianceConfig | None = None,
+        oeq_config: OEQConfig | None = None,
         **kwargs,
     ):
         super().__init__()

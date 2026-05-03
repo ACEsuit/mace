@@ -1,7 +1,7 @@
 import argparse
 import logging
 import os
-from typing import Dict, List, Tuple, Union
+from typing import Union
 
 import torch
 from e3nn import o3
@@ -19,7 +19,7 @@ except (ImportError, ModuleNotFoundError):
     CUEQQ_AVAILABLE = False
     cue = None
 
-SizeLike = Union[torch.Size, List[int]]
+SizeLike = Union[torch.Size, list[int]]
 
 
 def shapes_match_up_to_unsqueeze(a: SizeLike, b: SizeLike) -> bool:
@@ -46,7 +46,7 @@ def get_kmax_pairs(
     correlation: int,
     num_layers: int,
     keep_last_layer_irreps: bool,
-) -> List[Tuple[int, int]]:
+) -> list[tuple[int, int]]:
     """Determine kmax pairs based on num_product_irreps and correlation"""
     if correlation == 2:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
@@ -66,8 +66,8 @@ def get_kmax_pairs(
 
 
 def transfer_symmetric_contractions(
-    source_dict: Dict[str, torch.Tensor],
-    target_dict: Dict[str, torch.Tensor],
+    source_dict: dict[str, torch.Tensor],
+    target_dict: dict[str, torch.Tensor],
     num_product_irreps: int,
     products: torch.nn.Module,
     correlation: int,

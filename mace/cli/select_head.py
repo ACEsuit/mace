@@ -40,7 +40,6 @@ def main():
         print("Available heads:")
         print("\n".join(["  " + h for h in model.heads]))
     else:
-
         if args.output_file is None:
             args.output_file = (
                 args.model_file

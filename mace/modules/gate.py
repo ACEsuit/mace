@@ -10,12 +10,13 @@ Supports both mul_ir (e3nn default) and ir_mul (cuequivariance) layouts,
 so callers can drop TransposeIrrepsLayout layers around the gate.
 """
 
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Callable, Optional
 
 import torch
 from e3nn import o3
 
-_NORM_CACHE: Dict[int, float] = {}
+_NORM_CACHE: dict[int, float] = {}
 
 
 def _normalize2mom_cst(fn: Callable) -> float:
@@ -104,9 +105,9 @@ class GatedEquivariantBlock(torch.nn.Module):
         n_scalar_groups = len(irreps_scalars)
         n_gate_groups = len(irreps_gates)
 
-        scalar_sorted_indices: List[int] = []
-        gate_sorted_indices: List[int] = []
-        gated_sorted_indices: List[int] = []
+        scalar_sorted_indices: list[int] = []
+        gate_sorted_indices: list[int] = []
+        gated_sorted_indices: list[int] = []
 
         for sorted_idx in range(len(irreps_in_unsorted)):
             orig = int(sort_perm[sorted_idx])
@@ -117,7 +118,7 @@ class GatedEquivariantBlock(torch.nn.Module):
             else:
                 gated_sorted_indices.append(sorted_idx)
 
-        group_offsets: List[int] = []
+        group_offsets: list[int] = []
         offset = 0
         for mul_ir in irreps_in_sorted:
             group_offsets.append(offset)
@@ -140,13 +141,13 @@ class GatedEquivariantBlock(torch.nn.Module):
             self._g_len = 0
 
         # Gated groups: (start, total_len, ir_dim, mul, gate_offset_in_gate_slice)
-        gate_offset_by_gated_orig: List[int] = []
+        gate_offset_by_gated_orig: list[int] = []
         cum = 0
         for mul_ir in irreps_gated:
             gate_offset_by_gated_orig.append(cum)
             cum += mul_ir.mul
 
-        gated_info: List[Tuple[int, int, int, int, int]] = []
+        gated_info: list[tuple[int, int, int, int, int]] = []
         for si in gated_sorted_indices:
             mul_ir = irreps_in_sorted[si]
             gd_start = group_offsets[si]
@@ -157,7 +158,7 @@ class GatedEquivariantBlock(torch.nn.Module):
             g_off = gate_offset_by_gated_orig[gated_orig_idx]
             gated_info.append((gd_start, gd_len, ir_dim, mul, g_off))
 
-        self._gated_info: List[Tuple[int, int, int, int, int]] = gated_info
+        self._gated_info: list[tuple[int, int, int, int, int]] = gated_info
 
         if len(act_scalars) == 1 and len(irreps_scalars) > 1:
             act_scalars = list(act_scalars) * len(irreps_scalars)
@@ -222,7 +223,7 @@ class GatedEquivariantBlock(torch.nn.Module):
             gates = self._act_gate(gates) * self._gate_cst
 
         ir_mul = self._layout_is_ir_mul
-        gated_parts: List[torch.Tensor] = []
+        gated_parts: list[torch.Tensor] = []
         for gd_start, gd_len, ir_dim, mul, g_off in self._gated_info:
             gated_chunk = features.narrow(-1, gd_start, gd_len)
             gate_chunk = gates.narrow(-1, g_off, mul)

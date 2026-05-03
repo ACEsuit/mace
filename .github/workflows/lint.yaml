@@ -1,0 +1,29 @@
+name: Linting
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: |
+          uv pip install "torch>=1.12" --index-url https://download.pytorch.org/whl/cpu --system
+          uv pip install ".[dev,wandb]" --system
+
+      - name: Run prek
+        uses: j178/prek-action@v1

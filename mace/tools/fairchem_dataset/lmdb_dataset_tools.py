@@ -69,7 +69,7 @@ def rename_data_object_keys(data_object, key_mapping: dict[str, str | list[str]]
 
         This is currently required when we use a single target/label for multiple tasks
     """
-    for _property in key_mapping:
+    for _property in key_mapping:  # noqa: PLC0206
         # catch for test data not containing labels
         if _property in data_object:
             list_of_new_keys = key_mapping[_property]
@@ -180,12 +180,12 @@ class BaseDataset(ABC):
             for field in metadata_npzs[0]
         }
 
-        assert np.issubdtype(
-            metadata["natoms"].dtype, np.integer
-        ), f"Metadata natoms must be an integer type! not {metadata['natoms'].dtype}"
-        assert metadata["natoms"].shape[0] == len(
-            self
-        ), "Loaded metadata and dataset size mismatch."
+        assert np.issubdtype(metadata["natoms"].dtype, np.integer), (
+            f"Metadata natoms must be an integer type! not {metadata['natoms'].dtype}"
+        )
+        assert metadata["natoms"].shape[0] == len(self), (
+            "Loaded metadata and dataset size mismatch."
+        )
 
         return metadata
 
@@ -291,7 +291,7 @@ class LMDBDatabase(ase.db.core.Database):
         self.deleted_ids = []
         self._load_ids()
 
-    def __enter__(self) -> "LMDBDatabase":
+    def __enter__(self) -> LMDBDatabase:
         return self
 
     def __exit__(self, exc_type, exc_value, tb) -> None:
@@ -871,7 +871,7 @@ class AseDBDataset(AseAtomsDataset):
         elif os.path.isfile(config["src"]):
             filepaths = [config["src"]]
         elif os.path.isdir(config["src"]):
-            filepaths = sorted(glob(f'{config["src"]}/*'))
+            filepaths = sorted(glob(f"{config['src']}/*"))
         else:
             filepaths = sorted(glob(config["src"]))
 

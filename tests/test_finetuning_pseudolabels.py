@@ -77,7 +77,7 @@ def _run_and_collect_pt_metrics(name: str, mace_params: dict):
     assert results_path.exists(), f"Results log not found: {results_path}"
 
     pt_initial = None
-    with open(results_path, "r", encoding="utf-8") as f:
+    with open(results_path, encoding="utf-8") as f:
         for line in f:
             try:
                 rec = json.loads(line)

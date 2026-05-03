@@ -31,7 +31,7 @@ def init_distributed(args):
         world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
 
         # local-rank isn’t standardised; compute it from local node-size
-        local_size = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_SIZE", 1))
+        local_size = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_SIZE", "1"))
         local_rank = rank % local_size
 
         # tell PyTorch where the rendez-vous server is

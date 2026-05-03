@@ -3,7 +3,6 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from typing import Dict, Tuple
 
 import torch
 from ase.data import chemical_symbols
@@ -51,7 +50,7 @@ def timer(name: str, enabled: bool = True):
         yield
     finally:
         elapsed = time.perf_counter() - start
-        logging.info(f"Timer - {name}: {elapsed*1000:.3f} ms")
+        logging.info(f"Timer - {name}: {elapsed * 1000:.3f} ms")
 
 
 @compile_mode("script")
@@ -88,8 +87,8 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
             p.requires_grad = False
 
     def forward(
-        self, data: Dict[str, torch.Tensor]
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, data: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute energies and per-pair forces."""
         data["head"] = self.head
         data["total_charge"] = self.total_charge

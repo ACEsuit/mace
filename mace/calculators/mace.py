@@ -10,7 +10,7 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Optional, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -21,6 +21,7 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from e3nn import o3
 
 from mace import data as mace_data
+from mace.modules.models import MACE
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import (
@@ -96,10 +97,12 @@ class MACECalculator(Calculator):
     Dipoles are returned in units of Debye
     """
 
+    models: list[MACE]
+
     def __init__(
         self,
         model_paths: Union[list, str, None] = None,
-        models: Union[List[torch.nn.Module], torch.nn.Module, None] = None,
+        models: Union[list[torch.nn.Module], torch.nn.Module, None] = None,
         device: str = "cpu",
         energy_units_to_eV: float = 1.0,
         length_units_to_A: float = 1.0,
@@ -274,7 +277,7 @@ class MACECalculator(Calculator):
             ) ** 2
 
         try:
-            self.available_heads: List[str] = self.models[0].heads  # type: ignore
+            self.available_heads: list[str] = self.models[0].heads
         except AttributeError:
             self.available_heads = ["Default"]
         kwarg_head = kwargs.get("head", None)
@@ -348,14 +351,14 @@ class MACECalculator(Calculator):
                 dynamo = torch._dynamo
             except AttributeError:
                 dynamo = None
-            if self._enable_oeq:
-                if dynamo is not None:
+
+            if dynamo is not None:
+                if self._enable_oeq:
                     try:
                         configure_autograd_for_compile(allow_autograd=False)
                     except (TypeError, AttributeError):
                         pass
-            else:
-                if dynamo is not None:
+                else:
                     configure_autograd_for_compile(allow_autograd=True)
             if self._uses_accelerated_backend:
                 with disable_e3nn_codegen():
@@ -405,7 +408,7 @@ class MACECalculator(Calculator):
         def _infos_equal(a: dict, b: dict) -> bool:
             if a.keys() != b.keys():
                 return False
-            for k in a:
+            for k in a:  # noqa: PLC0206
                 va, vb = a[k], b[k]
                 if isinstance(va, np.ndarray) or isinstance(vb, np.ndarray):
                     continue
@@ -420,8 +423,8 @@ class MACECalculator(Calculator):
 
     @staticmethod
     def _slice_real_outputs(
-        out: Dict[str, Union[torch.Tensor, None]], num_real_atoms: int
-    ) -> Dict[str, Union[torch.Tensor, None]]:
+        out: dict[str, Union[torch.Tensor, None]], num_real_atoms: int
+    ) -> dict[str, Union[torch.Tensor, None]]:
         """Strip padding from model outputs, keeping only real-atom results."""
         graph_level_keys = {
             "energy",
@@ -442,7 +445,7 @@ class MACECalculator(Calculator):
             "atomic_dipoles",
             "node_feats",
         }
-        sliced: Dict[str, Union[torch.Tensor, None]] = {}
+        sliced: dict[str, Union[torch.Tensor, None]] = {}
         for key, value in out.items():
             if value is None or not torch.is_tensor(value):
                 sliced[key] = value
@@ -455,7 +458,11 @@ class MACECalculator(Calculator):
         return sliced
 
     def _create_result_tensors(
-        self, num_models: int, num_atoms: int, batch, out: dict
+        self,
+        num_models: int,
+        num_atoms: int,
+        batch,
+        out: dict[str, Optional[torch.Tensor]],
     ) -> dict:
         tensor_shapes = {
             "energy": [],
@@ -481,14 +488,14 @@ class MACECalculator(Calculator):
                 }
             )
         dict_of_tensors = {}
-        for key in out:
-            if key not in tensor_shapes or out.get(key) is None:
+        for key, value in out.items():
+            if key not in tensor_shapes or value is None:
                 continue
             shape = [num_models] + tensor_shapes[key]
             dict_of_tensors[key] = torch.zeros(
                 *shape,
                 device=self.device,
-                dtype=out[key].dtype,
+                dtype=value.dtype,
             )
 
         node_e0 = None
@@ -649,7 +656,7 @@ class MACECalculator(Calculator):
                 if out.get(key) is not None:
                     val[i] = out[key].detach()
 
-        # covert from ret_tensors to calculator results dict
+        # convert from ret_tensors to calculator results dict
         self.results = {}
         scalar_tensors = set(["energy"])
         results_store_ensemble = set(["energy", "forces", "stress", "dipole"])
