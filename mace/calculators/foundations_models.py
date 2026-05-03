@@ -38,32 +38,48 @@ def _normalize_github_download_url(url: str) -> str:
 
 
 def _urlretrieve_with_timeout(url, filename, timeout=_DOWNLOAD_TIMEOUT):
-    """Download *url* to *filename* with a per-read socket timeout."""
-    with urllib.request.urlopen(
-        _normalize_github_download_url(url), timeout=timeout
-    ) as response:
-        total = int(response.headers.get("Content-Length", 0))
-        downloaded = 0
-        block_size = 256 * 1024  # 256 KB
-        info = response.info()
-        with open(filename, "wb") as out:
-            while True:
-                block = response.read(block_size)
-                if not block:
-                    break
-                out.write(block)
-                downloaded += len(block)
-                if total > 0:
-                    pct = min(100, downloaded * 100 / total)
-                    print(
-                        f"\rDownloading: {pct:.1f}% "
-                        f"({downloaded / 1024 / 1024:.1f} MB / "
-                        f"{total / 1024 / 1024:.1f} MB)",
-                        end="",
-                        flush=True,
-                    )
-    if total > 0:
-        print()  # newline after progress
+    """Download *url* to *filename* with a per-read socket timeout.
+
+    Streams to a ``.part`` sibling and atomically renames on success so
+    interrupted downloads never leave a truncated file at *filename* (which
+    would later make ``torch.load`` fail with a confusing zip-archive error).
+    """
+    tmp = filename + ".part"
+    success = False
+    try:
+        with urllib.request.urlopen(
+            _normalize_github_download_url(url), timeout=timeout
+        ) as response:
+            total = int(response.headers.get("Content-Length", 0))
+            downloaded = 0
+            block_size = 256 * 1024  # 256 KB
+            info = response.info()
+            with open(tmp, "wb") as out:
+                while True:
+                    block = response.read(block_size)
+                    if not block:
+                        break
+                    out.write(block)
+                    downloaded += len(block)
+                    if total > 0:
+                        pct = min(100, downloaded * 100 / total)
+                        print(
+                            f"\rDownloading: {pct:.1f}% "
+                            f"({downloaded / 1024 / 1024:.1f} MB / "
+                            f"{total / 1024 / 1024:.1f} MB)",
+                            end="",
+                            flush=True,
+                        )
+        os.replace(tmp, filename)
+        success = True
+        if total > 0:
+            print()  # newline after progress
+    finally:
+        if not success:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
     return filename, info
 
 
