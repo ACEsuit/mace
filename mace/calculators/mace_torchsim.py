@@ -488,9 +488,21 @@ class MaceTorchSimModel(ModelInterface):
             "edge_index": edge_index,
             "unit_shifts": unit_shifts,
             "shifts": shifts,
-            "total_charge": sim_state.charge,
-            "total_spin": sim_state.spin,
         }
+        # torch-sim >=0.6 dropped charge/spin from SimState's default fields;
+        # they now live in extras and may be absent. Older releases still expose
+        # them as attributes. Pull whichever is available; only models that
+        # actually consume these (e.g. PolarMACE) require them.
+        total_charge = getattr(
+            sim_state, "total_charge", getattr(sim_state, "charge", None)
+        )
+        if total_charge is not None:
+            data_dict["total_charge"] = total_charge
+        total_spin = getattr(
+            sim_state, "total_spin", getattr(sim_state, "spin", None)
+        )
+        if total_spin is not None:
+            data_dict["total_spin"] = total_spin
 
         oeq_compile = self._use_compile and self._enable_oeq
         if oeq_compile and self._compute_stress:
