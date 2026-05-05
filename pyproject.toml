@@ -51,7 +51,7 @@ dev = [
     "pre-commit",
     "mace-torch[test]",
 ]
-torchsim = ["torch-sim-atomistic>=0.5.2; python_version >= '3.12'"]
+torchsim = ["torch-sim-atomistic>=0.6.0; python_version >= '3.12'"]
 test = [
     "pytest",
     "pytest-benchmark",
