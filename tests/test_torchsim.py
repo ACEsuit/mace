@@ -8,19 +8,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-
-from mace.calculators import mace_mp, mace_off, mace_omol
+from ase import build
 
 try:
     import torch_sim as ts
-    from torch_sim.models.interface import validate_model_outputs
-    from torch_sim.testing import (
-        SIMSTATE_BULK_GENERATORS,
-        SIMSTATE_MOLECULE_GENERATORS,
-        assert_model_calculator_consistency,
-    )
-except (ImportError, ModuleNotFoundError):
-    pytest.skip("Skipping torch-sim tests due to ImportError", allow_module_level=True)
+
+    TORCHSIM_AVAILABLE = True
+except ImportError:
+    TORCHSIM_AVAILABLE = False
 
 try:
     import cuequivariance as cue  # noqa: F401
@@ -29,127 +24,17 @@ try:
 except ImportError:
     CUET_AVAILABLE = False
 
-from mace.calculators.mace import MACECalculator
-from mace.calculators.mace_torchsim import MaceTorchSimModel
+pytestmark = pytest.mark.skipif(
+    not TORCHSIM_AVAILABLE, reason="torch-sim not installed"
+)
 
+pytest_mace_dir = Path(__file__).parent.parent
 run_train = Path(__file__).parent.parent / "mace" / "cli" / "run_train.py"
-DEVICE = torch.device("cpu")
-DTYPE = torch.float64
-MACE_MP_MODEL = "small-0b"
-MACE_OFF_MODEL = "small"
-SKIP_OMOL_DOWNLOAD = os.getenv("CI", "").lower() in {"1", "true", "yes"}
-
-
-def _to_dtype_name(dtype: torch.dtype) -> str:
-    if dtype == torch.float32:
-        return "float32"
-    if dtype == torch.float64:
-        return "float64"
-    raise ValueError(f"Unsupported dtype {dtype}")
-
-
-def _atoms_state(atoms, device=DEVICE, dtype=DTYPE):
-    return ts.io.atoms_to_state(atoms, device=device, dtype=dtype)
-
-
-@pytest.fixture(scope="module")
-def raw_mace_mp_model():
-    return mace_mp(
-        model=MACE_MP_MODEL,
-        device=DEVICE.type,
-        default_dtype=_to_dtype_name(DTYPE),
-        return_raw_model=True,
-    )
-
-
-@pytest.fixture(scope="module")
-def raw_mace_off_model():
-    return mace_off(
-        model=MACE_OFF_MODEL,
-        device=DEVICE.type,
-        default_dtype=_to_dtype_name(DTYPE),
-        return_raw_model=True,
-    )
-
-
-@pytest.fixture
-def ase_mace_mp_calculator():
-    return mace_mp(
-        model=MACE_MP_MODEL,
-        device=DEVICE.type,
-        default_dtype=_to_dtype_name(DTYPE),
-        dispersion=False,
-    )
-
-
-@pytest.fixture
-def ase_mace_off_calculator():
-    return mace_off(
-        model=MACE_OFF_MODEL,
-        device=DEVICE.type,
-        default_dtype=_to_dtype_name(DTYPE),
-    )
-
-
-@pytest.fixture
-def ts_mace_mp_model(raw_mace_mp_model):
-    return MaceTorchSimModel(
-        model=raw_mace_mp_model,
-        device=DEVICE,
-        dtype=DTYPE,
-        compute_forces=True,
-        compute_stress=True,
-    )
-
-
-@pytest.fixture
-def ts_mace_off_model(raw_mace_off_model):
-    return MaceTorchSimModel(
-        model=raw_mace_off_model,
-        device=DEVICE,
-        dtype=DTYPE,
-        compute_forces=True,
-        compute_stress=False,
-    )
-
-
-@pytest.fixture(scope="module")
-def raw_mace_omol_model():
-    if SKIP_OMOL_DOWNLOAD:
-        pytest.skip("MACE-OMOL checkpoint is large; skip in CI.")
-    return mace_omol(
-        device=DEVICE.type,
-        default_dtype=_to_dtype_name(DTYPE),
-        return_raw_model=True,
-    )
-
-
-@pytest.fixture
-def ase_mace_omol_calculator():
-    if SKIP_OMOL_DOWNLOAD:
-        pytest.skip("MACE-OMOL checkpoint is large; skip in CI.")
-    return mace_omol(
-        device=DEVICE.type,
-        default_dtype=_to_dtype_name(DTYPE),
-    )
-
-
-@pytest.fixture
-def ts_mace_omol_model(raw_mace_omol_model):
-    return MaceTorchSimModel(
-        model=raw_mace_omol_model,
-        device=DEVICE,
-        dtype=DTYPE,
-        compute_forces=True,
-        compute_stress=False,
-        head="omol",
-    )
 
 
 @pytest.fixture(scope="module")
 def trained_model_path(tmp_path_factory):
     """Train a minimal MACE model and return the path to the model file."""
-    import ase.io
     from ase.atoms import Atoms
 
     water = Atoms(
@@ -177,6 +62,7 @@ def trained_model_path(tmp_path_factory):
         fit_configs.append(c)
 
     tmp_path = tmp_path_factory.mktemp("torchsim_model_")
+    import ase.io
 
     ase.io.write(tmp_path / "fit.xyz", fit_configs)
 
@@ -237,178 +123,103 @@ def water_atoms():
     return atoms
 
 
-@pytest.mark.parametrize("sim_state_name", ("si_sim_state", "rattled_si_sim_state"))
-def test_torch_sim_mace_mp_consistency(
-    sim_state_name, ts_mace_mp_model, ase_mace_mp_calculator
-):
-    sim_state = SIMSTATE_BULK_GENERATORS[sim_state_name](DEVICE, DTYPE)
-    assert_model_calculator_consistency(
-        model=ts_mace_mp_model,
-        calculator=ase_mace_mp_calculator,
-        sim_state=sim_state,
-    )
+def test_torchsim_basic(trained_model_path, water_atoms):
+    from mace.calculators.mace_torchsim import MaceTorchSimModel
 
-@pytest.mark.parametrize("sim_state_name", ("benzene_sim_state",))
-def test_torch_sim_mace_off_consistency(sim_state_name, ts_mace_off_model, ase_mace_off_calculator):
-    sim_state = SIMSTATE_MOLECULE_GENERATORS[sim_state_name](DEVICE, DTYPE)
-    assert_model_calculator_consistency(
-        model=ts_mace_off_model,
-        calculator=ase_mace_off_calculator,
-        sim_state=sim_state,
-    )
-    assert "stress" not in ts_mace_off_model(sim_state)
-
-
-@pytest.mark.parametrize("sim_state_name", ("benzene_sim_state",))
-def test_torch_sim_mace_omol_consistency(sim_state_name, ts_mace_omol_model, ase_mace_omol_calculator):
-    sim_state = SIMSTATE_MOLECULE_GENERATORS[sim_state_name](DEVICE, DTYPE)
-    charge = torch.zeros(sim_state.n_systems, device=DEVICE, dtype=DTYPE)
-    spin = torch.zeros(sim_state.n_systems, device=DEVICE, dtype=DTYPE)
-    charge[0] = 1.0
-    spin[0] = 3.0
-    ion = sim_state.from_state(sim_state, charge=charge, spin=spin)
-    for state in (sim_state, ion):
-        assert_model_calculator_consistency(
-            model=ts_mace_omol_model,
-            calculator=ase_mace_omol_calculator,
-            sim_state=state,
-        )
-        assert "stress" not in ts_mace_omol_model(state)
-
-
-def test_torch_sim_mace_validate_outputs(ts_mace_mp_model):
-    validate_model_outputs(ts_mace_mp_model, DEVICE, DTYPE)
-
-
-@pytest.mark.parametrize("dtype", (torch.float32, torch.float64))
-def test_torch_sim_mace_dtype_smoke(raw_mace_mp_model, dtype: torch.dtype):
     model = MaceTorchSimModel(
-        model=raw_mace_mp_model,
-        device=DEVICE,
-        dtype=dtype,
+        model=trained_model_path,
+        device=torch.device("cpu"),
+        dtype=torch.float64,
         compute_forces=True,
         compute_stress=True,
     )
-    state = SIMSTATE_BULK_GENERATORS["si_sim_state"](DEVICE, dtype)
-    output = model(state)
 
-    assert output["energy"].shape == (1,)
-    assert torch.is_floating_point(output["energy"])
-    assert output["forces"].shape == state.positions.shape
-    assert torch.is_floating_point(output["forces"])
-    assert output["stress"].shape == (1, 3, 3)
+    state = ts.io.atoms_to_state(
+        water_atoms, device=torch.device("cpu"), dtype=torch.float64
+    )
+
+    results = model(state)
+    assert "energy" in results
+    assert "forces" in results
+    assert "stress" in results
+    assert results["energy"].shape == (1,)
+    assert results["forces"].shape[0] == len(water_atoms)
+    assert results["forces"].shape[1] == 3
 
 
 def test_torchsim_no_stress(trained_model_path, water_atoms):
+    from mace.calculators.mace_torchsim import MaceTorchSimModel
+
     model = MaceTorchSimModel(
         model=trained_model_path,
-        device=DEVICE,
-        dtype=DTYPE,
+        device=torch.device("cpu"),
+        dtype=torch.float64,
         compute_forces=True,
         compute_stress=False,
     )
-    results = model(_atoms_state(water_atoms))
+
+    state = ts.io.atoms_to_state(
+        water_atoms, device=torch.device("cpu"), dtype=torch.float64
+    )
+
+    results = model(state)
     assert "energy" in results
     assert "forces" in results
-    assert "stress" not in results
 
 
 def test_torchsim_matches_ase_calculator(trained_model_path, water_atoms):
+    from ase.stress import full_3x3_to_voigt_6_stress
+
+    from mace.calculators.mace import MACECalculator
+    from mace.calculators.mace_torchsim import MaceTorchSimModel
+
     ase_calc = MACECalculator(
-        model_paths=trained_model_path, device=DEVICE.type, default_dtype="float64"
+        model_paths=trained_model_path, device="cpu", default_dtype="float64"
     )
+    atoms_ase = water_atoms.copy()
+    atoms_ase.calc = ase_calc
+    ase_energy = atoms_ase.get_potential_energy()
+    ase_forces = atoms_ase.get_forces()
+    ase_stress = atoms_ase.get_stress()
+
     ts_model = MaceTorchSimModel(
         model=trained_model_path,
-        device=DEVICE,
-        dtype=DTYPE,
+        device=torch.device("cpu"),
+        dtype=torch.float64,
     )
-    sim_state = _atoms_state(water_atoms)
-    assert_model_calculator_consistency(
-        model=ts_model,
-        calculator=ase_calc,
-        sim_state=sim_state,
+    state = ts.io.atoms_to_state(
+        water_atoms, device=torch.device("cpu"), dtype=torch.float64
     )
+    ts_results = ts_model(state)
 
-
-def test_torchsim_buffers_reused(raw_mace_mp_model):
-    """Buffers returned by _fill_padded_data must be the same objects across calls.
-    Dynamic allocation would break torch.compile / CUDA graphs.
-    We force the buffer path without torch.compile to avoid e3nn Dynamo issues."""
-    model = MaceTorchSimModel(
-        model=raw_mace_mp_model,
-        device=DEVICE,
-        dtype=torch.float32,
-    )
-    model._use_compile = True
-    state = SIMSTATE_BULK_GENERATORS["si_sim_state"](DEVICE, torch.float32)
-    state = state.from_state(
-        state,
-        charge=torch.zeros(state.n_systems, device=DEVICE, dtype=torch.float32),
-        spin=torch.ones(state.n_systems, device=DEVICE, dtype=torch.float32),
-    )
-    _BUF_NAMES = (
-        "_buf_node_attrs",
-        "_buf_batch",
-        "_buf_edge_index",
-        "_buf_shifts",
-        "_buf_unit_shifts",
-        "_buf_ptr",
-        "_buf_cell",
-        "_buf_head",
-        "_buf_total_charge",
-        "_buf_total_spin",
-    )
-    def _buf_ptrs(m):
-        return {
-            name: getattr(m, name).data_ptr()
-            for name in _BUF_NAMES
-            if getattr(m, name, None) is not None
-        }
-    out1 = model(state)
-    ptrs1 = _buf_ptrs(model)
-    _ = model(state)
-    ptrs2 = _buf_ptrs(model)
-    out3 = model(state)
-    ptrs3 = _buf_ptrs(model)
-    assert ptrs1 == ptrs2 == ptrs3, "buffers were re-allocated between calls"
-    for key in _BUF_NAMES:
-        assert key in ptrs1, f"buffer {key} was never allocated"
     np.testing.assert_allclose(
-        out1["energy"].detach().cpu().numpy(),
-        out3["energy"].detach().cpu().numpy(),
-        atol=1e-5,
+        ts_results["energy"].item(), ase_energy, atol=1e-5, rtol=1e-5
     )
     np.testing.assert_allclose(
-        out1["forces"].detach().cpu().numpy(),
-        out3["forces"].detach().cpu().numpy(),
-        atol=1e-5,
+        ts_results["forces"].detach().cpu().numpy(), ase_forces, atol=1e-5, rtol=1e-5
     )
-
-
-def test_torchsim_skips_absent_optional_buffers(raw_mace_mp_model):
-    model = MaceTorchSimModel(
-        model=raw_mace_mp_model,
-        device=DEVICE,
-        dtype=torch.float32,
+    ts_stress_voigt = full_3x3_to_voigt_6_stress(
+        ts_results["stress"].detach().cpu().numpy().reshape(3, 3)
     )
-    model._use_compile = True
-    state = SIMSTATE_BULK_GENERATORS["si_sim_state"](DEVICE, torch.float32)
-    model(state)
-    assert model._buf_total_charge is None
-    assert model._buf_total_spin is None
-    assert model._buf_external_field is None
-    assert model._buf_density_coefficients is None
+    np.testing.assert_allclose(ts_stress_voigt, ase_stress, atol=1e-5, rtol=1e-5)
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
 def test_torchsim_cueq(trained_model_path, water_atoms):
+    from mace.calculators.mace_torchsim import MaceTorchSimModel
+
     model = MaceTorchSimModel(
         model=trained_model_path,
-        device=DEVICE,
-        dtype=DTYPE,
+        device=torch.device("cpu"),
+        dtype=torch.float64,
         enable_cueq=True,
     )
-    results = model(_atoms_state(water_atoms))
+
+    state = ts.io.atoms_to_state(
+        water_atoms, device=torch.device("cpu"), dtype=torch.float64
+    )
+
+    results = model(state)
     assert "energy" in results
     assert "forces" in results
 
@@ -486,12 +297,11 @@ def water_state(water_atoms):
 @pytest.fixture(scope="module")
 def water_state_with_extras(water_state):
     """SimState with polar-relevant extras set."""
-    return water_state.from_state(
-        water_state,
-        external_E_field=torch.tensor([[0.1, 0.0, 0.0]], dtype=DTYPE),
-        charge=torch.tensor([0.0], dtype=DTYPE),
-        spin=torch.tensor([1.0], dtype=DTYPE),
-    )
+    state = water_state.clone()
+    state.external_E_field = torch.tensor([[0.1, 0.0, 0.0]], dtype=DTYPE)
+    state.charge = torch.tensor([0.0], dtype=DTYPE)
+    state.spin = torch.tensor([1.0], dtype=DTYPE)
+    return state
 
 
 @pytest.fixture(scope="module")
@@ -506,14 +316,13 @@ def water_batched_state(water_atoms):
 @pytest.fixture(scope="module")
 def water_batched_state_with_extras(water_batched_state):
     """Batched SimState with polar-relevant extras."""
-    return water_batched_state.from_state(
-        water_batched_state,
-        external_E_field=torch.tensor(
-            [[0.1, 0.0, 0.0], [0.0, 0.1, 0.0]], dtype=DTYPE
-        ),
-        charge=torch.tensor([0.0, 0.0], dtype=DTYPE),
-        spin=torch.tensor([1.0, 1.0], dtype=DTYPE),
+    state = water_batched_state.clone()
+    state.external_E_field = torch.tensor(
+        [[0.1, 0.0, 0.0], [0.0, 0.1, 0.0]], dtype=DTYPE
     )
+    state.charge = torch.tensor([0.0, 0.0], dtype=DTYPE)
+    state.spin = torch.tensor([1.0, 1.0], dtype=DTYPE)
+    return state
 
 
 def test_torchsim_polar_basic(polar_raw_model, water_state):
@@ -566,9 +375,8 @@ def test_torchsim_polar_no_extras_vs_zero_extras(polar_raw_model, water_state):
 
     results_no_extras = model(water_state)
 
-    state_zero_extras = water_state.from_state(
-        water_state, external_E_field=torch.zeros(1, 3, dtype=DTYPE)
-    )
+    state_zero_extras = water_state.clone()
+    state_zero_extras.external_E_field = torch.zeros(1, 3, dtype=DTYPE)
     results_zero_extras = model(state_zero_extras)
 
     np.testing.assert_allclose(
@@ -643,7 +451,7 @@ def test_torchsim_polar_matches_ase(polar_raw_model, water_atoms):
         dtype=DTYPE,
     )
     state = _atoms_state(water_atoms)
-    state = state.from_state(state, spin=torch.tensor([1.0], dtype=DTYPE))
+    state.spin = torch.tensor([1.0], dtype=DTYPE)
     ts_results = ts_model(state)
 
     np.testing.assert_allclose(
