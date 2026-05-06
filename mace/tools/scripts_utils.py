@@ -35,9 +35,9 @@ def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> Non
     log_string = f"{dataset_name} ["
     for prop_name in dataset[0].properties.keys():
         if prop_name == "dipole":
-            log_string += f"{prop_name} components: {int(np.sum([np.sum(config.property_weights[prop_name]) for config in dataset]))}, "
+            log_string += f"{prop_name} components: {int(np.sum([np.sum(config.property_weights.get(prop_name, 0.0)) for config in dataset]))}, "
         else:
-            log_string += f"{prop_name}: {int(np.sum([config.property_weights[prop_name] for config in dataset]))}, "
+            log_string += f"{prop_name}: {int(np.sum([config.property_weights.get(prop_name, 0.0) for config in dataset]))}, "
     log_string = log_string[:-2] + "]"
     logging.info(log_string)
 
@@ -691,13 +691,18 @@ def get_loss_fn(
             forces_weight=args.forces_weight,
             dipole_weight=args.dipole_weight,
         )
-    elif args.loss == "universal_field":
+    elif args.loss in ("universal_field", "UniversalField"):
         loss_fn = modules.UniversalFieldLoss(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
             huber_delta=args.huber_delta,
+            polarization_loss_mode=getattr(
+                args, "polarization_loss_mode", "normalized_metric"
+            ),
+            polarization_huber_delta=getattr(args, "polarization_huber_delta", None),
             polarization_weight=args.polarization_weight,
+            polarization_loss_scale=getattr(args, "polarization_loss_scale", 1.0),
             becs_weight=args.becs_weight,
             polarizability_weight=args.polarizability_weight,
         )
@@ -770,12 +775,17 @@ def get_swa(
         logging.info(
             f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
         )
-    elif args.loss == "UniversalField":
+    elif args.loss in ("universal_field", "UniversalField"):
         loss_fn_energy = modules.UniversalFieldLoss(
             energy_weight=args.swa_energy_weight,
             forces_weight=args.swa_forces_weight,
             stress_weight=args.swa_stress_weight,
             polarization_weight=args.swa_polarization_weight,
+            polarization_loss_mode=getattr(
+                args, "polarization_loss_mode", "normalized_metric"
+            ),
+            polarization_huber_delta=getattr(args, "polarization_huber_delta", None),
+            polarization_loss_scale=getattr(args, "polarization_loss_scale", 1.0),
             becs_weight=args.swa_becs_weight,
             polarizability_weight=args.swa_polarizability_weight,
             huber_delta=args.huber_delta,

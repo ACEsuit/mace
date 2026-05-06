@@ -6,10 +6,11 @@
 
 import json
 import logging
+import math
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Sequence, Union
+from typing import Any, Dict, Iterable, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -45,6 +46,104 @@ def compute_c(delta: np.ndarray, eta: float) -> float:
 
 def get_tag(name: str, seed: int) -> str:
     return f"{name}_run-{seed}"
+
+
+def _exact_closest_lattice_shift(
+    fractional_coords: torch.Tensor,
+    polarization_lattice: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Solve the 3D closest vector problem exactly for one or more polarization
+    lattice coordinates.
+
+    We find the integer lattice shift n* minimizing
+
+        || (c - n) Q ||_2
+
+    where c are fractional polarization coordinates and Q contains the
+    polarization lattice basis vectors as rows. The returned shift is piecewise
+    constant in c, so the final folded polarization remains differentiable
+    almost everywhere when used as dP_folded = (c - n*) Q.
+    """
+
+    def _nearest_integer(value: float) -> int:
+        return int(np.rint(value))
+
+    def _babai_point(r_mat: torch.Tensor, y_tilde: torch.Tensor) -> list[int]:
+        n_dim = r_mat.shape[0]
+        z = [0] * n_dim
+        for level in range(n_dim - 1, -1, -1):
+            offset = sum(float(r_mat[level, j]) * z[j] for j in range(level + 1, n_dim))
+            center = (float(y_tilde[level]) - offset) / float(r_mat[level, level])
+            z[level] = _nearest_integer(center)
+        return z
+
+    def _residual_sq(r_mat: torch.Tensor, y_tilde: torch.Tensor, z: list[int]) -> float:
+        residual = r_mat @ torch.tensor(z, dtype=r_mat.dtype)
+        diff = residual - y_tilde
+        return float(torch.dot(diff, diff))
+
+    fractional_cpu = fractional_coords.detach().to(device="cpu", dtype=torch.float64)
+    lattice_cpu = polarization_lattice.detach().to(device="cpu", dtype=torch.float64)
+    shifts = []
+    tolerance = 1e-12
+
+    for c_vec, q_rows in zip(fractional_cpu, lattice_cpu):
+        target = (c_vec @ q_rows).to(torch.float64)
+        basis = q_rows.transpose(0, 1).contiguous()
+        q_orth, r_mat = torch.linalg.qr(basis)
+        y_tilde = q_orth.transpose(0, 1) @ target
+
+        diag = torch.diagonal(r_mat)
+        signs = torch.where(diag < 0, -torch.ones_like(diag), torch.ones_like(diag))
+        r_mat = signs.unsqueeze(-1) * r_mat
+        y_tilde = signs * y_tilde
+
+        initial = _babai_point(r_mat, y_tilde)
+        best = initial[:]
+        best_dist = _residual_sq(r_mat, y_tilde, best)
+        current = initial[:]
+        n_dim = r_mat.shape[0]
+
+        def recurse(level: int, partial_dist: float) -> None:
+            nonlocal best, best_dist, current
+
+            if partial_dist > best_dist + tolerance:
+                return
+            if level < 0:
+                best = current[:]
+                best_dist = partial_dist
+                return
+
+            r_diag = float(r_mat[level, level])
+            offset = sum(
+                float(r_mat[level, j]) * current[j] for j in range(level + 1, n_dim)
+            )
+            center = (float(y_tilde[level]) - offset) / r_diag
+            remaining = max(best_dist - partial_dist, 0.0)
+            radius = math.sqrt(remaining) / abs(r_diag)
+            z_min = math.ceil(center - radius)
+            z_max = math.floor(center + radius)
+
+            candidates = sorted(
+                range(z_min, z_max + 1),
+                key=lambda val: abs(val - center),
+            )
+            for z_val in candidates:
+                diff = r_diag * z_val + offset - float(y_tilde[level])
+                next_dist = partial_dist + diff * diff
+                if next_dist <= best_dist + tolerance:
+                    current[level] = z_val
+                    recurse(level - 1, next_dist)
+
+        recurse(n_dim - 1, 0.0)
+        shifts.append(best)
+
+    return torch.tensor(
+        shifts,
+        device=fractional_coords.device,
+        dtype=fractional_coords.dtype,
+    )
 
 
 def setup_logger(
@@ -212,30 +311,25 @@ def fold_polarization(
     pred_polarization: torch.Tensor,  # [n_graphs, 3] intensive P_pred
     ref_polarization: torch.Tensor,  # [n_graphs, 3] intensive P_ref  (branch anchor)
     cell: torch.Tensor,  # [n_graphs, 3, 3] ASE-style cell (rows = lattice vectors)
-) -> torch.Tensor:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Return the nearest-image *difference* ΔP_folded to add to P_ref:
         P_pred_fold = P_ref + ΔP_folded
     with ΔP identified modulo the polarization lattice Qpol = cell / |Ω|.
-    Keeps autograd intact (no detach), piecewise linear almost everywhere.
+
+    This is the exact closest-vector problem on the polarization lattice:
+    we choose the integer lattice shift that gives the smallest Cartesian norm.
+    The mapping is therefore exact for any full-rank crystal cell and remains
+    differentiable almost everywhere.
     """
-    # --- build polarization lattice Q = cell / |Ω| ---
     B = cell.view(-1, 3, 3)
-    vol = torch.linalg.det(B).abs().clamp_min(1e-30).view(-1, 1, 1)  # |Ω|
-    Q = B / vol  # [n_graphs, 3, 3]
+    vol = torch.linalg.det(B).abs().clamp_min(1e-30).view(-1, 1, 1)
+    Q = B / vol
 
-    # raw difference
-    dP = pred_polarization.view(-1, 3) - ref_polarization.view(-1, 3)  # [n_graphs, 3]
+    dP = pred_polarization.view(-1, 3) - ref_polarization.view(-1, 3)
+    c = torch.linalg.solve(Q.transpose(-2, -1), dP.unsqueeze(-1)).squeeze(-1)
 
-    # map to fractional coords c solving  Q^T c^T = dP^T   (i.e., c = dP @ Q^{-1})
-    c = torch.linalg.solve(Q.transpose(-2, -1), dP.unsqueeze(-1)).squeeze(
-        -1
-    )  # [n_graphs, 3]
-
-    # wrap into (-0.5, 0.5] with minimum-image convention
-    # c_wrap = c - round(c) gives (-0.5, 0.5]; works with autograd (grad ~ 1 a.e.)
-    c = c - torch.round(c)
-
-    # back to Cartesian
-    dP_folded = torch.einsum("bi,bij->bj", c, Q)  # [n_graphs, 3]
-    return dP_folded, c
+    integer_shift = _exact_closest_lattice_shift(c, Q)
+    c_folded = c - integer_shift
+    dP_folded = dP - torch.einsum("bi,bij->bj", integer_shift, Q)
+    return dP_folded, c_folded

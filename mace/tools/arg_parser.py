@@ -755,6 +755,36 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=10.0,
     )
     parser.add_argument(
+        "--polarization_loss_mode",
+        help=(
+            "polarization loss form: folded Cartesian Huber residuals or the "
+            "normalized geometry-aware metric loss in folded polarization-"
+            "quantum coordinates"
+        ),
+        type=str,
+        choices=["cartesian_huber", "normalized_metric"],
+        default="normalized_metric",
+    )
+    parser.add_argument(
+        "--polarization_loss_scale",
+        help=(
+            "explicit multiplier applied to the reduced polarization loss "
+            "term before polarization_weight"
+        ),
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--polarization_huber_delta",
+        help=(
+            "Huber delta for folded polarization in e/A^2 when "
+            "polarization_loss_mode=cartesian_huber; defaults to 5 * "
+            "huber_delta"
+        ),
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
         "--swa_polarization_weight",
         "--stage_two_polarization_weight",
         help="weight of polarization after starting Stage Two (previously called swa)",
