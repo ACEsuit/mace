@@ -655,6 +655,7 @@ def run(args) -> None:
     # concatenate all the trainsets
     train_set = ConcatDataset([train_sets[head] for head in heads])
     train_sampler, valid_sampler = None, None
+    valid_samplers = {}
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(
             train_set,
@@ -664,7 +665,7 @@ def run(args) -> None:
             drop_last=(not args.lbfgs),
             seed=args.seed,
         )
-        valid_samplers = {}
+    if args.distributed:
         for head, valid_set in valid_sets.items():
             valid_sampler = torch.utils.data.distributed.DistributedSampler(
                 valid_set,

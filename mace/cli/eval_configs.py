@@ -14,8 +14,9 @@
 import argparse
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 import ase.io
 import numpy as np
@@ -195,6 +196,31 @@ def init_distributed_if_needed(args_device: str):
     return True, rank, world_size, local_rank, device
 
 
+def load_rank_atoms(
+    configs_path: str,
+    rank: int,
+    world_size: int,
+    head: Optional[str] = None,
+) -> Tuple[List[ase.Atoms], List[int], int]:
+    """
+    Stream configurations from disk and keep only the shard assigned to this rank.
+    Returns local atoms, their global indices, and the total number of configurations.
+    """
+    local_atoms: List[ase.Atoms] = []
+    local_indices: List[int] = []
+    num_configs = 0
+
+    for idx, atoms in enumerate(ase.io.iread(configs_path, index=":")):
+        if head is not None:
+            atoms.info["head"] = head
+        if idx % world_size == rank:
+            local_atoms.append(atoms)
+            local_indices.append(idx)
+        num_configs += 1
+
+    return local_atoms, local_indices, num_configs
+
+
 def get_model_output(
     model: torch.nn.Module,
     batch: Dict[str, torch.Tensor],
@@ -267,12 +293,26 @@ def run(args: argparse.Namespace):
     else:
         print(f"Running non-distributed on device {device}")
 
-    # read configs (all ranks; we will only write subset per rank)
-    atoms_list = ase.io.read(args.configs, index=":")
-    if args.head is not None:
-        for atoms in atoms_list:
-            atoms.info["head"] = args.head
-    num_configs = len(atoms_list)
+    # Read only the local shard on each rank so large XYZ inputs can be split
+    # across GPUs without every process materializing the whole dataset.
+    local_atoms_list, local_indices, num_configs = load_rank_atoms(
+        args.configs,
+        rank=rank if is_distributed else 0,
+        world_size=world_size if is_distributed else 1,
+        head=args.head,
+    )
+
+    if is_distributed:
+        counts = [torch.tensor(len(local_atoms_list), device=device)]
+        torch.distributed.all_reduce(counts[0], op=torch.distributed.ReduceOp.SUM)
+        if int(counts[0].item()) != num_configs:
+            raise RuntimeError(
+                "Distributed config sharding lost or duplicated configurations: "
+                f"expected {num_configs}, got {int(counts[0].item())}"
+            )
+        print(
+            f"Rank {rank}: assigned {len(local_atoms_list)} / {num_configs} configurations"
+        )
 
     # electric field
     if args.electric_field is not None:
@@ -380,11 +420,10 @@ def run(args: argparse.Namespace):
     num_interactions = meta.get("num_interactions", None)
     products_irreps = meta.get("products_irreps", None)
 
-    # Prepare dataset & sampler. We need AtomicData instances for the dataset.
+    # Prepare the local dataset shard for this rank.
     z_table = utils.AtomicNumberTable([int(z) for z in atomic_numbers_list])
-    # Build dataset: attach original index
     dataset = []
-    for idx, atoms in enumerate(atoms_list):
+    for idx, atoms in zip(local_indices, local_atoms_list):
         cfg = data.config_from_atoms(
             atoms,
             key_specification=data.KeySpecification(
@@ -397,24 +436,9 @@ def run(args: argparse.Namespace):
         setattr(ad, "_orig_idx", idx)
         dataset.append(ad)
 
-    if is_distributed:
-        sampler = torch.utils.data.distributed.DistributedSampler(
-            dataset, shuffle=False, drop_last=False
-        )
-        local_indices = list(iter(sampler))
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=dataset,
-            batch_size=args.batch_size,
-            sampler=sampler,
-            shuffle=False,
-            drop_last=False,
-        )
-    else:
-        sampler = None
-        local_indices = list(range(len(dataset)))
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=dataset, batch_size=args.batch_size, shuffle=False, drop_last=False
-        )
+    data_loader = torch_geometric.dataloader.DataLoader(
+        dataset=dataset, batch_size=args.batch_size, shuffle=False, drop_last=False
+    )
 
     # MODEL LOADING (per-rank) -- minimal overhead strategy
     model = None
@@ -535,7 +559,11 @@ def run(args: argparse.Namespace):
         per_layer_features_template[-1] = num_invariant_features
 
     local_ptr = 0  # index into local_indices
-    with torch.no_grad():
+    # Evaluation still needs autograd because forces, stress, BECs, and related
+    # observables are computed inside model.forward() via torch.autograd.grad.
+    # Disabling gradients here breaks those derivative-based outputs.
+    grad_context = torch.enable_grad() if not model_is_compiled else nullcontext()
+    with grad_context:
         for batch in data_loader:
             batch = batch.to(device)
             output = get_model_output(
@@ -646,7 +674,7 @@ def run(args: argparse.Namespace):
                     node_energies_splits[j] if args.return_node_energies else None
                 )
 
-                atoms = atoms_list[cfg_idx]
+                atoms = local_atoms_list[local_ptr - n_graphs + j]
                 populate_atoms_fields(
                     atoms,
                     cfg_idx,
