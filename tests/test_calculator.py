@@ -10,10 +10,10 @@ import torch
 from ase import build
 from ase.atoms import Atoms
 from ase.calculators.test import gradient_test
-from ase.constraints import ExpCellFilter
+from ase.filters import FrechetCellFilter
 
 from mace.calculators import mace_mp, mace_off
-from mace.calculators.foundations_models import mace_omol
+from mace.calculators.foundations_models import mace_omol, mace_polar
 from mace.calculators.mace import MACECalculator
 from mace.modules.models import ScaleShiftMACE
 
@@ -574,7 +574,7 @@ def test_calculator_stress(tmp_path, fitting_configs, trained_model):
     at.calc = trained_model
 
     # test forces and stress
-    at_wrapped = ExpCellFilter(at)
+    at_wrapped = FrechetCellFilter(at)
     grads = gradient_test(at_wrapped)
 
     assert np.allclose(grads[0], grads[1])
@@ -747,6 +747,22 @@ def test_mace_mp(capsys: pytest.CaptureFixture):
 
     _, stderr = capsys.readouterr()
     assert stderr == ""
+
+
+def test_mace_polar_constructor():
+    try:
+        import graph_longrange  # noqa: F401
+    except (ImportError, ModuleNotFoundError):
+        pytest.skip("graph_longrange is not installed")
+    model_name = "polar-1-m"
+    try:
+        polar_calc = mace_polar(model=model_name, device="cpu")
+    except (FileNotFoundError, RuntimeError):
+        pytest.skip(f"Missing Polar foundation model file: {model_name}")
+
+    assert isinstance(polar_calc, MACECalculator)
+    assert len(polar_calc.models) == 1
+    assert polar_calc.models[0].__class__.__name__ == "PolarMACE"
 
 
 def test_mace_off(tmp_path):

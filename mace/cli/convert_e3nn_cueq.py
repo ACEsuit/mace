@@ -42,16 +42,25 @@ def reshape_like(src: torch.Tensor, ref_shape: torch.Size) -> torch.Tensor:
 
 
 def get_kmax_pairs(
-    num_product_irreps: int, correlation: int, num_layers: int
+    num_product_irreps: int,
+    correlation: int,
+    num_layers: int,
+    keep_last_layer_irreps: bool,
 ) -> List[Tuple[int, int]]:
     """Determine kmax pairs based on num_product_irreps and correlation"""
     if correlation == 2:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
-        kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
+        if keep_last_layer_irreps:
+            kmax_pairs = kmax_pairs + [[num_layers - 1, num_product_irreps]]
+        else:
+            kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
         return kmax_pairs
     if correlation == 3:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
-        kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
+        if keep_last_layer_irreps:
+            kmax_pairs = kmax_pairs + [[num_layers - 1, num_product_irreps]]
+        else:
+            kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
         return kmax_pairs
     raise NotImplementedError(f"Correlation {correlation} not supported")
 
@@ -64,9 +73,12 @@ def transfer_symmetric_contractions(
     correlation: int,
     num_layers: int,
     use_reduced_cg: bool,
+    keep_last_layer_irreps: bool,
 ):
     """Transfer symmetric contraction weights"""
-    kmax_pairs = get_kmax_pairs(num_product_irreps, correlation, num_layers)
+    kmax_pairs = get_kmax_pairs(
+        num_product_irreps, correlation, num_layers, keep_last_layer_irreps
+    )
     suffixes = ["_max"] + [f".{i}" for i in range(correlation - 1)]
     for i, kmax in kmax_pairs:
         irreps_in = o3.Irreps(
@@ -119,6 +131,7 @@ def transfer_weights(
     correlation: int,
     num_layers: int,
     use_reduced_cg: bool,
+    keep_last_layer_irreps: bool,
 ):
     """Transfer weights with proper remapping"""
     # Get source state dict
@@ -135,6 +148,7 @@ def transfer_weights(
         correlation,
         num_layers,
         use_reduced_cg,
+        keep_last_layer_irreps,
     )
 
     transferred_keys = set()
@@ -175,6 +189,7 @@ def run(
     output_model="_cueq.model",
     device="cpu",
     return_model=True,
+    layout: str = "ir_mul",
 ):
     # Setup logging
 
@@ -194,11 +209,12 @@ def run(
     num_product_irreps = len(config["hidden_irreps"].slices()) - 1
     correlation = config["correlation"]
     use_reduced_cg = config.get("use_reduced_cg", True)
+    keep_last_layer_irreps = config.get("keep_last_layer_irreps", False)
 
     # Add cuequivariance config
     config["cueq_config"] = CuEquivarianceConfig(
         enabled=True,
-        layout="ir_mul",
+        layout=layout,
         group="O3_e3nn",
         optimize_all=True,
         conv_fusion=(device == "cuda"),
@@ -217,6 +233,7 @@ def run(
         correlation,
         num_layers,
         use_reduced_cg,
+        keep_last_layer_irreps,
     )
 
     if return_model:
