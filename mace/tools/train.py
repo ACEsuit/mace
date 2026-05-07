@@ -96,8 +96,8 @@ def valid_err_log(
         error_f = eval_metrics["mae_f"] * 1e3
         error_stress = eval_metrics["mae_stress"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_stress={error_stress:8.2f} meV / A^3"
-        )
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_stress={error_stress:8.2f} meV / A^3"
+    )
     elif (
         log_errors == "PerAtomMAEstressvirials"
         and eval_metrics["mae_virials_per_atom"] is not None
@@ -106,7 +106,7 @@ def valid_err_log(
         error_f = eval_metrics["mae_f"] * 1e3
         error_virials = eval_metrics["mae_virials"] * 1e3
         logging.info(
-            f"{inintial_phrase}: loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_virials={error_virials:8.2f} meV"
+            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_virials={error_virials:8.2f} meV"
         )
     elif log_errors == "TotalRMSE":
         error_e = eval_metrics["rmse_e"] * 1e3
@@ -538,6 +538,7 @@ def take_step_lbfgs(
 
     return loss, loss_dict
 
+
 # Keep parameters frozen/active after evaluation
 @contextmanager
 def preserve_grad_state(model):
@@ -553,6 +554,7 @@ def preserve_grad_state(model):
         for param, requires_grad in requires_grad_backup.items():
             param.requires_grad = requires_grad
 
+
 def evaluate(
     model: torch.nn.Module,
     loss_fn: torch.nn.Module,
@@ -560,7 +562,6 @@ def evaluate(
     output_args: Dict[str, bool],
     device: torch.device,
 ) -> Tuple[float, Dict[str, Any]]:
-
 
     metrics = MACELoss(loss_fn=loss_fn).to(device)
 

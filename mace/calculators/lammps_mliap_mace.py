@@ -203,8 +203,9 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         if self.dtype == torch.float32:
             pair_forces = pair_forces.double()
         eatoms = torch.as_tensor(data.eatoms)
-        eatoms.copy_(atom_energies[:natoms])
-        data.energy = torch.sum(atom_energies[:natoms])
+        atom_energies_real = atom_energies[:natoms].detach()
+        eatoms.copy_(atom_energies_real)
+        data.energy = atom_energies_real.sum().item()
         data.update_pair_forces_gpu(pair_forces)
 
     def _manage_profiling(self):

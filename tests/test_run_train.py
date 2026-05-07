@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines
+
 import json
 import os
 import subprocess
@@ -1088,15 +1090,15 @@ def test_run_train_foundation_multihead_json_cueq(tmp_path, fitting_configs):
         raise e
     assert completed_process.returncode == 0
 
-    calc = MACECalculator(
-        model_paths=tmp_path / "MACE.model",
-        device="cpu",
-        default_dtype="float64",
-        head="DFT",
-    )
-
     Es = []
     for at in fitting_configs:
+        config_head = at.info.get("head", "MP2")
+        calc = MACECalculator(
+            model_paths=tmp_path / "MACE.model",
+            device="cpu",
+            default_dtype="float64",
+            head=config_head,
+        )
         at.calc = calc
         Es.append(at.get_potential_energy())
 
@@ -1789,7 +1791,9 @@ def test_run_train_multihead_replay_filtered_pt_data(
         "subselect_pt": "random",
         "filter_type_pt": "exclusive",
         "force_mh_ft_lr": True,
-        "atomic_numbers": str(sorted(multihead_finetuning_config_20[1])),
+        "atomic_numbers": str(
+            [int(x) for x in sorted(multihead_finetuning_config_20[1])]
+        ),
         "dry_run": None,
     }
 
@@ -1847,7 +1851,9 @@ def test_run_train_real_pt_data_ratio(
         "subselect_pt": "random",
         "filter_type_pt": "exclusive",
         "force_mh_ft_lr": True,
-        "atomic_numbers": str(sorted(multihead_finetuning_config_5[1])),
+        "atomic_numbers": str(
+            [int(x) for x in sorted(multihead_finetuning_config_5[1])]
+        ),
         "dry_run": None,
     }
 
@@ -1910,6 +1916,10 @@ def test_run_train_real_pt_data_ratio(
     assert l_ratio[0].strip().endswith(" 1")
 
 
+@pytest.mark.skipif(
+    os.getenv("CI", "").lower() in {"1", "true", "yes"},
+    reason="OMOL foundation model download is large; skip in CI.",
+)
 def test_run_train_omol_foundation(tmp_path, fitting_configs):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 

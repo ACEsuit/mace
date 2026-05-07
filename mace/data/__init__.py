@@ -2,6 +2,7 @@ from .atomic_data import AtomicData
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
 from .lmdb_dataset import LMDBDataset
 from .neighborhood import get_neighborhood
+from .padding_tools import build_fake_padding_graph
 from .utils import (
     Configuration,
     Configurations,
@@ -9,6 +10,7 @@ from .utils import (
     compute_average_E0s,
     config_from_atoms,
     config_from_atoms_list,
+    estimate_e0s_from_foundation,
     load_from_xyz,
     random_train_valid_split,
     save_AtomicData_to_HDF5,
@@ -29,6 +31,7 @@ __all__ = [
     "config_from_atoms_list",
     "AtomicData",
     "compute_average_E0s",
+    "estimate_e0s_from_foundation",
     "save_dataset_as_HDF5",
     "HDF5Dataset",
     "dataset_from_sharded_hdf5",
@@ -37,4 +40,5 @@ __all__ = [
     "KeySpecification",
     "update_keyspec_from_kwargs",
     "LMDBDataset",
+    "build_fake_padding_graph",
 ]

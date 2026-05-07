@@ -102,10 +102,12 @@ def prepare_pt_head(
     foundation_model_num_neighbours: float,
 ) -> Dict[str, Any]:
     """Prepare a pretraining head from args."""
-    if (
-        args.foundation_model in ["small", "medium", "large"]
-        or args.pt_train_file == "mp"
-    ):
+    if args.foundation_model in ["small", "medium", "large"] or args.pt_train_file in [
+        "mp",
+        "omat",
+        "matpes_pbe",
+        "matpes_r2scan",
+    ]:
         logging.info(
             "Using foundation model for multiheads finetuning with Materials Project data"
         )
@@ -151,6 +153,8 @@ def assemble_replay_data(
             checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-pbe-replay-data.xyz"
         elif name == "matpes_r2scan":
             checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/matpes-r2scan-replay-data.extxyz"
+        elif name == "omat":
+            checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_omat_0/mp_traj_combined_omat.xyz"
         else:
             raise ValueError(f"Unknown replay dataset name {name}")
 
@@ -180,7 +184,7 @@ def assemble_replay_data(
         settings = SelectionSettings(
             configs_pt=cached_dataset_path,
             output=f"mp_finetuning-{tag}.xyz",
-            atomic_numbers=atomic_numbers,
+            filter_atomic_numbers_pt=atomic_numbers,
             num_samples=args.num_samples_pt,
             seed=args.seed,
             head_pt="pbe_mp",

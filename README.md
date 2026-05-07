@@ -27,6 +27,7 @@
       - [Example usage in ASE](#example-usage-in-ase)
     - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
       - [Example usage in ASE](#example-usage-in-ase-1)
+    - [MACE-Polar: Electrostatics foundation models](#mace-polar-electrostatics-foundation-models)
     - [Finetuning foundation models](#finetuning-foundation-models)
     - [Latest recommended foundation models](#latest-recommended-foundation-models)
   - [Caching](#caching)
@@ -55,7 +56,7 @@ A partial documentation is available at: https://mace-docs.readthedocs.io
 
 ### 1. Requirements
 
-- Python >= 3.7  (for openMM, use Python = 3.9)
+- Python >= 3.9
 - [PyTorch](https://pytorch.org/) >= 1.12 **(training with float64 is not supported with PyTorch 2.1 but is supported with 2.2 and later, Pytorch 2.4.1 is not supported)**
 
 **Make sure to install PyTorch.** Please refer to the [official PyTorch installation](https://pytorch.org/get-started/locally/) for the installation instructions. Select the appropriate options for your system.
@@ -110,7 +111,11 @@ To give a specific validation set, use the argument `--valid_file`. To set a lar
 
 To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys.
 
-It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. If you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression. Note that using fitted E0s corresponds to fitting the deviations of the atomic energies from the average, rather than fitting the atomization energy (which is the case when using isolated-atom E0s), and this will most likely result in less stable potentials for molecular dynamics applications.
+It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. 
+
+When training a model from scratch, if you prefer not to use or do not know the energies of the isolated atoms, you can use the option `--E0s="average"` which estimates the atomic energies using least squares regression. Note that using fitted E0s corresponds to fitting the deviations of the atomic energies from the average, rather than fitting the atomization energy (which is the case when using isolated-atom E0s), and this will most likely result in less stable potentials for molecular dynamics applications.
+
+When finetuning foundation models, you can use `--E0s="estimated"`, which estimates the atomic reference energies by solving a linear system that optimally corrects the foundation model's predictions on the training data. This approach computes E0 corrections by first running the foundation model on all training configurations, computing the prediction errors (reference energies minus predicted energies), and then solving a least-squares system to find optimal E0 corrections for each element. This is preferable in general over the 'average' option. 
 
 If the keyword `--stage_two` (previously called swa) is enabled, the energy weight of the loss is increased for the last ~20% of the training epochs (from `--start_stage_two` epochs). This setting usually helps lower the energy errors.
 
@@ -293,6 +298,13 @@ calc = mace_off(model="medium", device='cuda')
 atoms.calc = calc
 print(atoms.get_potential_energy())
 ```
+
+### MACE-Polar: Electrostatics foundation models
+
+PolarMACE checkpoints are electrostatics foundation models for molecular chemistry, trained on the OMol25 dataset.
+For usage, outputs, and training/finetuning details, see the PolarMACE guide:
+
+- https://mace-docs.readthedocs.io/en/latest/guide/polar_mace.html
 
 ### Finetuning foundation models
 
