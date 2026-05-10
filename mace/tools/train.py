@@ -97,7 +97,7 @@ def valid_err_log(
         error_stress = eval_metrics["mae_stress"] * 1e3
         logging.info(
             f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, MAE_E_per_atom={error_e:8.2f} meV, MAE_F={error_f:8.2f} meV / A, MAE_stress={error_stress:8.2f} meV / A^3"
-    )
+        )
     elif (
         log_errors == "PerAtomMAEstressvirials"
         and eval_metrics["mae_virials_per_atom"] is not None

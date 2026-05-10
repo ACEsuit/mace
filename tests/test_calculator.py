@@ -856,9 +856,7 @@ def test_mace_off_download_uses_raw_githubusercontent_urls(
             self.kwargs = kwargs
 
     monkeypatch.setattr(foundations_models, "get_cache_dir", lambda: str(tmp_path))
-    monkeypatch.setattr(
-        foundations_models, "_urlretrieve_with_timeout", fake_download
-    )
+    monkeypatch.setattr(foundations_models, "_urlretrieve_with_timeout", fake_download)
     monkeypatch.setattr(foundations_models, "MACECalculator", DummyCalculator)
 
     kwargs = {"device": "cpu"}

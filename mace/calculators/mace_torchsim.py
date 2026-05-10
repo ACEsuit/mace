@@ -202,7 +202,8 @@ class MaceTorchSimModel(ModelInterface):
         return 0
 
     def _setup_compile(self, compile_mode: str) -> None:
-        import torch._dynamo as dynamo
+        # Side effect: ensure Dynamo is initialized before torch.compile.
+        import torch._dynamo as dynamo  # pylint: disable=unused-import  # noqa: F401
 
         from mace.tools.compile import configure_autograd_for_compile, simplify
 
@@ -279,9 +280,7 @@ class MaceTorchSimModel(ModelInterface):
             if has_volume.any():
                 mask = has_volume.nonzero(as_tuple=True)[0]
                 rcell[mask] = (
-                    2
-                    * torch.pi
-                    * torch.linalg.inv(cell_3x3[mask].transpose(-1, -2))
+                    2 * torch.pi * torch.linalg.inv(cell_3x3[mask].transpose(-1, -2))
                 )
 
         external_field = getattr(sim_state, "external_E_field", None)
@@ -453,7 +452,10 @@ class MaceTorchSimModel(ModelInterface):
                 ]
             )
             padded["external_field"] = torch.cat(
-                [data_dict["external_field"], torch.zeros(pad_sys, 3, device=dev, dtype=dt)]
+                [
+                    data_dict["external_field"],
+                    torch.zeros(pad_sys, 3, device=dev, dtype=dt),
+                ]
             )
             padded["fermi_level"] = torch.cat(
                 [data_dict["fermi_level"], torch.zeros(pad_sys, device=dev, dtype=dt)]
@@ -594,9 +596,7 @@ class MaceTorchSimModel(ModelInterface):
         )
         if total_charge is not None:
             data_dict["total_charge"] = total_charge
-        total_spin = getattr(
-            sim_state, "total_spin", getattr(sim_state, "spin", None)
-        )
+        total_spin = getattr(sim_state, "total_spin", getattr(sim_state, "spin", None))
         if total_spin is not None:
             data_dict["total_spin"] = total_spin
 
