@@ -203,6 +203,8 @@ class MaceTorchSimModel(ModelInterface):
         return 0
 
     def _setup_compile(self, compile_mode: str) -> None:
+        # Side effect: ensure Dynamo is initialized before torch.compile.
+        import torch._dynamo as dynamo  # pylint: disable=unused-import  # noqa: F401
 
         from mace.tools.compile import configure_autograd_for_compile, simplify
 
