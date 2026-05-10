@@ -498,7 +498,7 @@ def remove_pt_head(
 
 def extract_model(model: torch.nn.Module, map_location: str = "cpu") -> torch.nn.Module:
     model_copy = model.__class__(**extract_config_mace_model(model))
-    model_copy.load_state_dict(model.state_dict())
+    model_copy.load_state_dict(model.state_dict(), strict=False)
     return model_copy.to(map_location)
 
 

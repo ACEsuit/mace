@@ -25,6 +25,7 @@ from .blocks import (
     ScaleShiftBlock,
 )
 from .extensions import PolarMACE
+from .gate import GatedEquivariantBlock
 from .loss import (
     DipolePolarLoss,
     DipoleSingleLoss,

@@ -276,6 +276,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "--use_edge_irreps_first",
+        help="use edge irreps in the first interaction block",
+        type=str2bool,
+        default=False,
+    )
     # add option to specify irreps by channel number and max L
     parser.add_argument(
         "--num_channels",

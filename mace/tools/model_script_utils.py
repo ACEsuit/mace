@@ -28,10 +28,16 @@ def configure_model(
 
     if compute_virials:
         args.compute_virials = True
-        args.error_table = "PerAtomRMSEstressvirials"
     elif compute_stress:
         args.compute_stress = True
-        args.error_table = "PerAtomRMSEstressvirials"
+
+    if compute_virials or compute_stress:
+        if args.error_table in ["PerAtomRMSE", "PerAtomMAE", "TotalRMSE", "TotalMAE"]:
+            args.error_table = (
+                "PerAtomRMSEstressvirials"
+                if "RMSE" in args.error_table
+                else "PerAtomMAEstressvirials"
+            )
 
     output_args = {
         "energy": args.compute_energy,
@@ -191,6 +197,7 @@ def configure_model(
             atomic_numbers=z_table.zs,
             use_reduced_cg=args.use_reduced_cg,
             use_so3=args.use_so3,
+            use_edge_irreps_first=args.use_edge_irreps_first,
             cueq_config=cueq_config,
         )
         model_config_foundation = None
