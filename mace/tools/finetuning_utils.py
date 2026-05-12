@@ -42,16 +42,48 @@ def load_foundations_elements(
     )
     if hasattr(model, "joint_embedding"):
         
-        embedding_foundations = getattr(model_foundations, "joint_embedding", None)
-        found_params_dict = {n: p for n, p in embedding_foundations.named_parameters()} if embedding_foundations else {}
-
-        for name, param in model.joint_embedding.named_parameters():
-            if name in found_params_dict:
-                param.data.copy_(found_params_dict[name].data)
-            else:
-                print(f'Param {name} not found in foundation model, initializing with uniform weights')
+        model_specs = model.joint_embedding.specs
+        foundation_embedding = getattr(model_foundations, "joint_embedding", None)
+        foundation_specs = foundation_embedding.specs if foundation_embedding else {}
+        
+        if foundation_specs == {}:
+            # if foundational model has no embeddings initialize all weights (small).
+            for _, param in model.joint_embedding.named_parameters():
                 torch.nn.init.uniform_(param.data, -0.05, 0.05)
-
+        else:
+            foundation_emb_dim = 0
+            for embedding_spec in model_specs.items():
+                
+                spec_name = embedding_spec[0]
+                submodule = model.joint_embedding.embedders[spec_name]
+                model_params = dict(submodule.named_parameters())
+                
+                for param_name, param in model_params.items():
+                     # embedding spec is the *exactly* the same as that in foundation model (ideal)
+                    if embedding_spec in foundation_specs.items():
+                
+                        foundation_submodule = foundation_embedding.embedders[spec_name]
+                        foundation_params = dict(foundation_submodule.named_parameters())
+                        param.data.copy_(foundation_params[param_name].data)
+                    else:
+                        torch.nn.init.uniform_(param.data, -0.05, 0.05)
+                        
+                # dims for head
+                if embedding_spec in foundation_specs.items():
+                    foundation_emb_dim += embedding_spec[1]['emb_dim']
+                    
+            # update head.
+            foundation_emd_head = model_foundations.joint_embedding.project
+            model_emb_head = model.joint_embedding.project
+            head_emb_data = model_emb_head[0].weight.data
+            
+            if foundation_emd_head[0].out_features == model_emb_head[0].out_features:
+                head_emb_data[:,:foundation_emb_dim] = foundation_emd_head[0].weight.data
+                torch.nn.init.uniform_(head_emb_data[:,foundation_emb_dim:],-0.05,0.05)
+            else:
+                torch.nn.init.uniform_(head_emb_data, -0.05, 0.05)
+                
+    
     if hasattr(model, "embedding_readout"):
         for (_, param_1), (_, param_2) in zip(
             model.embedding_readout.named_parameters(),
