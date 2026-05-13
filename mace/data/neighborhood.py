@@ -24,16 +24,23 @@ def get_neighborhood(
     pbc_y = pbc[1]
     pbc_z = pbc[2]
     identity = np.identity(3, dtype=float)
-    max_positions = np.max(np.absolute(positions)) + 1
-    # Extend cell in non-periodic directions
-    # For models with more than 5 layers, the multiplicative constant needs to be increased.
-    # temp_cell = np.copy(cell)
+    # Extend cell in non-periodic directions using the actual extent of
+    # the atoms plus cutoff padding.  The previous formula used
+    # ``max(abs(positions)) * 5 * cutoff`` which (a) depended on the
+    # absolute coordinate origin rather than the molecular extent, and
+    # (b) created unnecessarily large cells that caused PolarMACE's
+    # k-space electrostatics to OOM on GPUs.  The extent-based cell
+    # gives identical neighbour lists and identical PolarMACE energies /
+    # forces (verified to float32 precision).
     if not pbc_x:
-        cell[0, :] = max_positions * 5 * cutoff * identity[0, :]
+        extent_x = positions[:, 0].max() - positions[:, 0].min()
+        cell[0, :] = (extent_x + 2 * cutoff + 1) * identity[0, :]
     if not pbc_y:
-        cell[1, :] = max_positions * 5 * cutoff * identity[1, :]
+        extent_y = positions[:, 1].max() - positions[:, 1].min()
+        cell[1, :] = (extent_y + 2 * cutoff + 1) * identity[1, :]
     if not pbc_z:
-        cell[2, :] = max_positions * 5 * cutoff * identity[2, :]
+        extent_z = positions[:, 2].max() - positions[:, 2].min()
+        cell[2, :] = (extent_z + 2 * cutoff + 1) * identity[2, :]
 
     sender, receiver, unit_shifts = neighbour_list(
         quantities="ijS",
@@ -64,3 +71,4 @@ def get_neighborhood(
     shifts = np.dot(unit_shifts, cell)  # [n_edges, 3]
 
     return edge_index, shifts, unit_shifts, cell
+
