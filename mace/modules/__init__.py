@@ -5,14 +5,17 @@ import torch
 from .blocks import (
     AtomicEnergiesBlock,
     EquivariantProductBasisBlock,
+    GeneralNonLinearBiasReadoutBlock,
     InteractionBlock,
     LinearDipolePolarReadoutBlock,
     LinearDipoleReadoutBlock,
+    LinearLesReadoutBlock,
     LinearNodeEmbeddingBlock,
     LinearReadoutBlock,
     NonLinearBiasReadoutBlock,
     NonLinearDipolePolarReadoutBlock,
     NonLinearDipoleReadoutBlock,
+    NonLinearLesReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     RealAgnosticAttResidualInteractionBlock,
@@ -23,6 +26,8 @@ from .blocks import (
     RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
 )
+from .extensions import MACELES, PolarMACE
+from .gate import GatedEquivariantBlock
 from .loss import (
     DipolePolarLoss,
     DipoleSingleLoss,
@@ -38,8 +43,8 @@ from .loss import (
 from .models import (
     MACE,
     AtomicDielectricMACE,
-    AtomicForcesMACE,
     AtomicDipolesMACE,
+    AtomicForcesMACE,
     EnergyDipolesMACE,
     ScaleShiftMACE,
 )
@@ -71,6 +76,7 @@ readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
     "NonLinearDipoleReadoutBlock": NonLinearDipoleReadoutBlock,
     "NonLinearReadoutBlock": NonLinearReadoutBlock,
     "NonLinearBiasReadoutBlock": NonLinearBiasReadoutBlock,
+    "GeneralNonLinearBiasReadoutBlock": GeneralNonLinearBiasReadoutBlock,
 }
 
 scaling_classes: Dict[str, Callable] = {
@@ -105,10 +111,14 @@ __all__ = [
     "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
+    "MACELES",
     "AtomicDipolesMACE",
     "AtomicForcesMACE",
     "AtomicDielectricMACE",
     "EnergyDipolesMACE",
+    "PolarMACE",
+    "LinearLesReadoutBlock",
+    "NonLinearLesReadoutBlock",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",

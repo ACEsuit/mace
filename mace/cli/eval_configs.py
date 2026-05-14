@@ -153,9 +153,13 @@ def run(args: argparse.Namespace) -> None:
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, index=":")
     if args.head is not None:
-        for atoms in atoms_list:
-            atoms.info["head"] = args.head
-    configs = [data.config_from_atoms(atoms) for atoms in atoms_list]
+        assert args.head in model.heads
+        head_name = args.head
+    else:
+        head_name = "Default"
+    configs = [
+        data.config_from_atoms(atoms, head_name=head_name) for atoms in atoms_list
+    ]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
 
@@ -185,8 +189,8 @@ def run(args: argparse.Namespace) -> None:
     bec_list = []
     qs_list = []
     us_list = []
-    alphas_list = []
     kappas_list = []
+    alphas_list = []
     forces_collection = []
 
     for batch in data_loader:
@@ -205,7 +209,7 @@ def run(args: argparse.Namespace) -> None:
             )
             bec_list.append(becs[:-1])  # drop last as its empty
 
-        if "latent_charges" in output:
+        if "latent_charges" in output and output["latent_charges"] is not None:
             qs = np.split(
                 torch_tools.to_numpy(output["latent_charges"]),
                 indices_or_sections=batch.ptr[1:],
@@ -213,32 +217,29 @@ def run(args: argparse.Namespace) -> None:
             )
             qs_list.append(qs[:-1])  # drop last as its empty
 
-        if "latent_dipoles" in output:
-            if output["latent_dipoles"] is not None:
-                us = np.split(
-                    torch_tools.to_numpy(output["latent_dipoles"]),
-                    indices_or_sections=batch.ptr[1:],
-                    axis=0,
-                )
-                us_list.append(us[:-1])  # drop last as its empty
+        if "latent_dipoles" in output and output["latent_dipoles"] is not None:
+            us = np.split(
+                torch_tools.to_numpy(output["latent_dipoles"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            us_list.append(us[:-1])
 
-        if "latent_kappas" in output:
-            if output["latent_kappas"] is not None:
-                kappas = np.split(
-                    torch_tools.to_numpy(output["latent_kappas"]),
-                    indices_or_sections=batch.ptr[1:],
-                    axis=0,
-                )
-                kappas_list.append(kappas[:-1])  # drop last as its empty
+        if "latent_kappas" in output and output["latent_kappas"] is not None:
+            kappas = np.split(
+                torch_tools.to_numpy(output["latent_kappas"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            kappas_list.append(kappas[:-1])
 
-        if "latent_alphas" in output:
-            if output["latent_alphas"] is not None:
-                alphas = np.split(
-                    torch_tools.to_numpy(output["latent_alphas"]),
-                    indices_or_sections=batch.ptr[1:],
-                    axis=0,
-                )
-                alphas_list.append(alphas[:-1])  # drop last as its empty
+        if "latent_alphas" in output and output["latent_alphas"] is not None:
+            alphas = np.split(
+                torch_tools.to_numpy(output["latent_alphas"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            alphas_list.append(alphas[:-1])
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
@@ -312,7 +313,7 @@ def run(args: argparse.Namespace) -> None:
         us_list = [us for sublist in us_list for us in sublist]
     if len(kappas_list) > 0:
         kappas_list = [kappas for sublist in kappas_list for kappas in sublist]
-    if len(alphas_list) > 0:    
+    if len(alphas_list) > 0:
         alphas_list = [alphas for sublist in alphas_list for alphas in sublist]
 
     if args.return_contributions:
