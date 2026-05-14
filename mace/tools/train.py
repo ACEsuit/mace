@@ -764,4 +764,5 @@ class MACELoss(Metric):
                 delta_polarizability_per_atom
             )
             aux["q95_polarizability"] = compute_q95(delta_polarizability)
-        return aux["loss"], dict(aux)
+
+        return aux["loss"], aux
