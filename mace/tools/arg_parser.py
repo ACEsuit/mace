@@ -142,7 +142,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "MACELES",
             "ScaleShiftBOTNet",
             "AtomicDipolesMACE",
-            "AtomicForcesMACE",
             "AtomicDielectricMACE",
             "EnergyDipolesMACE",
         ],

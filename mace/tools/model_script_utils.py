@@ -75,7 +75,7 @@ def configure_model(
         args.std = atomic_inter_scale
 
     elif (args.mean is None or args.std is None) and (
-        args.model not in ("AtomicDipolesMACE", "AtomicDielectricMACE", "AtomicForcesMACE")
+        args.model not in ("AtomicDipolesMACE", "AtomicDielectricMACE")
     ):
         args.mean, args.std = modules.scaling_classes[args.scaling](
             train_loader, atomic_energies
@@ -346,22 +346,6 @@ def _build_model(
         raise RuntimeError("ScaleShiftBOTNet is deprecated, use MACE instead")
     if args.model == "BOTNet":
         raise RuntimeError("BOTNet is deprecated, use MACE instead")
-    if args.model == "AtomicForcesMACE":
-        assert (
-            args.loss == "forces_only"
-        ), "Use forces loss with AtomicForcesMACE model"
-        #assert (
-        #    args.error_table == "ForcesRMSE"
-        #), "Use error_table ForcesRMSE with AtomicForcesMACE model"
-        return modules.AtomicForcesMACE(
-            **model_config,
-            correlation=args.correlation,
-            gate=modules.gate_dict[args.gate],
-            interaction_cls_first=modules.interaction_classes[
-                "RealAgnosticInteractionBlock"
-            ],
-            MLP_irreps=o3.Irreps(args.MLP_irreps),
-        )
     if args.model == "AtomicDipolesMACE":
         assert args.loss == "dipole", "Use dipole loss with AtomicDipolesMACE model"
         assert (

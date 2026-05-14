@@ -266,11 +266,6 @@ class EmptyParam(torch.nn.Parameter):
         zero = torch.zeros_like(data)
         return super().__new__(cls, zero, requires_grad=False)
 
-    def __deepcopy__(self, memo):
-        result = EmptyParam(self.data.clone(memory_format=torch.preserve_format))
-        memo[id(self)] = result
-        return result
-
     def requires_grad_(
         self, mode: bool = True
     ):  # pylint: disable=arguments-differ, arguments-renamed

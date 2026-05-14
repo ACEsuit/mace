@@ -44,7 +44,6 @@ from .models import (
     MACE,
     AtomicDielectricMACE,
     AtomicDipolesMACE,
-    AtomicForcesMACE,
     EnergyDipolesMACE,
     ScaleShiftMACE,
 )
@@ -113,7 +112,6 @@ __all__ = [
     "ScaleShiftMACE",
     "MACELES",
     "AtomicDipolesMACE",
-    "AtomicForcesMACE",
     "AtomicDielectricMACE",
     "EnergyDipolesMACE",
     "PolarMACE",
