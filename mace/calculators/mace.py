@@ -649,7 +649,7 @@ class MACECalculator(Calculator):
                     self.external_field,
                     device=batch_dict["positions"].device,
                     dtype=batch_dict["positions"].dtype,
-                ).reshape(1, 3)
+                )
 
             forward_kwargs: Dict[str, Any] = {
                 "compute_stress": compute_stress,
