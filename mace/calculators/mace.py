@@ -760,6 +760,47 @@ class MACECalculator(Calculator):
                     for stress in self.results["stresses"]
                 ]
             )
+        if "latent_alphas" in ret_tensors:
+            self.results["LES_alphas"] = torch.mean(torch.stack(ret_tensors["latent_alphas"]), dim=0).cpu().numpy()
+        if "latent_kappas" in ret_tensors:
+            self.results["LES_kappas"] = torch.mean(torch.stack(ret_tensors["latent_kappas"]), dim=0).cpu().numpy()
+        if getattr(self, "compute_bec", False) and "bec" in ret_tensors:
+            self.results["bec"] = (
+                torch.mean(torch.stack(ret_tensors["bec"]), dim=0).cpu().numpy()
+            )
+        if self.external_field is not None and getattr(self, "compute_bec", False) and "bec" in self.results:
+            bec_output = self.results["bec"]  # [N_atoms, 2, 3, 3] or [N_atoms, 3, 3]
+            if bec_output.ndim == 4:
+                if bec_output.shape[0] == 2:
+                    bec_output = np.sum(bec_output, axis=0)
+                elif bec_output.shape[1] == 2:
+                    bec_output = np.sum(bec_output, axis=1)
+            if getattr(self, "keep_neutral", False):
+                bec_output -= np.mean(bec_output, axis=0)
+            alphas = self.results.get('LES_alphas', None)
+            if getattr(self, "eps_infty", None) is not None and alphas is not None:
+                epsilon_0 = 5.52635e-3
+                volume = atoms.get_volume()
+                alpha_squeezed = np.squeeze(alphas)
+                if alpha_squeezed.ndim == 1:
+                    chi = alpha_squeezed.sum() / volume / epsilon_0
+                elif alpha_squeezed.ndim == 3 and alpha_squeezed.shape[1:] == (3, 3):
+                    chi = np.einsum('icc->', alpha_squeezed) / 3.0 / volume / epsilon_0
+                elif alpha_squeezed.ndim == 2 and alpha_squeezed.shape[-1] == 9:
+                    chi = np.einsum('icc->', alpha_squeezed.reshape(-1, 3, 3)) / 3.0 / volume / epsilon_0
+                else:
+                    chi = 0.0
+                epsilon_r = self.eps_infty / (1.0 + chi)
+            else:
+                epsilon_r = getattr(self, "eps_infty", 1.0) if getattr(self, "eps_infty", None) is not None else 1.0
+            e_ext_arr = np.array(self.external_field, dtype=np.float64)
+            scaled_e_field = e_ext_arr * (epsilon_r ** 0.5)
+            electric_field_unit = getattr(self, "electric_field_unit", 1.0)
+            if np.isscalar(scaled_e_field) or scaled_e_field.ndim == 0:
+                forces_bec = bec_output * scaled_e_field * electric_field_unit
+            else:
+                forces_bec = bec_output @ scaled_e_field * electric_field_unit
+            self.results["forces"] += forces_bec
 
     def get_dielectric_derivatives(self, atoms=None):
         if atoms is None and self.atoms is None:

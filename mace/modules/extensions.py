@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, List, Optional
 
 import torch
@@ -83,7 +84,7 @@ def _copy_mace_readout_tp(
     """
     Helper function to copy a MACE readout block.
     """
-    print("use_nonlinear_readout for alpha?", use_nonlinear_readout)
+    logging.debug(f"use_nonlinear_readout for alpha? {use_nonlinear_readout}")
     if isinstance(mace_readout, LinearReadoutBlock):
         if use_nonlinear_readout:
             return NonLinearLesReadoutBlock(
@@ -146,9 +147,9 @@ class MACELES(ScaleShiftMACE):
         self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
         self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
 
-        print("use_dipoles", self.use_dipoles)
-        print("use_induced_charges", self.use_induced_charges)
-        print("use_induced_dipoles", self.use_induced_dipoles)
+        logging.info(f"use_dipoles {self.use_dipoles}")
+        logging.info(f"use_induced_charges {self.use_induced_charges}")
+        logging.info(f"use_induced_dipoles {self.use_induced_dipoles}")
         self.les = Les(les_arguments=les_arguments)
 
         self.les_readouts = torch.nn.ModuleList()
@@ -179,14 +180,14 @@ class MACELES(ScaleShiftMACE):
             if self.use_quads:
                 mace_irreps = str(self.readouts[0].linear.irreps_in)
                 if "2e" in mace_irreps:
-                    print("Using l=2 readout to predict quadrupoles.")
+                    logging.info("Using l=2 readout to predict quadrupoles.")
                     change_of_basis_quads = ReducedTensorProducts('ij=ji', i="1o", filter_ir_out=['2e']).change_of_basis
                     self.les_quad_2e_readouts.append(
                         _copy_mace_readout(self.readouts[0], change_irrep_out="1x2e", cueq_config=cueq_config)
                     )
                     self.register_buffer("change_of_basis_quads", change_of_basis_quads)
                 if "1o" in mace_irreps:
-                    print("Using l=1 readout to predict quadrupoles.")
+                    logging.info("Using l=1 readout to predict quadrupoles.")
                     self.les_quad_1o_readouts.append(
                         _copy_mace_readout_tp(self.readouts[0], 
                         use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
@@ -202,7 +203,7 @@ class MACELES(ScaleShiftMACE):
                 if self.use_anisotropic_polarizability:
                     mace_irreps = str(self.readouts[0].linear.irreps_in)
                     if "2e" in mace_irreps and "2e" in self.alpha_irreps:
-                        print("Using l=2 readout to predict anisotropic polarizability.")
+                        logging.info("Using l=2 readout to predict anisotropic polarizability.")
                         change_of_basis = CartesianTensor("ij=ji").reduced_tensor_products().change_of_basis
                         self.les_alpha_2e_readouts.append(
                             _copy_mace_readout(self.readouts[0], change_irrep_out="1x0e + 1x2e", cueq_config=cueq_config)
@@ -210,7 +211,7 @@ class MACELES(ScaleShiftMACE):
                         self.register_buffer("change_of_basis", change_of_basis)
                     if "1o" in mace_irreps and "1o" in self.alpha_irreps:
                         #Obtain 2e from l=1 outer products
-                        print("Using l=1 readout to predict anisotropic polarizability.")
+                        logging.info("Using l=1 readout to predict anisotropic polarizability.")
                         self.les_alpha_1o_readouts.append(
                             _copy_mace_readout_tp(self.readouts[0], 
                             use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
