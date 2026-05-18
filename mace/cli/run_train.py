@@ -71,6 +71,7 @@ from mace.tools.scripts_utils import (
     get_swa,
     print_git_commit,
     remove_pt_head,
+    setup_mlflow,
     setup_wandb,
 )
 from mace.tools.tables_utils import create_error_table
@@ -892,6 +893,8 @@ def run(args) -> None:
 
     if args.wandb:
         setup_wandb(args)
+    if args.mlflow:
+        setup_mlflow(args)
     if args.distributed:
         distributed_model = DDP(model, device_ids=[local_rank])
     else:
@@ -960,6 +963,7 @@ def run(args) -> None:
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
         log_wandb=args.wandb,
+        log_mlflow=args.mlflow,
         distributed=args.distributed,
         distributed_model=distributed_model,
         plotter=plotter,
@@ -1133,6 +1137,7 @@ def run(args) -> None:
             loss_fn=loss_fn,
             output_args=output_args,
             log_wandb=args.wandb,
+            log_mlflow=args.mlflow,
             device=device,
             distributed=args.distributed,
             skip_heads=skip_heads,
@@ -1147,6 +1152,7 @@ def run(args) -> None:
                 loss_fn=loss_fn,
                 output_args=output_args,
                 log_wandb=args.wandb,
+                log_mlflow=args.mlflow,
                 device=device,
                 distributed=args.distributed,
             )

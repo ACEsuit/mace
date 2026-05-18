@@ -960,6 +960,28 @@ def setup_wandb(args: argparse.Namespace):
     wandb.run.summary["params"] = args_dict_json
 
 
+def setup_mlflow(args: argparse.Namespace):
+    logging.info("Using MLflow for logging")
+    import mlflow
+
+    mlflow_config = {}
+    args_dict = vars(args)
+
+    for key, value in args_dict.items():
+        if isinstance(value, np.ndarray):
+            args_dict[key] = value.tolist()
+
+    for key in args.mlflow_log_hypers:
+        if key in args_dict:
+            mlflow_config[key] = args_dict[key]
+    tools.init_mlflow(
+        experiment_name=args.mlflow_experiment,
+        run_name=args.mlflow_run_name,
+        tracking_uri=args.mlflow_tracking_uri,
+        config=mlflow_config,
+    )
+
+
 def get_files_with_suffix(dir_path: str, suffix: str) -> List[str]:
     return [
         os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(suffix)

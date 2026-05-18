@@ -166,6 +166,7 @@ def train(
     ema: Optional[ExponentialMovingAverage] = None,
     max_grad_norm: Optional[float] = 10.0,
     log_wandb: bool = False,
+    log_mlflow: bool = False,
     distributed: bool = False,
     save_all_checkpoints: bool = False,
     plotter: TrainingPlotter = None,
@@ -180,6 +181,8 @@ def train(
     keep_last = False
     if log_wandb:
         import wandb
+    if log_mlflow:
+        import mlflow
 
     if max_grad_norm is not None:
         logging.info(f"Using gradient clipping with tolerance={max_grad_norm:.3f}")
@@ -285,6 +288,17 @@ def train(
                                 ],
                                 "valid_rmse_f": eval_metrics["rmse_f"],
                             }
+                        if log_mlflow:
+                            mlflow.log_metrics(
+                                {
+                                    f"{valid_loader_name}_valid_loss": valid_loss_head,
+                                    f"{valid_loader_name}_valid_rmse_e_per_atom": eval_metrics[
+                                        "rmse_e_per_atom"
+                                    ],
+                                    f"{valid_loader_name}_valid_rmse_f": eval_metrics["rmse_f"],
+                                },
+                                step=epoch,
+                            )
                 if plotter and epoch % plotter.plot_frequency == 0:
                     try:
                         plotter.plot(epoch, model_to_evaluate, rank)

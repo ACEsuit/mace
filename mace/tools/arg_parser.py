@@ -1099,6 +1099,50 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "forces_weight",
         ],
     )
+    # options for using MLflow for experiment tracking
+    # to install: pip install mlflow
+    parser.add_argument(
+        "--mlflow",
+        help="Use MLflow for experiment tracking",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--mlflow_tracking_uri",
+        help="MLflow tracking URI (local path or remote server URL)",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--mlflow_experiment",
+        help="MLflow experiment name",
+        type=str,
+        default="mace_training",
+    )
+    parser.add_argument(
+        "--mlflow_run_name",
+        help="MLflow run name",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--mlflow_log_hypers",
+        help="The hyperparameters to log in MLflow",
+        nargs="+",
+        default=[
+            "num_channels",
+            "max_L",
+            "correlation",
+            "lr",
+            "swa_lr",
+            "weight_decay",
+            "batch_size",
+            "max_num_epochs",
+            "start_swa",
+            "energy_weight",
+            "forces_weight",
+        ],
+    )
     return parser
 
 

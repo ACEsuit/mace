@@ -142,6 +142,21 @@ def init_wandb(project: str, entity: str, name: str, config: dict, directory: st
     )
 
 
+def init_mlflow(
+    experiment_name: str,
+    run_name: str,
+    tracking_uri: Optional[str],
+    config: dict,
+):
+    import mlflow
+
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
+    mlflow.start_run(run_name=run_name or None)
+    mlflow.log_params(config)
+
+
 @contextmanager
 def default_dtype(dtype: Union[torch.dtype, str]):
     """Context manager for configuring the default_dtype used by torch

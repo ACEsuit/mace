@@ -30,9 +30,12 @@ def create_error_table(
     device: str,
     distributed: bool = False,
     skip_heads: Optional[List[str]] = None,
+    log_mlflow: bool = False,
 ) -> PrettyTable:
     if log_wandb:
         import wandb
+    if log_mlflow:
+        import mlflow
     skip_heads = skip_heads or []
     table = PrettyTable()
     if table_type == "TotalRMSE":
@@ -135,6 +138,14 @@ def create_error_table(
                 name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
             }
             wandb.log(wandb_log_dict)
+        if log_mlflow:
+            mlflow.log_metrics(
+                {
+                    name + "_final_rmse_e_per_atom": metrics["rmse_e_per_atom"] * 1e3,
+                    name + "_final_rmse_f": metrics["rmse_f"] * 1e3,
+                    name + "_final_rel_rmse_f": metrics["rel_rmse_f"],
+                }
+            )
         if table_type == "TotalRMSE":
             table.add_row(
                 [
