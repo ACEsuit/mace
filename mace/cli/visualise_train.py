@@ -226,8 +226,14 @@ def plot_epoch_dependence(
         .reset_index()
     )
     valid_data = valid_data[valid_data["head"] == head]
+
+    agg_columns = data[data["mode"] == "opt"].columns[
+        data[data["mode"] == "opt"].notna().any()
+    ]
     train_data = (
-        data[data["mode"] == "opt"]
+        data[data["mode"] == "opt"][
+            agg_columns
+        ]  # For Pandas > v1.5 compatibility, do not evaluate NaN-columns
         .groupby(["mode", "epoch"])
         .agg(["mean", "std"])
         .reset_index()

@@ -15,8 +15,10 @@ import ase.data
 import ase.io
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from mace.calculators import MACECalculator, mace_mp
+from mace.calculators.foundations_models import mace_mp_names
 
 try:
     import fpsample  # type: ignore
@@ -30,10 +32,16 @@ class FilteringType(Enum):
     EXCLUSIVE = "exclusive"
     INCLUSIVE = "inclusive"
 
+    def __str__(self):
+        return self.value
+
 
 class SubselectType(Enum):
     FPS = "fps"
     RANDOM = "random"
+
+    def __str__(self):
+        return self.value
 
 
 @dataclass
@@ -41,7 +49,7 @@ class SelectionSettings:
     configs_pt: str
     output: str
     configs_ft: str | None = None
-    atomic_numbers: List[int] | None = None
+    filter_atomic_numbers_pt: List[int] | None = None
     num_samples: int | None = None
     subselect: SubselectType = SubselectType.FPS
     model: str = "small"
@@ -55,6 +63,7 @@ class SelectionSettings:
     weight_pt: float = 1.0
     allow_random_padding: bool = True
     seed: int = 42
+    config: str | None = None
 
 
 def str_to_list(s: str) -> List[int]:
@@ -62,10 +71,25 @@ def str_to_list(s: str) -> List[int]:
     return ast.literal_eval(s)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+def build_default_finetuning_select_arg_parser() -> argparse.ArgumentParser:
+    try:
+        import configargparse
+
+        parser = configargparse.ArgumentParser(
+            config_file_parser_class=configargparse.YAMLConfigFileParser,
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        parser.add(
+            "--config",
+            type=str,
+            is_config_file=True,
+            help="config file to aggregate options",
+        )
+    except ImportError:
+        parser = argparse.ArgumentParser(
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+
     parser.add_argument(
         "--configs_pt",
         help="path to XYZ configurations for the pretraining",
@@ -144,7 +168,7 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
     )
     parser.add_argument(
-        "--atomic_numbers",
+        "--filter_atomic_numbers_pt",
         help="list of atomic numbers to filter the configurations",
         type=str_to_list,
         default=None,
@@ -156,12 +180,12 @@ def parse_args() -> argparse.Namespace:
         dest="allow_random_padding",
     )
     parser.add_argument("--seed", help="random seed", type=int, default=42)
-    return parser.parse_args()
+    return parser
 
 
 def calculate_descriptors(atoms: List[ase.Atoms], calc: MACECalculator) -> None:
     logging.info("Calculating descriptors")
-    for mol in atoms:
+    for mol in tqdm(atoms, desc="Calculate descriptors"):
         descriptors = calc.get_descriptors(mol.copy(), invariants_only=True)
         # average descriptors over atoms for each element
         descriptors_dict = {
@@ -233,7 +257,7 @@ class FPS:
                 (len(self.atoms_list), -1)
             )
         )
-        logging.info(f"{descriptor_dataset_reshaped.shape}")
+        logging.info(f"{descriptor_dataset_reshaped.shape=}")
         logging.info(f"n_samples: {self.n_samples}")
         self.list_index = fpsample.fps_npdu_kdtree_sampling(
             descriptor_dataset_reshaped,
@@ -245,6 +269,7 @@ class FPS:
         """
         Assemble the descriptors for all the configurations.
         """
+        logging.info("Assemble descriptors///")
         self.descriptors_dataset: np.ndarray = 10e10 * np.ones(
             (
                 len(self.atoms_list),
@@ -254,7 +279,10 @@ class FPS:
             dtype=np.float32,
         ).astype(np.float32)
 
-        for i, atoms in enumerate(self.atoms_list):
+        for i, atoms in tqdm(
+            enumerate(self.atoms_list),
+            desc="Assembling descriptors",
+        ):
             descriptors = atoms.info["mace_descriptors"]
             for z in descriptors:
                 self.descriptors_dataset[i, self.species_dict[z]] = np.array(
@@ -263,32 +291,33 @@ class FPS:
 
 
 def _load_calc(
-    model: str, device: str, default_dtype: str, subselect: SubselectType
+    model: str, device: str, default_dtype: str, head: str, subselect: SubselectType
 ) -> Union[MACECalculator, None]:
     if subselect == SubselectType.RANDOM:
         return None
-    if model in ["small", "medium", "large"]:
-        calc = mace_mp(model, device=device, default_dtype=default_dtype)
+    if model in filter(None, mace_mp_names):
+        calc = mace_mp(model, device=device, head=head, default_dtype=default_dtype)
     else:
         calc = MACECalculator(
             model_paths=model,
             device=device,
+            head=head,
             default_dtype=default_dtype,
         )
     return calc
 
 
 def _get_finetuning_elements(
-    atoms: List[ase.Atoms], atomic_numbers: List[int] | None
+    atoms: List[ase.Atoms], filter_atomic_numbers_pt: List[int] | None
 ) -> List[str]:
     if atoms:
         logging.debug(
             "Using elements from the finetuning configurations for filtering."
         )
         species = np.unique([x.symbol for atoms in atoms for x in atoms]).tolist()  # type: ignore
-    elif atomic_numbers is not None and atomic_numbers:
+    elif filter_atomic_numbers_pt:
         logging.debug("Using the supplied atomic numbers for filtering.")
-        species = [ase.data.chemical_symbols[z] for z in atomic_numbers]
+        species = [ase.data.chemical_symbols[z] for z in filter_atomic_numbers_pt]
     else:
         species = []
     return species
@@ -346,6 +375,7 @@ def _load_descriptors(
     calc: MACECalculator | None,
     full_data_length: int,
 ) -> None:
+    logging.info("Load descriptors")
     if descriptors_path is not None:
         logging.info(f"Loading descriptors from {descriptors_path}")
         descriptors = np.load(descriptors_path, allow_pickle=True)
@@ -361,7 +391,6 @@ def _load_descriptors(
         for i, atoms_ in enumerate(atoms):
             atoms_.info["mace_descriptors"] = required_descriptors[i]
     else:
-        logging.info("Calculating descriptors")
         if calc is None:
             raise ValueError("MACECalculator must be provided to calculate descriptors")
         calculate_descriptors(atoms, calc)
@@ -370,6 +399,7 @@ def _load_descriptors(
 def _maybe_save_descriptors(
     atoms: List[ase.Atoms],
     output_path: str,
+    delete: bool = True,
 ) -> None:
     """
     Save the descriptors if they are present in the atoms objects.
@@ -383,8 +413,9 @@ def _maybe_save_descriptors(
         logging.info(f"Saving descriptors at {descriptor_save_path}")
         descriptors_list = [x.info["mace_descriptors"] for x in atoms]
         np.save(descriptor_save_path, descriptors_list, allow_pickle=True)
-        for x in atoms:
-            del x.info["mace_descriptors"]
+        if delete:
+            for x in atoms:
+                del x.info["mace_descriptors"]
 
 
 def _maybe_fps(atoms: List[ase.Atoms], num_samples: int) -> List[ase.Atoms]:
@@ -408,6 +439,7 @@ def _subsample_data(
     allow_random_padding: bool,
     calc: MACECalculator | None,
 ) -> List[ase.Atoms]:
+    logging.info("Subsample data")
     if num_samples is None or num_samples == len(filtered_atoms):
         logging.info(
             f"No subsampling, keeping all {len(filtered_atoms)} filtered configurations"
@@ -461,21 +493,27 @@ def select_samples(
     np.random.seed(settings.seed)
     torch.manual_seed(settings.seed)
     calc = _load_calc(
-        settings.model, settings.device, settings.default_dtype, settings.subselect
+        settings.model,
+        settings.device,
+        settings.default_dtype,
+        settings.head_pt,
+        settings.subselect,
     )
     atoms_list_ft = _read_finetuning_configs(settings.configs_ft)
-    all_species_ft = _get_finetuning_elements(atoms_list_ft, settings.atomic_numbers)
+    all_species_ft = _get_finetuning_elements(
+        atoms_list_ft, settings.filter_atomic_numbers_pt
+    )
 
     if settings.filtering_type is not FilteringType.NONE and not all_species_ft:
         raise ValueError(
-            "Filtering types other than NONE require elements for filtering. They can be specified via the `--atomic_numbers` flag."
+            """Filtering types other than NONE require elements for filtering. They can be specified via the
+            `--filter_atomic_numbers_pt` flag."""
         )
-
+    logging.info(f"Reading {settings.configs_pt}")
     atoms_list_pt: list[ase.Atoms] = ase.io.read(settings.configs_pt, index=":")  # type: ignore
     filtered_pt_atoms, remaining_atoms, passes_filter = _filter_pretraining_data(
         atoms_list_pt, settings.filtering_type, all_species_ft
     )
-
     subsampled_atoms = _subsample_data(
         filtered_pt_atoms,
         remaining_atoms,
@@ -491,6 +529,8 @@ def select_samples(
             f"filename '{settings.output}' does no have "
             "suffix compatible with extxyz format"
         )
+    output_path = Path(settings.configs_pt).name
+    _maybe_save_descriptors(filtered_pt_atoms, output_path, True)
     _maybe_save_descriptors(subsampled_atoms, settings.output)
 
     _write_metadata(
@@ -519,10 +559,16 @@ def select_samples(
     )
 
 
-def main():
-    args = parse_args()
-    settings = SelectionSettings(**vars(args))
-    select_samples(settings)
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler()],
+    )
+    logging.info("Start: Parse command line arguments")
+    args = build_default_finetuning_select_arg_parser().parse_args()
+    select_samples(SelectionSettings(**vars(args)))
 
 
 if __name__ == "__main__":
