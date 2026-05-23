@@ -252,7 +252,7 @@ def _build_model(
             interaction_cls_first=modules.interaction_classes[args.interaction_first],
             MLP_irreps=o3.Irreps(args.MLP_irreps),
             atomic_inter_scale=args.std,
-            atomic_inter_shift=[0.0] * len(heads),
+            atomic_inter_shift=_determine_atomic_inter_shift(args.mean, heads),
             radial_MLP=ast.literal_eval(args.radial_MLP),
             radial_type=args.radial_type,
             heads=heads,
