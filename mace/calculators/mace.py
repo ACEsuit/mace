@@ -697,7 +697,7 @@ class MagneticMACECalculator(Calculator):
         length_units_to_A: float = 1.0,
         default_dtype="",
         charges_key="Qs",
-        magmom_key="mace_magmom",
+        magmom_key="MACE_magmoms",
         info_keys=None,
         arrays_keys=None,
         model_type="MACE",
@@ -1033,7 +1033,7 @@ class MagneticMACECalculator(Calculator):
                 ret_tensors["dipole"][i] = out["dipole"].detach()
             if "equilibrated_magmom" in out.keys():
                 assert len(self.models) == 1, "magnetic mace committee not supported"
-                ret_tensors["mace_magmom"] = out["equilibrated_magmom"].detach()
+                ret_tensors["MACE_magmoms"] = out["equilibrated_magmom"].detach()
 
         self.results = {}
         if self.model_type in ["MACE", "EnergyDipoleMACE"]:
@@ -1051,8 +1051,8 @@ class MagneticMACECalculator(Calculator):
                 / self.length_units_to_A
             )
 
-            if "mace_magmom" in ret_tensors:
-                self.results["mace_magmom"] = ret_tensors["mace_magmom"].cpu().numpy()
+            if "MACE_magmoms" in ret_tensors:
+                self.results["MACE_magmoms"] = ret_tensors["MACE_magmoms"].cpu().numpy()
 
             if self.num_models > 1:
                 self.results["energies"] = (
@@ -1094,7 +1094,7 @@ class MagneticMACECalculator(Calculator):
                     .numpy()
                 )
         # modify this inpalce
-        atoms.arrays["mace_magmom"] = self.results["mace_magmom"]
+        atoms.arrays["MACE_magmoms"] = self.results["MACE_magmoms"]
 
     def get_hessian(self, atoms=None):
         if atoms is None and self.atoms is None:

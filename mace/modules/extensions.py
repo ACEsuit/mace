@@ -1404,6 +1404,8 @@ class MagneticScaleShiftMACE(MagneticMACE):
         compute_displacement: bool = False,
         compute_hessian: bool = False,
         compute_magforces: bool = True,
+        compute_edge_forces: bool = False,
+        compute_atomic_stresses: bool = False,
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Setup
         data["positions"].requires_grad_(True)
@@ -1570,10 +1572,11 @@ class MagneticScaleShiftMACE(MagneticMACE):
         # Add E_0 and (scaled) interaction energy
         total_energy = e0 + inter_e
         node_energy = node_e0 + node_inter_es
-        forces, virials, stress, hessian, _, magforces = get_outputs(
+        forces, virials, stress, hessian, edge_forces, magforces = get_outputs(
             energy=inter_e,
             positions=data["positions"],
             displacement=displacement,
+            vectors=vectors,
             cell=data["cell"],
             magmoms=data["magmom"],
             training=training,
@@ -1581,17 +1584,31 @@ class MagneticScaleShiftMACE(MagneticMACE):
             compute_virials=compute_virials,
             compute_stress=compute_stress,
             compute_hessian=compute_hessian,
+            compute_edge_forces=compute_edge_forces or compute_atomic_stresses,
             compute_magforces=compute_magforces,
         )
+        atomic_virials: Optional[torch.Tensor] = None
+        atomic_stresses: Optional[torch.Tensor] = None
+        if compute_atomic_stresses and edge_forces is not None:
+            atomic_virials, atomic_stresses = get_atomic_virials_stresses(
+                edge_forces=edge_forces,
+                edge_index=data["edge_index"],
+                vectors=vectors,
+                num_atoms=data["positions"].shape[0],
+                batch=data["batch"],
+                cell=data["cell"],
+            )
         output = {
             "energy": total_energy,
             "node_energy": node_energy,
             "interaction_energy": inter_e,
             "forces": forces,
             "magforces": magforces,
-            # "edge_froces": edge_froces,
+            "edge_forces": edge_forces,
             "virials": virials,
             "stress": stress,
+            "atomic_virials": atomic_virials,
+            "atomic_stresses": atomic_stresses,
             "hessian": hessian,
             "displacement": displacement,
             "node_feats": node_feats_out,
@@ -1693,7 +1710,6 @@ class MagneticSCFMACE(torch.nn.Module):
             self.cache_magmom = magmom.detach()
 
             # Final output (evaluate one last time with final magmom)
-            data["mace_magmom"] = magmom
 
         final_output = self.magmom_mace(
             data,

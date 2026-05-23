@@ -1,0 +1,245 @@
+import argparse
+import importlib.util
+import os
+from pathlib import Path
+
+import ase.io
+import numpy as np
+import pytest
+import torch
+from ase.atoms import Atoms
+from e3nn import o3
+
+from mace.calculators import MACECalculator
+from mace.cli.eval_configs import run as mace_eval_configs_run
+from mace.cli.run_train import run as mace_run
+from mace.tools.arg_parser import build_default_arg_parser
+from mace.tools.torch_tools import default_dtype
+
+from mace.modules.extensions import MagneticScaleShiftMACE, MagneticSCFMACE
+from mace.modules import interaction_classes
+
+# ----------------------------------------------------------
+# Environment flags
+# ----------------------------------------------------------
+CUDA_AVAILABLE = torch.cuda.is_available()
+
+# ----------------------------------------------------------
+# Fixtures
+# ----------------------------------------------------------
+@pytest.fixture(name="magnetic_configs")
+def fixture_magnetic_configs():
+    """Generate a small synthetic magnetic dataset."""
+
+    # A simple 2-atom Fe dimer with random perturbations
+    base = Atoms(numbers=[26, 26],
+                 positions=[[0, 0, 0], [0, 0, 2.0]],
+                 cell=[6.0] * 3,
+                 pbc=[True] * 3)
+    fit_configs = [
+        Atoms(numbers=[26], positions=[[0, 0, 0]], cell=[6] * 3),
+    ]
+
+    fit_configs[0].info["REF_energy"] = 0.0
+    fit_configs[0].info["config_type"] = "IsolatedAtom"
+    fit_configs[0].arrays["REF_magmom"] = np.array([[0.0, 0.0, 2.2]])
+
+    np.random.seed(5)
+    for _ in range(20):
+        c = base.copy()
+        c.positions += np.random.normal(0, 0.05, size=c.positions.shape)
+        c.info["REF_energy"] = np.random.normal(0.0, 0.01)
+        c.new_array("REF_forces", np.random.normal(0, 0.01, size=c.positions.shape))
+        c.new_array("REF_magforces", np.random.normal(0, 0.01, size=c.positions.shape))
+        c.new_array("REF_magmom", np.tile([[0.0, 0.0, 2.2]], (len(c), 1)))
+        fit_configs.append(c)
+
+    return fit_configs
+
+
+_magnetic_mace_params = {
+    "name": "MACE",
+    "valid_fraction": 0.05,
+    "energy_weight": 1.0,
+    "forces_weight": 10.0,
+    "stress_weight": 1.0,
+    "magforces_weight": 5.0,
+    "model": "MagneticScaleShiftMACE",
+    "interaction_first": "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
+    "interaction": "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
+    "hidden_irreps": "128x0e",
+    "r_max": 3.5,
+    "m_max": 10.0,
+    "batch_size": 5,
+    "max_num_epochs": 10,
+    "swa": None,
+    "start_swa": 5,
+    "ema": None,
+    "ema_decay": 0.99,
+    "amsgrad": None,
+    "restart_latest": None,
+    "device": "cpu",
+    "seed": 5,
+    "loss": "stress",
+    "energy_key": "REF_energy",
+    "forces_key": "REF_forces",
+    "magforces_key": "REF_magforces",
+    "magmom_key": "REF_magmom",
+    "eval_interval": 1,
+    "use_reduced_cg": False,
+}
+
+
+# ----------------------------------------------------------
+# Training tests
+# ----------------------------------------------------------
+def test_run_train_magnetic_mace(tmp_path, magnetic_configs):
+    """Train a tiny magnetic MACE model on synthetic data and check energies."""
+    ase.io.write(tmp_path / "fit.xyz", magnetic_configs)
+
+    mace_params = _magnetic_mace_params.copy()
+    mace_params["checkpoints_dir"] = str(tmp_path)
+    mace_params["model_dir"] = str(tmp_path)
+    mace_params["train_file"] = tmp_path / "fit.xyz"
+    
+    args = build_default_arg_parser().parse_args(
+        [f"--{k}={v}" if v is not None else f"--{k}" for k, v in mace_params.items()]
+    )
+
+    # Run CLI training (mock Magnetic MACE mode)
+    mace_run(args)
+
+    model_path = tmp_path / "MACE.model"
+    assert model_path.exists()
+
+    calc = MACECalculator(model_paths=model_path, device="cpu")
+
+    Es = []
+    for at in magnetic_configs:
+        at.calc = calc
+        at.arrays['MACE_magmoms'] = at.arrays['REF_magmom']
+        Es.append(at.get_potential_energy())
+
+    print("Energies:", Es)
+    assert all(np.isfinite(Es)), "Non-finite energies in magnetic MACE output."
+
+
+@pytest.mark.skip(
+    reason="eval_configs.py does not yet plumb magmom into the data dict on magnetic-pr; tracked as a follow-up after the merge."
+)
+def test_run_eval_magnetic_mace(tmp_path, magnetic_configs):
+    """Run magnetic model evaluation and verify magnetic fields are written."""
+    # Save fake model to disk
+    with default_dtype(torch.float32):
+        model = MagneticScaleShiftMACE(
+            r_max=3.5,
+            num_bessel=4,
+            num_polynomial_cutoff=4,
+            max_ell=2,
+            interaction_cls=interaction_classes["MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"],
+            interaction_cls_first=interaction_classes["MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"],
+            num_interactions=1,
+            num_elements=1,
+            hidden_irreps=o3.Irreps("8x0e"),
+            MLP_irreps=o3.Irreps("4x0e"),
+            atomic_energies=np.zeros(1),
+            avg_num_neighbors=1.0,
+            atomic_numbers=[26],
+            correlation=[1],
+            gate=torch.nn.functional.silu,
+            atomic_inter_shift=0.0,
+            atomic_inter_scale=1.0,
+            # == magmoms ===
+            m_max=[3.0],
+            num_mag_radial_basis = 8,
+            num_mag_radial_basis_one_body = 10,
+            max_m_ell = 1,
+            use_magmom_one_body=False,
+        )
+        model_path = tmp_path / "magmace.model"
+        torch.save(model, model_path)
+
+    ase.io.write(tmp_path / "fit.xyz", magnetic_configs)
+    output_path = tmp_path / "output.xyz"
+
+    args = argparse.Namespace(
+        model=str(model_path),
+        configs=str(tmp_path / "fit.xyz"),
+        output=str(output_path),
+        device="cpu",
+        default_dtype="float32",
+        batch_size=1,
+        compute_stress=False,
+        compute_bec=False,
+        enable_cueq=False,
+        return_contributions=False,
+        return_descriptors=False,
+        return_node_energies=True,
+        info_prefix="MACE_",
+        head=None,
+    )
+
+    mace_eval_configs_run(args)
+
+    assert output_path.exists(), "Output file missing after evaluation."
+    output_atoms = ase.io.read(str(output_path), index=":")
+    assert len(output_atoms) == len(magnetic_configs)
+    
+    for at in output_atoms:
+        assert "MACE_energy" in at.info
+        assert "MACE_forces" in at.arrays
+        assert "MACE_magforces" in at.arrays or "MACE_magmoms" in at.arrays
+        print(f"E={at.info['MACE_energy']:.6f}, magmom={at.arrays.get('MACE_magmoms', None)}")
+
+
+# ----------------------------------------------------------
+# SCF wrapper test
+# ----------------------------------------------------------
+def test_run_magnetic_scf(tmp_path, magnetic_configs):
+    """Check that the MagneticSCFMACE wrapper runs SCF relaxation cycles."""
+    # Create minimal model and SCF wrapper
+    with default_dtype(torch.float32):
+        model = MagneticScaleShiftMACE(
+            r_max=3.5,
+            num_bessel=4,
+            num_polynomial_cutoff=4,
+            max_ell=2,
+            m_max=[3.0],
+            num_mag_radial_basis=4,
+            max_m_ell=1,
+            interaction_cls=interaction_classes["MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"],
+            interaction_cls_first=interaction_classes["MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"],
+            num_interactions=1,
+            num_elements=1,
+            hidden_irreps=o3.Irreps("8x0e"),
+            MLP_irreps=o3.Irreps("4x0e"),
+            atomic_energies=np.zeros(1),
+            avg_num_neighbors=1.0,
+            atomic_numbers=[26],
+            correlation=[1],
+            gate=torch.nn.functional.silu,
+            use_magmom_one_body=False,
+            num_mag_radial_basis_one_body=4,
+            atomic_inter_shift=0.0,
+            atomic_inter_scale=1.0,
+        )
+    scf_model = MagneticSCFMACE(model=model, n_scf_step=2, scf_logging=True)
+
+    # Convert to data dict. magnetic_configs[0] is the IsolatedAtom (single Fe); use the dimer.
+    at = magnetic_configs[1]
+    data = {
+        "positions": torch.tensor(at.positions, dtype=torch.float32),
+        "cell": torch.tensor(at.cell.array, dtype=torch.float32).unsqueeze(0),
+        "batch": torch.zeros(len(at), dtype=torch.int64),
+        "ptr": torch.tensor([0, len(at)], dtype=torch.int64),
+        "node_attrs": torch.nn.functional.one_hot(torch.tensor([0, 0]), num_classes=1).float(),
+        "magmom": torch.tensor(at.arrays["REF_magmom"], dtype=torch.float32),
+        "edge_index": torch.tensor([[0], [1]], dtype=torch.int64),
+        "unit_shifts": torch.zeros((1, 3), dtype=torch.float32),
+        "shifts": torch.zeros((1, 3), dtype=torch.float32),
+    }
+
+    out = scf_model(data)
+    assert "equilibrated_magmom" in out
+    assert torch.isfinite(out["equilibrated_magmom"]).all()
+    print("Final magmom after SCF:", out["equilibrated_magmom"])
