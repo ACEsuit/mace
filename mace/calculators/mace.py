@@ -697,7 +697,7 @@ class MagneticMACECalculator(Calculator):
         length_units_to_A: float = 1.0,
         default_dtype="",
         charges_key="Qs",
-        magmom_key="MACE_magmoms",
+        magmom_key="REF_magmom",
         info_keys=None,
         arrays_keys=None,
         model_type="MACE",

@@ -117,16 +117,12 @@ def test_run_train_magnetic_mace(tmp_path, magnetic_configs):
     Es = []
     for at in magnetic_configs:
         at.calc = calc
-        at.arrays['MACE_magmoms'] = at.arrays['REF_magmom']
         Es.append(at.get_potential_energy())
 
     print("Energies:", Es)
     assert all(np.isfinite(Es)), "Non-finite energies in magnetic MACE output."
 
 
-@pytest.mark.skip(
-    reason="eval_configs.py does not yet plumb magmom into the data dict on magnetic-pr; tracked as a follow-up after the merge."
-)
 def test_run_eval_magnetic_mace(tmp_path, magnetic_configs):
     """Run magnetic model evaluation and verify magnetic fields are written."""
     # Save fake model to disk
@@ -174,9 +170,11 @@ def test_run_eval_magnetic_mace(tmp_path, magnetic_configs):
         enable_cueq=False,
         return_contributions=False,
         return_descriptors=False,
-        return_node_energies=True,
+        return_node_energies=False,
+        return_magforces=True,
         info_prefix="MACE_",
         head=None,
+        magmom_key="REF_magmom",
     )
 
     mace_eval_configs_run(args)
