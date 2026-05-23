@@ -1115,6 +1115,7 @@ class MagneticMACE(torch.nn.Module):
         distance_transform: str = "None",
         use_magmom_one_body: Optional[bool] = False,
         edge_irreps: Optional[o3.Irreps] = None,
+        use_edge_irreps_first: bool = False,  # pylint: disable=unused-argument
         radial_MLP: Optional[List[int]] = None,
         radial_type: Optional[str] = "bessel",
         heads: Optional[List[str]] = None,
