@@ -637,16 +637,21 @@ def resolve_m_max(
         except (ValueError, SyntaxError):
             parsed = None
         if isinstance(parsed, dict):
-            unknown = [z for z in parsed.keys() if int(z) not in atomic_numbers]
-            if unknown:
-                raise ValueError(
-                    f"--m_max dict references atomic numbers {unknown} that are "
-                    f"not in the z_table {atomic_numbers}"
+            # Normalize keys to python ints to compare against atomic_numbers
+            # (which may be a list of np.int64).
+            normalized = {int(k): float(v) for k, v in parsed.items()}
+            atomic_numbers_int = [int(z) for z in atomic_numbers]
+            extras = sorted(set(normalized) - set(atomic_numbers_int))
+            if extras:
+                logging.info(
+                    f"--m_max dict has entries for atomic numbers {extras} not in the "
+                    f"current z_table; they are ignored. (This is normal when the dict "
+                    f"is a generic over-spec.)"
                 )
-            resolved = [float(parsed.get(int(z), default)) for z in atomic_numbers]
+            resolved = [normalized.get(z, default) for z in atomic_numbers_int]
             logging.info(
                 f"Resolved --m_max dict to per-element list (default={default} for "
-                f"unspecified): {dict(zip(atomic_numbers, resolved))}"
+                f"unspecified): {dict(zip(atomic_numbers_int, resolved))}"
             )
             return resolved
         # Single non-dict token: assume a single float.

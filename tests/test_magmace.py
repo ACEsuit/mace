@@ -374,8 +374,21 @@ def test_resolve_m_max_wrong_length_raises():
         resolve_m_max([0.1, 0.2], [1, 6, 8, 26])
 
 
-def test_resolve_m_max_unknown_element_raises():
+def test_resolve_m_max_extra_dict_keys_ignored():
+    """A dict over-spec'd with elements not in the current z_table is OK: extras get ignored, present elements resolved."""
     from mace.tools.scripts_utils import resolve_m_max
 
-    with pytest.raises(ValueError, match=r"\[99\]"):
-        resolve_m_max(["{99: 1.0}"], [1, 6, 8, 26])
+    # Z=99 isn't in z_table; should be ignored, not raise.
+    out = resolve_m_max(["{26: 1.8, 99: 1.0}"], [1, 6, 8, 26], default=1.0)
+    assert out == [1.0, 1.0, 1.0, 1.8]
+
+
+def test_resolve_m_max_numpy_atomic_numbers():
+    """atomic_numbers can be np.int64 (as it comes from z_table)."""
+    import numpy as np  # noqa: F401  (already imported at top of file)
+
+    from mace.tools.scripts_utils import resolve_m_max
+
+    zs = [np.int64(1), np.int64(6), np.int64(26)]
+    out = resolve_m_max(["{26: 8.0}"], zs, default=4.0)
+    assert out == [4.0, 4.0, 8.0]
