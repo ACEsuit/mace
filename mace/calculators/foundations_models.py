@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Literal, Optional, Union, overload
@@ -11,36 +12,76 @@ from mace.tools.utils import get_cache_dir
 
 from .mace import MACECalculator
 
-
 _DOWNLOAD_TIMEOUT = 120  # seconds – socket-level read timeout for model downloads
 
 
+def _normalize_github_download_url(url: str) -> str:
+    """Prefer raw.githubusercontent.com for GitHub-hosted model files."""
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or parsed.netloc != "github.com":
+        return url
+
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if len(path_parts) < 5:
+        return url
+
+    org, repo, mode = path_parts[:3]
+    if mode not in {"blob", "raw"}:
+        return url
+
+    ref = path_parts[3]
+    file_path = "/".join(path_parts[4:])
+    normalized = f"https://raw.githubusercontent.com/{org}/{repo}/{ref}/{file_path}"
+    if parsed.query and parsed.query != "raw=true":
+        normalized = f"{normalized}?{parsed.query}"
+    return normalized
+
+
 def _urlretrieve_with_timeout(url, filename, timeout=_DOWNLOAD_TIMEOUT):
-    """Download *url* to *filename* with a per-read socket timeout."""
-    with urllib.request.urlopen(url, timeout=timeout) as response:
-        total = int(response.headers.get("Content-Length", 0))
-        downloaded = 0
-        block_size = 256 * 1024  # 256 KB
-        info = response.info()
-        with open(filename, "wb") as out:
-            while True:
-                block = response.read(block_size)
-                if not block:
-                    break
-                out.write(block)
-                downloaded += len(block)
-                if total > 0:
-                    pct = min(100, downloaded * 100 / total)
-                    print(
-                        f"\rDownloading: {pct:.1f}% "
-                        f"({downloaded / 1024 / 1024:.1f} MB / "
-                        f"{total / 1024 / 1024:.1f} MB)",
-                        end="",
-                        flush=True,
-                    )
-    if total > 0:
-        print()  # newline after progress
+    """Download *url* to *filename* with a per-read socket timeout.
+
+    Streams to a ``.part`` sibling and atomically renames on success so
+    interrupted downloads never leave a truncated file at *filename* (which
+    would later make ``torch.load`` fail with a confusing zip-archive error).
+    """
+    tmp = filename + ".part"
+    success = False
+    try:
+        with urllib.request.urlopen(
+            _normalize_github_download_url(url), timeout=timeout
+        ) as response:
+            total = int(response.headers.get("Content-Length", 0))
+            downloaded = 0
+            block_size = 256 * 1024  # 256 KB
+            info = response.info()
+            with open(tmp, "wb") as out:
+                while True:
+                    block = response.read(block_size)
+                    if not block:
+                        break
+                    out.write(block)
+                    downloaded += len(block)
+                    if total > 0:
+                        pct = min(100, downloaded * 100 / total)
+                        print(
+                            f"\rDownloading: {pct:.1f}% "
+                            f"({downloaded / 1024 / 1024:.1f} MB / "
+                            f"{total / 1024 / 1024:.1f} MB)",
+                            end="",
+                            flush=True,
+                        )
+        os.replace(tmp, filename)
+        success = True
+        if total > 0:
+            print()  # newline after progress
+    finally:
+        if not success:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
     return filename, info
+
 
 module_dir = os.path.dirname(__file__)
 local_model_path = os.path.join(
@@ -66,6 +107,12 @@ mace_mp_urls = {
     "mh-1": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/mace-mh-1.model",
 }
 mace_mp_names = [None] + list(mace_mp_urls.keys())
+
+mace_off_urls = {
+    "small": "https://raw.githubusercontent.com/ACEsuit/mace-off/main/mace_off23/MACE-OFF23_small.model",
+    "medium": "https://raw.githubusercontent.com/ACEsuit/mace-off/main/mace_off23/MACE-OFF23_medium.model",
+    "large": "https://raw.githubusercontent.com/ACEsuit/mace-off/main/mace_off23/MACE-OFF23_large.model",
+}
 
 polar_model_urls = {
     "polar-1-s": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_polar_1/MACE-POLAR-1-S.model",
@@ -123,9 +170,7 @@ def download_mace_mp_checkpoint(model: Optional[Union[str, Path]] = None) -> str
     if not os.path.isfile(cached_model_path):
         os.makedirs(cache_dir, exist_ok=True)
         print(f"Downloading MACE model from {checkpoint_url!r}")
-        _, http_msg = _urlretrieve_with_timeout(
-            checkpoint_url, cached_model_path
-        )
+        _, http_msg = _urlretrieve_with_timeout(checkpoint_url, cached_model_path)
         if "Content-Type: text/html" in str(http_msg):
             raise RuntimeError(
                 f"Model download failed, please check the URL {checkpoint_url}"
@@ -167,9 +212,7 @@ def download_mace_polar_checkpoint(model: Union[str, Path]) -> str:
     if not os.path.isfile(cached_model_path):
         os.makedirs(cache_dir, exist_ok=True)
         print(f"Downloading MACE-Polar model from {checkpoint_url!r}")
-        _, http_msg = _urlretrieve_with_timeout(
-            checkpoint_url, cached_model_path
-        )
+        _, http_msg = _urlretrieve_with_timeout(checkpoint_url, cached_model_path)
         if "Content-Type: text/html" in str(http_msg):
             raise RuntimeError(
                 f"Model download failed, please check the URL {checkpoint_url}"
@@ -342,18 +385,11 @@ def mace_off(
         MACECalculator: trained on the MACE-OFF23 dataset
     """
     try:
-        if model in (None, "small", "medium", "large") or str(model).startswith(
-            "https:"
-        ):
-            urls = dict(
-                small="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true",
-                medium="https://github.com/ACEsuit/mace-off/raw/main/mace_off23/MACE-OFF23_medium.model?raw=true",
-                large="https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model?raw=true",
-            )
+        if model is None or model in mace_off_urls or str(model).startswith("https:"):
             checkpoint_url = (
-                urls.get(model, urls["medium"])
-                if model in (None, "small", "medium", "large")
-                else model
+                mace_off_urls["medium"]
+                if model is None
+                else mace_off_urls.get(model, model)
             )
             cache_dir = get_cache_dir()
             checkpoint_url_name = os.path.basename(checkpoint_url).split("?")[0]

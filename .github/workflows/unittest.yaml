@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ '3.8','3.9','3.10','3.11','3.12','3.13' ]
+        python-version: [ '3.9','3.10','3.11','3.12','3.13' ]
         split-group: [ 1, 2, 3, 4 ]
 
     steps:
@@ -161,3 +161,25 @@ jobs:
           pytest -v tests/test_calculator.py::test_mace_polar_constructor
           pytest -v tests/test_models.py::test_dipole_polar_mace
           pytest -v tests/test_foundations.py -k polar
+
+  pytest-torchsim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install requirements alongside torchsim
+        run: |
+          pip install -U pip
+          pip install ".[dev,torchsim]"
+
+      - name: Log installed environment alongside torchsim
+        run: |
+          python3 -m pip freeze
+
+      - name: Run torchsim tests
+        run: |
+          pytest -v tests/test_torchsim.py

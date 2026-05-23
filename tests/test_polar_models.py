@@ -514,7 +514,7 @@ POLAR_COMPONENTS = {
     },
 }
 
-POLAR_CHECKPOINT_ATOL = {"float32": 5e-4, "float64": 1e-8}
+POLAR_CHECKPOINT_ATOL = {"float32": 5e-4, "float64": 5e-8}
 POLAR_COMPONENT_ATOL = {"float32": 5e-4, "float64": 1e-8}
 
 

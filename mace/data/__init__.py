@@ -3,6 +3,7 @@ from .augmentation import create_random_rotation_loader
 from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
 from .lmdb_dataset import LMDBDataset
 from .neighborhood import get_neighborhood
+from .padding_tools import build_fake_padding_graph
 from .utils import (
     Configuration,
     Configurations,
@@ -41,4 +42,5 @@ __all__ = [
     "update_keyspec_from_kwargs",
     "LMDBDataset",
     "create_random_rotation_loader",
+    "build_fake_padding_graph",
 ]
