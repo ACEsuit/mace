@@ -592,6 +592,86 @@ def load_from_json(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return model_load_yaml.to(map_location)
 
 
+def resolve_m_max(
+    m_max: Any,
+    atomic_numbers: List[int],
+    default: float = 1.0,
+) -> Optional[List[float]]:
+    """Turn --m_max into a per-element list ordered by atomic_numbers.
+
+    Accepts:
+      * None  -> returns None (caller decides on a default).
+      * A list[float]  -> validated against len(atomic_numbers) and returned as-is.
+        This covers the legacy ``nargs="+"`` form and the dict-of-floats already
+        populated by ``inherit_magnetic_hyperparameters_from_foundation``.
+      * A single-element list with a dict literal string, e.g. ``["{26: 1.8, 28: 1.2}"]``
+        as produced by ``argparse(nargs="+", type=str)`` when the user passes
+        ``--m_max '{26: 1.8, 28: 1.2}'``. Missing elements use ``default``.
+      * A list of float-like strings (legacy ``--m_max 0.51 0.109 …`` form) ->
+        parsed as floats, validated against len(atomic_numbers).
+
+    ``atomic_numbers`` is the per-element ordering the model expects, typically
+    ``z_table.zs``.
+    """
+    if m_max is None:
+        return None
+
+    # Fast path: already a list of numbers (e.g. inherited from foundation).
+    if isinstance(m_max, list) and all(
+        isinstance(v, (int, float)) and not isinstance(v, bool) for v in m_max
+    ):
+        if len(m_max) != len(atomic_numbers):
+            raise ValueError(
+                f"--m_max float list has length {len(m_max)} but expected "
+                f"{len(atomic_numbers)} to match atomic_numbers {atomic_numbers}"
+            )
+        return [float(v) for v in m_max]
+
+    # argparse with nargs="+", type=str gives us a list of token strings.
+    tokens = m_max if isinstance(m_max, list) else [m_max]
+
+    if len(tokens) == 1:
+        token = tokens[0]
+        try:
+            parsed = ast.literal_eval(token)
+        except (ValueError, SyntaxError):
+            parsed = None
+        if isinstance(parsed, dict):
+            unknown = [z for z in parsed.keys() if int(z) not in atomic_numbers]
+            if unknown:
+                raise ValueError(
+                    f"--m_max dict references atomic numbers {unknown} that are "
+                    f"not in the z_table {atomic_numbers}"
+                )
+            resolved = [float(parsed.get(int(z), default)) for z in atomic_numbers]
+            logging.info(
+                f"Resolved --m_max dict to per-element list (default={default} for "
+                f"unspecified): {dict(zip(atomic_numbers, resolved))}"
+            )
+            return resolved
+        # Single non-dict token: assume a single float.
+        try:
+            return [float(token)] * len(atomic_numbers)
+        except ValueError as exc:
+            raise ValueError(
+                f"--m_max single token {token!r} is neither a dict literal nor a float"
+            ) from exc
+
+    # Multi-token: legacy space-separated float list.
+    try:
+        values = [float(t) for t in tokens]
+    except ValueError as exc:
+        raise ValueError(
+            f"--m_max values {tokens!r} could not be parsed as floats"
+        ) from exc
+    if len(values) != len(atomic_numbers):
+        raise ValueError(
+            f"--m_max has {len(values)} floats but expected {len(atomic_numbers)} "
+            f"to match atomic_numbers {atomic_numbers}"
+        )
+    return values
+
+
 def get_atomic_energies(E0s, train_collection, z_table) -> dict:
     if E0s is not None:
         logging.info(

@@ -327,3 +327,55 @@ def test_inherit_magnetic_hyperparameters_from_foundation(monkeypatch):
         "num_mag_radial_basis": 6,
         "num_mag_radial_basis_one_body": 7,
     }
+
+
+# ----------------------------------------------------------
+# resolve_m_max
+# ----------------------------------------------------------
+def test_resolve_m_max_dict_form():
+    from mace.tools.scripts_utils import resolve_m_max
+
+    out = resolve_m_max(["{26: 1.8, 8: 0.5}"], [1, 6, 8, 26], default=1.0)
+    assert out == [1.0, 1.0, 0.5, 1.8]
+
+
+def test_resolve_m_max_fast_path_float_list():
+    from mace.tools.scripts_utils import resolve_m_max
+
+    out = resolve_m_max([0.1, 0.2, 0.3, 0.4], [1, 6, 8, 26])
+    assert out == [0.1, 0.2, 0.3, 0.4]
+
+
+def test_resolve_m_max_legacy_string_tokens():
+    """argparse(nargs='+', type=str) on the legacy form yields stringified floats."""
+    from mace.tools.scripts_utils import resolve_m_max
+
+    out = resolve_m_max(["0.1", "0.2", "0.3", "0.4"], [1, 6, 8, 26])
+    assert out == [0.1, 0.2, 0.3, 0.4]
+
+
+def test_resolve_m_max_single_float_broadcast():
+    from mace.tools.scripts_utils import resolve_m_max
+
+    out = resolve_m_max(["1.5"], [1, 6, 8, 26])
+    assert out == [1.5, 1.5, 1.5, 1.5]
+
+
+def test_resolve_m_max_none_passthrough():
+    from mace.tools.scripts_utils import resolve_m_max
+
+    assert resolve_m_max(None, [1, 6, 8, 26]) is None
+
+
+def test_resolve_m_max_wrong_length_raises():
+    from mace.tools.scripts_utils import resolve_m_max
+
+    with pytest.raises(ValueError, match="expected 4"):
+        resolve_m_max([0.1, 0.2], [1, 6, 8, 26])
+
+
+def test_resolve_m_max_unknown_element_raises():
+    from mace.tools.scripts_utils import resolve_m_max
+
+    with pytest.raises(ValueError, match=r"\[99\]"):
+        resolve_m_max(["{99: 1.0}"], [1, 6, 8, 26])

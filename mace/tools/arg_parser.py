@@ -1146,9 +1146,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--m_max",
-        help="|m| basis m_max for magnetic momgent",
-        type=float,
+        help=(
+            "|m| saturation per element. Either a dict literal mapping atomic "
+            'number to m_max (e.g. "{26: 1.8, 28: 1.2}" — only listed elements '
+            "are required, others default to 1.0), or a space-separated list of "
+            "floats ordered by z_table.zs (legacy)."
+        ),
+        type=str,
         nargs="+",
+        default=None,
     )
     parser.add_argument(
         "--max_m_ell",
