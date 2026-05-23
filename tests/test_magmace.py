@@ -287,3 +287,43 @@ def test_extract_config_magnetic_round_trip():
     assert cfg["num_mag_radial_basis"] == 8
     assert cfg["num_mag_radial_basis_one_body"] == 10
     assert cfg["use_magmom_one_body"] is True
+
+
+def test_inherit_magnetic_hyperparameters_from_foundation(monkeypatch):
+    """inherit_magnetic_hyperparameters_from_foundation should copy m_max etc onto args."""
+    from types import SimpleNamespace
+
+    from mace.tools.multihead_tools import (
+        inherit_magnetic_hyperparameters_from_foundation,
+    )
+
+    args = SimpleNamespace(
+        m_max=[1, 1, 1],
+        max_m_ell=1,
+        num_mag_radial_basis=1,
+        num_mag_radial_basis_one_body=1,
+    )
+    foundation_config = {
+        "m_max": torch.tensor([2, 3, 4], dtype=torch.int64),
+        "max_m_ell": 5,
+        "num_mag_radial_basis": 6,
+        "num_mag_radial_basis_one_body": 7,
+    }
+
+    monkeypatch.setattr(
+        "mace.tools.multihead_tools.extract_config_mace_model",
+        lambda model: foundation_config,
+    )
+
+    inherited = inherit_magnetic_hyperparameters_from_foundation(args, object())
+
+    assert args.m_max == [2, 3, 4]
+    assert args.max_m_ell == 5
+    assert args.num_mag_radial_basis == 6
+    assert args.num_mag_radial_basis_one_body == 7
+    assert inherited == {
+        "m_max_len": 3,
+        "max_m_ell": 5,
+        "num_mag_radial_basis": 6,
+        "num_mag_radial_basis_one_body": 7,
+    }
