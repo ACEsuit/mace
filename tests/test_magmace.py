@@ -241,3 +241,49 @@ def test_run_magnetic_scf(tmp_path, magnetic_configs):
     assert "equilibrated_magmom" in out
     assert torch.isfinite(out["equilibrated_magmom"]).all()
     print("Final magmom after SCF:", out["equilibrated_magmom"])
+
+
+# ----------------------------------------------------------
+# extract_config_mace_model round-trip
+# ----------------------------------------------------------
+def test_extract_config_magnetic_round_trip():
+    """extract_config_mace_model should round-trip MagneticScaleShiftMACE."""
+    from mace.tools.scripts_utils import extract_config_mace_model
+
+    with default_dtype(torch.float32):
+        model = MagneticScaleShiftMACE(
+            r_max=3.5,
+            num_bessel=4,
+            num_polynomial_cutoff=4,
+            max_ell=2,
+            interaction_cls=interaction_classes[
+                "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"
+            ],
+            interaction_cls_first=interaction_classes[
+                "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"
+            ],
+            num_interactions=1,
+            num_elements=1,
+            hidden_irreps=o3.Irreps("8x0e"),
+            MLP_irreps=o3.Irreps("4x0e"),
+            atomic_energies=np.zeros(1),
+            avg_num_neighbors=1.0,
+            atomic_numbers=[26],
+            correlation=[1],
+            gate=torch.nn.functional.silu,
+            atomic_inter_shift=0.0,
+            atomic_inter_scale=1.0,
+            m_max=[3.0],
+            num_mag_radial_basis=8,
+            num_mag_radial_basis_one_body=10,
+            max_m_ell=1,
+            use_magmom_one_body=True,
+        )
+
+    cfg = extract_config_mace_model(model)
+    assert "error" not in cfg, cfg
+    assert cfg["m_max"] == [3.0]
+    assert cfg["max_m_ell"] == 1
+    assert cfg["num_mag_radial_basis"] == 8
+    assert cfg["num_mag_radial_basis_one_body"] == 10
+    assert cfg["use_magmom_one_body"] is True

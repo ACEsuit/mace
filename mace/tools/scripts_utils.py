@@ -225,8 +225,15 @@ def print_git_commit():
 
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
-    if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES", "PolarMACE"]:
-        return {"error": "Model is not a ScaleShiftMACE, MACELES, or PolarMACE model"}
+    if model.__class__.__name__ not in [
+        "ScaleShiftMACE",
+        "MACELES",
+        "PolarMACE",
+        "MagneticScaleShiftMACE",
+    ]:
+        return {
+            "error": "Model is not a ScaleShiftMACE, MACELES, PolarMACE, or MagneticScaleShiftMACE model"
+        }
 
     def radial_to_name(radial_type):
         if radial_type == "BesselBasis":
@@ -318,6 +325,16 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "atomic_inter_shift": shift.cpu().numpy(),
         "heads": heads,
     }
+    if model.__class__.__name__ == "MagneticScaleShiftMACE":
+        config["m_max"] = model.m_max.cpu().tolist()
+        config["max_m_ell"] = int(model.mag_solid_harmoics.SH.l_max())
+        config["num_mag_radial_basis"] = int(model.mag_radial_embedding.num_basis)
+        config["use_magmom_one_body"] = bool(model.use_magmom_one_body)
+        if model.use_magmom_one_body and hasattr(model, "onebody_magmombasis_coeffs"):
+            config["num_mag_radial_basis_one_body"] = int(
+                model.onebody_magmombasis_coeffs.shape[1]
+            )
+
     if model.__class__.__name__ == "AtomicDielectricMACE":
         config["use_polarizability"] = model.use_polarizability
         config["only_dipole"] = False  # model.only_dipole
