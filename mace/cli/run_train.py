@@ -810,6 +810,7 @@ def run(args) -> None:
             "ScaleShiftMACE",
             "MACELES",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
         ]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     if args.enable_oeq:
@@ -819,6 +820,7 @@ def run(args) -> None:
             "ScaleShiftMACE",
             "MACELES",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
         ]
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
 
