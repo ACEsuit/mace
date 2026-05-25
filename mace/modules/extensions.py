@@ -1476,7 +1476,12 @@ class MagneticScaleShiftMACE(MagneticMACE):
         element_dependent_scaling.requires_grad_(True)
         element_dependent_scaling.retain_grad()
 
-        magmom_lenghts_trans = 1 - 2 * (magmom_lenghts / element_dependent_scaling) ** 2
+        magmom_lenghts_trans = (
+            1
+            - 2
+            * torch.clamp(magmom_lenghts / element_dependent_scaling, min=0.0, max=1.0)
+            ** 2
+        )
         magmom_node_attrs = self.mag_solid_harmoics(data["magmom"])
 
         #
