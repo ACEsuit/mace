@@ -9,6 +9,8 @@ import glob
 import json
 import logging
 import os
+import re
+import warnings
 from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional
@@ -1096,7 +1098,17 @@ def run(args) -> None:
                         args.name + "_stagetwo_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata {path_complied}")
-                    model_compiled = jit.compile(deepcopy(model_to_save))
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            message=re.escape(
+                                "The TorchScript type system doesn't support instance-level annotations on empty non-base types "
+                                "in `__init__`. Instead, either 1) use a type annotation in the class body, or 2) wrap the type "
+                                "in `torch.jit.Attribute`."
+                            ),
+                            category=UserWarning,
+                        )
+                        model_compiled = jit.compile(deepcopy(model_to_save))
                     torch.jit.save(
                         model_compiled,
                         path_complied,
@@ -1111,7 +1123,17 @@ def run(args) -> None:
                         args.name + "_compiled.model"
                     )
                     logging.info(f"Compiling model, saving metadata to {path_complied}")
-                    model_compiled = jit.compile(deepcopy(model_to_save))
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            message=re.escape(
+                                "The TorchScript type system doesn't support instance-level annotations on empty non-base types "
+                                "in `__init__`. Instead, either 1) use a type annotation in the class body, or 2) wrap the type "
+                                "in `torch.jit.Attribute`."
+                            ),
+                            category=UserWarning,
+                        )
+                        model_compiled = jit.compile(deepcopy(model_to_save))
                     torch.jit.save(
                         model_compiled,
                         path_complied,

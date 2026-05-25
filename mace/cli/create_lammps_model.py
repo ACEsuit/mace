@@ -2,6 +2,8 @@
 import argparse
 import copy
 import os
+import re
+import warnings
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -106,7 +108,17 @@ def main():
     if args.format == "mliap":
         torch.save(lammps_model, model_path + "-mliap_lammps.pt")
     else:
-        lammps_model_compiled = jit.compile(lammps_model)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=re.escape(
+                    "The TorchScript type system doesn't support instance-level annotations on empty non-base types "
+                    "in `__init__`. Instead, either 1) use a type annotation in the class body, or 2) wrap the type "
+                    "in `torch.jit.Attribute`."
+                ),
+                category=UserWarning,
+            )
+            lammps_model_compiled = jit.compile(lammps_model)
         lammps_model_compiled.save(model_path + "-lammps.pt")
 
 
