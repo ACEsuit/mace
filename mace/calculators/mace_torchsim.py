@@ -488,7 +488,7 @@ class MaceTorchSimModel(ModelInterface):
     def compute_stress(self) -> bool:
         return self._compute_stress
 
-    def forward(self, state: Any) -> Dict[str, torch.Tensor]:
+    def forward(self, state: Any, **_kwargs: Any) -> Dict[str, torch.Tensor]:
         if ts is None:
             raise RuntimeError(
                 "torch-sim is required to call MaceTorchSimModel.forward"
@@ -601,7 +601,15 @@ class MaceTorchSimModel(ModelInterface):
             data_dict["total_spin"] = total_spin
 
         if self._is_polar:
-            if total_spin is not None and (total_spin == 0).all():
+            if "total_charge" not in data_dict:
+                data_dict["total_charge"] = torch.zeros(
+                    self.n_systems, device=self._device, dtype=self._dtype
+                )
+            if "total_spin" not in data_dict:
+                data_dict["total_spin"] = torch.ones(
+                    self.n_systems, device=self._device, dtype=self._dtype
+                )
+            elif (data_dict["total_spin"] == 0).all():
                 log.warning(
                     "PolarMACE detected with total_spin=0 for all systems. "
                     "MACE's default total_spin is 1.0; if this is unintentional, "
