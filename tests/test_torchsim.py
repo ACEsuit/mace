@@ -3,8 +3,9 @@
 Uses factory functions (mirrored from the torch-sim test conftest) to build
 model/calculator consistency tests and ``validate_model_outputs`` tests from
 fixture names.  Unlike the upstream factories we feed them sim_state *fixtures*
-(built from ASE atoms) instead of the ``SIMSTATE_GENERATORS`` registry, since
-the small water-only MACE model trained here doesn't know about Si/Mg/Fe.
+(built from ASE atoms) instead of the ``SIMSTATE_GENERATORS`` registry, which
+keeps the inputs hermetic to this repo and avoids needing torch-sim's bulk
+crystal generators at consistency-test time.
 """
 
 from __future__ import annotations
