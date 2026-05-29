@@ -252,8 +252,9 @@ class MACECalculator(Calculator):
             model.to(device)
 
         if has_ipex and device == "xpu":
-            for model in self.models:
-                model = ipex.optimize(model)
+            for i, model in enumerate(self.models):
+                model.eval()
+                self.models[i] = ipex.optimize(model)
 
         r_maxs = [model.r_max.cpu() for model in self.models]
         r_maxs = np.array(r_maxs)
