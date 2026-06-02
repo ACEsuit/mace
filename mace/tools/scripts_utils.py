@@ -34,10 +34,13 @@ class SubsetCollection:
 def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> None:
     log_string = f"{dataset_name} ["
     for prop_name in dataset[0].properties.keys():
+        count = sum(
+            1 for config in dataset if config.properties.get(prop_name) is not None
+        )
         if prop_name == "dipole":
-            log_string += f"{prop_name} components: {int(np.sum([np.sum(config.property_weights[prop_name]) for config in dataset]))}, "
+            log_string += f"{prop_name} components: {count}, "
         else:
-            log_string += f"{prop_name}: {int(np.sum([config.property_weights[prop_name] for config in dataset]))}, "
+            log_string += f"{prop_name}: {count}, "
     log_string = log_string[:-2] + "]"
     logging.info(log_string)
 
