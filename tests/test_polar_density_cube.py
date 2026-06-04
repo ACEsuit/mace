@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 
 import ase.io
 import numpy as np
@@ -15,9 +16,13 @@ from mace.cli.polar_density_cube import (
     PotentialInterpolator,
     RealSpaceDensityInterpolator,
     _select_backend,
+    coefficient_charge,
+    coefficient_dipole,
+    cube_quality_metrics,
     make_grid,
     run,
     select_multipoles,
+    voxel_volume,
     write_cube_file,
 )
 
@@ -55,7 +60,7 @@ def _centered_grid(atoms, grid):
 
 
 def _voxel_volume(atoms, density):
-    return abs(np.linalg.det(atoms.cell.array)) / np.prod(density.shape)
+    return voxel_volume(atoms, density)
 
 
 def _integrated_charge(density, atoms):
@@ -69,15 +74,11 @@ def _integrated_dipole(density, coords, atoms):
 
 
 def _coefficient_charge(multipoles):
-    return float(np.sum(multipoles[:, 0]))
+    return coefficient_charge(multipoles)
 
 
 def _coefficient_dipole(atoms, multipoles):
-    q = multipoles[:, 0]
-    dipoles = np.zeros((multipoles.shape[0], 3))
-    if multipoles.shape[1] > 1:
-        dipoles = multipoles[:, 1:4][:, [2, 0, 1]]
-    return np.sum(atoms.positions * q[:, None], axis=0) + np.sum(dipoles, axis=0)
+    return coefficient_dipole(atoms, multipoles)
 
 
 def test_select_multipoles_from_calculator_results():
@@ -183,6 +184,50 @@ def test_realspace_cube_integrates_to_coefficient_charge_and_dipole():
         _coefficient_dipole(atoms, multipoles),
         atol=2e-3,
     )
+
+    metrics = cube_quality_metrics(atoms, density, coords, multipoles)
+    assert abs(metrics["charge_error"]) < 2e-4
+    assert metrics["dipole_error_norm"] < 2e-3
+    assert metrics["boundary_max_abs"] < 1e-5
+    assert metrics["density_min"] < metrics["density_max"]
+    assert metrics["density_l2"] > 0.0
+
+
+def test_cube_quality_metrics_detect_box_boundary_density():
+    small_box = Atoms(
+        numbers=[1],
+        positions=[[1.0, 1.0, 1.0]],
+        cell=np.diag([2.0, 2.0, 2.0]),
+        pbc=[False, False, False],
+    )
+    large_box = Atoms(
+        numbers=[1],
+        positions=[[3.0, 3.0, 3.0]],
+        cell=np.diag([6.0, 6.0, 6.0]),
+        pbc=[False, False, False],
+    )
+    multipoles = np.array([[1.0]])
+    interpolator = RealSpaceDensityInterpolator(
+        sigma=0.5,
+        multipoles_max_l=0,
+        cutoff_factor=8.0,
+        chunk_size=4096,
+    )
+
+    small_coords = _centered_grid(small_box, (24, 24, 24))
+    large_coords = _centered_grid(large_box, (24, 24, 24))
+    small_density, _, _ = interpolator(small_box, multipoles, small_coords)
+    large_density, _, _ = interpolator(large_box, multipoles, large_coords)
+
+    small_metrics = cube_quality_metrics(
+        small_box, small_density, small_coords, multipoles
+    )
+    large_metrics = cube_quality_metrics(
+        large_box, large_density, large_coords, multipoles
+    )
+    assert small_metrics["boundary_max_abs"] > large_metrics["boundary_max_abs"]
+    assert small_metrics["boundary_max_abs"] > 1e-3
+    assert large_metrics["boundary_max_abs"] < 1e-5
 
 
 def test_realspace_spin_channel_integrals_match_coefficients():
@@ -362,6 +407,7 @@ def test_cli_run_writes_nonperiodic_cube_end_to_end(tmp_path, monkeypatch):
     )
     configs = tmp_path / "input.xyz"
     output = tmp_path / "spin.cube"
+    report = tmp_path / "quality.json"
     ase.io.write(configs, atoms)
     monkeypatch.setattr(
         polar_density_cube, "mace_polar", lambda **_: _FakePolarCalculator()
@@ -386,10 +432,11 @@ def test_cli_run_writes_nonperiodic_cube_end_to_end(tmp_path, monkeypatch):
             external_field=None,
             fermi_level=None,
             write_potential=False,
+            quality_report=str(report),
         )
     )
 
-    assert written == [output]
+    assert written == [output, report]
     cube_data, cube_atoms = read_cube_data(output)
     assert cube_data.shape == (6, 5, 4)
     assert len(cube_atoms) == len(atoms)
@@ -405,6 +452,19 @@ def test_cli_run_writes_nonperiodic_cube_end_to_end(tmp_path, monkeypatch):
         chunk_size=11,
     )(atoms, expected_multipoles, make_grid(atoms, (6, 5, 4)))
     np.testing.assert_allclose(cube_data, expected_density, atol=1e-8)
+
+    with open(report, "r", encoding="utf-8") as fin:
+        quality = json.load(fin)
+    assert quality["backend"] == "realspace"
+    assert quality["grid"] == [6, 5, 4]
+    expected_metrics = cube_quality_metrics(
+        atoms, expected_density, make_grid(atoms, (6, 5, 4)), expected_multipoles
+    )
+    np.testing.assert_allclose(
+        quality["quantities"]["spin"]["charge_error"],
+        expected_metrics["charge_error"],
+    )
+    assert "boundary_max_abs" in quality["quantities"]["spin"]
 
 
 @pytest.mark.parametrize("pbc", ([False, False, False], [True, False, True]))

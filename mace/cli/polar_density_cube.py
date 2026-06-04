@@ -3,6 +3,7 @@
 # This program is distributed under the MIT License (see MIT.md)
 
 import argparse
+import json
 import os
 import tempfile
 import warnings
@@ -86,6 +87,73 @@ def select_multipoles(results: dict, quantity: str) -> np.ndarray:
 def write_cube_file(path: str | Path, atoms, data: np.ndarray, comment: str) -> None:
     with open(path, "w", encoding="utf-8") as fout:
         write_cube(fout, atoms, data=np.asarray(data), comment=comment)
+
+
+def voxel_volume(atoms, density: np.ndarray) -> float:
+    return float(abs(np.linalg.det(atoms.cell.array)) / np.prod(density.shape))
+
+
+def coefficient_charge(multipoles: np.ndarray) -> float:
+    multipoles = np.asarray(multipoles)
+    return float(np.sum(multipoles[:, 0]))
+
+
+def coefficient_dipole(atoms, multipoles: np.ndarray) -> np.ndarray:
+    multipoles = np.asarray(multipoles)
+    charges = multipoles[:, 0]
+    dipoles = np.zeros((multipoles.shape[0], 3))
+    if multipoles.shape[1] > 1:
+        dipoles = multipoles[:, 1:4][:, [2, 0, 1]]
+    return np.sum(atoms.positions * charges[:, None], axis=0) + np.sum(
+        dipoles, axis=0
+    )
+
+
+def cube_boundary_max_abs(density: np.ndarray) -> float:
+    faces = [
+        density[0, :, :],
+        density[-1, :, :],
+        density[:, 0, :],
+        density[:, -1, :],
+        density[:, :, 0],
+        density[:, :, -1],
+    ]
+    return float(max(np.max(np.abs(face)) for face in faces))
+
+
+def cube_quality_metrics(
+    atoms,
+    density: np.ndarray,
+    coords: np.ndarray,
+    multipoles: Optional[np.ndarray] = None,
+) -> dict:
+    density = np.asarray(density)
+    coords = np.asarray(coords)
+    dvol = voxel_volume(atoms, density)
+    charge = float(np.sum(density) * dvol)
+    dipole = np.sum(density[..., None] * coords, axis=(0, 1, 2)) * dvol
+    metrics = {
+        "voxel_volume": dvol,
+        "integrated_charge": charge,
+        "integrated_dipole": dipole,
+        "density_min": float(np.min(density)),
+        "density_max": float(np.max(density)),
+        "density_l2": float(np.sqrt(np.sum(density * density) * dvol)),
+        "boundary_max_abs": cube_boundary_max_abs(density),
+    }
+    if multipoles is not None:
+        coeff_charge = coefficient_charge(multipoles)
+        coeff_dipole = coefficient_dipole(atoms, multipoles)
+        metrics.update(
+            {
+                "coefficient_charge": coeff_charge,
+                "coefficient_dipole": coeff_dipole,
+                "charge_error": charge - coeff_charge,
+                "dipole_error": dipole - coeff_dipole,
+                "dipole_error_norm": float(np.linalg.norm(dipole - coeff_dipole)),
+            }
+        )
+    return metrics
 
 
 class PotentialInterpolator:
@@ -512,6 +580,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="also write potential and corrected-potential cube files",
     )
+    parser.add_argument(
+        "--quality_report",
+        default=None,
+        help="optional JSON path for cube quality metrics",
+    )
     return parser.parse_args()
 
 
@@ -567,6 +640,7 @@ def run(args: argparse.Namespace) -> list[Path]:
     )
     output = Path(args.output)
     written = []
+    quality_reports = {}
     for quantity in quantities:
         multipoles = select_multipoles(calc.results, quantity)
         if backend == "fourier":
@@ -586,6 +660,11 @@ def run(args: argparse.Namespace) -> list[Path]:
             comment=f"MACE-Polar {quantity} density",
         )
         written.append(density_path)
+        metrics = cube_quality_metrics(atoms, density, coords, multipoles)
+        quality_reports[quantity] = {
+            key: value.tolist() if isinstance(value, np.ndarray) else value
+            for key, value in metrics.items()
+        }
 
         if args.write_potential:
             potential_path = density_path.with_name(
@@ -607,6 +686,19 @@ def run(args: argparse.Namespace) -> list[Path]:
                 comment=f"MACE-Polar {quantity} corrected potential",
             )
             written.extend([potential_path, corrected_path])
+    if args.quality_report is not None:
+        report_path = Path(args.quality_report)
+        with open(report_path, "w", encoding="utf-8") as fout:
+            json.dump(
+                {
+                    "backend": backend,
+                    "grid": list(args.grid),
+                    "quantities": quality_reports,
+                },
+                fout,
+                indent=2,
+            )
+        written.append(report_path)
     return written
 
 
