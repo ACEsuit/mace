@@ -596,6 +596,29 @@ def test_polar_checkpoint_energy_components(dtype_name, dtype, model_name, _):
         assert abs(values[key] - expected_value) < atol
 
 
+def test_polar_calculator_returns_fukui_functions():
+    device = torch.device("cpu")
+    dtype = torch.float32
+    torch.manual_seed(0)
+    model = _build_minimal_model(device, dtype).eval()
+    calc = MACECalculator(
+        models=model,
+        device="cpu",
+        default_dtype="float32",
+        model_type="PolarMACE",
+        return_fukui=True,
+    )
+
+    atoms = _water_atoms()
+    atoms.calc = calc
+    atoms.get_potential_energy()
+
+    fukui = calc.results["fukui_functions"]
+    assert fukui.shape == (len(atoms), 2)
+    assert np.all(np.isfinite(fukui))
+    np.testing.assert_allclose(fukui.sum(axis=0), np.ones(2), atol=1e-5)
+
+
 # ---------------------------------------------------------------------------
 # Evaluation with charge and spin
 # ---------------------------------------------------------------------------

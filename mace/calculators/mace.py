@@ -91,7 +91,10 @@ class MACECalculator(Calculator):
         default_dtype: str, default dtype of model
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
-                    Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+                    Options: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE,
+                    EnergyDipoleMACE]
+        return_fukui: bool, for PolarMACE models, return per-atom Fukui functions
+                    in results["fukui_functions"] with shape (num_atoms, 2)
 
     Dipoles are returned in units of Debye
     """
@@ -108,6 +111,7 @@ class MACECalculator(Calculator):
         info_keys=None,
         arrays_keys=None,
         model_type="MACE",
+        return_fukui: bool = False,
         compile_mode=None,
         fullgraph=True,
         enable_cueq=False,
@@ -173,6 +177,7 @@ class MACECalculator(Calculator):
 
         self.model_type = model_type
         self.compute_atomic_stresses = False
+        self.return_fukui = return_fukui
 
         if model_type not in [
             "MACE",
@@ -199,6 +204,8 @@ class MACECalculator(Calculator):
             if kwargs.get("compute_atomic_stresses", False):
                 self.implemented_properties.extend(["stresses", "virials"])
                 self.compute_atomic_stresses = True
+        if model_type == "PolarMACE" and self.return_fukui:
+            self.implemented_properties.extend(["fukui_functions"])
         if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
             self.implemented_properties.extend(["dipole"])
         if model_type == "DipolePolarizabilityMACE":
@@ -441,6 +448,7 @@ class MACECalculator(Calculator):
             "atomic_virials",
             "atomic_dipoles",
             "node_feats",
+            "fukui_functions",
         }
         sliced: Dict[str, Union[torch.Tensor, None]] = {}
         for key, value in out.items():
@@ -478,6 +486,7 @@ class MACECalculator(Calculator):
                     "spins": [num_atoms],
                     "density_coefficients": [num_atoms, self.density_dim],
                     "spin_charge_density": [num_atoms, 2, self.density_dim],
+                    "fukui_functions": [num_atoms, 2],
                 }
             )
         dict_of_tensors = {}
@@ -632,13 +641,15 @@ class MACECalculator(Calculator):
                 displacement = displacement + positions.sum() * 0.0
                 batch_dict["displacement"] = displacement
 
-            out = model(
-                batch_dict,
-                compute_stress=compute_stress,
-                training=self.use_compile and not oeq_compile,
-                compute_edge_forces=self.compute_atomic_stresses,
-                compute_atomic_stresses=self.compute_atomic_stresses,
-            )
+            model_kwargs = {
+                "compute_stress": compute_stress,
+                "training": self.use_compile and not oeq_compile,
+                "compute_edge_forces": self.compute_atomic_stresses,
+                "compute_atomic_stresses": self.compute_atomic_stresses,
+            }
+            if self.model_type == "PolarMACE":
+                model_kwargs["compute_fukui"] = self.return_fukui
+            out = model(batch_dict, **model_kwargs)
             if is_padded:
                 out = self._slice_real_outputs(out, num_real_atoms)
             if i == 0:
@@ -690,6 +701,7 @@ class MACECalculator(Calculator):
                     ("spins", "spins", 1.0),
                     ("density_coefficients", "density_coefficients", 1.0),
                     ("spin_charge_density", "spin_charge_density", 1.0),
+                    ("fukui_functions", "fukui_functions", 1.0),
                 ]
             )
         for results_key, ret_key, unit_conv in results_map:
