@@ -93,8 +93,8 @@ class MACECalculator(Calculator):
         model_type: str, type of model to load
                     Options: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE,
                     EnergyDipoleMACE]
-        return_fukui: bool, for PolarMACE models, return per-atom Fukui functions
-                    in results["fukui_functions"] with shape (num_atoms, 2)
+        For PolarMACE models, per-atom Fukui functions are returned in
+        results["fukui_functions"] with shape (num_atoms, 2)
 
     Dipoles are returned in units of Debye
     """
@@ -111,7 +111,6 @@ class MACECalculator(Calculator):
         info_keys=None,
         arrays_keys=None,
         model_type="MACE",
-        return_fukui: bool = False,
         compile_mode=None,
         fullgraph=True,
         enable_cueq=False,
@@ -177,7 +176,6 @@ class MACECalculator(Calculator):
 
         self.model_type = model_type
         self.compute_atomic_stresses = False
-        self.return_fukui = return_fukui
 
         if model_type not in [
             "MACE",
@@ -204,7 +202,7 @@ class MACECalculator(Calculator):
             if kwargs.get("compute_atomic_stresses", False):
                 self.implemented_properties.extend(["stresses", "virials"])
                 self.compute_atomic_stresses = True
-        if model_type == "PolarMACE" and self.return_fukui:
+        if model_type == "PolarMACE":
             self.implemented_properties.extend(["fukui_functions"])
         if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
             self.implemented_properties.extend(["dipole"])
@@ -647,8 +645,6 @@ class MACECalculator(Calculator):
                 "compute_edge_forces": self.compute_atomic_stresses,
                 "compute_atomic_stresses": self.compute_atomic_stresses,
             }
-            if self.model_type == "PolarMACE":
-                model_kwargs["compute_fukui"] = self.return_fukui
             out = model(batch_dict, **model_kwargs)
             if is_padded:
                 out = self._slice_real_outputs(out, num_real_atoms)

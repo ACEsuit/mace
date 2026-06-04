@@ -602,7 +602,6 @@ class PolarMACE(ScaleShiftMACE):
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
         use_pbc_evaluator: bool = False,
-        compute_fukui: bool = False,
         fermi_level: Optional[torch.Tensor] = None,
         external_field: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
@@ -987,5 +986,5 @@ class PolarMACE(ScaleShiftMACE):
             "electron_energy": le_total,
             "electrostatic_potentials": esps,
             "spin_charge_density": spin_charge_density_mul_ir,
-            "fukui_functions": final_fukui_sources if compute_fukui else None,
+            "fukui_functions": final_fukui_sources,
         }

@@ -596,7 +596,7 @@ def test_polar_checkpoint_energy_components(dtype_name, dtype, model_name, _):
         assert abs(values[key] - expected_value) < atol
 
 
-def test_polar_calculator_returns_fukui_functions():
+def test_polar_calculator_returns_fukui_functions_by_default():
     device = torch.device("cpu")
     dtype = torch.float32
     torch.manual_seed(0)
@@ -606,7 +606,6 @@ def test_polar_calculator_returns_fukui_functions():
         device="cpu",
         default_dtype="float32",
         model_type="PolarMACE",
-        return_fukui=True,
     )
 
     atoms = _water_atoms()
