@@ -251,23 +251,25 @@ def test_cueq_cuda_multihead_matches_e3nn(head_name):
     atoms.pbc = [False, False, False]
     atoms.positions += np.array([3.0, 3.0, 3.0])
     config = data.config_from_atoms(atoms, head_name=head_name)
-    batch = next(
-        iter(
-            torch_geometric.dataloader.DataLoader(
-                dataset=[
-                    data.AtomicData.from_config(
-                        config,
-                        z_table=table,
-                        cutoff=4.5,
-                        heads=heads,
-                    )
-                ],
-                batch_size=1,
-                shuffle=False,
-                drop_last=False,
+    # Build the batch under float64 so node_attrs/positions match the model dtype.
+    with tools.torch_tools.default_dtype(default_dtype):
+        batch = next(
+            iter(
+                torch_geometric.dataloader.DataLoader(
+                    dataset=[
+                        data.AtomicData.from_config(
+                            config,
+                            z_table=table,
+                            cutoff=4.5,
+                            heads=heads,
+                        )
+                    ],
+                    batch_size=1,
+                    shuffle=False,
+                    drop_last=False,
+                )
             )
-        )
-    ).to(device)
+        ).to(device)
 
     with tools.torch_tools.default_dtype(default_dtype):
         model_e3nn = modules.ScaleShiftMACE(
