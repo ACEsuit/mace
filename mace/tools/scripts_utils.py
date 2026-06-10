@@ -926,7 +926,9 @@ def get_optimizer(
         _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
         _param_options.pop("betas", None)
         optimizer = adamw_schedulefree.AdamWScheduleFree(
-            **_param_options, betas=(args.beta1_schedulefree, args.beta2_schedulefree)
+            **_param_options,
+            betas=(args.beta1_schedulefree, args.beta2_schedulefree),
+            warmup_steps=args.warmup_steps_schedulefree,
         )
     else:
         optimizer = torch.optim.Adam(**param_options)

@@ -965,6 +965,12 @@ def test_mace_mh_1_cueq(tmp_path, device="cpu"):
 
 
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
+def test_mace_mh_1_cueq_cuda(tmp_path):
+    test_mace_mh_1_cueq(tmp_path, device="cuda")
+
+
+@pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
 def test_mace_omol_cueq(tmp_path, device="cpu"):
 
     calc = mace_omol(device=device, default_dtype="float64")
