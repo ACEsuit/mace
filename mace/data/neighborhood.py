@@ -24,16 +24,23 @@ def get_neighborhood(
     pbc_y = pbc[1]
     pbc_z = pbc[2]
     identity = np.identity(3, dtype=float)
-    max_positions = np.max(np.absolute(positions)) + 1
-    # Extend cell in non-periodic directions
-    # For models with more than 5 layers, the multiplicative constant needs to be increased.
-    # temp_cell = np.copy(cell)
+    # Extend cell in non-periodic directions so an atom's receptive field cannot
+    # reach its periodic image. Use molecular extent (translation-invariant) plus
+    # an additive safety margin equal to receptive-field × cutoff; the additive
+    # form prevents the matscipy linked-cell grid from exploding when
+    # the molecule is far from the origin. Bump the safety
+    # multiplier if the model uses more than 5 message-passing layers.
+    if positions.size:
+        extent = positions.max(axis=0) - positions.min(axis=0)
+    else:
+        extent = np.zeros(3, dtype=float)
+    safety = 5 * cutoff
     if not pbc_x:
-        cell[0, :] = max_positions * 5 * cutoff * identity[0, :]
+        cell[0, :] = (extent[0] + safety) * identity[0, :]
     if not pbc_y:
-        cell[1, :] = max_positions * 5 * cutoff * identity[1, :]
+        cell[1, :] = (extent[1] + safety) * identity[1, :]
     if not pbc_z:
-        cell[2, :] = max_positions * 5 * cutoff * identity[2, :]
+        cell[2, :] = (extent[2] + safety) * identity[2, :]
 
     sender, receiver, unit_shifts = neighbour_list(
         quantities="ijS",
