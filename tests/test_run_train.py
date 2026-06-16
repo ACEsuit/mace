@@ -1,6 +1,8 @@
 # pylint: disable=too-many-lines
 
+import importlib
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -108,6 +110,75 @@ _mace_params = {
     "eval_interval": 2,
     "use_reduced_cg": False,
 }
+
+
+@pytest.mark.parametrize(
+    ("save_all_checkpoints", "expected_saved_epochs"),
+    [
+        (False, [(0, False)]),
+        (True, [(0, False), (1, True)]),
+    ],
+)
+def test_train_non_distributed_early_stopping_exits_loop(
+    monkeypatch, caplog, save_all_checkpoints, expected_saved_epochs
+):
+    train_module = importlib.import_module("mace.tools.train")
+    trained_epochs = []
+    scheduler_metrics = []
+    saved_epochs = []
+
+    def fake_evaluate(**_kwargs):
+        return 1.0, {}
+
+    def fake_train_one_epoch(*_args, epoch, **_kwargs):
+        trained_epochs.append(epoch)
+
+    class DummyScheduler:
+        def step(self, metrics=None):
+            scheduler_metrics.append(metrics)
+
+    class DummyCheckpointHandler:
+        def save(self, state, epochs, keep_last):  # pylint: disable=unused-argument
+            saved_epochs.append((epochs, keep_last))
+
+    class DummyLogger:
+        def log(self, _metrics):
+            pass
+
+    monkeypatch.setattr(train_module, "evaluate", fake_evaluate)
+    monkeypatch.setattr(train_module, "train_one_epoch", fake_train_one_epoch)
+    monkeypatch.setattr(train_module, "valid_err_log", lambda *_args, **_kwargs: None)
+
+    with caplog.at_level(logging.INFO):
+        train_module.train(
+            model=torch.nn.Linear(1, 1),
+            loss_fn=torch.nn.MSELoss(),
+            train_loader=object(),
+            valid_loaders={"valid": object()},
+            optimizer=object(),
+            lr_scheduler=DummyScheduler(),
+            start_epoch=0,
+            max_num_epochs=100,
+            patience=1,
+            checkpoint_handler=DummyCheckpointHandler(),
+            logger=DummyLogger(),
+            eval_interval=1,
+            output_args={},
+            device=torch.device("cpu"),
+            log_errors="TotalRMSE",
+            max_grad_norm=None,
+            distributed=False,
+            save_all_checkpoints=save_all_checkpoints,
+        )
+
+    assert trained_epochs == [0, 1]
+    assert scheduler_metrics == [1.0]
+    assert saved_epochs == expected_saved_epochs
+    assert any(
+        record.levelno == logging.INFO
+        and "Stopping optimization after 1 epochs without improvement" in record.message
+        for record in caplog.records
+    )
 
 
 def test_run_train(tmp_path, fitting_configs):
