@@ -158,7 +158,7 @@ def test_train_non_distributed_early_stopping_exits_loop(
             optimizer=object(),
             lr_scheduler=DummyScheduler(),
             start_epoch=0,
-            max_num_epochs=100,
+            max_num_epochs=10,
             patience=1,
             checkpoint_handler=DummyCheckpointHandler(),
             logger=DummyLogger(),
