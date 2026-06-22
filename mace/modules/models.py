@@ -578,7 +578,8 @@ class ScaleShiftMACE(MACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         total_energy = e0 + inter_e
-        node_energy = node_e0.clone().double() + node_inter_es.clone().double()
+        energy_dtype = node_e0.dtype if node_e0.device.type == "mps" else torch.float64
+        node_energy = node_e0.clone().to(energy_dtype) + node_inter_es.clone().to(energy_dtype)
 
         forces, virials, stress, hessian, edge_forces = get_outputs(
             energy=inter_e,
