@@ -774,6 +774,7 @@ class PolarMACE(ScaleShiftMACE):
         field_independent_spin_charge_density = spin_charge_density.clone()
         esps: Optional[torch.Tensor] = None
 
+        final_fukui_sources = fukui_sources
         for i in range(self.num_recursion_steps):
             source_feats_alpha = spin_charge_density[:, 0, :].clone()
             source_feats_beta = spin_charge_density[:, 1, :].clone()
@@ -849,6 +850,7 @@ class PolarMACE(ScaleShiftMACE):
                 fukui_norm2 == 0, torch.ones_like(fukui_norm2), fukui_norm2
             )
             current_fukui_sources = current_fukui_sources / fukui_norm2
+            final_fukui_sources = current_fukui_sources
             pred_total_charges = scatter_sum(
                 src=spin_charge_density[:, :, 0].double(),
                 index=data["batch"],
@@ -984,4 +986,5 @@ class PolarMACE(ScaleShiftMACE):
             "electron_energy": le_total,
             "electrostatic_potentials": esps,
             "spin_charge_density": spin_charge_density_mul_ir,
+            "fukui_functions": final_fukui_sources,
         }

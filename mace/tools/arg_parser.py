@@ -878,6 +878,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.98,
     )
+    parser.add_argument(
+        "--warmup_steps_schedulefree",
+        help="Number of linear LR warmup steps for the ScheduleFree optimizer",
+        type=int,
+        default=0,
+    )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
         "--valid_batch_size", help="Validation batch size", type=int, default=10
