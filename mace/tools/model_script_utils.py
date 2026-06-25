@@ -7,7 +7,7 @@ from e3nn import o3
 
 from mace import modules
 from mace.modules.wrapper_ops import CuEquivarianceConfig
-from mace.tools.finetuning_utils import load_foundations_elements
+from mace.tools.finetuning_utils import load_foundations_elements, load_foundations_mdp
 from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.torch_tools import dtype_dict
 from mace.tools.utils import AtomicNumberTable
@@ -205,14 +205,18 @@ def configure_model(
     model = _build_model(args, model_config, model_config_foundation, heads)
 
     if model_foundation is not None:
-        model = load_foundations_elements(
-            model,
-            model_foundation,
-            z_table,
-            load_readout=args.foundation_filter_elements,
-            max_L=args.max_L,
-            default_dtype=dtype_dict.get(args.default_dtype, torch.float64),
-        )
+        if getattr(args, "finetune_dipoles_polarizabilities", False):
+            # MDP fine-tuning: dedicated loader that handles higher-order irreps
+            load_foundations_mdp(model, model_foundation, z_table, max_L=args.max_L)
+        else:
+            model = load_foundations_elements(
+                model,
+                model_foundation,
+                z_table,
+                load_readout=args.foundation_filter_elements,
+                max_L=args.max_L,
+                default_dtype=dtype_dict.get(args.default_dtype, torch.float64),
+            )
 
     return model, output_args
 
