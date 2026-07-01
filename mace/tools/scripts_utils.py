@@ -228,8 +228,15 @@ def print_git_commit():
 
 
 def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
-    if model.__class__.__name__ not in ["ScaleShiftMACE", "MACELES", "PolarMACE"]:
-        return {"error": "Model is not a ScaleShiftMACE, MACELES, or PolarMACE model"}
+    if model.__class__.__name__ not in [
+        "ScaleShiftMACE",
+        "MACELES",
+        "PolarMACE",
+        "AtomicDielectricMACE",
+    ]:
+        return {
+            "error": "Model is not a ScaleShiftMACE, MACELES, PolarMACE, or AtomicDielectricMACE model"
+        }
 
     def radial_to_name(radial_type):
         if radial_type == "BesselBasis":
@@ -249,8 +256,9 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             return "Soft"
         return radial.distance_transform.__class__.__name__
 
-    scale = model.scale_shift.scale
-    shift = model.scale_shift.shift
+    if hasattr(model, "scale_shift"):
+        scale = model.scale_shift.scale
+        shift = model.scale_shift.shift
     heads = model.heads if hasattr(model, "heads") else ["default"]
     if hasattr(model.readouts[-1], "hidden_irreps"):
         model_mlp_irreps = o3.Irreps(str(model.readouts[-1].hidden_irreps))
@@ -303,7 +311,6 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "use_embedding_readout": (hasattr(model, "embedding_readout")),
         "readout_cls": model.readouts[-1].__class__,
         "cueq_config": model.cueq_config if hasattr(model, "cueq_config") else None,
-        "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
         "atomic_numbers": model.atomic_numbers,
         "correlation": correlation,
@@ -317,14 +324,22 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "radial_MLP": extract_radial_MLP(model),
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
         "distance_transform": radial_to_transform(model.radial_embedding),
-        "atomic_inter_scale": scale.cpu().numpy(),
-        "atomic_inter_shift": shift.cpu().numpy(),
         "heads": heads,
     }
+    if hasattr(model, "atomic_energies_fn"):
+        config["atomic_energies"] = (
+            model.atomic_energies_fn.atomic_energies.cpu().numpy()
+        )
+    if hasattr(model, "scale_shift"):
+        config["atomic_inter_scale"] = scale.cpu().numpy()
+        config["atomic_inter_shift"] = shift.cpu().numpy()
+    if model.__class__.__name__ in ["ScaleShiftMACE", "MACELES"]:
+        config["MLP_irreps"] = o3.Irreps(f"{mlp_scalars_per_head}x0e")
     if model.__class__.__name__ == "AtomicDielectricMACE":
         config["use_polarizability"] = model.use_polarizability
         config["only_dipole"] = False  # model.only_dipole
         config["gate"] = torch.nn.functional.silu
+        config["MLP_irreps"] = model_mlp_irreps
     if model.__class__.__name__ == "PolarMACE":
         if hasattr(model, "fukui_source_map") and hasattr(
             model.fukui_source_map, "hidden_irreps"

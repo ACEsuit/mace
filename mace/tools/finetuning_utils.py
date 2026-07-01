@@ -328,7 +328,9 @@ def load_foundations_elements(
                         / (num_species_foundations / num_species) ** 0.5
                     )
 
-    if model_foundations.scale_shift is not None:
+    if getattr(model_foundations, "scale_shift", None) is not None and hasattr(
+        model, "scale_shift"
+    ):
         if use_scale:
             model.scale_shift.scale = model_foundations.scale_shift.scale.repeat(
                 len(model_heads)
@@ -369,4 +371,179 @@ def load_foundations(
         if model_state[name].shape != param.shape:
             continue
         model_state[name].copy_(param)
+    return model
+
+
+def load_foundations_mdp(
+    model: torch.nn.Module,
+    model_foundations: torch.nn.Module,
+    table: AtomicNumberTable,
+    max_L: int = 2,
+):
+    """
+    Transfer weights from a pretrained AtomicDielectricMACE to a new one,
+    with species remapping for a (possibly smaller) element set.
+
+    Unlike load_foundations_elements, this handles higher-order irreps
+    in skip_tp and transfers all angular momentum channels in products.
+    """
+    assert model_foundations.r_max == model.r_max
+    z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
+    num_species_foundations = len(z_table.zs)
+    num_channels_foundation = (
+        model_foundations.node_embedding.linear.weight.shape[0]
+        // num_species_foundations
+    )
+    indices_weights = [z_table.z_to_index(z) for z in table.zs]
+    num_species = len(indices_weights)
+    num_radial = model.radial_embedding.out_dim
+    species_scale = (num_species_foundations / num_species) ** 0.5
+
+    # --- Node embedding: extract rows for target species ---
+    model.node_embedding.linear.weight = torch.nn.Parameter(
+        model_foundations.node_embedding.linear.weight.view(
+            num_species_foundations, -1
+        )[indices_weights, :]
+        .flatten()
+        .clone()
+        / species_scale
+    )
+
+    # --- Radial embedding ---
+    if model.radial_embedding.bessel_fn.__class__.__name__ == "BesselBasis":
+        model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
+            model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
+        )
+
+    # --- Interactions ---
+    for i in range(int(model.num_interactions)):
+        model.interactions[i].linear_up.weight = torch.nn.Parameter(
+            model_foundations.interactions[i].linear_up.weight.clone()
+        )
+        model.interactions[i].avg_num_neighbors = model_foundations.interactions[
+            i
+        ].avg_num_neighbors
+
+        for (_, param_1), (_, param_2) in zip(
+            model.interactions[i].conv_tp_weights.named_parameters(),
+            model_foundations.interactions[i].conv_tp_weights.named_parameters(),
+        ):
+            if param_1.shape == param_2.shape:
+                param_1.data.copy_(param_2.data)
+            else:
+                param_1.data.copy_(param_2.data[: (num_radial + 2 * num_species), ...])
+        if hasattr(model.interactions[i], "linear"):
+            model.interactions[i].linear.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear.weight.clone()
+            )
+        if hasattr(model.interactions[i], "linear_1"):
+            model.interactions[i].linear_1.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear_1.weight.clone()
+            )
+        if hasattr(model.interactions[i], "linear_2"):
+            model.interactions[i].linear_2.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear_2.weight.clone()
+            )
+        if hasattr(model.interactions[i], "linear_res"):
+            model.interactions[i].linear_res.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].linear_res.weight.clone()
+            )
+        if hasattr(model.interactions[i], "source_embedding"):
+            model.interactions[i].source_embedding.weight = torch.nn.Parameter(
+                model_foundations.interactions[i]
+                .source_embedding.weight.view(num_species_foundations, -1)[
+                    indices_weights, :
+                ]
+                .flatten()
+                .clone()
+                / species_scale
+            )
+        if hasattr(model.interactions[i], "target_embedding"):
+            model.interactions[i].target_embedding.weight = torch.nn.Parameter(
+                model_foundations.interactions[i]
+                .target_embedding.weight.view(num_species_foundations, -1)[
+                    indices_weights, :
+                ]
+                .flatten()
+                .clone()
+                / species_scale
+            )
+        if hasattr(model.interactions[i], "alpha"):
+            model.interactions[i].alpha = torch.nn.Parameter(
+                model_foundations.interactions[i].alpha.clone()
+            )
+        if hasattr(model.interactions[i], "beta"):
+            model.interactions[i].beta = torch.nn.Parameter(
+                model_foundations.interactions[i].beta.clone()
+            )
+        # skip_tp: use general reshape [-1, N_sp, N_ch] to handle higher-order irreps
+        if model.interactions[i].__class__.__name__ in [
+            "RealAgnosticResidualNonLinearInteractionBlock",
+        ]:
+            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
+                model_foundations.interactions[i].skip_tp.weight
+            )
+        else:
+            foundation_skip = model_foundations.interactions[i].skip_tp.weight
+            rest_dim = foundation_skip.numel() // (
+                num_species_foundations * num_channels_foundation
+            )
+            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
+                foundation_skip.reshape(
+                    rest_dim, num_species_foundations, num_channels_foundation
+                )[:, indices_weights, :]
+                .flatten()
+                .clone()
+                / species_scale
+            )
+        if hasattr(model.interactions[i], "density_fn"):
+            for (_, param_1), (_, param_2) in zip(
+                model.interactions[i].density_fn.named_parameters(),
+                model_foundations.interactions[i].density_fn.named_parameters(),
+            ):
+                param_1.data.copy_(param_2.data)
+
+    # --- Products: transfer ALL angular momentum channels (not just L=0 for last) ---
+    for i, product in enumerate(model.products):
+        indices_weights_prod = indices_weights
+        if hasattr(product, "use_agnostic_product"):
+            if product.use_agnostic_product:
+                indices_weights_prod = [0]
+        # MDP readouts use all irreps, so always transfer all contractions
+        max_range = max_L + 1
+        for j in range(max_range):
+            product.symmetric_contractions.contractions[j].weights_max = (
+                torch.nn.Parameter(
+                    model_foundations.products[i]
+                    .symmetric_contractions.contractions[j]
+                    .weights_max[indices_weights_prod, :, :]
+                    .clone()
+                )
+            )
+            target_weights = product.symmetric_contractions.contractions[j].weights
+            source_weights = (
+                model_foundations.products[i]
+                .symmetric_contractions.contractions[j]
+                .weights
+            )
+            for k, _ in enumerate(target_weights):
+                target_weights[k] = torch.nn.Parameter(
+                    source_weights[k][indices_weights_prod, :, :].clone()
+                )
+        product.linear.weight = torch.nn.Parameter(
+            model_foundations.products[i].linear.weight.clone()
+        )
+
+    # --- Readouts: copy matching params by name+shape (species-independent) ---
+    model_state = model.state_dict()
+    foundation_state = model_foundations.state_dict()
+    for name, param in foundation_state.items():
+        if not name.startswith("readouts."):
+            continue
+        if name not in model_state:
+            continue
+        if model_state[name].shape != param.shape:
+            continue
+        model_state[name].copy_(param)
+
     return model

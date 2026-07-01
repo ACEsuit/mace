@@ -130,7 +130,8 @@ class MACECalculator(Calculator):
             assert model_type in [
                 "MACE",
                 "PolarMACE",
-            ], "CuEq/OEq only supports MACE and PolarMACE models"
+                "DipolePolarizabilityMACE",
+            ], "CuEq/OEq only supports MACE, PolarMACE, and DipolePolarizabilityMACE models"
         if enable_cueq and enable_oeq:
             if not HYBRID_AVAILABLE:
                 raise ImportError(

@@ -1,6 +1,7 @@
 import os
 import urllib.parse
 import urllib.request
+import warnings
 from pathlib import Path
 from typing import Any, Literal, Optional, Union, overload
 
@@ -124,6 +125,9 @@ polar_model_paths = {
     for key, url in polar_model_urls.items()
 }
 polar_model_names = list(polar_model_paths.keys())
+mace_mdp_default_url = (
+    "https://raw.githubusercontent.com/Nilsgoe/MACE-MDP/main/models/MACE-MDP.model"
+)
 
 
 def download_mace_mp_checkpoint(model: Optional[Union[str, Path]] = None) -> str:
@@ -579,4 +583,80 @@ def mace_omol(
         default_dtype=default_dtype,
         **kwargs,
         head="omol",
+    )
+
+
+@overload
+def mace_mdp(*, return_raw_model: Literal[True], **kwargs: Any) -> torch.nn.Module: ...
+
+
+@overload
+def mace_mdp(
+    *, return_raw_model: Literal[False] = False, **kwargs: Any
+) -> MACECalculator: ...
+
+
+def mace_mdp(
+    model: Optional[Union[str, Path]] = None,
+    device: str = "",
+    default_dtype: str = "float64",
+    return_raw_model: bool = False,
+    **kwargs: Any,
+) -> Union[torch.nn.Module, MACECalculator]:
+    """
+    Construct a calculator for the MACE-MDP dipole/polarizability model.
+
+    This model is only intended for predicting dipoles and polarizabilities of
+    organic systems. It is not an energy or force model.
+    """
+    warnings.warn(
+        "The MACE-MDP model is designed for predicting dipoles and polarizabilities of organic systems only. It is not suitable for energies or forces."
+    )
+
+    if "model_type" in kwargs and kwargs["model_type"] != "DipolePolarizabilityMACE":
+        raise ValueError("mace_mdp only supports model_type='DipolePolarizabilityMACE'")
+    kwargs.pop("model_type", None)
+
+    try:
+        if model is None:
+            checkpoint_url = mace_mdp_default_url
+        elif isinstance(model, str) and model.startswith("https:"):
+            checkpoint_url = model
+        elif isinstance(model, (str, Path)) and Path(model).exists():
+            checkpoint_url = str(model)
+        else:
+            raise FileNotFoundError(f"{model} not found locally")
+
+        if checkpoint_url.startswith("http"):
+            cache_dir = get_cache_dir()
+            os.makedirs(cache_dir, exist_ok=True)
+            checkpoint_url_name = os.path.basename(checkpoint_url).split("?")[0]
+            cached_model_path = os.path.join(cache_dir, checkpoint_url_name)
+            if not os.path.isfile(cached_model_path):
+                print(f"Downloading MACE-MDP model from {checkpoint_url!r}")
+                _, http_msg = _urlretrieve_with_timeout(
+                    checkpoint_url, cached_model_path
+                )
+                if "Content-Type: text/html" in str(http_msg):
+                    raise RuntimeError(
+                        f"Model download failed, please check the URL {checkpoint_url}"
+                    )
+                print(f"Cached MACE-MDP model to {cached_model_path}")
+            model_path = cached_model_path
+        else:
+            model_path = checkpoint_url
+    except Exception as exc:
+        raise RuntimeError("Model download failed and no local model found") from exc
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+
+    if return_raw_model:
+        return torch.load(model_path, map_location=device)
+
+    return MACECalculator(
+        model_paths=model_path,
+        model_type="DipolePolarizabilityMACE",
+        device=device,
+        default_dtype=default_dtype,
+        **kwargs,
     )

@@ -136,6 +136,38 @@ def run(args) -> None:
     valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
     args.foundation_model_kwargs = ast.literal_eval(args.foundation_model_kwargs)
     args.foundation_model_kwargs["head"] = args.foundation_head
+
+    # MDP fine-tuning validation
+    if args.finetune_dipoles_polarizabilities:
+        if args.model != "AtomicDielectricMACE":
+            raise ValueError(
+                "--finetune_dipoles_polarizabilities only supports "
+                "--model AtomicDielectricMACE"
+            )
+        if args.foundation_model is None:
+            raise ValueError(
+                "--foundation_model must be provided when using "
+                "--finetune_dipoles_polarizabilities"
+            )
+        if args.loss not in ("weighted", "dipole_polar"):
+            raise ValueError(
+                "--finetune_dipoles_polarizabilities requires --loss dipole_polar "
+                f"(got --loss={args.loss})"
+            )
+        args.loss = "dipole_polar"
+        # multiheads_finetuning defaults to True and would override loss to "universal"
+        args.multiheads_finetuning = False
+        # AtomicDielectricMACE has no atomic_energies_fn, so E0s="foundation"/"estimated" crash
+        if args.E0s is not None and args.E0s.lower() in ("foundation", "estimated"):
+            logging.warning(
+                f"--E0s={args.E0s} is not supported for AtomicDielectricMACE "
+                "(no atomic_energies_fn); falling back to --E0s=average"
+            )
+            args.E0s = "average"
+        logging.info(
+            "MDP fine-tuning mode: loss=dipole_polar, multiheads_finetuning disabled"
+        )
+
     if args.foundation_model is not None:
         if args.foundation_model in polar_model_names:
             logging.info(
@@ -185,6 +217,13 @@ def run(args) -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
+        if args.finetune_dipoles_polarizabilities:
+            foundation_cls = model_foundation.__class__.__name__
+            if foundation_cls != "AtomicDielectricMACE":
+                raise ValueError(
+                    f"--finetune_dipoles_polarizabilities requires an AtomicDielectricMACE "
+                    f"checkpoint, but --foundation_model contains a {foundation_cls} model."
+                )
         foundation_model_avg_num_neighbors = model_foundation.interactions[
             0
         ].avg_num_neighbors
@@ -802,6 +841,7 @@ def run(args) -> None:
             "ScaleShiftMACE",
             "MACELES",
             "PolarMACE",
+            "AtomicDielectricMACE",
         ]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     if args.enable_oeq:

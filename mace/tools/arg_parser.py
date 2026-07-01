@@ -997,6 +997,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--finetune_dipoles_polarizabilities",
+        help="Fine-tune an existing AtomicDielectricMACE (MACE-MDP) model on dipoles and polarizabilities only. Requires --foundation_model pointing to the pretrained MDP checkpoint.",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
     )
     parser.add_argument(
