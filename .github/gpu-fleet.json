@@ -1,0 +1,25 @@
+[
+  {
+    "vendor": "nvidia",
+    "enabled": true,
+    "labels": ["self-hosted", "Linux", "X64"],
+    "torch_index": "",
+    "extras": "dev, cueq, cueq-cuda-12, schedulefree",
+    "pip_requirements": "requirements/polar.txt requirements/les.txt",
+    "marker_expr": "gpu",
+    "require_caps": "gpu,cueq,polar,les,schedulefree",
+    "notes": "oeq disabled until the CUDA toolkit (nvcc/CUDA_HOME) is installed on the runner host: OpenEquivariance JIT-compiles its kernels and cannot run with the driver alone. Re-enable by adding 'oeq' back to extras and require_caps.",
+    "smi": "nvidia-smi"
+  },
+  {
+    "vendor": "amd",
+    "enabled": false,
+    "labels": ["self-hosted", "gpu", "amd"],
+    "torch_index": "https://download.pytorch.org/whl/rocm6.3",
+    "extras": "dev, oeq",
+    "pip_requirements": "",
+    "marker_expr": "gpu and not cueq",
+    "require_caps": "gpu,oeq",
+    "smi": "rocm-smi"
+  }
+]
