@@ -1,0 +1,100 @@
+name: Run MACE tests
+description: >
+  The single source of truth for how CI runs pytest. Every test job describes
+  its selection declaratively through these inputs; the capability contract
+  (tests/conftest.py) turns a guaranteed-but-broken capability into a failure,
+  never a skip. To reproduce a job locally, run the pytest command these
+  inputs assemble — the mapping is 1:1 and documented in the README.
+
+inputs:
+  tests:
+    description: Space-separated test paths to run
+    required: false
+    default: tests
+  markers:
+    description: pytest -m marker expression (empty = no filter)
+    required: false
+    default: ""
+  require-caps:
+    description: >
+      Capabilities this job GUARANTEES (exported as MACE_REQUIRE_CAPS): a test
+      that would skip for one of these fails instead.
+    required: false
+    default: ""
+  allow-network:
+    description: Permit network-marked tests (exports MACE_CI_ALLOW_NETWORK=1)
+    required: false
+    default: "false"
+  splits:
+    description: pytest-split total groups (empty = no sharding)
+    required: false
+    default: ""
+  group:
+    description: pytest-split group index (1-based; requires splits)
+    required: false
+    default: ""
+  coverage:
+    description: Collect coverage (term + xml + html reports)
+    required: false
+    default: "false"
+  store-durations:
+    description: Regenerate tests/.test_durations instead of reading it
+    required: false
+    default: "false"
+  timeout:
+    description: Per-test timeout in seconds (pytest-timeout)
+    required: false
+    default: "600"
+  numprocs:
+    description: xdist workers ("auto", a number, or "0" for no xdist)
+    required: false
+    default: "2"
+  extra-args:
+    description: Extra pytest arguments appended verbatim
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Run pytest
+      shell: bash
+      env:
+        IN_TESTS: ${{ inputs.tests }}
+        IN_MARKERS: ${{ inputs.markers }}
+        IN_CAPS: ${{ inputs.require-caps }}
+        IN_NETWORK: ${{ inputs.allow-network }}
+        IN_SPLITS: ${{ inputs.splits }}
+        IN_GROUP: ${{ inputs.group }}
+        IN_COVERAGE: ${{ inputs.coverage }}
+        IN_STORE_DURATIONS: ${{ inputs.store-durations }}
+        IN_TIMEOUT: ${{ inputs.timeout }}
+        IN_NUMPROCS: ${{ inputs.numprocs }}
+        IN_EXTRA: ${{ inputs.extra-args }}
+      run: |
+        export MACE_REQUIRE_CAPS="$IN_CAPS"
+        if [ "$IN_NETWORK" = "true" ]; then
+          export MACE_CI_ALLOW_NETWORK=1
+        fi
+
+        # shellcheck disable=SC2206 # word-splitting of paths is intentional
+        args=( $IN_TESTS -v --timeout="$IN_TIMEOUT" )
+        if [ "$IN_NUMPROCS" != "0" ]; then
+          args+=( -n "$IN_NUMPROCS" )
+        fi
+        if [ -n "$IN_MARKERS" ]; then
+          args+=( -m "$IN_MARKERS" )
+        fi
+        if [ -n "$IN_SPLITS" ]; then
+          args+=( --splits "$IN_SPLITS" --group "$IN_GROUP" \
+                  --splitting-algorithm=least_duration \
+                  --durations-path=tests/.test_durations )
+        fi
+        if [ "$IN_COVERAGE" = "true" ]; then
+          args+=( --cov=mace --cov-report=term --cov-report=xml --cov-report=html )
+        fi
+        if [ "$IN_STORE_DURATIONS" = "true" ]; then
+          args+=( --store-durations --durations-path=tests/.test_durations )
+        fi
+        # shellcheck disable=SC2086 # extra-args is split on purpose
+        pytest "${args[@]}" $IN_EXTRA
