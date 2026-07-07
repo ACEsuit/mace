@@ -1,6 +1,8 @@
 # Copyright (c) MACE contributors
 # Script for exporting MACE-Polar density coefficients to Gaussian cube files
 # This program is distributed under the MIT License (see MIT.md)
+# pylint: disable=wrong-import-position
+from __future__ import annotations
 
 import argparse
 import json
@@ -104,9 +106,7 @@ def coefficient_dipole(atoms, multipoles: np.ndarray) -> np.ndarray:
     dipoles = np.zeros((multipoles.shape[0], 3))
     if multipoles.shape[1] > 1:
         dipoles = multipoles[:, 1:4][:, [2, 0, 1]]
-    return np.sum(atoms.positions * charges[:, None], axis=0) + np.sum(
-        dipoles, axis=0
-    )
+    return np.sum(atoms.positions * charges[:, None], axis=0) + np.sum(dipoles, axis=0)
 
 
 def cube_boundary_max_abs(density: np.ndarray) -> float:
@@ -208,13 +208,9 @@ class PotentialInterpolator:
     def _total_charge_dipole(
         multipoles: torch.Tensor, node_positions: torch.Tensor, batch: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        total_charge = torch.zeros(
-            1, dtype=multipoles.dtype, device=multipoles.device
-        )
+        total_charge = torch.zeros(1, dtype=multipoles.dtype, device=multipoles.device)
         total_charge.index_add_(0, batch, multipoles[:, 0])
-        dipole_q = torch.zeros(
-            (1, 3), dtype=multipoles.dtype, device=multipoles.device
-        )
+        dipole_q = torch.zeros((1, 3), dtype=multipoles.dtype, device=multipoles.device)
         dipole_q.index_add_(0, batch, node_positions * multipoles[:, 0].unsqueeze(-1))
         if multipoles.shape[-1] > 1:
             dipole_p = torch.zeros_like(dipole_q)
@@ -342,14 +338,17 @@ class PotentialInterpolator:
             sample_batch=sample_batch,
             k0_mask=k0_mask,
         )
-        samples_potential = evaluate_fourier_series_at_points_flat(
-            k_vectors=k_vectors,
-            k_vector_batch=k_vector_batch,
-            fourier_coefficients=potential,
-            sample_points=sample_points,
-            sample_batch=sample_batch,
-            k0_mask=k0_mask,
-        ) + fermi_level
+        samples_potential = (
+            evaluate_fourier_series_at_points_flat(
+                k_vectors=k_vectors,
+                k_vector_batch=k_vector_batch,
+                fourier_coefficients=potential,
+                sample_points=sample_points,
+                sample_batch=sample_batch,
+                k0_mask=k0_mask,
+            )
+            + fermi_level
+        )
         samples_potential_corrected = (
             samples_potential
             + correction_field_z[sample_batch] * sample_points[:, 2]
@@ -446,9 +445,9 @@ class RealSpaceDensityInterpolator:
         density = torch.empty(
             sample_points.shape[0], dtype=self.dtype, device=self.device
         )
-        image_positions = (
-            node_positions[None, :, :] + shifts[:, None, :]
-        ).reshape(-1, 3)
+        image_positions = (node_positions[None, :, :] + shifts[:, None, :]).reshape(
+            -1, 3
+        )
         image_charges = charges.repeat(shifts.shape[0])
         image_dipoles = dipoles.repeat(shifts.shape[0], 1)
 

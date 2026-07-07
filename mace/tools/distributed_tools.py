@@ -56,4 +56,11 @@ def init_distributed(args):
                 backend="ccl",
                 init_method="env://",
             )
+        else:
+            # CPU (tests, debugging): gloo. Previously no process group was
+            # created here at all, so --distributed on CPU could never work.
+            torch.distributed.init_process_group(
+                backend="gloo",
+                init_method="env://",
+            )
     return rank, local_rank, world_size

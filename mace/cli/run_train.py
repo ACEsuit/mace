@@ -933,7 +933,11 @@ def run(args) -> None:
     if args.wandb:
         setup_wandb(args)
     if args.distributed:
-        distributed_model = DDP(model, device_ids=[local_rank])
+        # device_ids is only valid for single-device CUDA modules; CPU (gloo)
+        # requires device_ids=None.
+        distributed_model = DDP(
+            model, device_ids=[local_rank] if args.device == "cuda" else None
+        )
     else:
         distributed_model = None
 
@@ -1093,7 +1097,9 @@ def run(args) -> None:
             # after param.requires_grad = False was called before evaluating stage-one model
             for param in model.parameters():
                 param.requires_grad = True
-            distributed_model = DDP(model, device_ids=[local_rank])
+            distributed_model = DDP(
+                model, device_ids=[local_rank] if args.device == "cuda" else None
+            )
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
