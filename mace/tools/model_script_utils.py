@@ -115,9 +115,11 @@ def configure_model(
         if args.model in (
             "ScaleShiftMACE",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
         ) or model_foundation.__class__.__name__ in (
             "ScaleShiftMACE",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
         ):
             model_config_foundation["atomic_inter_shift"] = (
                 _determine_atomic_inter_shift(args.mean, heads)
