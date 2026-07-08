@@ -150,6 +150,8 @@ def main() -> None:
 
 
 def run(args: argparse.Namespace) -> None:
+    if not hasattr(args, "return_magforces"):
+        args.return_magforces = False
     torch_tools.set_default_dtype(args.default_dtype)
     device = torch_tools.init_device(args.device)
 
