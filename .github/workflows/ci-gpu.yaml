@@ -85,15 +85,27 @@ jobs:
         env:
           PIP_DEFAULT_TIMEOUT: "120"
         run: |
-          python -m pip install -U pip
+          # pip's --retries does not cover DNS failures inside `git clone`
+          # (git deps in requirements/*.txt); retry the whole command to ride
+          # out transient network/DNS blips on the self-hosted host.
+          retry() {
+            local i
+            for i in 1 2 3; do
+              "$@" && return 0
+              echo "::warning::'$*' failed (attempt $i/3), retrying in 20s"
+              sleep 20
+            done
+            "$@"
+          }
+          retry python -m pip install -U pip
           if [ -n "${{ matrix.torch_index }}" ]; then
             # Vendor-specific torch build (e.g. ROCm) before the project pulls
             # the default PyPI wheel.
-            python -m pip install --retries 5 torch --index-url "${{ matrix.torch_index }}"
+            retry python -m pip install --retries 5 torch --index-url "${{ matrix.torch_index }}"
           fi
-          python -m pip install --retries 5 ".[${{ matrix.extras }}]"
+          retry python -m pip install --retries 5 ".[${{ matrix.extras }}]"
           for req in ${{ matrix.pip_requirements }}; do
-            python -m pip install --retries 5 -r "$req"
+            retry python -m pip install --retries 5 -r "$req"
           done
 
       # OpenEquivariance JIT-compiles its kernels at runtime and needs the
