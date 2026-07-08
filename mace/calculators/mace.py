@@ -1275,8 +1275,8 @@ class MagneticMACECalculator(Calculator):
                     .cpu()
                     .numpy()
                 )
-        # modify this inpalce
-        atoms.arrays["MACE_magmoms"] = self.results["MACE_magmoms"]
+        if "MACE_magmoms" in self.results:
+            atoms.arrays["MACE_magmoms"] = self.results["MACE_magmoms"]
 
     def get_hessian(self, atoms=None):
         if atoms is None and self.atoms is None:
