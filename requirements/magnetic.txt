@@ -1,6 +1,14 @@
-# External dependency of the magnetic extension (import name: sphericart.torch).
-# Pinned to 1.0.9: 1.x registers `torch.classes.sphericart_torch.SolidHarmonics`
-# via torch::class_, which pickled magnetic checkpoints reference by that exact
-# TorchScript class path. sphericart-torch 2.x moved to a different API and
-# breaks load-time compatibility with legacy checkpoints.
+# External dependencies of the magnetic extension.
+#
+# sphericart-torch: Pinned to 1.0.9 because 1.x registers
+# `torch.classes.sphericart_torch.SolidHarmonics` via torch::class_, which
+# pickled magnetic checkpoints reference by that exact TorchScript class path.
+# sphericart-torch 2.x moved to a different API and breaks load-time
+# compatibility with legacy checkpoints.
 sphericart-torch==1.0.9
+
+# torch-geometric: Required by mace.data.augmentation for the magmom SO(3)
+# augmentation transform (`Random3DRotation` inherits `BaseTransform`, and
+# `create_random_rotation_loader` — used when `--data_aug_magmom=True` in
+# magnetic training — raises ImportError without it).
+torch-geometric
