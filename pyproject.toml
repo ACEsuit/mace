@@ -9,11 +9,39 @@ build-backend = "setuptools.build_meta"
 [tool.isort]
 profile = "black"
 
-# Pylint
 [tool.pytest.ini_options]
 # Dump tracebacks of all threads after 300s of inactivity per test.
 # This helps diagnose hangs in CI without requiring extra dependencies.
 faulthandler_timeout = 300
+# A misspelled marker is a collection error, not a silently-ignored no-op.
+addopts = "--strict-markers"
+# Capability markers (gpu/network and dependency markers) are enforced by
+# tests/conftest.py: a test whose capability is unavailable is skipped locally,
+# but FAILS in CI jobs that guarantee that capability via MACE_REQUIRE_CAPS.
+markers = [
+    "slow: end-to-end test that trains models via subprocess",
+    "gpu: requires a GPU usable by torch (any vendor: CUDA or ROCm)",
+    "network: downloads from the internet (foundation models); opt-in via MACE_CI_ALLOW_NETWORK=1",
+    "cueq: requires cuEquivariance (its GPU kernels are NVIDIA-only)",
+    "oeq: requires OpenEquivariance (JIT kernels for CUDA or HIP)",
+    "polar: requires graph_electrostatics (import name graph_longrange)",
+    "les: requires the LES library",
+    "torchsim: requires torch-sim-atomistic (python >= 3.12)",
+    "schedulefree: requires the schedulefree optimizer package",
+    "benchmark: performance measurement; never part of correctness gates",
+    "bin_lammps: requires an external LAMMPS installation",
+    "timeout: per-test timeout (provided by pytest-timeout; registered here so collection works without the plugin)",
+]
+
+[tool.coverage.run]
+source = ["mace"]
+omit = [
+    # vendored code, excluded from lint/mypy as well
+    "mace/tools/torch_geometric/*",
+    "mace/tools/scatter.py",
+]
+
+# Pylint
 
 [tool.pylint.'MESSAGES CONTROL']
 disable = [

@@ -915,6 +915,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.98,
     )
+    parser.add_argument(
+        "--warmup_steps_schedulefree",
+        help="Number of linear LR warmup steps for the ScheduleFree optimizer",
+        type=int,
+        default=0,
+    )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
         "--valid_batch_size", help="Validation batch size", type=int, default=10
@@ -1026,6 +1032,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Use readout of foundation model for transfer learning",
         action="store_false",
         default=True,
+    )
+    parser.add_argument(
+        "--finetune_dipoles_polarizabilities",
+        help="Fine-tune an existing AtomicDielectricMACE (MACE-MDP) model on dipoles and polarizabilities only. Requires --foundation_model pointing to the pretrained MDP checkpoint.",
+        type=str2bool,
+        default=False,
     )
     parser.add_argument(
         "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1

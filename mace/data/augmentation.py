@@ -7,7 +7,7 @@ from mace.tools import torch_geometric as tg_mace
 
 # --- Optional torch_geometric support ---
 if importlib.util.find_spec("torch_geometric") is not None:
-    from torch_geometric.transforms import BaseTransform
+    from torch_geometric.transforms import BaseTransform  # pylint: disable=import-error
 
     has_tg = True
 else:

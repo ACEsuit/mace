@@ -1,0 +1,190 @@
+name: extension tests
+# One job per optional dependency ("extension"), each guaranteeing its
+# capability via MACE_REQUIRE_CAPS: a broken install fails, never skips.
+# On PRs, paths-filter runs only the extensions the PR can affect; pushes to
+# main/develop always run everything (the safety net lives on the branch).
+# Adding an extension = tests/extensions/<name>/ + a filter entry + a job.
+
+on:
+  pull_request:
+  workflow_dispatch:
+  # Called by nightly.yaml as extensions-refresh (external git deps can break
+  # on their own schedule).
+  workflow_call:
+  push:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-extensions-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Outside pull requests (push/dispatch/schedule) the filter step is
+    # skipped and every output falls back to 'true': always run everything.
+    outputs:
+      polar: ${{ steps.filter.outputs.polar || 'true' }}
+      les: ${{ steps.filter.outputs.les || 'true' }}
+      torchsim: ${{ steps.filter.outputs.torchsim || 'true' }}
+      schedulefree: ${{ steps.filter.outputs.schedulefree || 'true' }}
+      backends: ${{ steps.filter.outputs.backends || 'true' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            shared: &shared
+              - 'setup.cfg'
+              - 'pyproject.toml'
+              - 'tests/conftest.py'
+              - 'tests/helpers.py'
+              - '.github/workflows/ci-extensions.yaml'
+              - '.github/actions/setup-mace/**'
+              - 'mace/modules/**'
+              - 'mace/tools/**'
+              - 'mace/data/**'
+            polar:
+              - *shared
+              - 'mace/cli/polar_density_cube.py'
+              - 'mace/calculators/**'
+              - 'tests/extensions/polar/**'
+              - 'requirements/polar.txt'
+            les:
+              - *shared
+              - 'tests/extensions/les/**'
+              - 'requirements/les.txt'
+            torchsim:
+              - *shared
+              - 'mace/calculators/**'
+              - 'tests/extensions/torchsim/**'
+            schedulefree:
+              - *shared
+              - 'tests/extensions/schedulefree/**'
+            backends:
+              - *shared
+              - 'mace/cli/convert_*.py'
+              - 'tests/backends/**'
+
+  polar:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.polar == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.10"
+          extras: dev
+          pip-packages: -r requirements/polar.txt
+      # Polar regression tests compare against released foundation models.
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/extensions/polar
+          markers: not cueq and not gpu
+          require-caps: polar
+          allow-network: "true"
+
+  polar-cueq:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.polar == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.10"
+          extras: dev, cueq
+          pip-packages: -r requirements/polar.txt
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/extensions/polar
+          markers: cueq and not gpu
+          require-caps: polar,cueq
+          allow-network: "true"
+
+  les:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.les == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.10"
+          extras: dev
+          pip-packages: -r requirements/les.txt
+      # First CI coverage of LES ever; documented xfails (see test file).
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/extensions/les
+          markers: not gpu
+          require-caps: les
+          allow-network: "true"
+
+  torchsim:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.torchsim == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev, torchsim
+          # graph_longrange so the torchsim×polar tests run (they never did
+          # before: the old job did not install it and they skipped silently).
+          pip-packages: -r requirements/polar.txt
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/extensions/torchsim
+          require-caps: torchsim,polar
+          allow-network: "true"
+
+  schedulefree:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.schedulefree == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev, schedulefree
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/extensions/schedulefree
+          markers: not gpu
+          require-caps: schedulefree
+
+  backends-cpu:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.backends == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.11"
+          extras: dev, cueq
+      # Marker selection over the WHOLE tree, not just tests/backends: cueq
+      # tests that live with their subject (training in workflows/, dielectric
+      # cueq matrix in dipole_polar, calculator paths) run here too. polar+cueq
+      # has its own job; gpu-only cueq runs on the fleet.
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests
+          markers: cueq and not gpu and not polar
+          require-caps: cueq

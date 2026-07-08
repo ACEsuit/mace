@@ -34,10 +34,13 @@ class SubsetCollection:
 def log_dataset_contents(dataset: data.Configurations, dataset_name: str) -> None:
     log_string = f"{dataset_name} ["
     for prop_name in dataset[0].properties.keys():
+        count = sum(
+            1 for config in dataset if config.properties.get(prop_name) is not None
+        )
         if prop_name == "dipole":
-            log_string += f"{prop_name} components: {int(np.sum([np.sum(config.property_weights[prop_name]) for config in dataset]))}, "
+            log_string += f"{prop_name} components: {count}, "
         else:
-            log_string += f"{prop_name}: {int(np.sum([config.property_weights[prop_name] for config in dataset]))}, "
+            log_string += f"{prop_name}: {count}, "
     log_string = log_string[:-2] + "]"
     logging.info(log_string)
 
@@ -230,9 +233,10 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "MACELES",
         "PolarMACE",
         "MagneticScaleShiftMACE",
+        "AtomicDielectricMACE",
     ]:
         return {
-            "error": "Model is not a ScaleShiftMACE, MACELES, PolarMACE, or MagneticScaleShiftMACE model"
+            "error": "Model is not a ScaleShiftMACE, MACELES, PolarMACE, MagneticScaleShiftMACE, or AtomicDielectricMACE model"
         }
 
     def radial_to_name(radial_type):
@@ -253,8 +257,9 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             return "Soft"
         return radial.distance_transform.__class__.__name__
 
-    scale = model.scale_shift.scale
-    shift = model.scale_shift.shift
+    if hasattr(model, "scale_shift"):
+        scale = model.scale_shift.scale
+        shift = model.scale_shift.shift
     heads = model.heads if hasattr(model, "heads") else ["default"]
     if hasattr(model.readouts[-1], "hidden_irreps"):
         model_mlp_irreps = o3.Irreps(str(model.readouts[-1].hidden_irreps))
@@ -307,7 +312,6 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "use_embedding_readout": (hasattr(model, "embedding_readout")),
         "readout_cls": model.readouts[-1].__class__,
         "cueq_config": model.cueq_config if hasattr(model, "cueq_config") else None,
-        "atomic_energies": model.atomic_energies_fn.atomic_energies.cpu().numpy(),
         "avg_num_neighbors": model.interactions[0].avg_num_neighbors,
         "atomic_numbers": model.atomic_numbers,
         "correlation": correlation,
@@ -321,8 +325,6 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "radial_MLP": extract_radial_MLP(model),
         "pair_repulsion": hasattr(model, "pair_repulsion_fn"),
         "distance_transform": radial_to_transform(model.radial_embedding),
-        "atomic_inter_scale": scale.cpu().numpy(),
-        "atomic_inter_shift": shift.cpu().numpy(),
         "heads": heads,
     }
     if model.__class__.__name__ == "MagneticScaleShiftMACE":
@@ -334,11 +336,20 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             config["num_mag_radial_basis_one_body"] = int(
                 model.onebody_magmombasis_coeffs.shape[1]
             )
-
+    if hasattr(model, "atomic_energies_fn"):
+        config["atomic_energies"] = (
+            model.atomic_energies_fn.atomic_energies.cpu().numpy()
+        )
+    if hasattr(model, "scale_shift"):
+        config["atomic_inter_scale"] = scale.cpu().numpy()
+        config["atomic_inter_shift"] = shift.cpu().numpy()
+    if model.__class__.__name__ in ["ScaleShiftMACE", "MACELES"]:
+        config["MLP_irreps"] = o3.Irreps(f"{mlp_scalars_per_head}x0e")
     if model.__class__.__name__ == "AtomicDielectricMACE":
         config["use_polarizability"] = model.use_polarizability
         config["only_dipole"] = False  # model.only_dipole
         config["gate"] = torch.nn.functional.silu
+        config["MLP_irreps"] = model_mlp_irreps
     if model.__class__.__name__ == "PolarMACE":
         if hasattr(model, "fukui_source_map") and hasattr(
             model.fukui_source_map, "hidden_irreps"
@@ -1025,7 +1036,9 @@ def get_optimizer(
         _param_options = {k: v for k, v in param_options.items() if k != "amsgrad"}
         _param_options.pop("betas", None)
         optimizer = adamw_schedulefree.AdamWScheduleFree(
-            **_param_options, betas=(args.beta1_schedulefree, args.beta2_schedulefree)
+            **_param_options,
+            betas=(args.beta1_schedulefree, args.beta2_schedulefree),
+            warmup_steps=args.warmup_steps_schedulefree,
         )
     else:
         optimizer = torch.optim.Adam(**param_options)
