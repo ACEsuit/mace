@@ -1370,7 +1370,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
         atomic_inter_shift: float,
         **kwargs,
     ):
-        num_mag_radial_basis_one_body = kwargs.pop("num_mag_radial_basis_one_body")
+        num_mag_radial_basis_one_body = kwargs.pop("num_mag_radial_basis_one_body", 0)
         super().__init__(**kwargs)
         self.scale_shift = ScaleShiftBlock(
             scale=atomic_inter_scale, shift=atomic_inter_shift

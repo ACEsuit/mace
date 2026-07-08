@@ -1,3 +1,6 @@
 # External dependency of the magnetic extension (import name: sphericart.torch).
-# sphericart-torch is on PyPI; pin the current bundle to keep CI deterministic.
-sphericart-torch==2.0.2
+# Pinned to 1.0.9: 1.x registers `torch.classes.sphericart_torch.SolidHarmonics`
+# via torch::class_, which pickled magnetic checkpoints reference by that exact
+# TorchScript class path. sphericart-torch 2.x moved to a different API and
+# breaks load-time compatibility with legacy checkpoints.
+sphericart-torch==1.0.9
