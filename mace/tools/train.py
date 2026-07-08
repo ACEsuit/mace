@@ -430,7 +430,7 @@ def take_step(
 
     def closure():
         optimizer.zero_grad(set_to_none=True)
-        if not output_args["magforces"]:
+        if not output_args.get("magforces", False):
             output = model(
                 batch_dict,
                 training=True,
@@ -602,7 +602,7 @@ def evaluate(
                 compute_virials=output_args["virials"],
                 compute_stress=output_args["stress"],
             )
-            if output_args["magforces"]:
+            if output_args.get("magforces", False):
                 kwargs["compute_magforces"] = True
             output = model(batch_dict, **kwargs)
             avg_loss, aux = metrics(batch, output)
