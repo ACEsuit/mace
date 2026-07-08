@@ -35,6 +35,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
         internal_weights: Optional[bool] = None,
         shared_weights: Optional[bool] = None,
         num_elements: Optional[int] = None,
+        persistent_U_matrices: bool = True,
     ) -> None:
         super().__init__()
 
@@ -79,6 +80,7 @@ class SymmetricContraction(CodeGenMixin, torch.nn.Module):
                     num_elements=num_elements,
                     weights=self.shared_weights,
                     use_reduced_cg=use_reduced_cg,
+                    persistent_U_matrices=persistent_U_matrices,
                 )
             )
 
@@ -98,12 +100,14 @@ class Contraction(torch.nn.Module):
         use_reduced_cg: bool = False,
         num_elements: Optional[int] = None,
         weights: Optional[torch.Tensor] = None,
+        persistent_U_matrices: bool = True,
     ) -> None:
         super().__init__()
 
         self.num_features = irreps_in.count((0, 1))
         self.coupling_irreps = o3.Irreps([irrep.ir for irrep in irreps_in])
         self.correlation = correlation
+        self._persistent_U_matrices = bool(persistent_U_matrices)
         dtype = torch.get_default_dtype()
 
         path_weight = []
@@ -116,7 +120,9 @@ class Contraction(torch.nn.Module):
                 dtype=dtype,
             )[-1]
             path_weight.append(not torch.equal(U_matrix, torch.zeros_like(U_matrix)))
-            self.register_buffer(f"U_matrix_{nu}", U_matrix)
+            self.register_buffer(
+                f"U_matrix_{nu}", U_matrix, persistent=self._persistent_U_matrices
+            )
 
         # Tensor contraction equations
         self.contractions_weighting = torch.nn.ModuleList()
@@ -259,6 +265,49 @@ class Contraction(torch.nn.Module):
 
     def U_tensors(self, nu: int):
         return dict(self.named_buffers())[f"U_matrix_{nu}"]
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        # `U_matrix_{nu}` buffers are computed deterministically in __init__
+        # from irreps_in / irrep_out / correlation, so state_dict entries for
+        # them are redundant. Accept checkpoints saved under either
+        # `persistent_U_matrices` setting: silently drop any incoming
+        # `U_matrix_*` values (buffers already hold the correct tensors)
+        # before delegating to the default loader.
+        for key in list(state_dict.keys()):
+            if key.startswith(prefix):
+                local_name = key[len(prefix) :]
+                if local_name.startswith("U_matrix_"):
+                    state_dict.pop(key)
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+        # If our buffers are persistent (default), the parent loader will have
+        # populated `missing_keys` with any `U_matrix_*` entries we already
+        # dropped above; strip them so strict-mode loading of a
+        # persistent=False checkpoint doesn't raise.
+        pruned = []
+        for key in missing_keys:
+            if key.startswith(prefix):
+                local_name = key[len(prefix) :]
+                if local_name.startswith("U_matrix_"):
+                    continue
+            pruned.append(key)
+        missing_keys[:] = pruned
 
 
 class EmptyParam(torch.nn.Parameter):

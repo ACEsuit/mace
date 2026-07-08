@@ -186,6 +186,72 @@ def test_symmetric_contraction():
     assert operation.contractions[0].weights_max.shape == (2, 11, 16)
 
 
+def _build_symmetric_contraction(persistent_U_matrices):
+    return SymmetricContraction(
+        irreps_in=o3.Irreps("16x0e + 16x1o + 16x2e"),
+        irreps_out=o3.Irreps("16x0e + 16x1o"),
+        correlation=3,
+        num_elements=2,
+        persistent_U_matrices=persistent_U_matrices,
+    )
+
+
+def test_symmetric_contraction_persistent_u_matrices_default_true():
+    op = _build_symmetric_contraction(persistent_U_matrices=True)
+    state_dict = op.state_dict()
+    u_keys = [k for k in state_dict if "U_matrix_" in k]
+    assert len(u_keys) > 0, "default (persistent=True) should include U_matrix_* keys"
+
+
+def test_symmetric_contraction_persistent_u_matrices_false_omits_from_state_dict():
+    op = _build_symmetric_contraction(persistent_U_matrices=False)
+    state_dict = op.state_dict()
+    u_keys = [k for k in state_dict if "U_matrix_" in k]
+    assert u_keys == [], (
+        "persistent_U_matrices=False should omit U_matrix_* from state_dict; "
+        f"found: {u_keys}"
+    )
+    # buffers still present on the live module (recomputed in __init__)
+    for contraction in op.contractions:
+        for nu in range(1, contraction.correlation + 1):
+            assert hasattr(contraction, f"U_matrix_{nu}")
+
+
+def test_symmetric_contraction_cross_persistence_strict_load():
+    # Save under one persistence setting, load into a module built with the
+    # other setting; strict-mode load must succeed and forward must be
+    # equivalent to a fresh module with the same weights.
+    torch.manual_seed(7)
+    features = torch.randn(12, 16, 9)
+    one_hots = torch.nn.functional.one_hot(torch.arange(0, 12) % 2).to(
+        torch.get_default_dtype()
+    )
+
+    persistent = _build_symmetric_contraction(persistent_U_matrices=True)
+    non_persistent = _build_symmetric_contraction(persistent_U_matrices=False)
+
+    # Cross-load: persistent-saved checkpoint into a non_persistent instance.
+    missing, unexpected = non_persistent.load_state_dict(
+        persistent.state_dict(), strict=True
+    )
+    assert missing == [] and unexpected == []
+    torch.testing.assert_close(
+        non_persistent(features, one_hots), persistent(features, one_hots)
+    )
+
+    # And the reverse: non_persistent-saved checkpoint into a persistent
+    # instance (state_dict lacks U_matrix_* keys; hook must drop them from
+    # missing_keys).
+    persistent2 = _build_symmetric_contraction(persistent_U_matrices=True)
+    missing, unexpected = persistent2.load_state_dict(
+        non_persistent.state_dict(), strict=True
+    )
+    assert missing == [] and unexpected == []
+    torch.testing.assert_close(
+        persistent2(features, one_hots), non_persistent(features, one_hots)
+    )
+
+
 def test_bessel_basis():
     d = torch.linspace(start=0.5, end=5.5, steps=10)
     bessel_basis = BesselBasis(r_max=6.0, num_basis=5)
