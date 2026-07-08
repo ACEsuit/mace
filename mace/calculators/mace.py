@@ -1001,7 +1001,9 @@ class MagneticMACECalculator(Calculator):
         for model in self.models:
             model.to(device)
 
-        r_maxs = [model.magmom_mace.r_max.cpu() for model in self.models]
+        r_maxs = [
+            getattr(model, "magmom_mace", model).r_max.cpu() for model in self.models
+        ]
         r_maxs = np.array(r_maxs)
         if not np.all(r_maxs == r_maxs[0]):
             raise ValueError(f"committee r_max are not all the same {' '.join(r_maxs)}")
@@ -1011,13 +1013,20 @@ class MagneticMACECalculator(Calculator):
         self.energy_units_to_eV = energy_units_to_eV
         self.length_units_to_A = length_units_to_A
         self.z_table = utils.AtomicNumberTable(
-            [int(z) for z in self.models[0].magmom_mace.atomic_numbers]
+            [
+                int(z)
+                for z in getattr(
+                    self.models[0], "magmom_mace", self.models[0]
+                ).atomic_numbers
+            ]
         )
         self.charges_key = charges_key
         self.magmom_key = magmom_key
 
         try:
-            self.available_heads = self.models[0].magmom_mace.heads
+            self.available_heads = getattr(
+                self.models[0], "magmom_mace", self.models[0]
+            ).heads
         except AttributeError:
             self.available_heads = ["Default"]
 
@@ -1179,9 +1188,9 @@ class MagneticMACECalculator(Calculator):
             batch = self._clone_batch(batch_base)
             node_heads = batch["head"][batch["batch"]]
             num_atoms_arange = torch.arange(batch["positions"].shape[0])
-            node_e0 = self.models[0].magmom_mace.atomic_energies_fn(
-                batch["node_attrs"]
-            )[num_atoms_arange, node_heads]
+            node_e0 = getattr(
+                self.models[0], "magmom_mace", self.models[0]
+            ).atomic_energies_fn(batch["node_attrs"])[num_atoms_arange, node_heads]
             compute_stress = not self.use_compile
         else:
             compute_stress = False
@@ -1304,14 +1313,20 @@ class MagneticMACECalculator(Calculator):
             atoms = self.atoms
         if self.model_type != "MACE":
             raise NotImplementedError("Only implemented for MACE models")
-        num_interactions = int(self.models[0].magmom_mace.num_interactions)
+        num_interactions = int(
+            getattr(self.models[0], "magmom_mace", self.models[0]).num_interactions
+        )
         if num_layers == -1:
             num_layers = num_interactions
         batch = self._atoms_to_batch(atoms)
         descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
 
         irreps_out = o3.Irreps(
-            str(self.models[0].magmom_mace.products[0].linear.irreps_out)
+            str(
+                getattr(self.models[0], "magmom_mace", self.models[0])
+                .products[0]
+                .linear.irreps_out
+            )
         )
         l_max = irreps_out.lmax
         num_invariant_features = irreps_out.dim // (l_max + 1) ** 2
