@@ -1,0 +1,217 @@
+name: nightly
+# Everything too expensive, network-dependent or non-gating for the PR path:
+# foundation-model tests (downloads), the full-matrix e2e training suite,
+# external-dep refresh (polar/les install from git and can break on their
+# own), CPU benchmarks, the real-tier LAMMPS integration, and the durations
+# refresh. GPU nightly coverage runs via ci-gpu.yaml's own schedule.
+
+on:
+  schedule:
+    - cron: '47 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  foundations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev
+          # graph_longrange so the polar foundation loaders run too.
+          pip-packages: -r requirements/polar.txt
+      - name: Cache foundation model downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mace
+          # URLs live in foundations_models.py: new URLs -> new cache.
+          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
+      # Downloads are allowed and REQUIRED here: a broken download host
+      # must turn this job red, never a PR.
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/foundations
+          markers: not gpu
+          require-caps: network,polar
+          allow-network: "true"
+          timeout: "1200"
+
+  workflows-full:
+    runs-on: ubuntu-latest
+    name: workflows-full (py${{ matrix.python-version }}, group ${{ matrix.split-group }})
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ '3.9', '3.10', '3.11', '3.12', '3.13' ]
+        split-group: [ 1, 2 ]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: ${{ matrix.python-version }}
+          extras: dev
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/lib/jvm /usr/share/dotnet /usr/share/swift \
+            /usr/local/.ghcup /usr/local/lib/android \
+            /usr/local/share/chromium /opt/microsoft /opt/google
+      # The e2e suite INCLUDING its network-marked tests (the PR path
+      # runs this suite without network).
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/workflows
+          splits: "2"
+          group: ${{ matrix.split-group }}
+          allow-network: "true"
+          timeout: "1200"
+
+  extensions-refresh:
+    # Re-runs the extension jobs even when nobody touched the repo: polar/les
+    # install from external git and can break on their own.
+    uses: ./.github/workflows/ci-extensions.yaml
+    permissions:
+      contents: read
+
+  benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev
+      # CPU benchmark tests currently skip without a GPU (they are
+      # gpu-marked); keep the job so CPU benchmarks land here when added.
+      - uses: ./.github/actions/run-tests
+        continue-on-error: true
+        with:
+          tests: tests/benchmarks
+          allow-network: "true"
+          numprocs: "0"
+          timeout: "3600"
+          extra-args: --benchmark-json=benchmark.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: benchmark-json
+          path: benchmark.json
+          retention-days: 90
+          if-no-files-found: ignore
+
+  lammps-real:
+    # Real-tier LAMMPS via conda-forge (ML-IAP unified path). Deliberately
+    # continue-on-error while it proves itself; promote to blocking after a
+    # stable green streak.
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash -leo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Set up conda env with LAMMPS (ML-IAP + python)
+        uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5 # v4.0.1
+        with:
+          miniforge-version: latest
+          python-version: "3.11"
+          activate-environment: lammps-mace
+      - name: Install LAMMPS and mace
+        run: |
+          conda install -y -c conda-forge "lammps>=2024.06" python-devtools
+          python -m pip install -U pip
+          python -m pip install ".[dev, cueq]"
+          python -c "import lammps; print('lammps import OK')"
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/integrations
+          markers: bin_lammps
+          require-caps: bin_lammps,cueq
+          numprocs: "0"
+          timeout: "1200"
+
+  coverage-full:
+    # THE project coverage number: full fixed CPU scope (network, cueq, polar,
+    # les, torchsim, schedulefree), comparable night to night. The per-PR
+    # coverage job measures only the deterministic PR slice by design.
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev, cueq, torchsim, schedulefree
+          pip-packages: -r requirements/polar.txt -r requirements/les.txt
+      - name: Cache foundation model downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mace
+          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/lib/jvm /usr/share/dotnet /usr/share/swift \
+            /usr/local/.ghcup /usr/local/lib/android \
+            /usr/local/share/chromium /opt/microsoft /opt/google
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests
+          markers: not gpu and not benchmark
+          require-caps: network,cueq,polar,les,torchsim,schedulefree
+          allow-network: "true"
+          coverage: "true"
+          timeout: "1200"
+      - name: Coverage summary
+        if: always()
+        run: |
+          {
+            echo '## Full-scope CPU coverage (nightly)'
+            echo '```'
+            coverage report --skip-covered --sort=cover | tail -40
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: coverage-full
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 90
+
+  durations-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.11"
+          extras: dev
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/lib/jvm /usr/share/dotnet /usr/share/swift \
+            /usr/local/.ghcup /usr/local/lib/android \
+            /usr/local/share/chromium /opt/microsoft /opt/google
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests
+          allow-network: "true"
+          store-durations: "true"
+          timeout: "1200"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-durations
+          path: tests/.test_durations
+          retention-days: 30

@@ -1,0 +1,157 @@
+name: gpu tests
+# GPU jobs run on self-hosted runners described declaratively in
+# .github/gpu-fleet.json. The `plan` job emits one matrix entry per ENABLED
+# fleet entry, so a disabled/absent vendor never creates a job that would
+# queue forever waiting for a runner that does not exist. Adding a GPU vendor
+# is: register the runner with its labels (GitHub settings) + flip its entry
+# to "enabled": true. Tests never encode vendors: they use device="cuda"
+# (valid on ROCm too) and each fleet entry selects by marker expression
+# (e.g. "gpu and not cueq" on AMD, since cuEquivariance is NVIDIA-only).
+
+on:
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
+  schedule:
+    # Nightly at 03:17 UTC: catches GPU-stack drift even without pushes.
+    - cron: '17 3 * * *'
+  # PRs run the GPU suite unconditionally; superseded runs on the same ref
+  # are cancelled (concurrency below) so the single runner never accumulates
+  # a backlog from PR churn.
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpu-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.fleet.outputs.matrix }}
+      any: ${{ steps.fleet.outputs.any }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Read enabled GPU fleet
+        id: fleet
+        run: |
+          matrix=$(jq -c '[.[] | select(.enabled)]' .github/gpu-fleet.json)
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "any=$(jq -c 'length > 0' <<< "$matrix")" >> "$GITHUB_OUTPUT"
+          echo "Enabled fleet entries: $matrix"
+
+  test:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    # Human-in-the-loop gate for third-party code on self-hosted hardware:
+    # PRs authored by the team (OWNER/MEMBER/COLLABORATOR — GitHub-computed,
+    # travels with the author even on fork PRs) deploy to `gpu-internal`,
+    # which has no protection rules and runs immediately. Anyone else lands
+    # on `gpu-external`, whose required reviewers (MACE maintainers) must
+    # approve the run before it touches the fleet. Both environments are
+    # created in Settings -> Environments; only gpu-external needs reviewers.
+    environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: gpu-${{ matrix.vendor }}
+    runs-on: ${{ matrix.labels }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Show GPU
+        run: ${{ matrix.smi }}
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      # Build an isolated venv per run so the runner's global Python state does
+      # not drift/conflict across branches. Subsequent steps use it via PATH.
+      - name: Create isolated virtualenv
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/venv"
+          echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=${RUNNER_TEMP}/venv" >> "$GITHUB_ENV"
+
+      - name: Install requirements (${{ matrix.vendor }})
+        env:
+          PIP_DEFAULT_TIMEOUT: "120"
+        run: |
+          # pip's --retries does not cover DNS failures inside `git clone`
+          # (git deps in requirements/*.txt); retry the whole command to ride
+          # out transient network/DNS blips on the self-hosted host.
+          retry() {
+            local i
+            for i in 1 2 3; do
+              "$@" && return 0
+              echo "::warning::'$*' failed (attempt $i/3), retrying in 20s"
+              sleep 20
+            done
+            "$@"
+          }
+          retry python -m pip install -U pip
+          if [ -n "${{ matrix.torch_index }}" ]; then
+            # Vendor-specific torch build (e.g. ROCm) before the project pulls
+            # the default PyPI wheel.
+            retry python -m pip install --retries 5 torch --index-url "${{ matrix.torch_index }}"
+          fi
+          retry python -m pip install --retries 5 ".[${{ matrix.extras }}]"
+          for req in ${{ matrix.pip_requirements }}; do
+            retry python -m pip install --retries 5 -r "$req"
+          done
+
+      # OpenEquivariance JIT-compiles its kernels at runtime and needs the
+      # CUDA/HIP toolkit location; the isolated venv does not inherit it.
+      - name: Locate GPU toolkit for JIT backends
+        run: |
+          if [ -z "${CUDA_HOME:-}" ]; then
+            if command -v nvcc >/dev/null 2>&1; then
+              CUDA_HOME="$(dirname "$(dirname "$(command -v nvcc)")")"
+            elif [ -d /usr/local/cuda ]; then
+              CUDA_HOME=/usr/local/cuda
+            fi
+          fi
+          if [ -n "${CUDA_HOME:-}" ]; then
+            echo "CUDA_HOME=$CUDA_HOME" >> "$GITHUB_ENV"
+            echo "Using CUDA_HOME=$CUDA_HOME"
+          else
+            echo "::warning::No CUDA toolkit found (nvcc or /usr/local/cuda); OEQ JIT compilation will fail"
+          fi
+
+      - name: Log environment and assert GPU is visible to torch
+        run: |
+          python -m pip freeze
+          python - <<'PY'
+          import torch
+          print("torch:", torch.__version__)
+          print("cuda available:", torch.cuda.is_available())
+          print("cuda:", torch.version.cuda, "| hip:", torch.version.hip)
+          if not torch.cuda.is_available():
+              raise SystemExit("No GPU is visible to torch on the selected runner")
+          print("device:", torch.cuda.get_device_name(0))
+          PY
+
+      # Marker selection over the whole tree: parity of accelerated backends,
+      # torch.compile on GPU, GPU training, calculator GPU paths... Benchmarks
+      # are excluded from correctness gates by design. MACE_REQUIRE_CAPS turns
+      # a broken backend install on this runner into failures, never skips.
+      - name: Run GPU tests
+        uses: ./.github/actions/run-tests
+        with:
+          tests: tests
+          markers: (${{ matrix.marker_expr }}) and not benchmark
+          require-caps: ${{ matrix.require_caps }}
+          allow-network: "true"
+          timeout: "1200"
+
+      - name: Clean up virtualenv
+        if: always()
+        run: rm -rf "${RUNNER_TEMP}/venv"

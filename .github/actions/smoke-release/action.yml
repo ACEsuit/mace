@@ -1,0 +1,84 @@
+name: Release smoke test
+description: >
+  The only check of the PACKAGED artifact: installs the built wheel in a clean
+  venv, resolves all console entry points with --help (catches broken
+  setup.cfg entry points, the most common packaging failure), then runs a
+  mini train / eval / LAMMPS-export cycle. Run it against a branch without
+  tagging via the release workflow's workflow_dispatch trigger.
+
+inputs:
+  wheel:
+    description: Path (or glob resolving to one file) of the wheel to test
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Smoke-test the wheel
+      shell: bash
+      env:
+        IN_WHEEL: ${{ inputs.wheel }}
+      run: |
+        WORK="$(mktemp -d)"
+        trap 'rm -rf "$WORK"' EXIT
+
+        python3 -m venv "$WORK/venv"
+        # shellcheck disable=SC1091
+        source "$WORK/venv/bin/activate"
+        pip install -q -U pip
+        # the input may be a glob (e.g. dist/*.whl): resolve it here
+        # shellcheck disable=SC2086
+        WHEEL_PATH="$(ls $IN_WHEEL | head -1)"
+        pip install -q "$WHEEL_PATH"
+
+        python -c "import mace; print('mace import OK')"
+
+        # Every console entry point must at least resolve and print help: this
+        # catches broken setup.cfg entry points, the most common packaging failure.
+        for ep in mace_run_train mace_eval_configs mace_prepare_data \
+                  mace_create_lammps_model mace_convert_device mace_select_head \
+                  mace_e3nn_cueq mace_cueq_to_e3nn mace_finetuning_select \
+                  mace_active_learning_md mace_plot_train mace_polar_density_cube; do
+          if command -v "$ep" >/dev/null 2>&1; then
+            "$ep" --help >/dev/null
+            echo "entry point OK: $ep"
+          else
+            echo "MISSING entry point: $ep" >&2
+            exit 1
+          fi
+        done
+
+        # Mini end-to-end: train 2 epochs on tiny data, evaluate, export to LAMMPS.
+        python - <<'PY'
+        import numpy as np
+        from ase.atoms import Atoms
+        import ase.io
+
+        water = Atoms(numbers=[8, 1, 1],
+                      positions=[[0, -2.0, 0], [1, 0, 0], [0, 1, 0]],
+                      cell=[4] * 3, pbc=[True] * 3)
+        configs = [Atoms(numbers=[8], positions=[[0, 0, 0]], cell=[6] * 3),
+                   Atoms(numbers=[1], positions=[[0, 0, 0]], cell=[6] * 3)]
+        for c in configs:
+            c.info["REF_energy"] = 0.0
+            c.info["config_type"] = "IsolatedAtom"
+        np.random.seed(5)
+        for _ in range(10):
+            c = water.copy()
+            c.positions += np.random.normal(0.1, size=c.positions.shape)
+            c.info["REF_energy"] = np.random.normal(0.1)
+            c.new_array("REF_forces", np.random.normal(0.1, size=c.positions.shape))
+            c.info["REF_stress"] = np.random.normal(0.1, size=6)
+            configs.append(c)
+        ase.io.write("smoke.xyz", configs)
+        PY
+        mace_run_train --name=smoke --model=MACE --hidden_irreps=16x0e --r_max=3.5 \
+          --batch_size=5 --max_num_epochs=2 --device=cpu --seed=5 \
+          --energy_key=REF_energy --forces_key=REF_forces --valid_fraction=0.2 \
+          --checkpoints_dir=. --model_dir=. --train_file=smoke.xyz --loss=weighted
+        test -f smoke.model
+        mace_eval_configs --configs=smoke.xyz --model=smoke.model --output=smoke_eval.xyz
+        test -f smoke_eval.xyz
+        mace_create_lammps_model smoke.model
+        test -f smoke.model-lammps.pt
+        echo "release smoke: OK"
