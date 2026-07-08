@@ -1,0 +1,3 @@
+# External dependency of the magnetic extension (import name: sphericart.torch).
+# sphericart-torch is on PyPI; pin the current bundle to keep CI deterministic.
+sphericart-torch==2.0.2

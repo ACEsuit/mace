@@ -10,7 +10,7 @@ import torch
 from ase.atoms import Atoms
 from e3nn import o3
 
-from mace.calculators import MACECalculator
+from mace.calculators import MACECalculator, MagneticMACECalculator
 from mace.cli.eval_configs import run as mace_eval_configs_run
 from mace.cli.run_train import run as mace_run
 from mace.tools.arg_parser import build_default_arg_parser
@@ -112,7 +112,9 @@ def test_run_train_magnetic_mace(tmp_path, magnetic_configs):
     model_path = tmp_path / "MACE.model"
     assert model_path.exists()
 
-    calc = MACECalculator(model_paths=model_path, device="cpu")
+    calc = MagneticMACECalculator(
+        model_paths=model_path, device="cpu", magmom_key="REF_magmom"
+    )
 
     Es = []
     for at in magnetic_configs:

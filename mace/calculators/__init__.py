@@ -7,10 +7,11 @@ from .foundations_models import (
     mace_polar,
 )
 from .lammps_mace import LAMMPS_MACE
-from .mace import MACECalculator
+from .mace import MACECalculator, MagneticMACECalculator
 
 __all__ = [
     "MACECalculator",
+    "MagneticMACECalculator",
     "LAMMPS_MACE",
     "mace_mp",
     "mace_mdp",
