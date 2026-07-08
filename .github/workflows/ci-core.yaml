@@ -1,0 +1,129 @@
+name: core tests
+# Required PR checks: lint + the CPU-only core suites. Everything here is
+# deterministic (no network: foundation-download tests live in nightly.yaml).
+# Test jobs run through the .github/actions/run-tests composite action —
+# the single place that assembles the pytest command (see its inputs to
+# reproduce any job locally).
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-core-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.10"
+          extras: dev
+          # The pylint hook is `language: system`: packages the linted code
+          # imports must be importable in this environment.
+          pip-packages: wandb
+      - run: pre-commit run --all-files --show-diff-on-failure
+
+  unit:
+    # The only 5-version matrix: python-version bugs are import/API-shaped and
+    # this suite is cheap. No pytest-split: if tests/unit needs sharding, the
+    # tests are misclassified.
+    needs: lint
+    runs-on: ubuntu-latest
+    name: unit (py${{ matrix.python-version }})
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ '3.9', '3.10', '3.11', '3.12', '3.13' ]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: ${{ matrix.python-version }}
+          extras: dev
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/unit
+          markers: not slow
+          numprocs: auto
+
+  workflows:
+    # End-to-end CLI trainings via subprocess — the expensive suite. PRs run
+    # the python-version frontier (min+max); pushes run the full matrix, and
+    # nightly.yaml repeats it with network tests enabled.
+    needs: lint
+    runs-on: ubuntu-latest
+    name: workflows (py${{ matrix.python-version }}, group ${{ matrix.split-group }})
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.9","3.13"]') || fromJSON('["3.9","3.10","3.11","3.12","3.13"]') }}
+        split-group: [ 1, 2 ]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: ${{ matrix.python-version }}
+          extras: dev
+
+      # Training tests can leave large files around until the run ends.
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/lib/jvm /usr/share/dotnet /usr/share/swift \
+            /usr/local/.ghcup /usr/local/lib/android \
+            /usr/local/share/chromium /opt/microsoft /opt/google
+          df -h
+
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/workflows
+          splits: "2"
+          group: ${{ matrix.split-group }}
+
+  coverage:
+    # Informative (no threshold gate yet): summary + artifact. Nightly runs
+    # the network-inclusive variant.
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/lib/jvm /usr/share/dotnet /usr/share/swift \
+            /usr/local/.ghcup /usr/local/lib/android \
+            /usr/local/share/chromium /opt/microsoft /opt/google
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/unit tests/workflows
+          coverage: "true"
+      - name: Coverage summary
+        if: always()
+        run: |
+          {
+            echo '## Coverage (tests/unit + tests/workflows, no network)'
+            echo '```'
+            coverage report --skip-covered --sort=cover | tail -40
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: coverage-html
+          path: htmlcov/
+          retention-days: 14
