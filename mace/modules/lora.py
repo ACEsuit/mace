@@ -6,6 +6,8 @@ from e3nn import o3
 from e3nn.nn._fc import _Layer as E3NNFCLayer
 from torch import nn
 
+from mace.modules.symmetric_contraction import Contraction
+
 
 def build_lora_irreps(
     irreps_in: o3.Irreps, irreps_out: o3.Irreps, rank: int
@@ -274,18 +276,104 @@ class LoRAFCLayer(nn.Module):
         return self.base
 
 
+class LoRAContraction(nn.Module):
+    """LoRA for Contraction (the core of SymmetricContraction).
+
+    Uses fused weight computation: W_merged = weights_max + scaling * (lora_A_max @ lora_B_max)
+    with automatic caching during inference (when grad is disabled).
+
+    Only weights_max (highest correlation order) receives the LoRA update.
+    """
+
+    def __init__(self, base: Contraction, rank: int = 4, alpha: float = 1.0):
+        super().__init__()
+        self.base = base
+        self.scaling = float(alpha) / float(rank)
+
+        # LoRA matrices: delta = lora_A_max @ lora_B_max
+        # lora_A_max: (num_elements, num_params, rank), lora_B_max: (rank, num_features)
+        num_elements, num_params, num_features = base.weights_max.shape
+        w = base.weights_max
+        self.lora_A_max = nn.Parameter(
+            torch.empty(num_elements, num_params, rank, device=w.device, dtype=w.dtype)
+        )
+        self.lora_B_max = nn.Parameter(
+            torch.empty(rank, num_features, device=w.device, dtype=w.dtype)
+        )
+
+        # Cache for weight delta (used during inference)
+        self._cached_delta: torch.Tensor | None = None
+
+        with torch.no_grad():
+            nn.init.zeros_(self.lora_B_max)
+            nn.init.normal_(self.lora_A_max, mean=0.0, std=1e-3)
+
+    def __getattr__(self, name: str):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.base, name)
+
+    def compute_delta(self) -> torch.Tensor:
+        """Compute the LoRA weight delta: lora_A_max @ lora_B_max."""
+        return self.lora_A_max @ self.lora_B_max
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        if torch.is_grad_enabled():
+            # Training: compute fresh delta (gradients flow through lora_A_max @ lora_B_max)
+            self._cached_delta = None
+            delta = self.compute_delta()
+        else:
+            # Inference: use cached delta
+            if self._cached_delta is None:
+                self._cached_delta = self.compute_delta()
+            delta = self._cached_delta
+
+        effective = self.base.weights_max + self.scaling * delta
+
+        out = self.base.graph_opt_main(
+            self.base.U_tensors(self.base.correlation),
+            effective,
+            x,
+            y,
+        )
+        for i, (weight, contract_weights, contract_features) in enumerate(
+            zip(
+                self.base.weights,
+                self.base.contractions_weighting,
+                self.base.contractions_features,
+            )
+        ):
+            c_tensor = contract_weights(
+                self.base.U_tensors(self.base.correlation - i - 1),
+                weight,
+                y,
+            )
+            c_tensor = c_tensor + out
+            out = contract_features(c_tensor, x)
+
+        return out.view(out.shape[0], -1)
+
+    def merge_into_base(self) -> Contraction:
+        """Permanently merge LoRA weights into base and return the base layer."""
+        with torch.no_grad():
+            self.base.weights_max.add_(self.scaling * self.compute_delta())
+        return self.base
+
+
 def inject_lora(
     module: nn.Module,
     rank: int = 4,
     alpha: float = 1.0,
     wrap_equivariant: bool = True,
     wrap_dense: bool = True,
+    wrap_contraction: bool = True,
     _is_root: bool = True,
 ) -> None:
     """Recursively replace eligible linears with LoRA-wrapped versions."""
     for child_name, child in list(module.named_children()):
         # Skip already wrapped
-        if isinstance(child, (LoRAO3Linear, LoRADenseLinear, LoRAFCLayer)):
+        if isinstance(child, (LoRAO3Linear, LoRADenseLinear, LoRAFCLayer, LoRAContraction)):
             continue
         # Equivariant o3.Linear
         if wrap_equivariant and isinstance(child, o3.Linear):
@@ -304,8 +392,13 @@ def inject_lora(
             wrapped = LoRAFCLayer(child, rank=rank, alpha=alpha)
             setattr(module, child_name, wrapped)
             continue
+        # Symmetric Contraction core
+        if wrap_contraction and isinstance(child, Contraction):
+            wrapped = LoRAContraction(child, rank=rank, alpha=alpha)
+            setattr(module, child_name, wrapped)
+            continue
         # Recurse
-        inject_lora(child, rank, alpha, wrap_equivariant, wrap_dense, _is_root=False)
+        inject_lora(child, rank, alpha, wrap_equivariant, wrap_dense, wrap_contraction, _is_root=False)
 
     if _is_root:
         for name, p in module.named_parameters():
@@ -313,7 +406,7 @@ def inject_lora(
 
 
 def inject_LoRAs(model: nn.Module, rank: int = 4, alpha: int = 1):
-    inject_lora(model, rank=rank, alpha=alpha, wrap_equivariant=True, wrap_dense=True)
+    inject_lora(model, rank=rank, alpha=alpha, wrap_equivariant=True, wrap_dense=True, wrap_contraction=True)
     return model
 
 
@@ -326,6 +419,7 @@ def merge_lora_weights(model: nn.Module, inplace: bool = True) -> nn.Module:
     - LoRADenseLinear -> nn.Linear (with merged weights)
     - LoRAFCLayer -> e3nn _Layer (with merged weights)
     - LoRAO3Linear -> o3.Linear (with merged weights)
+    - LoRAContraction -> Contraction (with merged weights_max)
 
     Args:
         model: Model containing LoRA layers to merge.
@@ -342,7 +436,7 @@ def merge_lora_weights(model: nn.Module, inplace: bool = True) -> nn.Module:
 
     def merge_recursive(module: nn.Module) -> None:
         for name, child in list(module.named_children()):
-            if isinstance(child, (LoRADenseLinear, LoRAFCLayer, LoRAO3Linear)):
+            if isinstance(child, (LoRADenseLinear, LoRAFCLayer, LoRAO3Linear, LoRAContraction)):
                 setattr(module, name, child.merge_into_base())
             else:
                 merge_recursive(child)

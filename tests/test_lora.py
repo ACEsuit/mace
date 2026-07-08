@@ -257,7 +257,7 @@ def test_lora_merge_preserves_outputs(build_lora_model, random_configs) -> None:
 
 def test_lora_merge_removes_wrappers(build_lora_model) -> None:
     """Test that merging removes LoRA wrapper modules."""
-    from mace.modules.lora import LoRADenseLinear, LoRAFCLayer, LoRAO3Linear
+    from mace.modules.lora import LoRAContraction, LoRADenseLinear, LoRAFCLayer, LoRAO3Linear
 
     model, _ = build_lora_model(rank=2, alpha=0.5, randomize=True)
 
@@ -265,7 +265,7 @@ def test_lora_merge_removes_wrappers(build_lora_model) -> None:
     def count_lora_wrappers(module):
         count = 0
         for child in module.modules():
-            if isinstance(child, (LoRADenseLinear, LoRAFCLayer, LoRAO3Linear)):
+            if isinstance(child, (LoRADenseLinear, LoRAFCLayer, LoRAO3Linear, LoRAContraction)):
                 count += 1
         return count
 
