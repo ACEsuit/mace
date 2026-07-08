@@ -44,9 +44,12 @@ class LMDBDataset(Dataset):
             if "stress" in atoms.calc.results:
                 atoms.info[DefaultKeys.STRESS.value] = atoms.calc.results["stress"]
 
+        key_specification = self.kwargs.get("key_specification")
+        if key_specification is None:
+            key_specification = KeySpecification.from_defaults()
         config = config_from_atoms(
             atoms,
-            key_specification=KeySpecification.from_defaults(),
+            key_specification=key_specification,
         )
 
         # Set head if not already set

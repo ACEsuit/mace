@@ -1,5 +1,6 @@
 import os
 import tempfile
+from types import SimpleNamespace
 
 import numpy as np
 import torch
@@ -7,8 +8,10 @@ from ase.build import molecule
 from ase.calculators.singlepoint import SinglePointCalculator
 
 from mace.data.lmdb_dataset import LMDBDataset
+from mace.data.utils import KeySpecification, update_keyspec_from_kwargs
 from mace.tools import AtomicNumberTable, torch_geometric
 from mace.tools.fairchem_dataset.lmdb_dataset_tools import LMDBDatabase
+from mace.tools.run_train_utils import load_dataset_for_path
 
 
 def test_lmdb_dataset():
@@ -132,3 +135,73 @@ def test_lmdb_dataset():
         assert (
             len(all_batches) == 3
         )  # Should have 3 batches (12 configs with batch size 4)
+
+
+def test_lmdb_dataset_honors_key_specification():
+    """A CLI key specification must reach the loaded data.
+
+    OMol-style data stores charge/spin under the row ``data`` dict (surfaced as
+    ``atoms.info["charge"]`` / ``["spin"]``). A key specification built from
+    ``--total_charge_key=charge --total_spin_key=spin`` must be honored; without
+    one the defaults apply and ``total_charge`` / ``total_spin`` silently fall
+    back to 0 / 1.
+    """
+    torch.set_default_dtype(torch.float64)
+
+    charge, spin = -1, 3
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "sample.aselmdb")
+        db = LMDBDatabase(db_path, readonly=False)
+        db.write(molecule("H2O"), data={"charge": charge, "spin": spin})
+        db.close()
+
+        z_table = AtomicNumberTable([1, 8])  # H and O
+
+        # Key spec as built by --total_charge_key=charge --total_spin_key=spin
+        key_spec = KeySpecification.from_defaults()
+        update_keyspec_from_kwargs(
+            key_spec, {"total_charge_key": "charge", "total_spin_key": "spin"}
+        )
+        item = LMDBDataset(
+            file_path=db_path,
+            r_max=5.0,
+            z_table=z_table,
+            key_specification=key_spec,
+        )[0]
+        assert float(item.total_charge) == charge
+        assert float(item.total_spin) == spin
+
+        # Without a key spec the defaults apply (backward-compatible fallback)
+        default_item = LMDBDataset(file_path=db_path, r_max=5.0, z_table=z_table)[0]
+        assert float(default_item.total_charge) == 0.0
+        assert float(default_item.total_spin) == 1.0
+
+
+def test_load_dataset_for_path_forwards_key_specification():
+    """`load_dataset_for_path` must forward the head's key specification to
+    `LMDBDataset` for an ``.aselmdb`` input (the dispatch half of the fix)."""
+    torch.set_default_dtype(torch.float64)
+
+    charge, spin = -1, 3
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "sample.aselmdb")
+        db = LMDBDatabase(db_path, readonly=False)
+        db.write(molecule("H2O"), data={"charge": charge, "spin": spin})
+        db.close()
+
+        key_spec = KeySpecification.from_defaults()
+        update_keyspec_from_kwargs(
+            key_spec, {"total_charge_key": "charge", "total_spin_key": "spin"}
+        )
+        head_config = SimpleNamespace(head_name="Default", key_specification=key_spec)
+
+        dataset = load_dataset_for_path(
+            file_path=db_path,
+            r_max=5.0,
+            z_table=AtomicNumberTable([1, 8]),
+            heads=["Default"],
+            head_config=head_config,
+        )
+        item = dataset[0]
+        assert float(item.total_charge) == charge
+        assert float(item.total_spin) == spin
