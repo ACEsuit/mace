@@ -1339,8 +1339,13 @@ class MagneticMACE(torch.nn.Module):
                     )
                 )
             else:
+                # Intermediate iterations use LinearReadoutBlock — same choice
+                # as base MACE (see mace/modules/models.py). `readout_cls`
+                # defaults to NonLinearReadoutBlock and takes different ctor
+                # args, so using it here would blow up whenever
+                # num_interactions > 2.
                 self.readouts.append(
-                    readout_cls(
+                    LinearReadoutBlock(
                         hidden_irreps,
                         o3.Irreps(f"{len(heads)}x0e"),
                         cueq_config,
