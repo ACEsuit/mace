@@ -394,3 +394,128 @@ def test_resolve_m_max_numpy_atomic_numbers():
     zs = [np.int64(1), np.int64(6), np.int64(26)]
     out = resolve_m_max(["{26: 8.0}"], zs, default=4.0)
     assert out == [4.0, 4.0, 8.0]
+
+
+# ----------------------------------------------------------
+# O(3)-equivariance tests
+# ----------------------------------------------------------
+def _random_rotation(seed, dtype=torch.float32):
+    g = torch.Generator().manual_seed(seed)
+    A = torch.randn(3, 3, generator=g, dtype=dtype)
+    Q, _ = torch.linalg.qr(A)
+    if torch.det(Q) < 0:
+        Q[:, 0] = -Q[:, 0]
+    return Q
+
+
+def _make_magnetic_cluster_data(dtype=torch.float32):
+    """Non-collinear 2-Fe cluster with a hand-built neighbor list (no PBC edges)."""
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.6, 0.4, -0.3]], dtype=dtype
+    )
+    magmom = torch.tensor(
+        [[0.5, 1.7, 0.9], [-1.1, 0.8, -0.6]], dtype=dtype
+    )
+    n = positions.shape[0]
+    edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long)
+    shifts = torch.zeros((edge_index.shape[1], 3), dtype=dtype)
+    node_attrs = torch.nn.functional.one_hot(
+        torch.zeros(n, dtype=torch.long), num_classes=1
+    ).to(dtype)
+    return {
+        "positions": positions,
+        "magmom": magmom,
+        "edge_index": edge_index,
+        "shifts": shifts,
+        "unit_shifts": shifts.clone(),
+        "cell": torch.eye(3, dtype=dtype).unsqueeze(0) * 10.0,
+        "node_attrs": node_attrs,
+        "batch": torch.zeros(n, dtype=torch.long),
+        "ptr": torch.tensor([0, n], dtype=torch.long),
+    }
+
+
+def _build_small_magnetic_model(seed=42):
+    torch.manual_seed(seed)
+    with default_dtype(torch.float32):
+        return MagneticScaleShiftMACE(
+            r_max=3.5,
+            num_bessel=4,
+            num_polynomial_cutoff=4,
+            max_ell=2,
+            interaction_cls=interaction_classes[
+                "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"
+            ],
+            interaction_cls_first=interaction_classes[
+                "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"
+            ],
+            num_interactions=1,
+            num_elements=1,
+            hidden_irreps=o3.Irreps("8x0e"),
+            MLP_irreps=o3.Irreps("4x0e"),
+            atomic_energies=np.zeros(1),
+            avg_num_neighbors=1.0,
+            atomic_numbers=[26],
+            correlation=[1],
+            gate=torch.nn.functional.silu,
+            atomic_inter_shift=0.0,
+            atomic_inter_scale=1.0,
+            m_max=[3.0],
+            num_mag_radial_basis=8,
+            num_mag_radial_basis_one_body=10,
+            max_m_ell=1,
+            use_magmom_one_body=False,
+        )
+
+
+def test_magnetic_mace_rotation_equivariance():
+    """Rotating positions and magmoms together by R leaves E invariant and rotates F, magforces by R."""
+    model = _build_small_magnetic_model().eval()
+    R = _random_rotation(seed=1)
+
+    data = _make_magnetic_cluster_data()
+    data_rot = _make_magnetic_cluster_data()
+    data_rot["positions"] = (data_rot["positions"] @ R.T).detach()
+    data_rot["magmom"] = (data_rot["magmom"] @ R.T).detach()
+
+    out = model(data, training=False, compute_force=True, compute_magforces=True)
+    out_rot = model(
+        data_rot, training=False, compute_force=True, compute_magforces=True
+    )
+
+    E = out["energy"].detach()
+    F = out["forces"].detach()
+    MF = out["magforces"].detach()
+    E_r = out_rot["energy"].detach()
+    F_r = out_rot["forces"].detach()
+    MF_r = out_rot["magforces"].detach()
+
+    assert torch.allclose(E, E_r, atol=1e-4, rtol=1e-4)
+    assert torch.allclose(F_r, F @ R.T, atol=1e-4, rtol=1e-4)
+    assert torch.allclose(MF_r, MF @ R.T, atol=1e-4, rtol=1e-4)
+
+
+def test_magnetic_mace_inversion_parity():
+    """Flipping both positions and magmoms leaves E invariant; forces and magforces flip with them."""
+    model = _build_small_magnetic_model().eval()
+
+    data = _make_magnetic_cluster_data()
+    data_inv = _make_magnetic_cluster_data()
+    data_inv["positions"] = (-data_inv["positions"]).detach()
+    data_inv["magmom"] = (-data_inv["magmom"]).detach()
+
+    out = model(data, training=False, compute_force=True, compute_magforces=True)
+    out_inv = model(
+        data_inv, training=False, compute_force=True, compute_magforces=True
+    )
+
+    E = out["energy"].detach()
+    F = out["forces"].detach()
+    MF = out["magforces"].detach()
+    E_i = out_inv["energy"].detach()
+    F_i = out_inv["forces"].detach()
+    MF_i = out_inv["magforces"].detach()
+
+    assert torch.allclose(E, E_i, atol=1e-4, rtol=1e-4)
+    assert torch.allclose(F_i, -F, atol=1e-4, rtol=1e-4)
+    assert torch.allclose(MF_i, -MF, atol=1e-4, rtol=1e-4)
