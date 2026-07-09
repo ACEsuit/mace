@@ -291,7 +291,7 @@ def get_outputs(
             displacement=displacement,
             cell=cell,
             magmoms=magmoms,
-            training=(training or compute_hessian),
+            training=(training or compute_hessian or compute_edge_forces),
             compute_stress=True,
         )
     elif (compute_virials or compute_stress) and displacement is not None:
@@ -312,7 +312,7 @@ def get_outputs(
             energy=energy,
             positions=positions,
             magmoms=magmoms,
-            training=(training or compute_hessian),
+            training=(training or compute_hessian or compute_edge_forces),
         )
         virials, stress = None, None
     elif compute_force:

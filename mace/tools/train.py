@@ -214,6 +214,13 @@ def train(
 
     # variable used for broadcast by rank == 0 if epoch loop is exited early, e.g. patience
     exit_now = torch.zeros(1, device=device) if distributed else None
+
+    if data_aug_magmom:
+        # pylint: disable=cyclic-import
+        from mace.data.augmentation import create_random_rotation_loader
+
+        train_loader = create_random_rotation_loader(train_loader)
+
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
@@ -237,13 +244,6 @@ def train(
             train_sampler.set_epoch(epoch)
         if "ScheduleFree" in type(optimizer).__name__:
             optimizer.train()
-
-        # allow data augmentation on magnetic moment
-        if data_aug_magmom:
-            # pylint: disable=cyclic-import
-            from mace.data.augmentation import create_random_rotation_loader
-
-            train_loader = create_random_rotation_loader(train_loader)
 
         train_one_epoch(
             model=model,
