@@ -55,6 +55,6 @@ repos:
           '--disable=cell-var-from-loop',
           '--disable=duplicate-code',
           '--disable=use-dict-literal',
-          '--max-module-lines=2000',
+          '--max-module-lines=1500',
         ]
         exclude: *exclude_files

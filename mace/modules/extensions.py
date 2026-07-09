@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines  # magnetic MACE variants live here
 from abc import abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
