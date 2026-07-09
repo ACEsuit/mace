@@ -1638,6 +1638,7 @@ class MagneticSCFMACE(torch.nn.Module):
         scf_logging=False,
         scf_step_size=1.0,
         use_scf=True,
+        use_collinear=False,
     ):
         super().__init__()
         self.magmom_mace = model  # original magnetic mace
@@ -1647,6 +1648,7 @@ class MagneticSCFMACE(torch.nn.Module):
         self.scf_logging = scf_logging
         self.scf_step_size = scf_step_size
         self.use_scf = use_scf
+        self.use_collinear = use_collinear
 
         self.cache_magmom = None
 
@@ -1707,6 +1709,12 @@ class MagneticSCFMACE(torch.nn.Module):
 
                 # Set gradient manually from mag_forces
                 magmom.grad = -output["magforces"].detach()
+                if self.use_collinear:
+                    # Zero the transverse components so LBFGS only moves magmom
+                    # along z, enforcing a collinear SCF. Assumes initial magmom
+                    # is already along z (or is projected there by the caller).
+                    magmom.grad[:, 0] = 0.0
+                    magmom.grad[:, 1] = 0.0
                 if self.scf_logging:
                     print(
                         f"[SCF LBFGS] Energy = {energy.item():.6f} | Mag force norm = {magmom.grad.norm().item():.6f}"
