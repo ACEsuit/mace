@@ -804,6 +804,7 @@ def get_loss_fn(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
+            magforces_weight=args.magforces_weight,
             huber_delta=args.huber_delta,
         )
     elif args.loss == "l1l2energyforces":
@@ -894,10 +895,11 @@ def get_swa(
             energy_weight=args.swa_energy_weight,
             forces_weight=args.swa_forces_weight,
             stress_weight=args.swa_stress_weight,
+            magforces_weight=args.swa_magforces_weight,
             huber_delta=args.huber_delta,
         )
         logging.info(
-            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
+            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight}, magforces weight : {args.swa_magforces_weight} and learning rate : {args.swa_lr}"
         )
     else:
         loss_fn_energy = modules.WeightedEnergyForcesLoss(
