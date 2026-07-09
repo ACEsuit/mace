@@ -240,6 +240,7 @@ def train(
 
         # allow data augmentation on magnetic moment
         if data_aug_magmom:
+            # pylint: disable=cyclic-import
             from mace.data.augmentation import create_random_rotation_loader
 
             train_loader = create_random_rotation_loader(train_loader)
