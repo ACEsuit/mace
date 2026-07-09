@@ -67,6 +67,7 @@ def make_ref(num_atoms_per_graph=(2,), **overrides):
         "weight": torch.ones(n_graphs),
         "energy_weight": torch.ones(n_graphs),
         "forces_weight": torch.ones(n_graphs),
+        "magforces_weight": torch.ones(n_graphs),
         "stress_weight": torch.ones(n_graphs),
         "virials_weight": torch.ones(n_graphs),
         "energy": torch.zeros(n_graphs),
