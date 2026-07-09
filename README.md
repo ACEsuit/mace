@@ -356,6 +356,37 @@ The second line will initialise `pre-commit` to automaticaly run code checks on 
 We have CI set up to check this, but we _highly_ recommend that you run those commands
 before you commit (and push) to avoid accidentally committing bad code.
 
+### Running the tests
+
+The test suite is organised by what each test needs to run:
+
+| Directory | Contents | Extra requirements |
+|---|---|---|
+| `tests/unit` | fast, CPU-only unit tests | — |
+| `tests/workflows` | end-to-end CLI trainings (subprocess) | — |
+| `tests/backends` | e3nn ↔ cueq/oeq parity and converters | `cueq` / `oeq` extras (GPU for execution) |
+| `tests/extensions/<x>` | polar / les / torchsim / schedulefree | the extension's dependency |
+| `tests/foundations` | foundation-model loaders (downloads) | network, opt-in |
+| `tests/integrations/<x>` | LAMMPS (and future integrations) | see `tests/integrations/README.md` |
+| `tests/benchmarks` | performance measurements | GPU |
+
+Capabilities a test needs (a GPU, an optional package, network access) are
+pytest markers enforced by `tests/conftest.py`: locally, tests whose
+requirements are missing are skipped; CI jobs export `MACE_REQUIRE_CAPS` to
+turn those skips into failures. Network downloads are opt-in via
+`MACE_CI_ALLOW_NETWORK=1`.
+
+```bash
+pytest tests/unit                             # quick check
+pytest tests -m "not slow and not network"    # smoke over everything runnable
+```
+
+Every CI test job runs through the `.github/actions/run-tests` composite
+action, whose inputs (`tests`, `markers`, `require-caps`, `allow-network`,
+`splits`, `coverage`, ...) map 1:1 to pytest flags — to reproduce a job
+locally, read its `with:` block in the workflow and run the equivalent pytest
+command (e.g. the unit job is `pytest tests/unit -m "not slow" -n auto`).
+
 We are happy to accept pull requests under an [MIT license](https://choosealicense.com/licenses/mit/). Please copy/paste the license text as a comment into your pull request.
 
 ## References
