@@ -3,7 +3,7 @@ import importlib
 import numpy as np
 import torch
 
-from mace.tools import torch_geometric as tg_mace
+from mace.tools.torch_geometric.dataloader import DataLoader as _TgDataLoader
 
 # --- Optional torch_geometric support ---
 if importlib.util.find_spec("torch_geometric") is not None:
@@ -129,6 +129,6 @@ def create_random_rotation_loader(original_loader):
             sampler, torch.utils.data.SequentialSampler
         )
 
-    new_loader = tg_mace.dataloader.DataLoader(transformed_dataset, **loader_kwargs)
+    new_loader = _TgDataLoader(transformed_dataset, **loader_kwargs)
 
     return new_loader
