@@ -9,13 +9,9 @@ from typing import Optional, Sequence
 
 import torch.utils.data
 
-from mace.tools import (
-    AtomicNumberTable,
-    atomic_numbers_to_indices,
-    to_one_hot,
-    torch_geometric,
-    voigt_to_matrix,
-)
+from mace.tools import torch_geometric
+from mace.tools.torch_tools import to_one_hot, voigt_to_matrix
+from mace.tools.utils import AtomicNumberTable, atomic_numbers_to_indices
 
 from .neighborhood import get_neighborhood
 from .utils import Configuration
