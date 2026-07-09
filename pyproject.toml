@@ -68,6 +68,7 @@ disable = [
     "cell-var-from-loop",
     "duplicate-code",
     "use-dict-literal",
+    "cyclic-import",
 ]
 
 [tool.pylint.MASTER]
