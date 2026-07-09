@@ -19,6 +19,7 @@ from mace.tools import (
 
 from .neighborhood import get_neighborhood
 from .utils import Configuration
+from .rigid_body import cartesian_tensor_to_irreps, ellipsoid_inertia_tensor
 
 
 class AtomicData(torch_geometric.data.Data):
@@ -444,6 +445,40 @@ class AtomicData(torch_geometric.data.Data):
                 tv = tv.unsqueeze(-1)  # promote per-atom (n,) → (n, 1)
             cls_kwargs[k] = tv
 
+        # Convert rigid-particle orientation and shape to a
+        # lab-frame moment-of-inertia tensor. Quaternions are
+        # scalar-first: (w, x, y, z).
+        quaternions = config.properties.get("quaternions")
+        diameters = config.properties.get("diameters")
+
+        if quaternions is not None and diameters is not None:
+            quaternion_tensor = torch.as_tensor(
+                quaternions,
+                dtype=torch.get_default_dtype(),
+            )
+            diameter_tensor = torch.as_tensor(
+                diameters,
+                dtype=torch.get_default_dtype(),
+            )
+            inertia_tensor = ellipsoid_inertia_tensor(
+                quaternion_tensor,
+                diameter_tensor,
+            )
+            inertia_irreps = cartesian_tensor_to_irreps(
+                inertia_tensor
+            )
+        else:
+            inertia_tensor = torch.zeros(
+                (num_atoms, 3, 3),
+                dtype=torch.get_default_dtype(),
+            )
+            inertia_irreps = torch.zeros(
+                (num_atoms, 6),
+                dtype=torch.get_default_dtype(),
+            )
+
+        cls_kwargs["inertia_tensor"] = inertia_tensor
+        cls_kwargs["inertia_irreps"] = inertia_irreps
         return cls(**cls_kwargs)
 
 

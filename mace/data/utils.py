@@ -204,6 +204,36 @@ def config_from_atoms(
         if not atoms_key in atoms.arrays:
             property_weights[name] = 0.0
 
+    # Rigid-particle inputs from extended XYZ files.
+    #
+    # Expected per-particle fields:
+    #   quaternions:R:4
+    #   c_diameter[1]:R:1
+    #   c_diameter[2]:R:1
+    #   c_diameter[3]:R:1
+    if "quaternions" in atoms.arrays:
+        properties["quaternions"] = np.asarray(
+            atoms.arrays["quaternions"]
+        )
+
+    diameter_keys = (
+        "c_diameter[1]",
+        "c_diameter[2]",
+        "c_diameter[3]",
+    )
+
+    if all(key in atoms.arrays for key in diameter_keys):
+        properties["diameters"] = np.column_stack(
+            [
+                np.asarray(atoms.arrays[key]).reshape(-1)
+                for key in diameter_keys
+            ]
+        )
+    elif "c_diameter" in atoms.arrays:
+        diameter_array = np.asarray(atoms.arrays["c_diameter"])
+        if diameter_array.ndim == 2 and diameter_array.shape[1] == 3:
+            properties["diameters"] = diameter_array
+
     return Configuration(
         atomic_numbers=atomic_numbers,
         positions=atoms.get_positions(),

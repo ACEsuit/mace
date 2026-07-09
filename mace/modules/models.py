@@ -30,6 +30,8 @@ from .blocks import (
     RadialEmbeddingBlock,
     ScaleShiftBlock,
 )
+from mace.data.rigid_body import inertia_edge_invariants
+
 from .utils import (
     compute_dielectric_gradients,
     compute_fixed_charge_dipole,
@@ -137,7 +139,9 @@ class MACE(torch.nn.Module):
             distance_transform=distance_transform,
             apply_cutoff=apply_cutoff,
         )
-        edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
+        edge_feats_irreps = o3.Irreps(
+            f"{self.radial_embedding.out_dim + 5}x0e"
+        )
         if pair_repulsion:
             self.pair_repulsion_fn = ZBLBasis(p=num_polynomial_cutoff)
             self.pair_repulsion = True
@@ -322,6 +326,12 @@ class MACE(torch.nn.Module):
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+        inertia_feats = inertia_edge_invariants(
+            data["inertia_tensor"],
+            data["edge_index"],
+            vectors,
+        )
+        edge_feats = torch.cat((edge_feats, inertia_feats), dim=-1)
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
@@ -503,6 +513,12 @@ class ScaleShiftMACE(MACE):
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+        inertia_feats = inertia_edge_invariants(
+            data["inertia_tensor"],
+            data["edge_index"],
+            vectors,
+        )
+        edge_feats = torch.cat((edge_feats, inertia_feats), dim=-1)
 
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
