@@ -1188,9 +1188,10 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--train_one_body_contribution",
-        help="It true, freeze weights other than the one body contribution.",
+        help="If true, include the magmom one-body coefficients in the optimizer "
+        "(only relevant when --use_magmom_one_body is set).",
         type=str2bool,
-        default=False,
+        default=True,
     )
     parser.add_argument(
         "--data_aug_magmom",

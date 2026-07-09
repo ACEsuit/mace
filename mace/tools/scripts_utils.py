@@ -1020,6 +1020,17 @@ def get_params_options(
                 "weight_decay": 0.0,
             }
         )
+    if (
+        hasattr(model, "onebody_magmombasis_coeffs")
+        and args.train_one_body_contribution
+    ):
+        param_options["params"].append(
+            {
+                "name": "onebody_magmombasis_coeffs",
+                "params": [model.onebody_magmombasis_coeffs],
+                "weight_decay": 0.0,
+            }
+        )
     return param_options
 
 

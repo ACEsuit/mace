@@ -865,6 +865,11 @@ def run(args) -> None:
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
 
     # Optimizer
+    if (
+        hasattr(model, "onebody_magmombasis_coeffs")
+        and not args.train_one_body_contribution
+    ):
+        model.onebody_magmombasis_coeffs.requires_grad_(False)
     param_options = get_params_options(args, model)
 
     optimizer: torch.optim.Optimizer
