@@ -1,6 +1,6 @@
 import torch
 
-from mace.tools.torch_geometric.data import Data as _TgData
+from mace.tools import torch_geometric
 
 
 def _zeros_with_size0(tensor: torch.Tensor, size0: int) -> torch.Tensor:
@@ -34,7 +34,7 @@ def build_fake_padding_graph(
     real_num_atoms = int(reference_graph["node_attrs"].shape[0])
     real_num_edges = int(reference_graph["edge_index"].shape[1])
 
-    fake_graph = _TgData.from_dict(
+    fake_graph = torch_geometric.data.Data.from_dict(
         {
             key: value.clone() if torch.is_tensor(value) else value
             for key, value in reference_graph.to_dict().items()
