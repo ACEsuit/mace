@@ -109,11 +109,38 @@ class MACE(torch.nn.Module):
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
-        node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
+        num_scalar_node_features = hidden_irreps.count(
+            o3.Irrep(0, 1)
+        )
+        num_tensor_node_features = hidden_irreps.count(
+            o3.Irrep(2, 1)
+        )
+
+        if num_tensor_node_features == 0:
+            raise ValueError(
+                "Full inertia tensor features require 2e hidden channels. "
+                "Use --max_L=2 or explicit hidden_irreps containing 2e."
+            )
+
+        species_node_feats_irreps = o3.Irreps(
+            [(num_scalar_node_features, (0, 1))]
+        )
+        node_feats_irreps = o3.Irreps(
+            [
+                (num_scalar_node_features, (0, 1)),
+                (num_tensor_node_features, (2, 1)),
+            ]
+        )
+
+        self.rigid_body_input_irreps = o3.Irreps("1x0e + 1x2e")
+        self.initial_scalar_dim = species_node_feats_irreps.dim
         self.node_embedding = LinearNodeEmbeddingBlock(
             irreps_in=node_attr_irreps,
-            irreps_out=node_feats_irreps,
-            cueq_config=cueq_config,
+            irreps_out=species_node_feats_irreps,
+        )
+        self.inertia_node_embedding = o3.Linear(
+            self.rigid_body_input_irreps,
+            node_feats_irreps,
         )
         embedding_size = node_feats_irreps.count(o3.Irrep(0, 1))
         if embedding_specs is not None:
@@ -321,7 +348,21 @@ class MACE(torch.nn.Module):
             vectors.dtype
         )  # [n_graphs, n_heads]
         # Embeddings
-        node_feats = self.node_embedding(data["node_attrs"])
+        species_node_feats = self.node_embedding(
+            data["node_attrs"]
+        )
+        inertia_node_feats = self.inertia_node_embedding(
+            data["inertia_irreps"]
+        )
+
+        tensor_padding = torch.zeros_like(
+            inertia_node_feats[:, self.initial_scalar_dim :]
+        )
+        node_feats = torch.cat(
+            (species_node_feats, tensor_padding),
+            dim=-1,
+        )
+        node_feats = node_feats + inertia_node_feats
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
@@ -508,7 +549,21 @@ class ScaleShiftMACE(MACE):
         )  # [n_graphs, num_heads]
 
         # Embeddings
-        node_feats = self.node_embedding(data["node_attrs"])
+        species_node_feats = self.node_embedding(
+            data["node_attrs"]
+        )
+        inertia_node_feats = self.inertia_node_embedding(
+            data["inertia_irreps"]
+        )
+
+        tensor_padding = torch.zeros_like(
+            inertia_node_feats[:, self.initial_scalar_dim :]
+        )
+        node_feats = torch.cat(
+            (species_node_feats, tensor_padding),
+            dim=-1,
+        )
+        node_feats = node_feats + inertia_node_feats
         edge_attrs = self.spherical_harmonics(vectors)
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers

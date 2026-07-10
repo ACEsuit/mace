@@ -37,14 +37,37 @@ def ellipsoid_inertia_tensor(
     return rotation @ torch.diag_embed(principal) @ rotation.transpose(-1, -2)
 
 
-def cartesian_tensor_to_irreps(tensor: torch.Tensor) -> torch.Tensor:
-    """Symmetric rank-2 Cartesian tensor -> e3nn 0e + 2e components.
+def cartesian_tensor_to_irreps(
+    tensor: torch.Tensor,
+    eps: float = 1.0e-12,
+) -> torch.Tensor:
+    """Convert symmetric inertia tensors to normalized 0e + 2e features.
 
-    The basis is e3nn's canonical CartesianTensor basis, so it transforms
-    exactly according to ``0e + 2e`` under O(3).
+    The input has shape ``[..., 3, 3]``. Dividing by the trace removes
+    the arbitrary inertia-unit scale while retaining the complete shape
+    and orientation of each ellipsoid.
+
+    The output has shape ``[..., 6]`` and transforms as ``1x0e + 1x2e``.
     """
+    if tensor.shape[-2:] != (3, 3):
+        raise ValueError(
+            "Expected inertia tensors with final shape (3, 3), "
+            f"received {tuple(tensor.shape)}"
+        )
+
+    # Eliminate small numerical asymmetries before decomposition.
+    tensor = 0.5 * (tensor + tensor.transpose(-1, -2))
+
+    trace = tensor.diagonal(
+        dim1=-2,
+        dim2=-1,
+    ).sum(dim=-1)
+
+    normalized_tensor = tensor / trace.clamp_min(eps)[..., None, None]
+
     converter = CartesianTensor("ij=ji")
-    return converter.from_cartesian(tensor)
+    return converter.from_cartesian(normalized_tensor)
+
 
 
 def inertia_edge_invariants(

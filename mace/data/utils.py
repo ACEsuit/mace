@@ -215,6 +215,27 @@ def config_from_atoms(
         properties["quaternions"] = np.asarray(
             atoms.arrays["quaternions"]
         )
+        property_weights["quaternions"] = 0.0
+
+    diameter_name_sets = (
+        ("c_diameter1", "c_diameter2", "c_diameter3"),
+        ("c_diameter[1]", "c_diameter[2]", "c_diameter[3]"),
+        ("c_diameter_1", "c_diameter_2", "c_diameter_3"),
+    )
+
+    for diameter_keys in diameter_name_sets:
+        if all(key in atoms.arrays for key in diameter_keys):
+            properties["diameters"] = np.column_stack(
+                [
+                    np.asarray(
+                        atoms.arrays[key],
+                        dtype=float,
+                    ).reshape(-1)
+                    for key in diameter_keys
+                ]
+            )
+            property_weights["diameters"] = 0.0
+            break
 
     diameter_keys = (
         "c_diameter[1]",
@@ -229,10 +250,12 @@ def config_from_atoms(
                 for key in diameter_keys
             ]
         )
+        property_weights["diameters"] = 0.0
     elif "c_diameter" in atoms.arrays:
         diameter_array = np.asarray(atoms.arrays["c_diameter"])
         if diameter_array.ndim == 2 and diameter_array.shape[1] == 3:
             properties["diameters"] = diameter_array
+            property_weights["diameters"] = 0.0
 
     return Configuration(
         atomic_numbers=atomic_numbers,
