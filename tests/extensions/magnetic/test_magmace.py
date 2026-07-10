@@ -121,7 +121,6 @@ def test_run_train_magnetic_mace(tmp_path, magnetic_configs):
         at.calc = calc
         Es.append(at.get_potential_energy())
 
-    print("Energies:", Es)
     assert all(np.isfinite(Es)), "Non-finite energies in magnetic MACE output."
 
 
@@ -189,7 +188,6 @@ def test_run_eval_magnetic_mace(tmp_path, magnetic_configs):
         assert "MACE_energy" in at.info
         assert "MACE_forces" in at.arrays
         assert "MACE_magforces" in at.arrays or "MACE_magmoms" in at.arrays
-        print(f"E={at.info['MACE_energy']:.6f}, magmom={at.arrays.get('MACE_magmoms', None)}")
 
 
 # ----------------------------------------------------------
@@ -242,7 +240,6 @@ def test_run_magnetic_scf(tmp_path, magnetic_configs):
     out = scf_model(data)
     assert "equilibrated_magmom" in out
     assert torch.isfinite(out["equilibrated_magmom"]).all()
-    print("Final magmom after SCF:", out["equilibrated_magmom"])
 
 
 # ----------------------------------------------------------

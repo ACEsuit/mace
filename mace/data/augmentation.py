@@ -31,15 +31,16 @@ class Random3DRotation(BaseTransform):
         if hasattr(data, "magmom") and data.magmom is not None:
             device = data.magmom.device
             dtype = data.magmom.dtype
+            sample_dtype = (
+                torch.float32 if dtype in (torch.bfloat16, torch.float16) else dtype
+            )
 
-            # === Step 1: Sample a random unit quaternion (uniform over SO(3))
-            u1, u2, u3 = torch.rand(3, device=device, dtype=dtype)
+            u1, u2, u3 = torch.rand(3, device=device, dtype=sample_dtype)
             q1 = torch.sqrt(1 - u1) * torch.sin(2 * np.pi * u2)
             q2 = torch.sqrt(1 - u1) * torch.cos(2 * np.pi * u2)
             q3 = torch.sqrt(u1) * torch.sin(2 * np.pi * u3)
             q4 = torch.sqrt(u1) * torch.cos(2 * np.pi * u3)
 
-            # === Step 2: Convert quaternion to rotation matrix
             R = torch.tensor(
                 [
                     [
@@ -59,8 +60,8 @@ class Random3DRotation(BaseTransform):
                     ],
                 ],
                 device=device,
-                dtype=dtype,
-            )
+                dtype=sample_dtype,
+            ).to(dtype)
 
             # === Step 3: Apply to magmom (shape [N, 3])
             data.magmom = torch.matmul(data.magmom, R.T)
@@ -71,15 +72,6 @@ class Random3DRotation(BaseTransform):
 
 
 def create_random_rotation_loader(original_loader):
-    """
-    Create a new DataLoader with hemisphere rotation augmentation.
-
-    Args:
-        original_loader: Original PyTorch Geometric DataLoader
-
-    Returns:
-        New DataLoader with hemisphere rotation transform
-    """
     if not has_tg:
         raise ImportError(
             "torch_geometric is required for DataLoader functionality.\n"

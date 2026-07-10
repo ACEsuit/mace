@@ -1207,9 +1207,6 @@ class MagneticMACE(torch.nn.Module):
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
 
-        # --- magnetic stuffs ---
-        # m_max is not used here but Chebychev is still on (-1, 1)
-        # this needs to have a specicies dependent transform
         self.mag_radial_embedding = ChebyshevBasisGeneral(
             r_max=0.0,
             num_basis=num_mag_radial_basis,
@@ -1478,30 +1475,30 @@ class MagneticScaleShiftMACE(MagneticMACE):
 
         # --- magnetic stuffs ---
 
-        magmom_lenghts = torch.norm(data["magmom"], dim=-1, keepdim=True)
+        magmom_lengths = torch.norm(data["magmom"], dim=-1, keepdim=True)
         element_dependent_scaling = self.m_max[
             torch.argmax(data["node_attrs"], dim=1)
         ].unsqueeze(-1)
         element_dependent_scaling.requires_grad_(True)
         element_dependent_scaling.retain_grad()
 
-        magmom_lenghts_trans = (
+        magmom_lengths_trans = (
             1
             - 2
-            * torch.clamp(magmom_lenghts / element_dependent_scaling, min=0.0, max=1.0)
+            * torch.clamp(magmom_lengths / element_dependent_scaling, min=0.0, max=1.0)
             ** 2
         )
         magmom_node_attrs = self.mag_solid_harmoics(data["magmom"])
 
         #
         magmom_node_feats = self.mag_radial_embedding(
-            magmom_lenghts_trans
+            magmom_lengths_trans
         )  # (n_atoms, n_basis)
 
         # one body contribution radials, this is with constant shift so that it can be fitted
         if hasattr(self, "one_body_cheb_basis_with_const"):
             magmom_one_body_radials = self.one_body_cheb_basis_with_const(
-                magmom_lenghts_trans
+                magmom_lengths_trans
             )
 
         # Interactions
@@ -1532,10 +1529,6 @@ class MagneticScaleShiftMACE(MagneticMACE):
             node_feats_list.append(node_feats)
             if idx == (len(self.readouts) - 1):
                 if hasattr(self, "one_body_cheb_basis_with_const"):
-                    # linear (natom, num_basis) -> (natom, 1)
-                    # remove certain constant to make it matches with E0,
-                    # self.one_body_magmom_const_correction is computed outside after pre-training
-                    # Select the correct coefficient row for each atom via einsum
                     selected_coeffs = torch.einsum(
                         "ns,sbh->nbh",
                         data["node_attrs"],
@@ -1553,7 +1546,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
                         magmom_one_body_radials.unsqueeze(-1) * selected_coeffs
                     ).sum(dim=1)
 
-                    # apply correction so that the zero matches E0 exactly
+                    # apply optional correction so that the zero matches E0 exactly
                     onebody_magmom_contri -= one_body_correction
 
                     # Gather energy per atom + one-body magmom contribution for each head

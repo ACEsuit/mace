@@ -29,6 +29,7 @@ from mace.tools.compile import (
     prepare,
     simplify,
 )
+from mace.tools.default_keys import DefaultKeys
 from mace.tools.scripts_utils import extract_model
 
 try:
@@ -870,7 +871,7 @@ class MagneticMACECalculator(Calculator):
         length_units_to_A: float = 1.0,
         default_dtype="",
         charges_key="Qs",
-        magmom_key="REF_magmom",
+        magmom_key=DefaultKeys.MAGMOM.value,
         info_keys=None,
         arrays_keys=None,
         model_type="MACE",
@@ -957,7 +958,7 @@ class MagneticMACECalculator(Calculator):
                 for model_path in model_paths
             ]
             if enable_cueq:
-                print("Converting models to CuEq for acceleration")
+                logging.info("Converting models to CuEq for acceleration")
                 self.models = [
                     run_e3nn_to_cueq(model, device=device).to(device)
                     for model in self.models
@@ -974,7 +975,7 @@ class MagneticMACECalculator(Calculator):
             self.num_models = len(models)
 
         if self.num_models > 1:
-            print(f"Running committee mace with {self.num_models} models")
+            logging.info(f"Running committee mace with {self.num_models} models")
 
             if model_type in ["MACE", "EnergyDipoleMACE"]:
                 self.implemented_properties.extend(
@@ -984,7 +985,7 @@ class MagneticMACECalculator(Calculator):
                 self.implemented_properties.extend(["dipole_var"])
 
         if compile_mode is not None:
-            print(f"Torch compile is enabled with mode: {compile_mode}")
+            logging.info(f"Torch compile is enabled with mode: {compile_mode}")
             self.models = [
                 torch.compile(
                     prepare(extract_model)(model=model, map_location=device),
@@ -1148,15 +1149,12 @@ class MagneticMACECalculator(Calculator):
         return dict_of_tensors
 
     def _atoms_to_batch(self, atoms):
-        # self.arrays_keys.update({self.charges_key: "charges", self.magmom_key: "magmom"})
-
         self.arrays_keys.update(
             {
                 "charges": self.charges_key,
                 "magmom": self.magmom_key,
             }
         )
-        # print("self.arrays_keys: ", self.arrays_keys)
         keyspec = mace_data.KeySpecification(
             info_keys=self.info_keys, arrays_keys=self.arrays_keys
         )

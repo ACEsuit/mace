@@ -431,23 +431,15 @@ def take_step(
 
     def closure():
         optimizer.zero_grad(set_to_none=True)
-        if not output_args.get("magforces", False):
-            output = model(
-                batch_dict,
-                training=True,
-                compute_force=output_args["forces"],
-                compute_virials=output_args["virials"],
-                compute_stress=output_args["stress"],
-            )
-        else:
-            output = model(
-                batch_dict,
-                training=True,
-                compute_force=output_args["forces"],
-                compute_virials=output_args["virials"],
-                compute_stress=output_args["stress"],
-                compute_magforces=output_args["magforces"],
-            )
+        kwargs = dict(
+            training=True,
+            compute_force=output_args["forces"],
+            compute_virials=output_args["virials"],
+            compute_stress=output_args["stress"],
+        )
+        if output_args.get("magforces", False):
+            kwargs["compute_magforces"] = True
+        output = model(batch_dict, **kwargs)
         loss = loss_fn(pred=output, ref=batch)
         loss.backward()
         if max_grad_norm is not None:
@@ -512,16 +504,18 @@ def take_step_lbfgs(
         total_loss = torch.tensor(0.0, device=device)
 
         # Process each batch and then collect the results we pass to the optimizer
+        kwargs = dict(
+            training=True,
+            compute_force=output_args["forces"],
+            compute_virials=output_args["virials"],
+            compute_stress=output_args["stress"],
+        )
+        if output_args.get("magforces", False):
+            kwargs["compute_magforces"] = True
         for batch in data_loader:
             batch = batch.to(device)
             batch_dict = batch.to_dict()
-            output = model(
-                batch_dict,
-                training=True,
-                compute_force=output_args["forces"],
-                compute_virials=output_args["virials"],
-                compute_stress=output_args["stress"],
-            )
+            output = model(batch_dict, **kwargs)
             batch_loss = loss_fn(pred=output, ref=batch)
             batch_loss = batch_loss * (batch.num_graphs / total_sample_count)
 

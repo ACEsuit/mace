@@ -708,13 +708,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--magmom_key",
         help="Key of magnetic moment in training xyz",
         type=str,
-        default="REF_magmom",
+        default=DefaultKeys.MAGMOM.value,
     )
     parser.add_argument(
         "--magforces_key",
         help="Key of magnetic forces in training xyz",
         type=str,
-        default="REF_magforces",
+        default=DefaultKeys.MAGFORCES.value,
     )
     parser.add_argument(
         "--head_key",
@@ -1195,7 +1195,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--data_aug_magmom",
-        help="Whether to use data agumentation on manetic moment training. ",
+        help="Whether to use data augmentation on magnetic moment training. ",
         type=str2bool,
         default=False,
     )

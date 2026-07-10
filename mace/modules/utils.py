@@ -282,9 +282,8 @@ def get_outputs(
     if (
         (compute_virials or compute_stress) and displacement is not None
     ) and compute_magforces:
-        assert (
-            magmoms is not None
-        ), "Magnetic momenet must be inputed to get magnetic forces"
+        if magmoms is None:
+            raise ValueError("Magnetic moment must be provided to get magnetic forces")
         forces, virials, stress, mag_forces = compute_forces_virials_magforces(
             energy=energy,
             positions=positions,
@@ -305,9 +304,8 @@ def get_outputs(
         )
         mag_forces = None
     elif compute_force and compute_magforces:
-        assert (
-            magmoms is not None
-        ), "Magnetic momenet must be inputed to get magnetic forces"
+        if magmoms is None:
+            raise ValueError("Magnetic moment must be provided to get magnetic forces")
         forces, mag_forces = compute_forces_magforces(
             energy=energy,
             positions=positions,
