@@ -109,3 +109,34 @@ def select_rigid_features(
     raise AssertionError(
         f"Unhandled rigid feature mode: {mode}"
     )
+
+
+def mask_inertia_irreps(
+    inertia_irreps: torch.Tensor,
+    mode: str,
+) -> torch.Tensor:
+    """Return a six-component ``1x0e + 1x2e`` tensor with disabled
+    sectors set to zero.
+
+    Keeping the width fixed preserves the model architecture and state-dict
+    compatibility across feature modes.
+    """
+    mode = validate_rigid_feature_mode(mode)
+
+    if inertia_irreps.ndim != 2 or inertia_irreps.shape[1] != 6:
+        raise ValueError(
+            "inertia_irreps must have shape (N, 6); "
+            f"got {tuple(inertia_irreps.shape)}."
+        )
+
+    if mode == "moi":
+        return inertia_irreps
+
+    masked = torch.zeros_like(inertia_irreps)
+
+    if mode == "isotropic":
+        masked[:, :1] = inertia_irreps[:, :1]
+    elif mode == "traceless_moi":
+        masked[:, 1:] = inertia_irreps[:, 1:]
+
+    return masked

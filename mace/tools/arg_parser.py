@@ -253,6 +253,16 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--num_interactions", help="number of interactions", type=int, default=2
     )
     parser.add_argument(
+        "--rigid_feature_mode",
+        type=str,
+        default="moi",
+        choices=("none", "isotropic", "traceless_moi", "moi"),
+        help=(
+            "Rigid-body node feature ablation. The model architecture is kept "
+            "fixed; disabled MOI sectors and edge invariants are zeroed."
+        ),
+    )
+    parser.add_argument(
         "--MLP_irreps",
         help="hidden irreps of the MLP in last readout",
         type=str,

@@ -31,6 +31,7 @@ from .blocks import (
     ScaleShiftBlock,
 )
 from mace.data.rigid_body import inertia_edge_invariants
+from mace.data.rigid_features import validate_rigid_feature_mode
 
 from .utils import (
     compute_dielectric_gradients,
@@ -82,6 +83,7 @@ class MACE(torch.nn.Module):
         lammps_mliap: Optional[bool] = False,
         readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
         keep_last_layer_irreps: bool = False,
+        rigid_feature_mode: str = "moi",
     ):
         super().__init__()
         self.register_buffer(
@@ -106,6 +108,13 @@ class MACE(torch.nn.Module):
         self.use_so3 = use_so3
         self.use_last_readout_only = use_last_readout_only
         self.use_edge_irreps_first = use_edge_irreps_first
+        self.rigid_feature_mode = validate_rigid_feature_mode(rigid_feature_mode)
+        self.use_rigid_scalar = self.rigid_feature_mode in ("isotropic", "moi")
+        self.use_rigid_tensor = self.rigid_feature_mode in (
+            "traceless_moi",
+            "moi",
+        )
+        self.use_inertia_edge_invariants = self.use_rigid_tensor
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -304,6 +313,19 @@ class MACE(torch.nn.Module):
                     )
                 )
 
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        # Models serialized before rigid feature ablations implicitly used
+        # the complete MOI representation. Restore that behavior on load.
+        if not hasattr(self, "rigid_feature_mode"):
+            self.rigid_feature_mode = "moi"
+        if not hasattr(self, "use_rigid_scalar"):
+            self.use_rigid_scalar = True
+        if not hasattr(self, "use_rigid_tensor"):
+            self.use_rigid_tensor = True
+        if not hasattr(self, "use_inertia_edge_invariants"):
+            self.use_inertia_edge_invariants = True
+
     def forward(
         self,
         data: Dict[str, torch.Tensor],
@@ -351,8 +373,14 @@ class MACE(torch.nn.Module):
         species_node_feats = self.node_embedding(
             data["node_attrs"]
         )
+        inertia_scalar = data["inertia_irreps"][:, :1]
+        inertia_tensor_irreps = data["inertia_irreps"][:, 1:]
+        if not self.use_rigid_scalar:
+            inertia_scalar = torch.zeros_like(inertia_scalar)
+        if not self.use_rigid_tensor:
+            inertia_tensor_irreps = torch.zeros_like(inertia_tensor_irreps)
         inertia_node_feats = self.inertia_node_embedding(
-            data["inertia_irreps"]
+            torch.cat((inertia_scalar, inertia_tensor_irreps), dim=-1)
         )
 
         tensor_padding = torch.zeros_like(
@@ -372,6 +400,8 @@ class MACE(torch.nn.Module):
             data["edge_index"],
             vectors,
         )
+        if not self.use_inertia_edge_invariants:
+            inertia_feats = torch.zeros_like(inertia_feats)
         edge_feats = torch.cat((edge_feats, inertia_feats), dim=-1)
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
@@ -552,8 +582,14 @@ class ScaleShiftMACE(MACE):
         species_node_feats = self.node_embedding(
             data["node_attrs"]
         )
+        inertia_scalar = data["inertia_irreps"][:, :1]
+        inertia_tensor_irreps = data["inertia_irreps"][:, 1:]
+        if not self.use_rigid_scalar:
+            inertia_scalar = torch.zeros_like(inertia_scalar)
+        if not self.use_rigid_tensor:
+            inertia_tensor_irreps = torch.zeros_like(inertia_tensor_irreps)
         inertia_node_feats = self.inertia_node_embedding(
-            data["inertia_irreps"]
+            torch.cat((inertia_scalar, inertia_tensor_irreps), dim=-1)
         )
 
         tensor_padding = torch.zeros_like(
@@ -573,6 +609,8 @@ class ScaleShiftMACE(MACE):
             data["edge_index"],
             vectors,
         )
+        if not self.use_inertia_edge_invariants:
+            inertia_feats = torch.zeros_like(inertia_feats)
         edge_feats = torch.cat((edge_feats, inertia_feats), dim=-1)
 
         if hasattr(self, "pair_repulsion"):

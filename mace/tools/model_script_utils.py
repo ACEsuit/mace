@@ -270,6 +270,7 @@ def _build_model(
             use_embedding_readout=args.use_embedding_readout,
             use_last_readout_only=args.use_last_readout_only,
             use_agnostic_product=args.use_agnostic_product,
+            rigid_feature_mode=args.rigid_feature_mode,
         )
     if args.model == "ScaleShiftMACE":
         return modules.ScaleShiftMACE(
@@ -289,6 +290,7 @@ def _build_model(
             use_embedding_readout=args.use_embedding_readout,
             use_last_readout_only=args.use_last_readout_only,
             use_agnostic_product=args.use_agnostic_product,
+            rigid_feature_mode=args.rigid_feature_mode,
         )
     if args.model == "PolarMACE" and model_config_foundation is not None:
         return modules.PolarMACE(**model_config_foundation)

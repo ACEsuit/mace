@@ -3,6 +3,14 @@ from .hdf5_dataset import HDF5Dataset, dataset_from_sharded_hdf5
 from .lmdb_dataset import LMDBDataset
 from .neighborhood import get_neighborhood
 from .padding_tools import build_fake_padding_graph
+from .rigid_features import (
+    RIGID_FEATURE_SPECS,
+    VALID_RIGID_FEATURE_MODES,
+    mask_inertia_irreps,
+    rigid_feature_spec,
+    select_rigid_features,
+    validate_rigid_feature_mode,
+)
 from .utils import (
     Configuration,
     Configurations,
@@ -41,4 +49,10 @@ __all__ = [
     "update_keyspec_from_kwargs",
     "LMDBDataset",
     "build_fake_padding_graph",
+    "RIGID_FEATURE_SPECS",
+    "VALID_RIGID_FEATURE_MODES",
+    "mask_inertia_irreps",
+    "rigid_feature_spec",
+    "select_rigid_features",
+    "validate_rigid_feature_mode",
 ]
