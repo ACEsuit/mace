@@ -5,6 +5,25 @@ import torch
 from mace.tools.utils import AtomicNumberTable
 
 
+def _copy_radial_weights(
+    model: torch.nn.Module, model_foundations: torch.nn.Module
+) -> None:
+    """Copy the radial basis weights from the foundation model in-place.
+
+    Preserves the target's buffer-vs-Parameter registration (BesselBasis /
+    GaussianBasis expose ``*_weights`` as a Parameter only when ``trainable=True``;
+    otherwise it is a register_buffer). Handles both radial classes.
+    """
+    dst = model.radial_embedding.bessel_fn
+    src = model_foundations.radial_embedding.bessel_fn
+    attr = {"BesselBasis": "bessel_weights", "GaussianBasis": "gaussian_weights"}.get(
+        dst.__class__.__name__
+    )
+    if attr is None:
+        return
+    getattr(dst, attr).data.copy_(getattr(src, attr).data)
+
+
 def load_foundations_elements(
     model: torch.nn.Module,
     model_foundations: torch.nn.Module,
@@ -87,10 +106,7 @@ def load_foundations_elements_default(
                 .flatten()
                 .clone()
             )
-    if model.radial_embedding.bessel_fn.__class__.__name__ == "BesselBasis":
-        model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
-            model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
-        )
+    _copy_radial_weights(model, model_foundations)
     for i in range(int(model.num_interactions)):
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear_up.weight.clone()
@@ -420,10 +436,7 @@ def load_foundations_elements_magnetic(
         .clone()
         / (num_species_foundations / num_species) ** 0.5
     )
-    if model.radial_embedding.bessel_fn.__class__.__name__ == "BesselBasis":
-        model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
-            model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
-        )
+    _copy_radial_weights(model, model_foundations)
 
     for i in range(int(model.num_interactions)):
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
@@ -483,34 +496,14 @@ def load_foundations_elements_magnetic(
         if model.interactions[i].__class__.__name__ in [
             "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
         ]:
-            # import pdb; pdb.set_trace()
             model.interactions[i].magmom_skip_tp.weight = torch.nn.Parameter(
                 model_foundations.interactions[i]
                 .magmom_skip_tp.weight.flatten()
                 .clone()
-                # .reshape(
-                #     num_channels_foundation,
-                #     num_species_foundations,
-                #     num_channels_foundation,
-                # )[:, indices_weights, :]
-                # .flatten()
-                # .clone()
-                # / (num_species_foundations / num_species) ** 0.5
             )
         else:
             model.interactions[i].skip_tp.weight = torch.nn.Parameter(
-                model_foundations.interactions[i]
-                .skip_tp.weight.flatten()
-                .clone()
-                # .reshape(
-                #     num_channels_foundation,
-                #     (max_ell + 1),
-                #     num_species_foundations,
-                #     num_channels_foundation,
-                # )[:, :, indices_weights, :]
-                # .flatten()
-                # .clone()
-                # / (num_species_foundations / num_species) ** 0.5
+                model_foundations.interactions[i].skip_tp.weight.flatten().clone()
             )
         if model.interactions[i].__class__.__name__ in [
             "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
@@ -551,9 +544,6 @@ def load_foundations_elements_magnetic(
         model.products[i].conv_tp.weight = torch.nn.Parameter(
             model_foundations.products[i].conv_tp.weight.clone()
         )
-        # model.products[i].conv_tp_weights.weight = torch.nn.Parameter(
-        #     model_foundations.products[i].conv_tp_weights.weight.clone()
-        # )
         for j in range(4):  # Assuming 4 layers in conv_tp_weights,
             layer_name = f"layer{j}"
             if j == 0:
@@ -689,10 +679,7 @@ def load_foundations_mdp(
     )
 
     # --- Radial embedding ---
-    if model.radial_embedding.bessel_fn.__class__.__name__ == "BesselBasis":
-        model.radial_embedding.bessel_fn.bessel_weights = torch.nn.Parameter(
-            model_foundations.radial_embedding.bessel_fn.bessel_weights.clone()
-        )
+    _copy_radial_weights(model, model_foundations)
 
     # --- Interactions ---
     for i in range(int(model.num_interactions)):

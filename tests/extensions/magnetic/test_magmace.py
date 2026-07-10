@@ -387,8 +387,6 @@ def test_resolve_m_max_extra_dict_keys_ignored():
 
 def test_resolve_m_max_numpy_atomic_numbers():
     """atomic_numbers can be np.int64 (as it comes from z_table)."""
-    import numpy as np  # noqa: F401  (already imported at top of file)
-
     from mace.tools.scripts_utils import resolve_m_max
 
     zs = [np.int64(1), np.int64(6), np.int64(26)]
