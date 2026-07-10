@@ -1,4 +1,20 @@
-target-version = "py38"
+# Intentionally BELOW the supported floor (python_requires = >=3.10), so that
+# FA102 keeps flagging PEP 604 (`X | Y`) annotations. At py310 it degrades to a
+# no-op, since both PEP 585 and PEP 604 are natively valid there.
+#
+# The constraint is torch, not Python: TorchScript rejects `X | Y` in a type
+# expression on torch < 2.2 ("Expression of type | cannot be used in a type
+# expression"), and `from __future__ import annotations` does NOT rescue it.
+# setup.cfg declares torch>=1.12, and mace/modules is scripted wholesale
+# (@compile_mode, jit.compile on the LAMMPS export and checkpoint-save paths),
+# so `X | Y` there would break users on torch 1.12-2.1.
+#
+# PEP 585 (`list[T]`, `dict[K, V]`) is safe: TorchScript accepts it as far back
+# as torch 1.13.
+#
+# NOTE: nothing currently RUNS ruff — it is absent from .pre-commit-config.yaml
+# and from every CI job, so this file documents intent more than it enforces it.
+target-version = "py39"
 
 [lint]
 select = ["FA102"]
