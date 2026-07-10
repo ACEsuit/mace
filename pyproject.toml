@@ -70,6 +70,9 @@ disable = [
 ]
 
 [tool.pylint.MASTER]
+# Lint against the supported floor, not the interpreter the lint job happens to
+# run on (that job tracks the default, currently 3.12).
+py-version = "3.10"
 ignore-paths = [
     "^mace/tools/torch_geometric/.*$",
     "^mace/tools/scatter.py$",

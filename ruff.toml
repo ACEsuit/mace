@@ -1,4 +1,25 @@
-target-version = "py38"
+# The declared floor (setup.cfg: python_requires >= 3.10). PEP 585 (`list[T]`)
+# and PEP 604 (`X | Y`) are both natively valid here, so FA102 is a no-op over
+# most of the tree — which is correct: those annotations are fine at runtime.
+target-version = "py310"
+
+# ...except in the code TorchScript parses. TorchScript rejects `X | Y` in a
+# type expression on torch < 2.2 ("Expression of type | cannot be used in a
+# type expression"), and `from __future__ import annotations` does NOT rescue
+# it. setup.cfg declares torch>=1.12, so `X | Y` in a scripted module would
+# break users on torch 1.12-2.1. Pinning these files to py39 keeps FA102 firing
+# on them as an early warning. PEP 585 is safe as far back as torch 1.13, so
+# only the union syntax is at issue.
+#
+# This is every file carrying @compile_mode("script"). Keep it in sync with
+#   git grep -l '@compile_mode' mace/
+[per-file-target-version]
+"mace/modules/**" = "py39"
+"mace/calculators/lammps_mace.py" = "py39"
+"mace/calculators/lammps_mliap_mace.py" = "py39"
 
 [lint]
 select = ["FA102"]
+
+# NOTE: nothing currently RUNS ruff — it is absent from .pre-commit-config.yaml
+# and from every CI job, so this file documents intent more than it enforces it.
