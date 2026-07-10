@@ -1,0 +1,120 @@
+{
+  "configuration_count": 2274,
+  "distributions": {
+    "energy": {
+      "max": -0.0016368281090041435,
+      "mean": -0.01458938565604094,
+      "median": -0.01079246789385446,
+      "min": -0.23405081853799434,
+      "q05": -0.03758917667712944,
+      "q25": -0.017463552425582802,
+      "q75": -0.006671697577472598,
+      "q95": -0.0038570206456644512,
+      "std": 0.013951691861164203
+    },
+    "energy_per_particle": {
+      "max": -0.0008184140545020717,
+      "mean": -0.00729469282802047,
+      "median": -0.00539623394692723,
+      "min": -0.11702540926899717,
+      "q05": -0.01879458833856472,
+      "q25": -0.008731776212791401,
+      "q75": -0.003335848788736299,
+      "q95": -0.0019285103228322256,
+      "std": 0.0069758459305821014
+    },
+    "force_rms": {
+      "max": 0.9918084150743263,
+      "mean": 0.04729530698675461,
+      "median": 0.03147830867681983,
+      "min": 0.003428500141213356,
+      "q05": 0.00944818064309313,
+      "q25": 0.018032375894727733,
+      "q75": 0.05518882124172021,
+      "q95": 0.13469315214792518,
+      "std": 0.05596684340902552
+    },
+    "net_force_norm": {
+      "max": 0.0,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "q05": 0.0,
+      "q25": 0.0,
+      "q75": 0.0,
+      "q95": 0.0,
+      "std": 0.0
+    },
+    "separation": {
+      "max": 3.4074805108809985,
+      "mean": 2.8576877837306767,
+      "median": 2.86590365902746,
+      "min": 1.8375944491561813,
+      "q05": 2.496679470661356,
+      "q25": 2.7042216325712625,
+      "q75": 3.013816646374538,
+      "q95": 3.2138645799921077,
+      "std": 0.2179591199578428
+    },
+    "torque_balance_residual_norm": {
+      "max": 2.973392817406733e-08,
+      "mean": 1.2526497471837156e-08,
+      "median": 1.2190969091019816e-08,
+      "min": 7.943281162080405e-10,
+      "q05": 4.379521894880757e-09,
+      "q25": 8.519282559557413e-09,
+      "q75": 1.6298735084551812e-08,
+      "q95": 2.177006682514365e-08,
+      "std": 5.34635445095465e-09
+    },
+    "torque_rms": {
+      "max": 0.3079466717000745,
+      "mean": 0.014824973572659064,
+      "median": 0.009429329079187088,
+      "min": 0.0005916872214269968,
+      "q05": 0.0021538456028489116,
+      "q25": 0.005151299773424312,
+      "q75": 0.017465229226135262,
+      "q95": 0.0437998789160151,
+      "std": 0.018430856525123086
+    }
+  },
+  "exact_duplicate_count": 0,
+  "files": {
+    "manifest": "publication_splits/publication_manifest.csv",
+    "ood_test": "publication_splits/ood_test_short_range.xyz",
+    "ood_train": "publication_splits/ood_train.xyz",
+    "ood_valid": "publication_splits/ood_valid.xyz",
+    "random_test": "publication_splits/random_test.xyz",
+    "random_train": "publication_splits/random_train.xyz",
+    "random_valid": "publication_splits/random_valid.xyz"
+  },
+  "input_file": "/Users/rca/source_installs/anisoap/benchmarks/two_particle_gb/force_and_torque_benchmarks/random_rotations_gb.xyz",
+  "nested_subset_sizes": [
+    64,
+    128,
+    256,
+    512,
+    1024,
+    1570
+  ],
+  "ood_split": {
+    "definition": "Shortest-separation tail held out",
+    "separation_threshold": 2.6242548505400545,
+    "test_count": 341,
+    "train_count": 1574,
+    "valid_count": 308
+  },
+  "random_split": {
+    "energy_bins": 8,
+    "separation_bins": 8,
+    "test_count": 388,
+    "test_fraction_requested": 0.15000000000000005,
+    "train_count": 1570,
+    "train_fraction_requested": 0.7,
+    "valid_count": 316,
+    "valid_fraction_requested": 0.15
+  },
+  "seed": 20260710,
+  "unique_configuration_hashes": 2274
+}
