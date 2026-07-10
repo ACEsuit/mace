@@ -66,7 +66,6 @@ jobs:
               - 'mace/calculators/**'
               - 'mace/cli/**'
               - 'tests/extensions/magnetic/**'
-              - 'requirements/magnetic.txt'
             torchsim:
               - *shared
               - 'mace/calculators/**'
@@ -148,8 +147,7 @@ jobs:
       - uses: ./.github/actions/setup-mace
         with:
           python-version: "3.10"
-          extras: dev
-          pip-packages: -r requirements/magnetic.txt
+          extras: dev, magnetic
       - uses: ./.github/actions/run-tests
         with:
           tests: tests/extensions/magnetic
