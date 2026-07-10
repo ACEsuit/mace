@@ -2,8 +2,6 @@
 # Script for exporting MACE-Polar density coefficients to Gaussian cube files
 # This program is distributed under the MIT License (see MIT.md)
 # pylint: disable=wrong-import-position
-from __future__ import annotations
-
 import argparse
 import json
 import os

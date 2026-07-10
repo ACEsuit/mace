@@ -4,8 +4,10 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+from __future__ import annotations
+
 from copy import deepcopy
-from typing import Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence
 
 import torch.utils.data
 
@@ -18,7 +20,9 @@ from mace.tools import (
 )
 
 from .neighborhood import get_neighborhood
-from .utils import Configuration
+
+if TYPE_CHECKING:
+    from .utils import Configuration
 
 
 class AtomicData(torch_geometric.data.Data):
