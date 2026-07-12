@@ -1,4 +1,4 @@
-###########################################################################################
+##########################################################################################
 # Training script for MACE
 # Authors: Ilyes Batatia, Gregor Simm, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
@@ -97,13 +97,9 @@ def run(args) -> None:
     update_keyspec_from_kwargs(args.key_specification, vars(args))
 
     if args.device == "xpu":
-        try:
-            import intel_extension_for_pytorch as ipex
-            import oneccl_bindings_for_pytorch as oneccl  # pylint: disable=unused-import
-        except ImportError as e:
-            raise ImportError(
-                "Error: Intel extension for PyTorch not found, but XPU device was specified"
-            ) from e
+        if not hasattr(torch, "xpu"):
+            logging.info(f"Device GPU: XPU requested but torch.xpu not found, cannot use --device=xpu")
+
     rank, local_rank, world_size = init_distributed(args)
 
     # Setup
@@ -117,7 +113,11 @@ def run(args) -> None:
         if args.device == "cuda":
             torch.cuda.set_device(local_rank)
         elif args.device == "xpu":
-            torch.xpu.set_device(local_rank)
+            try:
+                n_visible = torch.xpu.device_count()
+            except Exception:
+                n_visible = 1
+            torch.xpu.set_device(local_rank if local_rank < n_visible else 0)
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
         logging.info(f"Processes: {world_size}")
 
@@ -828,9 +828,6 @@ def run(args) -> None:
     for i, param_group in enumerate(optimizer.param_groups):
         logging.info(f"Param group {i}: lr = {param_group['lr']}")
 
-    if args.device == "xpu":
-        logging.info("Optimzing model and optimzier for XPU")
-        model, optimizer = ipex.optimize(model, optimizer=optimizer)
     logger = tools.MetricsLogger(
         directory=args.results_dir, tag=tag + "_train"
     )  # pylint: disable=E1123
@@ -893,7 +890,18 @@ def run(args) -> None:
     if args.wandb:
         setup_wandb(args)
     if args.distributed:
-        distributed_model = DDP(model, device_ids=[local_rank])
+        # With ZE_AFFINITY_MASK each rank sees 1 xpu tile;
+        # local_rank can exceed visible device count, causing DDP to
+        # raise "value cannot be converted to type int without overflow".
+        # Pin DDP to device 0 in that case.
+        _ddp_dev = local_rank
+        if args.device == "xpu":
+            try:
+                if torch.xpu.device_count() == 1:
+                    _ddp_dev = 0
+            except Exception:
+                _ddp_dev = 0
+        distributed_model = DDP(model, device_ids=[_ddp_dev])
     else:
         distributed_model = None
 
@@ -930,14 +938,6 @@ def run(args) -> None:
         logging.info("DRY RUN mode enabled. Stopping now.")
         return
 
-    if args.device == "xpu":
-        try:
-            model, optimizer = ipex.optimize(model, optimizer=optimizer)
-        except ImportError as e:
-            logging.error(
-                "Intel Extension for PyTorch not found, but XPU device was specified. "
-                "Please install it to use XPU device."
-            )
 
     tools.train(
         model=model,
