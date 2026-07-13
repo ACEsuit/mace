@@ -1239,6 +1239,7 @@ class MagneticMACECalculator(Calculator):
             self.results["free_energy"] = self.results["energy"]
             self.results["node_energy"] = (
                 torch.mean(ret_tensors["node_energy"], dim=0).cpu().numpy()
+                * self.energy_units_to_eV
             )
             self.results["forces"] = (
                 torch.mean(ret_tensors["forces"], dim=0).cpu().numpy()

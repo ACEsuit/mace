@@ -672,9 +672,15 @@ class MACELoss(Metric):
             )
 
         if output.get("magforces") is not None and batch.magforces is not None:
-            self.MagFs_computed += 1.0
             self.MagFs.append(batch.magforces)
             self.delta_MagFs.append(batch.magforces - output["magforces"])
+            self.MagFs_computed += filter_nonzero_weight(
+                batch,
+                self.delta_MagFs,
+                batch.weight,
+                batch.magforces_weight,
+                spread_atoms=True,
+            )
         if output.get("stress") is not None and batch.stress is not None:
             self.delta_stress.append(batch.stress - output["stress"])
             self.stress_computed += filter_nonzero_weight(

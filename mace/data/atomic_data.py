@@ -356,14 +356,14 @@ class AtomicData(torch_geometric.data.Data):
                 config.properties.get("magmom"), dtype=torch.get_default_dtype()
             )
             if config.properties.get("magmom") is not None
-            else None
+            else torch.zeros(num_atoms, 3, dtype=torch.get_default_dtype())
         )
         magforces = (
             torch.tensor(
                 config.properties.get("magforces"), dtype=torch.get_default_dtype()
             )
             if config.properties.get("magforces") is not None
-            else None
+            else torch.zeros(num_atoms, 3, dtype=torch.get_default_dtype())
         )
         elec_temp = (
             torch.tensor(
