@@ -191,6 +191,7 @@ def run(args: argparse.Namespace) -> None:
     us_list = []
     kappas_list = []
     alphas_list = []
+    quads_list = []
     forces_collection = []
 
     for batch in data_loader:
@@ -240,6 +241,14 @@ def run(args: argparse.Namespace) -> None:
                 axis=0,
             )
             alphas_list.append(alphas[:-1])
+
+        if "latent_quads" in output and output["latent_quads"] is not None:
+            quads = np.split(
+                torch_tools.to_numpy(output["latent_quads"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            quads_list.append(quads[:-1])
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
@@ -315,6 +324,8 @@ def run(args: argparse.Namespace) -> None:
         kappas_list = [kappas for sublist in kappas_list for kappas in sublist]
     if len(alphas_list) > 0:
         alphas_list = [alphas for sublist in alphas_list for alphas in sublist]
+    if len(quads_list) > 0:
+        quads_list = [quads for sublist in quads_list for quads in sublist]
 
     if args.return_contributions:
         contributions = np.concatenate(contributions_list, axis=0)
@@ -347,6 +358,8 @@ def run(args: argparse.Namespace) -> None:
             atoms.arrays[args.info_prefix + "latent_kappas"] = kappas_list[i]
         if len(alphas_list) > 0:
             atoms.arrays[args.info_prefix + "latent_alphas"] = alphas_list[i].reshape(alphas_list[i].shape[0], -1)
+        if len(quads_list) > 0:
+            atoms.arrays[args.info_prefix + "latent_quads"] = quads_list[i].reshape(quads_list[i].shape[0], -1)
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
