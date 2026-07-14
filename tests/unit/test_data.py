@@ -206,9 +206,11 @@ def test_half_periodic():
     atoms = ase.build.fcc111("Al", size=(3, 3, 1), vacuum=0.0)
     assert all(atoms.pbc == (True, True, False))
     config = config_from_atoms(atoms)  # first shell dist is 2.864A
-    edge_index, shifts, _, _ = get_neighborhood(
+    edge_index, shifts, _, cell = get_neighborhood(
         config.positions, cutoff=2.9, pbc=(True, True, False), cell=config.cell
     )
+    # should give back the real cell, not the blown-up one (#1509)
+    assert np.allclose(cell, config.cell)
     sender, receiver = edge_index
     vectors = (
         config.positions[receiver] - config.positions[sender] + shifts

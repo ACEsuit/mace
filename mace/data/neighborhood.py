@@ -20,25 +20,27 @@ def get_neighborhood(
     assert len(pbc) == 3 and all(isinstance(i, (bool, np.bool_)) for i in pbc)
     assert cell.shape == (3, 3)
 
-    pbc_x = pbc[0]
-    pbc_y = pbc[1]
-    pbc_z = pbc[2]
     identity = np.identity(3, dtype=float)
     max_positions = np.max(np.absolute(positions)) + 1
-    # Extend cell in non-periodic directions
-    # For models with more than 5 layers, the multiplicative constant needs to be increased.
-    # temp_cell = np.copy(cell)
-    if not pbc_x:
-        cell[0, :] = max_positions * 5 * cutoff * identity[0, :]
-    if not pbc_y:
-        cell[1, :] = max_positions * 5 * cutoff * identity[1, :]
-    if not pbc_z:
-        cell[2, :] = max_positions * 5 * cutoff * identity[2, :]
+    # blow up the cell in non-periodic directions so matscipy can bin the atoms
+    # (constant may need bumping for models with more than 5 layers)
+    extended_cell = np.array(cell, dtype=float, copy=True)
+    for dim in range(3):
+        if not pbc[dim]:
+            extended_cell[dim, :] = max_positions * 5 * cutoff * identity[dim, :]
+
+    # only use the blown-up cell for the neighbour search, don't return it:
+    # stress divides by det(cell) later, so the fake volume shrinks it (#1509).
+    # keep it for fully aperiodic systems though (no stress there anyway)
+    if any(pbc):
+        cell = np.array(cell, dtype=float, copy=True)
+    else:
+        cell = extended_cell
 
     sender, receiver, unit_shifts = neighbour_list(
         quantities="ijS",
         pbc=pbc,
-        cell=cell,
+        cell=extended_cell,
         positions=positions,
         cutoff=cutoff,
         # self_interaction=True,  # we want edges from atom to itself in different periodic images
