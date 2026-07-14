@@ -96,10 +96,6 @@ def run(args) -> None:
     args.key_specification = KeySpecification()
     update_keyspec_from_kwargs(args.key_specification, vars(args))
 
-    if args.device == "xpu":
-        if not hasattr(torch, "xpu"):
-            logging.info(f"Device GPU: XPU requested but torch.xpu not found, cannot use --device=xpu")
-
     rank, local_rank, world_size = init_distributed(args)
 
     # Setup
