@@ -61,6 +61,7 @@ CAPABILITY_PROBES = {
     "oeq": lambda: _module_available("openequivariance"),
     "polar": lambda: _module_available("graph_longrange"),
     "les": lambda: _module_available("les"),
+    "magnetic": lambda: _module_available("sphericart"),
     "torchsim": lambda: _module_available("torch_sim"),
     "schedulefree": lambda: _module_available("schedulefree"),
     "bin_lammps": _lammps_available,
@@ -122,6 +123,7 @@ _DIR_MARKERS = {
     ("benchmarks",): ("benchmark", "slow"),
     ("extensions", "polar"): ("polar",),
     ("extensions", "les"): ("les",),
+    ("extensions", "magnetic"): ("magnetic",),
     ("extensions", "torchsim"): ("torchsim",),
     ("extensions", "schedulefree"): ("schedulefree",),
 }

@@ -45,6 +45,7 @@ from mace.tools.multihead_tools import (
     apply_pseudolabels_to_pt_head_configs,
     assemble_replay_data,
     dict_head_to_dataclass,
+    inherit_magnetic_hyperparameters_from_foundation,
     prepare_default_head,
     prepare_pt_head,
 )
@@ -217,6 +218,13 @@ def run(args) -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
+        inherited_magnetic_args = inherit_magnetic_hyperparameters_from_foundation(
+            args, model_foundation
+        )
+        if inherited_magnetic_args:
+            logging.info(
+                f"Inheriting magnetic hyperparameters from foundation model: {inherited_magnetic_args}"
+            )
         if args.finetune_dipoles_polarizabilities:
             foundation_cls = model_foundation.__class__.__name__
             if foundation_cls != "AtomicDielectricMACE":
@@ -841,6 +849,7 @@ def run(args) -> None:
             "ScaleShiftMACE",
             "MACELES",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
             "AtomicDielectricMACE",
         ]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
@@ -851,10 +860,16 @@ def run(args) -> None:
             "ScaleShiftMACE",
             "MACELES",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
         ]
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
 
     # Optimizer
+    if (
+        hasattr(model, "onebody_magmombasis_coeffs")
+        and not args.train_one_body_contribution
+    ):
+        model.onebody_magmombasis_coeffs.requires_grad_(False)
     param_options = get_params_options(args, model)
 
     optimizer: torch.optim.Optimizer
@@ -1009,6 +1024,7 @@ def run(args) -> None:
         plotter=plotter,
         train_sampler=train_sampler,
         rank=rank,
+        data_aug_magmom=args.data_aug_magmom,
     )
 
     logging.info("")

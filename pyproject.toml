@@ -26,6 +26,7 @@ markers = [
     "oeq: requires OpenEquivariance (JIT kernels for CUDA or HIP)",
     "polar: requires graph_electrostatics (import name graph_longrange)",
     "les: requires the LES library",
+    "magnetic: requires sphericart-torch (import name sphericart)",
     "torchsim: requires torch-sim-atomistic (python >= 3.12)",
     "schedulefree: requires the schedulefree optimizer package",
     "benchmark: performance measurement; never part of correctness gates",
@@ -79,4 +80,4 @@ ignore-paths = [
 ]
 
 [tool.pylint.FORMAT]
-max-module-lines = 2000
+max-module-lines = 1500

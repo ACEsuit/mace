@@ -30,6 +30,7 @@ jobs:
     outputs:
       polar: ${{ steps.filter.outputs.polar || 'true' }}
       les: ${{ steps.filter.outputs.les || 'true' }}
+      magnetic: ${{ steps.filter.outputs.magnetic || 'true' }}
       torchsim: ${{ steps.filter.outputs.torchsim || 'true' }}
       schedulefree: ${{ steps.filter.outputs.schedulefree || 'true' }}
       backends: ${{ steps.filter.outputs.backends || 'true' }}
@@ -60,6 +61,11 @@ jobs:
               - *shared
               - 'tests/extensions/les/**'
               - 'requirements/les.txt'
+            magnetic:
+              - *shared
+              - 'mace/calculators/**'
+              - 'mace/cli/**'
+              - 'tests/extensions/magnetic/**'
             torchsim:
               - *shared
               - 'mace/calculators/**'
@@ -130,6 +136,23 @@ jobs:
           markers: not gpu
           require-caps: les
           allow-network: "true"
+
+  magnetic:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.magnetic == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.10"
+          extras: dev, magnetic
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/extensions/magnetic
+          markers: not gpu
+          require-caps: magnetic
 
   torchsim:
     needs: changes

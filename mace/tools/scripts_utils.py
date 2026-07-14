@@ -232,10 +232,11 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "ScaleShiftMACE",
         "MACELES",
         "PolarMACE",
+        "MagneticScaleShiftMACE",
         "AtomicDielectricMACE",
     ]:
         return {
-            "error": "Model is not a ScaleShiftMACE, MACELES, PolarMACE, or AtomicDielectricMACE model"
+            "error": "Model is not a ScaleShiftMACE, MACELES, PolarMACE, MagneticScaleShiftMACE, or AtomicDielectricMACE model"
         }
 
     def radial_to_name(radial_type):
@@ -326,6 +327,15 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         "distance_transform": radial_to_transform(model.radial_embedding),
         "heads": heads,
     }
+    if model.__class__.__name__ == "MagneticScaleShiftMACE":
+        config["m_max"] = model.m_max.cpu().tolist()
+        config["max_m_ell"] = int(model.mag_solid_harmoics.SH.l_max())
+        config["num_mag_radial_basis"] = int(model.mag_radial_embedding.num_basis)
+        config["use_magmom_one_body"] = bool(model.use_magmom_one_body)
+        if model.use_magmom_one_body and hasattr(model, "onebody_magmombasis_coeffs"):
+            config["num_mag_radial_basis_one_body"] = int(
+                model.onebody_magmombasis_coeffs.shape[1]
+            )
     if hasattr(model, "atomic_energies_fn"):
         config["atomic_energies"] = (
             model.atomic_energies_fn.atomic_energies.cpu().numpy()
@@ -593,6 +603,91 @@ def load_from_json(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return model_load_yaml.to(map_location)
 
 
+def resolve_m_max(
+    m_max: Any,
+    atomic_numbers: List[int],
+    default: float = 1.0,
+) -> Optional[List[float]]:
+    """Turn --m_max into a per-element list ordered by atomic_numbers.
+
+    Accepts:
+      * None  -> returns None (caller decides on a default).
+      * A list[float]  -> validated against len(atomic_numbers) and returned as-is.
+        This covers the legacy ``nargs="+"`` form and the dict-of-floats already
+        populated by ``inherit_magnetic_hyperparameters_from_foundation``.
+      * A single-element list with a dict literal string, e.g. ``["{26: 1.8, 28: 1.2}"]``
+        as produced by ``argparse(nargs="+", type=str)`` when the user passes
+        ``--m_max '{26: 1.8, 28: 1.2}'``. Missing elements use ``default``.
+      * A list of float-like strings (legacy ``--m_max 0.51 0.109 …`` form) ->
+        parsed as floats, validated against len(atomic_numbers).
+
+    ``atomic_numbers`` is the per-element ordering the model expects, typically
+    ``z_table.zs``.
+    """
+    if m_max is None:
+        return None
+
+    # Fast path: already a list of numbers (e.g. inherited from foundation).
+    if isinstance(m_max, list) and all(
+        isinstance(v, (int, float)) and not isinstance(v, bool) for v in m_max
+    ):
+        if len(m_max) != len(atomic_numbers):
+            raise ValueError(
+                f"--m_max float list has length {len(m_max)} but expected "
+                f"{len(atomic_numbers)} to match atomic_numbers {atomic_numbers}"
+            )
+        return [float(v) for v in m_max]
+
+    # argparse with nargs="+", type=str gives us a list of token strings.
+    tokens = m_max if isinstance(m_max, list) else [m_max]
+
+    if len(tokens) == 1:
+        token = tokens[0]
+        try:
+            parsed = ast.literal_eval(token)
+        except (ValueError, SyntaxError):
+            parsed = None
+        if isinstance(parsed, dict):
+            # Normalize keys to python ints to compare against atomic_numbers
+            # (which may be a list of np.int64).
+            normalized = {int(k): float(v) for k, v in parsed.items()}
+            atomic_numbers_int = [int(z) for z in atomic_numbers]
+            extras = sorted(set(normalized) - set(atomic_numbers_int))
+            if extras:
+                logging.info(
+                    f"--m_max dict has entries for atomic numbers {extras} not in the "
+                    f"current z_table; they are ignored. (This is normal when the dict "
+                    f"is a generic over-spec.)"
+                )
+            resolved = [normalized.get(z, default) for z in atomic_numbers_int]
+            logging.info(
+                f"Resolved --m_max dict to per-element list (default={default} for "
+                f"unspecified): {dict(zip(atomic_numbers_int, resolved))}"
+            )
+            return resolved
+        # Single non-dict token: assume a single float.
+        try:
+            return [float(token)] * len(atomic_numbers)
+        except ValueError as exc:
+            raise ValueError(
+                f"--m_max single token {token!r} is neither a dict literal nor a float"
+            ) from exc
+
+    # Multi-token: legacy space-separated float list.
+    try:
+        values = [float(t) for t in tokens]
+    except ValueError as exc:
+        raise ValueError(
+            f"--m_max values {tokens!r} could not be parsed as floats"
+        ) from exc
+    if len(values) != len(atomic_numbers):
+        raise ValueError(
+            f"--m_max has {len(values)} floats but expected {len(atomic_numbers)} "
+            f"to match atomic_numbers {atomic_numbers}"
+        )
+    return values
+
+
 def get_atomic_energies(E0s, train_collection, z_table) -> dict:
     if E0s is not None:
         logging.info(
@@ -709,6 +804,7 @@ def get_loss_fn(
             energy_weight=args.energy_weight,
             forces_weight=args.forces_weight,
             stress_weight=args.stress_weight,
+            magforces_weight=args.magforces_weight,
             huber_delta=args.huber_delta,
         )
     elif args.loss == "l1l2energyforces":
@@ -799,10 +895,11 @@ def get_swa(
             energy_weight=args.swa_energy_weight,
             forces_weight=args.swa_forces_weight,
             stress_weight=args.swa_stress_weight,
+            magforces_weight=args.swa_magforces_weight,
             huber_delta=args.huber_delta,
         )
         logging.info(
-            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight} and learning rate : {args.swa_lr}"
+            f"Stage Two (after {args.start_swa} epochs) with loss function: {loss_fn_energy}, with energy weight : {args.swa_energy_weight}, forces weight : {args.swa_forces_weight}, stress weight : {args.swa_stress_weight}, magforces weight : {args.swa_magforces_weight} and learning rate : {args.swa_lr}"
         )
     else:
         loss_fn_energy = modules.WeightedEnergyForcesLoss(
@@ -920,6 +1017,17 @@ def get_params_options(
             {
                 "name": "les_readouts",
                 "params": model.les_readouts.parameters(),
+                "weight_decay": 0.0,
+            }
+        )
+    if (
+        hasattr(model, "onebody_magmombasis_coeffs")
+        and args.train_one_body_contribution
+    ):
+        param_options["params"].append(
+            {
+                "name": "onebody_magmombasis_coeffs",
+                "params": [model.onebody_magmombasis_coeffs],
                 "weight_decay": 0.0,
             }
         )
