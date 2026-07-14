@@ -206,9 +206,18 @@ def test_half_periodic():
     atoms = ase.build.fcc111("Al", size=(3, 3, 1), vacuum=0.0)
     assert all(atoms.pbc == (True, True, False))
     config = config_from_atoms(atoms)  # first shell dist is 2.864A
-    edge_index, shifts, _, _ = get_neighborhood(
+    # snapshot the cell: get_neighborhood must not mutate the caller's array,
+    # and comparing against a post-call cell would be a no-op guard.
+    cell_before = config.cell.copy()
+    edge_index, shifts, _, cell = get_neighborhood(
         config.positions, cutoff=2.9, pbc=(True, True, False), cell=config.cell
     )
+    assert np.allclose(config.cell, cell_before)  # input left untouched
+    # periodic rows must be the physical lattice, not the matscipy blow-up
+    assert np.allclose(cell[:2], cell_before[:2])
+    # the non-periodic row had zero extent here; it must stay non-degenerate so
+    # det(cell) / rcell downstream don't blow up (stress would NaN otherwise)
+    assert not np.isclose(np.linalg.det(cell), 0.0)
     sender, receiver = edge_index
     vectors = (
         config.positions[receiver] - config.positions[sender] + shifts
