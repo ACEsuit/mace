@@ -27,10 +27,11 @@ PME_ALPHA = 1.0e6
 class Case:
     num_atoms: int
     padding: float
+    mesh_spacing: float = MESH_SPACING
 
 
-def _mesh_size(box_length: float) -> int:
-    requested = math.ceil(box_length / MESH_SPACING)
+def _mesh_size(box_length: float, mesh_spacing: float = MESH_SPACING) -> int:
+    requested = math.ceil(box_length / mesh_spacing)
     return max(16, 8 * math.ceil(requested / 8))
 
 
@@ -95,34 +96,21 @@ def _receiver_scale(device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     )
 
 
-def _exact_fff(
-    descriptor,
-    energy_fn,
-    positions,
-    moments,
-    batch,
-):
+def _exact_features(descriptor, positions, moments, batch):
     pos = positions.detach().requires_grad_(True)
     src = moments.detach().requires_grad_(True)
-    features = descriptor.realspace_features(
+    return descriptor.realspace_features(
         source_feats=src.unsqueeze(-2), node_positions=pos, batch=batch
     )[0]
-    energy = energy_fn.realspace_energy(source_feats=src, positions=pos, batch=batch)
-    return features, energy
 
 
-def _padded_pme(
-    descriptor,
-    energy_fn,
-    positions,
-    moments,
-    cell,
-    batch,
-    pbc,
-    volume,
-    mesh_size,
-    receiver_scale,
-):
+def _exact_energy(energy_fn, positions, moments, batch):
+    pos = positions.detach().requires_grad_(True)
+    src = moments.detach().requires_grad_(True)
+    return energy_fn.realspace_energy(source_feats=src, positions=pos, batch=batch)
+
+
+def _padded_pme_node_energy(positions, moments, cell, mesh_size):
     pos = positions.detach().requires_grad_(True)
     src = moments.detach().requires_grad_(True)
     node_energy = multipole_pme_reciprocal_space(
@@ -133,6 +121,21 @@ def _padded_pme(
         alpha=PME_ALPHA,
         mesh_dimensions=(mesh_size, mesh_size, mesh_size),
     )
+    return pos, src, node_energy
+
+
+def _padded_pme_features(
+    descriptor,
+    positions,
+    moments,
+    cell,
+    batch,
+    pbc,
+    volume,
+    mesh_size,
+    receiver_scale,
+):
+    pos, src, node_energy = _padded_pme_node_energy(positions, moments, cell, mesh_size)
     features = (
         torch.autograd.grad(node_energy.sum(), src, create_graph=True)[0]
         * receiver_scale
@@ -144,8 +147,21 @@ def _padded_pme(
         volumes=volume,
         pbc=pbc,
     )
+    return features
+
+
+def _padded_pme_energy(
+    energy_fn,
+    positions,
+    moments,
+    cell,
+    batch,
+    volume,
+    mesh_size,
+):
+    pos, src, node_energy = _padded_pme_node_energy(positions, moments, cell, mesh_size)
     correction = energy_fn.monopole_dipole_correction(src, pos, volume, batch)
-    return features, node_energy.sum().reshape(1) + correction
+    return node_energy.sum().reshape(1) + correction
 
 
 def _time_cuda(fn, warmup: int, repeats: int) -> tuple[float, float]:
@@ -176,12 +192,12 @@ def _run_case(case: Case, device: torch.device, dtype: torch.dtype) -> None:
     positions, moments, cell, batch, pbc, volume, box_length = system
     descriptor, energy_fn = _models(device, dtype)
     scale = _receiver_scale(device, dtype)
-    mesh_size = _mesh_size(box_length)
+    mesh_size = _mesh_size(box_length, case.mesh_spacing)
 
-    exact_fn = lambda: _exact_fff(descriptor, energy_fn, positions, moments, batch)
-    pme_fn = lambda: _padded_pme(
+    exact_features_fn = lambda: _exact_features(descriptor, positions, moments, batch)
+    exact_energy_fn = lambda: _exact_energy(energy_fn, positions, moments, batch)
+    pme_features_fn = lambda: _padded_pme_features(
         descriptor,
-        energy_fn,
         positions,
         moments,
         cell,
@@ -191,10 +207,21 @@ def _run_case(case: Case, device: torch.device, dtype: torch.dtype) -> None:
         mesh_size,
         scale,
     )
+    pme_energy_fn = lambda: _padded_pme_energy(
+        energy_fn,
+        positions,
+        moments,
+        cell,
+        batch,
+        volume,
+        mesh_size,
+    )
 
     try:
-        exact_features, exact_energy = exact_fn()
-        pme_features, pme_energy = pme_fn()
+        exact_features = exact_features_fn()
+        exact_energy = exact_energy_fn()
+        pme_features = pme_features_fn()
+        pme_energy = pme_energy_fn()
         torch.cuda.synchronize()
         feature_rel_error = float(
             torch.linalg.vector_norm(pme_features - exact_features)
@@ -206,23 +233,52 @@ def _run_case(case: Case, device: torch.device, dtype: torch.dtype) -> None:
         del exact_features, exact_energy, pme_features, pme_energy
 
         repeats = 5 if case.num_atoms <= 256 else 3 if case.num_atoms <= 512 else 2
-        exact_ms, exact_peak = _time_cuda(exact_fn, warmup=1, repeats=repeats)
-        pme_ms, pme_peak = _time_cuda(pme_fn, warmup=2, repeats=repeats)
+        exact_feature_ms, exact_feature_peak = _time_cuda(
+            exact_features_fn, warmup=1, repeats=repeats
+        )
+        pme_feature_ms, pme_feature_peak = _time_cuda(
+            pme_features_fn, warmup=2, repeats=repeats
+        )
+        exact_energy_ms, exact_energy_peak = _time_cuda(
+            exact_energy_fn, warmup=1, repeats=repeats
+        )
+        pme_energy_ms, pme_energy_peak = _time_cuda(
+            pme_energy_fn, warmup=2, repeats=repeats
+        )
+        exact_polar_r1_ms = 2.0 * exact_feature_ms + exact_energy_ms
+        pme_polar_r1_ms = 2.0 * pme_feature_ms + pme_energy_ms
+        exact_polar_r2_ms = 4.0 * exact_feature_ms + exact_energy_ms
+        pme_polar_r2_ms = 4.0 * pme_feature_ms + pme_energy_ms
         print(
             "FFF_PME_RESULT "
             f"N={case.num_atoms} padding_A={case.padding:.1f} "
+            f"mesh_spacing_A={case.mesh_spacing:.3f} "
             f"box_A={box_length:.2f} mesh={mesh_size}^3 "
             f"feature_rel_error={feature_rel_error:.6e} "
             f"energy_error_eV_per_atom={energy_error_per_atom:.6e} "
-            f"exact_ms={exact_ms:.3f} pme_ms={pme_ms:.3f} "
-            f"speedup={exact_ms / pme_ms:.3f} "
-            f"exact_peak_GiB={exact_peak:.3f} pme_peak_GiB={pme_peak:.3f}",
+            f"exact_feature_ms={exact_feature_ms:.3f} "
+            f"pme_feature_ms={pme_feature_ms:.3f} "
+            f"feature_speedup={exact_feature_ms / pme_feature_ms:.3f} "
+            f"exact_energy_ms={exact_energy_ms:.3f} "
+            f"pme_energy_ms={pme_energy_ms:.3f} "
+            f"energy_speedup={exact_energy_ms / pme_energy_ms:.3f} "
+            f"exact_polar_r1_ms={exact_polar_r1_ms:.3f} "
+            f"pme_polar_r1_ms={pme_polar_r1_ms:.3f} "
+            f"polar_r1_speedup={exact_polar_r1_ms / pme_polar_r1_ms:.3f} "
+            f"exact_polar_r2_ms={exact_polar_r2_ms:.3f} "
+            f"pme_polar_r2_ms={pme_polar_r2_ms:.3f} "
+            f"polar_r2_speedup={exact_polar_r2_ms / pme_polar_r2_ms:.3f} "
+            f"exact_feature_peak_GiB={exact_feature_peak:.3f} "
+            f"pme_feature_peak_GiB={pme_feature_peak:.3f} "
+            f"exact_energy_peak_GiB={exact_energy_peak:.3f} "
+            f"pme_energy_peak_GiB={pme_energy_peak:.3f}",
             flush=True,
         )
     except torch.cuda.OutOfMemoryError as exc:
         print(
             "FFF_PME_RESULT "
             f"N={case.num_atoms} padding_A={case.padding:.1f} "
+            f"mesh_spacing_A={case.mesh_spacing:.3f} "
             f"box_A={box_length:.2f} mesh={mesh_size}^3 OOM={exc}",
             flush=True,
         )
@@ -249,6 +305,14 @@ def main() -> None:
     print("FFF_PME_SECTION padding_sweep", flush=True)
     for padding in (4.0, 8.0, 12.0, 16.0, 24.0):
         _run_case(Case(num_atoms=256, padding=padding), device, dtype)
+
+    print("FFF_PME_SECTION mesh_sweep", flush=True)
+    for mesh_spacing in (1.0, 0.75, 0.5, 0.375, 0.25):
+        _run_case(
+            Case(num_atoms=256, padding=16.0, mesh_spacing=mesh_spacing),
+            device,
+            dtype,
+        )
 
 
 if __name__ == "__main__":

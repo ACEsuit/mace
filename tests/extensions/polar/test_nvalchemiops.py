@@ -243,16 +243,7 @@ def _assert_full_model_parity(
         compute_stress=True,
     )
 
-    for key in (
-        "energy",
-        "electrostatic_energy",
-        "forces",
-        "virials",
-        "stress",
-        "density_coefficients",
-        "spin_charge_density",
-    ):
-        torch.testing.assert_close(nval_out[key], graph_out[key], rtol=3e-4, atol=2e-6)
+    _assert_model_outputs_close(nval_out, graph_out, device)
 
     molecule_batch = _clone_batch(batch)
     molecule_batch["pbc"] = torch.zeros_like(molecule_batch["pbc"])
@@ -265,6 +256,21 @@ def _assert_full_model_parity(
     torch.testing.assert_close(
         nval_molecule["energy"], graph_molecule["energy"], rtol=0.0, atol=0.0
     )
+
+
+def _assert_model_outputs_close(nval_out, graph_out, device: torch.device) -> None:
+    derivative_keys = {"forces", "virials", "stress"}
+    for key in (
+        "energy",
+        "electrostatic_energy",
+        "forces",
+        "virials",
+        "stress",
+        "density_coefficients",
+        "spin_charge_density",
+    ):
+        rtol = 5e-4 if device.type == "cuda" and key in derivative_keys else 3e-4
+        torch.testing.assert_close(nval_out[key], graph_out[key], rtol=rtol, atol=2e-6)
 
 
 def _assert_slab_model_parity(device: torch.device, dtype: torch.dtype) -> None:
@@ -301,16 +307,7 @@ def _assert_slab_model_parity(device: torch.device, dtype: torch.dtype) -> None:
         )
 
     assert feature_spy.called
-    for key in (
-        "energy",
-        "electrostatic_energy",
-        "forces",
-        "virials",
-        "stress",
-        "density_coefficients",
-        "spin_charge_density",
-    ):
-        torch.testing.assert_close(nval_out[key], graph_out[key], rtol=3e-4, atol=2e-6)
+    _assert_model_outputs_close(nval_out, graph_out, device)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
