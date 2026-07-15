@@ -15,6 +15,7 @@ try:
         gto_basis_kspace_cutoff,
     )
     from graph_longrange.kspace import compute_k_vectors_flat
+    from graph_longrange.slabs import slab_dipole_correction_energy
 
     GRAPH_LONGRANGE_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
@@ -630,8 +631,8 @@ class PolarMACE(ScaleShiftMACE):
                     "The nvalchemiops backend supports source and feature "
                     "multipoles only through l=2."
                 )
-            # Quadrupole feature corrections only affect nonperiodic inputs,
-            # which continue through the graph_longrange fallback.
+            # Molecular inputs, where quadrupole feature corrections apply,
+            # continue through the graph_longrange fallback.
             require_nvalchemiops()
         self.electrostatics_backend = backend
 
@@ -656,14 +657,29 @@ class PolarMACE(ScaleShiftMACE):
         batch_idx: Optional[torch.Tensor],
         positions: torch.Tensor,
         source_feats: torch.Tensor,
+        batch: torch.Tensor,
+        volumes: torch.Tensor,
+        pbc: torch.Tensor,
     ) -> torch.Tensor:
-        return nvalchemiops_scf_features(
+        features = nvalchemiops_scf_features(
             cache,
             positions,
             source_feats,
             batch_idx=batch_idx,
             include_self_interaction=self.field_si,
         )
+        if not bool(torch.all(pbc).item()):
+            features = (
+                features
+                + self.electric_potential_descriptor.non_periodic_correction_terms(
+                    source_feats=source_feats,
+                    node_positions=positions,
+                    batch=batch,
+                    volumes=volumes.reshape(-1),
+                    pbc=pbc,
+                )
+            )
+        return features
 
     @torch.jit.unused
     def _nvalchemiops_energy(
@@ -674,8 +690,10 @@ class PolarMACE(ScaleShiftMACE):
         source_feats: torch.Tensor,
         batch: torch.Tensor,
         num_graphs: int,
+        volumes: torch.Tensor,
+        pbc: torch.Tensor,
     ) -> torch.Tensor:
-        return nvalchemiops_scf_energy(
+        energy = nvalchemiops_scf_energy(
             cache,
             positions,
             source_feats,
@@ -684,6 +702,16 @@ class PolarMACE(ScaleShiftMACE):
             num_graphs=num_graphs,
             include_self_interaction=self.include_electrostatic_self_interaction,
         )
+        if not bool(torch.all(pbc).item()):
+            slab_correction = slab_dipole_correction_energy(
+                source_feats,
+                positions,
+                volumes.reshape(-1),
+                batch,
+            )
+            is_slab = pbc[:, 0] & pbc[:, 1] & (~pbc[:, 2])
+            energy = energy + slab_correction * is_slab.to(dtype=energy.dtype)
+        return energy
 
     def forward(
         self,
@@ -803,14 +831,17 @@ class PolarMACE(ScaleShiftMACE):
         node_inter_es = self.scale_shift(node_inter_es, node_heads)
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
+        pbc = data["pbc"].view(-1, 3).to(dtype=torch.bool)
         if torch.jit.is_scripting():
             use_nvalchemiops = False
         else:
+            is_3d_periodic = torch.all(pbc, dim=1)
+            is_z_slab = pbc[:, 0] & pbc[:, 1] & (~pbc[:, 2])
             use_nvalchemiops = (
                 getattr(self, "electrostatics_backend", GRAPH_LONGRANGE_BACKEND)
                 == NVALCHEMIOPS_BACKEND
                 and not is_lammps
-                and bool(torch.all(data["pbc"]).item())
+                and bool(torch.all(is_3d_periodic | is_z_slab).item())
             )
 
         nvalchemiops_cache: Any = None
@@ -820,7 +851,7 @@ class PolarMACE(ScaleShiftMACE):
                 cell, data["batch"]
             )
         else:
-            # graph_longrange also handles molecules and slab geometries.
+            # graph_longrange handles molecules and unsupported PBC patterns.
             (
                 k_vectors,
                 kv_norms_squared,
@@ -904,12 +935,18 @@ class PolarMACE(ScaleShiftMACE):
                     nvalchemiops_batch,
                     positions,
                     source_feats_alpha,
+                    data["batch"],
+                    data["volume"],
+                    pbc,
                 )
                 field_feats_beta = self._nvalchemiops_features(
                     nvalchemiops_cache,
                     nvalchemiops_batch,
                     positions,
                     source_feats_beta,
+                    data["batch"],
+                    data["volume"],
+                    pbc,
                 )
             else:
                 field_feats_alpha = self.electric_potential_descriptor.forward_dynamic(
@@ -1051,6 +1088,8 @@ class PolarMACE(ScaleShiftMACE):
                 charge_density_mul_ir,
                 data["batch"],
                 num_graphs,
+                data["volume"],
+                pbc,
             )
         else:
             electro_energy = self.coulomb_energy(

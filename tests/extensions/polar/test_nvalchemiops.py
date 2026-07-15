@@ -2,6 +2,7 @@
 
 import copy
 import math
+from unittest import mock
 
 import pytest
 import torch
@@ -266,6 +267,52 @@ def _assert_full_model_parity(
     )
 
 
+def _assert_slab_model_parity(device: torch.device, dtype: torch.dtype) -> None:
+    torch.manual_seed(7)
+    graph_model = _build_minimal_model(device, dtype).eval()
+    nval_model = copy.deepcopy(graph_model)
+    nval_model.set_electrostatics_backend("nvalchemiops")
+
+    batch = _build_minimal_batch(device, dtype)
+    batch["unit_shifts"] = torch.zeros_like(batch["shifts"])
+    cells = batch["cell"].view(-1, 3, 3)
+    batch["volume"] = torch.linalg.det(cells).abs()
+    slab_pbc = torch.ones_like(batch["pbc"], dtype=torch.bool)
+    slab_pbc.view(-1, 3)[:, 2] = False
+    batch["pbc"] = slab_pbc
+
+    graph_out = graph_model(
+        _clone_batch(batch),
+        training=False,
+        compute_force=True,
+        compute_virials=True,
+        compute_stress=True,
+    )
+    with mock.patch(
+        "mace.modules.extensions.nvalchemiops_scf_features",
+        wraps=nvalchemiops_scf_features,
+    ) as feature_spy:
+        nval_out = nval_model(
+            _clone_batch(batch),
+            training=False,
+            compute_force=True,
+            compute_virials=True,
+            compute_stress=True,
+        )
+
+    assert feature_spy.called
+    for key in (
+        "energy",
+        "electrostatic_energy",
+        "forces",
+        "virials",
+        "stress",
+        "density_coefficients",
+        "spin_charge_density",
+    ):
+        torch.testing.assert_close(nval_out[key], graph_out[key], rtol=3e-4, atol=2e-6)
+
+
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_full_polarmace_backend_matches_and_falls_back_on_cpu(dtype: torch.dtype):
     _assert_full_model_parity(torch.device("cpu"), dtype)
@@ -277,6 +324,10 @@ def test_quadrupole_corrections_use_periodic_backend_and_nonperiodic_fallback():
         torch.float64,
         quadrupole_feature_corrections=True,
     )
+
+
+def test_full_polarmace_slab_uses_nvalchemiops_on_cpu():
+    _assert_slab_model_parity(torch.device("cpu"), torch.float64)
 
 
 def test_calculator_rejects_compile_with_nvalchemiops():
@@ -295,3 +346,8 @@ def test_calculator_rejects_compile_with_nvalchemiops():
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_full_polarmace_backend_matches_on_gpu(dtype: torch.dtype):
     _assert_full_model_parity(torch.device("cuda"), dtype)
+
+
+@pytest.mark.gpu
+def test_full_polarmace_slab_uses_nvalchemiops_on_gpu():
+    _assert_slab_model_parity(torch.device("cuda"), torch.float32)

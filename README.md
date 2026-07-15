@@ -306,12 +306,13 @@ For usage, outputs, and training/finetuning details, see the PolarMACE guide:
 
 - https://mace-docs.readthedocs.io/en/latest/guide/polar_mace.html
 
-Fully periodic PolarMACE calculations can optionally use NVIDIA ALCHEMI
-Toolkit-Ops 0.4.0 for the reciprocal-space multipole features and energy. The
-backend reuses one SCF geometry cache across spin channels and recursion steps.
-It requires Python 3.11 or newer and PyTorch 2.8 or newer. After installing
-`graph_longrange` as described in the PolarMACE guide, install the optional
-backend with:
+Fully periodic and z-normal slab (`TTF`) PolarMACE calculations can optionally
+use NVIDIA ALCHEMI Toolkit-Ops 0.4.0 for the reciprocal-space multipole features
+and energy. Slabs combine the NVIDIA kernels with the existing analytic slab
+corrections. The backend reuses one SCF geometry cache across spin channels and
+recursion steps. It requires Python 3.11 or newer and PyTorch 2.8 or newer. After
+installing `graph_longrange` as described in the PolarMACE guide, install the
+optional backend with:
 
 ```sh
 pip install "mace-torch[nvalchemiops]"
@@ -329,10 +330,9 @@ calc = mace_polar(
 )
 ```
 
-Molecular, slab, and LAMMPS evaluator inputs continue to use the
-`graph_longrange` implementation because the NVIDIA SCF cache is a fully
-periodic direct-k-space method. This backend currently runs in eager mode, so
-leave the calculator's `compile_mode` unset.
+Molecular, other partially periodic, and LAMMPS evaluator inputs continue to use
+the `graph_longrange` implementation. This backend currently runs in eager mode,
+so leave the calculator's `compile_mode` unset.
 
 ### Finetuning foundation models
 
