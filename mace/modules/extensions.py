@@ -630,6 +630,8 @@ class PolarMACE(ScaleShiftMACE):
                     "The nvalchemiops backend supports source and feature "
                     "multipoles only through l=2."
                 )
+            # Quadrupole feature corrections only affect nonperiodic inputs,
+            # which continue through the graph_longrange fallback.
             require_nvalchemiops()
         self.electrostatics_backend = backend
 

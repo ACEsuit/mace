@@ -208,9 +208,17 @@ def test_batched_features_and_energy_match_on_cpu():
     torch.testing.assert_close(nv_energy, graph_energy, rtol=5e-8, atol=5e-8)
 
 
-def _assert_full_model_parity(device: torch.device, dtype: torch.dtype) -> None:
+def _assert_full_model_parity(
+    device: torch.device,
+    dtype: torch.dtype,
+    quadrupole_feature_corrections: bool = False,
+) -> None:
     torch.manual_seed(7)
-    graph_model = _build_minimal_model(device, dtype).eval()
+    graph_model = _build_minimal_model(
+        device,
+        dtype,
+        quadrupole_feature_corrections=quadrupole_feature_corrections,
+    ).eval()
     nval_model = copy.deepcopy(graph_model)
     nval_model.set_electrostatics_backend("nvalchemiops")
 
@@ -261,6 +269,14 @@ def _assert_full_model_parity(device: torch.device, dtype: torch.dtype) -> None:
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_full_polarmace_backend_matches_and_falls_back_on_cpu(dtype: torch.dtype):
     _assert_full_model_parity(torch.device("cpu"), dtype)
+
+
+def test_quadrupole_corrections_use_periodic_backend_and_nonperiodic_fallback():
+    _assert_full_model_parity(
+        torch.device("cpu"),
+        torch.float64,
+        quadrupole_feature_corrections=True,
+    )
 
 
 def test_calculator_rejects_compile_with_nvalchemiops():

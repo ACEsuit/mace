@@ -212,7 +212,7 @@ def _build_full_model(
     return model
 
 
-def _build_minimal_model(device, dtype):
+def _build_minimal_model(device, dtype, quadrupole_feature_corrections: bool = False):
     num_elements = 2
     atomic_numbers = [1, 8]
     hidden_irreps = o3.Irreps("4x0e + 4x1o")
@@ -259,6 +259,7 @@ def _build_minimal_model(device, dtype):
         field_si=False,
         include_electrostatic_self_interaction=False,
         add_local_electron_energy=True,
+        quadrupole_feature_corrections=quadrupole_feature_corrections,
         field_dependence_type="AgnosticEmbeddedOneBodyVariableUpdate",
         final_field_readout_type="OneBodyMLPFieldReadout",
         return_electrostatic_potentials=False,
