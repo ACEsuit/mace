@@ -331,8 +331,11 @@ calc = mace_polar(
 ```
 
 Molecular, other partially periodic, and LAMMPS evaluator inputs continue to use
-the `graph_longrange` implementation. This backend currently runs in eager mode,
-so leave the calculator's `compile_mode` unset.
+the `graph_longrange` implementation. Toolkit-Ops multipole PME is periodic and
+does not currently expose the PME atom-centered receiver-feature path needed to
+preserve `graph_longrange`'s finite-difference molecular representation. This
+backend currently runs in eager mode, so leave the calculator's `compile_mode`
+unset.
 
 ### Finetuning foundation models
 

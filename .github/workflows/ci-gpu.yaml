@@ -139,32 +139,11 @@ jobs:
           print("device:", torch.cuda.get_device_name(0))
           PY
 
-      - name: Benchmark isolated multipole PME prototype
-        if: >-
-          matrix.vendor == 'nvidia' &&
-          (github.head_ref == 'agent/nvalchemiops-polar-backend' ||
-           github.ref_name == 'agent/nvalchemiops-polar-backend')
-        run: python tests/benchmarks/benchmark_nval_fff_pme.py
-
-      - name: Run targeted NVIDIA backend GPU tests
-        if: >-
-          matrix.vendor == 'nvidia' &&
-          github.event_name == 'workflow_dispatch' &&
-          github.ref_name == 'agent/nvalchemiops-polar-backend'
-        env:
-          MACE_REQUIRE_CAPS: gpu,polar,nvalchemiops
-        run: >-
-          pytest tests/extensions/polar/test_nvalchemiops.py
-          -m gpu -v --timeout=1200
-
       # Marker selection over the whole tree: parity of accelerated backends,
       # torch.compile on GPU, GPU training, calculator GPU paths... Benchmarks
       # are excluded from correctness gates by design. MACE_REQUIRE_CAPS turns
       # a broken backend install on this runner into failures, never skips.
       - name: Run GPU tests
-        if: >-
-          github.event_name != 'workflow_dispatch' ||
-          github.ref_name != 'agent/nvalchemiops-polar-backend'
         uses: ./.github/actions/run-tests
         with:
           tests: tests
