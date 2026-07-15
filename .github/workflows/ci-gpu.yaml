@@ -139,6 +139,10 @@ jobs:
           print("device:", torch.cuda.get_device_name(0))
           PY
 
+      - name: Benchmark isolated multipole PME prototype
+        if: matrix.vendor == 'nvidia' && github.head_ref == 'agent/nvalchemiops-polar-backend'
+        run: python tests/benchmarks/benchmark_nval_fff_pme.py
+
       # Marker selection over the whole tree: parity of accelerated backends,
       # torch.compile on GPU, GPU training, calculator GPU paths... Benchmarks
       # are excluded from correctness gates by design. MACE_REQUIRE_CAPS turns
