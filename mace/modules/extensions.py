@@ -1,6 +1,6 @@
 # pylint: disable=too-many-lines  # magnetic MACE variants live here
 from abc import abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch
@@ -27,6 +27,15 @@ from mace.modules.blocks import (
 )
 from mace.modules.embeddings import GenericJointEmbedding
 from mace.modules.models import ScaleShiftMACE
+from mace.modules.polar_backends import (
+    GRAPH_LONGRANGE_BACKEND,
+    NVALCHEMIOPS_BACKEND,
+    normalize_electrostatics_backend,
+    nvalchemiops_scf_energy,
+    nvalchemiops_scf_features,
+    prepare_nvalchemiops_scf_cache,
+    require_nvalchemiops,
+)
 from mace.modules.utils import (
     compute_total_charge_dipole_permuted,
     get_atomic_virials_stresses,
@@ -342,6 +351,7 @@ class PolarMACE(ScaleShiftMACE):
         field_norm_factor: Optional[float] = 0.02,
         fixedpoint_update_config: Optional[Dict[str, Any]] = None,
         field_readout_config: Optional[Dict[str, Any]] = None,
+        electrostatics_backend: str = GRAPH_LONGRANGE_BACKEND,
         **kwargs,
     ):
         if not GRAPH_LONGRANGE_AVAILABLE:
@@ -407,6 +417,8 @@ class PolarMACE(ScaleShiftMACE):
         self.quadrupole_feature_corrections = quadrupole_feature_corrections
         self.field_si = field_si
         self.keep_last_layer_irreps = True
+        self.electrostatics_backend = GRAPH_LONGRANGE_BACKEND
+        self.set_electrostatics_backend(electrostatics_backend)
 
         # k-space cutoff heuristic
         kspace_cutoff = kspace_cutoff_factor * gto_basis_kspace_cutoff(
@@ -609,6 +621,68 @@ class PolarMACE(ScaleShiftMACE):
             cueq_config=cueq_config,
         )
 
+    def set_electrostatics_backend(self, backend: str) -> None:
+        """Select the eager PolarMACE long-range electrostatics backend."""
+        backend = normalize_electrostatics_backend(backend)
+        if backend == NVALCHEMIOPS_BACKEND:
+            if self.atomic_multipoles_max_l > 2 or self.field_feature_max_l > 2:
+                raise ValueError(
+                    "The nvalchemiops backend supports source and feature "
+                    "multipoles only through l=2."
+                )
+            require_nvalchemiops()
+        self.electrostatics_backend = backend
+
+    @torch.jit.unused
+    def _prepare_nvalchemiops_cache(
+        self, cell: torch.Tensor, batch: torch.Tensor
+    ) -> Tuple[Any, Optional[torch.Tensor]]:
+        return prepare_nvalchemiops_scf_cache(
+            cell,
+            batch,
+            density_smearing_width=self.atomic_multipoles_smearing_width,
+            feature_smearing_widths=tuple(self.field_feature_widths),
+            kspace_cutoff=float(self.kspace_cutoff),
+            density_max_l=self.atomic_multipoles_max_l,
+            feature_max_l=self.field_feature_max_l,
+        )
+
+    @torch.jit.unused
+    def _nvalchemiops_features(
+        self,
+        cache: Any,
+        batch_idx: Optional[torch.Tensor],
+        positions: torch.Tensor,
+        source_feats: torch.Tensor,
+    ) -> torch.Tensor:
+        return nvalchemiops_scf_features(
+            cache,
+            positions,
+            source_feats,
+            batch_idx=batch_idx,
+            include_self_interaction=self.field_si,
+        )
+
+    @torch.jit.unused
+    def _nvalchemiops_energy(
+        self,
+        cache: Any,
+        batch_idx: Optional[torch.Tensor],
+        positions: torch.Tensor,
+        source_feats: torch.Tensor,
+        batch: torch.Tensor,
+        num_graphs: int,
+    ) -> torch.Tensor:
+        return nvalchemiops_scf_energy(
+            cache,
+            positions,
+            source_feats,
+            batch_idx=batch_idx,
+            batch=batch,
+            num_graphs=num_graphs,
+            include_self_interaction=self.include_electrostatic_self_interaction,
+        )
+
     def forward(
         self,
         data: Dict[str, torch.Tensor],
@@ -727,27 +801,48 @@ class PolarMACE(ScaleShiftMACE):
         node_inter_es = self.scale_shift(node_inter_es, node_heads)
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
-        # Build k-grid
-        (
-            k_vectors,
-            kv_norms_squared,
-            k_vectors_batch,
-            k_vectors_0mask,
-        ) = compute_k_vectors_flat(
-            self.kspace_cutoff, cell.view(-1, 3, 3), data["rcell"].view(-1, 3, 3)
-        )
+        if torch.jit.is_scripting():
+            use_nvalchemiops = False
+        else:
+            use_nvalchemiops = (
+                getattr(self, "electrostatics_backend", GRAPH_LONGRANGE_BACKEND)
+                == NVALCHEMIOPS_BACKEND
+                and not is_lammps
+                and bool(torch.all(data["pbc"]).item())
+            )
 
-        field_feature_cache = self.electric_potential_descriptor.precompute_geometry(
-            k_vectors=k_vectors,
-            k_norm2=kv_norms_squared,
-            k_vector_batch=k_vectors_batch,
-            k0_mask=k_vectors_0mask,
-            node_positions=positions,
-            batch=data["batch"],
-            volume=data["volume"],
-            pbc=data["pbc"].view(-1, 3),
-            force_pbc_evaluator=use_pbc_evaluator,
-        )
+        nvalchemiops_cache: Any = None
+        nvalchemiops_batch: Optional[torch.Tensor] = None
+        if use_nvalchemiops:
+            nvalchemiops_cache, nvalchemiops_batch = self._prepare_nvalchemiops_cache(
+                cell, data["batch"]
+            )
+        else:
+            # graph_longrange also handles molecules and slab geometries.
+            (
+                k_vectors,
+                kv_norms_squared,
+                k_vectors_batch,
+                k_vectors_0mask,
+            ) = compute_k_vectors_flat(
+                self.kspace_cutoff,
+                cell.view(-1, 3, 3),
+                data["rcell"].view(-1, 3, 3),
+            )
+
+            field_feature_cache = (
+                self.electric_potential_descriptor.precompute_geometry(
+                    k_vectors=k_vectors,
+                    k_norm2=kv_norms_squared,
+                    k_vector_batch=k_vectors_batch,
+                    k0_mask=k_vectors_0mask,
+                    node_positions=positions,
+                    batch=data["batch"],
+                    volume=data["volume"],
+                    pbc=data["pbc"].view(-1, 3),
+                    force_pbc_evaluator=use_pbc_evaluator,
+                )
+            )
 
         # SCF fixed point
         features_mixed = self.layer_feature_mixer(torch.stack(node_feats_list, dim=0))
@@ -801,16 +896,30 @@ class PolarMACE(ScaleShiftMACE):
             if charges_to_mul_ir is not None:
                 source_feats_alpha = charges_to_mul_ir(source_feats_alpha)
                 source_feats_beta = charges_to_mul_ir(source_feats_beta)
-            field_feats_alpha = self.electric_potential_descriptor.forward_dynamic(
-                cache=field_feature_cache,
-                source_feats=source_feats_alpha.unsqueeze(-2),
-                pbc=data["pbc"].view(-1, 3),
-            )
-            field_feats_beta = self.electric_potential_descriptor.forward_dynamic(
-                cache=field_feature_cache,
-                source_feats=source_feats_beta.unsqueeze(-2),
-                pbc=data["pbc"].view(-1, 3),
-            )
+            if use_nvalchemiops:
+                field_feats_alpha = self._nvalchemiops_features(
+                    nvalchemiops_cache,
+                    nvalchemiops_batch,
+                    positions,
+                    source_feats_alpha,
+                )
+                field_feats_beta = self._nvalchemiops_features(
+                    nvalchemiops_cache,
+                    nvalchemiops_batch,
+                    positions,
+                    source_feats_beta,
+                )
+            else:
+                field_feats_alpha = self.electric_potential_descriptor.forward_dynamic(
+                    cache=field_feature_cache,
+                    source_feats=source_feats_alpha.unsqueeze(-2),
+                    pbc=data["pbc"].view(-1, 3),
+                )
+                field_feats_beta = self.electric_potential_descriptor.forward_dynamic(
+                    cache=field_feature_cache,
+                    source_feats=source_feats_beta.unsqueeze(-2),
+                    pbc=data["pbc"].view(-1, 3),
+                )
             field_from_mul_ir = getattr(self, "_field_from_mul_ir", None)
             if field_from_mul_ir is not None:
                 field_feats_alpha = field_from_mul_ir(field_feats_alpha)
@@ -932,18 +1041,28 @@ class PolarMACE(ScaleShiftMACE):
         total_charge, total_dipole = compute_total_charge_dipole_permuted(
             charge_density_mul_ir, positions, data["batch"], num_graphs
         )
-        electro_energy = self.coulomb_energy(
-            k_vectors=k_vectors,
-            k_norm2=kv_norms_squared,
-            k_vector_batch=k_vectors_batch,
-            k0_mask=k_vectors_0mask,
-            source_feats=charge_density_mul_ir,
-            node_positions=positions,
-            batch=data["batch"],
-            volume=data["volume"],
-            pbc=data["pbc"].view(-1, 3),
-            force_pbc_evaluator=use_pbc_evaluator,
-        )
+        if use_nvalchemiops:
+            electro_energy = self._nvalchemiops_energy(
+                nvalchemiops_cache,
+                nvalchemiops_batch,
+                positions,
+                charge_density_mul_ir,
+                data["batch"],
+                num_graphs,
+            )
+        else:
+            electro_energy = self.coulomb_energy(
+                k_vectors=k_vectors,
+                k_norm2=kv_norms_squared,
+                k_vector_batch=k_vectors_batch,
+                k0_mask=k_vectors_0mask,
+                source_feats=charge_density_mul_ir,
+                node_positions=positions,
+                batch=data["batch"],
+                volume=data["volume"],
+                pbc=data["pbc"].view(-1, 3),
+                force_pbc_evaluator=use_pbc_evaluator,
+            )
         total_energy = (
             total_energy
             + electro_energy

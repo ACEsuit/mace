@@ -321,6 +321,7 @@ def _build_model(
             use_agnostic_product=args.use_agnostic_product,
         )
     if args.model == "PolarMACE" and model_config_foundation is not None:
+        model_config_foundation["electrostatics_backend"] = args.electrostatics_backend
         return modules.PolarMACE(**model_config_foundation)
     if args.model == "PolarMACE":
         field_feature_widths = _parse_literal_or_none(args.field_feature_widths)
@@ -361,6 +362,7 @@ def _build_model(
             field_norm_factor=args.field_norm_factor,
             fixedpoint_update_config=fixedpoint_update_config,
             field_readout_config=field_readout_config,
+            electrostatics_backend=args.electrostatics_backend,
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)

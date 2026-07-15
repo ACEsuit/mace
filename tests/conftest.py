@@ -55,11 +55,28 @@ def _lammps_available() -> bool:
         return False
 
 
+def _nvalchemiops_available() -> bool:
+    try:
+        from nvalchemiops.torch.interactions import electrostatics
+
+        return all(
+            callable(getattr(electrostatics, name, None))
+            for name in (
+                "multipole_scf_step_energy",
+                "multipole_scf_step_features",
+                "prepare_multipole_scf_cache",
+            )
+        )
+    except (ImportError, ModuleNotFoundError, OSError, RuntimeError):
+        return False
+
+
 CAPABILITY_PROBES = {
     "gpu": _gpu_available,
     "cueq": lambda: _module_available("cuequivariance"),
     "oeq": lambda: _module_available("openequivariance"),
     "polar": lambda: _module_available("graph_longrange"),
+    "nvalchemiops": _nvalchemiops_available,
     "les": lambda: _module_available("les"),
     "magnetic": lambda: _module_available("sphericart"),
     "torchsim": lambda: _module_available("torch_sim"),

@@ -1,0 +1,3 @@
+# Optional NVIDIA Warp electrostatics backend for PolarMACE.
+# Version 0.4.0 introduces the cache-aware multipole SCF API used by MACE.
+nvalchemi-toolkit-ops[torch]==0.4.0

@@ -314,6 +314,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=1.5,
     )
     parser.add_argument(
+        "--electrostatics_backend",
+        help="long-range electrostatics backend used by PolarMACE",
+        type=str,
+        choices=["graph_longrange", "nvalchemiops"],
+        default="graph_longrange",
+    )
+    parser.add_argument(
         "--atomic_multipoles_max_l",
         help="maximum l for atomic multipoles in PolarMACE",
         type=int,

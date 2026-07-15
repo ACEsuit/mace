@@ -384,6 +384,9 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
             model, "_fixedpoint_update_config"
         ).copy()
         config["field_readout_config"] = getattr(model, "_field_readout_config").copy()
+        config["electrostatics_backend"] = getattr(
+            model, "electrostatics_backend", "graph_longrange"
+        )
         config["keep_last_layer_irreps"] = model.keep_last_layer_irreps
     return config
 
