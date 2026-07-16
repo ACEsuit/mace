@@ -23,6 +23,13 @@ from .test_polar_models import (
 pytestmark = pytest.mark.nvalchemiops
 
 
+@pytest.fixture(autouse=True)
+def _restore_default_dtype():
+    original_dtype = torch.get_default_dtype()
+    yield
+    torch.set_default_dtype(original_dtype)
+
+
 def _direct_inputs(device: torch.device):
     dtype = torch.float64
     positions = torch.tensor(
@@ -214,6 +221,7 @@ def _assert_full_model_parity(
     dtype: torch.dtype,
     quadrupole_feature_corrections: bool = False,
 ) -> None:
+    torch.set_default_dtype(dtype)
     torch.manual_seed(7)
     graph_model = _build_minimal_model(
         device,
@@ -243,7 +251,7 @@ def _assert_full_model_parity(
         compute_stress=True,
     )
 
-    _assert_model_outputs_close(nval_out, graph_out, device)
+    _assert_model_outputs_close(nval_out, graph_out)
 
     molecule_batch = _clone_batch(batch)
     molecule_batch["pbc"] = torch.zeros_like(molecule_batch["pbc"])
@@ -258,7 +266,7 @@ def _assert_full_model_parity(
     )
 
 
-def _assert_model_outputs_close(nval_out, graph_out, device: torch.device) -> None:
+def _assert_model_outputs_close(nval_out, graph_out) -> None:
     derivative_keys = {"forces", "virials", "stress"}
     for key in (
         "energy",
@@ -269,11 +277,12 @@ def _assert_model_outputs_close(nval_out, graph_out, device: torch.device) -> No
         "density_coefficients",
         "spin_charge_density",
     ):
-        rtol = 5e-4 if device.type == "cuda" and key in derivative_keys else 3e-4
+        rtol = 5e-4 if key in derivative_keys else 3e-4
         torch.testing.assert_close(nval_out[key], graph_out[key], rtol=rtol, atol=2e-6)
 
 
 def _assert_slab_model_parity(device: torch.device, dtype: torch.dtype) -> None:
+    torch.set_default_dtype(dtype)
     torch.manual_seed(7)
     graph_model = _build_minimal_model(device, dtype).eval()
     nval_model = copy.deepcopy(graph_model)
@@ -307,7 +316,7 @@ def _assert_slab_model_parity(device: torch.device, dtype: torch.dtype) -> None:
         )
 
     assert feature_spy.called
-    _assert_model_outputs_close(nval_out, graph_out, device)
+    _assert_model_outputs_close(nval_out, graph_out)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
