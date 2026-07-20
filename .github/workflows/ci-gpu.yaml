@@ -139,12 +139,12 @@ jobs:
           print("device:", torch.cuda.get_device_name(0))
           PY
 
-      - name: Benchmark large isolated multipole PME prototype
+      - name: Benchmark multipole PME torch.compile overhead
         if: >-
           matrix.vendor == 'nvidia' &&
           github.event_name == 'workflow_dispatch' &&
           github.ref_name == 'agent/nval-fff-large-benchmark-20260717'
-        run: python tests/benchmarks/benchmark_nval_fff_pme_large.py
+        run: python tests/benchmarks/benchmark_nval_pme_compile.py
 
       # Marker selection over the whole tree: parity of accelerated backends,
       # torch.compile on GPU, GPU training, calculator GPU paths... Benchmarks
