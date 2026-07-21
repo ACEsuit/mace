@@ -344,7 +344,9 @@ def _run_case(num_atoms: int, device: torch.device, dtype: torch.dtype) -> None:
     )
     torch.testing.assert_close(cached_energy, reference_energy, rtol=1e-10, atol=1e-10)
 
-    for mode in ("default", "reduce-overhead"):
+    # Warp launches on its own stream, so CUDA-graph capture used by
+    # reduce-overhead is unsupported. NVIDIA's benchmark also uses default mode.
+    for mode in ("default",):
         compiled, _, _ = _compile_node_energy(
             num_atoms, eager_cached_node, mode, positions, moments
         )
