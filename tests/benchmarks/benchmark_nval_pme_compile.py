@@ -20,6 +20,7 @@ from nvalchemiops.torch.interactions.electrostatics.pme_multipole import (
     multipole_pme_reciprocal_space,
 )
 from nvalchemiops.torch.math.gto import NormMode, inv_cl
+from torch._functorch import config as functorch_config
 
 SOURCE_SIGMA = 1.0
 RECEIVER_SIGMA = 1.0
@@ -396,13 +397,16 @@ def _run_case(num_atoms: int, device: torch.device, dtype: torch.dtype) -> None:
 def main() -> None:
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is required")
+    # PME features use create_graph=True so model forces can differentiate them.
+    functorch_config.donated_buffer = False
     device = torch.device("cuda")
     dtype = torch.float64
     torch.set_default_dtype(dtype)
     print(
         "PME_COMPILE_DEVICE "
         f"name={torch.cuda.get_device_name(0)} dtype={dtype} "
-        f"torch={torch.__version__}",
+        f"torch={torch.__version__} "
+        f"donated_buffer={functorch_config.donated_buffer}",
         flush=True,
     )
     for num_atoms in (64, 256, 1024):
