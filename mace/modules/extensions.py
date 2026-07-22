@@ -31,7 +31,12 @@ from mace.modules.blocks import (
     NonLinearReadoutBlock,
 )
 from mace.modules.models import ScaleShiftMACE
-from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
+from mace.modules.utils import (
+    get_atomic_virials_stresses,
+    get_outputs,
+    prepare_graph,
+    safe_double,
+)
 from mace.modules.wrapper_ops import (
     CuEquivarianceConfig,
     OEQConfig,
@@ -445,7 +450,7 @@ class MACELES(ScaleShiftMACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         total_energy = e0 + inter_e
-        node_energy = node_e0.clone().double() + node_inter_es.clone().double()
+        node_energy = safe_double(node_e0.clone()) + safe_double(node_inter_es.clone())
 
         les_q = torch.sum(torch.stack(node_qs_list, dim=1), dim=1) * self.les_output_scale
         if len(node_us_list) > 0:
@@ -990,7 +995,7 @@ class PolarMACE(ScaleShiftMACE):
             fukui_input = fukui_to_mul_ir(fukui_input)
         fukui_sources = self.fukui_source_map(fukui_input)
         fukui_norm = scatter_sum(
-            src=fukui_sources.double(),
+            src=safe_double(fukui_sources),
             index=data["batch"],
             dim=0,
             dim_size=num_graphs,
@@ -1002,7 +1007,7 @@ class PolarMACE(ScaleShiftMACE):
         Q_p_S = (data["total_charge"] + (data["total_spin"] - 1))[data["batch"]]
         Q_m_S = (data["total_charge"] - (data["total_spin"] - 1))[data["batch"]]
         pred_total_charges_0 = scatter_sum(
-            src=spin_charge_density[:, :, 0].double(),
+            src=safe_double(spin_charge_density[:, :, 0]),
             index=data["batch"],
             dim=0,
             dim_size=num_graphs,
@@ -1048,7 +1053,7 @@ class PolarMACE(ScaleShiftMACE):
 
             # Add external field contribution and subtract barycenter for gauge invariance
             barycenter = scatter_mean(
-                src=positions.double(),
+                src=safe_double(positions),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
@@ -1090,7 +1095,7 @@ class PolarMACE(ScaleShiftMACE):
             spin_charge_density = spin_charge_density + spin_charge_density_sources
 
             fukui_norm2 = scatter_sum(
-                src=current_fukui_sources.double(),
+                src=safe_double(current_fukui_sources),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
@@ -1100,7 +1105,7 @@ class PolarMACE(ScaleShiftMACE):
             )
             current_fukui_sources = current_fukui_sources / fukui_norm2
             pred_total_charges = scatter_sum(
-                src=spin_charge_density[:, :, 0].double(),
+                src=safe_double(spin_charge_density[:, :, 0]),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
@@ -1208,7 +1213,8 @@ class PolarMACE(ScaleShiftMACE):
 
         return {
             "energy": total_energy,
-            "node_energy": node_e0.clone().double() + node_inter_es.clone().double(),
+            "node_energy": safe_double(node_e0.clone())
+            + safe_double(node_inter_es.clone()),
             "interaction_energy": inter_e,
             "forces": forces,
             "edge_forces": edge_forces,

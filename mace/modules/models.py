@@ -39,6 +39,7 @@ from .utils import (
     get_outputs,
     get_symmetric_displacement,
     prepare_graph,
+    safe_double,
 )
 
 
@@ -578,7 +579,7 @@ class ScaleShiftMACE(MACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         total_energy = e0 + inter_e
-        node_energy = node_e0.clone().double() + node_inter_es.clone().double()
+        node_energy = safe_double(node_e0.clone()) + safe_double(node_inter_es.clone())
 
         forces, virials, stress, hessian, edge_forces = get_outputs(
             energy=inter_e,
