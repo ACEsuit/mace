@@ -22,6 +22,12 @@ try:
     OEQ_AVAILABLE = True
 except ImportError:
     OEQ_AVAILABLE = False
+except AssertionError as exc:
+    if "Only CUDA and HIP backends are supported" in str(exc):
+        # continue w/o if using CPU torch
+        OEQ_AVAILABLE = False
+    else:
+        raise
 
 
 def run(
