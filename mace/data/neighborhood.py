@@ -88,4 +88,3 @@ def get_neighborhood(
     shifts = np.dot(unit_shifts, cell)  # [n_edges, 3]
 
     return edge_index, shifts, unit_shifts, cell
-
