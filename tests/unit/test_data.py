@@ -230,3 +230,25 @@ def test_half_periodic():
         vectors[:, 2],
         np.zeros(vectors.shape[0]),
     )
+
+
+def test_nonperiodic_cell_is_extent_based():
+    # The fictitious cell for non-periodic directions is sized from the atom
+    # extent (+ cutoff padding), not from max(|positions|). Two copies of the
+    # same molecule at different absolute positions must therefore get the SAME
+    # cell -- the old max(|positions|)*5*cutoff formula grew with the coordinate
+    # origin and blew up (OOM) k-space electrostatics for molecules far from 0.
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(-2.0, 2.0, size=(6, 3))
+    cutoff = 5.0
+    _, _, _, cell_near = get_neighborhood(
+        positions, cutoff=cutoff, pbc=(False, False, False)
+    )
+    _, _, _, cell_far = get_neighborhood(
+        positions + 100.0, cutoff=cutoff, pbc=(False, False, False)
+    )
+    # origin-independent: same shape -> same cell regardless of absolute position
+    assert np.allclose(cell_near, cell_far)
+    # and the cell tracks the extent + cutoff padding (not |positions|)
+    extent = positions.max(axis=0) - positions.min(axis=0)
+    assert np.allclose(np.diag(cell_near), extent + 2 * cutoff + 1)

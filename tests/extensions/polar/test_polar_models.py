@@ -536,24 +536,19 @@ def test_polar_slab_partial_pbc_cell_contract(dtype):
 @pytest.mark.parametrize("dtype", [torch.float64])
 def test_polar_slab_electrostatics_converge_with_vacuum(dtype):
     """
-    Physics check for the coupling flagged in review ("the vacuum affects the
-    electrostatic part").
+    Smoke check for the coupling flagged in review ("the vacuum affects the
+    electrostatic part"): the returned physical cell becomes the k-space box
+    (and its det() the volume), so the vacuum gap enters the electrostatics.
+    The short-range part is identical across vacuum sizes (same edges/shifts),
+    so any energy change is purely the electrostatic response to the cell, and
+    on a benign slab it must *converge* (not diverge) as the vacuum grows.
 
-    The returned physical cell becomes the k-space box (and its det() the
-    volume), so the vacuum gap enters the electrostatics. graph_longrange
-    already applies a Yeh-Berkowitz slab dipole correction for pbc=(T, T, F)
-    (on by default), which removes the leading vacuum-dependent term, so the
-    slab energy must *converge* as the vacuum grows -- successive differences
-    shrink. The short-range part is identical across vacuum sizes (same
-    edges/shifts), so any change is purely the electrostatic response to the
-    returned cell.
-
-    _polar_slab_atoms is dipole-free, which makes convergence robust without
-    even leaning on the correction; with the correction active a dipolar slab
-    should converge too.
-
-    NOTE: the tolerance below is a scale-free convergence criterion; confirm the
-    absolute energy scale once in an environment with graph_longrange installed.
+    SCOPE: this guards "finite and non-diverging", not the Yeh-Berkowitz slab
+    correction itself. _polar_slab_atoms is dipole-free, and a dipole-free slab
+    converges whether or not that correction is active (verified by toggling
+    include_pbc_corrections), so this test does NOT exercise it. Testing the
+    correction would need a dipolar slab, which is not stable on an untrained
+    model here.
     """
     device = torch.device("cpu")
     torch.manual_seed(0)
