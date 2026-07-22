@@ -252,3 +252,81 @@ def test_nonperiodic_cell_is_extent_based():
     # and the cell tracks the extent + cutoff padding (not |positions|)
     extent = positions.max(axis=0) - positions.min(axis=0)
     assert np.allclose(np.diag(cell_near), extent + 2 * cutoff + 1)
+
+
+def _edge_multiset(idx_pairs, shift_vecs):
+    return sorted(
+        (
+            int(i),
+            int(j),
+            round(float(s[0]), 4),
+            round(float(s[1]), 4),
+            round(float(s[2]), 4),
+        )
+        for (i, j), s in zip(idx_pairs, shift_vecs)
+    )
+
+
+def _bruteforce_neighbours(positions, cell, pbc, cutoff):
+    # Reference neighbour list: enumerate periodic images along the periodic axes
+    # (none along non-periodic ones) and keep pairs within cutoff. The image range
+    # is grown until the edge set stops changing, so the reference is complete no
+    # matter how skewed the cell is (a fixed range could miss images for a very
+    # non-orthogonal cell).
+    prev, radius = None, 2
+    while True:
+        ranges = [range(-radius, radius + 1) if pbc[d] else range(1) for d in range(3)]
+        pairs, shift_vecs = [], []
+        for i in range(len(positions)):
+            for j in range(len(positions)):
+                for n0 in ranges[0]:
+                    for n1 in ranges[1]:
+                        for n2 in ranges[2]:
+                            if i == j and n0 == 0 and n1 == 0 and n2 == 0:
+                                continue
+                            shift = n0 * cell[0] + n1 * cell[1] + n2 * cell[2]
+                            if (
+                                np.linalg.norm(positions[j] + shift - positions[i])
+                                < cutoff
+                            ):
+                                pairs.append((i, j))
+                                shift_vecs.append(shift)
+        edges = _edge_multiset(pairs, shift_vecs)
+        if edges == prev:
+            return edges
+        prev, radius = edges, radius + 1
+
+
+_NONORTHO_CELLS = {
+    # in-plane periodic vectors are non-orthogonal; vacuum along the 3rd axis
+    "hexagonal": np.array([[3.0, 0.0, 0.0], [1.5, 2.598, 0.0], [0.0, 0.0, 0.0]]),
+    "monoclinic": np.array([[3.2, 0.0, 0.0], [0.8, 2.9, 0.0], [0.0, 0.0, 0.0]]),
+    "triclinic": np.array([[3.1, 0.2, 0.1], [0.9, 2.8, -0.2], [0.0, 0.0, 0.0]]),
+}
+
+
+@pytest.mark.parametrize("cell_name", list(_NONORTHO_CELLS))
+@pytest.mark.parametrize("cutoff", [3.5, 5.0])
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_partial_pbc_neighbours_match_bruteforce_nonorthogonal(cell_name, cutoff, seed):
+    """
+    get_neighborhood replaces the non-periodic (vacuum) row of the cell with an
+    axis-aligned vector for the matscipy binning. Verify this still yields the
+    EXACT neighbour list on non-orthogonal slabs: the periodic vectors keep their
+    true skewed directions and only the vacuum row is replaced. Checked across
+    hexagonal / monoclinic / triclinic in-plane lattices, two cutoffs and several
+    random configurations, edge-by-edge (indices + shift vectors) against a
+    brute-force reference.
+    """
+    cell = _NONORTHO_CELLS[cell_name]
+    pbc = (True, True, False)
+    rng = np.random.default_rng(seed)
+    positions = rng.uniform(0.0, 1.0, size=(6, 2)) @ cell[:2]  # in the periodic plane
+    positions[:, 2] += rng.uniform(-0.3, 0.3, size=6)  # small slab thickness
+
+    edge_index, shifts, _, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    got = _edge_multiset(edge_index.T, shifts)
+    ref = _bruteforce_neighbours(positions, cell, pbc, cutoff)
+    assert got == ref
