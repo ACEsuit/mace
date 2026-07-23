@@ -503,6 +503,15 @@ class MACECalculator(Calculator):
                 dtype=out[key].dtype,
             )
 
+        for key in ("latent_alphas", "latent_kappas", "BEC"):
+            if out.get(key) is not None:
+                dict_of_tensors[key] = torch.zeros(
+                    num_models,
+                    *out[key].shape,
+                    device=self.device,
+                    dtype=out[key].dtype,
+                )
+
         node_e0 = None
         if "node_energy" in out:
             node_heads = batch["head"][batch["batch"]][:num_atoms]
@@ -671,13 +680,6 @@ class MACECalculator(Calculator):
                 if out.get(key) is not None:
                     val[i] = out[key].detach()
 
-            if "latent_alphas" in out and out["latent_alphas"] is not None:
-                ret_tensors.setdefault("latent_alphas", []).append(out["latent_alphas"].detach())
-            if "latent_kappas" in out and out["latent_kappas"] is not None:
-                ret_tensors.setdefault("latent_kappas", []).append(out["latent_kappas"].detach())
-            if getattr(self, "compute_bec", False) and out.get("BEC") is not None:
-                ret_tensors.setdefault("bec", []).append(out["BEC"].detach())
-
         # covert from ret_tensors to calculator results dict
         self.results = {}
         scalar_tensors = set(["energy"])
@@ -761,20 +763,17 @@ class MACECalculator(Calculator):
                 ]
             )
         if "latent_alphas" in ret_tensors:
-            self.results["LES_alphas"] = torch.mean(torch.stack(ret_tensors["latent_alphas"]), dim=0).cpu().numpy()
+            self.results["LES_alphas"] = torch.mean(ret_tensors["latent_alphas"], dim=0).cpu().numpy()
         if "latent_kappas" in ret_tensors:
-            self.results["LES_kappas"] = torch.mean(torch.stack(ret_tensors["latent_kappas"]), dim=0).cpu().numpy()
-        if getattr(self, "compute_bec", False) and "bec" in ret_tensors:
+            self.results["LES_kappas"] = torch.mean(ret_tensors["latent_kappas"], dim=0).cpu().numpy()
+        if getattr(self, "compute_bec", False) and "BEC" in ret_tensors:
             self.results["bec"] = (
-                torch.mean(torch.stack(ret_tensors["bec"]), dim=0).cpu().numpy()
+                torch.mean(ret_tensors["BEC"], dim=0).cpu().numpy()
             )
         if self.external_field is not None and getattr(self, "compute_bec", False) and "bec" in self.results:
             bec_output = self.results["bec"]  # [N_atoms, 2, 3, 3] or [N_atoms, 3, 3]
             if bec_output.ndim == 4:
-                if bec_output.shape[0] == 2:
-                    bec_output = np.sum(bec_output, axis=0)
-                elif bec_output.shape[1] == 2:
-                    bec_output = np.sum(bec_output, axis=1)
+                bec_output = np.sum(bec_output, axis=1)
             if getattr(self, "keep_neutral", False):
                 bec_output -= np.mean(bec_output, axis=0)
             alphas = self.results.get('LES_alphas', None)
