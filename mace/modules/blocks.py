@@ -1413,6 +1413,8 @@ class LinearLesReadoutBlock(torch.nn.Module):
         super().__init__()
         self.irreps_in = o3.Irreps(irreps_in)
         self.make_w_pos = make_w_pos
+        # cueq uses ir_mul layout, which interleaves vector components differently.
+        self.ir_mul = get_layout(cueq_config) == "ir_mul"
 
         self.linear = Linear(
             irreps_in=self.irreps_in,
@@ -1466,10 +1468,14 @@ class LinearLesReadoutBlock(torch.nn.Module):
     def _collect_vectors(
         self, y: torch.Tensor, slices: List[Tuple[int, int]]
     ) -> torch.Tensor:
-        return torch.cat(
-            [y[:, s:e].reshape(y.shape[0], -1, 3) for s, e in slices],
-            dim=1,
-        )
+        vecs: List[torch.Tensor] = []
+        for s, e in slices:
+            block = y[:, s:e]
+            if self.ir_mul:
+                vecs.append(block.reshape(y.shape[0], 3, -1).transpose(1, 2))
+            else:
+                vecs.append(block.reshape(y.shape[0], -1, 3))
+        return torch.cat(vecs, dim=1)
 
     def _dyadic_sum(self, w: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         return (w[:, :, None, None] * v[:, :, None, :] * v[:, :, :, None]).sum(dim=1)
@@ -1479,6 +1485,8 @@ class LinearLesReadoutBlock(torch.nn.Module):
         x: torch.Tensor,
         heads: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        if not hasattr(self, "ir_mul"):  # checkpoints saved before the cueq-layout fix
+            self.ir_mul = False
         y = self.linear(x)
         s = self._collect_scalars(y)
         a = y.new_zeros((y.shape[0], 3, 3))
@@ -1509,30 +1517,77 @@ class NonLinearLesReadoutBlock(torch.nn.Module):
         cueq_config: Optional[CuEquivarianceConfig] = None,
     ):
         super().__init__()
-        self.irreps_in = irreps_in
-        self.cdim = int(str(irreps_in).split("x")[0])
+        self.irreps_in = o3.Irreps(irreps_in)
+        # cueq uses ir_mul layout, which interleaves vector components differently.
+        self.ir_mul = get_layout(cueq_config) == "ir_mul"
 
         self.linear = Linear(
-            irreps_in=irreps_in,
-            irreps_out=irreps_in,
+            irreps_in=self.irreps_in,
+            irreps_out=self.irreps_in,
             cueq_config=cueq_config,
         )
 
+        self._build_slices()
+
         self.mlp = torch.nn.Sequential(
-            torch.nn.Linear(self.cdim, hidden_dim),
+            torch.nn.Linear(self.n_scalar, hidden_dim),
             torch.nn.SiLU(),
-            torch.nn.Linear(hidden_dim, self.cdim * self.cdim),
+            torch.nn.Linear(hidden_dim, self.n_1o * self.n_1o),
         )
+
+    def _build_slices(self) -> None:
+        # Record 0e/1o block boundaries instead of assuming uniform multiplicity
+        # and [0e, 1o, ...] ordering.
+        self.scalar_slices: List[Tuple[int, int]] = []
+        self.vector_1o_slices: List[Tuple[int, int]] = []
+        n_scalar = 0
+        n_1o = 0
+        offset = 0
+        for mul, ir in self.irreps_in:
+            block_dim = mul * ir.dim
+            if ir.l == 0 and ir.p == 1:  # 0e
+                self.scalar_slices.append((offset, offset + block_dim))
+                n_scalar += mul
+            elif ir.l == 1 and ir.p == -1:  # 1o
+                self.vector_1o_slices.append((offset, offset + block_dim))
+                n_1o += mul
+            offset += block_dim
+
+        if n_scalar == 0:
+            raise ValueError("Need at least one 0e block for weights.")
+        if n_1o == 0:
+            raise ValueError("Need at least one 1o block.")
+
+        self.n_scalar = n_scalar
+        self.n_1o = n_1o
+
+    def _collect_scalars(self, y: torch.Tensor) -> torch.Tensor:
+        return torch.cat([y[:, s:e] for s, e in self.scalar_slices], dim=-1)
+
+    def _collect_vectors(self, y: torch.Tensor) -> torch.Tensor:
+        vecs: List[torch.Tensor] = []
+        for s, e in self.vector_1o_slices:
+            block = y[:, s:e]
+            if self.ir_mul:
+                vecs.append(block.reshape(y.shape[0], 3, -1).transpose(1, 2))
+            else:
+                vecs.append(block.reshape(y.shape[0], -1, 3))
+        return torch.cat(vecs, dim=1)
 
     def forward(
         self,
         x: torch.Tensor,
         heads: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        # checkpoints saved before the cueq-layout fix used a single `cdim`
+        if not hasattr(self, "n_1o"):
+            self.ir_mul = False
+            self.irreps_in = o3.Irreps(self.irreps_in)
+            self._build_slices()
         y = self.linear(x)
-        s = y[:, : self.cdim]
-        v = y[:, self.cdim : self.cdim * 4].reshape(y.shape[0], self.cdim, 3)
-        M = self.mlp(s).reshape(y.shape[0], self.cdim, self.cdim)
+        s = self._collect_scalars(y)
+        v = self._collect_vectors(y)
+        M = self.mlp(s).reshape(y.shape[0], self.n_1o, self.n_1o)
         M = 0.5 * (M + M.transpose(-1, -2))
         tmp = torch.einsum("ncd,ndj->ncj", M, v)
         a = torch.einsum("nci,ncj->nij", tmp, v)
