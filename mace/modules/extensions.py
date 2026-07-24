@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import torch
-from e3nn import nn, o3
+from e3nn import o3
 from e3nn.io import CartesianTensor
 from e3nn.o3._reduce import ReducedTensorProducts
 from e3nn.util.jit import compile_mode
@@ -21,12 +21,9 @@ except (ImportError, ModuleNotFoundError):
     GRAPH_LONGRANGE_AVAILABLE = False
 
 from mace.modules.blocks import (
-    LinearDipoleReadoutBlock,
-    LinearDipolePolarReadoutBlock,
     LinearLesReadoutBlock,
     LinearReadoutBlock,
     NonLinearBiasReadoutBlock,
-    NonLinearDipolePolarReadoutBlock,
     NonLinearLesReadoutBlock,
     NonLinearReadoutBlock,
 )
@@ -43,7 +40,7 @@ from mace.modules.wrapper_ops import (
     TransposeIrrepsLayoutWrapper,
 )
 from mace.tools.scatter import scatter_mean, scatter_sum
-from mace.tools.torch_tools import get_change_of_basis, spherical_to_cartesian
+from mace.tools.torch_tools import spherical_to_cartesian
 
 from .field_blocks import (
     EnvironmentDependentSpinSourceBlock,
@@ -53,8 +50,9 @@ from .field_blocks import (
 )
 from .utils import compute_total_charge_dipole_permuted
 
+
 def _copy_mace_readout(
-    mace_readout: torch.nn.Module, 
+    mace_readout: torch.nn.Module,
     change_irrep_out: Optional[str] = None, # o3.Irreps("1x1o")
     cueq_config: Optional[CuEquivarianceConfig] = None
 ) -> torch.nn.Module:
@@ -96,24 +94,22 @@ def _copy_mace_readout_tp(
                 irreps_in=mace_readout.linear.irreps_in,  # type:ignore
                 cueq_config=cueq_config,
             )
-        else:
-            return LinearLesReadoutBlock(
-                irreps_in=mace_readout.linear.irreps_in,  # type:ignore
-                make_w_pos = make_w_pos,
-                cueq_config=cueq_config,
-            )
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear.irreps_in,  # type:ignore
+            make_w_pos=make_w_pos,
+            cueq_config=cueq_config,
+        )
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type:ignore
         if use_nonlinear_readout:
             return NonLinearLesReadoutBlock(
                 irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
                 cueq_config=cueq_config,
             )
-        else:
-            return LinearLesReadoutBlock(
-                irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
-                make_w_pos = make_w_pos,
-                cueq_config=cueq_config,
-            )
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear_1.irreps_in,  # type:ignore
+            make_w_pos=make_w_pos,
+            cueq_config=cueq_config,
+        )
     raise TypeError("Unsupported readout type.")
 
 def _get_readout_input_dim(block: torch.nn.Module) -> int:
@@ -168,12 +164,12 @@ class MACELES(ScaleShiftMACE):
         self.les_output_scale = les_arguments.get("output_scale", 0.1)
         self.les_kappa_scale = les_arguments.get("kappa_scale", 0.01)
         self.les_alpha_scale = les_arguments.get("alpha_scale", 0.01)
-        
+
         self.readout_input_dims = [
             _get_readout_input_dim(readout) for readout in self.readouts  # type:ignore
         ]
         cueq_config = kwargs.get("cueq_config", None)
-        for i, readout in enumerate(self.readouts):  # type:ignore
+        for readout in self.readouts:  # type:ignore
             self.les_readouts.append(
                 _copy_mace_readout(readout, cueq_config=cueq_config)
             )
@@ -194,7 +190,7 @@ class MACELES(ScaleShiftMACE):
                 if "1o" in mace_irreps:
                     logging.info("Using l=1 readout to predict quadrupoles.")
                     self.les_quad_1o_readouts.append(
-                        _copy_mace_readout_tp(self.readouts[0], 
+                        _copy_mace_readout_tp(self.readouts[0],
                         use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
                         make_w_pos=False,
                         cueq_config=cueq_config
@@ -218,7 +214,7 @@ class MACELES(ScaleShiftMACE):
                         #Obtain 2e from l=1 outer products
                         logging.info("Using l=1 readout to predict anisotropic polarizability.")
                         self.les_alpha_1o_readouts.append(
-                            _copy_mace_readout_tp(self.readouts[0], 
+                            _copy_mace_readout_tp(self.readouts[0],
                             use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
                             make_w_pos=self.alpha_1o_linear_w_pos,
                             cueq_config=cueq_config
@@ -485,7 +481,7 @@ class MACELES(ScaleShiftMACE):
                 les_alpha = torch.einsum("nij,nkj->nik", les_alpha, les_alpha)
         if hasattr(self, 'make_kappa_positive') and self.make_kappa_positive and les_kappa is not None:
             les_kappa = les_kappa**2
-        
+
         les_positions = data["positions"] if displacement is not None else positions
         les_result = self.les(
             atomic_numbers=data["atomic_numbers"],

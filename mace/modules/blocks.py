@@ -3,6 +3,7 @@
 # Authors: Ilyes Batatia, Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+# pylint: disable=too-many-lines
 
 from abc import abstractmethod
 from typing import Any, Callable, List, Optional, Tuple, Union
@@ -1483,7 +1484,7 @@ class LinearLesReadoutBlock(torch.nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        heads: Optional[torch.Tensor] = None,
+        heads: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
     ) -> torch.Tensor:
         if not hasattr(self, "ir_mul"):  # checkpoints saved before the cueq-layout fix
             self.ir_mul = False
@@ -1577,7 +1578,7 @@ class NonLinearLesReadoutBlock(torch.nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        heads: Optional[torch.Tensor] = None,
+        heads: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
     ) -> torch.Tensor:
         # checkpoints saved before the cueq-layout fix used a single `cdim`
         if not hasattr(self, "n_1o"):
