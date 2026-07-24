@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
@@ -20,6 +21,7 @@ from mace.calculators.foundations_models import mace_polar
 from mace.modules import interaction_classes
 from mace.modules.extensions import PolarMACE
 from mace.tools import torch_geometric, utils
+from mace.tools.scripts_utils import get_optimizer, get_params_options
 
 # pylint: disable=redefined-outer-name
 
@@ -1089,3 +1091,27 @@ def test_polar_2l_regression_hardcoded_values(polar_calc_regression, structure_r
     np.testing.assert_allclose(
         stress, np.array(expected["stress"]), rtol=0.0, atol=atol
     )
+
+
+def _optimizer_args() -> argparse.Namespace:
+    """Optimizer-related arguments with the run_train defaults."""
+    return argparse.Namespace(
+        lr=0.01,
+        weight_decay=5e-7,
+        amsgrad=True,
+        beta=0.9,
+        freeze=None,
+        optimizer="adam",
+        lr_params_factors=json.dumps({}),
+        train_one_body_contribution=True,
+    )
+
+
+def test_polar_mace_registers_all_trainable_parameters():
+    """PolarMACE's optional submodules (lr_source_maps, fukui_source_map,
+    field_dependent_charges_maps, ...) motivated the explicit registration. Every
+    trainable parameter must be claimed by an optimizer group; get_params_options
+    raises otherwise, so a successful optimizer build is the assertion."""
+    model = _build_minimal_model(torch.device("cpu"), torch.get_default_dtype())
+    args = _optimizer_args()
+    get_optimizer(args, get_params_options(args, model))

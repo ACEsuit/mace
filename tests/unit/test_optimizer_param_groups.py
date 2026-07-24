@@ -5,6 +5,8 @@ explicit named parameter groups in mace.tools.scripts_utils.get_params_options.
 A submodule missing from those groups would silently receive no gradient
 updates, so get_params_options raises for unclaimed trainable parameters and
 these tests assert that every trainable model class passes that check.
+
+Polar and Magnetic MACE are tested in the extensions tests.
 """
 
 from __future__ import annotations
@@ -20,15 +22,6 @@ from mace import modules
 from mace.modules import interaction_classes
 from mace.tools.scripts_utils import get_optimizer, get_params_options
 from e3nn import o3  # isort: skip  (mace import must come first for torch.load)
-
-try:
-    import graph_longrange  # noqa: F401
-
-    from mace.modules.extensions import PolarMACE
-
-    GRAPH_LONGRANGE_AVAILABLE = True
-except (ImportError, ModuleNotFoundError):
-    GRAPH_LONGRANGE_AVAILABLE = False
 
 
 COMMON_MODEL_KWARGS = dict(
@@ -83,53 +76,12 @@ def build_energy_dipoles_mace() -> torch.nn.Module:
     return modules.EnergyDipolesMACE(**COMMON_MODEL_KWARGS)
 
 
-def build_polar_mace() -> torch.nn.Module:
-    kwargs = {
-        **COMMON_MODEL_KWARGS,
-        "atomic_energies": torch.zeros(2),
-        "interaction_cls": interaction_classes[
-            "RealAgnosticResidualNonLinearInteractionBlock"
-        ],
-        "interaction_cls_first": interaction_classes[
-            "RealAgnosticResidualNonLinearInteractionBlock"
-        ],
-    }
-    return PolarMACE(
-        **kwargs,
-        heads=["Default"],
-        radial_type="bessel",
-        kspace_cutoff_factor=1.0,
-        atomic_multipoles_max_l=1,
-        atomic_multipoles_smearing_width=1.0,
-        field_feature_max_l=1,
-        field_feature_widths=[1.0],
-        field_feature_norms=[1.0, 1.0],
-        num_recursion_steps=1,
-        field_si=False,
-        include_electrostatic_self_interaction=False,
-        add_local_electron_energy=True,
-        field_norm_factor=1.0,
-        fixedpoint_update_config={
-            "type": "AgnosticEmbeddedOneBodyVariableUpdate",
-            "potential_embedding_cls": "AgnosticChargeBiasedLinearPotentialEmbedding",
-            "nonlinearity_cls": "MLPNonLinearity",
-        },
-        field_readout_config={"type": "OneBodyMLPFieldReadout"},
-    )
-
-
 MODEL_BUILDERS = {
     "MACE": build_mace,
     "ScaleShiftMACE": build_scale_shift_mace,
     "AtomicDipolesMACE": build_atomic_dipoles_mace,
     "AtomicDielectricMACE": build_atomic_dielectric_mace,
     "EnergyDipolesMACE": build_energy_dipoles_mace,
-    "PolarMACE": pytest.param(
-        build_polar_mace,
-        marks=pytest.mark.skipif(
-            not GRAPH_LONGRANGE_AVAILABLE, reason="graph_longrange is not installed"
-        ),
-    ),
 }
 
 
