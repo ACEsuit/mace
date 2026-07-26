@@ -204,9 +204,9 @@ def transfer_weights(
                 )
     # Transfer avg_num_neighbors
     for i in range(num_layers):
-        target_model.interactions[i].avg_num_neighbors = source_model.interactions[
-            i
-        ].avg_num_neighbors
+        target_model.interactions[i].set_avg_num_neighbors(
+            source_model.interactions[i].avg_num_neighbors
+        )
 
     # Load state dict into target model
     target_model.load_state_dict(target_dict)

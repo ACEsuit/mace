@@ -111,9 +111,9 @@ def load_foundations_elements_default(
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear_up.weight.clone()
         )
-        model.interactions[i].avg_num_neighbors = model_foundations.interactions[
-            i
-        ].avg_num_neighbors
+        model.interactions[i].set_avg_num_neighbors(
+            model_foundations.interactions[i].avg_num_neighbors
+        )
 
         for (_, param_1), (_, param_2) in zip(
             model.interactions[i].conv_tp_weights.named_parameters(),
@@ -442,9 +442,9 @@ def load_foundations_elements_magnetic(
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear_up.weight.clone()
         )
-        model.interactions[i].avg_num_neighbors = model_foundations.interactions[
-            i
-        ].avg_num_neighbors
+        model.interactions[i].set_avg_num_neighbors(
+            model_foundations.interactions[i].avg_num_neighbors
+        )
         for j in range(4):  # Assuming 4 layers in conv_tp_weights,
             layer_name = f"layer{j}"
             if j == 0:
@@ -686,9 +686,9 @@ def load_foundations_mdp(
         model.interactions[i].linear_up.weight = torch.nn.Parameter(
             model_foundations.interactions[i].linear_up.weight.clone()
         )
-        model.interactions[i].avg_num_neighbors = model_foundations.interactions[
-            i
-        ].avg_num_neighbors
+        model.interactions[i].set_avg_num_neighbors(
+            model_foundations.interactions[i].avg_num_neighbors
+        )
 
         for (_, param_1), (_, param_2) in zip(
             model.interactions[i].conv_tp_weights.named_parameters(),
