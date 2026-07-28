@@ -12,6 +12,7 @@ class DefaultKeys(Enum):
     POLARIZABILITY = "polarizability"
     HEAD = "head"
     CHARGES = "REF_charges"
+    FORCES_ATOMIC_WEIGHTS = "REF_forces_atomic_weights"
     TOTAL_CHARGE = "total_charge"
     TOTAL_SPIN = "total_spin"
     ELEC_TEMP = "elec_temp"
