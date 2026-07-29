@@ -167,7 +167,7 @@ class MACE(torch.nn.Module):
             radial_MLP = [64, 64, 64]
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
-        if num_interactions == 1:
+        if num_interactions == 1 and not keep_last_layer_irreps:
             hidden_irreps_out = str(hidden_irreps[0])
         else:
             hidden_irreps_out = hidden_irreps
