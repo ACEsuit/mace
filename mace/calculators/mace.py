@@ -116,7 +116,7 @@ class MACECalculator(Calculator):
         pad_num_edges: int = 0,
         warmup: bool = False,
         compute_bec: bool = False,
-        external_field: Union[float, list, None] = None,
+        external_field: Union[list, None] = None,
         eps_infty: float = None,
         electric_field_unit: float = 1.0,
         keep_neutral: bool = True,
@@ -124,6 +124,13 @@ class MACECalculator(Calculator):
     ):
         Calculator.__init__(self, **kwargs)
         self.compute_bec = compute_bec
+        if external_field is not None:
+            external_field = np.asarray(external_field, dtype=np.float64).reshape(-1) # (3,) vector
+            if external_field.size != 3:
+                raise ValueError(
+                    "external_field must be a 3-vector [Ex, Ey, Ez]; "
+                    f"got {external_field.size} component(s)"
+                )
         self.external_field = external_field
         self.eps_infty = eps_infty
         self.electric_field_unit = electric_field_unit
@@ -795,10 +802,10 @@ class MACECalculator(Calculator):
             e_ext_arr = np.array(self.external_field, dtype=np.float64)
             scaled_e_field = e_ext_arr * (epsilon_r ** 0.5)
             electric_field_unit = getattr(self, "electric_field_unit", 1.0)
-            if np.isscalar(scaled_e_field) or scaled_e_field.ndim == 0:
-                forces_bec = bec_output * scaled_e_field * electric_field_unit
-            else:
-                forces_bec = bec_output @ scaled_e_field * electric_field_unit
+            forces_bec = (                                         # bec_output: [N, i, j] = dP_i/dr_j
+                np.einsum("nij,i->nj", bec_output, scaled_e_field) # F_nj = sum_i Z*_nij E_i
+                * electric_field_unit
+            )
             self.results["forces"] += forces_bec
 
     def get_dielectric_derivatives(self, atoms=None):
