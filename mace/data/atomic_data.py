@@ -399,6 +399,7 @@ class AtomicData(torch_geometric.data.Data):
         cls_kwargs = dict(
             edge_index=torch.tensor(edge_index, dtype=torch.long),
             positions=positions,
+            atomic_numbers=torch.tensor(config.atomic_numbers, dtype=torch.long),
             shifts=torch.tensor(shifts, dtype=torch.get_default_dtype()),
             unit_shifts=torch.tensor(unit_shifts, dtype=torch.get_default_dtype()),
             cell=cell,
