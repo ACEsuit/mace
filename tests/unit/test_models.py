@@ -450,3 +450,76 @@ def test_atomic_virials_stresses():
     assert torch.allclose(
         summed_atomic_stresses, total_stress.squeeze(0), atol=1e-6
     ), f"Sum of atomic stresses (normalized by volume) {summed_atomic_stresses} does not match total stress {total_stress.squeeze(0)}"
+
+
+def test_stress_partial_pbc():
+    """
+    Analytic stress must equal the finite-difference strain derivative of the
+    energy for partially periodic (slab) systems.
+    """
+    torch.set_default_dtype(torch.float64)
+    torch.manual_seed(7)
+
+    slab_z_table = tools.AtomicNumberTable([14])
+    model = modules.MACE(
+        r_max=5.0,
+        num_bessel=8,
+        num_polynomial_cutoff=6,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=1,
+        hidden_irreps=o3.Irreps("16x0e + 16x1o"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=np.array([0.0]),
+        avg_num_neighbors=8,
+        atomic_numbers=slab_z_table.zs,
+        correlation=3,
+        radial_type="bessel",
+    )
+
+    def compute(atoms):
+        atomic_data = data.AtomicData.from_config(
+            data.config_from_atoms(atoms), z_table=slab_z_table, cutoff=5.0
+        )
+        loader = torch_geometric.dataloader.DataLoader(
+            dataset=[atomic_data], batch_size=1, shuffle=False, drop_last=False
+        )
+        batch = next(iter(loader)).to_dict()
+        output = model(batch, training=False, compute_stress=True)
+        return output["energy"].item(), output["stress"].detach().numpy()[0]
+
+    # Si slab: periodic in x/y, vacuum along z
+    slab = build.bulk("Si", "diamond", a=5.43).repeat((2, 2, 2))
+    slab.set_pbc([True, True, False])
+    cell = slab.get_cell().array.copy()
+    cell[2] = [0.0, 0.0, slab.positions[:, 2].max() + 20.0]
+    slab.set_cell(cell, scale_atoms=False)
+    slab.positions[:, 2] += 10.0
+
+    cell0 = slab.get_cell().array.copy()
+    volume = abs(np.linalg.det(cell0))
+    eps, delta = 0.010, 0.001
+
+    def strained(strain_yy):
+        atoms = slab.copy()
+        strain = np.eye(3)
+        strain[1, 1] += strain_yy
+        atoms.set_cell(cell0 @ strain, scale_atoms=True)
+        return atoms
+
+    energy_plus, _ = compute(strained(eps + delta))
+    energy_minus, _ = compute(strained(eps - delta))
+    _, stress = compute(strained(eps))
+
+    finite_diff = (energy_plus - energy_minus) / (2 * delta) / volume
+    assert np.isclose(finite_diff, stress[1, 1], rtol=1e-4), (
+        f"sigma_yy finite difference {finite_diff} does not match "
+        f"analytic stress {stress[1, 1]}"
+    )

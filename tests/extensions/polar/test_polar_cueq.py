@@ -152,7 +152,11 @@ def test_polar_true_cueq_matches_e3nn(model_name, _):
 
     assert energy_max_abs <= 3.0e-4
     assert forces_max_abs <= 2.5e-4
-    assert stress_max_abs <= 1.0e-8
+    # stress = virial / det(cell); the non-periodic cell is now sized from the
+    # atom extent instead of max(|pos|)*5*cutoff, so its volume is ~2 orders
+    # smaller and stress magnitudes (and thus the e3nn/cueq abs difference)
+    # scale up proportionally. Parity is unchanged; the absolute bound isn't.
+    assert stress_max_abs <= 1.0e-6
 
 
 @pytest.mark.cueq
@@ -193,7 +197,9 @@ def test_polar_2l_true_cueq_matches_e3nn_float64():
 
     assert energy_max_abs <= 1.0e-7
     assert forces_max_abs <= 1.0e-7
-    assert stress_max_abs <= 1.0e-11
+    # see note above: the smaller (physical-extent) non-periodic cell scales
+    # stress magnitudes up, so the absolute e3nn/cueq bound is loosened here too.
+    assert stress_max_abs <= 1.0e-9
 
 
 try:
