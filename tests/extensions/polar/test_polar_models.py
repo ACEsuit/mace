@@ -445,6 +445,135 @@ def test_energy_invariance_under_rotation_and_translation(dtype):
 
 
 # ---------------------------------------------------------------------------
+# Partial-PBC (slab) regression: get_neighborhood cell fix vs electrostatics
+# ---------------------------------------------------------------------------
+
+
+def _polar_slab_atoms(vacuum: float) -> Atoms:
+    """
+    z-mirror-symmetric OH2 slab, periodic in x and y with vacuum along z
+    (pbc = (T, T, F)).
+
+    The two H are stacked at +/- z with identical xy, so the slab is invariant
+    under z -> -z and carries no net dipole perpendicular to the surface. That
+    matters for the electrostatics check below: a 3D-periodic k-space (Ewald)
+    sum applied to a slab converges quickly with the vacuum gap only when there
+    is no perpendicular dipole (otherwise it has a conditionally convergent
+    term that needs a slab / Yeh-Berkowitz correction).
+    """
+    a = 3.2
+    symbols = ["O", "H", "H"]
+    positions = [[0.0, 0.0, 0.0], [0.8, 0.8, 0.6], [0.8, 0.8, -0.6]]
+    cell = [[a, 0.0, 0.0], [0.0, a, 0.0], [0.0, 0.0, vacuum]]
+    return Atoms(symbols=symbols, positions=positions, cell=cell, pbc=(True, True, False))
+
+
+def _run_polar_slab(model, dtype, vacuum: float) -> dict:
+    """Build a slab config through get_neighborhood -> AtomicData and run PolarMACE."""
+    z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
+    config = data.config_from_atoms(_polar_slab_atoms(vacuum), head_name="Default")
+    atomic_data = data.AtomicData.from_config(
+        config, z_table=z_table, cutoff=float(model.r_max), heads=model.heads
+    )
+    loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data], batch_size=1, shuffle=False, drop_last=False
+    )
+    batch = next(iter(loader)).to("cpu").to_dict()
+    for key, value in batch.items():
+        if torch.is_tensor(value) and value.dtype.is_floating_point:
+            batch[key] = value.to(dtype)
+    out = model(batch, training=False, compute_force=True, compute_stress=True)
+    return {
+        "energy": out["energy"].detach(),
+        "forces": out["forces"].detach(),
+        "stress": None if out.get("stress") is None else out["stress"].detach(),
+        "cell": batch["cell"].view(3, 3).detach().cpu().numpy(),
+        "volume": float(batch["volume"].reshape(-1)[0]),
+        "rcell": batch["rcell"].view(3, 3).detach().cpu().numpy(),
+        "edges": batch["edge_index"].detach().cpu().numpy(),
+    }
+
+
+@pytest.mark.parametrize("dtype", [torch.float64])
+def test_polar_slab_partial_pbc_cell_contract(dtype):
+    """
+    get_neighborhood must return the *physical* cell for a partially periodic
+    (slab) system, and that cell must feed AtomicData.volume / rcell (which drive
+    PolarMACE's k-space electrostatics). Deterministic contract for the combined
+    fix: extent-based padding for the neighbour search, physical cell returned
+    on partial PBC.
+    """
+    device = torch.device("cpu")
+    torch.manual_seed(0)
+    model = _build_minimal_model(device, dtype)
+
+    thin = _run_polar_slab(model, dtype, vacuum=18.0)
+    thick = _run_polar_slab(model, dtype, vacuum=42.0)
+
+    # physical cell returned, not the matscipy blow-up nor max(|pos|)*5*cutoff.
+    assert np.isclose(thin["cell"][2, 2], 18.0), thin["cell"]
+    assert np.isclose(thick["cell"][2, 2], 42.0), thick["cell"]
+    # the periodic x/y rows are the true lattice, identical across vacuum sizes.
+    assert np.allclose(thin["cell"][:2, :2], thick["cell"][:2, :2])
+    # volume / rcell derive from the physical cell -> they feed the k-space sum.
+    assert np.isclose(thin["volume"], np.linalg.det(thin["cell"]))
+    assert np.isclose(thick["volume"], np.linalg.det(thick["cell"]))
+    assert np.allclose(thin["rcell"], 2 * np.pi * np.linalg.inv(thin["cell"].T))
+
+    # short-range graph is invariant to the vacuum: the padding only ever lived
+    # in the internal extended cell used for neighbour binning, never in shifts.
+    assert thin["edges"].shape == thick["edges"].shape
+    assert np.array_equal(thin["edges"], thick["edges"])
+
+    # forward is finite on a partial-PBC electrostatic model (a path that the
+    # aperiodic-only and non-electrostatic fixes each left untested).
+    for res in (thin, thick):
+        assert torch.isfinite(res["energy"]).all()
+        assert torch.isfinite(res["forces"]).all()
+        assert res["stress"] is not None and torch.isfinite(res["stress"]).all()
+
+
+@pytest.mark.parametrize("dtype", [torch.float64])
+def test_polar_slab_electrostatics_converge_with_vacuum(dtype):
+    """
+    Smoke check for the coupling flagged in review ("the vacuum affects the
+    electrostatic part"): the returned physical cell becomes the k-space box
+    (and its det() the volume), so the vacuum gap enters the electrostatics.
+    The short-range part is identical across vacuum sizes (same edges/shifts),
+    so any energy change is purely the electrostatic response to the cell, and
+    on a benign slab it must *converge* (not diverge) as the vacuum grows.
+
+    SCOPE: this guards "finite and non-diverging", not the Yeh-Berkowitz slab
+    correction itself. _polar_slab_atoms is dipole-free, and a dipole-free slab
+    converges whether or not that correction is active (verified by toggling
+    include_pbc_corrections), so this test does NOT exercise it. Testing the
+    correction would need a dipolar slab, which is not stable on an untrained
+    model here.
+    """
+    device = torch.device("cpu")
+    torch.manual_seed(0)
+    model = _build_minimal_model(device, dtype)
+
+    energies = {
+        vac: _run_polar_slab(model, dtype, vacuum=vac)["energy"].item()
+        for vac in (30.0, 45.0, 60.0)
+    }
+    for vac, e in energies.items():
+        assert np.isfinite(e), (vac, e)
+
+    d1 = abs(energies[45.0] - energies[30.0])
+    d2 = abs(energies[60.0] - energies[45.0])
+    # Converging: the far-field increment is no larger than the near one. Guard
+    # the case where it is already converged at 30 A (both increments ~ noise).
+    tol = 1e-9 + 1e-6 * abs(energies[60.0])
+    assert d2 <= d1 + tol, (
+        "slab electrostatics is not converging with vacuum "
+        f"(d(30->45)={d1!r}, d(45->60)={d2!r}); with the Yeh-Berkowitz slab "
+        "correction active a dipole-free slab must converge"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Checkpoint evaluation
 # ---------------------------------------------------------------------------
 
