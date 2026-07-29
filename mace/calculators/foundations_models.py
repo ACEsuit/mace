@@ -237,9 +237,10 @@ def mace_mp(
     device: str = "",
     default_dtype: str = "float32",
     dispersion: bool = False,
-    damping: str = "bj",  # choices: ["zero", "bj", "zerom", "bjm"]
+    dispersion_damping: str = "bj",  # choices: ["zero", "bj", "zerom", "bjm"]
     dispersion_xc: str = "pbe",
     dispersion_cutoff: float = 40.0 * units.Bohr,
+    dispersion_coord_cutoff: float = 40.0 * units.Bohr,
     return_raw_model: bool = False,
     **kwargs,
 ) -> Union[MACECalculator, torch.nn.Module, SumCalculator]:
@@ -263,9 +264,10 @@ def mace_mp(
         device (str, optional): Device to use for the model. Defaults to "cuda" if available.
         default_dtype (str, optional): Default dtype for the model. Defaults to "float32".
         dispersion (bool, optional): Whether to use D3 dispersion corrections. Defaults to False.
-        damping (str): The damping function associated with the D3 correction. Defaults to "bj" for D3(BJ).
-        dispersion_xc (str, optional): Exchange-correlation functional for D3 dispersion corrections.
-        dispersion_cutoff (float, optional): Cutoff radius in Bohr for D3 dispersion corrections.
+        dispersion_damping (str): The damping function associated with the D3 correction. Defaults to "bj" for D3(BJ).
+        dispersion_xc (str, optional): Exchange-correlation functional for D3 dispersion corrections. Defaults to "pbe"
+        dispersion_cutoff (float, optional): Cutoff radius in D3 dispersion corrections. Defaults to 40 * Bohr
+        dispersion_coord_cutoff (float, optional): Cutoff radius for coordination number in D3 dispersion corrections. Defaults to 40 * Bohr
         return_raw_model (bool, optional): Whether to return the raw model or an ASE calculator. Defaults to False.
         **kwargs: Passed to MACECalculator and TorchDFTD3Calculator.
 
@@ -314,10 +316,11 @@ def mace_mp(
     dtype = torch.float32 if default_dtype == "float32" else torch.float64
     d3_calc = TorchDFTD3Calculator(
         device=device,
-        damping=damping,
+        damping=dispersion_damping,
         dtype=dtype,
         xc=dispersion_xc,
         cutoff=dispersion_cutoff,
+        cnthr=dispersion_coord_cutoff,
         **kwargs,
     )
 
