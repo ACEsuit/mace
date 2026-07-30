@@ -1042,10 +1042,10 @@ def get_params_options(
         )
 
     # Guard against silently untrained submodules: any trainable parameter
-    # that no group claims would never receive optimizer updates.Submodules 
-    # that build their parameters lazily inside the first forward() (e.g. the 
+    # that no group claims would never receive optimizer updates.Submodules
+    # that build their parameters lazily inside the first forward() (e.g. the
     # external LES Atomwise MLP (created only when les_arguments
-    # ["use_atomwise"] is True) do not exist yet here, so they slip past both 
+    # ["use_atomwise"] is True) do not exist yet here, so they slip past both
     # the parameter groups and this check. MACELES with the default
     # use_atomwise=False has no such parameters.
     claimed_parameter_ids = set()
