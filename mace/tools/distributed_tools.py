@@ -53,7 +53,7 @@ def init_distributed(args):
             )
         elif args.device == "xpu":
             torch.distributed.init_process_group(
-                backend="ccl",
+                backend="xccl",
                 init_method="env://",
             )
     return rank, local_rank, world_size
