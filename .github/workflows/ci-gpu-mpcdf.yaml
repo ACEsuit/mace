@@ -136,8 +136,18 @@ jobs:
           deadline=$(( SECONDS + 7200 ))
           previous=""
           while :; do
-            status=$(curl -sS --fail-with-body -H "PRIVATE-TOKEN: ${TOKEN}" \
-              "${api}/pipelines/${PIPELINE_ID}" | jq -r '.status')
+            # A poll must never be able to fail the check: under `set -e` a
+            # single curl timeout would abort a job that has already waited
+            # through a queue and a full test run. Treat a blip as "unknown"
+            # and try again; only the deadline below ends the wait early.
+            status=$(curl -sS --max-time 30 --retry 3 --retry-all-errors \
+              -H "PRIVATE-TOKEN: ${TOKEN}" \
+              "${api}/pipelines/${PIPELINE_ID}" | jq -r '.status' || true)
+            if [ -z "$status" ] || [ "$status" = null ]; then
+              if [ "$SECONDS" -ge "$deadline" ]; then status="timeout"; break; fi
+              sleep 20
+              continue
+            fi
             if [ "$status" != "$previous" ]; then
               echo "pipeline status: ${status}"
               previous="$status"
