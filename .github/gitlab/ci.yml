@@ -1,14 +1,13 @@
-# GPU pipeline executed on the MPCDF shared runners (gitlab.mpcdf.mpg.de).
+# GPU pipeline run on GitLab CI runners provided by MPCDF.
 #
 # This file is NOT a repository-root .gitlab-ci.yml on purpose: nothing in
 # GitHub reads it. The `gpu tests (MPCDF)` workflow copies it to
 # `.gitlab-ci.yml` on a throwaway branch, pushes that branch to a mirror
-# project at MPCDF and starts the pipeline through the API. Keeping it here
-# means the GitHub repository carries no top-level GitLab configuration.
+# project and starts the pipeline through the API. Keeping it here means the
+# GitHub repository carries no top-level GitLab configuration.
 #
-# The MPCDF instance runs GitLab Community Edition, so the built-in GitHub
-# integration (mirror + status reporting) is unavailable; the direction of
-# control is therefore GitHub -> GitLab, never the reverse.
+# Control always flows GitHub -> GitLab, never the reverse: GitHub stays the
+# single entry point and the checks on a pull request come from the workflow.
 
 # Only API-created pipelines run. Without this the `git push` performed by the
 # bridge would start a second, redundant pipeline for the same commit.
@@ -28,9 +27,8 @@ stages:
 # A plain Python image is enough wherever the PyTorch wheels suffice: they
 # ship their own runtime libraries and only need the driver, which the runner
 # exposes into the container. The exception is OpenEquivariance, which
-# JIT-compiles its kernels and therefore needs a real toolkit, so that job
-# overrides the image below. Being containers is exactly what makes this
-# possible here and not on a shared machine nobody wants to install nvcc on.
+# JIT-compiles its kernels and therefore needs a real toolkit, so each vendor
+# job overrides the image below with one that carries the compiler.
 .gpu:
   stage: test
   image: python:3.11
@@ -94,9 +92,9 @@ gpu-nvidia:
   extends: .gpu
   rules:
     - if: '$ONLY_VENDOR == null || $ONLY_VENDOR == "" || $ONLY_VENDOR == "nvidia"'
-  # The CUDA toolkit image is what buys OpenEquivariance: it JIT-compiles its
-  # kernels with nvcc, so a driver-only host cannot run those tests at all.
-  # The major version tracks the default PyTorch wheels (cu13).
+  # OpenEquivariance JIT-compiles its kernels with nvcc, so a driver-only
+  # environment cannot run those tests at all; hence the toolkit image. Its
+  # major version tracks the default PyTorch wheels (cu13).
   image: nvidia/cuda:13.0.3-devel-ubuntu24.04
   before_script:
     - apt-get update
@@ -118,17 +116,32 @@ gpu-nvidia:
 # cuEquivariance is NVIDIA-only, hence the narrower marker expression. This
 # job is deliberately not allow_failure: it surfaces as its own check on the
 # GitHub side, so whether a red AMD blocks a merge is a branch-protection
-# decision there rather than something hidden inside the pipeline.
+# decision rather than something hidden inside the pipeline.
 gpu-amd:
   extends: .gpu
   rules:
     - if: '$ONLY_VENDOR == null || $ONLY_VENDOR == "" || $ONLY_VENDOR == "amd"'
+  # The ROCm dev image is the AMD counterpart of the CUDA one above: it brings
+  # hipcc, which OpenEquivariance needs to JIT-compile its kernels. The version
+  # tracks the PyTorch wheel index below, so the two ROCm stacks match.
+  image: rocm/dev-ubuntu-24.04:6.3.4
+  before_script:
+    - apt-get update
+    # rocblas-dev is NOT in the dev image, only in the much larger -complete
+    # one: OpenEquivariance includes rocblas/rocblas.h, so without it every
+    # oeq test dies at JIT time with a missing-header error.
+    - >
+      apt-get install -y --no-install-recommends
+      python3 python3-venv python3-dev build-essential git rocblas-dev
+    - !reference [ .gpu, before_script ]
   tags:
     - mpcdf-shared
     - gpu-amd
   variables:
+    ROCM_PATH: /opt/rocm
+    PYTORCH_ROCM_ARCH: "gfx90a"
     TORCH_INDEX: "https://download.pytorch.org/whl/rocm6.3"
-    EXTRAS: "dev,schedulefree"
+    EXTRAS: "dev,oeq,schedulefree"
     PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
-    REQUIRE_CAPS: "gpu,polar,les,schedulefree"
+    REQUIRE_CAPS: "gpu,oeq,polar,les,schedulefree"
     MARKER_EXPR: "gpu and not cueq"

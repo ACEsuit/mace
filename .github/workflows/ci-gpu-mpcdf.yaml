@@ -1,35 +1,32 @@
 name: gpu tests (MPCDF)
-# Runs the GPU suite on the shared GPU runners of the MPCDF GitLab instance
-# (gitlab.mpcdf.mpg.de) without giving up GitHub as the single entry point.
+# Runs the GPU suite on GitLab CI runners provided by MPCDF, without giving up
+# GitHub as the single entry point.
 #
-# That instance runs GitLab Community Edition, where the "run CI/CD for an
-# external repository" integration (mirror + status reporting back to GitHub)
-# is a paid feature. So the direction is inverted: this workflow pushes the
-# commit under test into a mirror project at MPCDF, starts a pipeline through
-# the API, waits for it and mirrors the GitLab job logs back into this log.
-# The checks that appear on the pull request are these jobs themselves.
+# GitLab can mirror a GitHub repository and report statuses back on its own,
+# but only in its paid tiers, so the direction is inverted here: this workflow
+# pushes the commit under test into a mirror project, starts a pipeline
+# through the API, waits for it and mirrors the GitLab job logs back into this
+# log. The checks on a pull request are these jobs themselves.
 #
 # One job per vendor, each driving its own single-job pipeline, so the two
-# report independently: the shared Nvidia runners are contended (queue waits
-# of several minutes are normal) and a single combined check would hide an
-# already-finished AMD result behind them. It also lets branch protection
-# require one vendor without requiring the other.
+# report independently: runner availability differs per vendor, and a single
+# combined check would hold an already-finished result behind the slower one.
+# It also lets branch protection require one vendor without the other.
 #
 # The pipeline definition lives in .github/gitlab/ci.yml and is copied to
 # .gitlab-ci.yml on the throwaway branch that gets pushed.
 #
 # Setup (one-off, outside this repository):
-#   - a project on gitlab.mpcdf.mpg.de whose numeric id goes into the
-#     repository variable MPCDF_GITLAB_PROJECT_ID
+#   - a GitLab project whose numeric id goes into the repository variable
+#     MPCDF_GITLAB_PROJECT_ID
 #   - an access token for that project with the `api` and `write_repository`
 #     scopes AND a role of Developer or above (scopes alone are not enough to
 #     push), stored as the secret MPCDF_GITLAB_TOKEN
 # Without those the workflow skips, so forks are unaffected.
 #
 # THE TOKEN EXPIRES. GitLab access tokens have a maximum lifetime, and when
-# this one lapses every run here starts failing at the push step with a 401
-# that looks nothing like a token problem. Whoever maintains this should renew
-# it before it lapses; the current one runs out on 2027-07-31.
+# this one lapses every run starts failing at the push step with an error that
+# looks nothing like a token problem. Renew it before it does.
 
 # Manual only while the MPCDF path is being brought up: it must not add noise
 # to pull requests until it has proven itself green. Once it has, add back the
@@ -54,7 +51,7 @@ jobs:
     if: vars.MPCDF_GITLAB_PROJECT_ID != ''
     # Same human-in-the-loop gate as the self-hosted fleet (ci-gpu.yaml): code
     # from outside the team must be approved by a maintainer before it runs on
-    # hardware we do not own. Here it also gates the push credentials.
+    # GPU hardware. Here it also gates the push credentials.
     environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -163,9 +160,8 @@ jobs:
           done
           echo "status=${status}" >> "$GITHUB_OUTPUT"
 
-      # MACE maintainers have no accounts on the MPCDF instance, so the GitLab
-      # logs would otherwise be unreachable from a pull request. Mirror them
-      # here rather than linking to a page nobody can open.
+      # Mirror the traces here so a failure can be read straight from the pull
+      # request, without following a link into GitLab.
       - name: Mirror the GitLab job logs
         if: always() && steps.trigger.outputs.pipeline_id != ''
         env:
