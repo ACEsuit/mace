@@ -1,0 +1,173 @@
+name: gpu tests (MPCDF)
+# Runs the GPU suite on the shared GPU runners of the MPCDF GitLab instance
+# (gitlab.mpcdf.mpg.de) without giving up GitHub as the single entry point.
+#
+# That instance runs GitLab Community Edition, where the "run CI/CD for an
+# external repository" integration (mirror + status reporting back to GitHub)
+# is a paid feature. So the direction is inverted: this job pushes the commit
+# under test into a mirror project at MPCDF, starts the pipeline through the
+# API, waits for it and mirrors the GitLab job logs back into this log. The
+# check that appears on the pull request is this job itself.
+#
+# The pipeline definition lives in .github/gitlab/ci.yml and is copied to
+# .gitlab-ci.yml on the throwaway branch that gets pushed.
+#
+# Setup (one-off, outside this repository):
+#   - a project on gitlab.mpcdf.mpg.de whose numeric id goes into the
+#     repository variable MPCDF_GITLAB_PROJECT_ID
+#   - an access token for that project with the `api` and `write_repository`
+#     scopes, stored as the secret MPCDF_GITLAB_TOKEN
+# Without those the job skips, so forks are unaffected.
+
+# Manual only while the MPCDF path is being brought up: it must not add noise
+# to pull requests until it has proven itself green. Once it has, add back the
+# triggers the self-hosted fleet uses (push to main/develop, pull_request, and
+# a nightly schedule offset from the fleet's 03:17 so the two GPU paths do not
+# report the same upstream breakage at the same minute).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpu-mpcdf-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLAB_URL: https://gitlab.mpcdf.mpg.de
+
+jobs:
+  gitlab:
+    if: vars.MPCDF_GITLAB_PROJECT_ID != ''
+    # Same human-in-the-loop gate as the self-hosted fleet (ci-gpu.yaml): code
+    # from outside the team must be approved by a maintainer before it runs on
+    # hardware we do not own. Here it also gates the push credentials.
+    environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # A shallow clone cannot be pushed to a remote that lacks the
+          # history, and the mirror project starts empty.
+          fetch-depth: 0
+
+      - name: Push the commit under test to the MPCDF mirror
+        id: push
+        env:
+          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          # Resolve the path from the id so the project is never configured
+          # twice, and a rename on the GitLab side cannot desynchronise them.
+          project=$(curl -sS --fail-with-body -H "PRIVATE-TOKEN: ${TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}" | jq -r .path_with_namespace)
+          branch="gh-run-${{ github.run_id }}-${{ github.run_attempt }}"
+          cp .github/gitlab/ci.yml .gitlab-ci.yml
+          git -c user.name="mace-ci" -c user.email="mace-ci@users.noreply.github.com" \
+              -c commit.gpgsign=false \
+              commit -m "CI: pipeline definition for ${GITHUB_SHA}" -- .gitlab-ci.yml
+          git push --force "https://oauth2:${TOKEN}@gitlab.mpcdf.mpg.de/${project}.git" \
+              "HEAD:refs/heads/${branch}"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+
+      - name: Start the GitLab pipeline
+        id: trigger
+        env:
+          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+          BRANCH: ${{ steps.push.outputs.branch }}
+        run: |
+          set -euo pipefail
+          response=$(curl -sS --fail-with-body -X POST \
+            -H "PRIVATE-TOKEN: ${TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipeline" \
+            --form "ref=${BRANCH}" \
+            --form "variables[][key]=GITHUB_SHA" \
+            --form "variables[][value]=${GITHUB_SHA}")
+          id=$(jq -r '.id' <<< "$response")
+          url=$(jq -r '.web_url' <<< "$response")
+          echo "pipeline_id=${id}" >> "$GITHUB_OUTPUT"
+          echo "Pipeline ${id}: ${url}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Wait for the pipeline
+        id: wait
+        env:
+          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+          PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
+        run: |
+          set -euo pipefail
+          api="${GITLAB_URL}/api/v4/projects/${PROJECT_ID}"
+          deadline=$(( SECONDS + 7200 ))
+          previous=""
+          while :; do
+            status=$(curl -sS --fail-with-body -H "PRIVATE-TOKEN: ${TOKEN}" \
+              "${api}/pipelines/${PIPELINE_ID}" | jq -r '.status')
+            if [ "$status" != "$previous" ]; then
+              echo "pipeline status: ${status}"
+              previous="$status"
+            fi
+            case "$status" in
+              success|failed|canceled|skipped) break ;;
+            esac
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              status="timeout"
+              break
+            fi
+            sleep 20
+          done
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+
+      # MACE maintainers have no accounts on the MPCDF instance, so the GitLab
+      # logs would otherwise be unreachable from a pull request. Mirror them
+      # here rather than linking to a page nobody can open.
+      - name: Mirror the GitLab job logs
+        if: always() && steps.trigger.outputs.pipeline_id != ''
+        env:
+          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+          PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
+        run: |
+          set -euo pipefail
+          api="${GITLAB_URL}/api/v4/projects/${PROJECT_ID}"
+          jobs=$(curl -sS --fail-with-body -H "PRIVATE-TOKEN: ${TOKEN}" \
+            "${api}/pipelines/${PIPELINE_ID}/jobs?per_page=100")
+          jq -r '.[] | "\(.id)\t\(.name)\t\(.status)"' <<< "$jobs" |
+          while IFS=$'\t' read -r id name status; do
+            echo "::group::${name} (${status})"
+            curl -sS -H "PRIVATE-TOKEN: ${TOKEN}" "${api}/jobs/${id}/trace" || true
+            echo "::endgroup::"
+            echo "- \`${name}\`: **${status}**" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Cancel the pipeline if this job was cancelled
+        if: cancelled() && steps.trigger.outputs.pipeline_id != ''
+        env:
+          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+          PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
+        run: |
+          curl -sS -X POST -H "PRIVATE-TOKEN: ${TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipelines/${PIPELINE_ID}/cancel" \
+            -o /dev/null
+
+      - name: Delete the throwaway branch
+        if: always() && steps.push.outputs.branch != ''
+        env:
+          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+          BRANCH: ${{ steps.push.outputs.branch }}
+        run: |
+          curl -sS -X DELETE -H "PRIVATE-TOKEN: ${TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/branches/${BRANCH}" \
+            -o /dev/null
+
+      - name: Report the pipeline result
+        if: always()
+        run: |
+          status="${{ steps.wait.outputs.status }}"
+          echo "GitLab pipeline finished with status: ${status:-unknown}"
+          [ "$status" = "success" ]
