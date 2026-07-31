@@ -20,6 +20,9 @@ variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PIP_DEFAULT_TIMEOUT: "120"
   GIT_DEPTH: "1"
+  # Keep the JIT-compiled OpenEquivariance kernels inside the project, the only
+  # place the cache below can reach.
+  TORCH_EXTENSIONS_DIR: "$CI_PROJECT_DIR/.cache/torch_extensions"
 
 stages:
   - test
@@ -33,26 +36,24 @@ stages:
   stage: test
   image: python:3.11
   timeout: 2h
-  # The venv is cached alongside the pip downloads: reinstalling the whole
-  # stack dominates the runtime otherwise. Reusing it is safe because every
-  # install below still runs, so a changed dependency is picked up; a warm
-  # cache only turns those installs into no-ops. The key follows setup.cfg so
-  # a dependency edit starts from a clean slate anyway.
+  # Cache only what is small AND expensive to reproduce: wheels pip had to
+  # build itself (matscipy compiles from an sdist) and the JIT-compiled
+  # kernels. Deliberately NOT the venv or pip's download cache — the torch
+  # builds put those in the multi-GB range, which the cache store rejects, and
+  # a rejected upload does not fail the job, so the whole cache silently stops
+  # working. Both paths are reused only when what produced them still matches,
+  # so a warm cache can save work but never change a result.
   cache:
     key:
       files:
         - setup.cfg
       prefix: "$CI_JOB_NAME"
     paths:
-      - .cache/pip
-      - .venv
+      - .cache/pip/wheels
+      - .cache/torch_extensions
   before_script:
     - python3 -V
-    # A cached venv built under a different interpreter (an image change, a
-    # Python upgrade) leaves dangling symlinks that fail much later and much
-    # more confusingly than here.
-    - .venv/bin/python -V > /dev/null 2>&1 || rm -rf .venv
-    - test -d .venv || python3 -m venv .venv
+    - python3 -m venv .venv
     - . .venv/bin/activate
     - python -m pip install -U pip
   script:

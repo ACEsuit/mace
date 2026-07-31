@@ -18,7 +18,10 @@ name: gpu tests (MPCDF)
 #
 # Setup (one-off, outside this repository):
 #   - a GitLab project whose numeric id goes into the repository variable
-#     MPCDF_GITLAB_PROJECT_ID
+#     MPCDF_GITLAB_PROJECT_ID. Give it a real default branch before the first
+#     run: pushing into an empty project promotes whatever lands first, so a
+#     throwaway branch becomes the default, gets protected automatically, and
+#     can then no longer be deleted.
 #   - an access token for that project with the `api` and `write_repository`
 #     scopes AND a role of Developer or above (scopes alone are not enough to
 #     push), stored as the secret MPCDF_GITLAB_TOKEN
