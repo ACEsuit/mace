@@ -31,13 +31,19 @@ name: gpu tests (MPCDF)
 # this one lapses every run starts failing at the push step with an error that
 # looks nothing like a token problem. Renew it before it does.
 
-# Manual only while the MPCDF path is being brought up: it must not add noise
-# to pull requests until it has proven itself green. Once it has, add back the
-# triggers the self-hosted fleet uses (push to main/develop, pull_request, and
-# a nightly schedule offset from the fleet's 03:17 so the two GPU paths do not
-# report the same upstream breakage at the same minute).
+# Runs alongside the self-hosted fleet, which it is meant to replace. Until
+# the two have been seen agreeing, treat a disagreement between them as
+# something to investigate rather than a verdict, and keep this one out of
+# branch protection's required checks.
 on:
+  push:
+    branches: [ main, develop ]
   workflow_dispatch:
+  pull_request:
+  schedule:
+    # Offset from the self-hosted fleet's 03:17 so the two GPU paths do not
+    # report the same upstream breakage at the same minute.
+    - cron: '47 3 * * *'
 
 permissions:
   contents: read
