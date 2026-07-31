@@ -93,7 +93,7 @@ stages:
 gpu-nvidia:
   extends: .gpu
   rules:
-    - if: '$ONLY_VENDOR == "" || $ONLY_VENDOR == "nvidia"'
+    - if: '$ONLY_VENDOR == null || $ONLY_VENDOR == "" || $ONLY_VENDOR == "nvidia"'
   # The CUDA toolkit image is what buys OpenEquivariance: it JIT-compiles its
   # kernels with nvcc, so a driver-only host cannot run those tests at all.
   # The major version tracks the default PyTorch wheels (cu13).
@@ -122,7 +122,7 @@ gpu-nvidia:
 gpu-amd:
   extends: .gpu
   rules:
-    - if: '$ONLY_VENDOR == "" || $ONLY_VENDOR == "amd"'
+    - if: '$ONLY_VENDOR == null || $ONLY_VENDOR == "" || $ONLY_VENDOR == "amd"'
   tags:
     - mpcdf-shared
     - gpu-amd
