@@ -25,21 +25,36 @@ variables:
 stages:
   - test
 
-# A plain Python image is enough even for the CUDA/ROCm jobs: the PyTorch
-# wheels ship their own runtime libraries and only need the driver, which the
-# runner exposes into the container. A vendor image would only be required for
-# OpenEquivariance, which JIT-compiles its kernels and needs a real toolkit.
+# A plain Python image is enough wherever the PyTorch wheels suffice: they
+# ship their own runtime libraries and only need the driver, which the runner
+# exposes into the container. The exception is OpenEquivariance, which
+# JIT-compiles its kernels and therefore needs a real toolkit, so that job
+# overrides the image below. Being containers is exactly what makes this
+# possible here and not on a shared machine nobody wants to install nvcc on.
 .gpu:
   stage: test
   image: python:3.11
   timeout: 2h
+  # The venv is cached alongside the pip downloads: reinstalling the whole
+  # stack dominates the runtime otherwise. Reusing it is safe because every
+  # install below still runs, so a changed dependency is picked up; a warm
+  # cache only turns those installs into no-ops. The key follows setup.cfg so
+  # a dependency edit starts from a clean slate anyway.
   cache:
-    key: "pip-$CI_JOB_NAME"
+    key:
+      files:
+        - setup.cfg
+      prefix: "$CI_JOB_NAME"
     paths:
       - .cache/pip
+      - .venv
   before_script:
-    - python -V
-    - python -m venv .venv
+    - python3 -V
+    # A cached venv built under a different interpreter (an image change, a
+    # Python upgrade) leaves dangling symlinks that fail much later and much
+    # more confusingly than here.
+    - .venv/bin/python -V > /dev/null 2>&1 || rm -rf .venv
+    - test -d .venv || python3 -m venv .venv
     - . .venv/bin/activate
     - python -m pip install -U pip
   script:
@@ -48,6 +63,10 @@ stages:
         python -m pip install --retries 5 torch --index-url "$TORCH_INDEX"
       fi
     - python -m pip install --retries 5 ".[${EXTRAS}]"
+    - |
+      for req in $PIP_REQUIREMENTS; do
+        python -m pip install --retries 5 -r "$req"
+      done
     - python -m pip freeze
     # Fail loudly rather than silently running the CPU path: a runner that
     # hands us no GPU must not report a green pipeline.
@@ -68,28 +87,48 @@ stages:
       -m "($MARKER_EXPR) and not benchmark"
       -n 2 --timeout 1200 -ra
 
+# ONLY_VENDOR is set by the bridge so each GitHub job drives a pipeline
+# containing a single vendor, and the two report as independent checks. Unset
+# (a pipeline started by hand) runs both.
 gpu-nvidia:
   extends: .gpu
+  rules:
+    - if: '$ONLY_VENDOR == "" || $ONLY_VENDOR == "nvidia"'
+  # The CUDA toolkit image is what buys OpenEquivariance: it JIT-compiles its
+  # kernels with nvcc, so a driver-only host cannot run those tests at all.
+  # The major version tracks the default PyTorch wheels (cu13).
+  image: nvidia/cuda:13.0.3-devel-ubuntu24.04
+  before_script:
+    - apt-get update
+    - >
+      apt-get install -y --no-install-recommends
+      python3 python3-venv python3-dev build-essential git
+    - !reference [ .gpu, before_script ]
   tags:
     - mpcdf-shared
     - gpu-nvidia
   variables:
+    CUDA_HOME: /usr/local/cuda
     TORCH_INDEX: ""
-    EXTRAS: "dev,cueq,cueq-cuda-12"
-    REQUIRE_CAPS: "gpu,cueq"
+    EXTRAS: "dev,cueq,cueq-cuda-12,oeq,schedulefree"
+    PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
+    REQUIRE_CAPS: "gpu,cueq,oeq,polar,les,schedulefree"
     MARKER_EXPR: "gpu"
 
-# cuEquivariance is NVIDIA-only, hence the narrower marker expression. Kept
-# non-blocking until the ROCm path has proven stable on this runner; drop
-# allow_failure once it has.
+# cuEquivariance is NVIDIA-only, hence the narrower marker expression. This
+# job is deliberately not allow_failure: it surfaces as its own check on the
+# GitHub side, so whether a red AMD blocks a merge is a branch-protection
+# decision there rather than something hidden inside the pipeline.
 gpu-amd:
   extends: .gpu
+  rules:
+    - if: '$ONLY_VENDOR == "" || $ONLY_VENDOR == "amd"'
   tags:
     - mpcdf-shared
     - gpu-amd
-  allow_failure: true
   variables:
     TORCH_INDEX: "https://download.pytorch.org/whl/rocm6.3"
-    EXTRAS: "dev"
-    REQUIRE_CAPS: "gpu"
+    EXTRAS: "dev,schedulefree"
+    PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
+    REQUIRE_CAPS: "gpu,polar,les,schedulefree"
     MARKER_EXPR: "gpu and not cueq"

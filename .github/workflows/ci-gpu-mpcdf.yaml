@@ -4,10 +4,16 @@ name: gpu tests (MPCDF)
 #
 # That instance runs GitLab Community Edition, where the "run CI/CD for an
 # external repository" integration (mirror + status reporting back to GitHub)
-# is a paid feature. So the direction is inverted: this job pushes the commit
-# under test into a mirror project at MPCDF, starts the pipeline through the
-# API, waits for it and mirrors the GitLab job logs back into this log. The
-# check that appears on the pull request is this job itself.
+# is a paid feature. So the direction is inverted: this workflow pushes the
+# commit under test into a mirror project at MPCDF, starts a pipeline through
+# the API, waits for it and mirrors the GitLab job logs back into this log.
+# The checks that appear on the pull request are these jobs themselves.
+#
+# One job per vendor, each driving its own single-job pipeline, so the two
+# report independently: the shared Nvidia runners are contended (queue waits
+# of several minutes are normal) and a single combined check would hide an
+# already-finished AMD result behind them. It also lets branch protection
+# require one vendor without requiring the other.
 #
 # The pipeline definition lives in .github/gitlab/ci.yml and is copied to
 # .gitlab-ci.yml on the throwaway branch that gets pushed.
@@ -16,8 +22,14 @@ name: gpu tests (MPCDF)
 #   - a project on gitlab.mpcdf.mpg.de whose numeric id goes into the
 #     repository variable MPCDF_GITLAB_PROJECT_ID
 #   - an access token for that project with the `api` and `write_repository`
-#     scopes, stored as the secret MPCDF_GITLAB_TOKEN
-# Without those the job skips, so forks are unaffected.
+#     scopes AND a role of Developer or above (scopes alone are not enough to
+#     push), stored as the secret MPCDF_GITLAB_TOKEN
+# Without those the workflow skips, so forks are unaffected.
+#
+# THE TOKEN EXPIRES. GitLab access tokens have a maximum lifetime, and when
+# this one lapses every run here starts failing at the push step with a 401
+# that looks nothing like a token problem. Whoever maintains this should renew
+# it before it lapses; the current one runs out on 2027-07-31.
 
 # Manual only while the MPCDF path is being brought up: it must not add noise
 # to pull requests until it has proven itself green. Once it has, add back the
@@ -38,14 +50,16 @@ env:
   GITLAB_URL: https://gitlab.mpcdf.mpg.de
 
 jobs:
-  gitlab:
+  push:
     if: vars.MPCDF_GITLAB_PROJECT_ID != ''
     # Same human-in-the-loop gate as the self-hosted fleet (ci-gpu.yaml): code
     # from outside the team must be approved by a maintainer before it runs on
     # hardware we do not own. Here it also gates the push credentials.
     environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 20
+    outputs:
+      branch: ${{ steps.push.outputs.branch }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -73,20 +87,40 @@ jobs:
               "HEAD:refs/heads/${branch}"
           echo "branch=${branch}" >> "$GITHUB_OUTPUT"
 
+  run:
+    needs: push
+    environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        vendor: [ nvidia, amd ]
+    name: gpu-${{ matrix.vendor }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+      PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+    steps:
       - name: Start the GitLab pipeline
         id: trigger
         env:
-          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
-          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
-          BRANCH: ${{ steps.push.outputs.branch }}
+          BRANCH: ${{ needs.push.outputs.branch }}
         run: |
           set -euo pipefail
-          response=$(curl -sS --fail-with-body -X POST \
-            -H "PRIVATE-TOKEN: ${TOKEN}" \
-            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipeline" \
-            --form "ref=${BRANCH}" \
-            --form "variables[][key]=GITHUB_SHA" \
-            --form "variables[][value]=${GITHUB_SHA}")
+          # ONLY_VENDOR selects the single job this pipeline will contain; see
+          # the rules in .github/gitlab/ci.yml.
+          if ! response=$(curl -sS --fail-with-body -X POST \
+              -H "PRIVATE-TOKEN: ${TOKEN}" \
+              "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipeline" \
+              --form "ref=${BRANCH}" \
+              --form "variables[][key]=ONLY_VENDOR" \
+              --form "variables[][value]=${{ matrix.vendor }}" \
+              --form "variables[][key]=GITHUB_SHA" \
+              --form "variables[][value]=${GITHUB_SHA}"); then
+            echo "::error::could not create the pipeline"
+            echo "$response"
+            exit 1
+          fi
           id=$(jq -r '.id' <<< "$response")
           url=$(jq -r '.web_url' <<< "$response")
           echo "pipeline_id=${id}" >> "$GITHUB_OUTPUT"
@@ -95,8 +129,6 @@ jobs:
       - name: Wait for the pipeline
         id: wait
         env:
-          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
-          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
           PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
         run: |
           set -euo pipefail
@@ -127,8 +159,6 @@ jobs:
       - name: Mirror the GitLab job logs
         if: always() && steps.trigger.outputs.pipeline_id != ''
         env:
-          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
-          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
           PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
         run: |
           set -euo pipefail
@@ -146,23 +176,10 @@ jobs:
       - name: Cancel the pipeline if this job was cancelled
         if: cancelled() && steps.trigger.outputs.pipeline_id != ''
         env:
-          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
-          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
           PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
         run: |
           curl -sS -X POST -H "PRIVATE-TOKEN: ${TOKEN}" \
             "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipelines/${PIPELINE_ID}/cancel" \
-            -o /dev/null
-
-      - name: Delete the throwaway branch
-        if: always() && steps.push.outputs.branch != ''
-        env:
-          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
-          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
-          BRANCH: ${{ steps.push.outputs.branch }}
-        run: |
-          curl -sS -X DELETE -H "PRIVATE-TOKEN: ${TOKEN}" \
-            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/branches/${BRANCH}" \
             -o /dev/null
 
       - name: Report the pipeline result
@@ -171,3 +188,22 @@ jobs:
           status="${{ steps.wait.outputs.status }}"
           echo "GitLab pipeline finished with status: ${status:-unknown}"
           [ "$status" = "success" ]
+
+  # Separate from `run` so the branch survives until BOTH vendors are done,
+  # and is still removed when one of them fails or is cancelled.
+  cleanup:
+    needs: [ push, run ]
+    if: always() && needs.push.outputs.branch != ''
+    environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete the throwaway branch
+        env:
+          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+          BRANCH: ${{ needs.push.outputs.branch }}
+        run: |
+          curl -sS -X DELETE -H "PRIVATE-TOKEN: ${TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/branches/${BRANCH}" \
+            -o /dev/null
