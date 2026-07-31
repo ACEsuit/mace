@@ -3,7 +3,7 @@ name: nightly
 # foundation-model tests (downloads), the full-matrix e2e training suite,
 # external-dep refresh (polar/les install from git and can break on their
 # own), CPU benchmarks, the real-tier LAMMPS integration, and the durations
-# refresh. GPU nightly coverage runs via ci-gpu.yaml's own schedule.
+# refresh. GPU nightly coverage runs via ci-gpu-mpcdf.yaml's own schedule.
 
 on:
   schedule:

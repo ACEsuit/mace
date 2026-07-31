@@ -31,18 +31,18 @@ name: gpu tests (MPCDF)
 # this one lapses every run starts failing at the push step with an error that
 # looks nothing like a token problem. Renew it before it does.
 
-# Runs alongside the self-hosted fleet, which it is meant to replace. Until
-# the two have been seen agreeing, treat a disagreement between them as
-# something to investigate rather than a verdict, and keep this one out of
-# branch protection's required checks.
+# This is the only GPU coverage in the repository, so the two vendor jobs are
+# what branch protection should require: nothing else exercises cueq, oeq, or
+# any CUDA/ROCm path.
 on:
   push:
     branches: [ main, develop ]
   workflow_dispatch:
   pull_request:
   schedule:
-    # Offset from the self-hosted fleet's 03:17 so the two GPU paths do not
-    # report the same upstream breakage at the same minute.
+    # Nightly, so breakage that arrives through a dependency rather than a
+    # commit still surfaces. An hour after nightly.yaml's own run, which keeps
+    # the two suites from reporting the same upstream break at the same minute.
     - cron: '47 3 * * *'
 
 permissions:
@@ -58,9 +58,13 @@ env:
 jobs:
   push:
     if: vars.MPCDF_GITLAB_PROJECT_ID != ''
-    # Same human-in-the-loop gate as the self-hosted fleet (ci-gpu.yaml): code
-    # from outside the team must be approved by a maintainer before it runs on
-    # GPU hardware. Here it also gates the push credentials.
+    # Human-in-the-loop gate for third-party code on GPU hardware, which here
+    # also gates the push credentials. PRs authored by the team (OWNER/MEMBER/
+    # COLLABORATOR — GitHub-computed, so it travels with the author even on
+    # fork PRs) deploy to `gpu-internal`, which has no protection rules and
+    # runs immediately. Anyone else lands on `gpu-external`, whose required
+    # reviewers must approve the run first. Both environments are created in
+    # Settings -> Environments; only gpu-external needs reviewers.
     environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
