@@ -1,0 +1,95 @@
+# GPU pipeline executed on the MPCDF shared runners (gitlab.mpcdf.mpg.de).
+#
+# This file is NOT a repository-root .gitlab-ci.yml on purpose: nothing in
+# GitHub reads it. The `gpu tests (MPCDF)` workflow copies it to
+# `.gitlab-ci.yml` on a throwaway branch, pushes that branch to a mirror
+# project at MPCDF and starts the pipeline through the API. Keeping it here
+# means the GitHub repository carries no top-level GitLab configuration.
+#
+# The MPCDF instance runs GitLab Community Edition, so the built-in GitHub
+# integration (mirror + status reporting) is unavailable; the direction of
+# control is therefore GitHub -> GitLab, never the reverse.
+
+# Only API-created pipelines run. Without this the `git push` performed by the
+# bridge would start a second, redundant pipeline for the same commit.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "api"
+    - when: never
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PIP_DEFAULT_TIMEOUT: "120"
+  GIT_DEPTH: "1"
+
+stages:
+  - test
+
+# A plain Python image is enough even for the CUDA/ROCm jobs: the PyTorch
+# wheels ship their own runtime libraries and only need the driver, which the
+# runner exposes into the container. A vendor image would only be required for
+# OpenEquivariance, which JIT-compiles its kernels and needs a real toolkit.
+.gpu:
+  stage: test
+  image: python:3.11
+  timeout: 2h
+  cache:
+    key: "pip-$CI_JOB_NAME"
+    paths:
+      - .cache/pip
+  before_script:
+    - python -V
+    - python -m venv .venv
+    - . .venv/bin/activate
+    - python -m pip install -U pip
+  script:
+    - |
+      if [ -n "$TORCH_INDEX" ]; then
+        python -m pip install --retries 5 torch --index-url "$TORCH_INDEX"
+      fi
+    - python -m pip install --retries 5 ".[${EXTRAS}]"
+    - python -m pip freeze
+    # Fail loudly rather than silently running the CPU path: a runner that
+    # hands us no GPU must not report a green pipeline.
+    - |
+      python - <<'PY'
+      import torch
+      print("torch:", torch.__version__)
+      print("cuda:", torch.version.cuda, "| hip:", torch.version.hip)
+      if not torch.cuda.is_available():
+          raise SystemExit("No GPU is visible to torch on this runner")
+      print("device:", torch.cuda.get_device_name(0))
+      PY
+    # MACE_REQUIRE_CAPS turns a broken backend install into a failure instead
+    # of a skip, the same contract the GitHub jobs use (tests/conftest.py).
+    - >
+      MACE_REQUIRE_CAPS="$REQUIRE_CAPS"
+      python -m pytest tests
+      -m "($MARKER_EXPR) and not benchmark"
+      -n 2 --timeout 1200 -ra
+
+gpu-nvidia:
+  extends: .gpu
+  tags:
+    - mpcdf-shared
+    - gpu-nvidia
+  variables:
+    TORCH_INDEX: ""
+    EXTRAS: "dev,cueq,cueq-cuda-12"
+    REQUIRE_CAPS: "gpu,cueq"
+    MARKER_EXPR: "gpu"
+
+# cuEquivariance is NVIDIA-only, hence the narrower marker expression. Kept
+# non-blocking until the ROCm path has proven stable on this runner; drop
+# allow_failure once it has.
+gpu-amd:
+  extends: .gpu
+  tags:
+    - mpcdf-shared
+    - gpu-amd
+  allow_failure: true
+  variables:
+    TORCH_INDEX: "https://download.pytorch.org/whl/rocm6.3"
+    EXTRAS: "dev"
+    REQUIRE_CAPS: "gpu"
+    MARKER_EXPR: "gpu and not cueq"
