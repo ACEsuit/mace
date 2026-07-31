@@ -139,11 +139,21 @@ jobs:
           print("device:", torch.cuda.get_device_name(0))
           PY
 
+      - name: Benchmark compiled cuEq PolarMACE with NVIDIA electrostatics
+        if: >-
+          matrix.vendor == 'nvidia' &&
+          github.event_name == 'workflow_dispatch' &&
+          github.ref_name == 'agent/polar-cueq-compile-benchmark-20260722'
+        run: python tests/benchmarks/benchmark_polar_nval_compile.py
+
       # Marker selection over the whole tree: parity of accelerated backends,
       # torch.compile on GPU, GPU training, calculator GPU paths... Benchmarks
       # are excluded from correctness gates by design. MACE_REQUIRE_CAPS turns
       # a broken backend install on this runner into failures, never skips.
       - name: Run GPU tests
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          github.ref_name != 'agent/polar-cueq-compile-benchmark-20260722'
         uses: ./.github/actions/run-tests
         with:
           tests: tests
