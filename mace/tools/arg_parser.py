@@ -706,6 +706,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=DefaultKeys.CHARGES.value,
     )
     parser.add_argument(
+        "--forces_atomic_weights_key",
+        help="Key of per-atom force loss weights in training xyz (arrays entry, one scalar per atom)",
+        type=str,
+        default=DefaultKeys.FORCES_ATOMIC_WEIGHTS.value,
+    )
+    parser.add_argument(
         "--elec_temp_key",
         help="Key of electronic temperature in training xyz",
         type=str,
@@ -1216,6 +1222,12 @@ def build_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="Key of atomic charges in training xyz",
         type=str,
         default=DefaultKeys.CHARGES.value,
+    )
+    parser.add_argument(
+        "--forces_atomic_weights_key",
+        help="Key of per-atom force loss weights in training xyz (arrays entry, one scalar per atom)",
+        type=str,
+        default=DefaultKeys.FORCES_ATOMIC_WEIGHTS.value,
     )
     parser.add_argument(
         "--atomic_numbers",
