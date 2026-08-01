@@ -78,7 +78,7 @@ def load_foundations_elements(
             head_emb_data = model_emb_head[0].weight.data
             
             if foundation_emd_head[0].out_features == model_emb_head[0].out_features:
-                head_emb_data[:,:foundation_emb_dim] = foundation_emd_head[0].weight.data
+                head_emb_data[:,:foundation_emb_dim] = foundation_emd_head[0].weight.data[:,:foundation_emb_dim]
                 torch.nn.init.uniform_(head_emb_data[:,foundation_emb_dim:],-0.05,0.05)
             else:
                 torch.nn.init.uniform_(head_emb_data, -0.05, 0.05)
@@ -339,7 +339,7 @@ def load_foundations_elements(
     for attr_name, module in model.named_children():
         if attr_name in _handled_attrs:
             continue
-        if not hasattr(model_foundations, "joint_embedding"):
+        if attr_name not in model_foundations._modules: 
             continue
         submodules = (
             list(zip(module, model_foundations.__dict__["_modules"][attr_name]))
