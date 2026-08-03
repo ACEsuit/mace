@@ -26,13 +26,25 @@ def init_distributed(args):
 
     # -------------------------------------------------------------------- mpi
     elif args.launcher == "mpi":
-        # OpenMPI & Intel-MPI export these:
-        rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
-        world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
+        # OpenMPI exports OMPI_*; Intel MPI / PALS export PMI_*/PALS_*.
+        if "OMPI_COMM_WORLD_RANK" in os.environ:
+            # OpenMPI & Intel-MPI export these:
+            rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
+            world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
 
-        # local-rank isn’t standardised; compute it from local node-size
-        local_size = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_SIZE", 1))
-        local_rank = rank % local_size
+            # local-rank isn’t standardised; compute it from local node-size
+            local_size = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_SIZE", 1))
+            local_rank = rank % local_size
+        else:
+            rank = int(os.environ.get("PMI_RANK",
+                       os.environ.get("PALS_RANKID", 0)))
+            # PMI_SIZE = global world size; PALS_NTASKS = same on PALS;
+            # PALS_LOCAL_SIZE is per-NODE size, NOT a valid world_size.
+            world_size = int(os.environ.get("PMI_SIZE",
+                       os.environ.get("PALS_NTASKS",
+                       os.environ.get("WORLD_SIZE", 1))))
+            local_rank = int(os.environ.get("PALS_LOCAL_RANKID",
+                       os.environ.get("MPI_LOCALRANKID", rank)))
 
         # tell PyTorch where the rendez-vous server is
         os.environ.setdefault("MASTER_ADDR", os.environ["MASTER_ADDR"])
