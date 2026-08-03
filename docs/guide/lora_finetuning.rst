@@ -44,6 +44,7 @@ LoRA wrappers are injected into three types of layers found in MACE models:
 - **Equivariant linear layers** (``o3.Linear`` and ``cuet.Linear``): Wrapped by ``LoRAO3Linear``, which preserves O(3) equivariance through symmetry-constrained bottleneck irreps.
 - **Dense linear layers** (``nn.Linear``): Wrapped by ``LoRADenseLinear``, which uses standard low-rank decomposition.
 - **Fully-connected network layers** (e3nn ``FullyConnectedNet`` internal layers): Wrapped by ``LoRAFCLayer``, which patches the weight matrix of each MLP layer.
+- **Tensor contraction layers** (``Contraction`` inside ``SymmetricContraction``): Wrapped by ``LoRAContraction``, which applies a low-rank update to the highest-order correlation weights while keeping lower-order weights frozen.
 
 Parameter Freezing
 ------------------
@@ -156,6 +157,7 @@ The ``inject_lora`` function accepts the following arguments:
 - ``alpha`` (float): Scaling factor.
 - ``wrap_equivariant`` (bool): Whether to wrap equivariant ``o3.Linear`` / ``cuet.Linear`` layers. Default: ``True``.
 - ``wrap_dense`` (bool): Whether to wrap dense ``nn.Linear`` and e3nn FC layers. Default: ``True``.
+- ``wrap_contraction`` (bool): Whether to wrap ``Contraction`` layers inside ``SymmetricContraction``. Default: ``True``.
 - ``cueq_config``: Optional cuequivariance configuration object for creating cueq-compatible LoRA layers.
 
 The ``merge_lora_weights`` function folds all LoRA adaptations into the base weights and replaces each wrapper with the original (now updated) layer. After merging, all parameters have ``requires_grad=True``.
@@ -168,3 +170,10 @@ Tips for Successful LoRA Fine-tuning
 - **Prefer naive over multihead**: LoRA is most useful with naive fine-tuning, where its regularisation effect helps prevent both overfitting and catastrophic forgetting. With :ref:`multihead replay <multihead_finetuning>`, the replay data already provides strong regularisation, so the additional constraint from LoRA is less beneficial.
 - **Monitor trainable parameter count**: The training log reports the number of trainable parameters before and after LoRA injection. Use this to verify that LoRA is working as expected and to compare different rank settings.
 - **Saved models are standard MACE**: After training, the saved model has no LoRA layers — weights are merged automatically. You can use the model in all the same ways as a regular MACE model.
+
+Related Work
+=============
+
+The original LoRA method was introduced in `Hu et al. (2022) <https://arxiv.org/abs/2106.09685>`_ for large language models.
+
+`Wang et al. (2025) <https://proceedings.mlr.press/v267/wang25al.html>`_ introduced **ELoRA** (*ELoRA: Low-Rank Adaptation for Equivariant GNNs*, ICML 2025), the first published study specifically addressing parameter-efficient fine-tuning for SO(3)-equivariant GNNs. ELoRA and MACE's implementation share the same broad direction of constructing low-rank updates that preserve SO(3) equivariance through symmetry-constrained bottleneck irreps, and were developed independently. ELoRA additionally covers ``SymmetricContraction`` layers, which are now also supported in MACE (see `Supported Layer Types`_ above).
