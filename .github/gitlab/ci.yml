@@ -52,19 +52,35 @@ stages:
       - .cache/pip/wheels
       - .cache/torch_extensions
   before_script:
+    # `before_script` and `script` are concatenated into ONE shell, which is why
+    # both the venv activation below and this function survive into `script`.
+    #
+    # pip's --retries covers its own HTTP requests, NOT the `git clone` it shells
+    # out to for the git+https pins in requirements/*.txt — a DNS blip there
+    # fails the install outright. The retired self-hosted workflow wrapped every
+    # install for this reason; containers on shared runners are no less exposed.
+    - |
+      retry() {
+        for i in 1 2 3; do
+          "$@" && return 0
+          echo "'$*' failed (attempt $i/3), retrying in 20s" >&2
+          sleep 20
+        done
+        "$@"
+      }
     - python3 -V
     - python3 -m venv .venv
     - . .venv/bin/activate
-    - python -m pip install -U pip
+    - retry python -m pip install -U pip
   script:
     - |
       if [ -n "$TORCH_INDEX" ]; then
-        python -m pip install --retries 5 torch --index-url "$TORCH_INDEX"
+        retry python -m pip install --retries 5 torch --index-url "$TORCH_INDEX"
       fi
-    - python -m pip install --retries 5 ".[${EXTRAS}]"
+    - retry python -m pip install --retries 5 ".[${EXTRAS}]"
     - |
       for req in $PIP_REQUIREMENTS; do
-        python -m pip install --retries 5 -r "$req"
+        retry python -m pip install --retries 5 -r "$req"
       done
     - python -m pip freeze
     # Fail loudly rather than silently running the CPU path: a runner that
