@@ -14,7 +14,22 @@ name: gpu tests (MPCDF)
 # It also lets branch protection require one vendor without the other.
 #
 # The pipeline definition lives in .github/gitlab/ci.yml and is copied to
-# .gitlab-ci.yml on the throwaway branch that gets pushed.
+# .gitlab-ci.yml on the throwaway branch that gets pushed. It is always taken
+# from the BASE ref, never from the pull request — see the push job.
+#
+# The trigger is `pull_request_target`, not `pull_request`, because neither
+# secrets nor repository variables are passed to a workflow triggered by a
+# fork's pull request: this workflow would skip on exactly the contributions
+# whose GPU behaviour is least known. `pull_request_target` runs the base
+# branch's copy of this file with the base repository's credentials, so the
+# usual warning applies — but nothing here EXECUTES the code under test. The
+# steps below are git and curl only; the code runs on the GitLab side, behind
+# the environment gate. Two rules keep it that way, and both matter:
+#   - the pipeline definition comes from the base ref, so a fork cannot choose
+#     what runs on MPCDF's hardware
+#   - the checkout below is explicitly the pull request's head, since
+#     `pull_request_target` otherwise hands you the base branch and the suite
+#     would silently pass on the wrong code
 #
 # Setup (one-off, outside this repository):
 #   - a GitLab project whose numeric id goes into the repository variable
@@ -38,7 +53,7 @@ on:
   push:
     branches: [ main, develop ]
   workflow_dispatch:
-  pull_request:
+  pull_request_target:
   schedule:
     # Nightly, so breakage that arrives through a dependency rather than a
     # commit still surfaces. An hour after nightly.yaml's own run, which keeps
@@ -49,7 +64,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: gpu-mpcdf-${{ github.ref }}
+  # Keyed on the pull request, not on github.ref: under `pull_request_target`
+  # that ref is the BASE branch, so every open pull request would share one
+  # group and each new one would cancel the last.
+  group: gpu-mpcdf-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -65,7 +83,11 @@ jobs:
     # runs immediately. Anyone else lands on `gpu-external`, whose required
     # reviewers must approve the run first. Both environments are created in
     # Settings -> Environments; only gpu-external needs reviewers.
-    environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
+    #
+    # The event name here MUST match the trigger: comparing against
+    # 'pull_request' while the workflow triggers on 'pull_request_target'
+    # sends every fork straight to gpu-internal and silently removes the gate.
+    environment: ${{ (github.event_name != 'pull_request_target' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -73,6 +95,11 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          # The code under test, which under `pull_request_target` is NOT the
+          # default ref. refs/pull/N/head rather than the head sha, because the
+          # fork's objects are only guaranteed to be reachable in the base
+          # repository through that ref.
+          ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
           # A shallow clone cannot be pushed to a remote that lacks the
           # history, and the mirror project starts empty.
           fetch-depth: 0
@@ -82,6 +109,12 @@ jobs:
         env:
           TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
           PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+          # Empty outside a pull request, where the checked-out tree is already
+          # the trusted one.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # NOT github.sha, which under `pull_request_target` is the base
+          # commit — the one thing this run is not testing.
+          TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           # Resolve the path from the id so the project is never configured
@@ -89,17 +122,33 @@ jobs:
           project=$(curl -sS --fail-with-body -H "PRIVATE-TOKEN: ${TOKEN}" \
             "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}" | jq -r .path_with_namespace)
           branch="gh-run-${{ github.run_id }}-${{ github.run_attempt }}"
-          cp .github/gitlab/ci.yml .gitlab-ci.yml
+          # Take the pipeline definition from the base ref, never from the tree
+          # that was just checked out: that tree is the pull request's, and a
+          # fork able to edit this file would be choosing what runs on MPCDF's
+          # hardware rather than merely what is tested there. The tests are
+          # still the fork's code — that is what the environment gate above is
+          # for — but the pipeline running them stays ours.
+          if [ -n "${BASE_SHA}" ]; then
+            # No --depth here: it would leave a shallow marker behind, and the
+            # push below needs the full history the mirror does not have.
+            git fetch origin "${BASE_SHA}"
+            git show "${BASE_SHA}:.github/gitlab/ci.yml" > .gitlab-ci.yml
+          else
+            cp .github/gitlab/ci.yml .gitlab-ci.yml
+          fi
+          # `git commit -- <path>` refuses a path it has never seen, so the
+          # copy has to be staged first.
+          git add .gitlab-ci.yml
           git -c user.name="mace-ci" -c user.email="mace-ci@users.noreply.github.com" \
               -c commit.gpgsign=false \
-              commit -m "CI: pipeline definition for ${GITHUB_SHA}" -- .gitlab-ci.yml
+              commit -m "CI: pipeline definition for ${TESTED_SHA}" -- .gitlab-ci.yml
           git push --force "https://oauth2:${TOKEN}@gitlab.mpcdf.mpg.de/${project}.git" \
               "HEAD:refs/heads/${branch}"
           echo "branch=${branch}" >> "$GITHUB_OUTPUT"
 
   run:
     needs: push
-    environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
+    environment: ${{ (github.event_name != 'pull_request_target' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
     strategy:
       fail-fast: false
       matrix:
@@ -115,6 +164,8 @@ jobs:
         id: trigger
         env:
           BRANCH: ${{ needs.push.outputs.branch }}
+          # See the push job: github.sha is the base commit on a pull request.
+          TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           # ONLY_VENDOR selects the single job this pipeline will contain; see
@@ -126,7 +177,7 @@ jobs:
               --form "variables[][key]=ONLY_VENDOR" \
               --form "variables[][value]=${{ matrix.vendor }}" \
               --form "variables[][key]=GITHUB_SHA" \
-              --form "variables[][value]=${GITHUB_SHA}"); then
+              --form "variables[][value]=${TESTED_SHA}"); then
             echo "::error::could not create the pipeline"
             echo "$response"
             exit 1
@@ -213,7 +264,7 @@ jobs:
   cleanup:
     needs: [ push, run ]
     if: always() && needs.push.outputs.branch != ''
-    environment: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
+    environment: ${{ (github.event_name != 'pull_request_target' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
