@@ -36,17 +36,12 @@ electrostatic, and learned non-local terms.
 Installation
 ------------
 
-Electrostatic MACE currently requires the latest ``main`` branch of MACE and is
-not supported by the PyPI ``mace-torch`` release yet. Install MACE from source
-first, then install the electrostatics dependency:
+You will need ``mace-torch`` version 0.3.16 or newer
 
 .. code-block:: bash
 
-    git clone https://github.com/ACEsuit/mace.git
-    cd mace
-    git checkout main
-    pip install .
-    pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git
+    pip install mace-torch
+    pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git@v0.4.0
 
 ``graph_electrostatics`` provides the Python module namespace ``graph_longrange``, which PolarMACE requires at runtime.
 
