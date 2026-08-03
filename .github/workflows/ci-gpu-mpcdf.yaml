@@ -17,11 +17,18 @@ name: gpu tests (MPCDF)
 # .gitlab-ci.yml on the throwaway branch that gets pushed. It is always taken
 # from the BASE ref, never from the pull request — see the push job.
 #
-# The trigger is `pull_request_target`, not `pull_request`, because neither
-# secrets nor repository variables are passed to a workflow triggered by a
-# fork's pull request: this workflow would skip on exactly the contributions
-# whose GPU behaviour is least known. `pull_request_target` runs the base
-# branch's copy of this file with the base repository's credentials, so the
+# Pull requests arrive through TWO triggers, and each job runs under exactly
+# one of them — the conditions below are what keep a PR from being tested
+# twice:
+#   - same-repository PRs use `pull_request`, which carries secrets and
+#     variables normally and runs THIS file rather than the base branch's, so a
+#     change to the GPU CI is testable by the PR that makes it
+#   - fork PRs use `pull_request_target`, because neither secrets nor
+#     repository variables are passed to a workflow triggered by a fork's
+#     `pull_request`: the whole workflow would skip on exactly the
+#     contributions whose GPU behaviour is least known
+#
+# `pull_request_target` runs with the base repository's credentials, so the
 # usual warning applies — but nothing here EXECUTES the code under test. The
 # steps below are git and curl only; the code runs on the GitLab side, behind
 # the environment gate. Two rules keep it that way, and both matter:
@@ -53,6 +60,7 @@ on:
   push:
     branches: [ main, develop ]
   workflow_dispatch:
+  pull_request:
   pull_request_target:
   schedule:
     # Nightly, so breakage that arrives through a dependency rather than a
@@ -67,7 +75,11 @@ concurrency:
   # Keyed on the pull request, not on github.ref: under `pull_request_target`
   # that ref is the BASE branch, so every open pull request would share one
   # group and each new one would cancel the last.
-  group: gpu-mpcdf-${{ github.event.pull_request.number || github.ref }}
+  #
+  # The event name is part of the key because both PR triggers fire for every
+  # pull request. Without it the two runs share a group and the one that no-ops
+  # cancels the one doing the work.
+  group: gpu-mpcdf-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -75,7 +87,17 @@ env:
 
 jobs:
   push:
-    if: vars.MPCDF_GITLAB_PROJECT_ID != ''
+    # Both PR triggers fire for every pull request, so each has to decline the
+    # half it is not responsible for, or the suite runs twice on contended
+    # runners. `run` and `cleanup` need no such condition: they follow this job
+    # through `needs`. A dispatch, a push or the schedule matches neither test
+    # and proceeds.
+    if: >-
+      vars.MPCDF_GITLAB_PROJECT_ID != ''
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository)
+      && (github.event_name != 'pull_request_target'
+          || github.event.pull_request.head.repo.full_name != github.repository)
     # Human-in-the-loop gate for third-party code on GPU hardware, which here
     # also gates the push credentials. PRs authored by the team (OWNER/MEMBER/
     # COLLABORATOR — GitHub-computed, so it travels with the author even on
@@ -84,9 +106,12 @@ jobs:
     # reviewers must approve the run first. Both environments are created in
     # Settings -> Environments; only gpu-external needs reviewers.
     #
-    # The event name here MUST match the trigger: comparing against
-    # 'pull_request' while the workflow triggers on 'pull_request_target'
-    # sends every fork straight to gpu-internal and silently removes the gate.
+    # Only `pull_request_target` is tested here, and that is load-bearing
+    # rather than sloppy: by the condition above, that event proceeds only for
+    # forks, while same-repo PRs arrive as `pull_request` and are trusted by
+    # construction. Adding 'pull_request' to this comparison would gate the
+    # team's own PRs; dropping 'pull_request_target' would send every fork
+    # straight to gpu-internal and silently remove the reviewer gate.
     environment: ${{ (github.event_name != 'pull_request_target' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -98,7 +123,8 @@ jobs:
           # The code under test, which under `pull_request_target` is NOT the
           # default ref. refs/pull/N/head rather than the head sha, because the
           # fork's objects are only guaranteed to be reachable in the base
-          # repository through that ref.
+          # repository through that ref. On a `pull_request` event github.sha is
+          # already the merge commit, which is the right thing to test.
           ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
           # A shallow clone cannot be pushed to a remote that lacks the
           # history, and the mirror project starts empty.
@@ -109,9 +135,13 @@ jobs:
         env:
           TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
           PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
-          # Empty outside a pull request, where the checked-out tree is already
-          # the trusted one.
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # Set ONLY for fork pull requests, whose tree cannot be trusted to
+          # define its own pipeline. Everywhere else — same-repo PRs, pushes,
+          # dispatches — the checked-out tree is the trusted one AND is what
+          # should be tested: reading the definition from the base branch would
+          # mean a PR editing the GPU pipeline never exercises its own change,
+          # and would fail outright on a base that has no definition yet.
+          BASE_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || '' }}
           # NOT github.sha, which under `pull_request_target` is the base
           # commit — the one thing this run is not testing.
           TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
