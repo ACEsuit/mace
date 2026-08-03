@@ -1,0 +1,340 @@
+name: gpu tests (MPCDF)
+# Runs the GPU suite on GitLab CI runners provided by MPCDF, without giving up
+# GitHub as the single entry point.
+#
+# GitLab can mirror a GitHub repository and report statuses back on its own,
+# but only in its paid tiers, so the direction is inverted here: this workflow
+# pushes the commit under test into a mirror project, starts a pipeline
+# through the API, waits for it and mirrors the GitLab job logs back into this
+# log. The checks on a pull request are these jobs themselves.
+#
+# One job per vendor, each driving its own single-job pipeline, so the two
+# report independently: runner availability differs per vendor, and a single
+# combined check would hold an already-finished result behind the slower one.
+# It also lets branch protection require one vendor without the other.
+#
+# The pipeline definition lives in .github/gitlab/ci.yml and is copied to
+# .gitlab-ci.yml on the throwaway branch that gets pushed. It is always taken
+# from the BASE ref, never from the pull request — see the push job.
+#
+# Pull requests arrive through TWO triggers, and each job runs under exactly
+# one of them — the conditions below are what keep a PR from being tested
+# twice:
+#   - same-repository PRs use `pull_request`, which carries secrets and
+#     variables normally and runs THIS file rather than the base branch's, so a
+#     change to the GPU CI is testable by the PR that makes it
+#   - fork PRs use `pull_request_target`, because neither secrets nor
+#     repository variables are passed to a workflow triggered by a fork's
+#     `pull_request`: the whole workflow would skip on exactly the
+#     contributions whose GPU behaviour is least known
+#
+# `pull_request_target` runs with the base repository's credentials, so the
+# usual warning applies — but nothing here EXECUTES the code under test. The
+# steps below are git and curl only; the code runs on the GitLab side, behind
+# the environment gate. Two rules keep it that way, and both matter:
+#   - the pipeline definition comes from the base ref, so a fork cannot choose
+#     what runs on MPCDF's hardware
+#   - the checkout below is explicitly the pull request's head, since
+#     `pull_request_target` otherwise hands you the base branch and the suite
+#     would silently pass on the wrong code
+#
+# Setup (one-off, outside this repository):
+#   - a GitLab project whose numeric id goes into the repository variable
+#     MPCDF_GITLAB_PROJECT_ID. Give it a real default branch before the first
+#     run: pushing into an empty project promotes whatever lands first, so a
+#     throwaway branch becomes the default, gets protected automatically, and
+#     can then no longer be deleted.
+#   - an access token for that project with the `api` and `write_repository`
+#     scopes AND a role of Developer or above (scopes alone are not enough to
+#     push), stored as the secret MPCDF_GITLAB_TOKEN
+# Without those the workflow skips, so forks are unaffected.
+#
+# THE TOKEN EXPIRES. GitLab access tokens have a maximum lifetime, and when
+# this one lapses every run starts failing at the push step with an error that
+# looks nothing like a token problem. Renew it before it does.
+
+# This is the only GPU coverage in the repository, so the two vendor jobs are
+# what branch protection should require: nothing else exercises cueq, oeq, or
+# any CUDA/ROCm path.
+on:
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
+  pull_request:
+  pull_request_target:
+  schedule:
+    # Nightly, so breakage that arrives through a dependency rather than a
+    # commit still surfaces. An hour after nightly.yaml's own run, which keeps
+    # the two suites from reporting the same upstream break at the same minute.
+    - cron: '47 3 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  # Keyed on the pull request, not on github.ref: under `pull_request_target`
+  # that ref is the BASE branch, so every open pull request would share one
+  # group and each new one would cancel the last.
+  #
+  # The event name is part of the key because both PR triggers fire for every
+  # pull request. Without it the two runs share a group and the one that no-ops
+  # cancels the one doing the work.
+  group: gpu-mpcdf-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLAB_URL: https://gitlab.mpcdf.mpg.de
+
+jobs:
+  push:
+    # Both PR triggers fire for every pull request, so each has to decline the
+    # half it is not responsible for, or the suite runs twice on contended
+    # runners. `run` and `cleanup` need no such condition: they follow this job
+    # through `needs`. A dispatch, a push or the schedule matches neither test
+    # and proceeds.
+    if: >-
+      vars.MPCDF_GITLAB_PROJECT_ID != ''
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository)
+      && (github.event_name != 'pull_request_target'
+          || github.event.pull_request.head.repo.full_name != github.repository)
+    # Human-in-the-loop gate for third-party code on GPU hardware, which here
+    # also gates the push credentials. PRs authored by the team (OWNER/MEMBER/
+    # COLLABORATOR — GitHub-computed, so it travels with the author even on
+    # fork PRs) deploy to `gpu-internal`, which has no protection rules and
+    # runs immediately. Anyone else lands on `gpu-external`, whose required
+    # reviewers must approve the run first. Both environments are created in
+    # Settings -> Environments; only gpu-external needs reviewers.
+    #
+    # Only `pull_request_target` is tested here, and that is load-bearing
+    # rather than sloppy: by the condition above, that event proceeds only for
+    # forks, while same-repo PRs arrive as `pull_request` and are trusted by
+    # construction. Adding 'pull_request' to this comparison would gate the
+    # team's own PRs; dropping 'pull_request_target' would send every fork
+    # straight to gpu-internal and silently remove the reviewer gate.
+    environment: ${{ (github.event_name != 'pull_request_target' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      branch: ${{ steps.push.outputs.branch }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # The code under test, which under `pull_request_target` is NOT the
+          # default ref. refs/pull/N/head rather than the head sha, because the
+          # fork's objects are only guaranteed to be reachable in the base
+          # repository through that ref. On a `pull_request` event github.sha is
+          # already the merge commit, which is the right thing to test.
+          ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
+          # A shallow clone cannot be pushed to a remote that lacks the
+          # history, and the mirror project starts empty.
+          fetch-depth: 0
+
+      - name: Push the commit under test to the MPCDF mirror
+        id: push
+        env:
+          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+          # Set ONLY for fork pull requests, whose tree cannot be trusted to
+          # define its own pipeline. Everywhere else — same-repo PRs, pushes,
+          # dispatches — the checked-out tree is the trusted one AND is what
+          # should be tested: reading the definition from the base branch would
+          # mean a PR editing the GPU pipeline never exercises its own change,
+          # and would fail outright on a base that has no definition yet.
+          BASE_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || '' }}
+          # NOT github.sha, which under `pull_request_target` is the base
+          # commit — the one thing this run is not testing.
+          TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # Resolve the path from the id so the project is never configured
+          # twice, and a rename on the GitLab side cannot desynchronise them.
+          project=$(curl -sS --fail-with-body -H "PRIVATE-TOKEN: ${TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}" | jq -r .path_with_namespace)
+          branch="gh-run-${{ github.run_id }}-${{ github.run_attempt }}"
+          # Take the pipeline definition from the base ref, never from the tree
+          # that was just checked out: that tree is the pull request's, and a
+          # fork able to edit this file would be choosing what runs on MPCDF's
+          # hardware rather than merely what is tested there. The tests are
+          # still the fork's code — that is what the environment gate above is
+          # for — but the pipeline running them stays ours.
+          if [ -n "${BASE_SHA}" ]; then
+            # No --depth here: it would leave a shallow marker behind, and the
+            # push below needs the full history the mirror does not have.
+            git fetch origin "${BASE_SHA}"
+            git show "${BASE_SHA}:.github/gitlab/ci.yml" > .gitlab-ci.yml
+          else
+            cp .github/gitlab/ci.yml .gitlab-ci.yml
+          fi
+          # `git commit -- <path>` refuses a path it has never seen, so the
+          # copy has to be staged first.
+          git add .gitlab-ci.yml
+          git -c user.name="mace-ci" -c user.email="mace-ci@users.noreply.github.com" \
+              -c commit.gpgsign=false \
+              commit -m "CI: pipeline definition for ${TESTED_SHA}" -- .gitlab-ci.yml
+          git push --force "https://oauth2:${TOKEN}@gitlab.mpcdf.mpg.de/${project}.git" \
+              "HEAD:refs/heads/${branch}"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+
+  run:
+    needs: push
+    environment: ${{ (github.event_name != 'pull_request_target' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        vendor: [ nvidia, amd ]
+    name: gpu-${{ matrix.vendor }}
+    runs-on: ubuntu-latest
+    # Only ever spent polling, and it has to outlast the wait deadline below by
+    # enough to mirror the logs and cancel the pipeline.
+    timeout-minutes: 240
+    env:
+      TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+      PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+    steps:
+      - name: Start the GitLab pipeline
+        id: trigger
+        env:
+          BRANCH: ${{ needs.push.outputs.branch }}
+          # See the push job: github.sha is the base commit on a pull request.
+          TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # ONLY_VENDOR selects the single job this pipeline will contain; see
+          # the rules in .github/gitlab/ci.yml.
+          if ! response=$(curl -sS --fail-with-body -X POST \
+              -H "PRIVATE-TOKEN: ${TOKEN}" \
+              "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipeline" \
+              --form "ref=${BRANCH}" \
+              --form "variables[][key]=ONLY_VENDOR" \
+              --form "variables[][value]=${{ matrix.vendor }}" \
+              --form "variables[][key]=GITHUB_SHA" \
+              --form "variables[][value]=${TESTED_SHA}"); then
+            echo "::error::could not create the pipeline"
+            echo "$response"
+            exit 1
+          fi
+          id=$(jq -r '.id' <<< "$response")
+          url=$(jq -r '.web_url' <<< "$response")
+          echo "pipeline_id=${id}" >> "$GITHUB_OUTPUT"
+          echo "Pipeline ${id}: ${url}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Wait for the pipeline
+        id: wait
+        env:
+          PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
+        run: |
+          set -euo pipefail
+          api="${GITLAB_URL}/api/v4/projects/${PROJECT_ID}"
+          # Queue time is on top of the pipeline's own 2h limit, so this covers
+          # both. It must stay comfortably under this job's timeout-minutes: if
+          # GitHub kills the job instead, the cancel step below never runs and
+          # the pipeline keeps a contended GPU runner busy for nothing.
+          deadline=$(( SECONDS + 13800 ))
+          previous=""
+          while :; do
+            # A poll must never be able to fail the check: under `set -e` a
+            # single curl timeout would abort a job that has already waited
+            # through a queue and a full test run. Treat a blip as "unknown"
+            # and try again; only the deadline below ends the wait early.
+            status=$(curl -sS --max-time 30 --retry 3 --retry-all-errors \
+              -H "PRIVATE-TOKEN: ${TOKEN}" \
+              "${api}/pipelines/${PIPELINE_ID}" | jq -r '.status' || true)
+            if [ -z "$status" ] || [ "$status" = null ]; then
+              if [ "$SECONDS" -ge "$deadline" ]; then status="timeout"; break; fi
+              sleep 20
+              continue
+            fi
+            if [ "$status" != "$previous" ]; then
+              echo "pipeline status: ${status}"
+              previous="$status"
+            fi
+            case "$status" in
+              success|failed|canceled|skipped) break ;;
+            esac
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              status="timeout"
+              break
+            fi
+            sleep 20
+          done
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+
+      # BEFORE mirroring, not after. Freeing the runner is the urgent half and
+      # costs one request; mirroring is slow and best-effort, and on a wait that
+      # already ran to its deadline it could push this job past its own timeout
+      # with the pipeline still burning a shared GPU.
+      - name: Cancel the pipeline if this job was cancelled or the wait gave up
+        if: always() && steps.trigger.outputs.pipeline_id != '' && (cancelled() || steps.wait.outputs.status == 'timeout')
+        env:
+          PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
+        run: |
+          # Say so when it does not work. Plain `curl` exits 0 on a 4xx/5xx, so
+          # a rejected cancel used to look identical to a successful one while
+          # the pipeline kept running. Short timeout and few retries: when the
+          # job itself is being cancelled there is little grace left to spend.
+          if curl -sS --fail-with-body --max-time 15 --retry 2 --retry-all-errors \
+              -X POST -H "PRIVATE-TOKEN: ${TOKEN}" \
+              "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipelines/${PIPELINE_ID}/cancel" \
+              -o /dev/null; then
+            echo "cancelled GitLab pipeline ${PIPELINE_ID}"
+          else
+            echo "::warning::could not cancel GitLab pipeline ${PIPELINE_ID}; it may still be running on a shared runner"
+          fi
+
+      # Mirror the traces here so a failure can be read straight from the pull
+      # request, without following a link into GitLab.
+      #
+      # continue-on-error because this step reports a result, it does not
+      # produce one: an API blip while fetching the job list would otherwise
+      # turn a green pipeline red under `set -e`. The verdict comes from the
+      # report step below, which reads only the pipeline status.
+      - name: Mirror the GitLab job logs
+        if: always() && steps.trigger.outputs.pipeline_id != ''
+        continue-on-error: true
+        env:
+          PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
+        run: |
+          set -euo pipefail
+          api="${GITLAB_URL}/api/v4/projects/${PROJECT_ID}"
+          jobs=$(curl -sS --fail-with-body --retry 3 --retry-all-errors \
+            -H "PRIVATE-TOKEN: ${TOKEN}" \
+            "${api}/pipelines/${PIPELINE_ID}/jobs?per_page=100")
+          jq -r '.[] | "\(.id)\t\(.name)\t\(.status)"' <<< "$jobs" |
+          while IFS=$'\t' read -r id name status; do
+            echo "::group::${name} (${status})"
+            curl -sS -H "PRIVATE-TOKEN: ${TOKEN}" "${api}/jobs/${id}/trace" || true
+            echo "::endgroup::"
+            echo "- \`${name}\`: **${status}**" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Report the pipeline result
+        if: always()
+        run: |
+          status="${{ steps.wait.outputs.status }}"
+          echo "GitLab pipeline finished with status: ${status:-unknown}"
+          [ "$status" = "success" ]
+
+  # Separate from `run` so the branch survives until BOTH vendors are done,
+  # and is still removed when one of them fails or is cancelled.
+  #
+  # Deliberately NOT gated on an environment, unlike the jobs above. It deletes
+  # a branch and runs no code from the pull request, so the reviewer gate buys
+  # nothing here — and an approval nobody gets around to giving would leave the
+  # throwaway branch behind in the mirror forever. The token is a repository
+  # secret rather than an environment one, so it is reachable without the gate.
+  cleanup:
+    needs: [ push, run ]
+    if: always() && needs.push.outputs.branch != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete the throwaway branch
+        env:
+          TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
+          PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
+          BRANCH: ${{ needs.push.outputs.branch }}
+        run: |
+          curl -sS -X DELETE -H "PRIVATE-TOKEN: ${TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/branches/${BRANCH}" \
+            -o /dev/null
