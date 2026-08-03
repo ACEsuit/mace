@@ -306,6 +306,37 @@ For usage, outputs, and training/finetuning details, see the PolarMACE guide:
 
 - https://mace-docs.readthedocs.io/en/latest/guide/polar_mace.html
 
+Fully periodic and z-normal slab (`TTF`) PolarMACE calculations can optionally
+use NVIDIA ALCHEMI Toolkit-Ops 0.4.0 for the reciprocal-space multipole features
+and energy. Slabs combine the NVIDIA kernels with the existing analytic slab
+corrections. The backend reuses one SCF geometry cache across spin channels and
+recursion steps. It requires Python 3.11 or newer and PyTorch 2.8 or newer. After
+installing `graph_longrange` as described in the PolarMACE guide, install the
+optional backend with:
+
+```sh
+pip install "mace-torch[nvalchemiops]"
+```
+
+Select it when loading a released checkpoint:
+
+```py
+from mace.calculators import mace_polar
+
+calc = mace_polar(
+    model="polar-1-m",
+    device="cuda",
+    electrostatics_backend="nvalchemiops",
+)
+```
+
+Molecular, other partially periodic, and LAMMPS evaluator inputs continue to use
+the `graph_longrange` implementation. Toolkit-Ops multipole PME is periodic and
+does not currently expose the PME atom-centered receiver-feature path needed to
+preserve `graph_longrange`'s finite-difference molecular representation. This
+backend currently runs in eager mode, so leave the calculator's `compile_mode`
+unset.
+
 ### Finetuning foundation models
 
 To finetune one of the mace-mp-0 foundation model, you can use the `mace_run_train` script with the extra argument `--foundation_model=model_type`. For example to finetune the small model on a new dataset, you can use:

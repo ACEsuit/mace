@@ -333,6 +333,7 @@ def mace_polar(
     device: str = "",
     default_dtype: str = "float32",
     return_raw_model: bool = False,
+    electrostatics_backend: Optional[str] = None,
     **kwargs,
 ) -> Union[MACECalculator, torch.nn.Module]:
     try:
@@ -343,12 +344,16 @@ def mace_polar(
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     if return_raw_model:
-        return torch.load(model_path, map_location=device)
+        raw_model = torch.load(model_path, map_location=device)
+        if electrostatics_backend is not None:
+            raw_model.set_electrostatics_backend(electrostatics_backend)
+        return raw_model
     return MACECalculator(
         model_paths=str(model_path),
         device=device,
         default_dtype=default_dtype,
         model_type="PolarMACE",
+        electrostatics_backend=electrostatics_backend,
         **kwargs,
     )
 

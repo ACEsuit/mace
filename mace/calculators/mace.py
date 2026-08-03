@@ -10,7 +10,7 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -94,6 +94,7 @@ class MACECalculator(Calculator):
         model_type: str, type of model to load
                     Options: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE,
                     EnergyDipoleMACE]
+        electrostatics_backend: optional PolarMACE long-range backend override
         For PolarMACE models, per-atom Fukui functions are returned in
         results["fukui_functions"] with shape (num_atoms, 2)
 
@@ -112,6 +113,7 @@ class MACECalculator(Calculator):
         info_keys=None,
         arrays_keys=None,
         model_type="MACE",
+        electrostatics_backend: Optional[str] = None,
         compile_mode=None,
         fullgraph=True,
         enable_cueq=False,
@@ -257,6 +259,30 @@ class MACECalculator(Calculator):
 
         for model in self.models:
             model.to(device)
+
+        if electrostatics_backend is not None:
+            if model_type != "PolarMACE":
+                raise ValueError(
+                    "electrostatics_backend is only supported for PolarMACE models"
+                )
+            for model in self.models:
+                if not hasattr(model, "set_electrostatics_backend"):
+                    raise TypeError(
+                        "The loaded PolarMACE model does not support an "
+                        "electrostatics backend override"
+                    )
+                model.set_electrostatics_backend(electrostatics_backend)
+        self.electrostatics_backend = electrostatics_backend
+
+        if compile_mode is not None and any(
+            getattr(model, "electrostatics_backend", "graph_longrange")
+            == "nvalchemiops"
+            for model in self.models
+        ):
+            raise ValueError(
+                "The nvalchemiops electrostatics backend currently requires "
+                "compile_mode=None"
+            )
 
         if has_ipex and device == "xpu":
             for model in self.models:

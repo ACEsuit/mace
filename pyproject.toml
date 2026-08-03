@@ -25,6 +25,7 @@ markers = [
     "cueq: requires cuEquivariance (its GPU kernels are NVIDIA-only)",
     "oeq: requires OpenEquivariance (JIT kernels for CUDA or HIP)",
     "polar: requires graph_electrostatics (import name graph_longrange)",
+    "nvalchemiops: requires NVIDIA ALCHEMI Toolkit-Ops",
     "les: requires the LES library",
     "magnetic: requires sphericart-torch (import name sphericart)",
     "torchsim: requires torch-sim-atomistic (python >= 3.12)",
