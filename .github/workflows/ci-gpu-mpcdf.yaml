@@ -260,6 +260,28 @@ jobs:
           done
           echo "status=${status}" >> "$GITHUB_OUTPUT"
 
+      # BEFORE mirroring, not after. Freeing the runner is the urgent half and
+      # costs one request; mirroring is slow and best-effort, and on a wait that
+      # already ran to its deadline it could push this job past its own timeout
+      # with the pipeline still burning a shared GPU.
+      - name: Cancel the pipeline if this job was cancelled or the wait gave up
+        if: always() && steps.trigger.outputs.pipeline_id != '' && (cancelled() || steps.wait.outputs.status == 'timeout')
+        env:
+          PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
+        run: |
+          # Say so when it does not work. Plain `curl` exits 0 on a 4xx/5xx, so
+          # a rejected cancel used to look identical to a successful one while
+          # the pipeline kept running. Short timeout and few retries: when the
+          # job itself is being cancelled there is little grace left to spend.
+          if curl -sS --fail-with-body --max-time 15 --retry 2 --retry-all-errors \
+              -X POST -H "PRIVATE-TOKEN: ${TOKEN}" \
+              "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipelines/${PIPELINE_ID}/cancel" \
+              -o /dev/null; then
+            echo "cancelled GitLab pipeline ${PIPELINE_ID}"
+          else
+            echo "::warning::could not cancel GitLab pipeline ${PIPELINE_ID}; it may still be running on a shared runner"
+          fi
+
       # Mirror the traces here so a failure can be read straight from the pull
       # request, without following a link into GitLab.
       #
@@ -285,17 +307,6 @@ jobs:
             echo "::endgroup::"
             echo "- \`${name}\`: **${status}**" >> "$GITHUB_STEP_SUMMARY"
           done
-
-      # Giving up on the wait must not leave the pipeline running: it would sit
-      # on a shared GPU runner producing a result nobody reads.
-      - name: Cancel the pipeline if this job was cancelled or the wait gave up
-        if: always() && steps.trigger.outputs.pipeline_id != '' && (cancelled() || steps.wait.outputs.status == 'timeout')
-        env:
-          PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
-        run: |
-          curl -sS -X POST -H "PRIVATE-TOKEN: ${TOKEN}" \
-            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipelines/${PIPELINE_ID}/cancel" \
-            -o /dev/null
 
       - name: Report the pipeline result
         if: always()
