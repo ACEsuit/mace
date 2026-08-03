@@ -447,6 +447,38 @@ def test_energy_invariance_under_rotation_and_translation(dtype):
 
 
 # ---------------------------------------------------------------------------
+# CPU/CUDA parity of the electrostatics path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gpu
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda is not available")
+@pytest.mark.parametrize("dtype", [torch.float64])
+def test_polar_cpu_cuda_parity(dtype):
+    """The same model is moved to CUDA rather than rebuilt, so the weights are
+    identical by construction and any difference is the device's. float64 keeps
+    the tolerance from depending on thread count and hardware.
+    """
+    torch.manual_seed(0)
+    model = _build_minimal_model(torch.device("cpu"), dtype)
+    batch_cpu = _build_minimal_batch(torch.device("cpu"), dtype)
+
+    out_cpu = model(batch_cpu, training=False, compute_force=False)
+    E_cpu = out_cpu["energy"].detach()
+
+    # _build_minimal_batch is deterministic (no RNG), so this is the same input.
+    model.to(device="cuda")
+    batch_cuda = _build_minimal_batch(torch.device("cuda"), dtype)
+
+    out_cuda = model(batch_cuda, training=False, compute_force=False)
+    E_cuda = out_cuda["energy"].detach()
+
+    assert torch.isfinite(E_cuda).all()
+    assert E_cuda.shape == E_cpu.shape
+    assert torch.allclose(E_cpu, E_cuda.cpu(), atol=1e-8, rtol=1e-6)
+
+
+# ---------------------------------------------------------------------------
 # Partial-PBC (slab) regression: get_neighborhood cell fix vs electrostatics
 # ---------------------------------------------------------------------------
 

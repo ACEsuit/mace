@@ -138,11 +138,11 @@ gpu-nvidia:
     TORCH_INDEX: ""
     EXTRAS: "dev,cueq,cueq-cuda-13,oeq,schedulefree"
     PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
-    # `polar` is installed but deliberately NOT required: no polar test carries
-    # the `gpu` marker, so the marker expression can never select one and the
-    # guarantee would be empty. The install stays, so adding such a test needs
-    # no change here. Everything else listed IS reachable under `-m gpu`.
-    REQUIRE_CAPS: "gpu,cueq,oeq,les,schedulefree,network"
+    # Everything listed IS reachable under `-m gpu`, which is the whole point:
+    # a capability whose tests are all deselected passes the guard in
+    # tests/conftest.py silently, because that guard counts collected tests
+    # rather than selected ones.
+    REQUIRE_CAPS: "gpu,cueq,oeq,polar,les,schedulefree,network"
     MARKER_EXPR: "gpu"
 
 # cuEquivariance is NVIDIA-only, hence the narrower marker expression. This
@@ -176,10 +176,11 @@ gpu-amd:
     EXTRAS: "dev,oeq,schedulefree"
     PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
     # Narrower than the Nvidia list, because `not cueq` removes the only test
-    # that could exercise each of the missing three: the one `gpu` `les` test is
-    # also `cueq`-marked, as is the one `gpu` `network` test, and no polar test
-    # is `gpu`-marked at all. Requiring them here would read as coverage this
-    # job does not have — the zero-collection guard in tests/conftest.py counts
-    # collected tests, not selected ones, so it cannot catch that for us.
-    REQUIRE_CAPS: "gpu,oeq,schedulefree"
+    # that could exercise `les` or `network`: both of those `gpu` tests are also
+    # `cueq`-marked. Requiring them here would read as coverage this job does
+    # not have, and the zero-collection guard in tests/conftest.py cannot catch
+    # that for us, since it counts collected tests rather than selected ones.
+    # `polar` is required: its `gpu` test carries no `cueq` mark, so it runs
+    # here too — verified on an MI210, 39 passed.
+    REQUIRE_CAPS: "gpu,oeq,polar,schedulefree"
     MARKER_EXPR: "gpu and not cueq"
