@@ -80,8 +80,16 @@ stages:
       PY
     # MACE_REQUIRE_CAPS turns a broken backend install into a failure instead
     # of a skip, the same contract the GitHub jobs use (tests/conftest.py).
+    #
+    # MACE_CI_ALLOW_NETWORK is what the retired self-hosted workflow passed as
+    # `allow-network: true`. The `network` capability is never autodetected, so
+    # without it the foundation-model tests that also carry `gpu` are collected
+    # and then skipped — silently narrower GPU coverage than the fleet had.
+    # It is in REQUIRE_CAPS too, so removing this line fails the job instead of
+    # quietly dropping those tests again.
     - >
       MACE_REQUIRE_CAPS="$REQUIRE_CAPS"
+      MACE_CI_ALLOW_NETWORK=1
       python -m pytest tests
       -m "($MARKER_EXPR) and not benchmark"
       -n 2 --timeout 1200 -ra
@@ -111,7 +119,7 @@ gpu-nvidia:
     TORCH_INDEX: ""
     EXTRAS: "dev,cueq,cueq-cuda-12,oeq,schedulefree"
     PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
-    REQUIRE_CAPS: "gpu,cueq,oeq,polar,les,schedulefree"
+    REQUIRE_CAPS: "gpu,cueq,oeq,polar,les,schedulefree,network"
     MARKER_EXPR: "gpu"
 
 # cuEquivariance is NVIDIA-only, hence the narrower marker expression. This
@@ -144,5 +152,5 @@ gpu-amd:
     TORCH_INDEX: "https://download.pytorch.org/whl/rocm6.3"
     EXTRAS: "dev,oeq,schedulefree"
     PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
-    REQUIRE_CAPS: "gpu,oeq,polar,les,schedulefree"
+    REQUIRE_CAPS: "gpu,oeq,polar,les,schedulefree,network"
     MARKER_EXPR: "gpu and not cueq"

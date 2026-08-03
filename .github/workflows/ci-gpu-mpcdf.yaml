@@ -155,7 +155,9 @@ jobs:
         vendor: [ nvidia, amd ]
     name: gpu-${{ matrix.vendor }}
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    # Only ever spent polling, and it has to outlast the wait deadline below by
+    # enough to mirror the logs and cancel the pipeline.
+    timeout-minutes: 240
     env:
       TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
       PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
@@ -194,7 +196,11 @@ jobs:
         run: |
           set -euo pipefail
           api="${GITLAB_URL}/api/v4/projects/${PROJECT_ID}"
-          deadline=$(( SECONDS + 7200 ))
+          # Queue time is on top of the pipeline's own 2h limit, so this covers
+          # both. It must stay comfortably under this job's timeout-minutes: if
+          # GitHub kills the job instead, the cancel step below never runs and
+          # the pipeline keeps a contended GPU runner busy for nothing.
+          deadline=$(( SECONDS + 13800 ))
           previous=""
           while :; do
             # A poll must never be able to fail the check: under `set -e` a
@@ -226,14 +232,21 @@ jobs:
 
       # Mirror the traces here so a failure can be read straight from the pull
       # request, without following a link into GitLab.
+      #
+      # continue-on-error because this step reports a result, it does not
+      # produce one: an API blip while fetching the job list would otherwise
+      # turn a green pipeline red under `set -e`. The verdict comes from the
+      # report step below, which reads only the pipeline status.
       - name: Mirror the GitLab job logs
         if: always() && steps.trigger.outputs.pipeline_id != ''
+        continue-on-error: true
         env:
           PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
         run: |
           set -euo pipefail
           api="${GITLAB_URL}/api/v4/projects/${PROJECT_ID}"
-          jobs=$(curl -sS --fail-with-body -H "PRIVATE-TOKEN: ${TOKEN}" \
+          jobs=$(curl -sS --fail-with-body --retry 3 --retry-all-errors \
+            -H "PRIVATE-TOKEN: ${TOKEN}" \
             "${api}/pipelines/${PIPELINE_ID}/jobs?per_page=100")
           jq -r '.[] | "\(.id)\t\(.name)\t\(.status)"' <<< "$jobs" |
           while IFS=$'\t' read -r id name status; do
@@ -243,8 +256,10 @@ jobs:
             echo "- \`${name}\`: **${status}**" >> "$GITHUB_STEP_SUMMARY"
           done
 
-      - name: Cancel the pipeline if this job was cancelled
-        if: cancelled() && steps.trigger.outputs.pipeline_id != ''
+      # Giving up on the wait must not leave the pipeline running: it would sit
+      # on a shared GPU runner producing a result nobody reads.
+      - name: Cancel the pipeline if this job was cancelled or the wait gave up
+        if: always() && steps.trigger.outputs.pipeline_id != '' && (cancelled() || steps.wait.outputs.status == 'timeout')
         env:
           PIPELINE_ID: ${{ steps.trigger.outputs.pipeline_id }}
         run: |
@@ -261,10 +276,15 @@ jobs:
 
   # Separate from `run` so the branch survives until BOTH vendors are done,
   # and is still removed when one of them fails or is cancelled.
+  #
+  # Deliberately NOT gated on an environment, unlike the jobs above. It deletes
+  # a branch and runs no code from the pull request, so the reviewer gate buys
+  # nothing here — and an approval nobody gets around to giving would leave the
+  # throwaway branch behind in the mirror forever. The token is a repository
+  # secret rather than an environment one, so it is reachable without the gate.
   cleanup:
     needs: [ push, run ]
     if: always() && needs.push.outputs.branch != ''
-    environment: ${{ (github.event_name != 'pull_request_target' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'gpu-internal' || 'gpu-external' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
