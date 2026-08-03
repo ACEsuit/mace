@@ -1045,11 +1045,18 @@ def run(args) -> None:
         )
         model.to(device)
         if args.distributed:
-            # re-enable gradients for distributed model for evaluation of stage-two model
-            # after param.requires_grad = False was called before evaluating stage-one model
-            for param in model.parameters():
-                param.requires_grad = True
-            distributed_model = DDP(model, device_ids=[local_rank])
+            # With ZE_AFFINITY_MASK (Aurora) each rank sees 1 xpu tile;
+            # local_rank can exceed visible device count, causing DDP to
+            # raise "value cannot be converted to type int without overflow".
+            # Pin DDP to device 0 in that case.
+            _ddp_dev = local_rank
+            if args.device == "xpu":
+                try:
+                    if torch.xpu.device_count() == 1:
+                        _ddp_dev = 0
+                except Exception:
+                    _ddp_dev = 0
+            distributed_model = DDP(model, device_ids=[_ddp_dev])
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
