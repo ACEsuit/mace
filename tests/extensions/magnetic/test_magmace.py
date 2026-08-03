@@ -18,6 +18,7 @@ from mace.tools.torch_tools import default_dtype
 
 from mace.modules.extensions import MagneticScaleShiftMACE, MagneticSCFMACE
 from mace.modules import interaction_classes
+from mace.tools.scripts_utils import get_optimizer, get_params_options
 
 # ----------------------------------------------------------
 # Environment flags
@@ -514,3 +515,24 @@ def test_magnetic_mace_inversion_parity():
     assert torch.allclose(E, E_i, atol=1e-4, rtol=1e-4)
     assert torch.allclose(F_i, -F, atol=1e-4, rtol=1e-4)
     assert torch.allclose(MF_i, -MF, atol=1e-4, rtol=1e-4)
+
+
+# ----------------------------------------------------------
+# Optimizer parameter-registration guard
+# ----------------------------------------------------------
+def test_magnetic_mace_registers_all_trainable_parameters():
+    """Every trainable MagneticScaleShiftMACE parameter must be claimed by an
+    optimizer group; get_params_options raises otherwise, so a successful
+    optimizer build is the assertion."""
+    model = _build_small_magnetic_model()
+    args = argparse.Namespace(
+        lr=0.01,
+        weight_decay=5e-7,
+        amsgrad=True,
+        beta=0.9,
+        freeze=None,
+        optimizer="adam",
+        lr_params_factors="{}",
+        train_one_body_contribution=True,
+    )
+    get_optimizer(args, get_params_options(args, model))

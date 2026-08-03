@@ -1,3 +1,4 @@
+import logging
 import tempfile
 
 import numpy as np
@@ -46,3 +47,40 @@ def test_save_load():
 
         handler.load_latest(state=CheckpointState(model, optimizer, scheduler))
         assert np.isclose(optimizer.param_groups[0]["lr"], initial_lr)
+
+
+def test_load_warns_and_resumes_on_optimizer_group_mismatch(caplog):
+    """A checkpoint whose optimizer has a different number of parameter groups
+    (e.g. get_params_options changed between runs) doesnt abort the restart:
+    the model weights load, a warning is logged, and the epoch is preserved so
+    training resumes with a freshly initialized optimizer."""
+    model = MyModel()
+    saved_optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+    saved_scheduler = optim.lr_scheduler.ExponentialLR(
+        optimizer=saved_optimizer, gamma=0.99
+    )
+
+    with tempfile.TemporaryDirectory() as directory:
+        handler = CheckpointHandler(directory=directory, tag="test", keep=True)
+        handler.save(
+            state=CheckpointState(model, saved_optimizer, saved_scheduler), epochs=50
+        )
+
+        # Rebuild the optimizer with two parameter groups instead of one.
+        parameters = list(model.parameters())
+        new_optimizer = optim.SGD(
+            [{"params": parameters[:1]}, {"params": parameters[1:]}],
+            lr=0.001,
+            momentum=0.9,
+        )
+        new_scheduler = optim.lr_scheduler.ExponentialLR(
+            optimizer=new_optimizer, gamma=0.99
+        )
+
+        with caplog.at_level(logging.WARNING):
+            epoch = handler.load_latest(
+                state=CheckpointState(model, new_optimizer, new_scheduler)
+            )
+
+    assert epoch == 50
+    assert "could not restore optimizer" in caplog.text.lower()
