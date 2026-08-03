@@ -118,14 +118,16 @@ jobs:
     outputs:
       branch: ${{ steps.push.outputs.branch }}
     steps:
+      # Deliberately NO `ref:`. The default is the trusted ref — the base branch
+      # under `pull_request_target`, the merge commit under `pull_request` — and
+      # actions/checkout REFUSES to place fork code in this worktree at all,
+      # because the job holds the base repository's secrets. It is right to
+      # refuse, and `allow-unsafe-pr-checkout` is the wrong answer: this job
+      # never needs the fork's files on disk, only its commit. The push step
+      # fetches that commit as objects and assembles what to mirror with
+      # plumbing, so fork code is transferred without ever being checked out.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          # The code under test, which under `pull_request_target` is NOT the
-          # default ref. refs/pull/N/head rather than the head sha, because the
-          # fork's objects are only guaranteed to be reachable in the base
-          # repository through that ref. On a `pull_request` event github.sha is
-          # already the merge commit, which is the right thing to test.
-          ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
           # A shallow clone cannot be pushed to a remote that lacks the
           # history, and the mirror project starts empty.
           fetch-depth: 0
@@ -135,16 +137,10 @@ jobs:
         env:
           TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
           PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
-          # Set ONLY for fork pull requests, whose tree cannot be trusted to
-          # define its own pipeline. Everywhere else — same-repo PRs, pushes,
-          # dispatches — the checked-out tree is the trusted one AND is what
-          # should be tested: reading the definition from the base branch would
-          # mean a PR editing the GPU pipeline never exercises its own change,
-          # and would fail outright on a base that has no definition yet.
-          BASE_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || '' }}
-          # NOT github.sha, which under `pull_request_target` is the base
-          # commit — the one thing this run is not testing.
-          TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Set ONLY for fork pull requests. Everywhere else — same-repo PRs,
+          # pushes, dispatches, the schedule — the checkout above is already the
+          # commit under test, so there is nothing extra to fetch.
+          FORK_PR_NUMBER: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}
         run: |
           set -euo pipefail
           # Resolve the path from the id so the project is never configured
@@ -152,28 +148,42 @@ jobs:
           project=$(curl -sS --fail-with-body -H "PRIVATE-TOKEN: ${TOKEN}" \
             "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}" | jq -r .path_with_namespace)
           branch="gh-run-${{ github.run_id }}-${{ github.run_attempt }}"
-          # Take the pipeline definition from the base ref, never from the tree
-          # that was just checked out: that tree is the pull request's, and a
-          # fork able to edit this file would be choosing what runs on MPCDF's
-          # hardware rather than merely what is tested there. The tests are
-          # still the fork's code — that is what the environment gate above is
-          # for — but the pipeline running them stays ours.
-          if [ -n "${BASE_SHA}" ]; then
-            # No --depth here: it would leave a shallow marker behind, and the
-            # push below needs the full history the mirror does not have.
-            git fetch origin "${BASE_SHA}"
-            git show "${BASE_SHA}:.github/gitlab/ci.yml" > .gitlab-ci.yml
+
+          # The commit to mirror. For a fork it is fetched as objects only:
+          # refs/pull/N/head because that is how a fork's commits are reachable
+          # in the base repository, and no --depth because a shallow marker
+          # cannot be pushed to a mirror that lacks the history.
+          if [ -n "${FORK_PR_NUMBER}" ]; then
+            git fetch --no-tags origin "refs/pull/${FORK_PR_NUMBER}/head"
+            tested=$(git rev-parse FETCH_HEAD)
           else
-            cp .github/gitlab/ci.yml .gitlab-ci.yml
+            tested=$(git rev-parse HEAD)
           fi
-          # `git commit -- <path>` refuses a path it has never seen, so the
-          # copy has to be staged first.
-          git add .gitlab-ci.yml
-          git -c user.name="mace-ci" -c user.email="mace-ci@users.noreply.github.com" \
-              -c commit.gpgsign=false \
-              commit -m "CI: pipeline definition for ${TESTED_SHA}" -- .gitlab-ci.yml
+
+          # The pipeline definition always comes from the WORKTREE, which is the
+          # base ref on a fork pull request and the code under test everywhere
+          # else. So a fork can change what gets tested, never what runs it —
+          # while a same-repo PR editing the GPU pipeline still exercises its own
+          # change, which reading from the base branch would prevent.
+          blob=$(git hash-object -w .github/gitlab/ci.yml)
+
+          # Assemble tested-tree + .gitlab-ci.yml in a throwaway index, so the
+          # fork's files are never written into the working tree.
+          GIT_INDEX_FILE=$(mktemp -u)
+          export GIT_INDEX_FILE
+          git read-tree "${tested}"
+          git update-index --add --cacheinfo "100644,${blob},.gitlab-ci.yml"
+          tree=$(git write-tree)
+          unset GIT_INDEX_FILE
+
+          commit=$(git -c user.name="mace-ci" \
+                       -c user.email="mace-ci@users.noreply.github.com" \
+                       -c commit.gpgsign=false \
+                       commit-tree "${tree}" -p "${tested}" \
+                       -m "CI: pipeline definition for ${tested}")
+
           git push --force "https://oauth2:${TOKEN}@gitlab.mpcdf.mpg.de/${project}.git" \
-              "HEAD:refs/heads/${branch}"
+              "${commit}:refs/heads/${branch}"
           echo "branch=${branch}" >> "$GITHUB_OUTPUT"
 
   run:
