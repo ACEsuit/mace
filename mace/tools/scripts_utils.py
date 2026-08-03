@@ -996,30 +996,39 @@ def get_params_options(
         amsgrad=args.amsgrad,
         betas=(args.beta, 0.999),
     )
-    if hasattr(model, "joint_embedding") and model.joint_embedding is not None:
+    # Optional submodules that only exist on some model classes (joint
+    # embeddings, MACELES, PolarMACE). Each gets its own named group so that
+    # every trainable parameter is registered explicitly; weight decay stays
+    # off because these blocks mix biases, gates, and physically meaningful
+    # scalars that must not be regularized toward zero.
+    optional_submodule_names = [
+        "radial_embedding",
+        "pair_repulsion_fn",
+        "joint_embedding",
+        "embedding_readout",
+        "les_readouts",
+        "les",
+        "lr_source_maps",
+        "fukui_source_map",
+        "field_dependent_charges_maps",
+        "local_electron_energy",
+        "layer_feature_mixer",
+    ]
+    for submodule_name in optional_submodule_names:
+        submodule = getattr(model, submodule_name, None)
+        if submodule is None:
+            continue
+        submodule_parameters = list(submodule.parameters())
+        if not submodule_parameters:
+            continue
         param_options["params"].append(
             {
-                "name": "joint_embedding",
-                "params": model.joint_embedding.parameters(),
+                "name": submodule_name,
+                "params": submodule_parameters,
                 "weight_decay": 0.0,
             }
         )
-    if hasattr(model, "embedding_readout") and model.embedding_readout is not None:
-        param_options["params"].append(
-            {
-                "name": "embedding_readout",
-                "params": model.embedding_readout.parameters(),
-                "weight_decay": 0.0,
-            }
-        )
-    if hasattr(model, "les_readouts") and model.les_readouts is not None:
-        param_options["params"].append(
-            {
-                "name": "les_readouts",
-                "params": model.les_readouts.parameters(),
-                "weight_decay": 0.0,
-            }
-        )
+
     if (
         hasattr(model, "onebody_magmombasis_coeffs")
         and args.train_one_body_contribution
@@ -1030,6 +1039,31 @@ def get_params_options(
                 "params": [model.onebody_magmombasis_coeffs],
                 "weight_decay": 0.0,
             }
+        )
+
+    # Guard against silently untrained submodules: any trainable parameter
+    # that no group claims would never receive optimizer updates.Submodules
+    # that build their parameters lazily inside the first forward() (e.g. the
+    # external LES Atomwise MLP (created only when les_arguments
+    # ["use_atomwise"] is True) do not exist yet here, so they slip past both
+    # the parameter groups and this check. MACELES with the default
+    # use_atomwise=False has no such parameters.
+    claimed_parameter_ids = set()
+    for group in param_options["params"]:
+        group["params"] = list(group["params"])
+        claimed_parameter_ids.update(id(p) for p in group["params"])
+    unregistered_parameter_names = [
+        parameter_name
+        for parameter_name, parameter in model.named_parameters()
+        if parameter.requires_grad and id(parameter) not in claimed_parameter_ids
+    ]
+    if unregistered_parameter_names:
+        raise ValueError(
+            f"{len(unregistered_parameter_names)} trainable parameters of "
+            f"{type(model).__name__} are not registered in any optimizer "
+            "parameter group and would never be updated during training. Add "
+            "their submodules to the parameter groups in get_params_options:\n"
+            + "\n".join(unregistered_parameter_names)
         )
     return param_options
 
