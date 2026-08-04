@@ -39,6 +39,7 @@ from .utils import (
     get_outputs,
     get_symmetric_displacement,
     prepare_graph,
+    safe_double,
 )
 
 
@@ -166,7 +167,7 @@ class MACE(torch.nn.Module):
             radial_MLP = [64, 64, 64]
         # Interactions and readout
         self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
-        if num_interactions == 1:
+        if num_interactions == 1 and not keep_last_layer_irreps:
             hidden_irreps_out = str(hidden_irreps[0])
         else:
             hidden_irreps_out = hidden_irreps
@@ -578,7 +579,7 @@ class ScaleShiftMACE(MACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         total_energy = e0 + inter_e
-        node_energy = node_e0.clone().double() + node_inter_es.clone().double()
+        node_energy = safe_double(node_e0.clone()) + safe_double(node_inter_es.clone())
 
         forces, virials, stress, hessian, edge_forces = get_outputs(
             energy=inter_e,
