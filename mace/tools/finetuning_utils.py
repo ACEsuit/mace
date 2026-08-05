@@ -46,12 +46,21 @@ def load_foundations_elements(
         foundation_embedding = getattr(model_foundations, "joint_embedding", None)
         foundation_specs = foundation_embedding.specs if foundation_embedding else {}
         
+        foundation_head_start = 0
+        foundation_head_slices = {}
+        for name, spec in foundation_specs.items():
+            dim = spec['emb_dim']
+            foundation_head_slices[name] = slice(foundation_head_start, foundation_head_start + dim)
+            foundation_head_start += dim
+
         if foundation_specs == {}:
             # if foundational model has no embeddings initialize all weights (small).
             for _, param in model.joint_embedding.named_parameters():
                 torch.nn.init.uniform_(param.data, -0.05, 0.05)
         else:
-            foundation_emb_dim = 0
+            spec_names = []
+            head_start = 0
+            head_slices = {}
             for embedding_spec in model_specs.items():
                 
                 spec_name = embedding_spec[0]
@@ -70,19 +79,21 @@ def load_foundations_elements(
                         
                 # dims for head
                 if embedding_spec in foundation_specs.items():
-                    foundation_emb_dim += embedding_spec[1]['emb_dim']
-                    
+                    dim = embedding_spec[1]['emb_dim']
+                    head_slices[spec_name] = slice(head_start, head_start + dim)
+                    head_start += dim
+                    spec_names.append(spec_name)
+    
             # update head.
             foundation_emd_head = model_foundations.joint_embedding.project
+            foundation_head_data = foundation_emd_head[0].weight.data
             model_emb_head = model.joint_embedding.project
             head_emb_data = model_emb_head[0].weight.data
-            
-            if foundation_emd_head[0].out_features == model_emb_head[0].out_features:
-                head_emb_data[:,:foundation_emb_dim] = foundation_emd_head[0].weight.data[:,:foundation_emb_dim]
-                torch.nn.init.uniform_(head_emb_data[:,foundation_emb_dim:],-0.05,0.05)
-            else:
-                torch.nn.init.uniform_(head_emb_data, -0.05, 0.05)
-                
+
+            # init and overwrite.
+            torch.nn.init.uniform_(head_emb_data, -0.05, 0.05) 
+            for name in spec_names:
+                head_emb_data[:, head_slices[name]] = foundation_head_data[:, foundation_head_slices[name]]
     
     if hasattr(model, "embedding_readout"):
         for (_, param_1), (_, param_2) in zip(
