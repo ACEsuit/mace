@@ -696,7 +696,13 @@ class MACECalculator(Calculator):
             if getattr(self, "compute_bec", False):
                 model_kwargs["compute_bec"] = True
 
-            out = model(batch_dict, **model_kwargs)
+            # Scoped, not just around batch construction: extensions build
+            # tensors during the forward without an explicit dtype (les does
+            # for its 3x3 identities), so they pick up the process-wide
+            # default. If that disagrees with the model, the mixed dtypes only
+            # surface in the backward, as a dtype error from a linalg op.
+            with torch_tools.default_dtype(self.default_dtype):
+                out = model(batch_dict, **model_kwargs)
             if is_padded:
                 out = self._slice_real_outputs(out, num_real_atoms)
             if i == 0:
