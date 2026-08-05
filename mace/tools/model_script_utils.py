@@ -95,23 +95,6 @@ def configure_model(
         model_config_foundation["atomic_energies"] = atomic_energies
         
         if args.embedding_specs:
-            # re-order the embedding specs so equal to foundation embeddings (for head construction)
-            if model_config_foundation['embedding_specs'] is not None:
-                foundation_specs = model_config_foundation.get('embedding_specs', {}) or {}
-                new_specs = args.embedding_specs or {}
-                
-                ordered_specs = {}
-                for key in foundation_specs.keys():
-                    if key in new_specs:
-                        if new_specs[key] == foundation_specs[key]:
-                            ordered_specs[key] = new_specs[key]
-                            
-                for key in new_specs.keys():
-                    if key not in ordered_specs:
-                        ordered_specs[key] = new_specs[key]
-            
-                args.embedding_specs = ordered_specs
-
             model_config_foundation['embedding_specs'] = args.embedding_specs
 
         if args.foundation_model_elements:
