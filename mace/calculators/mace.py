@@ -470,6 +470,15 @@ class MACECalculator(Calculator):
             "atomic_dipoles",
             "node_feats",
             "fukui_functions",
+            # LES outputs are per-atom too. BEC, latent_alphas and
+            # latent_kappas are the three that reach self.results; the rest
+            # are listed so a future consumer does not inherit padded rows.
+            "BEC",
+            "latent_alphas",
+            "latent_kappas",
+            "latent_charges",
+            "latent_dipoles",
+            "latent_quads",
         }
         sliced: Dict[str, Union[torch.Tensor, None]] = {}
         for key, value in out.items():
