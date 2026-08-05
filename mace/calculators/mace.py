@@ -994,6 +994,21 @@ class MagneticMACECalculator(Calculator):
         if enable_cueq:
             assert model_type == "MACE", "CuEq only supports MACE models"
             compile_mode = None
+        if enable_cueq and enable_oeq:
+            raise ValueError(
+                "MagneticMACECalculator has no hybrid cueq+oeq path, "
+                "enable only one of them"
+            )
+        # Without these the converters are None and the call below fails as a
+        # TypeError on a NoneType rather than saying what is missing.
+        if enable_cueq and not CUEQQ_AVAILABLE:
+            raise ImportError(
+                "cuequivariance is not installed so CuEq acceleration cannot be used"
+            )
+        if enable_oeq and not OEQ_AVAILABLE:
+            raise ImportError(
+                "openequivariance is not installed so OEq acceleration cannot be used"
+            )
         if "model_path" in kwargs:
             deprecation_message = (
                 "'model_path' argument is deprecated, please use 'model_paths'"
@@ -1061,17 +1076,14 @@ class MagneticMACECalculator(Calculator):
                 raise ValueError("No mace file names supplied")
             self.num_models = len(model_paths)
 
-            # Load models from files
+            # Load models from files. Acceleration is applied once further
+            # down, after the dtype conversion, and covers the `models=`
+            # branch too; converting here as well fed an already-converted
+            # model back into a converter that expects e3nn layout.
             self.models = [
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
             ]
-            if enable_cueq:
-                logging.info("Converting models to CuEq for acceleration")
-                self.models = [
-                    run_e3nn_to_cueq(model, device=device).to(device)
-                    for model in self.models
-                ]
 
         elif models is not None:
             if not isinstance(models, list):
@@ -1187,7 +1199,7 @@ class MagneticMACECalculator(Calculator):
                 run_e3nn_to_cueq(model, device=device).to(device)
                 for model in self.models
             ]
-        if enable_oeq:
+        elif enable_oeq:
             logging.info("Converting models to OEq for acceleration")
             self.models = [
                 run_e3nn_to_oeq(model, device=device).to(device)

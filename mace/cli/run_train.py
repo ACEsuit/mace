@@ -1060,19 +1060,24 @@ def run(args) -> None:
                     for config in subset
                 ]
         if head_config.test_dir is not None:
+            # Same head-prefixed key as the ASE branch above: two heads whose
+            # test files share a basename would otherwise overwrite each other,
+            # and visualise_train looks the sets up by that prefix.
             if not args.multi_processed_test:
                 test_files = get_files_with_suffix(head_config.test_dir, "_test.h5")
                 for test_file in test_files:
                     name = os.path.splitext(os.path.basename(test_file))[0]
-                    test_sets[name] = data.HDF5Dataset(
+                    test_sets[head_config.head_name + "_" + name] = data.HDF5Dataset(
                         test_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
             else:
                 test_folders = glob(head_config.test_dir + "/*")
                 for folder in test_folders:
-                    name = os.path.splitext(os.path.basename(test_file))[0]
-                    test_sets[name] = data.dataset_from_sharded_hdf5(
-                        folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                    name = os.path.splitext(os.path.basename(folder))[0]
+                    test_sets[head_config.head_name + "_" + name] = (
+                        data.dataset_from_sharded_hdf5(
+                            folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                        )
                     )
         for test_name, test_set in test_sets.items():
             test_sampler = None
