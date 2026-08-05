@@ -212,6 +212,10 @@ def run(args: argparse.Namespace) -> None:
     stresses_list = []
     bec_list = []
     qs_list = []
+    us_list = []
+    kappas_list = []
+    alphas_list = []
+    quads_list = []
     forces_collection = []
     magforces_collection = []
 
@@ -235,12 +239,45 @@ def run(args: argparse.Namespace) -> None:
             )
             bec_list.append(becs[:-1])  # drop last as its empty
 
+        if "latent_charges" in output and output["latent_charges"] is not None:
             qs = np.split(
                 torch_tools.to_numpy(output["latent_charges"]),
                 indices_or_sections=batch.ptr[1:],
                 axis=0,
             )
             qs_list.append(qs[:-1])  # drop last as its empty
+
+        if "latent_dipoles" in output and output["latent_dipoles"] is not None:
+            us = np.split(
+                torch_tools.to_numpy(output["latent_dipoles"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            us_list.append(us[:-1])
+
+        if "latent_kappas" in output and output["latent_kappas"] is not None:
+            kappas = np.split(
+                torch_tools.to_numpy(output["latent_kappas"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            kappas_list.append(kappas[:-1])
+
+        if "latent_alphas" in output and output["latent_alphas"] is not None:
+            alphas = np.split(
+                torch_tools.to_numpy(output["latent_alphas"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            alphas_list.append(alphas[:-1])
+
+        if "latent_quads" in output and output["latent_quads"] is not None:
+            quads = np.split(
+                torch_tools.to_numpy(output["latent_quads"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            quads_list.append(quads[:-1])
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
@@ -321,7 +358,16 @@ def run(args: argparse.Namespace) -> None:
 
     if args.compute_bec:
         bec_list = [becs for sublist in bec_list for becs in sublist]
+    if len(qs_list) > 0:
         qs_list = [qs for sublist in qs_list for qs in sublist]
+    if len(us_list) > 0:
+        us_list = [us for sublist in us_list for us in sublist]
+    if len(kappas_list) > 0:
+        kappas_list = [kappas for sublist in kappas_list for kappas in sublist]
+    if len(alphas_list) > 0:
+        alphas_list = [alphas for sublist in alphas_list for alphas in sublist]
+    if len(quads_list) > 0:
+        quads_list = [quads for sublist in quads_list for quads in sublist]
 
     if args.return_contributions:
         contributions = np.concatenate(contributions_list, axis=0)
@@ -348,8 +394,17 @@ def run(args: argparse.Namespace) -> None:
             atoms.info[args.info_prefix + "stress"] = stresses[i]
 
         if args.compute_bec:
-            atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(-1, 9)
+            atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(bec_list[i].shape[0], -1)
+        if len(qs_list) > 0:
             atoms.arrays[args.info_prefix + "latent_charges"] = qs_list[i]
+        if len(us_list) > 0:
+            atoms.arrays[args.info_prefix + "latent_dipoles"] = us_list[i]
+        if len(kappas_list) > 0:
+            atoms.arrays[args.info_prefix + "latent_kappas"] = kappas_list[i]
+        if len(alphas_list) > 0:
+            atoms.arrays[args.info_prefix + "latent_alphas"] = alphas_list[i].reshape(alphas_list[i].shape[0], -1)
+        if len(quads_list) > 0:
+            atoms.arrays[args.info_prefix + "latent_quads"] = quads_list[i].reshape(quads_list[i].shape[0], -1)
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]

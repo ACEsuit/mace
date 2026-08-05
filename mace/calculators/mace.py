@@ -10,7 +10,7 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -119,9 +119,26 @@ class MACECalculator(Calculator):
         pad_num_atoms: int = 0,
         pad_num_edges: int = 0,
         warmup: bool = False,
+        compute_bec: bool = False,
+        external_field: Union[list, None] = None,
+        eps_infty: float = None,
+        electric_field_unit: float = 1.0,
+        keep_neutral: bool = True,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
+        self.compute_bec = compute_bec
+        if external_field is not None:
+            external_field = np.asarray(external_field, dtype=np.float64).reshape(-1) # (3,) vector
+            if external_field.size != 3:
+                raise ValueError(
+                    "external_field must be a 3-vector [Ex, Ey, Ez]; "
+                    f"got {external_field.size} component(s)"
+                )
+        self.external_field = external_field
+        self.eps_infty = eps_infty
+        self.electric_field_unit = electric_field_unit
+        self.keep_neutral = keep_neutral
 
         self._enable_cueq = enable_cueq
         self._enable_oeq = enable_oeq
@@ -216,6 +233,8 @@ class MACECalculator(Calculator):
                     "polarizability_sh",
                 ]
             )
+        if getattr(self, "compute_bec", False):
+            self.implemented_properties.append("bec")
 
         if model_paths is not None:
             if isinstance(model_paths, str):
@@ -500,6 +519,15 @@ class MACECalculator(Calculator):
                 dtype=out[key].dtype,
             )
 
+        for key in ("latent_alphas", "latent_kappas", "BEC"):
+            if out.get(key) is not None:
+                dict_of_tensors[key] = torch.zeros(
+                    num_models,
+                    *out[key].shape,
+                    device=self.device,
+                    dtype=out[key].dtype,
+                )
+
         node_e0 = None
         if "node_energy" in out:
             node_heads = batch["head"][batch["batch"]][:num_atoms]
@@ -641,12 +669,22 @@ class MACECalculator(Calculator):
                 displacement = displacement + positions.sum() * 0.0
                 batch_dict["displacement"] = displacement
 
-            model_kwargs = {
+            if getattr(self, "external_field", None) is not None:
+                batch_dict["external_field"] = torch.tensor(
+                    self.external_field,
+                    device=batch_dict["positions"].device,
+                    dtype=batch_dict["positions"].dtype,
+                )
+
+            model_kwargs: Dict[str, Any] = {
                 "compute_stress": compute_stress,
                 "training": self.use_compile and not oeq_compile,
                 "compute_edge_forces": self.compute_atomic_stresses,
                 "compute_atomic_stresses": self.compute_atomic_stresses,
             }
+            if getattr(self, "compute_bec", False):
+                model_kwargs["compute_bec"] = True
+
             out = model(batch_dict, **model_kwargs)
             if is_padded:
                 out = self._slice_real_outputs(out, num_real_atoms)
@@ -741,6 +779,44 @@ class MACECalculator(Calculator):
                     for stress in self.results["stresses"]
                 ]
             )
+        if "latent_alphas" in ret_tensors:
+            self.results["LES_alphas"] = torch.mean(ret_tensors["latent_alphas"], dim=0).cpu().numpy()
+        if "latent_kappas" in ret_tensors:
+            self.results["LES_kappas"] = torch.mean(ret_tensors["latent_kappas"], dim=0).cpu().numpy()
+        if getattr(self, "compute_bec", False) and "BEC" in ret_tensors:
+            self.results["bec"] = (
+                torch.mean(ret_tensors["BEC"], dim=0).cpu().numpy()
+            )
+        if self.external_field is not None and getattr(self, "compute_bec", False) and "bec" in self.results:
+            bec_output = self.results["bec"]  # [N_atoms, 2, 3, 3] or [N_atoms, 3, 3]
+            if bec_output.ndim == 4:
+                bec_output = np.sum(bec_output, axis=1)
+            if getattr(self, "keep_neutral", False):
+                bec_output -= np.mean(bec_output, axis=0)
+            alphas = self.results.get('LES_alphas', None)
+            if getattr(self, "eps_infty", None) is not None and alphas is not None:
+                epsilon_0 = 5.52635e-3
+                volume = atoms.get_volume()
+                alpha_squeezed = np.squeeze(alphas)
+                if alpha_squeezed.ndim == 1:
+                    chi = alpha_squeezed.sum() / volume / epsilon_0
+                elif alpha_squeezed.ndim == 3 and alpha_squeezed.shape[1:] == (3, 3):
+                    chi = np.einsum('icc->', alpha_squeezed) / 3.0 / volume / epsilon_0
+                elif alpha_squeezed.ndim == 2 and alpha_squeezed.shape[-1] == 9:
+                    chi = np.einsum('icc->', alpha_squeezed.reshape(-1, 3, 3)) / 3.0 / volume / epsilon_0
+                else:
+                    chi = 0.0
+                epsilon_r = self.eps_infty / (1.0 + chi)
+            else:
+                epsilon_r = getattr(self, "eps_infty", 1.0) if getattr(self, "eps_infty", None) is not None else 1.0
+            e_ext_arr = np.array(self.external_field, dtype=np.float64)
+            scaled_e_field = e_ext_arr * (epsilon_r ** 0.5)
+            electric_field_unit = getattr(self, "electric_field_unit", 1.0)
+            forces_bec = (                                         # bec_output: [N, i, j] = dP_i/dr_j
+                np.einsum("nij,i->nj", bec_output, scaled_e_field) # F_nj = sum_i Z*_nij E_i
+                * electric_field_unit
+            )
+            self.results["forces"] += forces_bec
 
     def get_dielectric_derivatives(self, atoms=None):
         if atoms is None and self.atoms is None:

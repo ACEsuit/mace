@@ -19,6 +19,17 @@ from mace.tools.torch_geometric.batch import Batch
 from .blocks import AtomicEnergiesBlock
 
 
+def safe_double(t: torch.Tensor) -> torch.Tensor:
+    """Cast to float64 for accumulation precision, except on MPS.
+
+    The Apple-Silicon MPS backend does not support float64, so there the
+    tensor is returned unchanged in its working dtype.
+    """
+    if t.device.type == "mps":
+        return t
+    return t.double()
+
+
 def compute_forces(
     energy: torch.Tensor, positions: torch.Tensor, training: bool = True
 ) -> torch.Tensor:
