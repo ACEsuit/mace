@@ -536,3 +536,101 @@ def test_magnetic_mace_registers_all_trainable_parameters():
         train_one_body_contribution=True,
     )
     get_optimizer(args, get_params_options(args, model))
+
+
+# ----------------------------------------------------------
+# Accelerated-backend wiring
+# ----------------------------------------------------------
+def _tiny_magnetic_model():
+    return MagneticScaleShiftMACE(
+        r_max=3.5,
+        num_bessel=4,
+        num_polynomial_cutoff=4,
+        max_ell=2,
+        interaction_cls=interaction_classes[
+            "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"
+        ],
+        interaction_cls_first=interaction_classes[
+            "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"
+        ],
+        num_interactions=1,
+        num_elements=1,
+        hidden_irreps=o3.Irreps("8x0e"),
+        MLP_irreps=o3.Irreps("4x0e"),
+        atomic_energies=np.zeros(1),
+        avg_num_neighbors=1.0,
+        atomic_numbers=[26],
+        correlation=[1],
+        gate=torch.nn.functional.silu,
+        atomic_inter_shift=0.0,
+        atomic_inter_scale=1.0,
+        m_max=[3.0],
+        num_mag_radial_basis=8,
+        num_mag_radial_basis_one_body=10,
+        max_m_ell=1,
+        use_magmom_one_body=False,
+    )
+
+
+def test_magnetic_calculator_rejects_hybrid_backends():
+    """There is no hybrid cueq+oeq path here, so asking for both must not proceed."""
+    with pytest.raises(ValueError, match="hybrid"):
+        MagneticMACECalculator(
+            models=[_tiny_magnetic_model()],
+            device="cpu",
+            enable_cueq=True,
+            enable_oeq=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "flag,available_attr,library",
+    [
+        ("enable_cueq", "CUEQQ_AVAILABLE", "cuequivariance"),
+        ("enable_oeq", "OEQ_AVAILABLE", "openequivariance"),
+    ],
+)
+def test_magnetic_calculator_reports_missing_backend(
+    monkeypatch, flag, available_attr, library
+):
+    """A missing backend is an ImportError, not a TypeError on a None converter."""
+    from mace.calculators import mace as mace_calc_mod
+
+    monkeypatch.setattr(mace_calc_mod, available_attr, False)
+    with pytest.raises(ImportError, match=library):
+        MagneticMACECalculator(
+            models=[_tiny_magnetic_model()],
+            device="cpu",
+            **{flag: True},
+        )
+
+
+def test_magnetic_calculator_converts_to_cueq_once(monkeypatch, tmp_path):
+    """Loading from model_paths used to convert once on load and again later.
+
+    The second call handed an already-converted model to a converter that
+    expects the e3nn layout.
+    """
+    from mace.calculators import mace as mace_calc_mod
+
+    with default_dtype(torch.float32):
+        model_path = tmp_path / "magmace.model"
+        torch.save(_tiny_magnetic_model(), model_path)
+
+    calls = []
+
+    def fake_convert(model, device=None):
+        calls.append(model)
+        return model
+
+    monkeypatch.setattr(mace_calc_mod, "CUEQQ_AVAILABLE", True)
+    monkeypatch.setattr(mace_calc_mod, "run_e3nn_to_cueq", fake_convert)
+
+    MagneticMACECalculator(
+        model_paths=[str(model_path)],
+        device="cpu",
+        default_dtype="float32",
+        enable_cueq=True,
+    )
+
+    assert len(calls) == 1
