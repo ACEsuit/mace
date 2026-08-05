@@ -1202,7 +1202,13 @@ else:
     BENCH_ROOT = Path("")
 
 ATOL_BY_DTYPE = {
-    "float32": 5e-6,
+    # float32 sums in an order that depends on thread count and on which BLAS
+    # kernel is picked, so these references cannot be reproduced bit for bit
+    # across machines. At 5e-6 the X23 set failed on single force components
+    # by a few percent over the bound, on the same commit that passed in a
+    # sibling CI run. 5e-5 keeps about an order of magnitude of headroom and
+    # still catches a real regression, which moves these by far more.
+    "float32": 5e-5,
     "float64": 1e-9,
 }
 
