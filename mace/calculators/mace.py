@@ -800,7 +800,12 @@ class MACECalculator(Calculator):
             if bec_output.ndim == 4:
                 bec_output = np.sum(bec_output, axis=1)
             if getattr(self, "keep_neutral", False):
-                bec_output -= np.mean(bec_output, axis=0)
+                # Not in place: on the 3-D path bec_output still aliases
+                # self.results["bec"], so -= would neutralise the stored BEC
+                # as a side effect. The 4-D path escapes only because np.sum
+                # copies, which made the same flag behave differently per
+                # BEC layout.
+                bec_output = bec_output - np.mean(bec_output, axis=0)
             alphas = self.results.get("LES_alphas", None)
             if getattr(self, "eps_infty", None) is not None and alphas is not None:
                 epsilon_0 = 5.52635e-3
