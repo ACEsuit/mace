@@ -9,6 +9,7 @@ from .blocks import (
     InteractionBlock,
     LinearDipolePolarReadoutBlock,
     LinearDipoleReadoutBlock,
+    LinearLesReadoutBlock,
     LinearNodeEmbeddingBlock,
     LinearReadoutBlock,
     MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock,
@@ -16,6 +17,7 @@ from .blocks import (
     NonLinearBiasReadoutBlock,
     NonLinearDipolePolarReadoutBlock,
     NonLinearDipoleReadoutBlock,
+    NonLinearLesReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     RealAgnosticAttResidualInteractionBlock,
@@ -26,7 +28,12 @@ from .blocks import (
     RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
 )
-from .extensions import MagneticScaleShiftMACE, MagneticSCFMACE, PolarMACE
+from .extensions import (
+    MACELES,
+    MagneticScaleShiftMACE,
+    MagneticSCFMACE,
+    PolarMACE,
+)
 from .gate import GatedEquivariantBlock
 from .loss import (
     DipolePolarLoss,
@@ -112,12 +119,15 @@ __all__ = [
     "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
+    "MACELES",
     "AtomicDipolesMACE",
     "AtomicDielectricMACE",
     "EnergyDipolesMACE",
     "MagneticScaleShiftMACE",
     "MagneticSCFMACE",
     "PolarMACE",
+    "LinearLesReadoutBlock",
+    "NonLinearLesReadoutBlock",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
