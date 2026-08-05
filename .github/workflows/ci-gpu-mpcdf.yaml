@@ -143,11 +143,10 @@ jobs:
         env:
           TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
           PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
-          # Both set ONLY for fork pull requests. Everywhere else — same-repo
-          # PRs, pushes, dispatches, the schedule — HEAD is already the commit
-          # under test and carries the definition that should run it.
+          # Set ONLY for fork pull requests. Everywhere else — same-repo PRs,
+          # pushes, dispatches, the schedule — HEAD is already the commit under
+          # test, so there is nothing extra to fetch.
           FORK_PR_NUMBER: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}
-          BASE_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || '' }}
         run: |
           set -euo pipefail
           # Resolve the path from the id so the project is never configured
@@ -156,29 +155,35 @@ jobs:
             "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}" | jq -r .path_with_namespace)
           branch="gh-run-${{ github.run_id }}-${{ github.run_attempt }}"
 
-          # `tested` is the commit to mirror, `definition` the commit to take the
-          # pipeline definition from. They differ only for a fork: the code is
-          # the fork's, the pipeline that runs it is the base branch's, so a fork
-          # can change what gets tested and never what runs it. Everywhere else
-          # both are HEAD, which is what lets a same-repo PR editing the GPU
-          # pipeline exercise its own change.
-          #
-          # No --depth on either fetch: a shallow marker cannot be pushed to a
-          # mirror that lacks the history.
+          # The commit to mirror. For a fork it is fetched as objects only, via
+          # refs/pull/N/head, which is how a fork's commits are reachable here.
+          # No --depth: a shallow marker cannot be pushed to a mirror that lacks
+          # the history.
           if [ -n "${FORK_PR_NUMBER}" ]; then
-            # refs/pull/N/head is how a fork's commits are reachable here.
             git fetch --no-tags origin "refs/pull/${FORK_PR_NUMBER}/head"
             tested=$(git rev-parse FETCH_HEAD)
-            git fetch --no-tags origin "${BASE_SHA}"
-            definition="${BASE_SHA}"
           else
             tested=$(git rev-parse HEAD)
-            definition=HEAD
           fi
 
-          # Read straight out of the object database, so this does not depend on
-          # which ref got checked out above.
-          blob=$(git rev-parse "${definition}:.github/gitlab/ci.yml")
+          # The pipeline definition always comes from HEAD, never from the
+          # commit under test. On a fork pull request HEAD is the repository's
+          # DEFAULT branch — the very ref GitHub read this workflow from, since
+          # that is what `pull_request_target` runs — so it is trusted, current,
+          # and cannot disagree with the workflow driving the run. Everywhere
+          # else HEAD is the code under test, which is what lets a same-repo PR
+          # editing the GPU pipeline exercise its own change.
+          #
+          # Do NOT use `pull_request.base.sha` here. That is the base tip from
+          # when the pull request was last synchronised, so on any pull request
+          # older than this file it points at a commit without it and this fails
+          # outright — every open fork PR at once, not just new ones.
+          #
+          # The trade-off, deliberately taken: a fork pull request against a
+          # non-default base is tested with the default branch's pipeline. The
+          # workflow running it comes from there too, so the alternative would
+          # pair a base branch's pipeline with the default branch's workflow.
+          blob=$(git rev-parse "HEAD:.github/gitlab/ci.yml")
 
           # Assemble tested-tree + .gitlab-ci.yml in a throwaway index, so the
           # fork's files are never written into the working tree.
