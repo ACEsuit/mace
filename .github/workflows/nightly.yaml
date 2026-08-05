@@ -133,6 +133,16 @@ jobs:
           python -m pip install -U pip
           python -m pip install ".[dev, cueq]"
           python -c "import lammps; print('lammps import OK')"
+      # The conda env activates only in a login shell, and this job's
+      # `defaults.run.shell` does NOT reach steps inside a composite action --
+      # run-tests hardcodes `shell: bash`, so pytest was simply not found
+      # (exit 127) and the real tier never ran a single test. Putting the env's
+      # bin on PATH is what makes it visible to the action.
+      - name: Expose the conda env to non-login shells
+        run: |
+          test -n "$CONDA_PREFIX" || { echo "conda env is not active"; exit 1; }
+          test -x "$CONDA_PREFIX/bin/pytest" || { echo "no pytest in $CONDA_PREFIX"; exit 1; }
+          echo "$CONDA_PREFIX/bin" >> "$GITHUB_PATH"
       - uses: ./.github/actions/run-tests
         with:
           tests: tests/integrations
@@ -215,3 +225,7 @@ jobs:
           name: test-durations
           path: tests/.test_durations
           retention-days: 30
+          # The path is a dotfile and upload-artifact skips hidden files by
+          # default: without this the job stayed green while uploading nothing,
+          # so the committed durations silently went stale.
+          include-hidden-files: true
