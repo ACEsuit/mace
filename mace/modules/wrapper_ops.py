@@ -130,6 +130,7 @@ def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
     conv_tp.forward = types.MethodType(forward, conv_tp)
     return conv_tp
 
+
 class CueqConvFusionWrapper(torch.nn.Module):
     """A serializable wrapper around cuet.SegmentedPolynomial / mptp.ff.
 

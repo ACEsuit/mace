@@ -394,7 +394,9 @@ def run(args: argparse.Namespace) -> None:
             atoms.info[args.info_prefix + "stress"] = stresses[i]
 
         if args.compute_bec:
-            atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(bec_list[i].shape[0], -1)
+            atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(
+                bec_list[i].shape[0], -1
+            )
         if len(qs_list) > 0:
             atoms.arrays[args.info_prefix + "latent_charges"] = qs_list[i]
         if len(us_list) > 0:
@@ -402,9 +404,13 @@ def run(args: argparse.Namespace) -> None:
         if len(kappas_list) > 0:
             atoms.arrays[args.info_prefix + "latent_kappas"] = kappas_list[i]
         if len(alphas_list) > 0:
-            atoms.arrays[args.info_prefix + "latent_alphas"] = alphas_list[i].reshape(alphas_list[i].shape[0], -1)
+            atoms.arrays[args.info_prefix + "latent_alphas"] = alphas_list[i].reshape(
+                alphas_list[i].shape[0], -1
+            )
         if len(quads_list) > 0:
-            atoms.arrays[args.info_prefix + "latent_quads"] = quads_list[i].reshape(quads_list[i].shape[0], -1)
+            atoms.arrays[args.info_prefix + "latent_quads"] = quads_list[i].reshape(
+                quads_list[i].shape[0], -1
+            )
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
