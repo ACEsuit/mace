@@ -13,6 +13,7 @@ from mace.calculators import MACECalculator
 from mace.cli.eval_configs import run as mace_eval_configs_run
 from mace.cli.run_train import run as mace_run
 from mace.modules import interaction_classes
+from mace.modules.blocks import LinearLesReadoutBlock, NonLinearLesReadoutBlock
 from mace.modules.extensions import MACELES
 from mace.modules.models import ScaleShiftMACE
 from mace.tools.arg_parser import build_default_arg_parser
@@ -357,10 +358,72 @@ def test_run_eval_no_bec(tmp_path: Path, maceles_model_path: Path, fitting_confi
     assert len(output_atoms) == len(fitting_configs)
     for at in output_atoms:
         assert isinstance(at, Atoms)
-        # Ensure BEC and latent charges are not present
+        # BEC is gated on --compute_bec, so it must be absent here
         assert "MACE_BEC" not in at.arrays
-        assert "MACE_latent_charges" not in at.arrays
+        # latent charges are always emitted by MACELES, independent of --compute_bec
+        assert "MACE_latent_charges" in at.arrays
         # Check that other expected arrays are present
         assert "MACE_energy" in at.info
         assert "MACE_stress" in at.info
         assert "MACE_forces" in at.arrays
+
+
+def _to_ir_mul(y: torch.Tensor, irreps: o3.Irreps, n: int) -> torch.Tensor:
+    """Re-lay-out a mul_ir feature tensor into cueq's ir_mul order, block by block."""
+    cols = []
+    off = 0
+    for mul, ir in irreps:
+        d = mul * ir.dim
+        block = y[:, off : off + d]
+        if ir.dim == 1:  # scalars are identical in both layouts
+            cols.append(block)
+        else:  # [n, mul, ir.dim] -> [n, ir.dim, mul]
+            cols.append(block.reshape(n, mul, ir.dim).transpose(1, 2).reshape(n, d))
+        off += d
+    return torch.cat(cols, dim=1)
+
+
+@pytest.mark.parametrize("block_cls", [LinearLesReadoutBlock, NonLinearLesReadoutBlock])
+def test_les_readout_equivariance(block_cls):
+    """The predicted 3x3 tensor must rotate as R T R^T under input rotations."""
+    torch.manual_seed(0)
+    irreps = o3.Irreps("8x0e + 4x1o")
+    block = block_cls(irreps).eval()
+
+    x = torch.randn(5, irreps.dim)
+    rot = o3.rand_matrix()
+    x_rot = x @ irreps.D_from_matrix(rot).T
+
+    with torch.no_grad():
+        t = block(x)
+        t_rot = block(x_rot)
+
+    expected = torch.einsum("ij,njk,lk->nil", rot, t, rot)
+    assert t.shape == (5, 3, 3)
+    assert torch.allclose(t_rot, expected, atol=1e-4)
+
+
+@pytest.mark.parametrize("block_cls", [LinearLesReadoutBlock, NonLinearLesReadoutBlock])
+def test_les_readout_layout_invariance(block_cls):
+    """The cueq ir_mul path must recover the same vectors as the e3nn mul_ir path."""
+    torch.manual_seed(0)
+    irreps = o3.Irreps("8x0e + 5x1o")  # non-uniform mult exercises the slice logic
+    block = block_cls(irreps).eval()
+    n = 4
+    y = block.linear(torch.randn(n, irreps.dim))
+
+    is_linear = block_cls is LinearLesReadoutBlock
+    slices = block.vector_1o_slices
+
+    block.ir_mul = False
+    v_mulir = block._collect_vectors(y, slices) if is_linear else block._collect_vectors(y)
+
+    block.ir_mul = True
+    y_irmul = _to_ir_mul(y, irreps, n)
+    v_irmul = (
+        block._collect_vectors(y_irmul, slices)
+        if is_linear
+        else block._collect_vectors(y_irmul)
+    )
+
+    assert torch.allclose(v_mulir, v_irmul, atol=1e-6)

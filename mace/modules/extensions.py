@@ -1,10 +1,13 @@
 # pylint: disable=too-many-lines  # magnetic MACE variants live here
+import logging
 from abc import abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import numpy as np
 import torch
 from e3nn import o3
+from e3nn.io import CartesianTensor
+from e3nn.o3._reduce import ReducedTensorProducts
 from e3nn.util.jit import compile_mode
 
 try:
@@ -21,8 +24,10 @@ except (ImportError, ModuleNotFoundError):
     GRAPH_LONGRANGE_AVAILABLE = False
 
 from mace.modules.blocks import (
+    LinearLesReadoutBlock,
     LinearReadoutBlock,
     NonLinearBiasReadoutBlock,
+    NonLinearLesReadoutBlock,
     NonLinearReadoutBlock,
 )
 from mace.modules.embeddings import GenericJointEmbedding
@@ -32,6 +37,7 @@ from mace.modules.utils import (
     get_atomic_virials_stresses,
     get_outputs,
     prepare_graph,
+    safe_double,
 )
 from mace.modules.wrapper_ops import (
     CuEquivarianceConfig,
@@ -39,6 +45,7 @@ from mace.modules.wrapper_ops import (
     TransposeIrrepsLayoutWrapper,
 )
 from mace.tools.scatter import scatter_mean, scatter_sum
+from mace.tools.torch_tools import spherical_to_cartesian
 
 from .blocks import (
     AtomicEnergiesBlock,
@@ -61,7 +68,9 @@ from .utils import get_edge_vectors_and_lengths, get_symmetric_displacement
 
 
 def _copy_mace_readout(
-    mace_readout: torch.nn.Module, cueq_config: Optional[CuEquivarianceConfig] = None
+    mace_readout: torch.nn.Module,
+    change_irrep_out: Optional[str] = None,  # o3.Irreps("1x1o")
+    cueq_config: Optional[CuEquivarianceConfig] = None,
 ) -> torch.nn.Module:
     """
     Helper function to copy a MACE readout block.
@@ -69,7 +78,7 @@ def _copy_mace_readout(
     if isinstance(mace_readout, LinearReadoutBlock):
         return LinearReadoutBlock(
             irreps_in=mace_readout.linear.irreps_in,  # type: ignore
-            irrep_out=mace_readout.linear.irreps_out,  # type: ignore
+            irrep_out=o3.Irreps(change_irrep_out) if change_irrep_out is not None else mace_readout.linear.irreps_out,  # type: ignore
             cueq_config=cueq_config,
         )
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type: ignore
@@ -79,8 +88,43 @@ def _copy_mace_readout(
             gate=mace_readout.non_linearity._modules["acts"][  # pylint: disable=W0212
                 0
             ].f,
-            irrep_out=mace_readout.linear_2.irreps_out,  # type: ignore
+            irrep_out=o3.Irreps(change_irrep_out) if change_irrep_out is not None else mace_readout.linear_2.irreps_out,  # type: ignore
             num_heads=mace_readout.num_heads,
+            cueq_config=cueq_config,
+        )
+    raise TypeError("Unsupported readout type.")
+
+
+def _copy_mace_readout_tp(
+    mace_readout: torch.nn.Module,
+    make_w_pos: bool = True,
+    cueq_config: Optional[CuEquivarianceConfig] = None,
+    use_nonlinear_readout: bool = False,
+) -> torch.nn.Module:
+    """
+    Helper function to copy a MACE readout block.
+    """
+    logging.debug(f"use_nonlinear_readout for alpha? {use_nonlinear_readout}")
+    if isinstance(mace_readout, LinearReadoutBlock):
+        if use_nonlinear_readout:
+            return NonLinearLesReadoutBlock(
+                irreps_in=mace_readout.linear.irreps_in,  # type: ignore
+                cueq_config=cueq_config,
+            )
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear.irreps_in,  # type: ignore
+            make_w_pos=make_w_pos,
+            cueq_config=cueq_config,
+        )
+    if isinstance(mace_readout, NonLinearReadoutBlock):  # type: ignore
+        if use_nonlinear_readout:
+            return NonLinearLesReadoutBlock(
+                irreps_in=mace_readout.linear_1.irreps_in,  # type: ignore
+                cueq_config=cueq_config,
+            )
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear_1.irreps_in,  # type: ignore
+            make_w_pos=make_w_pos,
             cueq_config=cueq_config,
         )
     raise TypeError("Unsupported readout type.")
@@ -97,6 +141,9 @@ def _get_readout_input_dim(block: torch.nn.Module) -> int:
 @compile_mode("script")
 class MACELES(ScaleShiftMACE):
     def __init__(self, les_arguments: Optional[Dict] = None, **kwargs):
+        # MACELES requires full irreps at all interaction layers so that LES
+        # readout blocks can access vector features (e.g. dipoles, quadrupoles).
+        kwargs["keep_last_layer_irreps"] = True
         super().__init__(**kwargs)
         try:
             from les import Les
@@ -108,8 +155,38 @@ class MACELES(ScaleShiftMACE):
             les_arguments = {"use_atomwise": False}
         self.compute_bec = les_arguments.get("compute_bec", False)
         self.bec_output_index = les_arguments.get("bec_output_index", None)
+        self.use_dipoles = les_arguments.get("use_dipole", False)
+        self.use_quads = les_arguments.get("use_quad", False)
+        self.use_induced_charges = les_arguments.get("use_induced_charge", False)
+        self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
+        self.use_anisotropic_polarizability = les_arguments.get(
+            "use_anisotropic_polarizability", False
+        )
+        self.alpha_irreps = les_arguments.get("alpha_irreps", "0e+1o+2e")
+        self.alpha_1o_nonlinear_readout = les_arguments.get(
+            "alpha_1o_nonlinear_readout", False
+        )
+        self.alpha_1o_linear_w_pos = les_arguments.get("alpha_1o_linear_w_pos", True)
+        self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
+        self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
+
+        logging.info(f"use_dipoles {self.use_dipoles}")
+        logging.info(f"use_induced_charges {self.use_induced_charges}")
+        logging.info(f"use_induced_dipoles {self.use_induced_dipoles}")
         self.les = Les(les_arguments=les_arguments)
+
         self.les_readouts = torch.nn.ModuleList()
+        self.les_u_readouts = torch.nn.ModuleList()
+        self.les_quad_2e_readouts = torch.nn.ModuleList()
+        self.les_quad_1o_readouts = torch.nn.ModuleList()
+        self.les_alpha_readouts = torch.nn.ModuleList()
+        self.les_alpha_1o_readouts = torch.nn.ModuleList()
+        self.les_alpha_2e_readouts = torch.nn.ModuleList()
+        self.les_kappa_readouts = torch.nn.ModuleList()
+        self.les_output_scale = les_arguments.get("output_scale", 0.1)
+        self.les_kappa_scale = les_arguments.get("kappa_scale", 0.01)
+        self.les_alpha_scale = les_arguments.get("alpha_scale", 0.01)
+
         self.readout_input_dims = [
             _get_readout_input_dim(readout) for readout in self.readouts  # type: ignore
         ]
@@ -118,6 +195,85 @@ class MACELES(ScaleShiftMACE):
             self.les_readouts.append(
                 _copy_mace_readout(readout, cueq_config=cueq_config)
             )
+            if self.use_dipoles:
+                self.les_u_readouts.append(
+                    # _copy_mace_readout(readout,  change_irrep_out="1x1o", cueq_config=cueq_config)
+                    _copy_mace_readout(
+                        self.readouts[0],
+                        change_irrep_out="1x1o",
+                        cueq_config=cueq_config,
+                    )
+                )
+            if self.use_quads:
+                mace_irreps = str(self.readouts[0].linear.irreps_in)
+                if "2e" in mace_irreps:
+                    logging.info("Using l=2 readout to predict quadrupoles.")
+                    change_of_basis_quads = ReducedTensorProducts(
+                        "ij=ji", i="1o", filter_ir_out=["2e"]
+                    ).change_of_basis
+                    self.les_quad_2e_readouts.append(
+                        _copy_mace_readout(
+                            self.readouts[0],
+                            change_irrep_out="1x2e",
+                            cueq_config=cueq_config,
+                        )
+                    )
+                    self.register_buffer("change_of_basis_quads", change_of_basis_quads)
+                if "1o" in mace_irreps:
+                    logging.info("Using l=1 readout to predict quadrupoles.")
+                    self.les_quad_1o_readouts.append(
+                        _copy_mace_readout_tp(
+                            self.readouts[0],
+                            use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
+                            make_w_pos=False,
+                            cueq_config=cueq_config,
+                        )
+                    )
+            if self.use_induced_charges:
+                self.les_kappa_readouts.append(
+                    _copy_mace_readout(readout, cueq_config=cueq_config)
+                )
+            if self.use_induced_dipoles:
+                if self.use_anisotropic_polarizability:
+                    mace_irreps = str(self.readouts[0].linear.irreps_in)
+                    if "2e" in mace_irreps and "2e" in self.alpha_irreps:
+                        logging.info(
+                            "Using l=2 readout to predict anisotropic polarizability."
+                        )
+                        change_of_basis = (
+                            CartesianTensor("ij=ji")
+                            .reduced_tensor_products()
+                            .change_of_basis
+                        )
+                        self.les_alpha_2e_readouts.append(
+                            _copy_mace_readout(
+                                self.readouts[0],
+                                change_irrep_out="1x0e + 1x2e",
+                                cueq_config=cueq_config,
+                            )
+                        )
+                        self.register_buffer("change_of_basis", change_of_basis)
+                    if "1o" in mace_irreps and "1o" in self.alpha_irreps:
+                        # Obtain 2e from l=1 outer products
+                        logging.info(
+                            "Using l=1 readout to predict anisotropic polarizability."
+                        )
+                        self.les_alpha_1o_readouts.append(
+                            _copy_mace_readout_tp(
+                                self.readouts[0],
+                                use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
+                                make_w_pos=self.alpha_1o_linear_w_pos,
+                                cueq_config=cueq_config,
+                            )
+                        )
+                    if not ("1o" in mace_irreps or "2e" in mace_irreps):
+                        raise ValueError(
+                            "Unsupported irreps for anisotropic polarizability. Expected '1o' or '2e' in the readout irreps."
+                        )
+                if not self.use_anisotropic_polarizability or "0e" in self.alpha_irreps:
+                    self.les_alpha_readouts.append(
+                        _copy_mace_readout(readout, cueq_config=cueq_config)
+                    )
 
     def forward(
         self,
@@ -140,6 +296,7 @@ class MACELES(ScaleShiftMACE):
             compute_displacement=compute_displacement,
             lammps_mliap=lammps_mliap,
         )
+
         is_lammps = ctx.is_lammps
         num_atoms_arange = ctx.num_atoms_arange
         num_graphs = ctx.num_graphs
@@ -153,6 +310,21 @@ class MACELES(ScaleShiftMACE):
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
 
+        e_ext = data.get("external_field", None)
+        # external_field may default to zeros(1,3) from atomic_data.py; treat as None
+        if e_ext is not None and not e_ext.any():
+            e_ext = None
+
+        # for backward compatibility
+        if not hasattr(self, "les_output_scale"):
+            self.les_output_scale = 1.0
+        if not hasattr(self, "les_kappa_scale"):
+            self.les_kappa_scale = 1.0
+        if not hasattr(self, "les_alpha_scale"):
+            self.les_alpha_scale = 1.0
+        if not hasattr(self, "use_anisotropic_polarizability"):
+            self.use_anisotropic_polarizability = False
+
         # Setting LES cell input to zero when boundary conditions are not periodic
         cell_les = cell.clone()
         pbc_tensor = data["pbc"].to(device=data["cell"].device)
@@ -161,6 +333,15 @@ class MACELES(ScaleShiftMACE):
         cell_les[no_pbc_mask_rows] = torch.zeros(
             (no_pbc_mask_rows.sum(), 3), dtype=cell_les.dtype, device=cell_les.device
         )
+        if displacement is not None:
+            symmetric_displacement = 0.5 * (
+                displacement + displacement.transpose(-1, -2)
+            )
+            cell_les_view = cell_les.view(-1, 3, 3)
+            cell_les_view = cell_les_view + torch.matmul(
+                cell_les_view, symmetric_displacement
+            )
+            cell_les = cell_les_view.view_as(cell_les)
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
@@ -213,6 +394,10 @@ class MACELES(ScaleShiftMACE):
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
         node_qs_list: List[torch.Tensor] = []
+        node_us_list: List[torch.Tensor] = []
+        node_quads_list: List[torch.Tensor] = []
+        node_kappas_list: List[torch.Tensor] = []
+        node_alphas_list: List[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)
@@ -250,6 +435,79 @@ class MACELES(ScaleShiftMACE):
             ]  # type: ignore
             node_qs_list.append(node_qs)
             node_es_list.append(node_es)
+            if hasattr(self, "use_dipoles") and self.use_dipoles:
+                les_u_readout = self.les_u_readouts[i]
+                node_us = les_u_readout(node_feats_list[feat_idx])[
+                    num_atoms_arange
+                ]  # type: ignore
+                node_us_list.append(node_us)
+                # print('dipoles', i, node_us[:3])
+            if hasattr(self, "use_induced_charges") and self.use_induced_charges:
+                les_kappa_readout = self.les_kappa_readouts[i]
+                node_kappas = les_kappa_readout(node_feats_list[feat_idx], node_heads)[
+                    num_atoms_arange, node_heads
+                ]  # type: ignore
+                node_kappas_list.append(node_kappas)
+            if hasattr(self, "use_quads"):
+                if (
+                    hasattr(self, "les_quad_2e_readouts")
+                    and len(self.les_quad_2e_readouts) > i
+                ):
+                    les_quad_readout = self.les_quad_2e_readouts[i]
+                    node_quads = les_quad_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type: ignore
+                    node_quads = spherical_to_cartesian(
+                        node_quads, self.change_of_basis_quads
+                    )
+                    node_quads_list.append(node_quads)
+                if (
+                    hasattr(self, "les_quad_1o_readouts")
+                    and len(self.les_quad_1o_readouts) > i
+                ):
+                    les_quad_readout = self.les_quad_1o_readouts[i]
+                    node_quads = les_quad_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type: ignore
+                    node_quads_list.append(node_quads)
+            if hasattr(self, "use_induced_dipoles") and self.use_induced_dipoles:
+                if (
+                    hasattr(self, "les_alpha_1o_readouts")
+                    and len(self.les_alpha_1o_readouts) > i
+                ):
+                    les_alpha_readout = self.les_alpha_1o_readouts[i]
+                    node_alphas = les_alpha_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type: ignore
+                    node_alphas_list.append(node_alphas)
+                if (
+                    hasattr(self, "les_alpha_2e_readouts")
+                    and len(self.les_alpha_2e_readouts) > i
+                ):
+                    les_alpha_readout = self.les_alpha_2e_readouts[i]
+                    node_alphas = les_alpha_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type: ignore
+                    node_alphas = spherical_to_cartesian(
+                        node_alphas, self.change_of_basis
+                    )
+                    node_alphas_list.append(node_alphas)
+                if len(self.les_alpha_readouts) > i:
+                    les_alpha_readout = self.les_alpha_readouts[i]
+                    node_alphas = les_alpha_readout(
+                        node_feats_list[feat_idx], node_heads
+                    )[
+                        num_atoms_arange, node_heads
+                    ]  # type: ignore
+                    if (
+                        hasattr(self, "use_anisotropic_polarizability")
+                        and self.use_anisotropic_polarizability
+                    ):
+                        eye = torch.eye(3, device=node_alphas.device)
+                        node_alphas = node_alphas.unsqueeze(-1).unsqueeze(
+                            -1
+                        ) * eye.unsqueeze(0)
+                    node_alphas_list.append(node_alphas)
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
         node_inter_es = torch.sum(torch.stack(node_es_list, dim=0), dim=0)
@@ -257,17 +515,83 @@ class MACELES(ScaleShiftMACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         total_energy = e0 + inter_e
-        node_energy = node_e0.clone().double() + node_inter_es.clone().double()
+        node_energy = safe_double(node_e0.clone()) + safe_double(node_inter_es.clone())
 
-        les_q = torch.sum(torch.stack(node_qs_list, dim=1), dim=1)
+        les_q = (
+            torch.sum(torch.stack(node_qs_list, dim=1), dim=1) * self.les_output_scale
+        )
+        if len(node_us_list) > 0:
+            les_u = (
+                torch.sum(torch.stack(node_us_list, dim=-1), dim=-1)
+                * self.les_output_scale
+            )
+        else:
+            les_u = None
+
+        if len(node_kappas_list) > 0:
+            les_kappa = (
+                torch.sum(torch.stack(node_kappas_list, dim=1), dim=1)
+                * self.les_kappa_scale
+            )
+        else:
+            les_kappa = None
+
+        if len(node_quads_list) > 0:
+            les_quad = (
+                torch.sum(torch.stack(node_quads_list, dim=1), dim=1)
+                * self.les_output_scale
+            )
+            # Make quads traceless:
+            traces = les_quad.diagonal(dim1=-1, dim2=-2).sum(dim=1)
+            eye = torch.eye(3, device=les_quad.device)
+            les_quad = les_quad - eye[None, :, :] * traces[:, None, None] / 3
+        else:
+            les_quad = None
+
+        if len(node_alphas_list) > 0:
+            les_alpha = (
+                torch.sum(torch.stack(node_alphas_list, dim=1), dim=1)
+                * self.les_alpha_scale
+            )
+            # print('les_alpha', les_alpha.shape, les_alpha[:3])
+        else:
+            les_alpha = None
+
+        if (
+            hasattr(self, "make_alpha_positive")
+            and self.make_alpha_positive
+            and les_alpha is not None
+        ):
+            if les_alpha.dim() == 2:
+                les_alpha = les_alpha**2
+            if (
+                les_alpha.dim() == 3
+                and les_alpha.shape[1] == 3
+                and les_alpha.shape[2] == 3
+            ):
+                les_alpha = torch.einsum("nij,nkj->nik", les_alpha, les_alpha)
+        if (
+            hasattr(self, "make_kappa_positive")
+            and self.make_kappa_positive
+            and les_kappa is not None
+        ):
+            les_kappa = les_kappa**2
+
+        les_positions = data["positions"] if displacement is not None else positions
         les_result = self.les(
+            atomic_numbers=data["atomic_numbers"],
             latent_charges=les_q,
-            positions=positions,
+            latent_dipoles=les_u,
+            latent_quads=les_quad,
+            latent_alphas=les_alpha,
+            latent_kappas=les_kappa,
+            positions=les_positions,
             cell=cell_les.view(-1, 3, 3),
             batch=data["batch"],
             compute_energy=True,
             compute_bec=(compute_bec or self.compute_bec),
             bec_output_index=self.bec_output_index,
+            e_ext=e_ext,
         )
         les_energy_opt = les_result["E_lr"]
         if les_energy_opt is None:
@@ -314,7 +638,11 @@ class MACELES(ScaleShiftMACE):
             "hessian": hessian,
             "node_feats": node_feats_out,
             "les_energy": les_energy,
-            "latent_charges": les_q,
+            "latent_charges": les_result["latent_charges"],
+            "latent_dipoles": les_result["latent_dipoles"],
+            "latent_kappas": les_kappa,
+            "latent_alphas": les_result["latent_alphas"],
+            "latent_quads": les_quad,
             "BEC": les_result["BEC"],
         }
 
@@ -760,7 +1088,7 @@ class PolarMACE(ScaleShiftMACE):
             fukui_input = fukui_to_mul_ir(fukui_input)
         fukui_sources = self.fukui_source_map(fukui_input)
         fukui_norm = scatter_sum(
-            src=fukui_sources.double(),
+            src=safe_double(fukui_sources),
             index=data["batch"],
             dim=0,
             dim_size=num_graphs,
@@ -772,7 +1100,7 @@ class PolarMACE(ScaleShiftMACE):
         Q_p_S = (data["total_charge"] + (data["total_spin"] - 1))[data["batch"]]
         Q_m_S = (data["total_charge"] - (data["total_spin"] - 1))[data["batch"]]
         pred_total_charges_0 = scatter_sum(
-            src=spin_charge_density[:, :, 0].double(),
+            src=safe_double(spin_charge_density[:, :, 0]),
             index=data["batch"],
             dim=0,
             dim_size=num_graphs,
@@ -819,7 +1147,7 @@ class PolarMACE(ScaleShiftMACE):
 
             # Add external field contribution and subtract barycenter for gauge invariance
             barycenter = scatter_mean(
-                src=positions.double(),
+                src=safe_double(positions),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
@@ -861,7 +1189,7 @@ class PolarMACE(ScaleShiftMACE):
             spin_charge_density = spin_charge_density + spin_charge_density_sources
 
             fukui_norm2 = scatter_sum(
-                src=current_fukui_sources.double(),
+                src=safe_double(current_fukui_sources),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
@@ -872,7 +1200,7 @@ class PolarMACE(ScaleShiftMACE):
             current_fukui_sources = current_fukui_sources / fukui_norm2
             final_fukui_sources = current_fukui_sources
             pred_total_charges = scatter_sum(
-                src=spin_charge_density[:, :, 0].double(),
+                src=safe_double(spin_charge_density[:, :, 0]),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
@@ -980,7 +1308,8 @@ class PolarMACE(ScaleShiftMACE):
 
         return {
             "energy": total_energy,
-            "node_energy": node_e0.clone().double() + node_inter_es.clone().double(),
+            "node_energy": safe_double(node_e0.clone())
+            + safe_double(node_inter_es.clone()),
             "interaction_energy": inter_e,
             "forces": forces,
             "edge_forces": edge_forces,
