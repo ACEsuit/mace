@@ -85,3 +85,55 @@ class TestBuildFakePaddingGraph:
             water_graph, num_atoms=4, num_edges=8, r_max=3.5
         )
         assert (fake["node_attrs"][:, 0] == 1.0).all()
+
+
+class TestSliceRealOutputs:
+    """Padding must be stripped from every per-atom key the calculator surfaces."""
+
+    N_REAL = 4
+    N_PAD = 9
+
+    def _out(self):
+        n = self.N_PAD
+        return {
+            "energy": torch.zeros(2),
+            "forces": torch.zeros(n, 3),
+            "node_energy": torch.zeros(n),
+            "BEC": torch.zeros(n, 3, 3),
+            "latent_alphas": torch.zeros(n),
+            "latent_kappas": torch.zeros(n),
+            "latent_charges": torch.zeros(n),
+            "latent_dipoles": torch.zeros(n, 3),
+            "latent_quads": torch.zeros(n, 3, 3),
+        }
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "forces",
+            "node_energy",
+            "BEC",
+            "latent_alphas",
+            "latent_kappas",
+            "latent_charges",
+            "latent_dipoles",
+            "latent_quads",
+        ],
+    )
+    def test_atom_level_keys_are_sliced(self, key):
+        from mace.calculators.mace import MACECalculator
+
+        sliced = MACECalculator._slice_real_outputs(self._out(), self.N_REAL)
+        assert sliced[key].shape[0] == self.N_REAL
+
+    def test_bec_forces_are_addable(self):
+        """forces += forces_bec broadcasts only if BEC was sliced like forces."""
+        from mace.calculators.mace import MACECalculator
+
+        sliced = MACECalculator._slice_real_outputs(self._out(), self.N_REAL)
+        forces = sliced["forces"].numpy()
+        forces_bec = np.einsum(
+            "nij,i->nj", sliced["BEC"].numpy(), np.array([0.1, 0.0, 0.0])
+        )
+        forces += forces_bec
+        assert forces.shape == (self.N_REAL, 3)
