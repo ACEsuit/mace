@@ -452,7 +452,12 @@ def test_keep_neutral_does_not_mutate_stored_bec(
         )
         atoms = fitting_configs[2].copy()
         atoms.calc = calc
-        atoms.get_potential_energy()
+        # float64 ambient against a float32 model on purpose. Anything the
+        # forward creates without an explicit dtype follows the process-wide
+        # default, and the resulting mismatch only shows up in the backward.
+        # Leaving this to test ordering made it an intermittent xdist failure.
+        with default_dtype(torch.float64):
+            atoms.get_potential_energy()
         return calc.results["bec"]
 
     bec_neutral = stored_bec(True)

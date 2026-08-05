@@ -503,7 +503,11 @@ class MACELES(ScaleShiftMACE):
                         hasattr(self, "use_anisotropic_polarizability")
                         and self.use_anisotropic_polarizability
                     ):
-                        eye = torch.eye(3, device=node_alphas.device)
+                        eye = torch.eye(
+                            3,
+                            device=node_alphas.device,
+                            dtype=node_alphas.dtype,
+                        )
                         node_alphas = node_alphas.unsqueeze(-1).unsqueeze(
                             -1
                         ) * eye.unsqueeze(0)
@@ -543,7 +547,7 @@ class MACELES(ScaleShiftMACE):
             )
             # Make quads traceless:
             traces = les_quad.diagonal(dim1=-1, dim2=-2).sum(dim=1)
-            eye = torch.eye(3, device=les_quad.device)
+            eye = torch.eye(3, device=les_quad.device, dtype=les_quad.dtype)
             les_quad = les_quad - eye[None, :, :] * traces[:, None, None] / 3
         else:
             les_quad = None
