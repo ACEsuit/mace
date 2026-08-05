@@ -679,6 +679,26 @@ POLAR_COMPONENTS = {
 POLAR_CHECKPOINT_ATOL = {"float32": 5e-4, "float64": 5e-8}
 POLAR_COMPONENT_ATOL = {"float32": 5e-4, "float64": 1e-8}
 
+# The totals compared here are ~2.1e3, where one float32 ulp is 2.4e-4: the
+# absolute tolerances above are TWO ulps for those, which a float32 reduction
+# cannot be expected to survive, since thread count and BLAS kernel both
+# reorder it. The float64 legs agree to 2e-11 relative everywhere this has run
+# (macOS arm64, Linux x86_64, GitHub runners), so the code path is identical
+# and only float32 rounding differs. Add a relative term for the large
+# magnitudes; the absolute floors above still govern the small components, so
+# no comparison in this file gets tighter than it was.
+POLAR_CHECKPOINT_RTOL = {"float32": 1e-5, "float64": 0.0}
+POLAR_COMPONENT_RTOL = {"float32": 1e-5, "float64": 0.0}
+
+
+def _assert_energy_close(actual, expected, atol, rtol, label):
+    tolerance = atol + rtol * abs(expected)
+    delta = abs(actual - expected)
+    assert delta <= tolerance, (
+        f"{label}: got {actual!r}, expected {expected!r} "
+        f"(delta {delta:.3e} > tolerance {tolerance:.3e})"
+    )
+
 
 @pytest.mark.network
 @pytest.mark.parametrize("model_name, expected_energy", POLAR_MODELS)
@@ -696,7 +716,13 @@ def test_polar_checkpoint_evaluates(model_name, expected_energy):
 
     energy = atoms.get_potential_energy()
     assert np.isfinite(energy)
-    assert abs(float(energy) - expected_energy) < POLAR_CHECKPOINT_ATOL["float32"]
+    _assert_energy_close(
+        float(energy),
+        expected_energy,
+        POLAR_CHECKPOINT_ATOL["float32"],
+        POLAR_CHECKPOINT_RTOL["float32"],
+        f"{model_name} float32 checkpoint energy",
+    )
 
 
 @pytest.mark.network
@@ -715,7 +741,13 @@ def test_polar_checkpoint_evaluates_float64(model_name, expected_energy):
 
     energy = atoms.get_potential_energy()
     assert np.isfinite(energy)
-    assert abs(float(energy) - expected_energy) < POLAR_CHECKPOINT_ATOL["float64"]
+    _assert_energy_close(
+        float(energy),
+        expected_energy,
+        POLAR_CHECKPOINT_ATOL["float64"],
+        POLAR_CHECKPOINT_RTOL["float64"],
+        f"{model_name} float64 checkpoint energy",
+    )
 
 
 @pytest.mark.network
@@ -755,10 +787,17 @@ def test_polar_checkpoint_energy_components(dtype_name, dtype, model_name, _):
     }
     expected = POLAR_COMPONENTS[dtype_name][model_name]
     atol = POLAR_COMPONENT_ATOL[dtype_name]
+    rtol = POLAR_COMPONENT_RTOL[dtype_name]
 
     for key, expected_value in expected.items():
         assert np.isfinite(values[key])
-        assert abs(values[key] - expected_value) < atol
+        _assert_energy_close(
+            values[key],
+            expected_value,
+            atol,
+            rtol,
+            f"{model_name} {dtype_name} {key}",
+        )
 
 
 def test_polar_calculator_returns_fukui_functions_by_default():
