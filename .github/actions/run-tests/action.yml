@@ -91,6 +91,14 @@ runs:
                   --durations-path=tests/.test_durations )
         fi
         if [ "$IN_COVERAGE" = "true" ]; then
+          # PEP 669 monitoring instead of coverage's default C tracer. This is
+          # not a micro-optimisation: cuEquivariance's CPU fallback runs a
+          # torch.fx module of ~55k generated lines per forward, and the C
+          # tracer turns one tests/backends case from 96s into 1989s (20x),
+          # which is what pushed the nightly's full-scope job past its cap.
+          # Measured with sysmon: 98s, and byte-identical totals. Ignored
+          # without harm below 3.12, where sys.monitoring does not exist.
+          export COVERAGE_CORE=sysmon
           args+=( --cov=mace --cov-report=term --cov-report=xml --cov-report=html )
         fi
         if [ "$IN_STORE_DURATIONS" = "true" ]; then
