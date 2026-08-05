@@ -269,6 +269,7 @@ def mace_mp(
         default_dtype (str, optional): Default dtype for the model. Defaults to "float32".
         dispersion (bool, optional): Whether to use D3 dispersion corrections. Defaults to False.
         dispersion_damping (str): The damping function associated with the D3 correction. Defaults to "bj" for D3(BJ).
+            Also accepted under its former name, "damping".
         dispersion_xc (str, optional): Exchange-correlation functional for D3 dispersion corrections. Defaults to "pbe"
         dispersion_cutoff (float, optional): Cutoff radius in D3 dispersion corrections. Defaults to 40 * Bohr
         dispersion_coord_cutoff (float, optional): Cutoff radius for coordination number in D3 dispersion corrections. Defaults to 40 * Bohr
@@ -278,6 +279,14 @@ def mace_mp(
     Returns:
         MACECalculator: trained on the MPtrj dataset (unless model otherwise specified).
     """
+    # "damping" is the released name this argument had before it became
+    # dispersion_damping. It still arrives through **kwargs, which are also
+    # forwarded to TorchDFTD3Calculator, so without this it would collide
+    # with the explicit damping= there and raise a multiple-values TypeError.
+    damping_alias = kwargs.pop("damping", None)
+    if damping_alias is not None:
+        dispersion_damping = damping_alias
+
     try:
         if model in mace_mp_names or str(model).startswith("https:"):
             model_path = download_mace_mp_checkpoint(model)

@@ -562,7 +562,11 @@ class MACELES(ScaleShiftMACE):
             and self.make_alpha_positive
             and les_alpha is not None
         ):
-            if les_alpha.dim() == 2:
+            # dim 1 is the default isotropic case: the scalar readout is indexed
+            # as out[num_atoms_arange, node_heads], and advanced indexing with two
+            # 1-D index arrays collapses to [n_atoms]. Without it here the flag is
+            # a silent no-op on the default path and negative alphas reach Les.
+            if les_alpha.dim() in (1, 2):
                 les_alpha = les_alpha**2
             if (
                 les_alpha.dim() == 3
