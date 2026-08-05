@@ -1862,6 +1862,7 @@ class ScaleShiftBlock(torch.nn.Module):
         )
         return f"{self.__class__.__name__}(scale={formatted_scale}, shift={formatted_shift})"
 
+
 # LES-specific readout blocks
 class LinearLesReadoutBlock(torch.nn.Module):
     """Predicts a 3x3 polarizability tensor from equivariant features.
