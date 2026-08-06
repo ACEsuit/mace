@@ -917,3 +917,53 @@ def test_eval_configs_descriptors_for_scf_wrapped_models(tmp_path, magnetic_conf
     out = ase.io.read(str(output_path), index=":")
     assert len(out) == 2
     assert any("descriptor" in k.lower() for at in out for k in at.arrays)
+
+
+def test_hessian_refused_for_scf_wrapped_models():
+    """An SCF wrapper cannot give a hessian, and the inner one is not a substitute.
+
+    MagneticSCFMACE.forward takes no compute_hessian, so the request used to
+    surface as a bare TypeError from the forward call. Falling through to
+    magmom_mace would be worse than the error: that hessian holds the magnetic
+    moments fixed and so omits the dm*/dr term, making it the hessian of a
+    different energy than the one the calculator reports.
+    """
+    with default_dtype(torch.float32):
+        scf = MagneticSCFMACE(
+            model=_tiny_magnetic_model(), n_scf_step=2, scf_logging=False
+        )
+
+    atoms = Atoms(
+        numbers=[26, 26],
+        positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]],
+        cell=[6.0] * 3,
+        pbc=True,
+    )
+    atoms.arrays["REF_magmom"] = np.tile([[0.0, 0.0, 2.2]], (2, 1))
+    calc = MagneticMACECalculator(
+        models=[scf], device="cpu", default_dtype="float32", magmom_key="REF_magmom"
+    )
+
+    with pytest.raises(NotImplementedError, match="SCF-wrapped"):
+        calc.get_hessian(atoms=atoms)
+
+
+def test_hessian_still_works_for_plain_magnetic_models():
+    """The refusal must be scoped to wrappers, not to magnetic models at large."""
+    with default_dtype(torch.float32):
+        model = _tiny_magnetic_model()
+
+    atoms = Atoms(
+        numbers=[26, 26],
+        positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]],
+        cell=[6.0] * 3,
+        pbc=True,
+    )
+    atoms.arrays["REF_magmom"] = np.tile([[0.0, 0.0, 2.2]], (2, 1))
+    calc = MagneticMACECalculator(
+        models=[model], device="cpu", default_dtype="float32", magmom_key="REF_magmom"
+    )
+
+    hessian = calc.get_hessian(atoms=atoms)
+    assert hessian.shape == (3 * len(atoms), len(atoms), 3)
+    assert np.isfinite(hessian).all()
