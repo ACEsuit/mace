@@ -1988,6 +1988,28 @@ class MagneticSCFMACE(torch.nn.Module):
 
         self.cache_magmom = None
 
+    def __getattr__(self, name):
+        """Fall back to the wrapped model for anything this class does not define.
+
+        Otherwise the wrapper hides every attribute of the model it stands in
+        for -- heads, atomic_numbers, r_max, num_interactions, products, the
+        blocks -- and each consumer has to know to reach through magmom_mace.
+        Most do not, so SCF checkpoints fail in eval, export and fine-tuning;
+        the one that does, MagneticMACECalculator, spells it out six times.
+
+        nn.Module.__getattr__ runs first, so parameters, buffers and submodules
+        resolve normally and forward stays this class's own. _modules is read
+        out of __dict__ deliberately: during unpickling __getattr__ can fire
+        before it exists, and self.magmom_mace would recurse.
+        """
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            inner = self.__dict__.get("_modules", {}).get("magmom_mace")
+            if inner is None or name == "magmom_mace":
+                raise
+            return getattr(inner, name)
+
     def forward(
         self,
         data: Dict[str, torch.Tensor],
