@@ -14,6 +14,15 @@ directory and is tested in **two tiers**:
    is absent and *fails* in the CI job that guarantees it
    (`MACE_REQUIRE_CAPS`, see `tests/conftest.py`). Runs in `nightly.yaml`.
 
+What the real tier can cover is bounded by the binary CI can install, and for
+LAMMPS that bound is sharp: conda-forge builds every CPU variant with
+`PKG_KOKKOS=OFF`, and `forward_exchange` — the ghost node-feature exchange
+every interaction layer past the first needs — exists **only** in the KOKKOS
+ML-IAP coupling. So the real tier runs a *single-layer* model, the multi-layer
+path stays in the contract tier (`lammps/test_mliap_exchange.py`, which also
+pins the actionable error the non-KOKKOS case now raises), and no bump of the
+`lammps` package will change that.
+
 ## Adding integration X
 
 1. Create `tests/integrations/<x>/` with contract tests (and a `_harness.py`

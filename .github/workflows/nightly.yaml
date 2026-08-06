@@ -155,8 +155,24 @@ jobs:
     # THE project coverage number: full fixed CPU scope (network, cueq, polar,
     # les, torchsim, schedulefree), comparable night to night. The per-PR
     # coverage job measures only the deterministic PR slice by design.
+    #
+    # Sharded, one xdist worker per shard, because this is the ONLY job that
+    # installs every extra at once: extensions-refresh runs polar, les,
+    # torchsim and backends-cpu in separate jobs, and durations-refresh runs
+    # the same paths with `dev` alone, so they all skip the heavy ones. On
+    # 2026-08-06 the single job died at 87% with the runner itself killed
+    # ("the runner has received a shutdown signal") while one worker was in a
+    # cueq CPU-fallback polar case and the other was loading the omol
+    # foundation model. Shards bound both the concurrent peak and how much a
+    # single process accumulates; `[METRICS] mem/peak rss` in the log says
+    # which of the two it was, should it come back.
+    name: coverage-full (group ${{ matrix.split-group }})
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        split-group: [ 1, 2, 3 ]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
@@ -180,10 +196,48 @@ jobs:
           markers: not gpu and not benchmark
           require-caps: network,cueq,polar,les,torchsim,schedulefree
           allow-network: "true"
-          coverage: "true"
+          coverage: "data"
+          splits: "3"
+          group: ${{ matrix.split-group }}
+          numprocs: "1"
           timeout: "1200"
+      - name: Name this shard's coverage data
+        run: mv .coverage ".coverage.${{ matrix.split-group }}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-data-${{ matrix.split-group }}
+          path: .coverage.${{ matrix.split-group }}
+          retention-days: 7
+          # A dotfile, and upload-artifact skips hidden files by default --
+          # the same trap that silently emptied the durations upload.
+          include-hidden-files: true
+
+  coverage-report:
+    # Each shard measures a third of the suite: this is where the nightly
+    # coverage number is actually produced. Deliberately NOT `if: always()` --
+    # a report combined from a subset of the shards would read as the project
+    # number while missing whatever the failed shard covered.
+    needs: coverage-full
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # `coverage` alone, not the whole dev stack: combining and reporting
+      # needs the data files and the sources, not an importable mace.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "coverage[toml]"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-data-*
+          merge-multiple: true
+      - name: Combine the shards
+        run: |
+          coverage combine
+          coverage xml
+          coverage html
       - name: Coverage summary
-        if: always()
         run: |
           {
             echo '## Full-scope CPU coverage (nightly)'
@@ -192,7 +246,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
         with:
           name: coverage-full
           path: |

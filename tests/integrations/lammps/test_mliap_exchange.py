@@ -1,8 +1,10 @@
 import types
 
+import pytest
 import torch
 from e3nn import o3
 
+from mace.calculators.lammps_mliap_mace import LAMMPS_MLIAP_MACE
 from mace.modules import blocks
 from mace.modules.blocks import (
     RealAgnosticDensityResidualInteractionBlock,
@@ -125,3 +127,44 @@ def test_mliap_exchange_density_residual(monkeypatch):
     assert DummyMP.last_shape == (n_real + n_ghost, node_feat_dim)
     assert out.shape[0] == n_real
     assert sc.shape[0] == n_real
+
+
+class _StubMACE(torch.nn.Module):
+    """The metadata `MACEEdgeForcesWrapper` reads off a real MACE model."""
+
+    def __init__(self, num_interactions):
+        super().__init__()
+        self.register_buffer("atomic_numbers", torch.tensor([1, 8]))
+        self.register_buffer("r_max", torch.tensor(3.5))
+        self.register_buffer("num_interactions", torch.tensor(num_interactions))
+        self.lin = torch.nn.Linear(1, 1)
+
+
+def _mliap_data(**attrs):
+    """A stand-in for LAMMPS's MLIAPDataPy, with only the attributes named."""
+    return types.SimpleNamespace(elems=torch.zeros(3, dtype=torch.int64), **attrs)
+
+
+@pytest.mark.parametrize("num_interactions", [2, 3])
+def test_multilayer_without_forward_exchange_is_actionable(num_interactions):
+    # conda-forge's CPU LAMMPS builds with PKG_KOKKOS=OFF, so its MLIAPDataPy
+    # has no forward_exchange and a >1-layer model used to die on a bare
+    # AttributeError three frames deep in the second interaction block.
+    unified = LAMMPS_MLIAP_MACE(_StubMACE(num_interactions))
+    data = _mliap_data()
+
+    with pytest.raises(RuntimeError, match="PKG_KOKKOS"):
+        unified._check_ghost_exchange_support(data)  # pylint: disable=protected-access
+
+
+def test_single_layer_needs_no_forward_exchange():
+    # One layer never leaves the local atoms, which is what makes a stock
+    # non-KOKKOS build usable at all -- and what the real tier relies on.
+    unified = LAMMPS_MLIAP_MACE(_StubMACE(1))
+    unified._check_ghost_exchange_support(_mliap_data())  # pylint: disable=protected-access
+
+
+def test_multilayer_with_forward_exchange_is_accepted():
+    unified = LAMMPS_MLIAP_MACE(_StubMACE(2))
+    data = _mliap_data(forward_exchange=lambda *_: None)
+    unified._check_ghost_exchange_support(data)  # pylint: disable=protected-access
