@@ -13,6 +13,8 @@ from e3nn import o3
 from mace.calculators import MACECalculator, MagneticMACECalculator
 from mace.cli.eval_configs import run as mace_eval_configs_run
 from mace.cli.run_train import run as mace_run
+from mace.data import AtomicData, KeySpecification, config_from_atoms
+from mace.tools import torch_geometric, utils
 from mace.tools.arg_parser import build_default_arg_parser
 from mace.tools.torch_tools import default_dtype
 
@@ -465,7 +467,18 @@ def _build_small_magnetic_model(seed=42):
 
 
 def test_magnetic_mace_rotation_equivariance():
-    """Rotating positions and magmoms together by R leaves E invariant and rotates F, magforces by R."""
+    """Rotating positions and magmoms TOGETHER by R leaves E invariant and rotates F, magforces by R.
+
+    Together is the operative word. This model has spin-orbit coupling, so the
+    energy depends on how the spins are oriented relative to the lattice. Only
+    the joint rotation is a symmetry; rotating the spins while holding the
+    positions is expected to change the energy and is NOT tested here.
+
+    Spin-only invariance is the non-SOC property. It is not built into this
+    architecture, it is induced during training by --data_aug_magmom, which
+    rotates the moments while leaving the positions alone. Test that by
+    training with the augmentation, not by calling this model.
+    """
     model = _build_small_magnetic_model().eval()
     R = _random_rotation(seed=1)
 
@@ -492,7 +505,15 @@ def test_magnetic_mace_rotation_equivariance():
 
 
 def test_magnetic_mace_inversion_parity():
-    """Flipping both positions and magmoms leaves E invariant; forces and magforces flip with them."""
+    """Flipping BOTH positions and magmoms leaves E invariant; forces and magforces flip with them.
+
+    Note what this does not claim. Inverting the positions while holding the
+    spins is not a symmetry of an SOC model, and the energy does change under
+    it: magnetic moments are axial vectors, so a parity operation that flips
+    the lattice but not the spins alters their relative orientation, which is
+    exactly what the SOC term reads. See the rotation test above for how the
+    spin-only case is handled instead.
+    """
     model = _build_small_magnetic_model().eval()
 
     data = _make_magnetic_cluster_data()
@@ -668,3 +689,231 @@ def test_magnetic_check_state_tracks_magmoms(magnetic_configs):
 
     atoms.arrays["REF_magmom"] = atoms.arrays["REF_magmom"] + 0.5
     assert "REF_magmom" in calc.check_state(atoms)
+
+
+def test_eval_configs_unwraps_scf_wrapped_models(tmp_path, magnetic_configs):
+    """mace_eval_configs must read model metadata off the inner module.
+
+    MagneticSCFMACE wraps the real model in `magmom_mace` and keeps none of
+    heads / atomic_numbers / r_max on itself, so reading them off the loaded
+    object raised AttributeError for every SCF checkpoint. The ASE calculator
+    already unwrapped with getattr(model, "magmom_mace", model); the eval CLI
+    did not, so the two disagreed about what a loaded model looks like.
+    """
+    with default_dtype(torch.float32):
+        scf_model = MagneticSCFMACE(
+            model=_tiny_magnetic_model(), n_scf_step=2, scf_logging=False
+        )
+        model_path = tmp_path / "scf.model"
+        torch.save(scf_model, model_path)
+
+    # reachable after a save/load round trip, which is where a __getattr__ that
+    # touched self.magmom_mace instead of __dict__ would recurse
+    loaded = torch.load(model_path, map_location="cpu")
+    assert float(loaded.r_max) == float(loaded.magmom_mace.r_max)
+
+    ase.io.write(tmp_path / "fit.xyz", magnetic_configs[1:3])
+    output_path = tmp_path / "out.xyz"
+    args = argparse.Namespace(
+        model=str(model_path),
+        configs=str(tmp_path / "fit.xyz"),
+        output=str(output_path),
+        device="cpu",
+        default_dtype="float32",
+        batch_size=1,
+        compute_stress=False,
+        compute_bec=False,
+        enable_cueq=False,
+        return_contributions=False,
+        return_descriptors=False,
+        return_node_energies=False,
+        return_magforces=False,
+        magmom_key="REF_magmom",
+        info_prefix="MACE_",
+        head=None,
+    )
+    mace_eval_configs_run(args)
+
+    assert output_path.exists()
+    assert len(ase.io.read(str(output_path), index=":")) == 2
+
+
+def test_eval_configs_refuses_magforces_for_scf_models(tmp_path, magnetic_configs):
+    """SCF wrappers take no compute_magforces, so asking for it must say so.
+
+    MagneticSCFMACE.forward accepts only data/training/compute_force/
+    compute_virials/compute_stress/compute_displacement. Passing the flag
+    through would surface as a bare TypeError from the forward call.
+    """
+    with default_dtype(torch.float32):
+        model_path = tmp_path / "scf.model"
+        torch.save(
+            MagneticSCFMACE(
+                model=_tiny_magnetic_model(), n_scf_step=2, scf_logging=False
+            ),
+            model_path,
+        )
+
+    ase.io.write(tmp_path / "fit.xyz", magnetic_configs[1:2])
+    args = argparse.Namespace(
+        model=str(model_path),
+        configs=str(tmp_path / "fit.xyz"),
+        output=str(tmp_path / "out.xyz"),
+        device="cpu",
+        default_dtype="float32",
+        batch_size=1,
+        compute_stress=False,
+        compute_bec=False,
+        enable_cueq=False,
+        return_contributions=False,
+        return_descriptors=False,
+        return_node_energies=False,
+        return_magforces=True,
+        magmom_key="REF_magmom",
+        info_prefix="MACE_",
+        head=None,
+    )
+    with pytest.raises(ValueError, match="return_magforces"):
+        mace_eval_configs_run(args)
+
+
+def test_random_rotation_loader_over_real_atomic_data(magnetic_configs):
+    """Pin the augmentation's contract through the loader it is wired into.
+
+    --data_aug_magmom wraps the train loader with create_random_rotation_loader,
+    so every ASE sample passes through Random3DRotation as a real AtomicData.
+    Two things are easy to get wrong about that path and both have been:
+
+    1. Random3DRotation.forward assigns onto `data`, which reads like it
+       corrupts the dataset, since for the ASE path the dataset is a plain list
+       and __getitem__ returns the same object every epoch. It does not:
+       TransformedDataset calls the transform, and BaseTransform.__call__ is
+       `self.forward(copy.copy(data))`, so forward only ever sees a copy.
+    2. "Fixing" 1. by copying inside forward crashes, because AtomicData cannot
+       be cloned: Data.clone rebuilds via cls() and AtomicData.__init__ takes
+       27 required arguments.
+
+    So this asserts the stored samples come through untouched after repeated
+    epochs, without requiring forward itself to copy. A stub-based unit test
+    can see neither point, since it takes a different copy path.
+    """
+    pytest.importorskip(
+        "torch_geometric", reason="loader path needs real torch_geometric"
+    )
+    from mace.data.augmentation import create_random_rotation_loader
+
+    z_table = utils.AtomicNumberTable([26])
+    keyspec = KeySpecification(
+        info_keys={"energy": "REF_energy"},
+        arrays_keys={"magmom": "REF_magmom", "magforces": "REF_magforces"},
+    )
+    dataset = [
+        AtomicData.from_config(
+            config_from_atoms(at, key_specification=keyspec),
+            z_table=z_table,
+            cutoff=3.5,
+        )
+        for at in magnetic_configs[1:5]
+    ]
+    stored = [d.magmom.clone() for d in dataset]
+
+    base_loader = torch_geometric.dataloader.DataLoader(
+        dataset=dataset, batch_size=2, shuffle=False, drop_last=False
+    )
+    loader = create_random_rotation_loader(base_loader)
+
+    for _ in range(2):  # two epochs over the same underlying objects
+        batches = list(loader)
+        assert batches, "loader yielded nothing"
+        for batch in batches:
+            assert batch.magmom.shape[-1] == 3
+            assert torch.isfinite(batch.magmom).all()
+
+    for original, item in zip(stored, dataset):
+        assert torch.equal(item.magmom, original), "dataset sample was mutated"
+
+
+@pytest.mark.parametrize(
+    "attr",
+    [
+        "heads",
+        "atomic_numbers",
+        "r_max",
+        "num_interactions",
+        "products",
+        "interactions",
+        "radial_embedding",
+        "atomic_energies_fn",
+    ],
+)
+def test_scf_wrapper_delegates_inner_model_attributes(attr):
+    """The wrapper must answer for the model it wraps.
+
+    MagneticSCFMACE defines none of these: they live on magmom_mace. Without
+    delegation every consumer has to know that, and fixing them one report at
+    a time has already missed the eval CLI twice, first for heads /
+    atomic_numbers / r_max and then for the descriptors path's
+    num_interactions / products. Others are still reachable this way:
+    create_lammps_model and select_head read model.heads, and fine-tuning
+    reads model_foundation.interactions and .atomic_energies_fn.
+    """
+    scf = MagneticSCFMACE(
+        model=_tiny_magnetic_model(), n_scf_step=2, scf_logging=False
+    )
+    assert getattr(scf, attr) is getattr(scf.magmom_mace, attr)
+
+
+def test_scf_wrapper_keeps_its_own_forward_and_still_raises():
+    """Delegation must not swallow real mistakes or shadow the wrapper itself."""
+    scf = MagneticSCFMACE(
+        model=_tiny_magnetic_model(), n_scf_step=2, scf_logging=False
+    )
+    # forward is the wrapper's, not the inner model's
+    assert scf.forward.__func__ is MagneticSCFMACE.forward
+    # compute_magforces is still absent, which is why eval refuses it
+    import inspect
+
+    assert "compute_magforces" not in inspect.signature(scf.forward).parameters
+    with pytest.raises(AttributeError):
+        scf.definitely_not_a_real_attribute
+
+
+def test_eval_configs_descriptors_for_scf_wrapped_models(tmp_path, magnetic_configs):
+    """--return_descriptors needs num_interactions and products, both inner-only."""
+    with default_dtype(torch.float32):
+        model_path = tmp_path / "scf.model"
+        torch.save(
+            MagneticSCFMACE(
+                model=_tiny_magnetic_model(), n_scf_step=2, scf_logging=False
+            ),
+            model_path,
+        )
+
+    ase.io.write(tmp_path / "fit.xyz", magnetic_configs[1:3])
+    output_path = tmp_path / "out.xyz"
+    args = argparse.Namespace(
+        model=str(model_path),
+        configs=str(tmp_path / "fit.xyz"),
+        output=str(output_path),
+        device="cpu",
+        default_dtype="float32",
+        batch_size=1,
+        compute_stress=False,
+        compute_bec=False,
+        enable_cueq=False,
+        return_contributions=False,
+        return_descriptors=True,
+        descriptor_num_layers=-1,
+        descriptor_aggregation_method=None,
+        descriptor_invariants_only=True,
+        return_node_energies=False,
+        return_magforces=False,
+        magmom_key="REF_magmom",
+        info_prefix="MACE_",
+        head=None,
+    )
+    mace_eval_configs_run(args)
+
+    out = ase.io.read(str(output_path), index=":")
+    assert len(out) == 2
+    assert any("descriptor" in k.lower() for at in out for k in at.arrays)

@@ -25,6 +25,17 @@ class Random3DRotation(BaseTransform):
     """
     Apply a random SO(3) rotation to all magnetic moments in a configuration.
     A single rotation is applied per structure, preserving relative orientation.
+
+    This is how a spin-orbit-coupled model is taught the non-SOC symmetry: the
+    moments turn while the positions stay put, so training sees every
+    orientation of the spins against the same lattice.
+
+    Assigning to `data` below is deliberate and safe. Callers reach this through
+    BaseTransform.__call__, which is `self.forward(copy.copy(data))`, so the
+    object here is already a shallow copy and the dataset's own sample is never
+    touched. Do not add another copy: AtomicData cannot be cloned (Data.clone
+    rebuilds via cls(), and AtomicData.__init__ takes 27 required arguments),
+    and copying again would only cost a dict per sample per epoch.
     """
 
     def forward(self, data):

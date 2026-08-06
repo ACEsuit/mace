@@ -170,6 +170,16 @@ def run(args: argparse.Namespace) -> None:
     for param in model.parameters():
         param.requires_grad = False
 
+    # Model metadata needs no unwrapping: MagneticSCFMACE delegates attribute
+    # lookup to the model it wraps. Its forward signature is its own, though,
+    # and takes no compute_magforces.
+    if args.return_magforces and hasattr(model, "magmom_mace"):
+        raise ValueError(
+            "--return_magforces is not supported for SCF-wrapped magnetic models: "
+            f"{model.__class__.__name__}.forward does not accept compute_magforces. "
+            "Evaluate the underlying model instead."
+        )
+
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, index=":")
     if args.head is not None:
