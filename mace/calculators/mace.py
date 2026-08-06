@@ -866,14 +866,15 @@ class MACECalculator(Calculator):
                 "Only implemented for DipoleMACE or DipolePolarizabilityMACE models"
             )
         batch = self._atoms_to_batch(atoms)
-        outputs = [
-            model(
-                self._clone_batch(batch).to_dict(),
-                compute_dielectric_derivatives=True,
-                training=self.use_compile,
-            )
-            for model in self.models
-        ]
+        with torch_tools.default_dtype(self.default_dtype):
+            outputs = [
+                model(
+                    self._clone_batch(batch).to_dict(),
+                    compute_dielectric_derivatives=True,
+                    training=self.use_compile,
+                )
+                for model in self.models
+            ]
         dipole_derivatives = [
             output["dmu_dr"].clone().detach().cpu().numpy() for output in outputs
         ]
@@ -899,15 +900,16 @@ class MACECalculator(Calculator):
         if self.model_type not in ["MACE", "PolarMACE"]:
             raise NotImplementedError("Only implemented for MACE/PolarMACE models")
         batch = self._atoms_to_batch(atoms)
-        hessians = [
-            model(
-                self._clone_batch(batch).to_dict(),
-                compute_hessian=True,
-                compute_stress=False,
-                training=self.use_compile,
-            )["hessian"]
-            for model in self.models
-        ]
+        with torch_tools.default_dtype(self.default_dtype):
+            hessians = [
+                model(
+                    self._clone_batch(batch).to_dict(),
+                    compute_hessian=True,
+                    compute_stress=False,
+                    training=self.use_compile,
+                )["hessian"]
+                for model in self.models
+            ]
         hessians = [hessian.detach().cpu().numpy() for hessian in hessians]
         if self.num_models == 1:
             return hessians[0]
@@ -930,7 +932,10 @@ class MACECalculator(Calculator):
         if num_layers == -1:
             num_layers = num_interactions
         batch = self._atoms_to_batch(atoms)
-        descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+        with torch_tools.default_dtype(self.default_dtype):
+            descriptors = [
+                model(batch.to_dict())["node_feats"] for model in self.models
+            ]
 
         irreps_out = o3.Irreps(str(self.models[0].products[0].linear.irreps_out))
         l_max = irreps_out.lmax
@@ -1466,15 +1471,16 @@ class MagneticMACECalculator(Calculator):
                 "you want."
             )
         batch = self._atoms_to_batch(atoms)
-        hessians = [
-            model(
-                self._clone_batch(batch).to_dict(),
-                compute_hessian=True,
-                compute_stress=False,
-                training=self.use_compile,
-            )["hessian"]
-            for model in self.models
-        ]
+        with torch_tools.default_dtype(self.default_dtype):
+            hessians = [
+                model(
+                    self._clone_batch(batch).to_dict(),
+                    compute_hessian=True,
+                    compute_stress=False,
+                    training=self.use_compile,
+                )["hessian"]
+                for model in self.models
+            ]
         hessians = [hessian.detach().cpu().numpy() for hessian in hessians]
         if self.num_models == 1:
             return hessians[0]
@@ -1499,7 +1505,10 @@ class MagneticMACECalculator(Calculator):
         if num_layers == -1:
             num_layers = num_interactions
         batch = self._atoms_to_batch(atoms)
-        descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+        with torch_tools.default_dtype(self.default_dtype):
+            descriptors = [
+                model(batch.to_dict())["node_feats"] for model in self.models
+            ]
 
         irreps_out = o3.Irreps(
             str(
