@@ -1237,9 +1237,25 @@ class MagneticMACECalculator(Calculator):
                     return False
             return True
 
+        def _magmoms_equal(a, b) -> bool:
+            if a is None or b is None:
+                return a is None and b is None
+            a, b = np.asarray(a), np.asarray(b)
+            return a.shape == b.shape and bool(np.allclose(a, b, atol=tol, rtol=0.0))
+
         state = super().check_state(atoms, tol=tol)
         if (not state) and (not _infos_equal(self.atoms.info, atoms.info)):
             state.append("info")
+        # Magmoms are a primary input here, but they live under magmom_key
+        # (REF_magmom by default), which is not one of ASE's all_changes. Left
+        # unchecked, editing them in place returns the cached energy.
+        if (not state) and (
+            not _magmoms_equal(
+                self.atoms.arrays.get(self.magmom_key),
+                atoms.arrays.get(self.magmom_key),
+            )
+        ):
+            state.append(self.magmom_key)
         return state
 
     def _create_result_tensors(

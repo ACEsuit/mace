@@ -80,4 +80,5 @@ ignore-paths = [
 ]
 
 [tool.pylint.FORMAT]
-max-module-lines = 1500
+# Mirrored in .pre-commit-config.yaml; change both together.
+max-module-lines = 1600

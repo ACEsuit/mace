@@ -648,3 +648,23 @@ def test_magnetic_committee_rmax_mismatch_reports_values():
 
     with pytest.raises(ValueError, match="committee r_max are not all the same"):
         MagneticMACECalculator(models=[model_a, model_b], device="cpu")
+
+
+def test_magnetic_check_state_tracks_magmoms(magnetic_configs):
+    """Changing magmoms in place must invalidate the cached results.
+
+    magmom_key is REF_magmom, which is not one of ASE's all_changes, so the
+    base check_state did not see it and served stale energies and forces.
+    """
+    calc = MagneticMACECalculator(
+        models=[_tiny_magnetic_model()], device="cpu", default_dtype="float32"
+    )
+    atoms = magnetic_configs[1].copy()
+    atoms.calc = calc
+    atoms.get_potential_energy()
+
+    # nothing touched yet, so nothing to recompute
+    assert calc.check_state(atoms) == []
+
+    atoms.arrays["REF_magmom"] = atoms.arrays["REF_magmom"] + 0.5
+    assert "REF_magmom" in calc.check_state(atoms)
