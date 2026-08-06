@@ -1438,6 +1438,20 @@ class MagneticMACECalculator(Calculator):
             atoms = self.atoms
         if self.model_type != "MACE":
             raise NotImplementedError("Only implemented for MACE models")
+        # Refuse rather than fall through to magmom_mace. The wrapper's forward
+        # takes no compute_hessian, but the inner model's hessian is also a
+        # different quantity: it holds the moments fixed, so it drops the term
+        # coming from their relaxation, dm*/dr. Returning that under the name
+        # "hessian" would be silently wrong instead of loudly unsupported.
+        if any(hasattr(model, "magmom_mace") for model in self.models):
+            raise NotImplementedError(
+                "Hessians are not available for SCF-wrapped magnetic models "
+                "(MagneticSCFMACE). Its forward does not accept compute_hessian, "
+                "and the inner model's hessian holds the magnetic moments fixed, "
+                "so it is not the hessian of the self-consistent energy. Call the "
+                "inner magmom_mace directly if the fixed-moment hessian is what "
+                "you want."
+            )
         batch = self._atoms_to_batch(atoms)
         hessians = [
             model(
