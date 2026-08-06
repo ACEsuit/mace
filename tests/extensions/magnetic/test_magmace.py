@@ -634,3 +634,17 @@ def test_magnetic_calculator_converts_to_cueq_once(monkeypatch, tmp_path):
     )
 
     assert len(calls) == 1
+
+
+def test_magnetic_committee_rmax_mismatch_reports_values():
+    """A committee r_max mismatch must name the cutoffs, not raise TypeError.
+
+    The message interpolated ' '.join over a NumPy float array, so the real
+    configuration problem was hidden behind a TypeError.
+    """
+    model_a = _tiny_magnetic_model()
+    model_b = _tiny_magnetic_model()
+    model_b.r_max = torch.tensor(4.5)
+
+    with pytest.raises(ValueError, match="committee r_max are not all the same"):
+        MagneticMACECalculator(models=[model_a, model_b], device="cpu")

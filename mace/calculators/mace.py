@@ -286,7 +286,7 @@ class MACECalculator(Calculator):
         r_maxs = [model.r_max.cpu() for model in self.models]
         r_maxs = np.array(r_maxs)
         if not np.all(r_maxs == r_maxs[0]):
-            raise ValueError(f"committee r_max are not all the same {' '.join(r_maxs)}")
+            raise ValueError(f"committee r_max are not all the same {r_maxs.tolist()}")
         self.r_max = float(r_maxs[0])
 
         self.device = torch_tools.init_device(device)
@@ -1130,7 +1130,7 @@ class MagneticMACECalculator(Calculator):
         ]
         r_maxs = np.array(r_maxs)
         if not np.all(r_maxs == r_maxs[0]):
-            raise ValueError(f"committee r_max are not all the same {' '.join(r_maxs)}")
+            raise ValueError(f"committee r_max are not all the same {r_maxs.tolist()}")
         self.r_max = float(r_maxs[0])
 
         self.device = torch_tools.init_device(device)
