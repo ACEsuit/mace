@@ -303,6 +303,17 @@ def plot_epoch_dependence(
 # INFERENCE=========
 
 
+def belongs_to_head(name: str, head: str) -> bool:
+    """Whether a data-loader key belongs to `head`.
+
+    The two dicts are keyed differently: train and valid are `train_<head>`
+    and `valid_<head>`, test sets are `<head>_<set name>`. A plain `head in
+    name` substring test mis-assigns overlapping head names, giving every
+    H2O point to the H2 head as well.
+    """
+    return name in (f"train_{head}", f"valid_{head}") or name.startswith(f"{head}_")
+
+
 def plot_inference_from_results(
     axes: np.ndarray,
     train_valid_dict: dict,
@@ -326,7 +337,7 @@ def plot_inference_from_results(
             else:
                 fixed_color_train_valid = colors[0]
                 marker = "+"
-            if head not in name:
+            if not belongs_to_head(name, head):
                 continue
 
             # Initialize scatter to None
@@ -386,7 +397,7 @@ def plot_inference_from_results(
 
         # Plot test data (single legend entry per head)
         for name, result in test_dict.items():
-            if head not in name:
+            if not belongs_to_head(name, head):
                 continue
             # Initialize scatter to None to avoid possibly used before assignment
             scatter = None

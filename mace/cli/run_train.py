@@ -948,10 +948,11 @@ def run(args) -> None:
     if args.wandb:
         setup_wandb(args)
     if args.distributed:
-        # device_ids is only valid for single-device CUDA modules; CPU (gloo)
-        # requires device_ids=None.
+        # device_ids is only valid for single-device accelerator modules;
+        # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
+        # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
         distributed_model = DDP(
-            model, device_ids=[local_rank] if args.device == "cuda" else None
+            model, device_ids=[local_rank] if args.device in ("cuda", "xpu") else None
         )
     else:
         distributed_model = None
@@ -1119,7 +1120,7 @@ def run(args) -> None:
             for param in model.parameters():
                 param.requires_grad = True
             distributed_model = DDP(
-                model, device_ids=[local_rank] if args.device == "cuda" else None
+                model, device_ids=[local_rank] if args.device in ("cuda", "xpu") else None
             )
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
