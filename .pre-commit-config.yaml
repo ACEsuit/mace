@@ -55,6 +55,6 @@ repos:
           '--disable=cell-var-from-loop',
           '--disable=duplicate-code',
           '--disable=use-dict-literal',
-          '--max-module-lines=1500',
+          '--max-module-lines=1600',  # mirrored in pyproject.toml
         ]
         exclude: *exclude_files

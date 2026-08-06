@@ -286,7 +286,7 @@ class MACECalculator(Calculator):
         r_maxs = [model.r_max.cpu() for model in self.models]
         r_maxs = np.array(r_maxs)
         if not np.all(r_maxs == r_maxs[0]):
-            raise ValueError(f"committee r_max are not all the same {' '.join(r_maxs)}")
+            raise ValueError(f"committee r_max are not all the same {r_maxs.tolist()}")
         self.r_max = float(r_maxs[0])
 
         self.device = torch_tools.init_device(device)
@@ -696,11 +696,10 @@ class MACECalculator(Calculator):
             if getattr(self, "compute_bec", False):
                 model_kwargs["compute_bec"] = True
 
-            # Scoped, not just around batch construction: extensions build
-            # tensors during the forward without an explicit dtype (les does
-            # for its 3x3 identities), so they pick up the process-wide
-            # default. If that disagrees with the model, the mixed dtypes only
-            # surface in the backward, as a dtype error from a linalg op.
+            # Scoped here too, not only around batch construction: extensions
+            # create tensors mid-forward without a dtype (les does, for its
+            # 3x3 identities) and would follow the process-wide default. The
+            # mismatch then only surfaces in the backward, from a linalg op.
             with torch_tools.default_dtype(self.default_dtype):
                 out = model(batch_dict, **model_kwargs)
             if is_padded:
@@ -1005,16 +1004,14 @@ class MagneticMACECalculator(Calculator):
                 "MagneticMACECalculator has no hybrid cueq+oeq path, "
                 "enable only one of them"
             )
-        # Without these the converters are None and the call below fails as a
-        # TypeError on a NoneType rather than saying what is missing.
-        if enable_cueq and not CUEQQ_AVAILABLE:
-            raise ImportError(
-                "cuequivariance is not installed so CuEq acceleration cannot be used"
-            )
-        if enable_oeq and not OEQ_AVAILABLE:
-            raise ImportError(
-                "openequivariance is not installed so OEq acceleration cannot be used"
-            )
+        # Without this the converter is None and the call below is a
+        # TypeError on a NoneType instead of naming what is missing.
+        for requested, available, lib in (
+            (enable_cueq, CUEQQ_AVAILABLE, "cuequivariance"),
+            (enable_oeq, OEQ_AVAILABLE, "openequivariance"),
+        ):
+            if requested and not available:
+                raise ImportError(f"{lib} is not installed, cannot accelerate")
         if "model_path" in kwargs:
             deprecation_message = (
                 "'model_path' argument is deprecated, please use 'model_paths'"
@@ -1082,10 +1079,9 @@ class MagneticMACECalculator(Calculator):
                 raise ValueError("No mace file names supplied")
             self.num_models = len(model_paths)
 
-            # Load models from files. Acceleration is applied once further
-            # down, after the dtype conversion, and covers the `models=`
-            # branch too; converting here as well fed an already-converted
-            # model back into a converter that expects e3nn layout.
+            # No conversion here: it happens once further down, after the
+            # dtype change and for the `models=` branch too. Doing it twice
+            # fed a converted model to a converter expecting e3nn layout.
             self.models = [
                 torch.load(f=model_path, map_location=device)
                 for model_path in model_paths
@@ -1134,7 +1130,7 @@ class MagneticMACECalculator(Calculator):
         ]
         r_maxs = np.array(r_maxs)
         if not np.all(r_maxs == r_maxs[0]):
-            raise ValueError(f"committee r_max are not all the same {' '.join(r_maxs)}")
+            raise ValueError(f"committee r_max are not all the same {r_maxs.tolist()}")
         self.r_max = float(r_maxs[0])
 
         self.device = torch_tools.init_device(device)
@@ -1241,9 +1237,25 @@ class MagneticMACECalculator(Calculator):
                     return False
             return True
 
+        def _magmoms_equal(a, b) -> bool:
+            if a is None or b is None:
+                return a is None and b is None
+            a, b = np.asarray(a), np.asarray(b)
+            return a.shape == b.shape and bool(np.allclose(a, b, atol=tol, rtol=0.0))
+
         state = super().check_state(atoms, tol=tol)
         if (not state) and (not _infos_equal(self.atoms.info, atoms.info)):
             state.append("info")
+        # Magmoms are a primary input here, but they live under magmom_key
+        # (REF_magmom by default), which is not one of ASE's all_changes. Left
+        # unchecked, editing them in place returns the cached energy.
+        if (not state) and (
+            not _magmoms_equal(
+                self.atoms.arrays.get(self.magmom_key),
+                atoms.arrays.get(self.magmom_key),
+            )
+        ):
+            state.append(self.magmom_key)
         return state
 
     def _create_result_tensors(
