@@ -967,3 +967,56 @@ def test_hessian_still_works_for_plain_magnetic_models():
     hessian = calc.get_hessian(atoms=atoms)
     assert hessian.shape == (3 * len(atoms), len(atoms), 3)
     assert np.isfinite(hessian).all()
+
+
+def _fe_dimer():
+    atoms = Atoms(
+        numbers=[26, 26],
+        positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]],
+        cell=[6.0] * 3,
+        pbc=True,
+    )
+    atoms.arrays["REF_magmom"] = np.tile([[0.0, 0.0, 2.2]], (2, 1))
+    return atoms
+
+
+def test_magnetic_calculator_does_not_change_the_global_dtype():
+    """Constructing a calculator must not reach into the rest of the session.
+
+    It used to call torch_tools.set_default_dtype process-wide, so building a
+    float32 magnetic calculator silently reconfigured every other calculator
+    and every later tensor built from the default.
+    """
+    before = torch.get_default_dtype()
+    with default_dtype(torch.float64):
+        MagneticMACECalculator(
+            models=[_tiny_magnetic_model()],
+            device="cpu",
+            default_dtype="float32",
+            magmom_key="REF_magmom",
+        )
+        assert torch.get_default_dtype() is torch.float64
+    assert torch.get_default_dtype() is before
+
+
+def test_magnetic_calculator_runs_under_a_foreign_global_dtype():
+    """The forward must use the model's dtype, not whatever the process has set.
+
+    This is the failure #1619 fixed for MACECalculator: extensions build
+    tensors mid-forward without an explicit dtype and follow the global
+    default, and the mismatch only shows up in the backward as a dtype error
+    out of a linalg op.
+    """
+    with default_dtype(torch.float32):
+        model = _tiny_magnetic_model()
+
+    calc = MagneticMACECalculator(
+        models=[model], device="cpu", default_dtype="float32", magmom_key="REF_magmom"
+    )
+    atoms = _fe_dimer()
+    atoms.calc = calc
+
+    with default_dtype(torch.float64):  # hostile ambient dtype
+        energy = atoms.get_potential_energy()
+
+    assert np.isfinite(energy)
