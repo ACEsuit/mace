@@ -1020,3 +1020,63 @@ def test_magnetic_calculator_runs_under_a_foreign_global_dtype():
         energy = atoms.get_potential_energy()
 
     assert np.isfinite(energy)
+
+
+class _NoStressModel(torch.nn.Module):
+    """Wraps a magnetic model and drops stress from its output."""
+
+    def __init__(self, inner):
+        super().__init__()
+        self.inner = inner
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.__dict__["_modules"]["inner"], name)
+
+    def forward(self, *args, **kwargs):
+        out = self.inner(*args, **kwargs)
+        out["stress"] = None
+        return out
+
+
+def test_committee_stress_follows_the_first_member_not_the_last():
+    """Whether stress is published is decided by the first committee member.
+
+    That is the rule the rest of the code follows: MACECalculator's
+    _create_result_tensors only allocates a key when the first model's output
+    has it, and everything downstream reads ret_tensors. The magnetic copy
+    instead read `out` after the loop, which is the *last* member, so the two
+    disagreed whenever a committee was not uniform.
+
+    Not asserted here: what the mean should be when only some members produced
+    stress. MACECalculator averages in the zeros left in the unfilled slots,
+    and this now matches it rather than inventing a stricter rule.
+    """
+    with default_dtype(torch.float32):
+        good = _tiny_magnetic_model()
+        partial = _NoStressModel(_tiny_magnetic_model())
+
+    def stress_of(models):
+        atoms = Atoms(
+            numbers=[26, 26],
+            positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]],
+            cell=[6.0] * 3,
+            pbc=True,
+        )
+        atoms.arrays["REF_magmom"] = np.tile([[0.0, 0.0, 2.2]], (2, 1))
+        calc = MagneticMACECalculator(
+            models=models,
+            device="cpu",
+            default_dtype="float32",
+            magmom_key="REF_magmom",
+        )
+        atoms.calc = calc
+        atoms.get_potential_energy()
+        return "stress" in calc.results
+
+    # first member has stress -> published, whatever the last one did
+    assert stress_of([good, partial]) is True
+    # first member has none -> not published, even though the last one had it
+    assert stress_of([partial, good]) is False
