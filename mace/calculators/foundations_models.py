@@ -38,6 +38,19 @@ def _normalize_github_download_url(url: str) -> str:
     return normalized
 
 
+def _discard_cached_download(path):
+    """Remove a just-downloaded file that turned out not to be a checkpoint.
+
+    Only ever called for a path the caller has just created, since every call
+    site is guarded by `if not os.path.isfile(path)`, so this cannot delete a
+    model the user already had.
+    """
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def _urlretrieve_with_timeout(url, filename, timeout=_DOWNLOAD_TIMEOUT):
     """Download *url* to *filename* with a per-read socket timeout.
 
@@ -176,6 +189,12 @@ def download_mace_mp_checkpoint(model: Optional[Union[str, Path]] = None) -> str
         print(f"Downloading MACE model from {checkpoint_url!r}")
         _, http_msg = _urlretrieve_with_timeout(checkpoint_url, cached_model_path)
         if "Content-Type: text/html" in str(http_msg):
+            # The fetch succeeded at the HTTP layer, so the helper already
+            # renamed the body into place: an error page is now sitting where
+            # the checkpoint belongs. Leaving it there poisons the cache, since
+            # the isfile check above skips the download from then on and
+            # torch.load reports a zip-archive error instead of this one.
+            _discard_cached_download(cached_model_path)
             raise RuntimeError(
                 f"Model download failed, please check the URL {checkpoint_url}"
             )
@@ -218,6 +237,12 @@ def download_mace_polar_checkpoint(model: Union[str, Path]) -> str:
         print(f"Downloading MACE-Polar model from {checkpoint_url!r}")
         _, http_msg = _urlretrieve_with_timeout(checkpoint_url, cached_model_path)
         if "Content-Type: text/html" in str(http_msg):
+            # The fetch succeeded at the HTTP layer, so the helper already
+            # renamed the body into place: an error page is now sitting where
+            # the checkpoint belongs. Leaving it there poisons the cache, since
+            # the isfile check above skips the download from then on and
+            # torch.load reports a zip-archive error instead of this one.
+            _discard_cached_download(cached_model_path)
             raise RuntimeError(
                 f"Model download failed, please check the URL {checkpoint_url}"
             )
@@ -650,6 +675,9 @@ def mace_mdp(
                     checkpoint_url, cached_model_path
                 )
                 if "Content-Type: text/html" in str(http_msg):
+                    # See download_mace_mp_checkpoint: the body is already at
+                    # the cache path, and leaving it there poisons the cache.
+                    _discard_cached_download(cached_model_path)
                     raise RuntimeError(
                         f"Model download failed, please check the URL {checkpoint_url}"
                     )

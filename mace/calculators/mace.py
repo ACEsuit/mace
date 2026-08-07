@@ -1364,6 +1364,7 @@ class MagneticMACECalculator(Calculator):
         ret_tensors = self._create_result_tensors(
             self.model_type, self.num_models, len(atoms)
         )
+        stress_available = False
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
             # Scoped for the same reason as MACECalculator: extensions build
@@ -1381,6 +1382,8 @@ class MagneticMACECalculator(Calculator):
                 ret_tensors["forces"][i] = out["forces"].detach()
                 if out["stress"] is not None:
                     ret_tensors["stress"][i] = out["stress"].detach()
+                if i == 0:
+                    stress_available = out["stress"] is not None
             if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
                 ret_tensors["dipole"][i] = out["dipole"].detach()
             if "equilibrated_magmom" in out.keys():
@@ -1422,7 +1425,11 @@ class MagneticMACECalculator(Calculator):
                     * self.energy_units_to_eV
                     / self.length_units_to_A
                 )
-            if out["stress"] is not None:
+            # The first member decides, as in MACECalculator, where
+            # _create_result_tensors only allocates a key when the first
+            # model's output has it. Reading `out` here instead took the last
+            # member, since it outlives the loop.
+            if stress_available:
                 self.results["stress"] = full_3x3_to_voigt_6_stress(
                     torch.mean(ret_tensors["stress"], dim=0).cpu().numpy()
                     * self.energy_units_to_eV
