@@ -304,6 +304,22 @@ def fixture_pretraining_configs():
 _MAXRSS_TO_BYTES = 1 if sys.platform == "darwin" else 2**10
 
 
+def _peak_rss_gb():
+    """High-water mark of this process plus its reaped children, in GiB.
+
+    Children count because the workflow tests do their real work in
+    ``run_mace_train`` subprocesses.
+    """
+    return (
+        _MAXRSS_TO_BYTES
+        * (
+            resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            + resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+        )
+        / (2**30)
+    )
+
+
 def _mem_available_gb():
     """System-wide free memory, or None where /proc/meminfo does not exist.
 
@@ -322,22 +338,37 @@ def _mem_available_gb():
     return None
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_runtest_logreport(report):
-    """Prints a line about available disc space & test duration after each test."""
-    if report.when == "call":
-        _total, _used, free = shutil.disk_usage("/")
-        # Children too: the workflow tests do their real work in subprocesses.
-        peak = _MAXRSS_TO_BYTES * (
-            resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            + resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
-        )
-        mem_available = _mem_available_gb()
-        mem = "" if mem_available is None else f"mem: {mem_available:.3f}GB free, "
-        print(
-            f"\n[METRICS] "
-            f"{report.nodeid}: "
-            f"disc: {free / (2**30):.3f}GB free, "
-            f"{mem}"
-            f"peak rss: {peak / (2**30):.3f}GB, "
-            f"time: {report.duration:.2f}s"
-        )
+    """Print disc, memory and duration after each test.
+
+    Under xdist this hook fires in two processes: the worker that ran the
+    test, whose stdout never reaches the log, and then the controller, which
+    is the line you actually see. Only the worker's rusage describes the
+    test — a still-live child does not count towards the controller's
+    RUSAGE_CHILDREN, so measuring on the controller reports its own idle
+    footprint and the figure stays flat no matter what the test allocates.
+    So the worker stashes the numbers on the report (tryfirst, ahead of the
+    xdist hook that serialises it — `TestReport` round-trips unknown
+    attributes through its `**extra`) and the controller prints them.
+    """
+    if report.when != "call":
+        return
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        report.mace_peak_rss_gb = _peak_rss_gb()
+        report.mace_mem_available_gb = _mem_available_gb()
+        return
+    if hasattr(report, "mace_peak_rss_gb"):
+        peak, mem_available = report.mace_peak_rss_gb, report.mace_mem_available_gb
+    else:  # no xdist: this process is the one that ran the test
+        peak, mem_available = _peak_rss_gb(), _mem_available_gb()
+    _total, _used, free = shutil.disk_usage("/")
+    mem = "" if mem_available is None else f"mem: {mem_available:.3f}GB free, "
+    print(
+        f"\n[METRICS] "
+        f"{report.nodeid}: "
+        f"disc: {free / (2**30):.3f}GB free, "
+        f"{mem}"
+        f"peak rss: {peak:.3f}GB, "
+        f"time: {report.duration:.2f}s"
+    )
