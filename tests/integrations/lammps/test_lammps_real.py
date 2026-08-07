@@ -6,6 +6,15 @@ plugin compilation required. The native `pair_style mace` route needs a
 patched LAMMPS build and is intentionally out of scope here (containerized
 job, future work).
 
+The model here has ONE interaction layer, and that is not a size choice: past
+the first layer MACE asks LAMMPS to exchange ghost node features through
+`forward_exchange`, which exists only in the KOKKOS ML-IAP coupling
+(`src/KOKKOS/mliap_unified_couple_kokkos.pyx`). conda-forge builds LAMMPS with
+`PKG_KOKKOS=OFF` on every CPU variant, so no version of the package this job
+installs can run a multi-layer model — the ghost-exchange branch is covered in
+the contract tier instead (`test_mliap_exchange.py`), and the guard that turns
+the multi-layer case into an actionable error is tested there too.
+
 Capability `bin_lammps`: skipped wherever LAMMPS is absent, enforced
 (skip=fail) in the nightly job that installs it. The mliap export also needs
 cueq (the exporter converts to the cueq layout).
@@ -26,9 +35,9 @@ pytestmark = [pytest.mark.bin_lammps, pytest.mark.cueq]
 
 
 @pytest.fixture(name="mliap_artifact")
-def fixture_mliap_artifact(trained_tiny_model_path, tmp_path):
+def fixture_mliap_artifact(trained_tiny_1layer_model_path, tmp_path):
     dest = tmp_path / "tiny.model"
-    shutil.copy(trained_tiny_model_path, dest)
+    shutil.copy(trained_tiny_1layer_model_path, dest)
     run_mace_train(
         {"format": "mliap"}, extra_argv=[str(dest)], script=CREATE_LAMMPS_MODEL
     )

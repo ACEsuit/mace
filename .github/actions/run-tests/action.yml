@@ -34,7 +34,10 @@ inputs:
     required: false
     default: ""
   coverage:
-    description: Collect coverage (term + xml + html reports)
+    description: >
+      "true" collects coverage and writes the term + xml + html reports;
+      "data" collects it and writes only the `.coverage` data file, for a
+      sharded job that combines the shards and reports once.
     required: false
     default: "false"
   store-durations:
@@ -90,7 +93,7 @@ runs:
                   --splitting-algorithm=least_duration \
                   --durations-path=tests/.test_durations )
         fi
-        if [ "$IN_COVERAGE" = "true" ]; then
+        if [ "$IN_COVERAGE" != "false" ]; then
           # PEP 669 monitoring instead of coverage's default C tracer. This is
           # not a micro-optimisation: cuEquivariance's CPU fallback runs a
           # torch.fx module of ~55k generated lines per forward, and the C
@@ -99,7 +102,13 @@ runs:
           # Measured with sysmon: 98s, and byte-identical totals. Ignored
           # without harm below 3.12, where sys.monitoring does not exist.
           export COVERAGE_CORE=sysmon
-          args+=( --cov=mace --cov-report=term --cov-report=xml --cov-report=html )
+          args+=( --cov=mace )
+          if [ "$IN_COVERAGE" = "data" ]; then
+            # Empty --cov-report: keep only .coverage, for the combining job.
+            args+=( --cov-report= )
+          else
+            args+=( --cov-report=term --cov-report=xml --cov-report=html )
+          fi
         fi
         if [ "$IN_STORE_DURATIONS" = "true" ]; then
           args+=( --store-durations --durations-path=tests/.test_durations )
