@@ -112,11 +112,18 @@ def get_symmetric_displacement(
     )
     cell = cell.view(-1, 3, 3)
     cell = cell + torch.matmul(cell, symmetric_displacement)
-    shifts = torch.einsum(
-        "be,bec->bc",
-        unit_shifts,
-        cell[batch[sender]],
-    )
+    if num_graphs == 1:
+        shifts = torch.einsum(
+                "be,ec->bc",
+                unit_shifts,
+                cell[0],
+            )
+    else:
+        shifts = torch.einsum(
+            "be,bec->bc",
+            unit_shifts,
+            cell[batch[sender]],
+        )
     return positions, shifts, displacement
 
 
