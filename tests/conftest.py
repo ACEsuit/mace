@@ -1,6 +1,8 @@
 import importlib.util
 import os
+import resource
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -129,7 +131,13 @@ _DIR_MARKERS = {
 }
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):  # pylint: disable=unused-argument
+    # tryfirst for two reasons, both silent when wrong: the directory-derived
+    # markers below must exist before the builtin mark plugin applies `-m`,
+    # and the zero-collection guard at the end must see the WHOLE collection,
+    # before pytest-split deselects the other shards' tests -- otherwise a
+    # sharded job fails on whichever capability did not land in its group.
     for item in items:
         try:
             rel = Path(item.path).relative_to(_TESTS_DIR).parts[:-1]
@@ -231,6 +239,40 @@ def fixture_trained_tiny_model_path(tmp_path_factory):
     return model_path
 
 
+@pytest.fixture(scope="session", name="trained_tiny_1layer_model_path")
+def fixture_trained_tiny_1layer_model_path(tmp_path_factory):
+    """`trained_tiny_model_path` with a single interaction layer.
+
+    Same purpose and cost, one message-passing layer instead of two, so the
+    forward never asks LAMMPS to exchange ghost node features. That is what
+    makes the real-tier ML-IAP test runnable against a stock (non-KOKKOS)
+    LAMMPS build -- see `mace.calculators.lammps_mliap_mace`.
+    """
+    import ase.io
+
+    from tests.helpers import base_mace_params, make_fitting_configs, run_mace_train
+
+    tmp = tmp_path_factory.mktemp("tiny_1layer_model")
+    ase.io.write(tmp / "fit.xyz", make_fitting_configs())
+    params = base_mace_params()
+    params.update(
+        {
+            "name": "tiny1l",
+            "hidden_irreps": "16x0e + 16x1o",
+            "num_interactions": 1,
+            "checkpoints_dir": str(tmp),
+            "model_dir": str(tmp),
+            "train_file": str(tmp / "fit.xyz"),
+            "max_num_epochs": 6,
+            "start_swa": 4,
+        }
+    )
+    run_mace_train(params)
+    model_path = tmp / "tiny1l.model"
+    assert model_path.exists()
+    return model_path
+
+
 @pytest.fixture(name="pretraining_configs")
 def fixture_pretraining_configs():
     configs = []
@@ -258,13 +300,75 @@ def fixture_pretraining_configs():
     return configs
 
 
-def pytest_runtest_logreport(report):
-    """Prints a line about available disc space & test duration after each test."""
-    if report.when == "call":
-        _total, _used, free = shutil.disk_usage("/")
-        print(
-            f"\n[METRICS] "
-            f"{report.nodeid}: "
-            f"disc: {free / (2**30):.3f}GB free, "
-            f"time: {report.duration:.2f}s"
+# ru_maxrss is in bytes on macOS and in kilobytes on Linux.
+_MAXRSS_TO_BYTES = 1 if sys.platform == "darwin" else 2**10
+
+
+def _peak_rss_gb():
+    """High-water mark of this process plus its reaped children, in GiB.
+
+    Children count because the workflow tests do their real work in
+    ``run_mace_train`` subprocesses.
+    """
+    return (
+        _MAXRSS_TO_BYTES
+        * (
+            resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            + resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
         )
+        / (2**30)
+    )
+
+
+def _mem_available_gb():
+    """System-wide free memory, or None where /proc/meminfo does not exist.
+
+    The counterpart of the disc figure below: a CI runner that is killed
+    outright ("the runner has received a shutdown signal") leaves no other
+    trace of having run out of memory, and per-test peak RSS alone cannot
+    tell a big-but-fine test from the one that crossed the line.
+    """
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) / (2**20)
+    except OSError:
+        pass
+    return None
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_logreport(report):
+    """Print disc, memory and duration after each test.
+
+    Under xdist this hook fires in two processes: the worker that ran the
+    test, whose stdout never reaches the log, and then the controller, which
+    is the line you actually see. Only the worker's rusage describes the
+    test — a still-live child does not count towards the controller's
+    RUSAGE_CHILDREN, so measuring on the controller reports its own idle
+    footprint and the figure stays flat no matter what the test allocates.
+    So the worker stashes the numbers on the report (tryfirst, ahead of the
+    xdist hook that serialises it — `TestReport` round-trips unknown
+    attributes through its `**extra`) and the controller prints them.
+    """
+    if report.when != "call":
+        return
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        report.mace_peak_rss_gb = _peak_rss_gb()
+        report.mace_mem_available_gb = _mem_available_gb()
+        return
+    if hasattr(report, "mace_peak_rss_gb"):
+        peak, mem_available = report.mace_peak_rss_gb, report.mace_mem_available_gb
+    else:  # no xdist: this process is the one that ran the test
+        peak, mem_available = _peak_rss_gb(), _mem_available_gb()
+    _total, _used, free = shutil.disk_usage("/")
+    mem = "" if mem_available is None else f"mem: {mem_available:.3f}GB free, "
+    print(
+        f"\n[METRICS] "
+        f"{report.nodeid}: "
+        f"disc: {free / (2**30):.3f}GB free, "
+        f"{mem}"
+        f"peak rss: {peak:.3f}GB, "
+        f"time: {report.duration:.2f}s"
+    )
