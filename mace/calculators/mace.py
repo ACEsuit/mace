@@ -866,14 +866,15 @@ class MACECalculator(Calculator):
                 "Only implemented for DipoleMACE or DipolePolarizabilityMACE models"
             )
         batch = self._atoms_to_batch(atoms)
-        outputs = [
-            model(
-                self._clone_batch(batch).to_dict(),
-                compute_dielectric_derivatives=True,
-                training=self.use_compile,
-            )
-            for model in self.models
-        ]
+        with torch_tools.default_dtype(self.default_dtype):
+            outputs = [
+                model(
+                    self._clone_batch(batch).to_dict(),
+                    compute_dielectric_derivatives=True,
+                    training=self.use_compile,
+                )
+                for model in self.models
+            ]
         dipole_derivatives = [
             output["dmu_dr"].clone().detach().cpu().numpy() for output in outputs
         ]
@@ -899,15 +900,16 @@ class MACECalculator(Calculator):
         if self.model_type not in ["MACE", "PolarMACE"]:
             raise NotImplementedError("Only implemented for MACE/PolarMACE models")
         batch = self._atoms_to_batch(atoms)
-        hessians = [
-            model(
-                self._clone_batch(batch).to_dict(),
-                compute_hessian=True,
-                compute_stress=False,
-                training=self.use_compile,
-            )["hessian"]
-            for model in self.models
-        ]
+        with torch_tools.default_dtype(self.default_dtype):
+            hessians = [
+                model(
+                    self._clone_batch(batch).to_dict(),
+                    compute_hessian=True,
+                    compute_stress=False,
+                    training=self.use_compile,
+                )["hessian"]
+                for model in self.models
+            ]
         hessians = [hessian.detach().cpu().numpy() for hessian in hessians]
         if self.num_models == 1:
             return hessians[0]
@@ -930,7 +932,10 @@ class MACECalculator(Calculator):
         if num_layers == -1:
             num_layers = num_interactions
         batch = self._atoms_to_batch(atoms)
-        descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+        with torch_tools.default_dtype(self.default_dtype):
+            descriptors = [
+                model(batch.to_dict())["node_feats"] for model in self.models
+            ]
 
         irreps_out = o3.Irreps(str(self.models[0].products[0].linear.irreps_out))
         l_max = irreps_out.lmax
@@ -1194,7 +1199,12 @@ class MagneticMACECalculator(Calculator):
                 self.models = [model.double() for model in self.models]
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
-        torch_tools.set_default_dtype(default_dtype)
+        # Recorded, not applied process-wide. Setting the global dtype here
+        # would reach every other calculator in the session, and would still
+        # leave this one running at whatever dtype happened to be current by
+        # the time it is called. It is scoped around batch construction and
+        # the forward instead, as MACECalculator does.
+        self.default_dtype = default_dtype
         if enable_cueq:
             logging.info("Converting models to CuEq for acceleration")
             self.models = [
@@ -1297,23 +1307,27 @@ class MagneticMACECalculator(Calculator):
         keyspec = mace_data.KeySpecification(
             info_keys=self.info_keys, arrays_keys=self.arrays_keys
         )
-        config = mace_data.config_from_atoms(
-            atoms, key_specification=keyspec, head_name=self.head
-        )
-        data_loader = torch_geometric.dataloader.DataLoader(
-            dataset=[
-                mace_data.AtomicData.from_config(
-                    config,
-                    z_table=self.z_table,
-                    cutoff=self.r_max,
-                    heads=self.available_heads,
-                )
-            ],
-            batch_size=1,
-            shuffle=False,
-            drop_last=False,
-        )
-        batch = next(iter(data_loader)).to(self.device)
+        # The scope has to cover AtomicData.from_config too, not just the
+        # config: that is where the tensors are built, and it reads the
+        # process-wide default dtype for every one of them.
+        with torch_tools.default_dtype(self.default_dtype):
+            config = mace_data.config_from_atoms(
+                atoms, key_specification=keyspec, head_name=self.head
+            )
+            data_loader = torch_geometric.dataloader.DataLoader(
+                dataset=[
+                    mace_data.AtomicData.from_config(
+                        config,
+                        z_table=self.z_table,
+                        cutoff=self.r_max,
+                        heads=self.available_heads,
+                    )
+                ],
+                batch_size=1,
+                shuffle=False,
+                drop_last=False,
+            )
+            batch = next(iter(data_loader)).to(self.device)
         return batch
 
     def _clone_batch(self, batch):
@@ -1352,11 +1366,15 @@ class MagneticMACECalculator(Calculator):
         )
         for i, model in enumerate(self.models):
             batch = self._clone_batch(batch_base)
-            out = model(
-                batch.to_dict(),
-                compute_stress=compute_stress,
-                training=self.use_compile,
-            )
+            # Scoped for the same reason as MACECalculator: extensions build
+            # tensors mid-forward without an explicit dtype, and would follow
+            # the process-wide default instead of the model's.
+            with torch_tools.default_dtype(self.default_dtype):
+                out = model(
+                    batch.to_dict(),
+                    compute_stress=compute_stress,
+                    training=self.use_compile,
+                )
             if self.model_type in ["MACE", "EnergyDipoleMACE"]:
                 ret_tensors["energies"][i] = out["energy"].detach()
                 ret_tensors["node_energy"][i] = (out["node_energy"] - node_e0).detach()
@@ -1453,15 +1471,16 @@ class MagneticMACECalculator(Calculator):
                 "you want."
             )
         batch = self._atoms_to_batch(atoms)
-        hessians = [
-            model(
-                self._clone_batch(batch).to_dict(),
-                compute_hessian=True,
-                compute_stress=False,
-                training=self.use_compile,
-            )["hessian"]
-            for model in self.models
-        ]
+        with torch_tools.default_dtype(self.default_dtype):
+            hessians = [
+                model(
+                    self._clone_batch(batch).to_dict(),
+                    compute_hessian=True,
+                    compute_stress=False,
+                    training=self.use_compile,
+                )["hessian"]
+                for model in self.models
+            ]
         hessians = [hessian.detach().cpu().numpy() for hessian in hessians]
         if self.num_models == 1:
             return hessians[0]
@@ -1486,7 +1505,10 @@ class MagneticMACECalculator(Calculator):
         if num_layers == -1:
             num_layers = num_interactions
         batch = self._atoms_to_batch(atoms)
-        descriptors = [model(batch.to_dict())["node_feats"] for model in self.models]
+        with torch_tools.default_dtype(self.default_dtype):
+            descriptors = [
+                model(batch.to_dict())["node_feats"] for model in self.models
+            ]
 
         irreps_out = o3.Irreps(
             str(
