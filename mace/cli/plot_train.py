@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import dataclasses
 import glob
@@ -6,11 +8,21 @@ import os
 import re
 from typing import List
 
-import matplotlib.pyplot as plt
-import pandas as pd
+# matplotlib/pandas are not mace-torch dependencies: guard the import so the
+# console entry point resolves (and --help works) in a clean install, and
+# main() can explain what to install instead of crashing with ImportError.
+try:
+    import matplotlib.pyplot as plt
+    import pandas as pd
 
-plt.rcParams.update({"font.size": 8})
-plt.style.use("seaborn-v0_8-paper")
+    plt.rcParams.update({"font.size": 8})
+    plt.style.use("seaborn-v0_8-paper")
+
+    PLOT_DEPS_AVAILABLE = True
+except ImportError:
+    plt = None
+    pd = None
+    PLOT_DEPS_AVAILABLE = False
 
 
 colors = [
@@ -313,6 +325,11 @@ def get_paths(path: str) -> List[str]:
 
 
 def main() -> None:
+    if not PLOT_DEPS_AVAILABLE:
+        raise SystemExit(
+            "mace_plot_train requires matplotlib and pandas: "
+            "pip install matplotlib pandas"
+        )
     args = parse_args()
     run(args)
 

@@ -75,9 +75,16 @@ def valid_err_log(
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
         error_stress = eval_metrics["rmse_stress"] * 1e3
-        logging.info(
-            f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3",
+        errors_magforces = None
+        if "rmse_magf" in eval_metrics.keys():
+            errors_magforces = eval_metrics["rmse_magf"] * 1e3
+        msg = f"{inintial_phrase}: head: {valid_loader_name}, loss={valid_loss:8.8f}, RMSE_E_per_atom={error_e:8.2f} meV, RMSE_F={error_f:8.2f} meV / A, RMSE_stress={error_stress:8.2f} meV / A^3"
+        msg += (
+            f", RMSE_magforces={errors_magforces:8.2f} meV / μB"
+            if errors_magforces is not None
+            else ""
         )
+        logging.info(msg)
     elif (
         log_errors == "PerAtomRMSEstressvirials"
         and eval_metrics["rmse_virials_per_atom"] is not None
@@ -172,6 +179,7 @@ def train(
     distributed_model: Optional[DistributedDataParallel] = None,
     train_sampler: Optional[DistributedSampler] = None,
     rank: Optional[int] = 0,
+    data_aug_magmom: Optional[bool] = False,
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
@@ -206,6 +214,13 @@ def train(
 
     # variable used for broadcast by rank == 0 if epoch loop is exited early, e.g. patience
     exit_now = torch.zeros(1, device=device) if distributed else None
+
+    if data_aug_magmom:
+        # pylint: disable=cyclic-import
+        from mace.data.augmentation import create_random_rotation_loader
+
+        train_loader = create_random_rotation_loader(train_loader)
+
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
@@ -229,6 +244,7 @@ def train(
             train_sampler.set_epoch(epoch)
         if "ScheduleFree" in type(optimizer).__name__:
             optimizer.train()
+
         train_one_epoch(
             model=model,
             loss_fn=loss_fn,
@@ -415,13 +431,15 @@ def take_step(
 
     def closure():
         optimizer.zero_grad(set_to_none=True)
-        output = model(
-            batch_dict,
+        kwargs = dict(
             training=True,
             compute_force=output_args["forces"],
             compute_virials=output_args["virials"],
             compute_stress=output_args["stress"],
         )
+        if output_args.get("magforces", False):
+            kwargs["compute_magforces"] = True
+        output = model(batch_dict, **kwargs)
         loss = loss_fn(pred=output, ref=batch)
         loss.backward()
         if max_grad_norm is not None:
@@ -486,16 +504,18 @@ def take_step_lbfgs(
         total_loss = torch.tensor(0.0, device=device)
 
         # Process each batch and then collect the results we pass to the optimizer
+        kwargs = dict(
+            training=True,
+            compute_force=output_args["forces"],
+            compute_virials=output_args["virials"],
+            compute_stress=output_args["stress"],
+        )
+        if output_args.get("magforces", False):
+            kwargs["compute_magforces"] = True
         for batch in data_loader:
             batch = batch.to(device)
             batch_dict = batch.to_dict()
-            output = model(
-                batch_dict,
-                training=True,
-                compute_force=output_args["forces"],
-                compute_virials=output_args["virials"],
-                compute_stress=output_args["stress"],
-            )
+            output = model(batch_dict, **kwargs)
             batch_loss = loss_fn(pred=output, ref=batch)
             batch_loss = batch_loss * (batch.num_graphs / total_sample_count)
 
@@ -571,13 +591,15 @@ def evaluate(
         for batch in data_loader:
             batch = batch.to(device)
             batch_dict = batch.to_dict()
-            output = model(
-                batch_dict,
+            kwargs = dict(
                 training=False,
                 compute_force=output_args["forces"],
                 compute_virials=output_args["virials"],
                 compute_stress=output_args["stress"],
             )
+            if output_args.get("magforces", False):
+                kwargs["compute_magforces"] = True
+            output = model(batch_dict, **kwargs)
             avg_loss, aux = metrics(batch, output)
     avg_loss, aux = metrics.compute()
     aux["time"] = time.time() - start_time
@@ -619,6 +641,12 @@ class MACELoss(Metric):
             "delta_polarizability_per_atom", default=[], dist_reduce_fx="cat"
         )
 
+        self.add_state(
+            "MagFs_computed", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.add_state("MagFs", default=[], dist_reduce_fx="cat")
+        self.add_state("delta_MagFs", default=[], dist_reduce_fx="cat")
+
     def update(self, batch, output):  # pylint: disable=arguments-differ
         loss = self.loss_fn(pred=output, ref=batch)
         self.total_loss += loss
@@ -640,6 +668,17 @@ class MACELoss(Metric):
                 self.delta_fs,
                 batch.weight,
                 batch.forces_weight,
+                spread_atoms=True,
+            )
+
+        if output.get("magforces") is not None and batch.magforces is not None:
+            self.MagFs.append(batch.magforces)
+            self.delta_MagFs.append(batch.magforces - output["magforces"])
+            self.MagFs_computed += filter_nonzero_weight(
+                batch,
+                self.delta_MagFs,
+                batch.weight,
+                batch.magforces_weight,
                 spread_atoms=True,
             )
         if output.get("stress") is not None and batch.stress is not None:
@@ -727,6 +766,14 @@ class MACELoss(Metric):
             aux["rmse_f"] = compute_rmse(delta_fs)
             aux["rel_rmse_f"] = compute_rel_rmse(delta_fs, fs)
             aux["q95_f"] = compute_q95(delta_fs)
+        if self.MagFs_computed:
+            MagFs = self.convert(self.MagFs)
+            delta_MagFs = self.convert(self.delta_MagFs)
+            aux["mae_magf"] = compute_mae(delta_MagFs)
+            aux["rel_mae_magf"] = compute_rel_mae(delta_MagFs, MagFs)
+            aux["rmse_magf"] = compute_rmse(delta_MagFs)
+            aux["rel_rmse_magf"] = compute_rel_rmse(delta_MagFs, MagFs)
+            aux["q95_magf"] = compute_q95(delta_MagFs)
         if self.stress_computed:
             delta_stress = self.convert(self.delta_stress)
             aux["mae_stress"] = compute_mae(delta_stress)
