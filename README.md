@@ -6,6 +6,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/issues/)
 [![Documentation Status](https://readthedocs.org/projects/mace/badge/)](https://mace-docs.readthedocs.io/en/latest/)
 [![DOI](https://zenodo.org/badge/505964914.svg)](https://doi.org/10.5281/zenodo.14103332)
+[![Coverage](https://coveralls.io/repos/github/ElliottKasoar/mace/badge.svg?branch=develop)](https://coveralls.io/github/ElliottKasoar/mace/?branch=main)
 
 ## Table of contents
 
