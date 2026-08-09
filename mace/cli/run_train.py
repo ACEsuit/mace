@@ -945,7 +945,8 @@ def run(args) -> None:
             if opt_start_epoch is not None:
                 start_epoch = opt_start_epoch
 
-    if args.wandb:
+    log_wandb = args.wandb and rank == 0
+    if log_wandb:
         setup_wandb(args)
     if args.distributed:
         # device_ids is only valid for single-device accelerator modules;
@@ -988,6 +989,11 @@ def run(args) -> None:
 
     if args.dry_run:
         logging.info("DRY RUN mode enabled. Stopping now.")
+        if args.distributed and torch.distributed.is_initialized():
+            try:
+                torch.distributed.destroy_process_group()
+            except Exception as e:  # pylint: disable=W0703
+                logging.debug(f"Failed to destroy process group during dry run: {e}")
         return
 
     if args.device == "xpu":
@@ -1019,7 +1025,7 @@ def run(args) -> None:
         ema=ema,
         max_grad_norm=args.clip_grad,
         log_errors=args.error_table,
-        log_wandb=args.wandb,
+        log_wandb=log_wandb,
         distributed=args.distributed,
         distributed_model=distributed_model,
         plotter=plotter,
@@ -1200,7 +1206,7 @@ def run(args) -> None:
             model=model_to_evaluate,
             loss_fn=loss_fn,
             output_args=output_args,
-            log_wandb=args.wandb,
+            log_wandb=log_wandb,
             device=device,
             distributed=args.distributed,
             skip_heads=skip_heads,
@@ -1214,7 +1220,7 @@ def run(args) -> None:
                 model=model_to_evaluate,
                 loss_fn=loss_fn,
                 output_args=output_args,
-                log_wandb=args.wandb,
+                log_wandb=log_wandb,
                 device=device,
                 distributed=args.distributed,
             )
