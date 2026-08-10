@@ -21,10 +21,23 @@ python3 tests/golden/check_inventory.py     # prints "all sources covered"
 | feature | the option strings / class / key, plus any gloss |
 | source | `file:line` of the declaration |
 | disposition | `KEEP` · `MERGE` · `DROP`, optionally followed by ` — reason`. `DROP` **must** carry one |
-| pinned by | the Phase 0 test or existing test that protects the behaviour, or `⚠️ gap` |
+| pinned by | the Phase 0 test or existing test that protects the behaviour, or `⚠️ gap`. Must **resolve**: see below |
 | destination | the v1 ticket that carries the capability |
 | retirement | the `RET-*` that deletes the legacy implementation, or `n/a — why` |
 | status | `todo` until an implementing ticket lands it, then `done` |
+
+**A pin has to resolve.** "Not empty" is not a rule: it accepts the literal string `TODO`, and the
+gate then finishes with *all sources covered*. So the `pinned by` cell must open with one of four
+things, and every backticked path it names anywhere must exist on disk — with its `::node_id`, if it
+carries one, actually declared there. A pin naming a test that was renamed or never written is worse
+than a gap marker, because it reads as coverage.
+
+| pin opens with | means |
+|---|---|
+| a gap marker, `⚠️ gap (…)` | nothing pins this yet; counted in the tally and owed before the phase gate |
+| a backticked path under `tests/` | an existing test, file or directory, optionally `::test_name` |
+| a ticket id, `P0-5` / `CORE-4` / … | a test the named ticket will write. Only the families listed in `TICKET_PREFIXES` — and a family the inventory uses but the checker does not know fails too, so the constant cannot rot in either direction |
+| one of two named CI jobs | `the suite itself` and `the lint job itself`, for the two `setup.cfg` extras, where the only thing that can fail is a job installing them. Allowed by name, one entry each, with a written reason |
 
 **Disposition vocabulary.** `KEEP` = the functionality must exist in v1, possibly renamed or reshaped
 (usually as a config field — the flag *as a flag* disappears into the config system). `MERGE` =
@@ -57,8 +70,9 @@ is a disposition a checker can read.
 thirteen `mace/cli` parsers, the `--model` choices, model classes, registries, losses, calculator
 params, calculator exports, extras, the three output-key surfaces, the `MACE_*` environment
 variables, the pytest markers, and the default property keys — plus, on every row: a valid
-disposition, a reason on every `DROP`, a pinning test or an explicit `⚠️ gap` on every `KEEP`/`MERGE`,
-a destination ticket, a retirement ticket, and no duplicate ids. Four conditions fail a dest: no row,
+disposition, a reason on every `DROP`, a pinning test or an explicit `⚠️ gap` on every `KEEP`/`MERGE`
+*that resolves to a file, a ticket or a named CI job*, a destination ticket, a retirement ticket, and
+no duplicate ids. Four conditions fail a dest: no row,
 an empty disposition, a `REVIEW` disposition, and a row for a dest the source no longer declares —
 so a renamed flag cannot leave a stale row behind claiming coverage.
 
@@ -915,18 +929,18 @@ than left to be inferred.
 
 | id | feature | source | disposition | pinned by | destination | retirement | status |
 |---|---|---|---|---|---|---|---|
-| `marker.gpu` | `@pytest.mark.gpu` | `pyproject.toml:23` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest (any vendor: CUDA or ROCm) | the suite itself | INF-5, P0-8 | n/a — test infrastructure, not legacy code | todo |
-| `marker.cueq` | `@pytest.mark.cueq` | `pyproject.toml:25` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | the suite itself | INF-5, P0-4 | n/a — test infrastructure, not legacy code | todo |
-| `marker.oeq` | `@pytest.mark.oeq` | `pyproject.toml:26` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | the suite itself | INF-5, P0-4 | n/a — test infrastructure, not legacy code | todo |
-| `marker.polar` | `@pytest.mark.polar` | `pyproject.toml:27` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | the suite itself | INF-5, P0-3a | n/a — test infrastructure, not legacy code | todo |
-| `marker.les` | `@pytest.mark.les` | `pyproject.toml:28` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | the suite itself | INF-5, P0-3c | n/a — test infrastructure, not legacy code | todo |
-| `marker.magnetic` | `@pytest.mark.magnetic` | `pyproject.toml:29` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | the suite itself | INF-5, P0-3b | n/a — test infrastructure, not legacy code | todo |
-| `marker.torchsim` | `@pytest.mark.torchsim` | `pyproject.toml:30` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | the suite itself | INF-5, DEP-4 | n/a — test infrastructure, not legacy code | todo |
-| `marker.schedulefree` | `@pytest.mark.schedulefree` | `pyproject.toml:31` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | the suite itself | INF-5, TRN-2 | n/a — test infrastructure, not legacy code | todo |
-| `marker.bin_lammps` | `@pytest.mark.bin_lammps` | `pyproject.toml:33` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest (an external binary rather than an import) | the suite itself | INF-5, DEP-2 | n/a — test infrastructure, not legacy code | todo |
-| `marker.network` | `@pytest.mark.network` | `pyproject.toml:24` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest; never autodetected, opt-in via `MACE_CI_ALLOW_NETWORK=1` | the suite itself | INF-5, P0-2 | n/a — test infrastructure, not legacy code | todo |
-| `marker.slow` | `@pytest.mark.slow` | `pyproject.toml:22` | KEEP — a cost marker, not a capability: applied by directory to `tests/workflows` | the suite itself | INF-5, P0-8 | n/a — test infrastructure, not legacy code | todo |
-| `marker.benchmark` | `@pytest.mark.benchmark` | `pyproject.toml:32` | KEEP — a cost marker: performance measurement, never part of a correctness gate | the suite itself | INF-5, P0-8 | n/a — test infrastructure, not legacy code | todo |
+| `marker.gpu` | `@pytest.mark.gpu` | `pyproject.toml:23` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest (any vendor: CUDA or ROCm) | `tests/conftest.py` | INF-5, P0-8 | n/a — test infrastructure, not legacy code | todo |
+| `marker.cueq` | `@pytest.mark.cueq` | `pyproject.toml:25` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | `tests/conftest.py` | INF-5, P0-4 | n/a — test infrastructure, not legacy code | todo |
+| `marker.oeq` | `@pytest.mark.oeq` | `pyproject.toml:26` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | `tests/conftest.py` | INF-5, P0-4 | n/a — test infrastructure, not legacy code | todo |
+| `marker.polar` | `@pytest.mark.polar` | `pyproject.toml:27` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | `tests/conftest.py` | INF-5, P0-3a | n/a — test infrastructure, not legacy code | todo |
+| `marker.les` | `@pytest.mark.les` | `pyproject.toml:28` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | `tests/conftest.py` | INF-5, P0-3c | n/a — test infrastructure, not legacy code | todo |
+| `marker.magnetic` | `@pytest.mark.magnetic` | `pyproject.toml:29` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | `tests/conftest.py` | INF-5, P0-3b | n/a — test infrastructure, not legacy code | todo |
+| `marker.torchsim` | `@pytest.mark.torchsim` | `pyproject.toml:30` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | `tests/conftest.py` | INF-5, DEP-4 | n/a — test infrastructure, not legacy code | todo |
+| `marker.schedulefree` | `@pytest.mark.schedulefree` | `pyproject.toml:31` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest | `tests/conftest.py` | INF-5, TRN-2 | n/a — test infrastructure, not legacy code | todo |
+| `marker.bin_lammps` | `@pytest.mark.bin_lammps` | `pyproject.toml:33` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest (an external binary rather than an import) | `tests/conftest.py` | INF-5, DEP-2 | n/a — test infrastructure, not legacy code | todo |
+| `marker.network` | `@pytest.mark.network` | `pyproject.toml:24` | KEEP — a capability probe in `tests/conftest.py`; INF-5 carries it into the capabilities manifest; never autodetected, opt-in via `MACE_CI_ALLOW_NETWORK=1` | `tests/conftest.py` | INF-5, P0-2 | n/a — test infrastructure, not legacy code | todo |
+| `marker.slow` | `@pytest.mark.slow` | `pyproject.toml:22` | KEEP — a cost marker, not a capability: applied by directory to `tests/workflows` | `tests/conftest.py` | INF-5, P0-8 | n/a — test infrastructure, not legacy code | todo |
+| `marker.benchmark` | `@pytest.mark.benchmark` | `pyproject.toml:32` | KEEP — a cost marker: performance measurement, never part of a correctness gate | `tests/conftest.py` | INF-5, P0-8 | n/a — test infrastructure, not legacy code | todo |
 | `marker.timeout` | `@pytest.mark.timeout` | `pyproject.toml:34` | KEEP — test infrastructure, and explicitly **not** a capability: it is registered only so collection works when `pytest-timeout` is absent (the plugin ships in the `test`/`dev` extras). It has no `CAPABILITY_PROBES` entry and must not be absorbed into INF-5's manifest. Three tests use it today (`tests/workflows/test_finetuning_pseudolabels.py:97,133,169`) | `tests/workflows/test_finetuning_pseudolabels.py` | INF-5 | n/a — test infrastructure, not legacy code | todo |
 
 ## 15. Default property keys — the on-disk data contract (13)

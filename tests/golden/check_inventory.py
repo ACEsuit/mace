@@ -46,6 +46,52 @@ REPO = Path(__file__).resolve().parents[2]
 INVENTORY = Path(__file__).with_name("feature_inventory.md")
 
 VALID_DISPOSITIONS = ("KEEP", "MERGE", "DROP")
+
+# --------------------------------------------------------------- pin vocabulary
+#
+# A `KEEP`/`MERGE` row has to name what protects the behaviour, and until this
+# check existed the rule was only that the cell was not empty. The literal
+# string "TODO" satisfied that, and the gate still finished with "all sources
+# covered" — a completeness contract that accepts "TODO" as evidence is not
+# one. So the cell now has to open with something a machine can resolve:
+#
+#   * a `⚠️ gap` marker — the honest "nothing pins this yet", already counted
+#     in the tally and already required to be closed before the phase gate;
+#   * a backticked path under `tests/` — which must exist on disk, and whose
+#     `::node_id`, if it carries one, must exist too. A pin naming a test that
+#     was renamed or never written is worse than a gap marker, because it
+#     reads as coverage;
+#   * a ticket id from a known family — Phase 0 pins name tests that are not
+#     written yet, which is legitimate and the whole reason the column exists,
+#     but "not written yet" and "not a ticket" have to stay distinguishable;
+#   * one of the two pins below, where the enforcing thing is a CI job.
+
+#: Ticket-id families. Derived from the destination/retirement columns of the
+#: inventory itself, and checked against them at run time so a new family has
+#: to be added here deliberately rather than appearing by typo.
+TICKET_PREFIXES = (
+    "ARCH", "BKD", "CFG", "CLI", "CORE", "DATA", "DEP", "EDU", "ELEC",
+    "FM", "FT", "GOV", "INF", "MAG", "P0", "REL", "RET", "TRN",
+)
+TICKET_RE = re.compile(rf"(?:{'|'.join(TICKET_PREFIXES)})-\d+[a-z]?\b")
+ANY_TICKET_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,7})-\d+[a-z]?\b")
+
+#: Pins that are neither a test file nor a ticket, allowed one at a time with
+#: the reason each is not a file. Both are cases where the only thing that can
+#: fail is a CI job: an extras group is exercised by installing it, and there
+#: is no in-tree test that can assert `pip install .[dev]` resolves.
+NON_TEST_PINS = {
+    "the suite itself": (
+        "`[test]` is what the test jobs install; nothing inside the suite can "
+        "assert the extras group resolves, because the suite is what it "
+        "installs"
+    ),
+    "the lint job itself": (
+        "`[dev]` is what the lint job installs; same reason, and `pre-commit "
+        "run --all-files` is the assertion"
+    ),
+}
+
 COLUMNS = (
     "id",
     "feature",
@@ -560,6 +606,91 @@ def read_rows() -> tuple[list[Row], list[str]]:
     return rows, problems
 
 
+def _node_id_exists(path: Path, node_id: str) -> bool:
+    """Whether `def <node_id>` is declared under `path` (a file or a directory)."""
+    files = sorted(path.rglob("*.py")) if path.is_dir() else [path]
+    needle = re.compile(rf"^\s*def {re.escape(node_id)}\s*\(", re.MULTILINE)
+    return any(needle.search(f.read_text(encoding="utf-8")) for f in files)
+
+
+def check_pins(rows: list[Row]) -> list[str]:
+    """Every pin resolves to something: a file, a ticket, a gap, or a CI job.
+
+    Non-empty is not a rule. This is what makes the `pinned by` column
+    evidence rather than decoration — see the vocabulary comment at the top.
+    """
+    problems: list[str] = []
+    for row in rows:
+        pin = row.pinned_by.strip()
+        if not pin or pin.startswith("—"):
+            continue  # required-ness is check_row_hygiene's business
+
+        # Every test path named anywhere in the cell has to resolve, not just
+        # the leading one: a row pinned on "A + B" claims both.
+        for span in re.findall(r"`([^`]+)`", pin):
+            if not span.startswith("tests/"):
+                continue  # flag and command names quoted inside gap prose
+            file_part, _, node_id = span.partition("::")
+            target = REPO / file_part
+            if not target.exists():
+                problems.append(
+                    f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
+                    f"`{span}`, which does not exist on disk"
+                )
+            elif node_id and not _node_id_exists(target, node_id):
+                problems.append(
+                    f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
+                    f"`{span}`, but no `def {node_id}` exists under {file_part}"
+                )
+
+        if pin in NON_TEST_PINS:
+            continue
+        if pin.startswith("⚠️"):
+            continue
+        if re.match(r"`tests/", pin):
+            continue
+        if TICKET_RE.match(pin):
+            continue
+
+        lead = ANY_TICKET_RE.match(pin)
+        if lead is not None:
+            problems.append(
+                f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
+                f"'{pin}', whose ticket family '{lead.group(1)}' is not one of "
+                f"{'/'.join(TICKET_PREFIXES)}"
+            )
+        else:
+            problems.append(
+                f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
+                f"'{pin}', which is free text. A pin must open with a "
+                f"⚠️ gap marker, a backticked path under tests/, a ticket id, "
+                f"or one of {sorted(NON_TEST_PINS)}"
+            )
+    return problems
+
+
+def check_ticket_prefixes(rows: list[Row]) -> list[str]:
+    """The recognised families must cover the ones the inventory actually uses.
+
+    Without this the constant above rots silently in the permissive
+    direction: a new ticket family appears in a destination column, a pin
+    names it, and the pin is rejected as free text for a reason that looks
+    like a typo.
+    """
+    unknown: dict[str, int] = {}
+    for row in rows:
+        for column in (row.destination, row.retirement):
+            for match in ANY_TICKET_RE.finditer(column):
+                if match.group(1) not in TICKET_PREFIXES:
+                    unknown.setdefault(match.group(1), row.line)
+    return [
+        f"{INVENTORY.name}:{line}: ticket family '{prefix}' is used by the "
+        f"inventory but is not in TICKET_PREFIXES; add it there so a pin may "
+        f"name it"
+        for prefix, line in sorted(unknown.items())
+    ]
+
+
 def check_row_hygiene(rows: list[Row]) -> list[str]:
     """Rules that hold for every row, gated section or not."""
     problems: list[str] = []
@@ -660,6 +791,8 @@ def main() -> int:
         reports.extend(report)
 
     hygiene = check_row_hygiene(rows)
+    hygiene += check_pins(rows)
+    hygiene += check_ticket_prefixes(rows)
     failed = failed or bool(hygiene)
 
     gaps = [r for r in rows if "⚠️" in r.pinned_by]

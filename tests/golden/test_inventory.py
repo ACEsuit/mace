@@ -131,6 +131,88 @@ def test_row_hygiene_accepts_the_deliberate_escapes():
     assert check_inventory.check_row_hygiene(rows) == []
 
 
+@pytest.mark.parametrize(
+    "pin, expected",
+    [
+        # The weakness this set closes: the old rule was "not empty", so the
+        # literal string TODO was a pin and the gate still printed "all
+        # sources covered".
+        ("TODO", "free text"),
+        ("later", "free text"),
+        ("the tests", "free text"),
+        ("SOMEDAY-3", "ticket family 'SOMEDAY'"),
+        ("XY-1", "ticket family 'XY'"),
+        # A pin naming a test that does not exist reads as coverage and is
+        # therefore worse than an honest ⚠️ gap marker.
+        ("`tests/unit/test_not_here.py`", "does not exist on disk"),
+        (
+            "`tests/workflows/test_run_train.py::test_never_written`",
+            "no `def test_never_written`",
+        ),
+        # Every path in a compound pin is claimed, not just the leading one.
+        (
+            "`tests/unit/test_compile.py` + `tests/unit/test_gone.py`",
+            "does not exist on disk",
+        ),
+    ],
+)
+def test_a_pin_that_resolves_to_nothing_is_rejected(pin, expected):
+    problems = check_inventory.check_pins([_row("x.a", pinned=pin)])
+    assert any(expected in p for p in problems), problems
+
+
+@pytest.mark.parametrize(
+    "pin",
+    [
+        "P0-5",
+        "P0-3a",
+        "P0-4 pins the backend numerics",
+        "P0-5; committee ⚠️ gap (§12.1)",
+        "⚠️ gap (add to P0-5)",
+        "⚠️ gap (idem — spelled `--disallow_random_padding`, stored inverted)",
+        "`tests/unit/test_compile.py`",
+        "`tests/extensions/magnetic`",
+        "`tests/extensions/magnetic::test_run_magnetic_scf`",
+        "`tests/workflows/test_run_train.py::test_run_train_lbfgs`",
+        "`tests/extensions/les` + P0-3c",
+        "the suite itself",
+        "the lint job itself",
+        "—",
+        "",
+    ],
+)
+def test_the_pin_vocabulary_actually_in_use_is_accepted(pin):
+    """Every shape the inventory uses today, so the rule cannot be tightened
+    into rejecting the file it gates."""
+    assert check_inventory.check_pins([_row("x.a", pinned=pin)]) == []
+
+
+def test_the_two_non_test_pins_are_named_and_justified():
+    """Allowed by name, not by a wildcard, and each says why it is not a file.
+
+    Both are extras groups: the only thing that can fail is a CI job
+    installing them, and no test inside the suite can assert that the suite's
+    own dependencies resolve. Everything else that used this phrasing -- the
+    twelve pytest markers -- now points at `tests/conftest.py`, which is
+    where the capability contract is actually implemented.
+    """
+    assert set(check_inventory.NON_TEST_PINS) == {
+        "the suite itself",
+        "the lint job itself",
+    }
+    for pin, reason in check_inventory.NON_TEST_PINS.items():
+        assert len(reason) > 40, pin
+    rows, _ = check_inventory.read_rows()
+    users = sorted(r.ident for r in rows if r.pinned_by in check_inventory.NON_TEST_PINS)
+    assert users == ["extra.dev", "extra.test"], users
+
+
+def test_every_ticket_family_the_inventory_uses_is_recognised():
+    """Otherwise the constant rots the other way: a real ticket reads as a typo."""
+    rows, _ = check_inventory.read_rows()
+    assert check_inventory.check_ticket_prefixes(rows) == []
+
+
 def test_duplicate_ids_are_rejected():
     problems = check_inventory.check_row_hygiene([_row("x.a"), _row("x.a")])
     assert any("duplicate id" in p for p in problems)
