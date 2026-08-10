@@ -57,10 +57,10 @@ VALID_DISPOSITIONS = ("KEEP", "MERGE", "DROP")
 #
 #   * a `⚠️ gap` marker — the honest "nothing pins this yet", already counted
 #     in the tally and already required to be closed before the phase gate;
-#   * a backticked path under `tests/` — which must exist on disk, and whose
-#     `::node_id`, if it carries one, must exist too. A pin naming a test that
-#     was renamed or never written is worse than a gap marker, because it
-#     reads as coverage;
+#   * a backticked path under `tests/` — which must exist on disk, be specific
+#     enough to mean something, and whose `::node_id`, if it carries one, must
+#     exist too. A pin naming a test that was renamed or never written is
+#     worse than a gap marker, because it reads as coverage;
 #   * a ticket id from a known family — Phase 0 pins name tests that are not
 #     written yet, which is legitimate and the whole reason the column exists,
 #     but "not written yet" and "not a ticket" have to stay distinguishable;
@@ -80,6 +80,39 @@ ANY_TICKET_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,7})-\d+[a-z]?\b")
 #: the reason each is not a file. Both are cases where the only thing that can
 #: fail is a CI job: an extras group is exercised by installing it, and there
 #: is no in-tree test that can assert `pip install .[dev]` resolves.
+#: Directories too coarse to be a pin. Existing on disk is not the same as
+#: pinning something: `tests/` names the entire suite and `tests/unit` names a
+#: whole tier, so either satisfies "a valid path" while telling a reader
+#: nothing about which behaviour is protected — the same emptiness as "TODO",
+#: wearing a path.
+#:
+#: This is a floor, not a ban on directories. `tests/extensions/magnetic` is a
+#: legitimate pin: it is the whole of that family's coverage and splitting the
+#: claim across its files would be noise. What separates the two is whether
+#: the directory is *about* the row. So the rule is a depth: a pinning
+#: directory must sit at least two levels under `tests/` — `tests/a/b` —
+#: which admits every per-family and per-integration directory in the tree and
+#: rejects exactly the tier-level ones. `tests/workflows` and `tests/unit` are
+#: named here rather than left to the depth rule because they are the two a
+#: hurried pin actually reaches for.
+TOO_COARSE_TO_PIN = {
+    "tests": "the entire suite",
+    "tests/unit": "the whole fast CPU tier",
+    "tests/workflows": "the whole e2e tier",
+    "tests/backends": "the whole backend-parity tier",
+    "tests/foundations": "the whole downloaded-model tier",
+    "tests/extensions": "the whole optional-dependency tier",
+    "tests/integrations": "the whole integrations tier",
+    "tests/benchmarks": "the whole benchmark tier",
+    "tests/golden": "the whole golden tier",
+}
+
+#: How deep under `tests/` a directory pin has to sit: `tests/a/b` passes,
+#: `tests/a` does not. A file pin is exempt — a file is specific by
+#: construction, and `tests/conftest.py` is a legitimate pin for the shared
+#: fixtures even though it sits one level down.
+MIN_PIN_DIRECTORY_DEPTH = 3
+
 NON_TEST_PINS = {
     "the suite itself": (
         "`[test]` is what the test jobs install; nothing inside the suite can "
@@ -607,10 +640,54 @@ def read_rows() -> tuple[list[Row], list[str]]:
 
 
 def _node_id_exists(path: Path, node_id: str) -> bool:
-    """Whether `def <node_id>` is declared under `path` (a file or a directory)."""
+    """Whether `node_id` is declared under `path` (a file or a directory).
+
+    Two forms, because a pin has to be able to name the two kinds of thing
+    that actually enforce a row:
+
+    * `test_name` — a `def test_name(` somewhere under the path;
+    * `TABLE[key]` — an entry of a module-level dict literal. A capability
+      marker is not enforced by a function; it is enforced by having a probe
+      in `CAPABILITY_PROBES`, and nothing but the entry itself can stand for
+      that.
+    """
     files = sorted(path.rglob("*.py")) if path.is_dir() else [path]
+    entry = re.fullmatch(r"(\w+)\[(\w+)\]", node_id)
+    if entry is not None:
+        table, key = entry.group(1), entry.group(2)
+        return any(_dict_has_key(f, table, key) for f in files)
     needle = re.compile(rf"^\s*def {re.escape(node_id)}\s*\(", re.MULTILINE)
     return any(needle.search(f.read_text(encoding="utf-8")) for f in files)
+
+
+def _dict_literal(path: Path, name: str) -> dict | None:
+    """The string keys of a module-level `name = {...}`, or None."""
+    for node in _parse(path).body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Dict):
+            continue
+        targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        if name in targets:
+            return {
+                key.value: key
+                for key in node.value.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+    return None
+
+
+def _dict_has_key(path: Path, name: str, key: str) -> bool:
+    keys = _dict_literal(path, name)
+    return keys is not None and key in keys
+
+
+def _too_coarse(path: str) -> str | None:
+    """Why `path` is too broad to be a pin, or None if it is specific enough."""
+    named = TOO_COARSE_TO_PIN.get(path)
+    if named is not None:
+        return named
+    if len(Path(path).parts) < MIN_PIN_DIRECTORY_DEPTH:
+        return f"only {len(Path(path).parts)} levels deep"
+    return None
 
 
 def check_pins(rows: list[Row]) -> list[str]:
@@ -628,19 +705,32 @@ def check_pins(rows: list[Row]) -> list[str]:
         # Every test path named anywhere in the cell has to resolve, not just
         # the leading one: a row pinned on "A + B" claims both.
         for span in re.findall(r"`([^`]+)`", pin):
-            if not span.startswith("tests/"):
+            # `tests` with no slash is caught here too: it resolves on disk,
+            # so leaving it to the free-text rule below would reject it for
+            # the wrong reason.
+            if span.rstrip("/") != "tests" and not span.startswith("tests/"):
                 continue  # flag and command names quoted inside gap prose
             file_part, _, node_id = span.partition("::")
             target = REPO / file_part
+            normalised = file_part.rstrip("/")
             if not target.exists():
                 problems.append(
                     f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
                     f"`{span}`, which does not exist on disk"
                 )
+            elif target.is_dir() and not node_id and _too_coarse(normalised):
+                problems.append(
+                    f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
+                    f"`{span}`, which is {_too_coarse(normalised)}. A pin has "
+                    f"to say which behaviour is protected; a directory that "
+                    f"broad is 'TODO' wearing a path. Name the file, the test, "
+                    f"or a directory at least {MIN_PIN_DIRECTORY_DEPTH} levels "
+                    f"deep (`tests/extensions/magnetic` is fine)"
+                )
             elif node_id and not _node_id_exists(target, node_id):
                 problems.append(
                     f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
-                    f"`{span}`, but no `def {node_id}` exists under {file_part}"
+                    f"`{span}`, but no `{node_id}` exists under {file_part}"
                 )
 
         if pin in NON_TEST_PINS:
@@ -665,6 +755,83 @@ def check_pins(rows: list[Row]) -> list[str]:
                 f"'{pin}', which is free text. A pin must open with a "
                 f"⚠️ gap marker, a backticked path under tests/, a ticket id, "
                 f"or one of {sorted(NON_TEST_PINS)}"
+            )
+    return problems
+
+
+CONFTEST = REPO / "tests" / "conftest.py"
+
+
+def check_marker_rows(rows: list[Row]) -> list[str]:
+    """A capability marker must pin its own probe, not the file it lives in.
+
+    Twelve of the thirteen `marker.*` rows pinned `tests/conftest.py`, and the
+    only thing asserted about that was that the file exists. It does, and it
+    always will, so every one of those pins passed for a reason that had
+    nothing to do with the marker: `marker.anything` would have passed
+    identically. That is the "TODO" failure again -- a cell that resolves
+    without discriminating.
+
+    What actually enforces a capability marker is having an entry in
+    `CAPABILITY_PROBES`: that dict is what `pytest_runtest_setup` iterates, so
+    a marker missing from it is registered, usable, silently never checked,
+    and -- the part that matters -- invisible to the `MACE_REQUIRE_CAPS`
+    skip-o-fail contract. So a capability row has to pin
+    `tests/conftest.py::CAPABILITY_PROBES[<name>]`, which resolves to the
+    entry itself and fails the moment that entry is renamed or dropped.
+
+    The three cost markers (`slow`, `benchmark`, `timeout`) are the mirror
+    rule: they have no probe and must not claim one, because absorbing them
+    into the capability manifest is exactly the mistake the inventory row for
+    `marker.timeout` was written to prevent.
+    """
+    problems: list[str] = []
+    probes = _dict_literal(CONFTEST, "CAPABILITY_PROBES")
+    if probes is None:
+        return [
+            f"{_rel(CONFTEST)}: no module-level CAPABILITY_PROBES dict — the "
+            f"marker check is stale, and every marker row is unenforced until "
+            f"it is fixed"
+        ]
+
+    marker_rows = {
+        row.ident[len("marker.") :]: row
+        for row in rows
+        if row.ident.startswith("marker.")
+    }
+    for name in sorted(set(probes) - set(marker_rows)):
+        problems.append(
+            f"{_rel(CONFTEST)}: capability '{name}' has a probe but no "
+            f"`marker.{name}` row in the inventory"
+        )
+
+    for name, row in sorted(marker_rows.items()):
+        pin = row.pinned_by.strip()
+        wanted = f"`tests/conftest.py::CAPABILITY_PROBES[{name}]`"
+        claims_probe = "CAPABILITY_PROBES[" in pin
+        if name in probes:
+            if wanted not in pin:
+                problems.append(
+                    f"{INVENTORY.name}:{row.line}: `{row.ident}` is a "
+                    f"capability marker pinned by '{pin}'. Pinning the file "
+                    f"asserts only that tests/conftest.py exists, which is "
+                    f"true for every marker and so discriminates none of "
+                    f"them; pin {wanted} instead"
+                )
+        elif claims_probe:
+            problems.append(
+                f"{INVENTORY.name}:{row.line}: `{row.ident}` pins a "
+                f"CAPABILITY_PROBES entry, but '{name}' has no probe. It is a "
+                f"cost marker, and claiming a probe is what would sweep it "
+                f"into the capability manifest"
+            )
+        elif pin == "`tests/conftest.py`":
+            problems.append(
+                f"{INVENTORY.name}:{row.line}: `{row.ident}` is a cost marker "
+                f"pinned by the bare conftest, which every marker row could "
+                f"claim. Name what applies it -- "
+                f"`tests/conftest.py::pytest_collection_modifyitems` for the "
+                f"directory-derived ones"
             )
     return problems
 
@@ -792,6 +959,7 @@ def main() -> int:
 
     hygiene = check_row_hygiene(rows)
     hygiene += check_pins(rows)
+    hygiene += check_marker_rows(rows)
     hygiene += check_ticket_prefixes(rows)
     failed = failed or bool(hygiene)
 

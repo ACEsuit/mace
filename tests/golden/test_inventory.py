@@ -1,5 +1,10 @@
 """The feature-inventory gate, as a test so CI fails when a feature has no row.
 
+It runs in the per-PR ci-core `unit` job, which already collects this directory:
+the row has to be written by the pull request that adds the feature, because a
+nightly only ever reports it late, and by then the row is written after the fact
+if at all.
+
 `check_inventory.py` is runnable on its own (`python3 tests/golden/check_inventory.py`);
 this file is what makes it a gate rather than a tool someone remembers to run.
 
@@ -147,18 +152,70 @@ def test_row_hygiene_accepts_the_deliberate_escapes():
         ("`tests/unit/test_not_here.py`", "does not exist on disk"),
         (
             "`tests/workflows/test_run_train.py::test_never_written`",
-            "no `def test_never_written`",
+            "no `test_never_written` exists",
         ),
         # Every path in a compound pin is claimed, not just the leading one.
         (
             "`tests/unit/test_compile.py` + `tests/unit/test_gone.py`",
             "does not exist on disk",
         ),
+        # And the hole the "must resolve" rule left open: a path that exists
+        # and pins nothing. `tests/` is the whole suite, so it is true of
+        # every row and discriminates none of them -- TODO wearing a path.
+        ("`tests/`", "the entire suite"),
+        ("`tests`", "the entire suite"),
+        ("`tests/unit`", "the whole fast CPU tier"),
+        ("`tests/workflows`", "the whole e2e tier"),
+        ("`tests/extensions`", "the whole optional-dependency tier"),
+        ("P0-5 + `tests/unit`", "the whole fast CPU tier"),
     ],
 )
 def test_a_pin_that_resolves_to_nothing_is_rejected(pin, expected):
     problems = check_inventory.check_pins([_row("x.a", pinned=pin)])
     assert any(expected in p for p in problems), problems
+
+
+def test_the_specificity_floor_is_a_floor_and_not_a_ban_on_directories():
+    """`tests/extensions/magnetic` is a legitimate pin and has to stay one.
+
+    It is the whole of that family's coverage, and splitting the claim over
+    its files would be noise. What separates it from `tests/unit` is not
+    being a directory, it is being *about* the row -- expressed here as a
+    depth, which admits every per-family directory in the tree and rejects
+    exactly the tier-level ones.
+    """
+    for pin in (
+        "`tests/extensions/magnetic`",
+        "`tests/extensions/polar`",
+        "`tests/integrations/lammps`",
+    ):
+        assert check_inventory.check_pins([_row("x.a", pinned=pin)]) == [], pin
+
+    # every coarse name is a real directory, or the rule is guarding nothing
+    for name in check_inventory.TOO_COARSE_TO_PIN:
+        assert (check_inventory.REPO / name).is_dir(), name
+
+    # and the depth rule and the named list agree about the tiers
+    for name in check_inventory.TOO_COARSE_TO_PIN:
+        if name != "tests":
+            assert len(Path(name).parts) < check_inventory.MIN_PIN_DIRECTORY_DEPTH
+
+
+def test_a_directory_pin_may_still_name_a_test_inside_it():
+    """The floor is about vagueness, not about directories, so a `::node_id`
+    makes even a coarse directory specific again."""
+    assert (
+        check_inventory.check_pins(
+            [_row("x.a", pinned="`tests/unit::test_run_train_lbfgs`")]
+        )
+        != []
+    ), "that test does not live under tests/unit, so this must still fail"
+    assert (
+        check_inventory.check_pins(
+            [_row("x.a", pinned="`tests/workflows::test_run_train_lbfgs`")]
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -193,8 +250,8 @@ def test_the_two_non_test_pins_are_named_and_justified():
     Both are extras groups: the only thing that can fail is a CI job
     installing them, and no test inside the suite can assert that the suite's
     own dependencies resolve. Everything else that used this phrasing -- the
-    twelve pytest markers -- now points at `tests/conftest.py`, which is
-    where the capability contract is actually implemented.
+    thirteen pytest markers -- now points into `tests/conftest.py`, each
+    capability at its own `CAPABILITY_PROBES` entry rather than at the file.
     """
     assert set(check_inventory.NON_TEST_PINS) == {
         "the suite itself",
@@ -205,6 +262,68 @@ def test_the_two_non_test_pins_are_named_and_justified():
     rows, _ = check_inventory.read_rows()
     users = sorted(r.ident for r in rows if r.pinned_by in check_inventory.NON_TEST_PINS)
     assert users == ["extra.dev", "extra.test"], users
+
+
+def test_every_marker_row_pins_its_own_probe():
+    rows, _ = check_inventory.read_rows()
+    assert check_inventory.check_marker_rows(rows) == []
+
+
+def test_a_marker_row_pinning_the_bare_conftest_is_rejected():
+    """The defect: twelve rows pinned `tests/conftest.py` and the only thing
+    checked was that the file exists. It does, so `marker.anything` passed
+    for a reason that had nothing to do with the marker."""
+    problems = check_inventory.check_marker_rows(
+        [_row("marker.cueq", pinned="`tests/conftest.py`")]
+    )
+    assert any("CAPABILITY_PROBES[cueq]" in p for p in problems), problems
+
+    problems = check_inventory.check_marker_rows(
+        [_row("marker.slow", pinned="`tests/conftest.py`")]
+    )
+    assert any("cost marker pinned by the bare conftest" in p for p in problems)
+
+
+def test_a_marker_row_pinning_the_wrong_probe_is_rejected():
+    """Tying each row to *its own* entry is the whole point: pinning some
+    other capability's probe resolves on disk and still says nothing."""
+    problems = check_inventory.check_marker_rows(
+        [_row("marker.cueq", pinned="`tests/conftest.py::CAPABILITY_PROBES[oeq]`")]
+    )
+    assert any("CAPABILITY_PROBES[cueq]" in p for p in problems), problems
+
+
+def test_a_cost_marker_may_not_claim_a_capability_probe():
+    """The mirror rule, and the one the `marker.timeout` row was written to
+    protect: absorbing a cost marker into the capability manifest is how
+    `timeout` would start gating CI jobs on a plugin's presence."""
+    problems = check_inventory.check_marker_rows(
+        [_row("marker.timeout", pinned="`tests/conftest.py::CAPABILITY_PROBES[gpu]`")]
+    )
+    assert any("has no probe" in p for p in problems), problems
+
+
+def test_a_capability_without_a_marker_row_is_rejected():
+    """Both directions. A probe with no row is a capability the inventory
+    does not know it has."""
+    rows, _ = check_inventory.read_rows()
+    kept = [r for r in rows if r.ident != "marker.network"]
+    problems = check_inventory.check_marker_rows(kept)
+    assert any("marker.network" in p for p in problems), problems
+
+
+def test_the_probe_pin_resolves_against_the_real_dict():
+    """A `TABLE[key]` pin is machine-checked against the dict literal, so a
+    renamed capability fails here rather than in whichever CI job silently
+    stops enforcing it."""
+    conftest = check_inventory.CONFTEST
+    assert check_inventory._dict_has_key(conftest, "CAPABILITY_PROBES", "cueq")
+    assert not check_inventory._dict_has_key(conftest, "CAPABILITY_PROBES", "nope")
+    assert check_inventory._dict_literal(conftest, "NOT_A_DICT_HERE") is None
+    problems = check_inventory.check_pins(
+        [_row("x.a", pinned="`tests/conftest.py::CAPABILITY_PROBES[nope]`")]
+    )
+    assert any("no `CAPABILITY_PROBES[nope]` exists" in p for p in problems), problems
 
 
 def test_every_ticket_family_the_inventory_uses_is_recognised():
