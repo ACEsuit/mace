@@ -797,8 +797,16 @@ def _evaluate(calc_like: Any, atoms: Atoms) -> Tuple[Dict[str, Any], str]:
             # stress to be computed and left in `results`. The Voigt-6 layout
             # ase stores it in is turned into the channel's 3x3 by the
             # registered calculator-surface conversion, not by hand here --
-            # one representation change, one place.
+            # one representation change, one place. Taking the accessor's
+            # return value instead would be a second place, and the two would
+            # be free to drift.
             probe.get_stress(voigt=True)
+            if (getattr(calc_like, "results", None) or {}).get("stress") is None:
+                raise RuntimeError(
+                    "the calculator computed a stress but left none in its "
+                    "results dict, so the snapshot would silently carry no "
+                    "stress for a periodic structure"
+                )
         raw = getattr(calc_like, "results", None) or {}
         for name, value in raw.items():
             # Everything the calculator left behind is handed on, known or
