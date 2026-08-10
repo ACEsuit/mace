@@ -6,6 +6,7 @@ replacement have to share, and a test that needed the current stack to prove
 that would be proving the opposite.
 """
 
+import ast
 import json
 import re
 import subprocess
@@ -76,6 +77,10 @@ def test_tolerance_table_rows():
         "fp64_cpu_reference",
         "fp64_accelerated_backend",
         "fp32",
+        # not selectable for outputs -- nothing reproduces bit for bit across
+        # machines -- but it is what the recorded inputs are always compared
+        # at, and it belongs in the one table rather than beside it
+        "exact",
     }
     assert harness.FP64_CPU_REFERENCE.atol == 1e-6
     assert harness.FP64_CPU_REFERENCE.rtol == 0.0
@@ -286,6 +291,107 @@ def test_the_two_spellings_of_a_graph_input_must_agree():
 
 
 # ---------------------------------------------------------------------------
+# Which array the input actually came from
+#
+# The defect the block above fixed was "the harness recorded the wrong array".
+# It survives being fixed, in a quieter form: the *right* array is named by a
+# constructor argument, and a table of literal defaults cannot know what a
+# given instance was built with. A structure whose moments live under another
+# key matches nothing, is recorded as no magmom at all, and then compares
+# clean -- there is nothing on either side to disagree about.
+# ---------------------------------------------------------------------------
+
+
+def test_a_non_default_magmom_key_is_recorded_not_missed():
+    """The parameterised form of the same silence."""
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.set_array("spins_from_dft", np.full(9, 1.3))
+
+    plain = harness.snapshot_outputs(FakeSource(), {"spun": atoms})
+    assert "magmom" not in plain["fixtures"]["spun"]["inputs"], (
+        "nothing knows about this array yet, so this is the silent case"
+    )
+
+    class Configured(FakeSource):
+        """As MagneticMACECalculator(magmom_key=...) presents itself."""
+
+        magmom_key = "spins_from_dft"
+
+    probed = harness.snapshot_outputs(Configured(), {"spun": atoms})
+    assert probed["fixtures"]["spun"]["inputs"]["magmom"]["value"][0] == [
+        0.0,
+        0.0,
+        1.3,
+    ]
+
+    explicit = harness.snapshot_outputs(
+        FakeSource(), {"spun": atoms}, input_keys={"magmom": ["spins_from_dft"]}
+    )
+    assert explicit["fixtures"]["spun"]["inputs"] == (
+        probed["fixtures"]["spun"]["inputs"]
+    )
+
+
+def test_a_non_default_charges_key_is_recorded_too():
+    """`charges_key` defaults to "Qs" on both calculators, and the reference
+    charges it names are a real input: the fixed-charge dipole baseline is
+    computed from them."""
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.set_array("Qs", np.linspace(-0.4, 0.4, 9))
+
+    class Configured(FakeSource):
+        charges_key = "Qs"
+
+    snap = harness.snapshot_outputs(Configured(), {"q": atoms})
+    recorded = snap["fixtures"]["q"]["inputs"]["input_charges"]
+    assert recorded["shape"] == [9]
+    assert recorded["value"][0] == pytest.approx(-0.4)
+    # and it is not confused with the `charges` a model predicts
+    assert "charges" not in snap["fixtures"]["q"]["inputs"]
+    assert "charges" in snap["fixtures"]["q"]["outputs"]
+
+
+def test_the_probed_key_replaces_the_default_rather_than_joining_it():
+    """Both arrays present, holding different moments.
+
+    A configured key is not a synonym for the default -- it is the answer to
+    which array the evaluation read. A stale `REF_magmom` on the same
+    structure is an array nothing looked at, not a second opinion, so this
+    must record 2.5 rather than raising the "present under both with
+    different values" error that genuine synonyms get.
+    """
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.set_array("REF_magmom", np.full(9, 0.5))
+    atoms.set_array("other_magmom", np.full(9, 2.5))
+
+    class Configured(FakeSource):
+        magmom_key = "other_magmom"
+
+    snap = harness.snapshot_outputs(Configured(), {"spun": atoms})
+    assert snap["fixtures"]["spun"]["inputs"]["magmom"]["value"][0][2] == 2.5
+    # ... while two spellings of the *same* input still have to agree
+    atoms.info["total_charge"] = -1.0
+    atoms.info["charge"] = 0.0
+    with pytest.raises(ValueError, match="different values"):
+        harness.snapshot_outputs(Configured(), {"spun": atoms})
+
+
+def test_input_keys_must_name_an_input_channel():
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    with pytest.raises(KeyError, match="not a declared input channel"):
+        harness.snapshot_outputs(
+            FakeSource(), {"w": atoms}, input_keys={"forces": ["REF_forces"]}
+        )
+
+
+def test_a_probe_must_name_an_input_channel():
+    with pytest.raises(KeyError, match="not a declared input channel"):
+        harness.register_input_probe("forces", attribute="forces_key", store="arrays")
+    with pytest.raises(ValueError, match="arrays"):
+        harness.register_input_probe("magmom", attribute="magmom_key", store="elsewhere")
+
+
+# ---------------------------------------------------------------------------
 # Unknown outputs
 # ---------------------------------------------------------------------------
 
@@ -393,20 +499,18 @@ def test_an_alias_cannot_shadow_or_contradict(two_fixtures):
         harness.ignore_key("forces", "because it would be convenient")
 
 
-def test_the_calculator_key_set_is_covered():
-    """Every results key mace/calculators/mace.py can write is accounted for.
+REPO_ROOT = Path(harness.__file__).resolve().parents[2]
+
+
+def _calculator_result_keys():
+    """Every key mace/calculators/mace.py can write into `self.results`.
 
     Derived from the file rather than from a remembered list: `results_map`
-    plus the special cases plus the committee suffixes. A new key added to
-    the calculator without a channel, an alias or an allowlist entry fails
-    here rather than in whichever golden happens to touch that model family.
+    plus the special cases plus the committee suffixes.
     """
-    source = (
-        Path(harness.__file__).resolve().parents[2]
-        / "mace"
-        / "calculators"
-        / "mace.py"
-    ).read_text(encoding="utf-8")
+    source = (REPO_ROOT / "mace" / "calculators" / "mace.py").read_text(
+        encoding="utf-8"
+    )
     written = set(re.findall(r"""self\.results\[["'](\w+)["']\]""", source))
     written |= {
         f"{base}{suffix}"
@@ -416,15 +520,246 @@ def test_the_calculator_key_set_is_covered():
     # the results_map left-hand column, which is assigned through a variable
     written |= set(re.findall(r"""^\s*\(\s*["'](\w+)["'],\s*["']\w+["'],""",
                               source, flags=re.MULTILINE))
+    return written
+
+
+def _forward_output_keys():
+    """Every key a model class's `forward` can put in its return dict.
+
+    Parsed, not grepped, because the models build that dict three different
+    ways -- a `return {...}` literal (MACE, ScaleShiftMACE, MACELES,
+    PolarMACE), a local dict that is returned by name (AtomicDipolesMACE,
+    AtomicDielectricMACE, EnergyDipolesMACE, MagneticScaleShiftMACE), and
+    subscript assignment onto a dict returned from a nested call
+    (MagneticSCFMACE, which adds the three SCF keys to what its inner model
+    produced). A regex over any one of those three misses the other two.
+
+    Nested function bodies are skipped: MagneticSCFMACE's LBFGS `closure`
+    returns a tensor named `energy`, and walking into it would make every
+    `energy = ...` assignment in the enclosing forward look like an output
+    dict.
+
+    Returns a mapping class name -> the keys its forward can emit, so a
+    failure can say which family diverged.
+    """
+    per_class = {}
+    for relative in ("mace/modules/models.py", "mace/modules/extensions.py"):
+        tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for fn in node.body:
+                if not isinstance(fn, ast.FunctionDef) or fn.name != "forward":
+                    continue
+                keys = _dict_keys_returned_by(fn)
+                if keys:
+                    per_class[f"{relative}::{node.name}"] = keys
+    return per_class
+
+
+def _walk_skipping_nested_functions(fn):
+    """Every node in `fn`'s own body, not in any function defined inside it."""
+    stack = list(fn.body)
+    while stack:
+        node = stack.pop()
+        yield node
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            stack.append(child)
+
+
+def _dict_keys_returned_by(fn):
+    nodes = list(_walk_skipping_nested_functions(fn))
+    returned_names = {
+        node.value.id
+        for node in nodes
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Name)
+    }
+    keys = set()
+    for node in nodes:
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict):
+            keys |= {
+                k.value for k in node.value.keys if isinstance(k, ast.Constant)
+            }
+        if not isinstance(node, ast.Assign):
+            continue
+        target = node.targets[0]
+        if (
+            isinstance(target, ast.Name)
+            and target.id in returned_names
+            and isinstance(node.value, ast.Dict)
+        ):
+            keys |= {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
+        if (
+            isinstance(target, ast.Subscript)
+            and isinstance(target.value, ast.Name)
+            and target.value.id in returned_names
+            and isinstance(target.slice, ast.Constant)
+        ):
+            keys.add(target.slice.value)
+    return keys
+
+
+def test_the_key_extractors_still_find_the_families_they_are_meant_to():
+    """A guard on the guard.
+
+    Both derivations are static analysis of somebody else's file, and the
+    failure mode that matters is not a false alarm -- it is finding nothing
+    and reporting coverage. A regex that stops matching, or an AST walk that
+    stops recognising how a forward builds its dict, would make the coverage
+    test below pass vacuously.
+    """
+    calculator = _calculator_result_keys()
+    assert len(calculator) >= 25, sorted(calculator)
+    assert {"energy", "forces", "stresses", "virials"} <= calculator
+
+    per_class = _forward_output_keys()
+    # one class per way of building the return dict, so a change to any of
+    # the three shows up here
+    for name in (
+        "mace/modules/models.py::MACE",  # return {...}
+        "mace/modules/models.py::AtomicDielectricMACE",  # output = {...}; return output
+        "mace/modules/extensions.py::PolarMACE",
+        "mace/modules/extensions.py::MagneticSCFMACE",  # out["k"] = ...
+    ):
+        assert name in per_class, sorted(per_class)
+    assert "scf_steps" in per_class["mace/modules/extensions.py::MagneticSCFMACE"]
+    assert "edge_forces" in per_class["mace/modules/models.py::MACE"]
+    everything = set().union(*per_class.values())
+    assert len(everything) >= 40, sorted(everything)
+
+
+def test_the_calculator_key_set_is_covered():
+    """Every results key mace/calculators/mace.py can write is accounted for.
+
+    A new key added to the calculator without a channel, an alias or an
+    allowlist entry fails here rather than in whichever golden happens to
+    touch that model family.
+    """
     unresolved = []
-    for key in sorted(written):
+    for key in sorted(_calculator_result_keys()):
         try:
-            harness.resolve_channel(key)
+            harness.resolve_channel(key, harness.SURFACE_CALCULATOR)
         except KeyError:
             unresolved.append(key)
     assert not unresolved, (
         "these calculator result keys resolve to nothing, so a golden taken "
         f"through the calculator would fail on them: {unresolved}"
+    )
+
+
+def test_the_model_forward_key_set_is_covered():
+    """The other half of the surface, and the half that was missing.
+
+    The alias map and its guard were both derived from
+    mace/calculators/mace.py alone, so all 31 calculator keys resolved while
+    13 of the 43 forward keys resolved to nothing: atomic_stresses,
+    atomic_virials, displacement, node_feats, contributions, atomic_dipoles,
+    dmu_dr, dalpha_dr, spin_density, charges_history, scf_energy_history,
+    electrostatic_potentials and fermi_level.
+
+    That gap is not academic for the goldens still to be written.
+    `edge_forces` and `hessian` are returned by every energy model and by no
+    calculator, so any golden that wants either has to go through the
+    `golden_outputs` hook -- and a hook hands the harness the forward's whole
+    dict, all 43 keys, not the calculator's 31. The first such golden would
+    have died on a key the schema had never been shown.
+    """
+    unresolved = {}
+    for owner, keys in sorted(_forward_output_keys().items()):
+        for key in sorted(keys):
+            try:
+                harness.resolve_channel(key, harness.SURFACE_MODEL)
+            except KeyError:
+                unresolved.setdefault(owner, []).append(key)
+    assert not unresolved, (
+        "these model forward keys resolve to nothing, so a golden taken "
+        f"through golden_outputs would fail on them: {unresolved}"
+    )
+
+
+def test_neither_surface_is_reachable_only_through_the_other():
+    """The structural version of the same point.
+
+    Coverage of one surface is not coverage of the other, and the way that
+    stayed invisible was that nothing ever asked. These two sets genuinely
+    differ in both directions, so a future test that checks one and calls it
+    done is checking about two thirds of the schema.
+    """
+    calculator = _calculator_result_keys()
+    model = set().union(*_forward_output_keys().values())
+    assert {"edge_forces", "hessian"} <= model - calculator, (
+        "if these became reachable through the calculator, the case for the "
+        "golden_outputs hook would need restating"
+    )
+    assert {"energies", "free_energy"} <= calculator - model
+
+
+def test_a_spelling_may_mean_different_things_on_the_two_surfaces():
+    """`virials` is the collision, and both readings have to survive.
+
+    The model's forward returns the graph-level virial under this name
+    (mace/modules/models.py:433, shape (n_graphs, 3, 3)); the calculator
+    returns the per-atom one (mace/calculators/mace.py:729-733, shape
+    (n_atoms, 3, 3)) and has no key at all for the graph virial. A single
+    spelling->channel map has to pick one and mis-shape the other.
+    """
+    assert harness.resolve_channel("virials", harness.SURFACE_MODEL) == "virials"
+    assert (
+        harness.resolve_channel("virials", harness.SURFACE_CALCULATOR)
+        == "atomic_virials"
+    )
+    assert harness.CHANNELS["virials"].kind == harness.GRAPH_TENSOR
+    assert harness.CHANNELS["atomic_virials"].kind == harness.PER_ATOM_TENSOR
+    # a surface-scoped alias that shadows a declared channel has to say so
+    with pytest.raises(ValueError, match="collision"):
+        harness.register_alias("forces", "charges", surface=harness.SURFACE_MODEL)
+
+
+def test_one_quantity_with_two_layouts_stays_one_channel():
+    """Per-atom stress: (n_atoms, 6) from the calculator, (n_atoms, 3, 3) from
+    the model, and exactly one channel holding it.
+
+    Registering a channel each would have been the silent split -- both would
+    hold the same physics and no comparison would ever put them side by side.
+    """
+    assert (
+        harness.resolve_channel("stresses", harness.SURFACE_CALCULATOR)
+        == "atomic_stresses"
+    )
+    assert harness.CHANNELS["atomic_stresses"].kind == harness.PER_ATOM_TENSOR
+    assert "stresses" not in harness.CHANNELS
+
+    n_atoms = 4
+    rng = np.random.default_rng(0)
+    full = rng.normal(size=(n_atoms, 3, 3))
+    full = 0.5 * (full + full.transpose(0, 2, 1))
+    voigt = np.stack(
+        [full[:, 0, 0], full[:, 1, 1], full[:, 2, 2],
+         full[:, 1, 2], full[:, 0, 2], full[:, 0, 1]],
+        axis=-1,
+    )
+    assert np.array_equal(harness.voigt_6_to_full_3x3(voigt), full)
+
+    class Calc:
+        golden_surface = harness.SURFACE_CALCULATOR
+
+        def golden_outputs(self, atoms):
+            return {"energy": 1.0, "stresses": voigt[: len(atoms)]}
+
+    class Model:
+        golden_surface = harness.SURFACE_MODEL
+
+        def golden_outputs(self, atoms):
+            return {"energy": 1.0, "atomic_stresses": full[: len(atoms)]}
+
+    atoms = {"probe": Atoms("H4", positions=np.eye(4, 3), pbc=False)}
+    from_calc = harness.snapshot_outputs(Calc(), atoms)
+    from_model = harness.snapshot_outputs(Model(), atoms)
+    assert (
+        from_calc["fixtures"]["probe"]["outputs"]["atomic_stresses"]
+        == from_model["fixtures"]["probe"]["outputs"]["atomic_stresses"]
     )
 
 
@@ -629,6 +964,47 @@ def test_an_input_comparison_cannot_be_switched_off():
                 channels=["energy"],
                 strict_channels=strict,
             )
+
+
+def test_inputs_are_compared_exactly_not_at_the_output_row():
+    """A perturbation inside the output tolerance is still a different input.
+
+    Inputs were compared at whichever row the outputs used, so at the fp32
+    row a 2e-3 nudge to a moment sat inside the bound and passed. The moment
+    below is 2.2 muB -- bcc iron, not a contrived magnitude -- and the fp32
+    row is relative, so its bound there is 5e-5 + 1e-3 * 2.2 = 2.25e-3. A
+    2e-3 change to a magnetic moment is a physically different structure, and
+    it fitted underneath.
+
+    The argument behind the output rows does not transfer to an input: an
+    input is read verbatim off the committed fixture rather than computed, so
+    two reads either agree exactly or the fixture changed.
+    """
+    moment = 2.2
+    nudge = 2e-3
+    reference = harness.snapshot_outputs(FakeSource(), {"spun": _spun([moment] * 9)})
+    nudged = harness.snapshot_outputs(
+        FakeSource(), {"spun": _spun([moment + nudge] * 9)}
+    )
+
+    fp32 = harness.TOLERANCES["fp32"]
+    assert nudge < fp32.atol + fp32.rtol * moment, (
+        "this test is only meaningful while the nudge is inside the fp32 row"
+    )
+    for row in sorted(harness.TOLERANCES):
+        with pytest.raises(AssertionError, match="inputs/magmom"):
+            harness.compare_to_reference(nudged, reference, row=row)
+
+
+def test_the_exact_row_is_declared_and_is_actually_exact():
+    assert harness.EXACT.atol == 0.0 and harness.EXACT.rtol == 0.0
+    assert harness.TOLERANCES["exact"] is harness.EXACT
+    # the smallest possible perturbation still fails
+    tiny = 0.7 + np.spacing(0.7)
+    reference = harness.snapshot_outputs(FakeSource(), {"spun": _spun([0.7] * 9)})
+    nudged = harness.snapshot_outputs(FakeSource(), {"spun": _spun([tiny] * 9)})
+    with pytest.raises(AssertionError, match="inputs/magmom"):
+        harness.compare_to_reference(nudged, reference, row="fp64_cpu_reference")
 
 
 # ---------------------------------------------------------------------------

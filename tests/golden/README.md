@@ -9,6 +9,7 @@ here is regenerated as a side effect of another change.
 harness.py            the shared machinery: fixtures, snapshot schema,
                       tolerance table, comparison
 calculator_keys.py    what this repo's calculators call each channel
+model_keys.py         what the model forwards call each channel
 fixtures/             committed .xyz structures + manifest.json
 models/               committed anchor checkpoints + their build sidecars
 references/           committed expected-output JSON
@@ -44,29 +45,77 @@ reference at all. Three ways out, in order of preference:
 * `register_alias(spelling, channel)` — the same quantity under another
   name. This is not hypothetical: the calculator writes `LES_alphas`,
   `LES_kappas`, `bec` and `MACE_magmoms` where the model's forward returns
-  `latent_alphas`, `latent_kappas`, `BEC` and `equilibrated_magmom`. All four
-  live in `calculator_keys.py`, and a test re-derives the calculator's key
-  set from `mace/calculators/mace.py` so a new one cannot appear unnoticed;
+  `latent_alphas`, `latent_kappas`, `BEC` and `equilibrated_magmom`;
 * `ignore_key(key, reason)` — an explicit, one-at-a-time allowlist entry with
-  a written reason. Currently the committee spread statistics, and only
-  those.
+  a written reason. Currently the committee spread statistics and the strain
+  `displacement` handle, and only those.
 
-`inputs` are compared as strictly as outputs, in both directions and with no
-flag to disable it: a snapshot taken at different moments, a different total
-charge or a different field is a different measurement, not a drift. Inputs
-are read from the same place the model reads them — moments from
-`atoms.arrays["REF_magmom"]`, not from ase's initial-moments attribute, which
-nothing in the forward pass looks at.
+## There are two surfaces, and they disagree
+
+A quantity reaches the harness through one of two doors, and coverage of one
+is not coverage of the other. The first version of the alias map was derived
+from `mace/calculators/mace.py` alone: all 31 calculator keys resolved and 13
+of the 43 model-forward keys resolved to nothing. That gap is load-bearing —
+`edge_forces` and `hessian` are returned by every energy model and by no
+calculator, so any golden that wants either goes through the `golden_outputs`
+hook, and a hook hands over the forward's whole dict.
+
+So registrations name their surface, and the guard test derives its
+expectation from **both**: `mace/calculators/mace.py` by regex, and the
+`forward` return dicts of every model class in `mace/modules/{models,
+extensions}.py` by AST (they build that dict three different ways, so a regex
+would only find one of them).
+
+Naming the surface buys two things a flat map cannot express:
+
+* **one spelling, two quantities.** `virials` is the graph-level virial in
+  every forward and the per-atom virial in the calculator's results, which
+  has no key for the graph one at all. A flat map had to pick one and
+  mis-shape the other.
+* **one quantity, two layouts.** The per-atom stress is `(n_atoms, 3, 3)`
+  from the model and Voigt-6 from the calculator. A plain alias is a shape
+  failure; a channel each is worse, because both would hold the same physics
+  and no comparison would ever put them side by side — the silent split, this
+  time arrived at deliberately. Instead the layout is canonicalised on
+  ingest: one channel holding the 3x3, and the calculator's Voigt-6 expanded
+  as it arrives.
+
+  Whether that is lossless is a measurement, not an assumption — Voigt-6
+  cannot carry an asymmetric tensor. It holds because
+  `get_atomic_virials_stresses` symmetrises explicitly
+  (`mace/modules/utils.py:382`); measured on the `tiny_scaleshift` anchor over
+  all six fixtures in float64, the asymmetry, the Voigt round trip and the
+  difference between the two routes are all exactly `0.0`. A test re-measures
+  it rather than trusting this paragraph.
+
+## Inputs
+
+`inputs` are compared in both directions, with no flag to disable it, and
+**exactly** — never at the row the outputs use. A snapshot taken at different
+moments, a different total charge or a different field is a different
+measurement, not a drift, and an input is read verbatim off the committed
+fixture rather than computed, so there is no numerical-agreement argument to
+make. At the fp32 row a 2e-3 change to a 2.2 muB moment fits under the bound;
+bcc iron is not a contrived magnitude.
+
+Inputs are read from the same place the model reads them — moments from
+`atoms.arrays[magmom_key]`, not from ase's initial-moments attribute, which
+nothing in the forward pass looks at. `magmom_key` and `charges_key` are
+*constructor arguments*, so the harness asks the object it was handed
+(`register_input_probe`) instead of assuming the default; a structure whose
+moments live under another key used to be recorded as no moments at all and
+then compare clean.
 
 ## The tolerance table
 
-Defined once, in `harness.py`, as three rows:
+Defined once, in `harness.py`, as four rows:
 
 | row | atol | rtol | what it covers |
 |---|---|---|---|
 | `fp64_cpu_reference` | 1e-6 | 0 | fp64 e3nn on CPU, cross-machine and cross-Python |
 | `fp64_accelerated_backend` | 1e-5 | 0 | cueq/oeq fp64 on an accelerator vs the CPU reference |
 | `fp32` | 5e-5 | 1e-3 | fp32 anywhere |
+| `exact` | 0 | 0 | the recorded inputs, always — not selectable for outputs |
 
 Import the row; never restate a number in a test file. A test enforces that
 too, by scanning every other module here for a literal `atol=`/`rtol=`.

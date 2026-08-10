@@ -17,7 +17,7 @@ import torch
 
 from mace import data
 from mace.modules.utils import get_edge_vectors_and_lengths
-from mace.tools import torch_geometric, utils
+from mace.tools import torch_geometric, torch_tools, utils
 from tests.golden import harness
 
 ANCHORS = {
@@ -43,21 +43,27 @@ def _load(name):
 
 
 def _batch(model, atoms):
-    """One structure as the graph batch the model consumes.
+    """One structure as the graph batch the model consumes, in float64.
 
     AtomicData reads the process-wide default dtype, which is float32 under
-    pytest, so the graph is cast to the anchors' float64 explicitly rather
-    than left to whatever ran before it in the session.
+    pytest, so the graph is *built* inside a float64 scope. Casting a float32
+    graph up afterwards is not the same thing and was what this used to do:
+    the positions have already been rounded, and the anchor then reproduces
+    the calculator's numbers only to about 2e-8 relative -- close enough to
+    the fp64 row to look like agreement and far enough to make a bit-exact
+    comparison impossible. The trailing cast stays as a belt-and-braces for
+    any tensor the scope does not reach.
     """
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
-    config = data.config_from_atoms(atoms)
-    atomic_data = data.AtomicData.from_config(
-        config, z_table=z_table, cutoff=float(model.r_max)
-    )
-    loader = torch_geometric.dataloader.DataLoader(
-        [atomic_data], batch_size=1, shuffle=False
-    )
-    graph = next(iter(loader)).to_dict()
+    with torch_tools.default_dtype("float64"):
+        config = data.config_from_atoms(atoms)
+        atomic_data = data.AtomicData.from_config(
+            config, z_table=z_table, cutoff=float(model.r_max)
+        )
+        loader = torch_geometric.dataloader.DataLoader(
+            [atomic_data], batch_size=1, shuffle=False
+        )
+        graph = next(iter(loader)).to_dict()
     return {
         key: (
             value.to(torch.float64)
@@ -218,6 +224,124 @@ def test_anchor_checkpoints_stay_small():
     for entry in ANCHORS.values():
         size_mb = entry["model"].stat().st_size / 1e6
         assert size_mb < 1.5, f"{entry['model'].name} is {size_mb:.2f} MB"
+
+
+def test_the_two_per_atom_stress_routes_land_on_one_channel(fixtures):
+    """The measurement the single `atomic_stresses` channel rests on.
+
+    The model emits a per-atom stress as (n_atoms, 3, 3); the calculator
+    renames it to `stresses` and stores it Voigt-6 (mace/calculators/mace.py:
+    791-797). One channel can hold both only if the Voigt round trip loses
+    nothing, and Voigt-6 cannot represent an asymmetric tensor --
+    `full_3x3_to_voigt_6_stress` averages each off-diagonal pair.
+
+    It is lossless here because `get_atomic_virials_stresses` symmetrises
+    explicitly (mace/modules/utils.py:382) before dividing by the volume. That
+    is a line in somebody else's file, so it is measured rather than trusted:
+    if it is ever dropped, the two routes start disagreeing and this fails
+    instead of a golden quietly pinning a symmetrised copy of an asymmetric
+    tensor.
+
+    Note the `default_dtype` scope, and note that it has to cover the
+    *forward* and not only the graph. Both read the process-wide default
+    dtype, which is float32 under pytest; running either outside the scope
+    costs about 2e-8 relative, which is under the fp64 row and so reads as
+    agreement while making a bit-exact comparison impossible. Measured on
+    dimer_short: graph inside, forward outside -> the two routes differ by
+    4.4e-10 on the per-atom stress; both inside -> 0.0.
+    """
+    from mace.calculators import MACECalculator  # noqa: PLC0415
+
+    model = _load("tiny_scaleshift")
+    calc = MACECalculator(
+        models=[model],
+        device="cpu",
+        default_dtype="float64",
+        compute_atomic_stresses=True,
+    )
+    for name, atoms in fixtures.items():
+        probe = atoms.copy()
+        probe.calc = calc
+        probe.get_potential_energy()
+        via_calculator = harness.voigt_6_to_full_3x3(calc.results["stresses"])
+
+        with torch_tools.default_dtype("float64"):
+            direct = model(
+                _batch(model, atoms),
+                training=False,
+                compute_force=True,
+                compute_stress=harness.is_periodic(atoms),
+                compute_virials=True,
+                compute_edge_forces=True,
+                compute_atomic_stresses=True,
+            )
+        via_model = direct["atomic_stresses"].detach().numpy()
+
+        asymmetry = np.abs(via_model - via_model.transpose(0, 2, 1)).max()
+        assert asymmetry == 0.0, (
+            f"{name}: the per-atom stress is no longer symmetric (max "
+            f"|A - A^T| = {asymmetry:.3e}), so Voigt-6 cannot carry it and "
+            f"the two surfaces can no longer share the atomic_stresses "
+            f"channel. Reconcile the layouts before regenerating anything."
+        )
+        assert np.array_equal(via_calculator, via_model), (
+            f"{name}: the calculator and model routes to the per-atom stress "
+            f"differ by {np.abs(via_calculator - via_model).max():.3e}"
+        )
+        assert np.array_equal(
+            calc.results["virials"], direct["atomic_virials"].detach().numpy()
+        )
+
+
+def test_the_two_per_atom_stress_routes_snapshot_identically(fixtures):
+    """The same claim one level up: through the harness, end to end.
+
+    A snapshot taken through the calculator and one taken through the model's
+    forward have to be the same dict. Two channels would have made that
+    impossible to even ask -- which is the split the single channel exists to
+    prevent.
+    """
+    from mace.calculators import MACECalculator  # noqa: PLC0415
+
+    model = _load("tiny_scaleshift")
+    calc = MACECalculator(
+        models=[model],
+        device="cpu",
+        default_dtype="float64",
+        compute_atomic_stresses=True,
+    )
+
+    class Forward:
+        """The golden_outputs hook route, as a wave-2 golden would use it."""
+
+        golden_surface = harness.SURFACE_MODEL
+
+        def golden_outputs(self, atoms):
+            with torch_tools.default_dtype("float64"):
+                out = model(
+                    _batch(model, atoms),
+                    training=False,
+                    compute_force=True,
+                    compute_stress=harness.is_periodic(atoms),
+                    compute_edge_forces=True,
+                    compute_atomic_stresses=True,
+                )
+            return {
+                # graph-level channels are per graph, so the one graph is
+                # indexed out here rather than squeezed inside the schema
+                "energy": float(out["energy"][0].detach()),
+                "forces": out["forces"].detach().numpy(),
+                "atomic_stresses": out["atomic_stresses"].detach().numpy(),
+            }
+
+    channels = ["energy", "forces", "atomic_stresses"]
+    from_calc = harness.snapshot_outputs(calc, fixtures, channels=channels)
+    from_model = harness.snapshot_outputs(Forward(), fixtures, channels=channels)
+    for name in fixtures:
+        assert (
+            from_calc["fixtures"][name]["outputs"]
+            == from_model["fixtures"][name]["outputs"]
+        ), name
 
 
 def test_zero_edge_and_degenerate_cell_fixtures_produce_finite_numbers(fixtures):
