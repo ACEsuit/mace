@@ -178,20 +178,39 @@ def tolerance(row: str) -> Tolerance:
 GRAPH_SCALAR = "graph_scalar"  # ()
 GRAPH_VECTOR = "graph_vector"  # (3,)
 GRAPH_TENSOR = "graph_tensor"  # (3, 3)
+GRAPH_ARRAY = "graph_array"  # (k, ...) with the extent set by the channel
 PER_ATOM_SCALAR = "per_atom_scalar"  # (n_atoms,)
 PER_ATOM_VECTOR = "per_atom_vector"  # (n_atoms, 3)
 PER_ATOM_TENSOR = "per_atom_tensor"  # (n_atoms, 3, 3)
-PER_ATOM_MATRIX = "per_atom_matrix"  # (n_atoms, k) with k free
+PER_ATOM_MATRIX = "per_atom_matrix"  # (n_atoms, ...) with the rest free
+PER_EDGE_VECTOR = "per_edge_vector"  # (n_edges, 3)
+HESSIAN = "hessian"  # (3 * n_atoms, n_atoms, 3)
 
 KINDS = (
     GRAPH_SCALAR,
     GRAPH_VECTOR,
     GRAPH_TENSOR,
+    GRAPH_ARRAY,
     PER_ATOM_SCALAR,
     PER_ATOM_VECTOR,
     PER_ATOM_TENSOR,
     PER_ATOM_MATRIX,
+    PER_EDGE_VECTOR,
+    HESSIAN,
 )
+
+#: Kinds whose leading axis is *not* the atom count. They exist because two
+#: real outputs cannot be expressed by any per-atom kind, and a schema that
+#: cannot express an output ends up dropping it:
+#:
+#:   * a per-edge quantity is indexed by the neighbour list, whose length
+#:     depends on the cutoff -- a number this module cannot know, because it
+#:     is a property of the model and this module never imports one. The
+#:     leading extent is therefore recorded rather than predicted; a change
+#:     in the edge count still fails a comparison, through the shape check.
+#:   * a hessian is a square matrix over the 3N Cartesian degrees of freedom,
+#:     stored as 3N rows of one gradient each.
+_LEADING_AXIS_IS_FREE = (GRAPH_ARRAY, PER_EDGE_VECTOR)
 
 #: Channels whose value is recorded for provenance but never asserted --
 #: optimiser iterate counts, histories, anything that is an implementation
@@ -221,12 +240,33 @@ CHANNELS: Dict[str, Channel] = {
     "energy": _channel("energy", GRAPH_SCALAR, "eV"),
     "free_energy": _channel("free_energy", GRAPH_SCALAR, "eV"),
     "node_energy": _channel("node_energy", PER_ATOM_SCALAR, "eV"),
+    # Per-atom energies *including* the isolated-atom reference, as the ase
+    # property of that name is defined. Distinct from node_energy, which has
+    # the reference subtracted, and the pair is worth pinning separately:
+    # their difference is exactly the E0 table.
+    "energies": _channel("energies", PER_ATOM_SCALAR, "eV"),
     "forces": _channel("forces", PER_ATOM_VECTOR, "eV/Ang"),
+    "edge_forces": _channel("edge_forces", PER_EDGE_VECTOR, "eV/Ang"),
     "stress": _channel("stress", GRAPH_TENSOR, "eV/Ang^3"),
+    # Per-atom stress decomposition, carried in Voigt-6 form by the property
+    # of this name; the per-atom virial keeps its 3x3 layout.
+    "stresses": _channel("stresses", PER_ATOM_MATRIX, "eV/Ang^3"),
+    "virials": _channel("virials", PER_ATOM_TENSOR, "eV"),
+    "hessian": _channel("hessian", HESSIAN, "eV/Ang^2"),
+    "interaction_energy": _channel("interaction_energy", GRAPH_SCALAR, "eV"),
+    "electron_energy": _channel("electron_energy", GRAPH_SCALAR, "eV"),
     # --- dipole / polarisability family -----------------------------------
     "dipole": _channel("dipole", GRAPH_VECTOR, "Debye"),
     "polarizability": _channel("polarizability", GRAPH_TENSOR, "Debye*Ang/V"),
+    # The same quantity in a spherical basis: six irreducible components
+    # rather than a 3x3, so it is a graph array and not a graph tensor.
+    "polarizability_sh": _channel("polarizability_sh", GRAPH_ARRAY, "Debye*Ang/V"),
     "charges": _channel("charges", PER_ATOM_SCALAR, "e"),
+    "spins": _channel("spins", PER_ATOM_SCALAR, "e"),
+    "density_coefficients": _channel("density_coefficients", PER_ATOM_MATRIX, "arb"),
+    "spin_charge_density": _channel("spin_charge_density", PER_ATOM_MATRIX, "arb"),
+    # Normalised per graph, hence dimensionless.
+    "fukui_functions": _channel("fukui_functions", PER_ATOM_MATRIX, "1"),
     # --- long-range electrostatics family ----------------------------------
     "les_energy": _channel("les_energy", GRAPH_SCALAR, "eV"),
     "electrostatic_energy": _channel("electrostatic_energy", GRAPH_SCALAR, "eV"),
@@ -250,6 +290,90 @@ CHANNELS: Dict[str, Channel] = {
     "elec_temp": _channel("elec_temp", GRAPH_SCALAR, "K", role=ROLE_INPUT),
     "external_field": _channel("external_field", GRAPH_VECTOR, "V/Ang", ROLE_INPUT),
 }
+
+
+#: Alternative spellings for a declared channel. A model's forward and the
+#: calculator that wraps it do not have to agree on a name, and when they
+#: disagree the registry can only know one of the two. Every extra spelling
+#: resolves here to the one channel, so a golden taken through either path
+#: records the same key -- rather than recording nothing, which is how a
+#: reference ends up claiming to pin a family it never saw.
+#:
+#: The harness declares none itself: which name a given implementation writes
+#: is knowledge about that implementation, and this module has none. The
+#: spellings this repository's calculators use are registered in
+#: ``tests/golden/calculator_keys.py``, which the package imports for its
+#: side effect, so any consumer of the harness has them.
+CHANNEL_ALIASES: Dict[str, str] = {}
+
+#: Keys an evaluation may return that are deliberately not snapshotted, each
+#: with the reason it is not. There is no blanket "unknown key" escape: a key
+#: that is neither declared, aliased nor listed here is an error, because
+#: silently discarding an output the schema does not know is precisely the
+#: regression a golden exists to catch.
+IGNORED_KEYS: Dict[str, str] = {}
+
+
+def register_alias(spelling: str, channel: str) -> None:
+    """Map an alternative output name onto a declared channel."""
+    if channel not in CHANNELS:
+        raise KeyError(
+            f"cannot alias {spelling!r} onto {channel!r}: no such channel. "
+            f"Declare it with register_channel() first."
+        )
+    if spelling in CHANNELS:
+        raise ValueError(
+            f"{spelling!r} is itself a declared channel and cannot also be an "
+            f"alias for {channel!r}"
+        )
+    existing = CHANNEL_ALIASES.get(spelling)
+    if existing is not None and existing != channel:
+        raise ValueError(
+            f"{spelling!r} already resolves to {existing!r} and cannot also "
+            f"resolve to {channel!r}"
+        )
+    CHANNEL_ALIASES[spelling] = channel
+
+
+def ignore_key(key: str, reason: str) -> None:
+    """Declare that ``key`` is intentionally absent from every snapshot.
+
+    ``reason`` is mandatory and is printed by the tooling that lists the
+    allowlist, so that "we never pinned this" stays a decision on the record
+    rather than an omission nobody can date.
+    """
+    if not reason.strip():
+        raise ValueError(f"ignoring {key!r} requires a reason")
+    if key in CHANNELS or key in CHANNEL_ALIASES:
+        raise ValueError(f"{key!r} is a declared channel; it cannot be ignored")
+    IGNORED_KEYS[key] = reason
+
+
+def resolve_channel(key: str) -> Optional[str]:
+    """The channel ``key`` names, or ``None`` if it is on the allowlist.
+
+    Raises:
+        KeyError: if the key is neither declared, aliased nor ignored. This
+            is the harness refusing to drop an output it does not recognise.
+    """
+    if key in CHANNELS:
+        return key
+    alias = CHANNEL_ALIASES.get(key)
+    if alias is not None:
+        return alias
+    if key in IGNORED_KEYS:
+        return None
+    raise KeyError(
+        f"the evaluation produced {key!r}, which the schema does not know. "
+        f"An output that is silently dropped is an output nothing pins, so "
+        f"this is an error rather than a skip. Fix it in one of three ways: "
+        f"declare it with register_channel({key!r}, <kind>, <unit>) if it is "
+        f"a new quantity; register_alias({key!r}, <channel>) if it is another "
+        f"spelling of a channel that already exists (the spellings this "
+        f"repository's calculators use live in tests/golden/calculator_keys.py); "
+        f"or ignore_key({key!r}, <reason>) if it genuinely must not be pinned. "
+        f"Declared channels: {sorted(CHANNELS)}."
+    )
 
 
 def register_channel(
@@ -276,16 +400,54 @@ def register_channel(
 
 def expected_shape(kind: str, n_atoms: int) -> Optional[tuple]:
     """The array shape a kind implies, or ``None`` when it is only partly
-    constrained (``per_atom_matrix`` fixes the leading axis only)."""
+    constrained (``per_atom_matrix`` fixes the leading axis only;
+    ``graph_array`` and ``per_edge_vector`` do not fix it at all)."""
     return {
         GRAPH_SCALAR: (),
         GRAPH_VECTOR: (3,),
         GRAPH_TENSOR: (3, 3),
+        GRAPH_ARRAY: None,
         PER_ATOM_SCALAR: (n_atoms,),
         PER_ATOM_VECTOR: (n_atoms, 3),
         PER_ATOM_TENSOR: (n_atoms, 3, 3),
         PER_ATOM_MATRIX: None,
+        PER_EDGE_VECTOR: None,
+        HESSIAN: (3 * n_atoms, n_atoms, 3),
     }[kind]
+
+
+def _check_shape(name: str, channel: Channel, arr: np.ndarray, n_atoms: int) -> None:
+    """Reject an array that does not match the shape its kind promises."""
+    want = expected_shape(channel.kind, n_atoms)
+    if want is not None:
+        if arr.shape != want:
+            raise ValueError(
+                f"channel {name!r} is declared {channel.kind} and should have "
+                f"shape {want} for {n_atoms} atoms, got {arr.shape}"
+            )
+        return
+    if channel.kind == PER_ATOM_MATRIX:
+        if arr.ndim < 1 or arr.shape[0] != n_atoms:
+            raise ValueError(
+                f"channel {name!r} is declared {channel.kind} and should have "
+                f"{n_atoms} leading rows, got shape {arr.shape}"
+            )
+        return
+    if channel.kind == PER_EDGE_VECTOR:
+        if arr.ndim != 2 or arr.shape[1] != 3:
+            raise ValueError(
+                f"channel {name!r} is declared {channel.kind} and should have "
+                f"shape (n_edges, 3), got {arr.shape}"
+            )
+        return
+    if channel.kind == GRAPH_ARRAY:
+        if arr.ndim < 1:
+            raise ValueError(
+                f"channel {name!r} is declared {channel.kind} and should be an "
+                f"array, got a scalar"
+            )
+        return
+    raise AssertionError(f"kind {channel.kind!r} has no shape rule")
 
 
 # ---------------------------------------------------------------------------
@@ -393,9 +555,14 @@ def _evaluate(calc_like: Any, atoms: Atoms) -> Dict[str, Any]:
             results["stress"] = _voigt_to_matrix(stress)
         raw = getattr(calc_like, "results", None) or {}
         for name, value in raw.items():
-            if name in results or name not in CHANNELS:
-                continue
-            if CHANNELS[name].role != ROLE_OUTPUT:
+            # Everything the calculator left behind is handed on, known or
+            # not: deciding what the schema covers is the schema's job, and
+            # a filter here would make an undeclared output disappear before
+            # anything could complain about it. The one exception is a key
+            # the ase accessors above already produced, because those are in
+            # this module's own convention -- notably a 3x3 stress, where the
+            # calculator's results dict carries the Voigt-6 form.
+            if name in results:
                 continue
             results[name] = value
         return results
@@ -417,23 +584,70 @@ def _encode(name: str, value: Any, n_atoms: int) -> dict:
             f"register_channel() so its kind and unit are recorded once"
         )
     arr = _as_array(value)
-    want = expected_shape(channel.kind, n_atoms)
-    if want is not None and arr.shape != want:
-        raise ValueError(
-            f"channel {name!r} is declared {channel.kind} and should have "
-            f"shape {want} for {n_atoms} atoms, got {arr.shape}"
-        )
-    if want is None and (arr.ndim < 1 or arr.shape[0] != n_atoms):
-        raise ValueError(
-            f"channel {name!r} is declared {channel.kind} and should have "
-            f"{n_atoms} leading rows, got shape {arr.shape}"
-        )
+    _check_shape(name, channel, arr, n_atoms)
     return {
         "kind": channel.kind,
         "unit": channel.unit,
         "shape": list(arr.shape),
         "value": arr.tolist(),
     }
+
+
+#: Where each declared input actually lives on an ``ase.Atoms``, in the order
+#: the spellings are tried. This has to track the reader, not the convention:
+#: a model that takes its moments from ``atoms.arrays["REF_magmom"]`` is not
+#: fed by ``set_initial_magnetic_moments``, so recording the latter would put
+#: provenance in the reference that the evaluation never saw -- a reference
+#: that looks reproducible and is not.
+INPUT_ARRAY_KEYS: Dict[str, tuple] = {
+    "magmom": ("REF_magmom",),
+}
+
+#: The same, for graph-level inputs read off ``atoms.info``. Two spellings
+#: are live for charge and spin -- the long one the data pipeline writes and
+#: the short one the calculators default to -- so both are accepted, and
+#: disagreement between them is an error rather than a coin toss.
+INPUT_INFO_KEYS: Dict[str, tuple] = {
+    "total_charge": ("total_charge", "charge"),
+    "total_spin": ("total_spin", "spin"),
+    "elec_temp": ("elec_temp",),
+    "external_field": ("external_field",),
+}
+
+
+def register_input_source(
+    channel: str,
+    *,
+    arrays: Sequence[str] = (),
+    info: Sequence[str] = (),
+) -> None:
+    """Teach the harness where an input channel is read from."""
+    if CHANNELS.get(channel) is None or CHANNELS[channel].role != ROLE_INPUT:
+        raise KeyError(f"{channel!r} is not a declared input channel")
+    if arrays:
+        INPUT_ARRAY_KEYS[channel] = tuple(
+            dict.fromkeys(INPUT_ARRAY_KEYS.get(channel, ()) + tuple(arrays))
+        )
+    if info:
+        INPUT_INFO_KEYS[channel] = tuple(
+            dict.fromkeys(INPUT_INFO_KEYS.get(channel, ()) + tuple(info))
+        )
+
+
+def _first_present(channel: str, store: Mapping[str, Any], keys: Sequence[str]) -> Any:
+    """The value of the first spelling present, refusing a disagreement."""
+    found = [key for key in keys if key in store]
+    if not found:
+        return None
+    values = [np.asarray(store[key], dtype=np.float64) for key in found]
+    for key, value in zip(found[1:], values[1:]):
+        if value.shape != values[0].shape or not np.array_equal(value, values[0]):
+            raise ValueError(
+                f"input {channel!r} is present under both {found[0]!r} and "
+                f"{key!r} with different values; the evaluation reads one of "
+                f"them and the reference would record the other"
+            )
+    return values[0]
 
 
 def _fixture_inputs(atoms: Atoms) -> Dict[str, dict]:
@@ -446,16 +660,30 @@ def _fixture_inputs(atoms: Atoms) -> Dict[str, dict]:
     """
     n_atoms = len(atoms)
     inputs: Dict[str, dict] = {}
-    moments = np.asarray(atoms.get_initial_magnetic_moments(), dtype=np.float64)
-    if moments.any():
-        if moments.ndim == 1:
-            moments = np.stack(
-                [np.zeros(n_atoms), np.zeros(n_atoms), moments], axis=-1
+    for channel, keys in sorted(INPUT_ARRAY_KEYS.items()):
+        value = _first_present(channel, atoms.arrays, keys)
+        if value is None:
+            continue
+        if channel == "magmom" and value.ndim == 1:
+            # A collinear moment is stored along z, so the schema stays
+            # vector-valued rather than being widened later.
+            value = np.stack([np.zeros(n_atoms), np.zeros(n_atoms), value], axis=-1)
+        inputs[channel] = _encode(channel, value, n_atoms)
+    if "magmom" not in inputs:
+        stray = np.asarray(atoms.get_initial_magnetic_moments(), dtype=np.float64)
+        if stray.any():
+            raise ValueError(
+                "this structure carries ase initial magnetic moments but no "
+                f"{INPUT_ARRAY_KEYS['magmom'][0]!r} array. The magnetic models "
+                "read the array, not the ase attribute, so a reference taken "
+                "here would record moments the evaluation never used. Put the "
+                "moments in the array the model reads, or clear them."
             )
-        inputs["magmom"] = _encode("magmom", moments, n_atoms)
-    for name in ("total_charge", "total_spin", "elec_temp"):
-        if name in atoms.info:
-            inputs[name] = _encode(name, float(atoms.info[name]), n_atoms)
+    for channel, keys in sorted(INPUT_INFO_KEYS.items()):
+        value = _first_present(channel, atoms.info, keys)
+        if value is None:
+            continue
+        inputs[channel] = _encode(channel, value, n_atoms)
     return inputs
 
 
@@ -482,7 +710,14 @@ def snapshot_outputs(
             schema knows, minus ``stress`` on aperiodic structures.
         metadata: free-form extra fields stored alongside the snapshot.
     """
-    wanted = set(channels) if channels is not None else None
+    wanted = (
+        {resolve_channel(name) for name in channels} if channels is not None else None
+    )
+    if wanted is not None and None in wanted:
+        raise KeyError(
+            "channels= names an allowlisted key, which is by definition never "
+            f"recorded: {sorted(set(channels) & set(IGNORED_KEYS))}"
+        )
     out_fixtures: Dict[str, dict] = {}
     for name, atoms in fixtures.items():
         n_atoms = len(atoms)
@@ -491,16 +726,24 @@ def snapshot_outputs(
         outputs: Dict[str, dict] = {}
         meta: Dict[str, Any] = {}
         for key in sorted(raw):
-            if wanted is not None and key not in wanted:
+            # Unknown keys raise here rather than being skipped; see
+            # resolve_channel for why, and for the three ways to fix it.
+            channel = resolve_channel(key)
+            if channel is None:
                 continue
-            if key not in CHANNELS:
+            if wanted is not None and channel not in wanted:
                 continue
-            if key == "stress" and not periodic:
+            if channel == "stress" and not periodic:
                 continue
-            if CHANNELS[key].role == ROLE_METADATA:
-                meta[key] = np.asarray(raw[key]).tolist()
+            if CHANNELS[channel].role == ROLE_INPUT:
+                # Recorded from the structure by _fixture_inputs, which reads
+                # the same place the model does; an echo in the results dict
+                # would be the value after the reader, not the input.
                 continue
-            outputs[key] = _encode(key, raw[key], n_atoms)
+            if CHANNELS[channel].role == ROLE_METADATA:
+                meta[channel] = np.asarray(raw[key]).tolist()
+                continue
+            outputs[channel] = _encode(channel, raw[key], n_atoms)
         if wanted is not None:
             missing = sorted(
                 wanted
@@ -596,6 +839,85 @@ def load_reference(path: Path) -> dict:
 
 def _values(entry: Mapping[str, Any]) -> np.ndarray:
     return np.asarray(entry["value"], dtype=np.float64).reshape(entry["shape"])
+
+
+def _compare_entry(
+    label: str,
+    got_entry: Mapping[str, Any],
+    ref_entry: Mapping[str, Any],
+    tol: Tolerance,
+    problems: list,
+) -> None:
+    """Compare one encoded channel, appending any complaint to ``problems``."""
+    if got_entry["unit"] != ref_entry["unit"]:
+        problems.append(
+            f"{label}: unit changed {ref_entry['unit']!r} -> {got_entry['unit']!r}"
+        )
+        return
+    if list(got_entry["shape"]) != list(ref_entry["shape"]):
+        problems.append(
+            f"{label}: shape changed {ref_entry['shape']} -> {got_entry['shape']}"
+        )
+        return
+    got = _values(got_entry)
+    want = _values(ref_entry)
+    bound = tol.atol + tol.rtol * np.abs(want)
+    diff = np.abs(got - want)
+    bad = diff > bound
+    if not bad.any():
+        return
+    idx = np.unravel_index(int(np.argmax(diff - bound)), diff.shape)
+    problems.append(
+        f"{label} [{ref_entry['unit']}]: "
+        f"{int(bad.sum())}/{diff.size} element(s) outside the "
+        f"'{tol.name}' row (atol={tol.atol:g}, rtol={tol.rtol:g}); "
+        f"worst at index {tuple(int(i) for i in idx)}: "
+        f"got {float(got[idx]):.12g}, reference {float(want[idx]):.12g}, "
+        f"|diff| {float(diff[idx]):.3g} > {float(bound[idx]):.3g}"
+    )
+
+
+def _compare_inputs(
+    name: str,
+    got_fix: Mapping[str, Any],
+    ref_fix: Mapping[str, Any],
+    tol: Tolerance,
+    problems: list,
+) -> None:
+    """Compare the recorded inputs, in both directions and unconditionally.
+
+    Outputs are compared one way by default -- a model gaining an observable
+    is not a regression of the ones already pinned. Inputs are not like that.
+    A snapshot taken at moments, a total charge or a field the reference was
+    not taken at is a different measurement wearing the reference's name, and
+    an input the reference records but the snapshot does not means the
+    evaluation was fed nothing where it used to be fed something. Both
+    directions are therefore failures, and there is no flag to turn this off:
+    the schema calls magmom a pinned input, and a comparison that ignored the
+    block would make that claim decoration.
+    """
+    ref_in = ref_fix.get("inputs", {})
+    got_in = got_fix.get("inputs", {})
+    for channel in sorted(set(ref_in) | set(got_in)):
+        if channel not in got_in:
+            problems.append(
+                f"{name}: input {channel!r} vanished; the reference was taken "
+                f"with it and this snapshot was not"
+            )
+            continue
+        if channel not in ref_in:
+            problems.append(
+                f"{name}: input {channel!r} appeared; this snapshot was fed "
+                f"something the reference was not taken with"
+            )
+            continue
+        _compare_entry(
+            f"{name}/inputs/{channel}",
+            got_in[channel],
+            ref_in[channel],
+            tol,
+            problems,
+        )
 
 
 @dataclass
@@ -705,39 +1027,14 @@ def compare_to_reference(
             extra = sorted(set(got_out) - set(ref_out))
             if extra:
                 problems.append(f"{name}: unpinned new channel(s) {extra}")
+        _compare_inputs(name, got_fix, ref_fix, tol, problems)
         for channel, ref_entry in sorted(ref_out.items()):
             if wanted is not None and channel not in wanted:
                 continue
             if channel not in got_out:
                 continue
-            got_entry = got_out[channel]
-            if got_entry["unit"] != ref_entry["unit"]:
-                problems.append(
-                    f"{name}/{channel}: unit changed "
-                    f"{ref_entry['unit']!r} -> {got_entry['unit']!r}"
-                )
-                continue
-            if list(got_entry["shape"]) != list(ref_entry["shape"]):
-                problems.append(
-                    f"{name}/{channel}: shape changed "
-                    f"{ref_entry['shape']} -> {got_entry['shape']}"
-                )
-                continue
-            got = _values(got_entry)
-            want = _values(ref_entry)
-            bound = tol.atol + tol.rtol * np.abs(want)
-            diff = np.abs(got - want)
-            bad = diff > bound
-            if not bad.any():
-                continue
-            idx = np.unravel_index(int(np.argmax(diff - bound)), diff.shape)
-            problems.append(
-                f"{name}/{channel} [{ref_entry['unit']}]: "
-                f"{int(bad.sum())}/{diff.size} element(s) outside the "
-                f"'{tol.name}' row (atol={tol.atol:g}, rtol={tol.rtol:g}); "
-                f"worst at index {tuple(int(i) for i in idx)}: "
-                f"got {float(got[idx]):.12g}, reference {float(want[idx]):.12g}, "
-                f"|diff| {float(diff[idx]):.3g} > {float(bound[idx]):.3g}"
+            _compare_entry(
+                f"{name}/{channel}", got_out[channel], ref_entry, tol, problems
             )
     if problems:
         raise AssertionError(
@@ -752,6 +1049,10 @@ def compare_to_reference(
 
 __all__ = [
     "CHANNELS",
+    "CHANNEL_ALIASES",
+    "IGNORED_KEYS",
+    "INPUT_ARRAY_KEYS",
+    "INPUT_INFO_KEYS",
     "FIXTURES_DIR",
     "FP32",
     "FP64_ACCELERATED_BACKEND",
@@ -767,11 +1068,15 @@ __all__ = [
     "compare_to_reference",
     "deviations",
     "expected_shape",
+    "ignore_key",
     "is_periodic",
     "load_fixtures",
     "load_manifest",
     "load_reference",
+    "register_alias",
     "register_channel",
+    "register_input_source",
+    "resolve_channel",
     "snapshot_outputs",
     "tolerance",
     "write_reference",

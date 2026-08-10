@@ -233,9 +233,22 @@ def test_metadata_channels_are_recorded_but_not_asserted(two_fixtures):
     harness.compare_to_reference(other, snap, row="fp64_cpu_reference")
 
 
-def test_magmom_is_recorded_as_an_input():
+def _spun(moments, key="REF_magmom"):
+    """A fixture carrying per-atom moments in the array a model reads."""
     atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
-    atoms.set_initial_magnetic_moments([0.7, -0.2, 0.1] * 3)
+    atoms.arrays[key] = np.asarray(moments, dtype=float)
+    return atoms
+
+
+def test_magmom_is_read_from_the_array_the_model_reads():
+    """The provenance defect: ase's attribute is not the model's input.
+
+    MagneticMACECalculator reads `atoms.arrays[magmom_key]`, defaulting to
+    `REF_magmom`; `set_initial_magnetic_moments` writes a different array
+    that nothing in the forward pass ever looks at. Recording the latter
+    would put moments in the reference that the evaluation never used.
+    """
+    atoms = _spun([0.7, -0.2, 0.1] * 3)
     atoms.info["total_charge"] = -1.0
     snap = harness.snapshot_outputs(FakeSource(), {"spun": atoms})
     inputs = snap["fixtures"]["spun"]["inputs"]
@@ -247,21 +260,172 @@ def test_magmom_is_recorded_as_an_input():
     assert inputs["total_charge"]["value"] == -1.0
 
 
-def test_unknown_channel_must_be_declared(two_fixtures):
-    class Odd(FakeSource):
-        def golden_outputs(self, atoms):
-            out = super().golden_outputs(atoms)
-            out["not_a_channel"] = 1.0
-            return out
+def test_noncollinear_moments_are_recorded_as_given():
+    atoms = _spun(np.arange(27, dtype=float).reshape(9, 3))
+    snap = harness.snapshot_outputs(FakeSource(), {"spun": atoms})
+    assert snap["fixtures"]["spun"]["inputs"]["magmom"]["shape"] == [9, 3]
 
-    # unknown channels are dropped silently by default...
-    snap = harness.snapshot_outputs(Odd(), two_fixtures)
-    assert "not_a_channel" not in snap["fixtures"]["triclinic_bulk"]["outputs"]
-    # ...and asking for one by name is an error naming the fix
+
+def test_ase_initial_moments_without_the_array_are_refused():
+    """Silence here is what made the wrong-array bug survive review."""
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.set_initial_magnetic_moments([0.7] * 9)
+    with pytest.raises(ValueError, match="REF_magmom"):
+        harness.snapshot_outputs(FakeSource(), {"spun": atoms})
+
+
+def test_the_two_spellings_of_a_graph_input_must_agree():
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.info["total_charge"] = -1.0
+    atoms.info["charge"] = -1.0
+    snap = harness.snapshot_outputs(FakeSource(), {"c": atoms})
+    assert snap["fixtures"]["c"]["inputs"]["total_charge"]["value"] == -1.0
+    atoms.info["charge"] = 0.0
+    with pytest.raises(ValueError, match="different values"):
+        harness.snapshot_outputs(FakeSource(), {"c": atoms})
+
+
+# ---------------------------------------------------------------------------
+# Unknown outputs
+# ---------------------------------------------------------------------------
+
+
+class Odd(FakeSource):
+    def golden_outputs(self, atoms):
+        out = super().golden_outputs(atoms)
+        out["not_a_channel"] = 1.0
+        return out
+
+
+def test_an_undeclared_output_is_a_hard_failure(two_fixtures):
+    """The regression this whole module exists to prevent, applied to itself.
+
+    An output the schema does not know used to be dropped without a word, so
+    a reference could be committed that claimed to pin a family and pinned
+    three channels of it. Nothing about that failure is visible in a passing
+    test run, which is why it has to be an error.
+    """
+    with pytest.raises(KeyError) as excinfo:
+        harness.snapshot_outputs(Odd(), two_fixtures)
+    message = str(excinfo.value)
+    assert "not_a_channel" in message
+    assert "register_channel" in message
+    assert "register_alias" in message
+    assert "ignore_key" in message
+
+
+def test_asking_for_an_undeclared_channel_by_name_also_fails(two_fixtures):
+    with pytest.raises(KeyError, match="not_a_channel"):
+        harness.snapshot_outputs(
+            FakeSource(), two_fixtures, channels=["energy", "not_a_channel"]
+        )
+
+
+def test_a_declared_channel_that_is_not_produced_still_fails(two_fixtures):
     with pytest.raises(KeyError, match="were not produced"):
         harness.snapshot_outputs(
-            Odd(), two_fixtures, channels=["energy", "not_a_channel"]
+            FakeSource(), two_fixtures, channels=["energy", "polarizability"]
         )
+
+
+def test_an_allowlisted_key_is_skipped_with_its_reason_on_record(two_fixtures):
+    """Ignoring is allowed, but only one key at a time and only in writing."""
+    class Committee(FakeSource):
+        def golden_outputs(self, atoms):
+            out = super().golden_outputs(atoms)
+            out["energy_var"] = 1e-3
+            return out
+
+    snap = harness.snapshot_outputs(Committee(), two_fixtures)
+    assert "energy_var" not in snap["fixtures"]["triclinic_bulk"]["outputs"]
+    assert harness.IGNORED_KEYS["energy_var"].strip()
+    with pytest.raises(ValueError, match="reason"):
+        harness.ignore_key("something_else", "  ")
+
+
+def test_every_allowlist_entry_carries_a_reason():
+    assert harness.IGNORED_KEYS, "an empty allowlist would make the rule vacuous"
+    for key, reason in harness.IGNORED_KEYS.items():
+        assert len(reason.strip()) > 20, f"{key} is ignored without a real reason"
+
+
+# ---------------------------------------------------------------------------
+# Calculator spellings
+# ---------------------------------------------------------------------------
+
+
+def test_the_calculator_spellings_resolve_to_one_channel():
+    """The four names measured against mace/calculators/mace.py.
+
+    Each of these is what the calculator writes; the right-hand side is what
+    the model's forward and the registry call it. Before the alias map, a LES
+    or magnetic golden taken through the calculator dropped all four.
+    """
+    assert harness.resolve_channel("LES_alphas") == "latent_alphas"
+    assert harness.resolve_channel("LES_kappas") == "latent_kappas"
+    assert harness.resolve_channel("bec") == "BEC"
+    assert harness.resolve_channel("MACE_magmoms") == "equilibrated_magmom"
+
+
+def test_an_aliased_output_lands_under_its_channel_name(two_fixtures):
+    class Latent(FakeSource):
+        def golden_outputs(self, atoms):
+            out = super().golden_outputs(atoms)
+            out["LES_alphas"] = np.ones((len(atoms), 4))
+            out["MACE_magmoms"] = np.zeros((len(atoms), 3))
+            return out
+
+    outputs = harness.snapshot_outputs(Latent(), two_fixtures)
+    bulk = outputs["fixtures"]["triclinic_bulk"]["outputs"]
+    assert "LES_alphas" not in bulk and "MACE_magmoms" not in bulk
+    assert bulk["latent_alphas"]["shape"] == [6, 4]
+    assert bulk["equilibrated_magmom"]["unit"] == "muB"
+
+
+def test_an_alias_cannot_shadow_or_contradict(two_fixtures):
+    with pytest.raises(KeyError, match="no such channel"):
+        harness.register_alias("probe_alias", "not_a_channel")
+    with pytest.raises(ValueError, match="already resolves"):
+        harness.register_alias("bec", "charges")
+    with pytest.raises(ValueError, match="declared channel"):
+        harness.register_alias("forces", "charges")
+    with pytest.raises(ValueError, match="declared channel"):
+        harness.ignore_key("forces", "because it would be convenient")
+
+
+def test_the_calculator_key_set_is_covered():
+    """Every results key mace/calculators/mace.py can write is accounted for.
+
+    Derived from the file rather than from a remembered list: `results_map`
+    plus the special cases plus the committee suffixes. A new key added to
+    the calculator without a channel, an alias or an allowlist entry fails
+    here rather than in whichever golden happens to touch that model family.
+    """
+    source = (
+        Path(harness.__file__).resolve().parents[2]
+        / "mace"
+        / "calculators"
+        / "mace.py"
+    ).read_text(encoding="utf-8")
+    written = set(re.findall(r"""self\.results\[["'](\w+)["']\]""", source))
+    written |= {
+        f"{base}{suffix}"
+        for base in ("energy", "forces", "stress", "dipole")
+        for suffix in ("_comm", "_var")
+    }
+    # the results_map left-hand column, which is assigned through a variable
+    written |= set(re.findall(r"""^\s*\(\s*["'](\w+)["'],\s*["']\w+["'],""",
+                              source, flags=re.MULTILINE))
+    unresolved = []
+    for key in sorted(written):
+        try:
+            harness.resolve_channel(key)
+        except KeyError:
+            unresolved.append(key)
+    assert not unresolved, (
+        "these calculator result keys resolve to nothing, so a golden taken "
+        f"through the calculator would fail on them: {unresolved}"
+    )
 
 
 def test_register_channel_rejects_a_conflicting_redefinition():
@@ -420,6 +584,115 @@ def test_regenerate_refuses_without_the_acknowledgement():
     )
     assert done.returncode != 0
     assert "--i-know-what-i-am-doing" in done.stderr
+
+
+def test_a_changed_input_fails_even_when_every_output_matches():
+    """The defect that let a verifier rewrite every moment and still pass.
+
+    compare_to_reference used to look only at `outputs`, so the `inputs`
+    block was carried in the JSON, printed in review, and never checked. The
+    schema calls magmom a pinned input; without this the claim is decoration.
+    """
+    atoms = _spun([0.7, -0.2, 0.1] * 3)
+    reference = harness.snapshot_outputs(FakeSource(), {"spun": atoms})
+    tampered = harness.snapshot_outputs(FakeSource(), {"spun": _spun([9.0] * 9)})
+    # the outputs are identical -- the stub does not read the moments
+    assert (
+        tampered["fixtures"]["spun"]["outputs"]
+        == reference["fixtures"]["spun"]["outputs"]
+    )
+    with pytest.raises(AssertionError) as excinfo:
+        harness.compare_to_reference(tampered, reference, row="fp64_cpu_reference")
+    assert "inputs/magmom" in str(excinfo.value)
+
+
+def test_an_input_that_appears_or_vanishes_fails_in_both_directions():
+    plain = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    bare = harness.snapshot_outputs(FakeSource(), {"spun": plain})
+    spun = harness.snapshot_outputs(FakeSource(), {"spun": _spun([0.3] * 9)})
+    with pytest.raises(AssertionError, match="appeared"):
+        harness.compare_to_reference(spun, bare, row="fp64_cpu_reference")
+    with pytest.raises(AssertionError, match="vanished"):
+        harness.compare_to_reference(bare, spun, row="fp64_cpu_reference")
+
+
+def test_an_input_comparison_cannot_be_switched_off():
+    """strict_channels relaxes outputs only; inputs are never optional."""
+    reference = harness.snapshot_outputs(FakeSource(), {"spun": _spun([0.7] * 9)})
+    tampered = harness.snapshot_outputs(FakeSource(), {"spun": _spun([0.8] * 9)})
+    for strict in (False, True):
+        with pytest.raises(AssertionError, match="inputs/magmom"):
+            harness.compare_to_reference(
+                tampered,
+                reference,
+                row="fp64_cpu_reference",
+                channels=["energy"],
+                strict_channels=strict,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Kinds no per-atom shape can express
+# ---------------------------------------------------------------------------
+
+
+def test_edge_and_hessian_outputs_are_expressible(two_fixtures):
+    """Two real outputs whose leading axis is not the atom count.
+
+    edge_forces is indexed by the neighbour list and hessian by the 3N
+    Cartesian degrees of freedom. Every per-atom kind pins the leading axis
+    to n_atoms, so before these kinds existed the harness could only have
+    dropped them -- which is the failure mode this module is supposed to
+    make impossible.
+    """
+    class Derivatives(FakeSource):
+        def golden_outputs(self, atoms):
+            n = len(atoms)
+            out = super().golden_outputs(atoms)
+            out["edge_forces"] = np.ones((7 * n, 3))
+            out["hessian"] = np.zeros((3 * n, n, 3))
+            return out
+
+    snap = harness.snapshot_outputs(Derivatives(), two_fixtures)
+    bulk = snap["fixtures"]["triclinic_bulk"]["outputs"]
+    assert bulk["edge_forces"]["kind"] == harness.PER_EDGE_VECTOR
+    assert bulk["edge_forces"]["shape"] == [42, 3]
+    assert bulk["hessian"]["kind"] == harness.HESSIAN
+    assert bulk["hessian"]["shape"] == [18, 6, 3]
+
+
+def test_a_changed_edge_count_still_fails_a_comparison(two_fixtures):
+    """The edge count is recorded, not predicted, but it is still pinned."""
+    class Edges(FakeSource):
+        def __init__(self, per_atom):
+            super().__init__()
+            self.per_atom = per_atom
+
+        def golden_outputs(self, atoms):
+            out = super().golden_outputs(atoms)
+            out["edge_forces"] = np.ones((self.per_atom * len(atoms), 3))
+            return out
+
+    reference = harness.snapshot_outputs(Edges(7), two_fixtures)
+    fewer = harness.snapshot_outputs(Edges(6), two_fixtures)
+    with pytest.raises(AssertionError, match="shape changed"):
+        harness.compare_to_reference(fewer, reference, row="fp64_cpu_reference")
+
+
+def test_a_hessian_of_the_wrong_rank_is_named_not_dropped(two_fixtures):
+    class Wrong(FakeSource):
+        def golden_outputs(self, atoms):
+            out = super().golden_outputs(atoms)
+            out["hessian"] = np.zeros((len(atoms), len(atoms), 3))
+            return out
+
+    with pytest.raises(ValueError, match=r"hessian.*\(18, 6, 3\)"):
+        harness.snapshot_outputs(Wrong(), two_fixtures)
+
+
+def test_every_kind_has_a_shape_rule():
+    for kind in harness.KINDS:
+        harness.expected_shape(kind, 4)
 
 
 def test_deviations_reports_headroom(two_fixtures):

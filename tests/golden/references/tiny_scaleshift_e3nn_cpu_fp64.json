@@ -9,6 +9,17 @@
       "metadata": {},
       "n_atoms": 2,
       "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            2
+          ],
+          "unit": "eV",
+          "value": [
+            2.7726881104383834,
+            3.042611246906495
+          ]
+        },
         "energy": {
           "kind": "graph_scalar",
           "shape": [],
@@ -61,6 +72,16 @@
       "metadata": {},
       "n_atoms": 1,
       "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            1
+          ],
+          "unit": "eV",
+          "value": [
+            0.45330357332773347
+          ]
+        },
         "energy": {
           "kind": "graph_scalar",
           "shape": [],
@@ -107,6 +128,19 @@
       "metadata": {},
       "n_atoms": 4,
       "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            4
+          ],
+          "unit": "eV",
+          "value": [
+            0.22496728107628886,
+            0.4495479488026796,
+            0.20344474286427242,
+            -0.15894707222895355
+          ]
+        },
         "energy": {
           "kind": "graph_scalar",
           "shape": [],
@@ -196,6 +230,19 @@
       "metadata": {},
       "n_atoms": 4,
       "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            4
+          ],
+          "unit": "eV",
+          "value": [
+            0.22496728107628886,
+            0.4495479488026796,
+            0.20344474286427242,
+            -0.15894707222895355
+          ]
+        },
         "energy": {
           "kind": "graph_scalar",
           "shape": [],
@@ -285,6 +332,21 @@
       "metadata": {},
       "n_atoms": 6,
       "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            6
+          ],
+          "unit": "eV",
+          "value": [
+            0.450002940444836,
+            0.22200570717794207,
+            -0.15614820890553788,
+            0.44767435216097334,
+            0.2442945326208407,
+            -0.16178326443232355
+          ]
+        },
         "energy": {
           "kind": "graph_scalar",
           "shape": [],
@@ -386,6 +448,24 @@
       "metadata": {},
       "n_atoms": 9,
       "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            9
+          ],
+          "unit": "eV",
+          "value": [
+            0.5011746822964748,
+            -0.14998598598924992,
+            -0.1510275757127011,
+            0.5043359671423674,
+            -0.1496740900271382,
+            -0.1499828828641854,
+            0.4952225362892789,
+            -0.15551034386479023,
+            -0.14363647213744127
+          ]
+        },
         "energy": {
           "kind": "graph_scalar",
           "shape": [],

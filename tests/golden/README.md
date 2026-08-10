@@ -8,6 +8,7 @@ here is regenerated as a side effect of another change.
 ```
 harness.py            the shared machinery: fixtures, snapshot schema,
                       tolerance table, comparison
+calculator_keys.py    what this repo's calculators call each channel
 fixtures/             committed .xyz structures + manifest.json
 models/               committed anchor checkpoints + their build sidecars
 references/           committed expected-output JSON
@@ -29,6 +30,33 @@ framework blocked on `sys.meta_path`.
 
 Anything framework-specific — building a graph, loading a checkpoint — lives
 in the test files or in the build scripts, which may import freely.
+
+## Nothing is dropped
+
+A snapshot records every key an evaluation returns. A key that is not a
+declared channel is an **error**, not a skip, because an output nobody
+declared is an output nothing pins — and a reference that quietly recorded
+three channels of a family while claiming to pin the family is worse than no
+reference at all. Three ways out, in order of preference:
+
+* `register_channel(name, kind, unit)` — a genuinely new quantity, declared
+  once with its shape and its unit;
+* `register_alias(spelling, channel)` — the same quantity under another
+  name. This is not hypothetical: the calculator writes `LES_alphas`,
+  `LES_kappas`, `bec` and `MACE_magmoms` where the model's forward returns
+  `latent_alphas`, `latent_kappas`, `BEC` and `equilibrated_magmom`. All four
+  live in `calculator_keys.py`, and a test re-derives the calculator's key
+  set from `mace/calculators/mace.py` so a new one cannot appear unnoticed;
+* `ignore_key(key, reason)` — an explicit, one-at-a-time allowlist entry with
+  a written reason. Currently the committee spread statistics, and only
+  those.
+
+`inputs` are compared as strictly as outputs, in both directions and with no
+flag to disable it: a snapshot taken at different moments, a different total
+charge or a different field is a different measurement, not a drift. Inputs
+are read from the same place the model reads them — moments from
+`atoms.arrays["REF_magmom"]`, not from ase's initial-moments attribute, which
+nothing in the forward pass looks at.
 
 ## The tolerance table
 
