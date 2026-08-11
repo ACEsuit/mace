@@ -124,3 +124,56 @@ harness.ignore_key(
 #    leading axis of one inside the schema would silently accept a two-graph
 #    batch as a one-graph result.
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# The measured extents of the position_gradient kind
+#
+# `harness.POSITION_GRADIENT` pins the atom axis and leaves the leading one
+# free, because that extent is a property of the differentiated quantity
+# rather than of the structure, and says the measurement belongs here. Taken
+# on the published MACE-MDP model (AtomicDielectricMACE) over the molecular
+# fixtures, with `compute_dielectric_derivatives=True`:
+#
+#     dmu_dr      (3, n_atoms, 3)   d(dipole)/dr, 3 dipole components
+#     dalpha_dr   (9, n_atoms, 3)   d(polarizability)/dr, the 3x3 flattened
+#                                   by `total_polarizability.flatten(-2)`
+#                                   (mace/modules/models.py:1160)
+#
+# Neither appears in any calculator's `results`: `results_map`
+# (mace/calculators/mace.py:719-738) has no entry for them, so the model
+# surface is the only door. That is why tests/golden/test_mdp_foundation.py
+# takes its reference through the forward and asserts the calculator's four
+# shared channels against the same file, rather than the other way round.
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# One channel, two families, and they do not agree on its unit
+#
+# The `dipole` channel is declared "Debye", which is what MACECalculator's own
+# docstring promises (mace/calculators/mace.py:100). Both dipole families add
+# a fixed-charge baseline to their readout sum, and the two baselines are not
+# in the same unit:
+#
+#     AtomicDipolesMACE      compute_fixed_charge_dipole       divides by
+#                            (mace/modules/utils.py:622)       1e-11 / c / e
+#                                                              -> Debye
+#     AtomicDielectricMACE   compute_fixed_charge_dipole_polar the same
+#                            (mace/modules/utils.py:634-636)   division, but
+#                                                              commented out
+#                                                              -> e*Ang
+#
+# The ratio is exactly the e*Ang -> Debye factor, 4.8032. PolarMACE is a third
+# case and sits with the second: its `dipole` is `compute_total_charge_dipole_
+# permuted` (mace/modules/utils.py:640-648), a bare sum of charge times
+# position with no conversion at all.
+#
+# Which of these is right is a physics question for the electrostatics work,
+# not something a schema can decide, and declaring a channel per family would
+# only mean the three could never be compared. So one channel holds them all,
+# the discrepancy between the two baselines is pinned as a number by
+# tests/golden/test_tiny_dipoles.py::test_the_two_fixed_charge_baselines_do_not_share_a_unit,
+# and a rewrite that unifies the two functions fails there instead of silently
+# rescaling one of the committed references by 4.8.
+# ---------------------------------------------------------------------------

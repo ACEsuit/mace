@@ -57,6 +57,10 @@ jobs:
               - 'mace/calculators/**'
               - 'tests/extensions/polar/**'
               - 'requirements/polar.txt'
+              # The MACE-Polar golden lives here, and this is the only
+              # PR-time job with graph_longrange, so a change to tests/golden
+              # that this job would catch must be able to start it.
+              - 'tests/golden/**'
             les:
               - *shared
               - 'tests/extensions/les/**'
@@ -90,12 +94,25 @@ jobs:
           python-version: "3.10"
           extras: dev
           pip-packages: -r requirements/polar.txt
+      - name: Cache foundation model downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mace
+          # URLs live in foundations_models.py: new URLs -> new cache.
+          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
       # Polar regression tests compare against released foundation models.
+      # tests/golden rides along because this is the only PR-time job with
+      # graph_longrange installed, and so the only one where the MACE-Polar
+      # golden is more than a skip. `network` joins require-caps for the same
+      # reason: the job already allows downloads, and without it a lost
+      # MACE_CI_ALLOW_NETWORK would turn every foundation golden green by
+      # skipping. The energy anchors in tests/golden run here too; they are
+      # seconds and they are the reference the polar work is measured against.
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/polar
+          tests: tests/extensions/polar tests/golden
           markers: not cueq and not gpu
-          require-caps: polar
+          require-caps: polar,network
           allow-network: "true"
 
   polar-cueq:
