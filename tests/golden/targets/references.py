@@ -28,7 +28,10 @@ def run() -> None:
         MACECalculator,
     )
 
-    fixtures = harness.load_fixtures()
+    # Selected by chemistry: the manifest also holds the magnetic group, and
+    # these two anchors are three-element H/C/O models that cannot evaluate an
+    # iron structure at all.
+    fixtures = harness.load_fixtures(elements=(1, 6, 8))
     for name, (_, reference_name, description) in anchors_target.ANCHORS.items():
         model_path = anchors_target.checkpoint(name)
         model = torch.load(model_path, weights_only=False, map_location="cpu")
