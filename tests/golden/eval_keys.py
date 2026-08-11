@@ -62,21 +62,32 @@ harness.register_alias("BO_contributions", "contributions", surface=EVAL)
 #: mace/cli/eval_configs.py:446 -- atoms.arrays[prefix + "node_energies"] is
 #: `output["node_energy"]`, plural against the model's singular.
 #:
-#: Worth stating because of the near miss: the calculator has a channel called
-#: `energies`, and it is *not* this. `energies` is the per-atom energy
-#: including the isolated-atom reference; `node_energy` has it subtracted
-#: (mace/calculators/mace.py:788-790 computes one from the other). The eval
-#: CLI writes the model's raw `node_energy` and does no E0 arithmetic at all,
-#: so this lands on `node_energy` and a golden comparing it against a
-#: calculator's `energies` would be comparing two different quantities that
-#: differ by exactly the E0 table.
+#: And it lands on `energies`, not on `node_energy`, which is the opposite of
+#: what this registration said when it was written. The near miss was spotted
+#: and then resolved the wrong way round: the two channels do differ by the E0
+#: table, and `node_energy` is the one with the reference *subtracted*
+#: (mace/calculators/mace.py:787-790 makes `energies` a copy of the model's
+#: node_energy and then subtracts node_e0 from `node_energy`) -- so the raw
+#: `output["node_energy"]` this CLI writes, with no E0 arithmetic at all, is
+#: `energies`. Landing it on `node_energy` meant an eval-route golden and a
+#: calculator-route golden of the same model disagreed by the E0 table on a
+#: channel whose shape and unit both matched, which is a comparison with
+#: nothing to catch it.
+#:
+#: Measured on the committed tiny_magnetic anchor over all five magnetic
+#: fixtures, float64: the CLI's node_energies equals the calculator's
+#: `energies` to 5e-9 (extxyz writes per-atom columns as %16.8f) and differs
+#: from its `node_energy` by the E0 table, up to 6.75 eV.
 harness.register_alias(
     "node_energies",
-    "node_energy",
+    "energies",
     surface=EVAL,
     note=(
-        "the eval CLI's plural of the model's node_energy; deliberately not "
-        "the `energies` channel, which carries the E0 reference"
+        "the eval CLI writes the model's raw node_energy, which includes the "
+        "isolated-atom reference and is therefore the `energies` channel. The "
+        "calculator's `node_energy` has E0 subtracted; the two differ by "
+        "exactly the E0 table. Same collision as the model surface, see "
+        "model_keys.py."
     ),
 )
 

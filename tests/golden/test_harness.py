@@ -1101,14 +1101,30 @@ def test_the_eval_cli_spellings_resolve_to_one_channel():
     `descriptors` is different -- see eval_keys.py for why only the per-atom
     form is pinnable -- and it lands on the channel the model calls
     node_feats.
+
+    `node_energies` is the third kind again: a collision rather than a rename,
+    and one this test used to assert the wrong way round. The CLI writes the
+    model's raw `output["node_energy"]`, which *includes* the isolated-atom
+    reference, and the channel for that is `energies`; `node_energy` is the
+    calculator's E0-subtracted quantity (mace/calculators/mace.py:787-790).
+    The two have the same shape and the same unit, so an eval-route golden
+    landing on the wrong one of them disagreed with a calculator-route golden
+    by exactly the E0 table with nothing in the comparison able to say so.
     """
     resolve = lambda key: harness.resolve_channel(key, harness.SURFACE_EVAL)
     assert resolve("BO_contributions") == "contributions"
-    assert resolve("node_energies") == "node_energy"
     assert resolve("descriptors") == "node_feats"
-    # ...and the plural is not the calculator's `energies`, which carries E0
-    assert resolve("node_energies") != "energies"
+    assert resolve("node_energies") == "energies"
+    # ...and not the E0-subtracted quantity, which this surface never writes
+    assert resolve("node_energies") != "node_energy"
     assert harness.CHANNELS["energies"].name != harness.CHANNELS["node_energy"].name
+    # The model surface spells the same E0-inclusive quantity `node_energy`,
+    # which is the other half of the collision.
+    assert harness.resolve_channel("node_energy", harness.SURFACE_MODEL) == "energies"
+    assert (
+        harness.resolve_channel("node_energy", harness.SURFACE_CALCULATOR)
+        == "node_energy"
+    )
 
 
 def test_the_eval_stress_is_not_put_through_the_voigt_conversion():
