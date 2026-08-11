@@ -321,7 +321,7 @@ def test_the_e0_buffer_is_rounded_once_at_construction():
 
 
 def test_the_forward_casts_the_buffer_to_the_inputs_dtype_in_both_directions():
-    """`.to(dtype=x.dtype)` on every call (mace/modules/blocks.py:378-380).
+    """`.to(dtype=x.dtype)` on every call (mace/modules/blocks.py:379-381).
 
     The *input* dtype wins, not the buffer's. Two consequences, both pinned:
     a float32 buffer under a float64 forward is **widened, not re-rounded**

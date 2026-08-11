@@ -344,7 +344,7 @@
   },
   "parameters_without_a_gradient": [],
   "provenance": {
-    "description": "One forward+backward of an energy+forces loss on the tiny_mace anchor, reduced to a per-parameter gradient digest. Legacy characterization: what FM-00 must reproduce and what PAR-1 diffs legacy against v1.",
+    "description": "One forward+backward of an energy+forces loss on the tiny_mace anchor, reduced to a per-parameter gradient digest. A rewrite of the training path has to reproduce these, and a rewrite that changes them has to say which gradient moved and why.",
     "evaluated_with": "e3nn, CPU, float64",
     "recipe": "tests/golden/train_step.py",
     "source": "tests/golden/models/tiny_mace.model",

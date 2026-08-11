@@ -3,8 +3,9 @@
 E0s are the largest numbers in a MACE energy by two or three orders of
 magnitude, and they enter in exactly one place: `AtomicEnergiesBlock` looks
 them up with a one-hot matmul and the result is the first term of the readout
-sum (`mace/modules/models.py:359` for plain MACE, `:576` for the scale-shift
-class, where the E0 term sits *outside* the scale and the shift). Everything
+sum (`mace/modules/models.py:359` for plain MACE, `:581` for the scale-shift
+class, where the E0 term is added *outside* the scale and the shift, which
+were applied one line earlier). Everything
 upstream of that lookup -- the four ways a user can supply E0s, and the
 several ways the code quietly supplies its own -- is characterized here.
 

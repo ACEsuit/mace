@@ -121,7 +121,7 @@ def test_the_reported_force_is_the_gradient_of_the_energy_the_model_returns(fixt
 
     ScaleShiftMACE differentiates the *interaction* energy
     (mace/modules/models.py:585) while plain MACE differentiates the total
-    (`:590`), and the two are only interchangeable because the E0 branch has
+    (`:403`), and the two are only interchangeable because the E0 branch has
     no autograd path to the positions at all. That is a property of the
     model, not an identity, so it is measured: if a future E0 term ever
     became position dependent, the ScaleShiftMACE forces would silently stop
@@ -424,7 +424,7 @@ def test_prepare_graph_rewrites_the_callers_positions_and_shifts(fixtures):
 
     `prepare_graph` sets `requires_grad_` on the caller's positions tensor
     and, in the stress branch, replaces `data["positions"]` and
-    `data["shifts"]` with the strained ones (mace/modules/utils.py:781).
+    `data["shifts"]` with the strained ones (mace/modules/utils.py:783).
     The edge vectors are then built from the *replacement*, so a port that
     treats the input dict as read-only computes the unstrained vectors and
     gets a zero stress with no error anywhere.

@@ -871,3 +871,47 @@ def test_an_unknown_cli_loss_name_falls_back_instead_of_failing():
     # and with the *default* weights, not the ones on the command line
     assert float(loss.energy_weight) == 1.0
     assert float(loss.forces_weight) == 1.0
+
+
+def test_a_zero_config_weight_dilutes_rather_than_renormalizing():
+    """Masking semantics: weight 0 removes a config's contribution, but the
+    mean keeps its elements in the denominator.
+
+    So the remaining loss is *halved*, not preserved. Stated as its own test
+    because the plausible-looking alternative -- renormalising over the
+    non-zero weights -- differs by exactly the factor a rewrite would not
+    notice: every individual term is still right, and only the total moves.
+    """
+    ref = make_ref(num_atoms_per_graph=(1, 1), energy=torch.zeros(2))
+    pred = clone_pred(ref)
+    pred["energy"] = torch.tensor([1.0, 1.0])
+    both = weighted_mean_squared_error_energy(ref, pred).item()
+
+    ref.weight = torch.tensor([1.0, 0.0])
+    masked = weighted_mean_squared_error_energy(ref, pred).item()
+    assert masked == pytest.approx(both / 2)
+
+
+def test_the_weighted_huber_loss_ignores_config_and_property_weights():
+    """Unlike every other class here, this one drops the per-config weights.
+
+    Pinned because it is surprising: the constructor takes global weights and
+    honours them, so the natural assumption is that the per-config ones apply
+    too. They do not, and a test that only ever passes weights of 1.0 -- as
+    the hand-value test above does -- cannot tell the difference.
+    """
+    ref = make_ref(num_atoms_per_graph=(2,))
+    pred = clone_pred(ref)
+    pred["energy"] = torch.tensor([0.004])
+    pred["forces"][0, 0] = 0.002
+    pred["forces"][1, 0] = 0.002
+    pred["stress"][0, 0, 0] = 0.001
+
+    loss = WeightedHuberEnergyForcesStressLoss(
+        energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01
+    )
+    unweighted = loss(ref, pred).item()
+
+    for field in ("weight", "energy_weight", "forces_weight", "stress_weight"):
+        setattr(ref, field, torch.tensor([9.0]))
+    assert loss(ref, pred).item() == pytest.approx(unweighted)

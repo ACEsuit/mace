@@ -1,14 +1,15 @@
 """The one-training-step gradient golden.
 
-This closes the training-numerics gap: the loss-decrease smoke test (P0-5)
-and the committed final-error table both stay green while `d(loss)/d(theta)`
-is wrong by an amount comparable to initialisation noise, because they only
-ever look at where training ended up. A committed single-step gradient looks
-at the derivative itself.
+This closes the training-numerics gap: the loss-decrease smoke test and the
+committed final-error table both stay green while `d(loss)/d(theta)` is wrong
+by an amount comparable to initialisation noise, because they only ever look
+at where training ended up. A committed single-step gradient looks at the
+derivative itself.
 
-It is a **legacy characterization**, not a parity test -- nothing outside the
-frozen stack is involved. FM-00 is what has to reproduce it; PAR-1 upgrades
-it from "introduce the test" to "run it against both stacks and diff".
+It characterizes the current implementation rather than comparing two of
+them: nothing outside this stack is involved. A rewrite of the training path
+has to reproduce these numbers, and a rewrite that changes them has to say
+which gradient moved and why.
 
 Read `train_step.py` for the digest design and for why the raw 37,704-element
 gradient vector is not what is committed. The two properties that make the
