@@ -15,63 +15,12 @@ import numpy as np
 import pytest
 import torch
 
-from mace import data
 from mace.modules.utils import get_edge_vectors_and_lengths
-from mace.tools import torch_geometric, torch_tools, utils
+from mace.tools import torch_tools
 from tests.golden import harness
-
-ANCHORS = {
-    "tiny_scaleshift": {
-        "model": harness.MODELS_DIR / "tiny_scaleshift.model",
-        "sidecar": harness.MODELS_DIR / "tiny_scaleshift.build.json",
-        "reference": harness.REFERENCES_DIR / "tiny_scaleshift_e3nn_cpu_fp64.json",
-        "class": "ScaleShiftMACE",
-    },
-    "tiny_mace": {
-        "model": harness.MODELS_DIR / "tiny_mace.model",
-        "sidecar": harness.MODELS_DIR / "tiny_mace.build.json",
-        "reference": harness.REFERENCES_DIR / "tiny_mace_e3nn_cpu_fp64.json",
-        "class": "MACE",
-    },
-}
-
-
-def _load(name):
-    return torch.load(
-        ANCHORS[name]["model"], weights_only=False, map_location="cpu"
-    ).to(torch.float64)
-
-
-def _batch(model, atoms):
-    """One structure as the graph batch the model consumes, in float64.
-
-    AtomicData reads the process-wide default dtype, which is float32 under
-    pytest, so the graph is *built* inside a float64 scope. Casting a float32
-    graph up afterwards is not the same thing and was what this used to do:
-    the positions have already been rounded, and the anchor then reproduces
-    the calculator's numbers only to about 2e-8 relative -- close enough to
-    the fp64 row to look like agreement and far enough to make a bit-exact
-    comparison impossible. The trailing cast stays as a belt-and-braces for
-    any tensor the scope does not reach.
-    """
-    z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
-    with torch_tools.default_dtype("float64"):
-        config = data.config_from_atoms(atoms)
-        atomic_data = data.AtomicData.from_config(
-            config, z_table=z_table, cutoff=float(model.r_max)
-        )
-        loader = torch_geometric.dataloader.DataLoader(
-            [atomic_data], batch_size=1, shuffle=False
-        )
-        graph = next(iter(loader)).to_dict()
-    return {
-        key: (
-            value.to(torch.float64)
-            if torch.is_tensor(value) and torch.is_floating_point(value)
-            else value
-        )
-        for key, value in graph.items()
-    }
+from tests.golden.anchors import ANCHORS
+from tests.golden.anchors import anchor_graph as _batch
+from tests.golden.anchors import load_anchor as _load
 
 
 @pytest.fixture(name="fixtures", scope="module")
