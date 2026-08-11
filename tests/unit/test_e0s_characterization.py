@@ -560,3 +560,255 @@ def test_no_scaling_overrides_even_an_explicit_std():
     model = _configure(["--scaling", "no_scaling", "--std", "7.0", "--mean", "1.5"])
     assert float(model.scale_shift.scale) == pytest.approx(1.0)
     assert float(model.scale_shift.shift) == pytest.approx(1.5)
+
+
+# ---------------------------------------------------------------------------
+# The dataset statistics the scale and the shift come from
+#
+# These are the numbers `--mean` and `--std` replace, and they are computed
+# from the E0s: every one of them subtracts the atomic energies first, so an
+# E0 mistake propagates into the scale as well as into the energies. Each is
+# asserted against the same arithmetic done in numpy on the same structures.
+# ---------------------------------------------------------------------------
+
+
+def _labelled_loader(structures, batch_size=2, cutoff=4.0):
+    keyspec = KeySpecification.from_defaults()
+    with torch_tools.default_dtype("float64"):
+        graphs = [
+            data.AtomicData.from_config(
+                config_from_atoms(atoms, keyspec), z_table=Z_TABLE, cutoff=cutoff
+            )
+            for atoms in structures
+        ]
+        return torch_geometric.dataloader.DataLoader(
+            graphs, batch_size=batch_size, shuffle=False
+        )
+
+
+def _per_atom_interaction_energies(structures, e0s):
+    """The same quantity in numpy: (E - sum_z n_z E0_z) / n_atoms."""
+    values = []
+    for atoms in structures:
+        e0 = sum(e0s[Z_TABLE.z_to_index(int(z))] for z in atoms.get_atomic_numbers())
+        values.append((atoms.info["REF_energy"] - e0) / len(atoms))
+    return np.array(values)
+
+
+def test_the_mean_and_std_scaling_is_the_per_atom_interaction_energy():
+    """`--scaling std_scaling`, which is the default.
+
+    The mean is the mean per-atom interaction energy and the std is its
+    sample standard deviation (Bessel-corrected -- `scatter_std` defaults to
+    `unbiased=True`, which differs from the population value by a factor
+    sqrt(n/(n-1)) and is the kind of detail a port gets wrong silently).
+    """
+    from mace.modules.utils import (  # noqa: PLC0415
+        compute_mean_std_atomic_inter_energy,
+    )
+
+    structures = load_training_structures(limit=6)
+    e0s = np.array([-0.1, -0.2, -0.3])
+    with torch_tools.default_dtype("float64"):
+        mean, std = compute_mean_std_atomic_inter_energy(
+            _labelled_loader(structures), e0s
+        )
+    expected = _per_atom_interaction_energies(structures, e0s)
+    assert float(np.atleast_1d(mean)[0]) == pytest.approx(
+        expected.mean(), abs=TOL.atol
+    )
+    assert float(np.atleast_1d(std)[0]) == pytest.approx(
+        expected.std(ddof=1), abs=TOL.atol
+    )
+    assert float(np.atleast_1d(std)[0]) != pytest.approx(
+        expected.std(ddof=0), abs=TOL.atol
+    ), "ddof=0 would also be plausible; it is not what the code does"
+
+
+def test_the_rms_forces_scaling_is_the_root_mean_square_force_component():
+    """`--scaling rms_forces_scaling`: the shift is an energy, the scale is a force.
+
+    Two different physical quantities in one pair, which is why `--mean` and
+    `--std` have the help strings they do.
+    """
+    from mace.modules.utils import compute_mean_rms_energy_forces  # noqa: PLC0415
+
+    structures = load_training_structures(limit=6)
+    e0s = np.array([-0.1, -0.2, -0.3])
+    with torch_tools.default_dtype("float64"):
+        mean, rms = compute_mean_rms_energy_forces(_labelled_loader(structures), e0s)
+    expected_mean = _per_atom_interaction_energies(structures, e0s).mean()
+    forces = np.concatenate([atoms.arrays["REF_forces"] for atoms in structures])
+    assert float(np.atleast_1d(mean)[0]) == pytest.approx(expected_mean, abs=TOL.atol)
+    assert float(np.atleast_1d(rms)[0]) == pytest.approx(
+        np.sqrt(np.mean(forces**2)), abs=TOL.atol
+    )
+
+
+def test_a_zero_spread_becomes_a_scale_of_one_with_a_warning(caplog):
+    """Silent fallback #4, in the statistics rather than in the E0s.
+
+    A single training configuration has no spread, so the std is 0 and
+    dividing by it would be fatal. `_check_non_zero` replaces it with 1.0 and
+    logs -- so a one-config debug run trains unscaled and looks normal.
+    """
+    from mace.modules.utils import (  # noqa: PLC0415
+        compute_mean_std_atomic_inter_energy,
+    )
+
+    structures = load_training_structures(limit=1)
+    with torch_tools.default_dtype("float64"):
+        with caplog.at_level(logging.WARNING):
+            _, std = compute_mean_std_atomic_inter_energy(
+                _labelled_loader(structures, batch_size=1), np.zeros(3)
+            )
+    assert float(np.atleast_1d(std)[0]) == 1.0
+    assert any("Standard deviation" in record.message for record in caplog.records)
+
+
+def test_the_average_neighbour_count_skips_atoms_that_have_no_neighbours():
+    """A counting convention with a real effect on the model's normalisation.
+
+    `compute_avg_num_neighbors` counts with `torch.unique(receivers)`, so an
+    atom that appears in no edge contributes nothing at all -- it is not
+    counted as a zero. Adding an isolated atom to the batch therefore leaves
+    the average unchanged instead of pulling it down, which is a difference a
+    port that counts per node rather than per edge would get wrong.
+    """
+    from mace.modules.utils import compute_avg_num_neighbors  # noqa: PLC0415
+
+    structures = load_training_structures(limit=3)
+    lonely = Atoms("H", positions=[[0.0, 0.0, 0.0]], cell=np.eye(3) * 50.0, pbc=True)
+    lonely.info["REF_energy"] = 0.0
+    lonely.arrays["REF_forces"] = np.zeros((1, 3))
+
+    with torch_tools.default_dtype("float64"):
+        without = compute_avg_num_neighbors(_labelled_loader(structures))
+        with_lonely = compute_avg_num_neighbors(_labelled_loader(structures + [lonely]))
+    assert without > 1.0
+    assert with_lonely == pytest.approx(without, abs=TOL.atol)
+
+
+def test_compute_statistics_returns_three_numbers_and_the_third_is_not_a_std():
+    """What `mace_prepare_data` writes into statistics.json, and its one lie.
+
+    The signature says `Tuple[float, float, float, float]` and the function
+    returns **three** values; `preprocess_data.py:43` unpacks them as
+    `avg_num_neighbors, mean, std`, but the third is the root-mean-square
+    force component, not a standard deviation of anything. It agrees with
+    `compute_mean_rms_energy_forces`, which is what `--scaling
+    rms_forces_scaling` (the default) uses, so the number is the right one
+    for the default path and misnamed everywhere it is read.
+    """
+    from mace.modules.utils import (  # noqa: PLC0415
+        compute_avg_num_neighbors,
+        compute_mean_rms_energy_forces,
+        compute_mean_std_atomic_inter_energy,
+        compute_statistics,
+    )
+
+    structures = load_training_structures(limit=6)
+    e0s = np.array([-0.1, -0.2, -0.3])
+    with torch_tools.default_dtype("float64"):
+        returned = compute_statistics(_labelled_loader(structures), e0s)
+        expected_neighbors = compute_avg_num_neighbors(_labelled_loader(structures))
+        expected_mean, expected_rms = compute_mean_rms_energy_forces(
+            _labelled_loader(structures), e0s
+        )
+        _, actual_std = compute_mean_std_atomic_inter_energy(
+            _labelled_loader(structures), e0s
+        )
+    assert len(returned) == 3, "the annotation says four; the code returns three"
+    avg_neighbors, mean, third = returned
+    assert avg_neighbors == pytest.approx(expected_neighbors, abs=TOL.atol)
+    assert float(np.atleast_1d(mean)[0]) == pytest.approx(
+        float(np.atleast_1d(expected_mean)[0]), abs=TOL.atol
+    )
+    assert float(np.atleast_1d(third)[0]) == pytest.approx(
+        float(np.atleast_1d(expected_rms)[0]), abs=TOL.atol
+    )
+    assert float(np.atleast_1d(third)[0]) != pytest.approx(
+        float(np.atleast_1d(actual_std)[0]), abs=TOL.atol
+    ), "the two are different quantities; if they coincide the test is vacuous"
+
+
+def test_the_dipole_scaling_entry_cannot_be_used_the_way_the_other_two_are():
+    """`scaling_classes["rms_dipoles_scaling"]` does not have the same shape.
+
+    The other two entries return `(mean, std)` and `configure_model` unpacks
+    the call site as such (mace/tools/model_script_utils.py:81). This one
+    returns a single float, so that unpacking raises TypeError. It is not
+    reachable from `--scaling`, whose choices are the other three, so the
+    entry is only usable through a YAML config -- where it fails. Pinned as
+    characterization: a port that "fixes" the return shape changes what a
+    config file does, and a port that copies the registry faithfully
+    inherits a dead entry it should know about.
+    """
+    from mace.modules import scaling_classes  # noqa: PLC0415
+    from mace.modules.utils import compute_rms_dipoles  # noqa: PLC0415
+
+    structures = load_training_structures(limit=4)
+    for index, atoms in enumerate(structures):
+        atoms.info["dipole"] = np.array([0.5 * (index + 1), 0.0, -1.0])
+    with torch_tools.default_dtype("float64"):
+        returned = compute_rms_dipoles(_labelled_loader(structures))
+    dipoles = np.stack([atoms.info["dipole"] for atoms in structures])
+    assert isinstance(returned, float)
+    assert returned == pytest.approx(np.sqrt(np.mean(dipoles**2)), abs=TOL.atol)
+    assert scaling_classes["rms_dipoles_scaling"] is compute_rms_dipoles
+    with pytest.raises(TypeError):
+        _mean, _std = returned  # what configure_model does
+
+
+def test_the_zero_spread_guard_only_works_on_arrays():
+    """`_check_non_zero` assigns into its argument, so a scalar 0.0 raises.
+
+    The two array-returning statistics reach it safely; `compute_rms_dipoles`
+    hands it a Python float, so the guard that exists to prevent a division
+    by zero is itself a TypeError in exactly the case it was written for.
+    """
+    from mace.modules.utils import _check_non_zero  # noqa: PLC0415
+
+    assert _check_non_zero(np.array([0.0, 2.0])).tolist() == [1.0, 2.0]
+    assert _check_non_zero(3.5) == 3.5
+    with pytest.raises(TypeError):
+        _check_non_zero(0.0)
+
+
+def test_the_per_batch_statistics_helpers_agree_with_the_loader_versions():
+    """`_compute_mean_std_atomic_inter_energy` and its rms sibling.
+
+    They exist so a caller holding one batch can get the same per-graph
+    quantities the loader-level functions reduce -- the HDF5/LMDB
+    preprocessing path is what needs that. Nothing pins them together, so
+    this does: fed the whole dataset as one batch, the private helper's
+    per-graph energies reduce to exactly what the public function returns.
+    """
+    from mace.modules.blocks import AtomicEnergiesBlock  # noqa: PLC0415
+    from mace.modules.utils import (  # noqa: PLC0415
+        _compute_mean_rms_energy_forces,
+        _compute_mean_std_atomic_inter_energy,
+        compute_mean_std_atomic_inter_energy,
+    )
+
+    structures = load_training_structures(limit=6)
+    e0s = np.array([-0.1, -0.2, -0.3])
+    with torch_tools.default_dtype("float64"):
+        loader = _labelled_loader(structures, batch_size=len(structures))
+        batch = next(iter(loader))
+        block = AtomicEnergiesBlock(atomic_energies=e0s)
+        per_graph = _compute_mean_std_atomic_inter_energy(batch, block)
+        also_per_graph, forces = _compute_mean_rms_energy_forces(batch, block)
+        mean, std = compute_mean_std_atomic_inter_energy(
+            _labelled_loader(structures), e0s
+        )
+    expected = _per_atom_interaction_energies(structures, e0s)
+    assert per_graph.detach().numpy() == pytest.approx(expected, abs=TOL.atol)
+    assert torch.equal(per_graph, also_per_graph)
+    assert forces.shape[0] == sum(len(atoms) for atoms in structures)
+    assert float(np.atleast_1d(mean)[0]) == pytest.approx(
+        float(per_graph.mean()), abs=TOL.atol
+    )
+    assert float(np.atleast_1d(std)[0]) == pytest.approx(
+        float(per_graph.std(unbiased=True)), abs=TOL.atol
+    )

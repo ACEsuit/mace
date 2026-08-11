@@ -40,6 +40,7 @@ from mace.modules.utils import (
     compute_forces,
     compute_forces_virials,
     get_edge_vectors_and_lengths,
+    get_symmetric_displacement,
     prepare_graph,
 )
 from mace.tools import torch_tools
@@ -281,6 +282,62 @@ def test_the_sign_of_every_derivative_against_a_hand_differentiable_energy():
     # the volume is |det(cell)|, so a left-handed cell gives the same stress
     _, _, mirrored = evaluate(-cell)
     assert torch.allclose(mirrored, expected_stress, atol=TOL.atol, rtol=TOL.rtol)
+
+
+def test_an_unconnected_energy_gives_zero_forces_and_a_zero_virial():
+    """The two `is None` guards in `compute_forces_virials` (`:75-78`).
+
+    They are what a fully dissociated structure hits. Note the shapes they
+    fall back to: the forces match the positions, but the virial is
+    `torch.zeros((1, 3, 3))` regardless of how many graphs were in the batch
+    -- and in the default dtype rather than the energy's. A batch of four
+    structures that reaches this branch gets one virial back.
+    """
+    positions = torch.zeros((2, 3), dtype=torch.float64, requires_grad=True)
+    displacement = torch.zeros((3, 3, 3), dtype=torch.float64, requires_grad=True)
+    unrelated = torch.ones(1, dtype=torch.float64, requires_grad=True) * 5.0
+    cell = torch.eye(3, dtype=torch.float64).repeat(3, 1, 1)
+
+    forces, virials, stress = compute_forces_virials(
+        energy=unrelated,
+        positions=positions,
+        displacement=displacement,
+        cell=cell,
+        training=False,
+        compute_stress=True,
+    )
+    assert torch.equal(forces, torch.zeros_like(positions))
+    assert virials.shape == (1, 3, 3)
+    assert torch.count_nonzero(virials) == 0
+    # the stress keeps the displacement's shape, because it was seeded from it
+    assert stress.shape == (3, 3, 3)
+
+
+def test_get_symmetric_displacement_invents_a_cell_when_there_is_none():
+    """`cell=None` becomes a `(3 * n_graphs, 3)` block of zeros (`:92-98`).
+
+    A zero cell makes every shift zero, so an aperiodic batch that reaches
+    this path gets the right edge vectors and a meaningless volume -- which
+    is why the neighbour list hands back a fabricated cell for aperiodic
+    structures rather than letting this one be used for a stress.
+    """
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=torch.float64, requires_grad=True
+    )
+    unit_shifts = torch.zeros((1, 3), dtype=torch.float64)
+    edge_index = torch.tensor([[0], [1]])
+    moved, shifts, displacement = get_symmetric_displacement(
+        positions=positions,
+        unit_shifts=unit_shifts,
+        cell=None,
+        edge_index=edge_index,
+        num_graphs=2,
+        batch=torch.tensor([0, 1]),
+    )
+    assert torch.equal(shifts, torch.zeros((1, 3), dtype=torch.float64))
+    assert displacement.shape == (2, 3, 3)
+    assert displacement.requires_grad
+    assert torch.allclose(moved, positions, atol=TOL.atol, rtol=TOL.rtol)
 
 
 def test_a_blown_up_stress_component_is_silently_zeroed():
