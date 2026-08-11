@@ -8,8 +8,13 @@ here is regenerated as a side effect of another change.
 ```
 harness.py            the shared machinery: fixtures, snapshot schema,
                       tolerance table, comparison
-calculator_keys.py    what this repo's calculators call each channel
+calculator_keys.py    what this repo's calculators call each channel, and
+                      where every evaluation reads its inputs
 model_keys.py         what the model forwards call each channel
+eval_keys.py          what mace_eval_configs writes onto its structures
+surface_scan.py       derives all of the above out of mace/ by AST, so the
+                      guard checks the schema against the package rather
+                      than against a remembered list
 fixtures/             committed .xyz structures + manifest.json
 models/               committed anchor checkpoints + their build sidecars
 references/           committed expected-output JSON
@@ -50,21 +55,46 @@ reference at all. Three ways out, in order of preference:
   a written reason. Currently the committee spread statistics and the strain
   `displacement` handle, and only those.
 
-## There are two surfaces, and they disagree
+## There are three surfaces, and they disagree
 
-A quantity reaches the harness through one of two doors, and coverage of one
-is not coverage of the other. The first version of the alias map was derived
-from `mace/calculators/mace.py` alone: all 31 calculator keys resolved and 13
-of the 43 model-forward keys resolved to nothing. That gap is load-bearing —
-`edge_forces` and `hessian` are returned by every energy model and by no
-calculator, so any golden that wants either goes through the `golden_outputs`
-hook, and a hook hands over the forward's whole dict.
+A quantity reaches the harness through one of three doors, and coverage of
+one is not coverage of another. Each was added after the previous one turned
+out not to be the whole story:
 
-So registrations name their surface, and the guard test derives its
-expectation from **both**: `mace/calculators/mace.py` by regex, and the
-`forward` return dicts of every model class in `mace/modules/{models,
-extensions}.py` by AST (they build that dict three different ways, so a regex
-would only find one of them).
+* the **calculator**, an ase `Calculator`'s `results` dict;
+* the **model**, a `forward` return dict, reached through `golden_outputs`.
+  The first version of the alias map was derived from
+  `mace/calculators/mace.py` alone: all 31 calculator keys resolved and 13 of
+  the 43 model-forward keys resolved to nothing. That gap is load-bearing —
+  `edge_forces` and `hessian` are returned by every energy model and by no
+  calculator;
+* the **eval CLI**, which returns nothing at all: `mace_eval_configs` writes
+  its results back onto the structures, into `info` or `arrays` under a
+  caller-chosen prefix, and then writes extxyz. It emits 13 names, of which
+  `BO_contributions`, `node_energies` and `descriptors` resolved to nothing —
+  so any ticket pinning the eval CLI stopped at authoring time.
+
+So registrations name their surface, and the guard derives its expectation
+from the package. That derivation lives in `surface_scan.py` and is not a
+regex: it follows how each surface is actually written.
+
+| surface | derived from | forms it has to follow |
+|---|---|---|
+| calculator | every `class X(Calculator)` in `mace/` | `self.results[k]`, the aliased local (both assignment directions), `.update()` with a literal or a named dict, a whole-dict assignment, and the suffixed committee keys — whose bases come from the `results_store_ensemble` set literal the source guards them with, not from a copy of its members |
+| model | every file defining a `forward` that returns a dict | `return {...}`, `out = {...}; return out`, and `out[k] = ...` on a dict from a nested call |
+| eval CLI | `mace/cli/eval_configs.py` | `atoms.{info,arrays}[args.info_prefix + "name"]`, prefix stripped |
+
+Two details of that table are the whole reason it exists. The model file list
+is **discovered**, because the version that named `modules/models.py` and
+`modules/extensions.py` was reading two writers out of four — the other two
+are `calculators/lammps_mace.py` and `calculators/mace_torchsim.py`, which is
+exactly what a deployment golden evaluates, and `total_energy_local` was the
+one key in the whole package that no channel described. And every scan
+reports the writes it **could not** resolve, with file and line, because an
+extractor that finds nothing reports perfect coverage. The only unresolved
+write allowed to stand is one with a written reason in `PASSTHROUGH_WRITES`
+(there is one: the torchsim wrapper forwards the wrapped model's dict key by
+key, so its key set *is* the model surface's).
 
 Naming the surface buys two things a flat map cannot express:
 
@@ -100,11 +130,49 @@ bcc iron is not a contrived magnitude.
 
 Inputs are read from the same place the model reads them — moments from
 `atoms.arrays[magmom_key]`, not from ase's initial-moments attribute, which
-nothing in the forward pass looks at. `magmom_key` and `charges_key` are
-*constructor arguments*, so the harness asks the object it was handed
-(`register_input_probe`) instead of assuming the default; a structure whose
-moments live under another key used to be recorded as no moments at all and
-then compare clean.
+nothing in the forward pass looks at.
+
+**Which place that is, is derived, not listed.** The first version named two
+constructor arguments (`magmom_key`, `charges_key`) and by doing so said
+nothing at all about `external_field`, `total_charge` or `total_spin`: a
+reference recorded no field, and a snapshot taken at another field compared
+clean against it. Adding the missing three would have been the same mistake
+with a longer list, so the harness reads the mapping the reader is handed.
+Both calculators keep a `KeySpecification`'s two dicts on the instance
+(`info_keys`, `arrays_keys`) and `config_from_atoms` iterates them, so
+`register_keyspec_source` reads the reader. A constructor argument added
+tomorrow lands in one of those dicts and is picked up with no change here;
+one that names a property no channel covers **fails the snapshot** and says
+which, which is the outcome an enumerated list could not produce.
+
+Four rules follow, and each one closes a way of pinning nothing:
+
+* **an unknown property is an error**, exactly as an unknown output key is.
+  `update_keyspec_from_kwargs` will put an arbitrary name in the mapping
+  (that is how `embedding_specs` works), so the next input is not
+  hypothetical.
+* **a label is dismissed in writing.** Training targets travel in the same
+  mapping and reach no `forward` — the batch keys the models actually read
+  are a much shorter list — so each is declared a non-input with a reason
+  rather than silently skipped.
+* **an input the evaluation carries itself is recorded too.**
+  `MACECalculator(external_field=…)` writes the vector into the batch after
+  the graph is built, so it overrides the structure and appears in no array.
+  It enters the energy and the BEC force correction.
+* **an input under a key nobody reads is refused.** The two live spellings of
+  the reference charges disagree by default — the training CLI writes
+  `REF_charges`, both calculators read `Qs` — so a structure prepared by one
+  and handed to the other has its charges ignored. That is the generalisation
+  of the older ase-initial-moments refusal.
+
+One table survives: the fallback spellings in `INPUT_ARRAY_KEYS` /
+`INPUT_INFO_KEYS`, used when nothing better is known. It **cannot** be
+derived, because deriving it means reading the framework's own key tables and
+`harness.py` may not import the framework. So it is literal and a guard test
+derives the truth — `DefaultKeys` for one spelling per property, the
+`infos`/`arrays` lists in `update_keyspec_from_kwargs` for the store, each
+calculator's own `__init__` defaults for the second spelling — and asserts
+the table matches. Drift fails there.
 
 ## The tolerance table
 

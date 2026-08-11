@@ -255,7 +255,7 @@ ROLES = (ROLE_INPUT, ROLE_OUTPUT, ROLE_METADATA)
 # ---------------------------------------------------------------------------
 # Surfaces
 #
-# A quantity reaches this module through one of two doors, and they do not
+# A quantity reaches this module through one of three doors, and they do not
 # use the same words. The model's ``forward`` returns one dict; the ase
 # calculator that wraps it returns another, with four renames and -- worse --
 # one *collision*: ``virials`` is the graph-level virial in the forward and
@@ -264,14 +264,21 @@ ROLES = (ROLE_INPUT, ROLE_OUTPUT, ROLE_METADATA)
 # surface's ``virials`` onto a per-atom kind, which is a shape failure waiting
 # for the first golden that takes the model route.
 #
+# The third door is the evaluation command line, which writes its results onto
+# the structures themselves rather than returning a dict. It renames three
+# things again and reshapes a fourth, and it was missing here for exactly as
+# long as nobody had written a golden that used it -- the same way the model
+# surface was missing before it.
+#
 # So a registration may name the surface it describes. ``SURFACE_ANY`` is the
-# default and means "both doors agree", which is the common case.
+# default and means "every door agrees", which is the common case.
 # ---------------------------------------------------------------------------
 
 SURFACE_ANY = "any"
 SURFACE_MODEL = "model"  # a forward() return dict, via golden_outputs()
 SURFACE_CALCULATOR = "calculator"  # an ase calculator's results dict
-SURFACES = (SURFACE_ANY, SURFACE_MODEL, SURFACE_CALCULATOR)
+SURFACE_EVAL = "eval"  # what the evaluation CLI writes onto the structures
+SURFACES = (SURFACE_ANY, SURFACE_MODEL, SURFACE_CALCULATOR, SURFACE_EVAL)
 
 
 @dataclass(frozen=True)
@@ -314,6 +321,12 @@ CHANNELS: Dict[str, Channel] = {
     "atomic_stresses": _channel("atomic_stresses", PER_ATOM_TENSOR, "eV/Ang^3"),
     "atomic_virials": _channel("atomic_virials", PER_ATOM_TENSOR, "eV"),
     "hessian": _channel("hessian", HESSIAN, "eV/Ang^2"),
+    # The energy of one domain's *own* atoms, with the ghost atoms' site
+    # energies left out. A deliberately different quantity from `energy`: the
+    # domain-decomposed export sums it per rank and the total is only
+    # recovered by adding the ranks up, so a golden that compared it against
+    # `energy` would be comparing a part with the whole.
+    "total_energy_local": _channel("total_energy_local", GRAPH_SCALAR, "eV"),
     "interaction_energy": _channel("interaction_energy", GRAPH_SCALAR, "eV"),
     "electron_energy": _channel("electron_energy", GRAPH_SCALAR, "eV"),
     # Per-readout-layer energy terms, stacked per graph. The extent is a
@@ -462,10 +475,11 @@ def register_alias(
     Args:
         spelling: the name the implementation writes.
         channel: the declared channel it means.
-        surface: ``SURFACE_ANY`` when both doors use this spelling for this
-            quantity; ``SURFACE_MODEL`` / ``SURFACE_CALCULATOR`` when only one
-            does. A surface-scoped registration is the only way to say that a
-            spelling means different things on the two surfaces.
+        surface: ``SURFACE_ANY`` when every door uses this spelling for this
+            quantity; a named surface when only one does. A surface-scoped
+            registration is the only way to say that a spelling means
+            different things on two of them -- and the only way to keep a
+            layout conversion from leaking onto a door that does not need it.
         convert: applied to the value on ingest, to bring it into the
             channel's canonical layout. Must be lossless.
         note: mandatory when the spelling shadows a declared channel, because
@@ -488,7 +502,7 @@ def register_alias(
             raise ValueError(
                 f"{spelling!r} is a declared channel and the {surface} surface "
                 f"uses it for {channel!r} instead. That is a name collision "
-                f"between the two surfaces, not a rename; say so in note=."
+                f"between two of the surfaces, not a rename; say so in note=."
             )
     by_surface = CHANNEL_ALIASES.setdefault(spelling, {})
     existing = by_surface.get(surface)
@@ -734,6 +748,42 @@ def load_fixtures(
     return out
 
 
+def collect_prefixed_outputs(atoms: Atoms, prefix: str) -> Dict[str, Any]:
+    """Everything written onto a structure under a common prefix, unprefixed.
+
+    The third surface does not return a dict: it writes its results back onto
+    the structures, into ``info`` or ``arrays`` depending on whether the
+    quantity is per graph or per atom, under a prefix its caller chooses. So
+    the prefix is not part of any name -- stripping it here is what lets one
+    channel serve a run whatever prefix it was given, instead of the schema
+    growing a spelling per invocation.
+
+    Which of the two stores a name lands in is a property of the quantity, so
+    a name in both is a contradiction rather than a merge, and it raises.
+    """
+    if not prefix:
+        raise ValueError(
+            "a prefix is required; with an empty one every structural array "
+            "('numbers', 'positions') would be read as an output"
+        )
+    out: Dict[str, Any] = {}
+    seen: Dict[str, str] = {}
+    for store_name, store in (("info", atoms.info), ("arrays", atoms.arrays)):
+        for key, value in store.items():
+            if not key.startswith(prefix) or key == prefix:
+                continue
+            name = key[len(prefix) :]
+            if name in out:
+                raise ValueError(
+                    f"{key!r} is present in both {seen[name]} and {store_name}; "
+                    f"one quantity lives in one of the two and a name in both "
+                    f"is two different things sharing a spelling"
+                )
+            out[name] = value
+            seen[name] = store_name
+    return out
+
+
 def is_periodic(atoms: Atoms) -> bool:
     """Whether a stress is meaningful for this structure.
 
@@ -749,10 +799,15 @@ def is_periodic(atoms: Atoms) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _as_array(value: Any) -> np.ndarray:
+def _as_array(value: Any, what: str = "a value") -> np.ndarray:
     arr = np.asarray(value)
     if arr.dtype == object:
-        raise TypeError(f"cannot snapshot a ragged/object value: {value!r}")
+        raise TypeError(
+            f"cannot snapshot {what}: it is ragged or not numeric ({value!r}). "
+            f"Every channel is an array of a declared shape, so a mapping or a "
+            f"list of unequal rows has to be reduced to one before it gets here "
+            f"-- or declared not to be pinned at all."
+        )
     return arr.astype(np.float64) if arr.dtype.kind in "fiub" else arr
 
 
@@ -846,23 +901,34 @@ def _encode(name: str, value: Any, n_atoms: int) -> dict:
     }
 
 
-#: Where each declared input actually lives on an ``ase.Atoms``, in the order
-#: the spellings are tried. This has to track the reader, not the convention:
-#: a model that takes its moments from ``atoms.arrays["REF_magmom"]`` is not
-#: fed by ``set_initial_magnetic_moments``, so recording the latter would put
+#: Where each declared input lives on an ``ase.Atoms`` **when nothing better
+#: is known**, in the order the spellings are tried. This has to track the
+#: reader, not the convention: a model that takes its moments from
+#: ``atoms.arrays["REF_magmom"]`` is not fed by
+#: ``set_initial_magnetic_moments``, so recording the latter would put
 #: provenance in the reference that the evaluation never saw -- a reference
 #: that looks reproducible and is not.
 #:
-#: These are only the *defaults*. Both of them are constructor arguments on
-#: the calculators (``magmom_key``, ``charges_key``), so a table of literals
-#: is a table of guesses: a structure whose moments live under a
-#: non-default key matches nothing here, the snapshot records no magmom at
-#: all, and the comparison passes -- silently, since there is nothing on
-#: either side to disagree about. The configured value is recovered per
-#: evaluation through :func:`register_input_probe`.
+#: These are only the *defaults*, and a default is a guess about a specific
+#: evaluation: every one of these spellings is a constructor argument
+#: somewhere, so a structure whose moments live under another key matches
+#: nothing here, is recorded as no moments at all, and then compares clean.
+#: What an evaluation actually reads is recovered from the evaluation itself,
+#: by :func:`register_keyspec_source` (the whole property->key mapping, which
+#: is the authoritative answer) and :func:`register_input_probe` (one
+#: attribute naming one key, for objects that expose no mapping).
+#:
+#: This module cannot derive the defaults, because deriving them means reading
+#: the framework's own key tables and this module may not import the
+#: framework. They are literals here and a guard test derives the truth and
+#: asserts these match it, so drift fails there rather than silently widening
+#: what a snapshot will accept.
 INPUT_ARRAY_KEYS: Dict[str, tuple] = {
     "magmom": ("REF_magmom",),
-    "input_charges": ("REF_charges",),
+    # Two live spellings, and they disagree by default: the training CLI and
+    # the data pipeline write REF_charges, while both calculators default to
+    # Qs. Listing one would make the other a silent miss.
+    "input_charges": ("REF_charges", "Qs"),
 }
 
 #: The same, for graph-level inputs read off ``atoms.info``. Two spellings
@@ -875,6 +941,134 @@ INPUT_INFO_KEYS: Dict[str, tuple] = {
     "elec_temp": ("elec_temp",),
     "external_field": ("external_field",),
 }
+
+# ---------------------------------------------------------------------------
+# What the evaluation says it reads
+#
+# Three mechanisms, in increasing order of how much they know, and every one
+# of them exists because the layer below it was silent rather than wrong:
+#
+#   * the tables above: literal defaults, right until an evaluation is
+#     configured differently;
+#   * :func:`register_input_probe`: one attribute holding one key, which is
+#     how an object that takes ``magmom_key=`` presents itself;
+#   * :func:`register_keyspec_source`: an attribute holding the *whole*
+#     property -> key mapping the reader is handed. This is the only one that
+#     cannot be outgrown by the next constructor argument, because it does not
+#     enumerate anything -- it reads the mapping the evaluation built. An
+#     input that appears in that mapping and has no channel here raises, which
+#     is the point: a quantity the evaluation reads and the reference does not
+#     record is a reference that pins nothing about it, and two snapshots
+#     taken at different values of it compare clean.
+#
+# The property names are the reader's vocabulary, not this module's, so the
+# translation is registered rather than assumed -- ``charges`` on the reading
+# side is the reference charge *input*, while the channel called ``charges``
+# is what a model predicts, and conflating them would put a prediction in the
+# inputs block.
+# ---------------------------------------------------------------------------
+
+#: property name (as the reader spells it) -> input channel.
+INPUT_PROPERTIES: Dict[str, str] = {}
+
+#: property name -> why it is read but is not an input to pin. Labels are the
+#: whole population: a training target parsed off the structure travels in the
+#: graph and reaches no forward.
+NON_INPUT_PROPERTIES: Dict[str, str] = {}
+
+#: attribute holding a property->key mapping -> the store it addresses.
+KEYSPEC_SOURCES: Dict[str, str] = {}
+
+#: input channel -> attributes holding the *value* itself rather than a key.
+#: Some inputs never come off the structure at all.
+INPUT_VALUE_PROBES: Dict[str, Tuple[str, ...]] = {}
+
+
+def register_input_property(prop: str, channel: str) -> None:
+    """Declare that a reader's property ``prop`` is the input ``channel``."""
+    if CHANNELS.get(channel) is None or CHANNELS[channel].role != ROLE_INPUT:
+        raise KeyError(f"{channel!r} is not a declared input channel")
+    existing = INPUT_PROPERTIES.get(prop)
+    if existing is not None and existing != channel:
+        raise ValueError(
+            f"property {prop!r} already means the {existing!r} channel and "
+            f"cannot also mean {channel!r}"
+        )
+    if prop in NON_INPUT_PROPERTIES:
+        raise ValueError(
+            f"property {prop!r} is declared not an input: "
+            f"{NON_INPUT_PROPERTIES[prop]}"
+        )
+    INPUT_PROPERTIES[prop] = channel
+
+
+def declare_non_input_property(prop: str, reason: str) -> None:
+    """Declare that a property the reader parses is not an input to pin.
+
+    ``reason`` is mandatory for the same purpose as :func:`ignore_key`'s: the
+    interesting question about an unpinned quantity is not whether somebody
+    thought about it but when, and a sentence on the record answers it.
+    """
+    if not reason.strip():
+        raise ValueError(f"declaring {prop!r} a non-input requires a reason")
+    if prop in INPUT_PROPERTIES:
+        raise ValueError(
+            f"property {prop!r} is registered as the "
+            f"{INPUT_PROPERTIES[prop]!r} input channel"
+        )
+    NON_INPUT_PROPERTIES[prop] = reason
+
+
+def register_keyspec_source(attribute: str, store: str) -> None:
+    """Declare that ``calc_like.<attribute>`` maps properties to ``store`` keys."""
+    if store not in ("arrays", "info"):
+        raise ValueError(f"store must be 'arrays' or 'info', got {store!r}")
+    existing = KEYSPEC_SOURCES.get(attribute)
+    if existing is not None and existing != store:
+        raise ValueError(
+            f"{attribute!r} already addresses the {existing!r} store"
+        )
+    KEYSPEC_SOURCES[attribute] = store
+
+
+def register_input_value_probe(channel: str, *, attribute: str) -> None:
+    """Declare that ``calc_like.<attribute>`` holds an input's value outright.
+
+    Not every input is read off the structure. One is handed to the
+    evaluation directly and then overwrites whatever the structure carried, so
+    a snapshot that only ever looks at the structure records the value the
+    evaluation discarded -- and two references taken at two different values
+    compare clean, which is the failure this whole block exists to stop.
+    """
+    if CHANNELS.get(channel) is None or CHANNELS[channel].role != ROLE_INPUT:
+        raise KeyError(f"{channel!r} is not a declared input channel")
+    INPUT_VALUE_PROBES[channel] = tuple(
+        dict.fromkeys(INPUT_VALUE_PROBES.get(channel, ()) + (attribute,))
+    )
+
+
+def input_channel_for_property(prop: str, where: str) -> Optional[str]:
+    """The input channel a reader's property means, or ``None`` if declared not
+    to be an input.
+
+    Raises:
+        KeyError: if the property is neither. An evaluation reading something
+            nobody declared is the input-side twin of an output nobody pins.
+    """
+    if prop in INPUT_PROPERTIES:
+        return INPUT_PROPERTIES[prop]
+    if prop in NON_INPUT_PROPERTIES:
+        return None
+    raise KeyError(
+        f"the evaluation reads a property named {prop!r} (from {where}), which "
+        f"the schema does not know. An input that is read and not recorded is "
+        f"an input nothing pins: two snapshots taken at different values of it "
+        f"compare clean. Fix it with register_input_property({prop!r}, "
+        f"<input channel>) if it is fed to the model, or "
+        f"declare_non_input_property({prop!r}, <reason>) if it is a label the "
+        f"forward never sees. Declared input channels: "
+        f"{sorted(n for n, c in CHANNELS.items() if c.role == ROLE_INPUT)}."
+    )
 
 
 def register_input_source(
@@ -944,8 +1138,12 @@ def _effective_input_keys(
     Merging the two would turn that into a spurious "present under both with
     different values" failure.
 
-    ``overrides`` wins over the probe, which wins over the defaults.
+    ``overrides`` wins over the keyspec, which wins over the single-attribute
+    probe, which wins over the defaults. The keyspec beats the probe because
+    it is what the reader was handed: an object may expose both, and only one
+    of them is the mapping that was actually used.
     """
+    _validate_overrides(overrides)
     arrays = {name: tuple(keys) for name, keys in INPUT_ARRAY_KEYS.items()}
     info = {name: tuple(keys) for name, keys in INPUT_INFO_KEYS.items()}
 
@@ -955,16 +1153,43 @@ def _effective_input_keys(
             if isinstance(configured, str) and configured:
                 target = arrays if probe.store == "arrays" else info
                 target[probe.channel] = (configured,)
+    for attribute, store in sorted(KEYSPEC_SOURCES.items()):
+        mapping = getattr(calc_like, attribute, None)
+        if not isinstance(mapping, Mapping):
+            continue
+        for prop, key in mapping.items():
+            channel = input_channel_for_property(prop, f"{attribute}[{prop!r}]")
+            if channel is None or not isinstance(key, str) or not key:
+                continue
+            target = arrays if store == "arrays" else info
+            target[channel] = (key,)
     for channel, keys in (overrides or {}).items():
+        target = info if channel in INPUT_INFO_KEYS else arrays
+        target[channel] = tuple(dict.fromkeys(keys))
+    return arrays, info
+
+
+def _validate_overrides(overrides: Optional[Mapping[str, Sequence[str]]]) -> None:
+    for channel in overrides or ():
         if CHANNELS.get(channel) is None or CHANNELS[channel].role != ROLE_INPUT:
             raise KeyError(
                 f"input_keys names {channel!r}, which is not a declared input "
                 f"channel; the inputs are "
                 f"{sorted(n for n, c in CHANNELS.items() if c.role == ROLE_INPUT)}"
             )
-        target = info if channel in INPUT_INFO_KEYS else arrays
-        target[channel] = tuple(dict.fromkeys(keys))
-    return arrays, info
+
+
+def _probed_input_values(calc_like: Any) -> Dict[str, Tuple[str, np.ndarray]]:
+    """Input values the evaluation carries itself, as channel -> (where, value)."""
+    found: Dict[str, Tuple[str, np.ndarray]] = {}
+    for channel, attributes in sorted(INPUT_VALUE_PROBES.items()):
+        for attribute in attributes:
+            value = getattr(calc_like, attribute, None)
+            if value is None:
+                continue
+            found[channel] = (attribute, np.asarray(value, dtype=np.float64))
+            break
+    return found
 
 
 def _first_present(channel: str, store: Mapping[str, Any], keys: Sequence[str]) -> Any:
@@ -983,29 +1208,101 @@ def _first_present(channel: str, store: Mapping[str, Any], keys: Sequence[str]) 
     return values[0]
 
 
+def _refuse_a_stray_spelling(
+    channel: str,
+    store: Mapping[str, Any],
+    store_name: str,
+    effective: Sequence[str],
+    known: Sequence[str],
+) -> None:
+    """Refuse a structure that carries an input under a key nobody reads.
+
+    Nothing was recorded for ``channel`` because none of the keys the
+    evaluation reads is present -- but a spelling the schema knows *is*, so
+    the structure was prepared for one reader and handed to another. The
+    reference would record no value, the evaluation would run on the default,
+    and the comparison would pass while pinning nothing.
+
+    Only known spellings raise. An arbitrary array nobody has ever declared
+    is not evidence of anything, and treating it as such would make every
+    structure carrying an unrelated column unusable.
+    """
+    stray = [key for key in known if key not in effective and key in store]
+    if not stray:
+        return
+    raise ValueError(
+        f"this structure carries the {channel!r} input in "
+        f"{store_name}[{stray[0]!r}], but this evaluation reads it from "
+        f"{list(effective)}, which is absent. A reference taken here would "
+        f"record no {channel!r} while the structure plainly has one, and would "
+        f"then compare clean against a snapshot taken at any other value. Put "
+        f"it under the key the evaluation reads, or configure the evaluation "
+        f"to read the one it is under."
+    )
+
+
 def _fixture_inputs(
     atoms: Atoms,
     array_keys: Mapping[str, tuple],
     info_keys: Mapping[str, tuple],
+    probed_values: Mapping[str, Tuple[str, np.ndarray]] = (),
 ) -> Dict[str, dict]:
     """Record the non-geometric inputs a structure carries.
 
     Geometry lives in the committed .xyz; what has to travel with the
-    reference is everything else a model reads off the structure, because a
-    snapshot taken at different initial moments (or a different total charge)
-    is a different number and would otherwise look like a regression.
+    reference is everything else a model reads, because a snapshot taken at
+    different initial moments, a different total charge or a different
+    external field is a different number and would otherwise look like a
+    regression -- or, worse, like agreement.
     """
     n_atoms = len(atoms)
     inputs: Dict[str, dict] = {}
-    for channel, keys in sorted(array_keys.items()):
-        value = _first_present(channel, atoms.arrays, keys)
-        if value is None:
-            continue
-        if channel == "magmom" and value.ndim == 1:
-            # A collinear moment is stored along z, so the schema stays
-            # vector-valued rather than being widened later.
-            value = np.stack([np.zeros(n_atoms), np.zeros(n_atoms), value], axis=-1)
+    probed = dict(probed_values or {})
+    stores = (("arrays", atoms.arrays, array_keys, INPUT_ARRAY_KEYS),
+              ("info", atoms.info, info_keys, INPUT_INFO_KEYS))
+
+    for channel, (attribute, value) in sorted(probed.items()):
+        # The evaluation was handed this value directly, so it is the input
+        # whatever the structure says. A structure that disagrees is not a
+        # second opinion being overruled quietly -- it is a fixture prepared
+        # for a different run, and saying so beats recording the right number
+        # for a reason nobody can see.
+        for store_name, store, keys, _known in stores:
+            carried = _first_present(channel, store, keys.get(channel, ()))
+            if carried is not None and not np.array_equal(
+                carried, np.asarray(value, dtype=np.float64)
+            ):
+                raise ValueError(
+                    f"input {channel!r} is {value.tolist()} on the evaluation "
+                    f"(from its {attribute!r}) and "
+                    f"{np.asarray(carried).tolist()} on the structure "
+                    f"({store_name}); the evaluation's value is what the model "
+                    f"sees, so the structure's is silently discarded"
+                )
         inputs[channel] = _encode(channel, value, n_atoms)
+
+    for store_name, store, keys_by_channel, known_by_channel in stores:
+        for channel, keys in sorted(keys_by_channel.items()):
+            if channel in inputs:
+                continue
+            value = _first_present(channel, store, keys)
+            if value is None:
+                _refuse_a_stray_spelling(
+                    channel,
+                    store,
+                    store_name,
+                    keys,
+                    known_by_channel.get(channel, ()),
+                )
+                continue
+            if channel == "magmom" and value.ndim == 1:
+                # A collinear moment is stored along z, so the schema stays
+                # vector-valued rather than being widened later.
+                value = np.stack(
+                    [np.zeros(n_atoms), np.zeros(n_atoms), value], axis=-1
+                )
+            inputs[channel] = _encode(channel, value, n_atoms)
+
     if "magmom" not in inputs:
         stray = np.asarray(atoms.get_initial_magnetic_moments(), dtype=np.float64)
         if stray.any():
@@ -1017,11 +1314,6 @@ def _fixture_inputs(
                 "the evaluation never used. Put the moments in the array the "
                 "model reads, or clear them."
             )
-    for channel, keys in sorted(info_keys.items()):
-        value = _first_present(channel, atoms.info, keys)
-        if value is None:
-            continue
-        inputs[channel] = _encode(channel, value, n_atoms)
     return inputs
 
 
@@ -1061,12 +1353,19 @@ def snapshot_outputs(
             "channels= names an allowlisted key, which is by definition never "
             f"recorded: {sorted(set(channels) & set(IGNORED_KEYS))}"
         )
-    array_keys, info_keys = _effective_input_keys(calc_like, input_keys)
+    _validate_overrides(input_keys)
     out_fixtures: Dict[str, dict] = {}
     for name, atoms in fixtures.items():
         n_atoms = len(atoms)
         periodic = is_periodic(atoms)
         raw, surface = _evaluate(calc_like, atoms)
+        # Resolved *after* the evaluation, not before it, because an object
+        # may only assemble its property->key mapping while it runs: one of
+        # the calculators here fills in its charges entry inside the call, so
+        # reading the mapping up front sees an empty dict and falls back to a
+        # default that may be the wrong array.
+        array_keys, info_keys = _effective_input_keys(calc_like, input_keys)
+        probed_values = _probed_input_values(calc_like)
         outputs: Dict[str, dict] = {}
         meta: Dict[str, Any] = {}
         for key in sorted(raw):
@@ -1096,7 +1395,11 @@ def snapshot_outputs(
                 meta[channel] = np.asarray(raw[key]).tolist()
                 continue
             convert = channel_conversion(key, surface)
-            value = raw[key] if convert is None else convert(_as_array(raw[key]))
+            value = (
+                raw[key]
+                if convert is None
+                else convert(_as_array(raw[key], f"{key!r} on the {surface} surface"))
+            )
             outputs[channel] = _encode(channel, value, n_atoms)
         if wanted is not None:
             missing = sorted(
@@ -1114,7 +1417,7 @@ def snapshot_outputs(
             "n_atoms": n_atoms,
             "periodic": periodic,
             "formula": atoms.get_chemical_formula(),
-            "inputs": _fixture_inputs(atoms, array_keys, info_keys),
+            "inputs": _fixture_inputs(atoms, array_keys, info_keys, probed_values),
             "outputs": outputs,
             "metadata": meta,
         }
@@ -1416,6 +1719,10 @@ __all__ = [
     "INPUT_ARRAY_KEYS",
     "INPUT_INFO_KEYS",
     "INPUT_PROBES",
+    "INPUT_PROPERTIES",
+    "INPUT_VALUE_PROBES",
+    "KEYSPEC_SOURCES",
+    "NON_INPUT_PROPERTIES",
     "FIXTURES_DIR",
     "FP32",
     "FP64_ACCELERATED_BACKEND",
@@ -1427,6 +1734,7 @@ __all__ = [
     "SURFACES",
     "SURFACE_ANY",
     "SURFACE_CALCULATOR",
+    "SURFACE_EVAL",
     "SURFACE_MODEL",
     "TOLERANCES",
     "Alias",
@@ -1435,10 +1743,13 @@ __all__ = [
     "InputProbe",
     "Tolerance",
     "channel_conversion",
+    "collect_prefixed_outputs",
     "compare_to_reference",
+    "declare_non_input_property",
     "deviations",
     "expected_shape",
     "ignore_key",
+    "input_channel_for_property",
     "is_periodic",
     "load_fixtures",
     "load_manifest",
@@ -1446,7 +1757,10 @@ __all__ = [
     "register_alias",
     "register_channel",
     "register_input_probe",
+    "register_input_property",
     "register_input_source",
+    "register_input_value_probe",
+    "register_keyspec_source",
     "resolve_channel",
     "snapshot_outputs",
     "tolerance",

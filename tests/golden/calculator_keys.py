@@ -158,19 +158,102 @@ harness.register_alias(
 # ---------------------------------------------------------------------------
 # Where the inputs are read from
 #
-# Both of these are constructor arguments, so the static default in the
-# harness is a guess about a specific instance. A structure whose moments live
-# under a non-default key matched nothing, was recorded as no magmom at all,
-# and then compared clean -- an input the model reads and the reference does
-# not record is the same silence as an output nobody pins.
+# The output side of this file is a list of names, because the calculator
+# writes a fixed set of them. The input side cannot be, and the first version
+# tried anyway: it enumerated two constructor arguments -- `magmom_key` and
+# `charges_key` -- and by doing so said nothing at all about `external_field`,
+# `total_charge` or `total_spin`. A reference taken with one external field
+# recorded no field, and a snapshot taken with another compared clean against
+# it. Measured, not feared.
+#
+# Enumerating the three that were missing would have been the same mistake
+# with a longer list. What the evaluation reads is not a fact about the
+# arguments a constructor happens to take today; it is a fact about the
+# mapping the reader is handed, and both calculators keep that mapping on the
+# instance:
+#
+#     mace/calculators/mace.py:187-196   MACECalculator.info_keys / .arrays_keys
+#     mace/calculators/mace.py:1038-1043 MagneticMACECalculator, its own defaults
+#     mace/calculators/mace.py:576       arrays_keys["charges"] = self.charges_key
+#     mace/calculators/mace.py:1301-1305 ... and "magmom" = self.magmom_key
+#
+# `KeySpecification(info_keys=..., arrays_keys=...)` is built from exactly
+# those two dicts (:577, :1307) and `config_from_atoms` iterates them
+# (mace/data/utils.py:197-205), so reading them is reading the reader. A
+# constructor argument added tomorrow lands in one of the two dicts and is
+# picked up with no change here; if it names a property the schema has no
+# channel for, the snapshot fails and says which, which is the outcome the
+# enumerated version could not produce.
+#
+# The two spellings differ, and that is the point of registering rather than
+# assuming: the reader's `charges` property is the reference charge *input*,
+# while the `charges` channel is what a model predicts.
 # ---------------------------------------------------------------------------
 
-#: MagneticMACECalculator(magmom_key=...) -> self.magmom_key
-#: (mace/calculators/mace.py:1153), fed to the keyspec at :1304.
-harness.register_input_probe("magmom", attribute="magmom_key", store="arrays")
+harness.register_keyspec_source("info_keys", store="info")
+harness.register_keyspec_source("arrays_keys", store="arrays")
 
-#: MACECalculator(charges_key="Qs") / MagneticMACECalculator(charges_key=...)
-#: -> self.charges_key (mace/calculators/mace.py:298, :1152).
+harness.register_input_property("charges", "input_charges")
+harness.register_input_property("magmom", "magmom")
+harness.register_input_property("total_charge", "total_charge")
+harness.register_input_property("total_spin", "total_spin")
+harness.register_input_property("elec_temp", "elec_temp")
+harness.register_input_property("external_field", "external_field")
+
+# The rest of the property vocabulary (mace/data/utils.py:53-64, and
+# DefaultKeys in mace/tools/default_keys.py) is training labels. They are
+# parsed off the structure into `Configuration.properties` and carried in the
+# graph -- `AtomicData.from_config` gives each one a field -- but no `forward`
+# on this tree reads any of them: the batch keys the models actually read are
+# atomic_numbers, batch, cell, charges, edge_index, external_field,
+# fermi_level, head, magmom, node_attrs, pbc, positions, ptr, rcell, shifts,
+# total_charge, total_spin, unit_shifts and volume. A label therefore cannot
+# change an output, and pinning one would pin the fixture against itself.
+_LABEL_PROPERTIES = {
+    "energy": "a training target; carried as AtomicData.energy and read by the "
+    "loss, never by a forward",
+    "forces": "a training target; carried as AtomicData.forces and read by the "
+    "loss, never by a forward",
+    "stress": "a training target; carried as AtomicData.stress and read by the "
+    "loss, never by a forward",
+    "virials": "a training target; carried as AtomicData.virials and read by "
+    "the loss, never by a forward",
+    "dipole": "a training target; the `dipole` channel is what a model "
+    "predicts, and the label of the same name never reaches a forward",
+    "polarizability": "a training target, like dipole; the channel of this "
+    "name is the prediction",
+    "magforces": "a training target for the magnetic loss (dE/dm); the channel "
+    "of this name is the prediction, and the label never reaches a forward",
+    "head": "selects which head answers, but not through this property: "
+    "AtomicData.from_config takes the head from `config.head`, which comes "
+    "from the head_name argument (mace/data/atomic_data.py:206), and "
+    "properties['head'] is never read. It is also a name, not a number, so no "
+    "channel kind could hold it.",
+}
+
+for _prop, _reason in _LABEL_PROPERTIES.items():
+    harness.declare_non_input_property(_prop, _reason)
+
+
+#: One input is not read off the structure at all. `MACECalculator(
+#: external_field=[Ex, Ey, Ez])` keeps the vector on the instance
+#: (mace/calculators/mace.py:140) and writes it straight into the batch
+#: *after* the graph is built (:685-690), so it overwrites whatever
+#: `info_keys["external_field"]` produced. A snapshot that only looked at the
+#: structure recorded nothing for a run whose field was non-zero -- and the
+#: field enters the energy, so two references taken at two fields held
+#: different numbers under identical inputs and no comparison could tell them
+#: apart. This records the value the model was given, and refuses the case
+#: where the structure says something else.
+harness.register_input_value_probe("external_field", attribute="external_field")
+
+#: The single-attribute probes stay as the fallback for an object that names
+#: its key without exposing a mapping -- a direct model wrapper, or either
+#: calculator inspected before its first `calculate()` call, since
+#: `arrays_keys` gains its charges entry inside `_atoms_to_batch`.
+#: MagneticMACECalculator(magmom_key=...) -> self.magmom_key (:1153);
+#: MACECalculator(charges_key="Qs") -> self.charges_key (:298, :1152).
+harness.register_input_probe("magmom", attribute="magmom_key", store="arrays")
 harness.register_input_probe("input_charges", attribute="charges_key", store="arrays")
 
 
@@ -218,7 +301,7 @@ for _key, _reason in _COMMITTEE_SPREAD.items():
 
 
 # ---------------------------------------------------------------------------
-# Two divergences worth stating rather than encoding
+# Three divergences worth stating rather than encoding
 #
 # 1. MACECalculator writes results["energies"] as the per-atom energies before
 #    the E0 subtraction, which is the ase meaning of the property and what the
@@ -229,7 +312,19 @@ for _key, _reason in _COMMITTEE_SPREAD.items():
 #    the collision is in the calculator, and a harness that quietly accepted
 #    either shape would be hiding it.
 #
-# 2. results["virials"] is scaled by `energy_units_to_eV / length_units_to_A**3`
+# 2. Three more constructor arguments change the numbers and are *not* input
+#    channels: `eps_infty`, `keep_neutral` and `electric_field_unit` all scale
+#    the BEC force correction that is added to results["forces"]
+#    (mace/calculators/mace.py:809-859), and `energy_units_to_eV` /
+#    `length_units_to_A` scale most of the results dict. None of them is a
+#    per-structure quantity and none reaches the batch, so none is a channel:
+#    they are configuration of the evaluation, and a reference that varies one
+#    belongs in a different file, recorded through `snapshot_outputs(...,
+#    metadata=...)`. The line between the two is whether the value enters the
+#    graph -- `external_field` does, which is why it has a probe and these do
+#    not.
+#
+# 3. results["virials"] is scaled by `energy_units_to_eV / length_units_to_A**3`
 #    (mace/calculators/mace.py:729-733) -- a *stress* conversion applied to a
 #    virial, which is an energy. It is the identity under the default units, so
 #    nothing in this repository sees it, and the harness declares the channel

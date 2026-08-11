@@ -9,8 +9,8 @@ calculator's subset. A schema derived from ``mace/calculators/mace.py`` alone
 resolves every calculator key and leaves thirteen forward keys resolving to
 nothing, which is a golden that fails on the first model-route snapshot
 rather than a golden that pins less than it claims. The registry now covers
-both surfaces, and ``tests/golden/test_harness.py`` derives its expectation
-from both files so the next divergence fails there instead.
+every surface, and ``tests/golden/surface_scan.py`` derives the expectation
+from the package so the next divergence fails in the guard instead.
 
 The key sets, read out of the ``forward`` return dicts on this tree
 (``mace/modules/models.py`` and ``mace/modules/extensions.py``):
@@ -36,10 +36,27 @@ The key sets, read out of the ``forward`` return dicts on this tree
     MagneticSCFMACE          + equilibrated_magmom, scf_energy_history,
                              scf_steps
 
-Almost all of those are declared channels under exactly these names, because
-the registry was keyed on the model's vocabulary in the first place. What is
-left is this file: one allowlist entry, and the note that the ``virials``
-collision is handled on the *other* surface.
+...and two more classes in two more files, which is the second half of this
+file's history. The guard read ``models.py`` and ``extensions.py`` and called
+that the model surface, but four files in ``mace/`` define a ``forward`` that
+returns an output dict:
+
+    mace/calculators/lammps_mace.py::LAMMPS_MACE
+                             total_energy_local, node_energy, forces, virials
+    mace/calculators/mace_torchsim.py::MaceTorchSimModel
+                             energy, forces, stress (plus whatever the wrapped
+                             model returned, forwarded verbatim)
+
+Both are deployment wrappers rather than models, which is presumably why they
+were not looked at -- and both are exactly what a deployment golden evaluates.
+The guard now discovers the files instead of listing them, so a fifth writer
+is found rather than waited for, and ``total_energy_local`` is a declared
+channel because of it: it was the one key in the whole set that resolved to
+nothing.
+
+Almost everything else is a declared channel under exactly the model's name,
+because the registry was keyed on the model's vocabulary in the first place.
+What is left is this file: one allowlist entry, and the notes below.
 """
 
 from __future__ import annotations
@@ -76,7 +93,7 @@ harness.ignore_key(
 
 
 # ---------------------------------------------------------------------------
-# Three things that are true of this surface and are not registrations
+# Four things that are true of this surface and are not registrations
 #
 # 1. `virials` on this surface is the graph-level virial, shape (n_graphs, 3,
 #    3), which is exactly what the `virials` channel declares. No alias is
@@ -93,7 +110,14 @@ harness.ignore_key(
 #    still raises while a known-but-absent one leaves the channel out; a
 #    reference that pins it then fails with "channel vanished".
 #
-# 3. Graph-level channels are declared per graph -- `energy` is a `()` scalar,
+# 3. `total_energy_local` is a channel and not an alias for `energy`. The
+#    LAMMPS wrapper masks the site energies by `local_or_ghost` before summing
+#    (mace/calculators/lammps_mace.py:71-74), so it is the part of the energy
+#    this domain owns; the full energy is only recovered by adding the domains
+#    up. Aliasing the two would have made a single-domain golden pass and a
+#    decomposed one compare a part against a whole.
+#
+# 4. Graph-level channels are declared per graph -- `energy` is a `()` scalar,
 #    not `(n_graphs,)`. A forward returns the batched form, so a
 #    `golden_outputs` hook over single-structure fixtures has to index the one
 #    graph out. That is the hook's job and not the harness's: squeezing a

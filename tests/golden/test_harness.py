@@ -6,7 +6,6 @@ replacement have to share, and a test that needed the current stack to prove
 that would be proving the opposite.
 """
 
-import ast
 import json
 import re
 import subprocess
@@ -17,7 +16,7 @@ import numpy as np
 import pytest
 from ase.atoms import Atoms
 
-from tests.golden import harness
+from tests.golden import eval_keys, harness, surface_scan
 
 GOLDEN_ROOT = Path(harness.__file__).resolve().parent
 
@@ -392,6 +391,240 @@ def test_a_probe_must_name_an_input_channel():
 
 
 # ---------------------------------------------------------------------------
+# The input surface, derived rather than enumerated
+#
+# Naming two constructor arguments said nothing about the other four inputs,
+# and the silence was total: no probe for external_field, total_charge or
+# total_spin meant a reference recorded none of them and two snapshots taken
+# at different values compared clean. Enumerating the missing three would have
+# been the same mistake with a longer list, so the harness reads the mapping
+# the evaluation was handed.
+# ---------------------------------------------------------------------------
+
+
+class Keyspecced(FakeSource):
+    """As either calculator presents itself: two dicts on the instance.
+
+    `KeySpecification(info_keys=self.info_keys, arrays_keys=self.arrays_keys)`
+    is built from exactly these (mace/calculators/mace.py:577) and
+    `config_from_atoms` iterates them, so reading them is reading the reader.
+    """
+
+    def __init__(self, info_keys=None, arrays_keys=None, **kwargs):
+        super().__init__(**kwargs)
+        self.info_keys = dict(info_keys or {})
+        self.arrays_keys = dict(arrays_keys or {})
+
+
+def test_the_whole_keyspec_is_read_not_two_arguments_of_it():
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.info["field_from_dft"] = [0.0, 0.0, 0.5]
+    atoms.info["net_charge"] = -1.0
+    atoms.info["net_spin"] = 2.0
+    atoms.set_array("dft_charges", np.linspace(-0.4, 0.4, 9))
+
+    calc = Keyspecced(
+        info_keys={
+            "external_field": "field_from_dft",
+            "total_charge": "net_charge",
+            "total_spin": "net_spin",
+        },
+        arrays_keys={"charges": "dft_charges"},
+    )
+    inputs = harness.snapshot_outputs(calc, {"w": atoms})["fixtures"]["w"]["inputs"]
+    assert inputs["external_field"]["value"] == [0.0, 0.0, 0.5]
+    assert inputs["total_charge"]["value"] == -1.0
+    assert inputs["total_spin"]["value"] == 2.0
+    assert inputs["input_charges"]["value"][0] == pytest.approx(-0.4)
+
+    # and none of it is recorded when nothing says to read it from there
+    plain = harness.snapshot_outputs(FakeSource(), {"w": atoms})
+    assert not plain["fixtures"]["w"]["inputs"]
+
+
+def test_a_keyspec_property_the_schema_does_not_know_is_a_hard_failure():
+    """The input-side twin of an undeclared output.
+
+    `update_keyspec_from_kwargs` will put an arbitrary property into the
+    mapping (that is how `embedding_specs` works), so the next input is not
+    hypothetical. One that nothing here declares must stop the snapshot, not
+    be skipped: an input the evaluation reads and the reference does not
+    record is an input two references cannot disagree about.
+    """
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    calc = Keyspecced(arrays_keys={"some_new_embedding": "col"})
+    with pytest.raises(KeyError) as excinfo:
+        harness.snapshot_outputs(calc, {"w": atoms})
+    message = str(excinfo.value)
+    assert "some_new_embedding" in message
+    assert "register_input_property" in message
+    assert "declare_non_input_property" in message
+
+
+def test_a_label_in_the_keyspec_is_not_recorded_as_an_input():
+    """Training targets travel in the same mapping and are not inputs.
+
+    They reach `Configuration.properties` and get an `AtomicData` field, but
+    no forward reads one, so pinning a label would pin the fixture against
+    itself -- and would put a *reference* energy in the inputs block of a
+    reference about a *predicted* energy.
+    """
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.info["REF_energy"] = -12.0
+    calc = Keyspecced(info_keys={"energy": "REF_energy"})
+    snap = harness.snapshot_outputs(calc, {"w": atoms})
+    assert not snap["fixtures"]["w"]["inputs"]
+    assert harness.NON_INPUT_PROPERTIES["energy"].strip()
+
+
+def test_the_keyspec_beats_the_single_attribute_probe():
+    """Both are present on a real calculator and only one is authoritative.
+
+    `charges_key` is set in `__init__`; the mapping entry is written inside
+    `_atoms_to_batch`, from that same argument, and it is the mapping that is
+    handed to the reader. When they disagree -- a caller mutating
+    `arrays_keys` directly, say -- the mapping is what the model saw.
+    """
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.set_array("from_the_mapping", np.full(9, 0.25))
+    atoms.set_array("from_the_argument", np.full(9, 0.75))
+
+    class Both(Keyspecced):
+        charges_key = "from_the_argument"
+
+    snap = harness.snapshot_outputs(
+        Both(arrays_keys={"charges": "from_the_mapping"}), {"w": atoms}
+    )
+    recorded = snap["fixtures"]["w"]["inputs"]["input_charges"]["value"]
+    assert recorded[0] == pytest.approx(0.25)
+
+
+def test_an_input_the_evaluation_carries_itself_is_recorded():
+    """The external field, which is the case that has no key at all.
+
+    `MACECalculator(external_field=[...])` writes the vector into the batch
+    after the graph is built (mace/calculators/mace.py:685-690), so it
+    overrides the structure and appears in no array. It enters the energy and
+    the BEC force correction, so a reference that recorded nothing for it held
+    numbers that another field's reference could not be told apart from.
+    """
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+
+    class Fielded(FakeSource):
+        def __init__(self, field):
+            super().__init__()
+            self.external_field = field
+
+    off = harness.snapshot_outputs(Fielded(None), {"w": atoms})
+    assert "external_field" not in off["fixtures"]["w"]["inputs"]
+
+    on = harness.snapshot_outputs(Fielded([0.0, 0.0, 0.1]), {"w": atoms})
+    assert on["fixtures"]["w"]["inputs"]["external_field"]["value"] == [0.0, 0.0, 0.1]
+
+    # ...and two fields no longer compare clean, which is the whole point
+    other = harness.snapshot_outputs(Fielded([0.0, 0.0, 0.2]), {"w": atoms})
+    with pytest.raises(AssertionError, match="inputs/external_field"):
+        harness.compare_to_reference(other, on, row="fp64_cpu_reference")
+    with pytest.raises(AssertionError, match="vanished"):
+        harness.compare_to_reference(off, on, row="fp64_cpu_reference")
+
+
+def test_a_carried_input_that_contradicts_the_structure_is_refused():
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.info["external_field"] = [0.0, 0.0, 0.5]
+
+    class Fielded(FakeSource):
+        external_field = [0.0, 0.0, 0.1]
+
+    with pytest.raises(ValueError, match="silently discarded"):
+        harness.snapshot_outputs(Fielded(), {"w": atoms})
+
+
+def test_an_input_the_structure_carries_under_an_unread_key_is_refused():
+    """The generalisation of the ase-initial-moments refusal.
+
+    The two live spellings of the reference charges disagree by default -- the
+    training CLI writes REF_charges, both calculators read Qs -- so a
+    structure prepared by one and handed to the other carries the input and
+    has it ignored. Recording nothing there is worse than wrong: the
+    comparison passes.
+    """
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.set_array("REF_charges", np.full(9, 0.1))
+    calc = Keyspecced(arrays_keys={"charges": "Qs"})
+    with pytest.raises(ValueError, match="REF_charges"):
+        harness.snapshot_outputs(calc, {"w": atoms})
+    # an array nobody has ever declared is not evidence of anything
+    clean = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    clean.set_array("some_unrelated_column", np.full(9, 0.1))
+    harness.snapshot_outputs(calc, {"w": clean})
+
+
+def test_the_default_spellings_match_what_the_package_says_they_are():
+    """The one table left, and it is checked rather than trusted.
+
+    The harness may not import the framework, so it cannot derive its
+    fallback spellings; they are literals. What it can do is be held to the
+    truth: DefaultKeys fixes one spelling per property,
+    update_keyspec_from_kwargs says which store each is read from, and each
+    calculator's own defaults add the second spelling for three of them
+    (charge, spin, Qs). Drift fails here.
+    """
+    surface = surface_scan.scan_input_surface()
+    assert surface.stores, "the input-surface scan found nothing"
+    for prop, spellings in sorted(surface.spellings.items()):
+        channel = harness.input_channel_for_property(prop, "the derived surface")
+        if channel is None:
+            continue
+        table = (
+            harness.INPUT_INFO_KEYS
+            if surface.stores[prop] == "info"
+            else harness.INPUT_ARRAY_KEYS
+        )
+        assert set(table.get(channel, ())) == spellings, (
+            f"the {channel!r} defaults are {table.get(channel)} and the "
+            f"package says {sorted(spellings)}"
+        )
+    # the store matters as much as the spelling: an info input looked up in
+    # arrays is another silent miss
+    assert surface.stores["magmom"] == "arrays"
+    assert surface.stores["charges"] == "arrays"
+    assert surface.stores["total_charge"] == "info"
+    assert surface.stores["external_field"] == "info"
+
+
+def test_every_property_the_package_reads_is_classified():
+    """No third option, and no default.
+
+    Each property the package can put in a keyspec either names an input
+    channel or is declared, in writing, not to be one.
+    """
+    unclassified = []
+    for prop in sorted(surface_scan.scan_input_surface().stores):
+        try:
+            harness.input_channel_for_property(prop, "the derived surface")
+        except KeyError:
+            unclassified.append(prop)
+    assert not unclassified, (
+        "these properties are read off the structure and the schema neither "
+        f"records nor dismisses them: {unclassified}"
+    )
+    for prop, reason in harness.NON_INPUT_PROPERTIES.items():
+        assert len(reason.strip()) > 20, f"{prop} is dismissed without a reason"
+
+
+def test_a_property_cannot_be_both_an_input_and_a_label():
+    with pytest.raises(ValueError, match="not an input"):
+        harness.register_input_property("energy", "total_charge")
+    with pytest.raises(ValueError, match="input channel"):
+        harness.declare_non_input_property("magmom", "because it would be tidy")
+    with pytest.raises(KeyError, match="not a declared input channel"):
+        harness.register_input_property("whatever", "forces")
+    with pytest.raises(ValueError, match="reason"):
+        harness.declare_non_input_property("whatever", "   ")
+
+
+# ---------------------------------------------------------------------------
 # Unknown outputs
 # ---------------------------------------------------------------------------
 
@@ -502,143 +735,212 @@ def test_an_alias_cannot_shadow_or_contradict(two_fixtures):
 REPO_ROOT = Path(harness.__file__).resolve().parents[2]
 
 
-def _calculator_result_keys():
-    """Every key mace/calculators/mace.py can write into `self.results`.
+# ---------------------------------------------------------------------------
+# The three surfaces, each derived from mace/ by tests/golden/surface_scan.py
+#
+# Nothing below restates a key. The extractors are the subject of the first
+# few tests and the coverage checks are the subject of the rest, in that order
+# on purpose: a coverage check standing on an extractor that has quietly
+# stopped finding anything is the exact failure this pair exists to prevent,
+# and it looks like a green run.
+# ---------------------------------------------------------------------------
 
-    Derived from the file rather than from a remembered list: `results_map`
-    plus the special cases plus the committee suffixes.
+
+def test_no_scan_leaves_an_unexplained_write():
+    """The honesty check, and the one that matters most.
+
+    An extractor that finds nothing reports perfect coverage. So each scan
+    also reports the writes whose key it could *not* compute, and the only
+    ones allowed to stand are the ones with a written reason in
+    PASSTHROUGH_WRITES. Add `self.results[whatever_variable] = ...` to a
+    calculator and this fails, instead of the key set silently shrinking.
     """
-    source = (REPO_ROOT / "mace" / "calculators" / "mace.py").read_text(
-        encoding="utf-8"
+    for name, scan in (
+        ("calculator", surface_scan.scan_calculator_surface()),
+        ("model", surface_scan.scan_model_surface()),
+        ("eval", surface_scan.scan_eval_surface()[0]),
+    ):
+        assert not surface_scan.unexplained(scan), (
+            f"the {name} scan met writes it could not follow, so the coverage "
+            f"test below is checking less than it claims: "
+            f"{surface_scan.unexplained(scan)}"
+        )
+    # ...and the allowlist itself is not a blanket: every entry carries a
+    # reason, and every entry still matches something, so a stale one is
+    # noticed rather than sitting there covering a future write.
+    live = set()
+    for scan in (
+        surface_scan.scan_calculator_surface(),
+        surface_scan.scan_model_surface(),
+    ):
+        for entry in scan.unresolved:
+            for path, code, _ in surface_scan.PASSTHROUGH_WRITES:
+                if path in entry and code in entry:
+                    live.add((path, code))
+    for path, code, reason in surface_scan.PASSTHROUGH_WRITES:
+        assert len(reason.strip()) > 20, f"{path}: {code} is excused without a reason"
+        assert (path, code) in live, f"{path}: {code} no longer matches any write"
+
+
+def test_the_calculator_extractor_follows_every_write_form(tmp_path):
+    """A guard on the guard, exercised rather than assumed.
+
+    The previous extractor was a regex for `self.results["name"]`, so it saw
+    one of the five ways this package writes a result and hand-copied the
+    sixth (the committee suffixes) into the test as four literals. Each form
+    below is either in mace/calculators/mace.py today or one refactor away,
+    and the point of a synthetic source is that a form stays tested even after
+    the real file stops using it.
+    """
+    source = tmp_path / "probe_calc.py"
+    source.write_text(
+        "\n".join(
+            [
+                "SPREAD = set(['energy', 'forces'])",
+                "EXTRA = {'from_a_dict_literal': 1}",
+                "class ProbeCalculator(Calculator):",
+                "    def calculate(self):",
+                "        self.results = {'from_a_whole_dict': 1}",
+                "        self.results['plain'] = 1",
+                "        self.results.update({'from_update': 1})",
+                "        self.results.update(EXTRA)",
+                "        alias = self.results",
+                "        alias['through_an_alias'] = 1",
+                "        table = [('mapped_a', 'x'), ('mapped_b', 'y')]",
+                "        table.extend([('mapped_c', 'z')])",
+                "        for name, _ in table:",
+                "            self.results[name] = 1",
+                "            if self.n > 1 and name in SPREAD:",
+                "                self.results[name + '_var'] = 1",
+                "    def second(self):",
+                "        out = {}",
+                "        out['written_before_the_alias_exists'] = 1",
+                "        self.results = out",
+            ]
+        ),
+        encoding="utf-8",
     )
-    written = set(re.findall(r"""self\.results\[["'](\w+)["']\]""", source))
-    written |= {
-        f"{base}{suffix}"
+    scan = surface_scan.scan_calculator_surface([source])
+    keys = scan.all_keys
+    assert not scan.unresolved, scan.unresolved
+    assert keys == {
+        "from_a_whole_dict",
+        "plain",
+        "from_update",
+        "from_a_dict_literal",
+        "through_an_alias",
+        "mapped_a",
+        "mapped_b",
+        "mapped_c",
+        "written_before_the_alias_exists",
+        # the suffix applies to the guard set's members and to nothing else:
+        # derived from `SPREAD`, not restated here
+        "energy_var",
+        "forces_var",
+    }, sorted(keys)
+
+    # and a key it cannot compute is reported, not dropped
+    unfollowable = tmp_path / "probe_dynamic.py"
+    unfollowable.write_text(
+        "class ProbeCalculator(Calculator):\n"
+        "    def calculate(self):\n"
+        "        self.results[self.whatever] = 1\n",
+        encoding="utf-8",
+    )
+    dynamic = surface_scan.scan_calculator_surface([unfollowable])
+    assert dynamic.unresolved and "self.whatever" in dynamic.unresolved[0]
+
+
+def test_the_model_extractor_follows_every_return_form(tmp_path):
+    """The same, for the three ways a forward builds its dict."""
+    source = tmp_path / "probe_model.py"
+    source.write_text(
+        "\n".join(
+            [
+                "class Literal:",
+                "    def forward(self, data):",
+                "        return {'a': 1}",
+                "class ByName:",
+                "    def forward(self, data):",
+                "        out = {'b': 1}",
+                "        return out",
+                "class Subscript:",
+                "    def forward(self, data):",
+                "        out = self.inner(data)",
+                "        out['c'] = 1",
+                "        return out",
+                "class Nested:",
+                "    def forward(self, data):",
+                "        def closure():",
+                "            inner = {'not_an_output': 1}",
+                "            return inner",
+                "        return {'d': closure()}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    scan = surface_scan.scan_model_surface([source])
+    assert not scan.unresolved, scan.unresolved
+    assert scan.all_keys == {"a", "b", "c", "d"}, sorted(scan.all_keys)
+
+
+def test_the_scans_still_find_the_families_they_are_meant_to():
+    """The same guard, against the real files rather than a synthetic one."""
+    calculator = surface_scan.scan_calculator_surface()
+    assert len(calculator.all_keys) >= 30, sorted(calculator.all_keys)
+    assert {"energy", "forces", "stresses", "virials"} <= calculator.all_keys
+    # both calculators, not just the first one in the file
+    assert len(calculator.keys) == 2, sorted(calculator.keys)
+    # the committee keys, derived from `results_store_ensemble` rather than
+    # restated: all four bases, both suffixes
+    assert {
+        f"{base}_{suffix}"
         for base in ("energy", "forces", "stress", "dipole")
-        for suffix in ("_comm", "_var")
-    }
-    # the results_map left-hand column, which is assigned through a variable
-    written |= set(re.findall(r"""^\s*\(\s*["'](\w+)["'],\s*["']\w+["'],""",
-                              source, flags=re.MULTILINE))
-    return written
+        for suffix in ("comm", "var")
+    } <= calculator.all_keys
 
-
-def _forward_output_keys():
-    """Every key a model class's `forward` can put in its return dict.
-
-    Parsed, not grepped, because the models build that dict three different
-    ways -- a `return {...}` literal (MACE, ScaleShiftMACE, MACELES,
-    PolarMACE), a local dict that is returned by name (AtomicDipolesMACE,
-    AtomicDielectricMACE, EnergyDipolesMACE, MagneticScaleShiftMACE), and
-    subscript assignment onto a dict returned from a nested call
-    (MagneticSCFMACE, which adds the three SCF keys to what its inner model
-    produced). A regex over any one of those three misses the other two.
-
-    Nested function bodies are skipped: MagneticSCFMACE's LBFGS `closure`
-    returns a tensor named `energy`, and walking into it would make every
-    `energy = ...` assignment in the enclosing forward look like an output
-    dict.
-
-    Returns a mapping class name -> the keys its forward can emit, so a
-    failure can say which family diverged.
-    """
-    per_class = {}
-    for relative in ("mace/modules/models.py", "mace/modules/extensions.py"):
-        tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ClassDef):
-                continue
-            for fn in node.body:
-                if not isinstance(fn, ast.FunctionDef) or fn.name != "forward":
-                    continue
-                keys = _dict_keys_returned_by(fn)
-                if keys:
-                    per_class[f"{relative}::{node.name}"] = keys
-    return per_class
-
-
-def _walk_skipping_nested_functions(fn):
-    """Every node in `fn`'s own body, not in any function defined inside it."""
-    stack = list(fn.body)
-    while stack:
-        node = stack.pop()
-        yield node
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-                continue
-            stack.append(child)
-
-
-def _dict_keys_returned_by(fn):
-    nodes = list(_walk_skipping_nested_functions(fn))
-    returned_names = {
-        node.value.id
-        for node in nodes
-        if isinstance(node, ast.Return) and isinstance(node.value, ast.Name)
-    }
-    keys = set()
-    for node in nodes:
-        if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict):
-            keys |= {
-                k.value for k in node.value.keys if isinstance(k, ast.Constant)
-            }
-        if not isinstance(node, ast.Assign):
-            continue
-        target = node.targets[0]
-        if (
-            isinstance(target, ast.Name)
-            and target.id in returned_names
-            and isinstance(node.value, ast.Dict)
-        ):
-            keys |= {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
-        if (
-            isinstance(target, ast.Subscript)
-            and isinstance(target.value, ast.Name)
-            and target.value.id in returned_names
-            and isinstance(target.slice, ast.Constant)
-        ):
-            keys.add(target.slice.value)
-    return keys
-
-
-def test_the_key_extractors_still_find_the_families_they_are_meant_to():
-    """A guard on the guard.
-
-    Both derivations are static analysis of somebody else's file, and the
-    failure mode that matters is not a false alarm -- it is finding nothing
-    and reporting coverage. A regex that stops matching, or an AST walk that
-    stops recognising how a forward builds its dict, would make the coverage
-    test below pass vacuously.
-    """
-    calculator = _calculator_result_keys()
-    assert len(calculator) >= 25, sorted(calculator)
-    assert {"energy", "forces", "stresses", "virials"} <= calculator
-
-    per_class = _forward_output_keys()
-    # one class per way of building the return dict, so a change to any of
-    # the three shows up here
+    model = surface_scan.scan_model_surface()
+    # one class per way of building the return dict...
     for name in (
         "mace/modules/models.py::MACE",  # return {...}
         "mace/modules/models.py::AtomicDielectricMACE",  # output = {...}; return output
         "mace/modules/extensions.py::PolarMACE",
         "mace/modules/extensions.py::MagneticSCFMACE",  # out["k"] = ...
     ):
-        assert name in per_class, sorted(per_class)
-    assert "scf_steps" in per_class["mace/modules/extensions.py::MagneticSCFMACE"]
-    assert "edge_forces" in per_class["mace/modules/models.py::MACE"]
-    everything = set().union(*per_class.values())
-    assert len(everything) >= 40, sorted(everything)
+        assert name in model.keys, sorted(model.keys)
+    # ...and all four files that define one, which is the half that was
+    # missing: the guard named modules/models.py and modules/extensions.py and
+    # called that the model surface, so the two deployment wrappers -- the
+    # things a deployment golden actually evaluates -- were never checked.
+    files = {owner.split("::")[0] for owner in model.keys}
+    assert files == {
+        "mace/modules/models.py",
+        "mace/modules/extensions.py",
+        "mace/calculators/lammps_mace.py",
+        "mace/calculators/mace_torchsim.py",
+    }, sorted(files)
+    assert "scf_steps" in model.keys["mace/modules/extensions.py::MagneticSCFMACE"]
+    assert "edge_forces" in model.keys["mace/modules/models.py::MACE"]
+    assert (
+        "total_energy_local"
+        in model.keys["mace/calculators/lammps_mace.py::LAMMPS_MACE"]
+    )
+    assert len(model.all_keys) >= 44, sorted(model.all_keys)
+
+    evaluation, stores = surface_scan.scan_eval_surface()
+    assert len(evaluation.all_keys) == 13, sorted(evaluation.all_keys)
+    assert stores["energy"] == "info" and stores["forces"] == "arrays"
 
 
 def test_the_calculator_key_set_is_covered():
-    """Every results key mace/calculators/mace.py can write is accounted for.
+    """Every results key an ase calculator here can write is accounted for.
 
-    A new key added to the calculator without a channel, an alias or an
+    A new key added to a calculator without a channel, an alias or an
     allowlist entry fails here rather than in whichever golden happens to
     touch that model family.
     """
     unresolved = []
-    for key in sorted(_calculator_result_keys()):
+    for key in sorted(surface_scan.scan_calculator_surface().all_keys):
         try:
             harness.resolve_channel(key, harness.SURFACE_CALCULATOR)
         except KeyError:
@@ -650,7 +952,7 @@ def test_the_calculator_key_set_is_covered():
 
 
 def test_the_model_forward_key_set_is_covered():
-    """The other half of the surface, and the half that was missing.
+    """The second surface, and the half that was missing first.
 
     The alias map and its guard were both derived from
     mace/calculators/mace.py alone, so all 31 calculator keys resolved while
@@ -663,11 +965,11 @@ def test_the_model_forward_key_set_is_covered():
     `edge_forces` and `hessian` are returned by every energy model and by no
     calculator, so any golden that wants either has to go through the
     `golden_outputs` hook -- and a hook hands the harness the forward's whole
-    dict, all 43 keys, not the calculator's 31. The first such golden would
-    have died on a key the schema had never been shown.
+    dict, not the calculator's subset. The first such golden would have died
+    on a key the schema had never been shown.
     """
     unresolved = {}
-    for owner, keys in sorted(_forward_output_keys().items()):
+    for owner, keys in sorted(surface_scan.scan_model_surface().keys.items()):
         for key in sorted(keys):
             try:
                 harness.resolve_channel(key, harness.SURFACE_MODEL)
@@ -679,21 +981,155 @@ def test_the_model_forward_key_set_is_covered():
     )
 
 
-def test_neither_surface_is_reachable_only_through_the_other():
+def test_the_eval_cli_key_set_is_covered():
+    """The third surface, which had no registrations at all.
+
+    mace_eval_configs writes thirteen names onto the structures it evaluates
+    and three of them -- BO_contributions, node_energies and descriptors --
+    resolved to nothing, so a Phase 0 ticket pinning the eval CLI stopped at
+    authoring time rather than at review.
+    """
+    unresolved = []
+    for key in sorted(surface_scan.scan_eval_surface()[0].all_keys):
+        try:
+            harness.resolve_channel(key, harness.SURFACE_EVAL)
+        except KeyError:
+            unresolved.append(key)
+    assert not unresolved, (
+        "these eval CLI output names resolve to nothing, so a golden taken "
+        f"through mace_eval_configs would fail on them: {unresolved}"
+    )
+
+
+def test_no_surface_is_reachable_only_through_another():
     """The structural version of the same point.
 
-    Coverage of one surface is not coverage of the other, and the way that
-    stayed invisible was that nothing ever asked. These two sets genuinely
-    differ in both directions, so a future test that checks one and calls it
-    done is checking about two thirds of the schema.
+    Coverage of one surface is not coverage of another, and the way that
+    stayed invisible was that nothing ever asked. All three sets genuinely
+    differ, so a future test that checks one and calls it done is checking a
+    fraction of the schema.
     """
-    calculator = _calculator_result_keys()
-    model = set().union(*_forward_output_keys().values())
-    assert {"edge_forces", "hessian"} <= model - calculator, (
-        "if these became reachable through the calculator, the case for the "
-        "golden_outputs hook would need restating"
+    calculator = surface_scan.scan_calculator_surface().all_keys
+    model = surface_scan.scan_model_surface().all_keys
+    evaluation = surface_scan.scan_eval_surface()[0].all_keys
+    assert {"edge_forces", "hessian"} <= model - calculator - evaluation, (
+        "if these became reachable through the calculator or the CLI, the "
+        "case for the golden_outputs hook would need restating"
     )
-    assert {"energies", "free_energy"} <= calculator - model
+    assert {"energies", "free_energy"} <= calculator - model - evaluation
+    # ...and the CLI is not a subset of either: three of its names are its own
+    assert {"BO_contributions", "node_energies", "descriptors"} <= (
+        evaluation - calculator - model
+    )
+
+
+def test_the_eval_cli_spellings_resolve_to_one_channel():
+    """The three renames, and the one that is not a rename.
+
+    Two are the same divergence as bec/BEC on the calculator surface: the
+    writer picked a different word for a quantity that already had one.
+    `descriptors` is different -- see eval_keys.py for why only the per-atom
+    form is pinnable -- and it lands on the channel the model calls
+    node_feats.
+    """
+    resolve = lambda key: harness.resolve_channel(key, harness.SURFACE_EVAL)
+    assert resolve("BO_contributions") == "contributions"
+    assert resolve("node_energies") == "node_energy"
+    assert resolve("descriptors") == "node_feats"
+    # ...and the plural is not the calculator's `energies`, which carries E0
+    assert resolve("node_energies") != "energies"
+    assert harness.CHANNELS["energies"].name != harness.CHANNELS["node_energy"].name
+
+
+def test_the_eval_stress_is_not_put_through_the_voigt_conversion():
+    """The surface scoping, doing the job it was introduced for.
+
+    The calculator writes a Voigt-6 stress and the schema expands it; the eval
+    CLI writes the model's (3, 3) straight into atoms.info. One flat
+    spelling->channel map would have applied the calculator's conversion here
+    and expanded an already-square tensor.
+    """
+    assert harness.channel_conversion("stress", harness.SURFACE_CALCULATOR) is not None
+    assert harness.channel_conversion("stress", harness.SURFACE_EVAL) is None
+    assert harness.resolve_channel("stress", harness.SURFACE_EVAL) == "stress"
+
+
+def test_the_eval_cli_flattens_the_born_charges_and_the_schema_unflattens_them():
+    n_atoms = 4
+    rng = np.random.default_rng(1)
+    full = rng.normal(size=(n_atoms, 3, 3))
+    flat = full.reshape(n_atoms, -1)  # what mace/cli/eval_configs.py:407 writes
+    assert np.array_equal(eval_keys.unflatten_bec(flat), full)
+
+    class Written:
+        golden_surface = harness.SURFACE_EVAL
+
+        def golden_outputs(self, atoms):
+            return {"energy": 1.0, "BEC": flat[: len(atoms)]}
+
+    atoms = {"probe": Atoms("H4", positions=np.eye(4, 3), pbc=False)}
+    snap = harness.snapshot_outputs(Written(), atoms)
+    entry = snap["fixtures"]["probe"]["outputs"]["BEC"]
+    assert entry["shape"] == [4, 3, 3]
+    assert entry["kind"] == harness.PER_ATOM_TENSOR
+    # the two-component form is refused rather than reshaped into a lie
+    with pytest.raises(ValueError, match="two-component"):
+        eval_keys.unflatten_bec(np.zeros((n_atoms, 18)))
+
+
+def test_only_the_per_atom_descriptors_are_pinnable():
+    """The decision, taken here rather than by whoever meets it first.
+
+    `--descriptor_aggregation_method` sends the same numbers to three
+    different shapes, and two of them are reductions of the third. The
+    per-atom array is the channel; a reduction is refused with a message
+    naming the flag, and the dict form is not an array at all.
+    """
+    # the scan sees the split, which is what makes this a decision and not a
+    # rename: `descriptors` is the one name the CLI writes into both stores
+    _, stores = surface_scan.scan_eval_surface()
+    assert stores["descriptors"] == "info+arrays", stores["descriptors"]
+
+    per_atom = np.arange(12.0).reshape(3, 4)
+    assert np.array_equal(eval_keys.per_atom_descriptors(per_atom), per_atom)
+    with pytest.raises(ValueError, match="descriptor_aggregation_method"):
+        eval_keys.per_atom_descriptors(per_atom.mean(axis=0))
+
+    class Aggregated:
+        golden_surface = harness.SURFACE_EVAL
+
+        def golden_outputs(self, atoms):
+            return {
+                "energy": 1.0,
+                # what "per_element_mean" writes: a mapping, not an array
+                "descriptors": {"H": [1.0, 2.0], "O": [3.0, 4.0]},
+            }
+
+    atoms = {"probe": Atoms("H2O", positions=np.eye(3, 3), pbc=False)}
+    with pytest.raises(TypeError, match="descriptors"):
+        harness.snapshot_outputs(Aggregated(), atoms)
+
+
+def test_a_prefixed_write_is_read_back_without_its_prefix():
+    """How a golden gets an eval run into the harness.
+
+    --info_prefix is an argument, so the prefix cannot be part of any channel
+    name; stripping it is what lets one channel serve a run whatever prefix it
+    was given.
+    """
+    atoms = harness.load_fixtures(["water_cluster"])["water_cluster"]
+    atoms.info["MACE_energy"] = -1.0
+    atoms.arrays["MACE_forces"] = np.zeros((9, 3))
+    atoms.info["unrelated"] = 3
+    collected = harness.collect_prefixed_outputs(atoms, "MACE_")
+    assert set(collected) == {"energy", "forces"}
+    assert "numbers" not in collected and "positions" not in collected
+    with pytest.raises(ValueError, match="prefix is required"):
+        harness.collect_prefixed_outputs(atoms, "")
+    # the same name in both stores is two quantities sharing a spelling
+    atoms.arrays["MACE_energy"] = np.zeros(9)
+    with pytest.raises(ValueError, match="both"):
+        harness.collect_prefixed_outputs(atoms, "MACE_")
 
 
 def test_a_spelling_may_mean_different_things_on_the_two_surfaces():
