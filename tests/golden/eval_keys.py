@@ -22,6 +22,7 @@ only after the ticket had been scoped as if the harness supported it.
     descriptors          node_feats               the name, and the shape is
                                                   a decision -- see below
     BEC                  BEC                      flattened to (n_atoms, 9)
+                                                  or (n_atoms, 18)
     energy, forces,      the same                 nothing
     stress, magforces,
     latent_*
@@ -115,20 +116,31 @@ harness.register_alias(
 
 
 def unflatten_bec(value) -> np.ndarray:
-    """Restore a (n_atoms, 9) Born-charge block to (n_atoms, 3, 3)."""
+    """Restore a flattened Born-charge block to the model's layout.
+
+    Nine columns per atom is one 3x3; eighteen is the two-component form, and
+    the leading pair is the charge and dipole contributions to the
+    polarization derivative, in that order (``les/module/bec.py:100-104``
+    returns ``torch.stack([result, result_u], dim=1)`` whenever the model
+    predicts latent dipoles). This function had to make that call, because a
+    ``MACELES`` with ``use_dipole`` on emits exactly it and the eval CLI
+    flattens whatever it is given; refusing the wider block meant the only
+    LES configuration the eval surface could describe was the one without
+    dipoles.
+    """
     arr = np.asarray(value, dtype=np.float64)
-    if arr.ndim == 3:
+    if arr.ndim > 2:
         return arr
-    if arr.ndim != 2 or arr.shape[-1] != 9:
+    if arr.ndim != 2 or arr.shape[-1] not in (9, 18):
         raise ValueError(
-            "the BEC channel is one 3x3 tensor per atom, so the eval CLI's "
-            f"flattened form has to be (n_atoms, 9); got {arr.shape}. A "
-            "(n_atoms, 18) block is the two-component BEC the calculator "
-            "mentions at mace/calculators/mace.py:820, which no channel here "
-            "describes -- that one needs a kind and a decision about what the "
-            "leading pair means, not a reshape."
+            "the BEC channel is a 3x3 tensor per atom, optionally with a "
+            "leading charge/dipole pair, so the eval CLI's flattened form is "
+            f"(n_atoms, 9) or (n_atoms, 18); got {arr.shape}. A different "
+            "width means `les` changed the layout rather than that this needs "
+            "a reshape."
         )
-    return arr.reshape(arr.shape[0], 3, 3)
+    trailing = (3, 3) if arr.shape[-1] == 9 else (2, 3, 3)
+    return arr.reshape(arr.shape[0], *trailing)
 
 
 harness.register_alias(
@@ -137,11 +149,65 @@ harness.register_alias(
     surface=EVAL,
     convert=unflatten_bec,
     note=(
-        "the eval CLI flattens each atom's 3x3 to 9 columns so it fits an "
-        "extxyz array (mace/cli/eval_configs.py:433-435); the channel is the "
-        "model's 3x3, and reshape is its exact inverse"
+        "the eval CLI flattens each atom's Born charges to 9 or 18 columns so "
+        "they fit an extxyz array (mace/cli/eval_configs.py:433-435); the "
+        "channel is the model's (3, 3) or (2, 3, 3), and reshape is its exact "
+        "inverse"
     ),
 )
+
+
+# ---------------------------------------------------------------------------
+# The same flattening, twice more: the latent multipoles
+#
+# `BEC` is not the only thing this surface flattens. mace/cli/eval_configs.py
+# :417-423 puts `latent_alphas` and `latent_quads` through the same
+# `reshape(n_atoms, -1)`, for the same extxyz reason, and neither had a
+# registration -- so an eval-surface LES snapshot resolved both onto their
+# channels and then compared (n_atoms, 9) against the model's (n_atoms, 3, 3)
+# and failed on the shape. Measured on the committed MACELES anchor: the CLI
+# writes latent_quads as (n, 9) and latent_alphas as (n, 1) for the isotropic
+# configuration, against (n, 3, 3) and (n,) from the forward.
+#
+# One wrinkle worth recording, because it makes the alphas look fine until
+# they are not: ase drops a trailing axis of one on the extxyz round trip, so
+# a golden that reads the *written file* sees (n,) and one that snapshots the
+# in-memory structures sees (n, 1). Both land on the channel now.
+# ---------------------------------------------------------------------------
+
+
+def unflatten_latent_tensor(value) -> np.ndarray:
+    """Undo the eval CLI's per-atom flattening of a latent multipole.
+
+    Nine columns is a 3x3 per atom; one column is a scalar per atom that
+    ``reshape(n, -1)`` widened. Anything else is `les` having changed the
+    layout, which is a thing to look at rather than to reshape around.
+    """
+    arr = np.asarray(value, dtype=np.float64)
+    if arr.ndim == 1 or arr.ndim > 2:
+        return arr
+    if arr.shape[-1] == 1:
+        return arr[:, 0]
+    if arr.shape[-1] == 9:
+        return arr.reshape(arr.shape[0], 3, 3)
+    raise ValueError(
+        "a flattened latent multipole is (n_atoms, 9) for a 3x3 per atom or "
+        f"(n_atoms, 1) for a scalar per atom; got {arr.shape}"
+    )
+
+
+for _latent in ("latent_alphas", "latent_quads"):
+    harness.register_alias(
+        _latent,
+        _latent,
+        surface=EVAL,
+        convert=unflatten_latent_tensor,
+        note=(
+            "the eval CLI flattens each atom's latent multipole to fit an "
+            "extxyz array (mace/cli/eval_configs.py:417-423); the channel is "
+            "the layout the forward returns"
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
