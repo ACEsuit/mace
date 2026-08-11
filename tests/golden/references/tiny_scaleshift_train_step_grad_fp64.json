@@ -1,0 +1,358 @@
+{
+  "backend": "e3nn",
+  "device": "cpu",
+  "dtype": "float64",
+  "global_gradient_norm": 0.4377097960821653,
+  "gradcheck": {
+    "gradcheck_positions": true,
+    "gradcheck_strain": true,
+    "gradgradcheck_positions": true,
+    "gradgradcheck_strain": true
+  },
+  "kind": "train_step_gradient",
+  "loss": 0.3584699958726426,
+  "metadata": {
+    "loss": "WeightedEnergyForcesLoss",
+    "loss_weights": {
+      "energy_weight": 1.0,
+      "forces_weight": 10.0
+    },
+    "model": "tiny_scaleshift.model",
+    "model_class": "ScaleShiftMACE",
+    "projection": "sum_k g_k * cos(k + 1), C-order flattening",
+    "seed": 20260810,
+    "structures": "first 4 non-isolated configurations of fixtures/tiny_train.xyz"
+  },
+  "n_elements": 37704,
+  "parameters": {
+    "interactions.0.conv_tp_weights.layer0.weight": {
+      "abs_sum": 2.788001409830277,
+      "count": 512,
+      "projection": 0.29285179229097236,
+      "shape": [
+        8,
+        64
+      ],
+      "sq_sum": 0.03129154858235829,
+      "sum": -0.020248448345735914
+    },
+    "interactions.0.conv_tp_weights.layer1.weight": {
+      "abs_sum": 5.1455542993409615,
+      "count": 4096,
+      "projection": 0.15923329937075062,
+      "shape": [
+        64,
+        64
+      ],
+      "sq_sum": 0.018549962767202,
+      "sum": 0.5946572928278898
+    },
+    "interactions.0.conv_tp_weights.layer2.weight": {
+      "abs_sum": 3.9821481731392576,
+      "count": 4096,
+      "projection": -0.1126011213402125,
+      "shape": [
+        64,
+        64
+      ],
+      "sq_sum": 0.010485735855425704,
+      "sum": 0.3155110335284571
+    },
+    "interactions.0.conv_tp_weights.layer3.weight": {
+      "abs_sum": 2.3003616810816023,
+      "count": 3072,
+      "projection": -0.012218285398300246,
+      "shape": [
+        64,
+        48
+      ],
+      "sq_sum": 0.007152167210762705,
+      "sum": 0.022619127751047227
+    },
+    "interactions.0.linear.weight": {
+      "abs_sum": 1.4586242662695963,
+      "count": 768,
+      "projection": -0.1895658916812491,
+      "shape": [
+        768
+      ],
+      "sq_sum": 0.01231614908713416,
+      "sum": 0.15922816743314697
+    },
+    "interactions.0.linear_up.weight": {
+      "abs_sum": 0.9215719698673027,
+      "count": 256,
+      "projection": 0.026590297800401987,
+      "shape": [
+        256
+      ],
+      "sq_sum": 0.007336684616035474,
+      "sum": 0.12810844581829595
+    },
+    "interactions.0.skip_tp.weight": {
+      "abs_sum": 3.0006585298818216,
+      "count": 2304,
+      "projection": 0.06551536526485824,
+      "shape": [
+        2304
+      ],
+      "sq_sum": 0.0334599004306561,
+      "sum": 0.014311048001083978
+    },
+    "interactions.1.conv_tp_weights.layer0.weight": {
+      "abs_sum": 0.6657519753466667,
+      "count": 512,
+      "projection": 0.019579244840276455,
+      "shape": [
+        8,
+        64
+      ],
+      "sq_sum": 0.0018616073470872632,
+      "sum": 0.06341674292518003
+    },
+    "interactions.1.conv_tp_weights.layer1.weight": {
+      "abs_sum": 1.2796017875414973,
+      "count": 4096,
+      "projection": 0.0061270395186497125,
+      "shape": [
+        64,
+        64
+      ],
+      "sq_sum": 0.0010661071973347828,
+      "sum": 0.024913991359547936
+    },
+    "interactions.1.conv_tp_weights.layer2.weight": {
+      "abs_sum": 1.462942643265341,
+      "count": 4096,
+      "projection": 0.013331140019653695,
+      "shape": [
+        64,
+        64
+      ],
+      "sq_sum": 0.001573175979104044,
+      "sum": 0.12407222410641663
+    },
+    "interactions.1.conv_tp_weights.layer3.weight": {
+      "abs_sum": 0.8796352665695909,
+      "count": 7168,
+      "projection": 0.002461140510817611,
+      "shape": [
+        64,
+        112
+      ],
+      "sq_sum": 0.001384811479831184,
+      "sum": -0.048301105445588494
+    },
+    "interactions.1.linear.weight": {
+      "abs_sum": 0.41899876030783334,
+      "count": 1792,
+      "projection": -0.0029536406873578447,
+      "shape": [
+        1792
+      ],
+      "sq_sum": 0.0023155902460735905,
+      "sum": -0.005702784857592557
+    },
+    "interactions.1.linear_up.weight": {
+      "abs_sum": 0.49676101645264437,
+      "count": 512,
+      "projection": -0.03054525619504167,
+      "shape": [
+        512
+      ],
+      "sq_sum": 0.0015274519625689132,
+      "sum": 0.04909013383120342
+    },
+    "interactions.1.skip_tp.weight": {
+      "abs_sum": 1.0088681066517349,
+      "count": 768,
+      "projection": 0.02035437399038644,
+      "shape": [
+        768
+      ],
+      "sq_sum": 0.003885859208996946,
+      "sum": -0.14124096098179484
+    },
+    "node_embedding.linear.weight": {
+      "abs_sum": 0.47096594660560587,
+      "count": 48,
+      "projection": 0.0066850129333898,
+      "shape": [
+        48
+      ],
+      "sq_sum": 0.007376478429403369,
+      "sum": 0.1509143480518122
+    },
+    "products.0.linear.weight": {
+      "abs_sum": 1.661215146411035,
+      "count": 512,
+      "projection": 0.1024158372791461,
+      "shape": [
+        512
+      ],
+      "sq_sum": 0.013625462941555196,
+      "sum": 0.05449465131604936
+    },
+    "products.0.symmetric_contractions.contractions.0.weights.0": {
+      "abs_sum": 0.22576690850236586,
+      "count": 144,
+      "projection": 0.008798568589636195,
+      "shape": [
+        3,
+        3,
+        16
+      ],
+      "sq_sum": 0.0016438492428601315,
+      "sum": 0.015122979762326653
+    },
+    "products.0.symmetric_contractions.contractions.0.weights.1": {
+      "abs_sum": 0.5295323878379838,
+      "count": 48,
+      "projection": -0.12306182670328152,
+      "shape": [
+        3,
+        1,
+        16
+      ],
+      "sq_sum": 0.01444217177583827,
+      "sum": 0.02553718683303676
+    },
+    "products.0.symmetric_contractions.contractions.0.weights_max": {
+      "abs_sum": 0.0979930937423099,
+      "count": 528,
+      "projection": -0.011218793368790505,
+      "shape": [
+        3,
+        11,
+        16
+      ],
+      "sq_sum": 0.0001651323823716894,
+      "sum": 0.010253294988345025
+    },
+    "products.0.symmetric_contractions.contractions.1.weights.0": {
+      "abs_sum": 0.054451988314473676,
+      "count": 192,
+      "projection": -0.0007199874756154215,
+      "shape": [
+        3,
+        4,
+        16
+      ],
+      "sq_sum": 5.5468921853966946e-05,
+      "sum": -0.020185364763503067
+    },
+    "products.0.symmetric_contractions.contractions.1.weights.1": {
+      "abs_sum": 0.1497550577928138,
+      "count": 48,
+      "projection": -0.04396185167159128,
+      "shape": [
+        3,
+        1,
+        16
+      ],
+      "sq_sum": 0.0013898195980304832,
+      "sum": 0.027805457086638917
+    },
+    "products.0.symmetric_contractions.contractions.1.weights_max": {
+      "abs_sum": 0.03386005866208357,
+      "count": 1008,
+      "projection": 0.00015790304081523876,
+      "shape": [
+        3,
+        21,
+        16
+      ],
+      "sq_sum": 9.87548030711196e-06,
+      "sum": 0.00942821296910239
+    },
+    "products.1.linear.weight": {
+      "abs_sum": 0.5050429425342315,
+      "count": 256,
+      "projection": -0.01848233226400572,
+      "shape": [
+        256
+      ],
+      "sq_sum": 0.0029853534834416388,
+      "sum": 0.09440375493769328
+    },
+    "products.1.symmetric_contractions.contractions.0.weights.0": {
+      "abs_sum": 0.014552713986201525,
+      "count": 144,
+      "projection": -0.005561897317214507,
+      "shape": [
+        3,
+        3,
+        16
+      ],
+      "sq_sum": 1.0770808701210973e-05,
+      "sum": 0.0035017945481109858
+    },
+    "products.1.symmetric_contractions.contractions.0.weights.1": {
+      "abs_sum": 0.1822912700394066,
+      "count": 48,
+      "projection": 0.035590322792980925,
+      "shape": [
+        3,
+        1,
+        16
+      ],
+      "sq_sum": 0.002656660615390703,
+      "sum": 0.03544767609053103
+    },
+    "products.1.symmetric_contractions.contractions.0.weights_max": {
+      "abs_sum": 0.0014270909238827845,
+      "count": 528,
+      "projection": -8.405828918210146e-05,
+      "shape": [
+        3,
+        11,
+        16
+      ],
+      "sq_sum": 6.196346826660813e-08,
+      "sum": 0.0005987806086162391
+    },
+    "readouts.0.linear.weight": {
+      "abs_sum": 0.22954998424783546,
+      "count": 16,
+      "projection": 0.00028509587407002336,
+      "shape": [
+        16
+      ],
+      "sq_sum": 0.00637826138172445,
+      "sum": -0.1314352058829677
+    },
+    "readouts.1.linear_1.weight": {
+      "abs_sum": 0.4245182376944351,
+      "count": 128,
+      "projection": 0.0148459792811504,
+      "shape": [
+        128
+      ],
+      "sq_sum": 0.0036419516087816428,
+      "sum": 0.10940654253997534
+    },
+    "readouts.1.linear_2.weight": {
+      "abs_sum": 0.1146499604176466,
+      "count": 8,
+      "projection": -0.031186266363245507,
+      "shape": [
+        8
+      ],
+      "sq_sum": 0.003001794981991499,
+      "sum": 0.11449102592605298
+    }
+  },
+  "parameters_without_a_gradient": [],
+  "provenance": {
+    "description": "One forward+backward of an energy+forces loss on the tiny_scaleshift anchor, reduced to a per-parameter gradient digest. Legacy characterization: what FM-00 must reproduce and what PAR-1 diffs legacy against v1.",
+    "evaluated_with": "e3nn, CPU, float64",
+    "recipe": "tests/golden/train_step.py",
+    "source": "tests/golden/models/tiny_scaleshift.model",
+    "tolerance_row": "fp64_cpu_reference"
+  },
+  "schema_version": 1,
+  "units": {
+    "energy": "eV",
+    "length": "Ang"
+  }
+}
