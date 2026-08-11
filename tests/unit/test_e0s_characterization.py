@@ -411,6 +411,12 @@ def test_estimated_e0s_fall_back_to_the_foundation_when_nothing_has_an_energy(
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(name="fixtures_water")
+def fixture_water():
+    atoms = harness.load_fixtures(names=["water_cluster"])["water_cluster"]
+    return atoms, load_anchor("tiny_scaleshift", torch.float64)
+
+
 def test_the_e0s_enter_the_total_energy_once_per_atom(fixtures_water):
     """Additive, exact, and outside every scaling.
 
@@ -452,12 +458,6 @@ def test_the_e0_contribution_is_the_composition_dot_the_table(fixtures_water):
             model(anchor_graph(model, atoms), compute_force=False)["energy"]
         )
     assert with_e0s - without == pytest.approx(expected, abs=TOL.atol)
-
-
-@pytest.fixture(name="fixtures_water")
-def fixture_water():
-    atoms = harness.load_fixtures(names=["water_cluster"])["water_cluster"]
-    return atoms, load_anchor("tiny_scaleshift", torch.float64)
 
 
 # ---------------------------------------------------------------------------

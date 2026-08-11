@@ -47,8 +47,13 @@ from mace.modules.loss import WeightedEnergyForcesLoss
 from mace.tools import torch_tools
 
 from . import harness
-from .anchors import ANCHORS, anchor_graph, anchor_batch, load_anchor
-from .anchors import load_training_structures
+from .anchors import (
+    ANCHORS,
+    anchor_batch,
+    anchor_graph,
+    load_anchor,
+    load_training_structures,
+)
 
 #: anchor -> the committed reference for its gradient digest.
 GRADIENT_REFERENCES = {
