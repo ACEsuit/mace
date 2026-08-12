@@ -135,6 +135,33 @@ def test_the_floors_are_enforced_after_the_shards_are_combined():
     )
 
 
+def test_the_floors_carry_their_reasoning_in_the_job_that_enforces_them():
+    """A bare list of percentages is not maintainable by anyone but its author.
+
+    Three things have to survive next to the numbers, because each is a
+    question the next person will otherwise answer wrongly: why only these
+    files (the rest is pinned by goldens and contracts, not line coverage),
+    which selection the percentages are measured under (the same floor reads
+    76 or 87 on `mace/modules/utils.py` depending on it), and what to do when
+    a module moves to the new stack (the floor moves with it). Comments are
+    not in the parsed YAML, so this reads the raw file.
+    """
+    text = NIGHTLY.read_text(encoding="utf-8")
+    gate = text[text.index("THE coverage gate") : text.index("<<'FLOORS'")]
+    for topic, needle in (
+        ("why only these files", "WHY ONLY THESE FILES"),
+        ("the migration invariant", "MIGRATION INVARIANT"),
+        ("which selection is measured", "THE SELECTION THESE FLOORS ARE MEASURED"),
+        ("why not in a shard", "shard"),
+        ("why not in the PR job", "denominator"),
+    ):
+        assert needle in gate, (
+            f"the floor gate no longer explains {topic}; the list of "
+            f"percentages has to carry its reasoning or it cannot be "
+            f"maintained, raised or migrated by anyone but whoever wrote it"
+        )
+
+
 def test_the_floor_gate_runs_only_when_every_shard_reported():
     """`coverage-report` must stay dependent on, and not independent of, the shards.
 

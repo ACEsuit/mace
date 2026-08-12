@@ -337,20 +337,39 @@ jobs:
       # both wrong. Inside coverage-full the check would run in a shard
       # holding one third of the suite (splits: 3), so a module exercised
       # entirely by tests that landed in another group would fail its own
-      # floor. In ci-core's coverage job the denominator is different: that
-      # job measures tests/unit + tests/workflows only -- no extensions,
-      # backends, integrations or network -- so the same percentage would
-      # mean a different thing. mace/modules/radial.py is the example that
-      # settles it: the ZBL and non-default radial-basis branches are reached
-      # from tests/backends and the extension suites, so it reads roughly 58%
-      # on the PR slice and roughly 70% on the full scope. A floor is
-      # meaningless without naming which.
+      # floor. In ci-core's coverage job the denominator is different: it
+      # measures tests/unit + tests/workflows only -- no extensions, backends,
+      # integrations or network -- so the same percentage means a different
+      # thing.
       #
-      # THE SELECTION THESE FLOORS ARE MEASURED UNDER is therefore exactly
+      # That second one is not a theoretical objection, and the file that
+      # settles it is mace/modules/utils.py. Measured on one host over the
+      # whole selection: 76% on the PR slice, 87% on the full scope. Its floor
+      # is 85. The same number against the same file therefore PASSES here and
+      # FAILS in the PR job. The gap is 36 statements and it is not diffuse:
+      # compute_forces_virials_magforces, compute_forces_magforces, the
+      # get_outputs branches that dispatch to them, and
+      # compute_total_charge_dipole_permuted -- reached from tests/extensions,
+      # which the PR slice does not run. A floor is meaningless without naming
+      # the selection, so:
+      #
+      # THE SELECTION THESE FLOORS ARE MEASURED UNDER is exactly
       # coverage-full's, combined over all three shards:
       #   pytest tests -m "not gpu and not benchmark"
       # with extras dev,cueq,torchsim,schedulefree plus requirements/polar.txt
       # and requirements/les.txt, and MACE_CI_ALLOW_NETWORK=1.
+      #
+      # HEADROOM, as measured under that selection when the floors went in:
+      #   loss.py 100 (floor 90)      data/utils.py      96  (85)
+      #   radial.py 100 (floor 90)    neighborhood.py    100 (95)
+      #   modules/utils.py 87 (85)    atomic_data.py     96  (85)
+      # Two of those are ratchets rather than newly-cleared bars --
+      # neighborhood.py and atomic_data.py already sat above their floors
+      # before the characterization tests landed, so they gate against
+      # regression and nothing else. modules/utils.py is the tight one at two
+      # points; the honest reading is that its floor is the one that will bite
+      # first, which is the point of putting it here rather than rounding it
+      # down to something comfortable.
       #
       # This step runs after `coverage combine`, which is also why
       # coverage-report is deliberately not `if: always()`: a gate must never

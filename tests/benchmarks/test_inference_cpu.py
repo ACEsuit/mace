@@ -153,6 +153,13 @@ def backend_params() -> List:
 
 def _load_model(name: str, dtype: str, device: str) -> torch.nn.Module:
     if name == "anchor":
+        # Read straight from the committed checkpoint rather than through a
+        # shared loader, so this file stands on the golden harness alone. The
+        # numerics characterization work introduces a tests.golden.anchors
+        # with a load_anchor() that does exactly this; collapse these five
+        # lines into it once that lands, but not before -- a benchmark that
+        # cannot be collected without another suite present is a benchmark
+        # that silently stops being collected.
         torch_dtype = torch.float32 if dtype == "float32" else torch.float64
         model = torch.load(
             harness.MODELS_DIR / "tiny_scaleshift.model",
