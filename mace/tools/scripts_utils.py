@@ -954,6 +954,20 @@ def get_params_options(
                 "weight_decay": 0.0,
             }
         )
+    if model.__class__.__name__ == "LREnergyDipoleMACE":
+        long_range_parameters = (
+            list(model.charge_readout.parameters())
+            + list(model.charge_weight_readout.parameters())
+            + list(model.field_updates.parameters())
+        )
+        param_options["params"].append(
+            {
+                "name": "long_range",
+                "params": long_range_parameters,
+                "weight_decay": args.weight_decay,
+                "lr": args.lr,
+            }
+        )
     return param_options
 
 

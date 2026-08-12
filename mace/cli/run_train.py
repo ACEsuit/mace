@@ -572,7 +572,7 @@ def run(args) -> None:
         args.compute_polarizability = True
     else:
         dipole_only = False
-        if args.model == "EnergyDipoleMACE":
+        if args.model in ("EnergyDipoleMACE", "LREnergyDipoleMACE"):
             args.compute_dipole = True
             args.compute_energy = True
             args.compute_forces = True

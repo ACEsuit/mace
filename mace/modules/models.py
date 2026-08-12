@@ -3,8 +3,9 @@
 # Authors: Ilyes Batatia, Gregor Simm
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
+# pylint: disable=too-many-lines
 
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch
@@ -1319,6 +1320,19 @@ class EnergyDipoleMACE(torch.nn.Module):
                     )
                 )
 
+    def _long_range_update(
+        self,
+        data: Dict[str, torch.Tensor],
+        node_feats: torch.Tensor,
+        node_dipoles: torch.Tensor,
+        positions: torch.Tensor,
+        displacement: torch.Tensor,
+        num_graphs: int,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Hook for energy/dipole extensions which share this local backbone."""
+        del data, node_feats, positions, displacement
+        return node_dipoles, node_dipoles.new_zeros((num_graphs,))
+
     def forward(
         self,
         data: Dict[str, torch.Tensor],
@@ -1422,6 +1436,16 @@ class EnergyDipoleMACE(torch.nn.Module):
             n_components,
         ), f"'graph_features' has the wrong shape, expected {(num_graphs,n_components)} but got {graph_features.shape}"
         total_energy = graph_features[:, 0]
+
+        node_dipoles, long_range_energy = self._long_range_update(
+            data=data,
+            node_feats=node_feats,
+            node_dipoles=node_dipoles,
+            positions=data["positions"],
+            displacement=displacement,
+            num_graphs=num_graphs,
+        )
+        total_energy = total_energy + long_range_energy
 
         # Attention:
         # if we want to compute the Born Charges we need to call 'torch.autograd.grad' on the dipoles w.r.t. the positions.

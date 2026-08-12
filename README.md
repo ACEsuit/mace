@@ -306,6 +306,32 @@ For usage, outputs, and training/finetuning details, see the PolarMACE guide:
 
 - https://mace-docs.readthedocs.io/en/latest/guide/polar_mace.html
 
+### Long-range energy and dipole model
+
+`LREnergyDipoleMACE` is a drop-in long-range variant of `EnergyDipoleMACE`.
+An existing training configuration only needs `model: EnergyDipoleMACE` changed
+to `model: LREnergyDipoleMACE`. It keeps the same energy, force, dipole, and
+oxidation-number targets and outputs, while adding charge-conserving learned
+monopoles, one global field update of the existing intrinsic atomic dipoles, and
+Gaussian charge--dipole electrostatics from `graph_longrange`. The defaults are
+`l_max=1`, 1.5 Angstrom smearing, one field update, a 1.5 reciprocal-space
+cutoff factor, and electrostatic self interaction. `graph-longrange` 0.4.0 or a
+compatible `graph_electrostatics` installation is required.
+
+The public atomic and total dipoles remain Cartesian `[x, y, z]` values in
+electron-Angstrom, as in `EnergyDipoleMACE`. Internally, intrinsic dipoles are
+permuted to the real-spherical Condon--Shortley order `[y, z, x]` expected by
+`graph_longrange`; no extra sign or normalization is applied because its
+`normalize="multipoles"` basis consumes physical monopoles and dipoles. The
+electrostatics library uses electron, volt, and Angstrom internally, so its
+energy is added directly in eV without a Bohr, Hartree, or elementary-charge
+conversion. Its one-half energy contraction handles pair double counting, and
+the default includes Gaussian self energy. Periodic energy uses reciprocal
+images; open-boundary energy uses the library's real-space evaluator. The
+oxidation-number branch continues to use the positions supplied to
+`EnergyDipoleMACE` (including their unwrapped lattice translations), while the
+learned continuous charges are used only for the field and electrostatic energy.
+
 ### Finetuning foundation models
 
 To finetune one of the mace-mp-0 foundation model, you can use the `mace_run_train` script with the extra argument `--foundation_model=model_type`. For example to finetune the small model on a new dataset, you can use:

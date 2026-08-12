@@ -147,6 +147,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "AtomicDipolesMACE",
             "AtomicDielectricMACE",
             "EnergyDipoleMACE",
+            "LREnergyDipoleMACE",
         ],
     )
     parser.add_argument(

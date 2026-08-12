@@ -71,7 +71,7 @@ class MACECalculator(Calculator):
         default_dtype: str, default dtype of model
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
-                    Options: [MACE, DipoleMACE, EnergyDipoleMACE]
+                    Options: [MACE, DipoleMACE, EnergyDipoleMACE, LREnergyDipoleMACE]
 
     Dipoles are returned in units of e*angstrom
     """
@@ -153,15 +153,21 @@ class MACECalculator(Calculator):
             "MACE",
             "DipoleMACE",
             "EnergyDipoleMACE",
+            "LREnergyDipoleMACE",
             "DipolePolarizabilityMACE",
             "PolarMACE",
         ]:
             raise ValueError(
-                f"Give a valid model_type: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
+                f"Give a valid model_type: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE, LREnergyDipoleMACE], {model_type} not supported"
             )
 
         # superclass constructor initializes self.implemented_properties to an empty list
-        if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
+        if model_type in [
+            "MACE",
+            "EnergyDipoleMACE",
+            "LREnergyDipoleMACE",
+            "PolarMACE",
+        ]:
             self.implemented_properties.extend(
                 [
                     "energy",
@@ -175,7 +181,12 @@ class MACECalculator(Calculator):
             if kwargs.get("compute_atomic_stresses", False):
                 self.implemented_properties.extend(["stresses", "virials"])
                 self.compute_atomic_stresses = True
-        if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
+        if model_type in [
+            "EnergyDipoleMACE",
+            "LREnergyDipoleMACE",
+            "DipoleMACE",
+            "DipolePolarizabilityMACE",
+        ]:
             self.implemented_properties.extend(["dipole"])
         if model_type == "DipolePolarizabilityMACE":
             self.implemented_properties.extend(
@@ -221,13 +232,19 @@ class MACECalculator(Calculator):
         if self.num_models > 1:
             logging.info(f"Running committee mace with {self.num_models} models")
 
-            if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
+            if model_type in [
+                "MACE",
+                "EnergyDipoleMACE",
+                "LREnergyDipoleMACE",
+                "PolarMACE",
+            ]:
                 self.implemented_properties.extend(
                     ["energy_comm", "energy_var", "forces_comm", "stress_var"]
                 )
             if model_type in [
                 "DipoleMACE",
                 "EnergyDipoleMACE",
+                "LREnergyDipoleMACE",
                 "DipolePolarizabilityMACE",
             ]:
                 self.implemented_properties.extend(["dipole_var"])
@@ -455,7 +472,12 @@ class MACECalculator(Calculator):
 
         batch_base = self._atoms_to_batch(atoms)
 
-        if self.model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
+        if self.model_type in [
+            "MACE",
+            "EnergyDipoleMACE",
+            "LREnergyDipoleMACE",
+            "PolarMACE",
+        ]:
             compute_stress = not self.use_compile
         else:
             compute_stress = False

@@ -1,5 +1,6 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
+import numpy as np
 import torch
 from e3nn import o3
 from e3nn.util.jit import compile_mode
@@ -9,6 +10,7 @@ try:
     from graph_longrange.features import GTOElectrostaticFeatures
     from graph_longrange.gto_utils import (
         DisplacedGTOExternalFieldBlock,
+        GTOBasis,
         gto_basis_kspace_cutoff,
     )
     from graph_longrange.kspace import compute_k_vectors_flat
@@ -16,13 +18,15 @@ try:
     GRAPH_LONGRANGE_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     GRAPH_LONGRANGE_AVAILABLE = False
+    GTOBasis = torch.nn.Module
 
 from mace.modules.blocks import (
+    InteractionBlock,
     LinearReadoutBlock,
     NonLinearBiasReadoutBlock,
     NonLinearReadoutBlock,
 )
-from mace.modules.models import ScaleShiftMACE
+from mace.modules.models import EnergyDipoleMACE, ScaleShiftMACE
 from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
 from mace.modules.wrapper_ops import (
     CuEquivarianceConfig,
@@ -72,6 +76,70 @@ def _get_readout_input_dim(block: torch.nn.Module) -> int:
     if isinstance(block, NonLinearReadoutBlock):  # type: ignore
         return block.linear_1.irreps_in.dim  # type: ignore
     raise TypeError("Unsupported readout type for input dimension retrieval.")
+
+
+class _DifferentiableRadialIntegral(torch.nn.Module):
+    """Autograd-safe form of graph_longrange's analytic l<=1 radial basis."""
+
+    def __init__(self, radial: torch.nn.Module):
+        super().__init__()
+        self.max_l = int(radial.max_l)
+        self.register_buffer("sigma2", radial.sigma2.detach().clone())
+        self.register_buffer("pref0", radial.pref0.detach().clone())
+        if self.max_l == 1:
+            self.register_buffer("pref1", radial.pref1.detach().clone())
+
+    def forward(self, k_mods: torch.Tensor) -> torch.Tensor:
+        k2 = k_mods * k_mods
+        exponential = torch.exp(-0.5 * k2.unsqueeze(-1) * self.sigma2)
+        monopoles = self.pref0 * exponential
+        if self.max_l == 0:
+            return monopoles.unsqueeze(-1)
+        dipoles = self.pref1 * k_mods.unsqueeze(-1) * exponential
+        return torch.stack((monopoles, dipoles), dim=-1)
+
+
+class _DifferentiableGTOBasis(GTOBasis):
+    """GTO basis without graph_longrange 0.4.0's in-place autograd hazards."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.radial_spline = _DifferentiableRadialIntegral(self.radial_spline)
+
+    def _prepare_k_moduli(
+        self, k_norm2: torch.Tensor, k0_mask: torch.Tensor
+    ) -> torch.Tensor:
+        safe_k_norm2 = torch.where(
+            k0_mask > 0.0, torch.ones_like(k_norm2), torch.clamp_min(k_norm2, 0.0)
+        )
+        k_moduli = torch.sqrt(safe_k_norm2)
+        return k_moduli.masked_fill(k0_mask > 0.0, 0.0)
+
+    def _evaluate_fourier_basis(
+        self, k_moduli: torch.Tensor, yklm: torch.Tensor
+    ) -> torch.Tensor:
+        fnlk = self.radial_spline(k_moduli) * self.cl_scale
+        expanded_fnlk = torch.index_select(fnlk, -1, self.expanded_l_indices)
+        xnlk = expanded_fnlk * yklm.unsqueeze(-2)
+        return torch.stack(
+            (
+                xnlk * self.real_phase_factors,
+                xnlk * self.imag_phase_factors,
+            ),
+            dim=-1,
+        )
+
+
+def _make_gto_basis_differentiable(basis: torch.nn.Module) -> torch.nn.Module:
+    """Return an algebraically identical, fully differentiable GTO basis."""
+    differentiable = _DifferentiableGTOBasis(
+        max_l=basis.max_l,
+        sigmas=basis.sigmas,
+        kspace_cutoff=basis.kspace_cutoff,
+        normalize=basis.normalize,
+    )
+    differentiable.load_state_dict(basis.state_dict())
+    return differentiable
 
 
 @compile_mode("script")
@@ -985,3 +1053,319 @@ class PolarMACE(ScaleShiftMACE):
             "electrostatic_potentials": esps,
             "spin_charge_density": spin_charge_density_mul_ir,
         }
+
+
+@compile_mode("script")
+class LREnergyDipoleMACE(EnergyDipoleMACE):
+    """EnergyDipoleMACE with field-responsive dipoles and GTO electrostatics.
+
+    The public constructor and forward signatures intentionally match
+    :class:`EnergyDipoleMACE`. Long-range settings are serialized attributes with
+    MACE-POLAR-like defaults and do not require additional training inputs.
+    """
+
+    def __init__(
+        self,
+        r_max: float,
+        num_bessel: int,
+        num_polynomial_cutoff: int,
+        max_ell: int,
+        interaction_cls: Type[InteractionBlock],
+        interaction_cls_first: Type[InteractionBlock],
+        num_interactions: int,
+        num_elements: int,
+        hidden_irreps: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        avg_num_neighbors: float,
+        atomic_numbers: List[int],
+        correlation: int,
+        gate: Optional[Callable],
+        atomic_energies: Optional[np.ndarray],
+        apply_cutoff: bool = True,
+        use_reduced_cg: bool = True,
+        use_so3: bool = False,
+        distance_transform: str = "None",
+        radial_MLP: Optional[List[int]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,
+        oeq_config: Optional[Dict[str, Any]] = None,
+        edge_irreps: Optional[o3.Irreps] = None,
+    ):
+        if not GRAPH_LONGRANGE_AVAILABLE:
+            raise ImportError(
+                "Cannot import 'graph_longrange'. Please install graph_electrostatics "
+                "from https://github.com/WillBaldwin0/graph_electrostatics."
+            )
+        super().__init__(
+            r_max=r_max,
+            num_bessel=num_bessel,
+            num_polynomial_cutoff=num_polynomial_cutoff,
+            max_ell=max_ell,
+            interaction_cls=interaction_cls,
+            interaction_cls_first=interaction_cls_first,
+            num_interactions=num_interactions,
+            num_elements=num_elements,
+            hidden_irreps=hidden_irreps,
+            MLP_irreps=MLP_irreps,
+            avg_num_neighbors=avg_num_neighbors,
+            atomic_numbers=atomic_numbers,
+            correlation=correlation,
+            gate=gate,
+            atomic_energies=atomic_energies,
+            apply_cutoff=apply_cutoff,
+            use_reduced_cg=use_reduced_cg,
+            use_so3=use_so3,
+            distance_transform=distance_transform,
+            radial_MLP=radial_MLP,
+            cueq_config=cueq_config,
+            oeq_config=oeq_config,
+            edge_irreps=edge_irreps,
+        )
+
+        self.atomic_multipoles_max_l = 1
+        self.atomic_multipoles_smearing_width = 1.5
+        self.kspace_cutoff_factor = 1.5
+        self.num_field_updates = 1
+        self.include_electrostatic_self_interaction = True
+        self.field_feature_max_l = 1
+        self.field_feature_widths = [1.5]
+
+        kspace_cutoff = self.kspace_cutoff_factor * gto_basis_kspace_cutoff(
+            [self.atomic_multipoles_smearing_width] + self.field_feature_widths,
+            self.atomic_multipoles_max_l,
+        )
+        self.register_buffer(
+            "kspace_cutoff",
+            torch.tensor(kspace_cutoff, dtype=torch.get_default_dtype()),
+        )
+        self.register_buffer(
+            "cartesian_to_gto",
+            torch.tensor([1, 2, 0], dtype=torch.long),
+        )
+        self.register_buffer(
+            "field_gto_to_cartesian",
+            torch.tensor([0, 3, 1, 2], dtype=torch.long),
+        )
+
+        final_hidden_irreps = (
+            o3.Irreps(str(hidden_irreps[:2]))
+            if num_interactions > 1
+            else o3.Irreps(hidden_irreps)
+        )
+        multipole_irreps = o3.Irreps("1x0e + 1x1o")
+        field_irreps = o3.Irreps("1x0e + 1x1o")
+        self.charge_readout = o3.Linear(final_hidden_irreps, o3.Irreps("1x0e"))
+        self.charge_weight_readout = o3.Linear(
+            final_hidden_irreps, o3.Irreps("1x0e"), biases=True
+        )
+        self.field_updates = torch.nn.ModuleList(
+            [
+                o3.Linear(
+                    final_hidden_irreps + multipole_irreps + field_irreps,
+                    o3.Irreps("2x0e + 1x1o"),
+                    biases=True,
+                )
+            ]
+        )
+
+        self.electric_potential_descriptor = GTOElectrostaticFeatures(
+            density_max_l=self.atomic_multipoles_max_l,
+            density_smearing_width=self.atomic_multipoles_smearing_width,
+            feature_max_l=self.field_feature_max_l,
+            feature_smearing_widths=self.field_feature_widths,
+            include_self_interaction=False,
+            kspace_cutoff=kspace_cutoff,
+            integral_normalization="receiver",
+        )
+        self.coulomb_energy = GTOElectrostaticEnergy(
+            density_max_l=self.atomic_multipoles_max_l,
+            density_smearing_width=self.atomic_multipoles_smearing_width,
+            kspace_cutoff=kspace_cutoff,
+            include_self_interaction=self.include_electrostatic_self_interaction,
+        )
+        self.electric_potential_descriptor.density_basis = (
+            _make_gto_basis_differentiable(
+                self.electric_potential_descriptor.density_basis
+            )
+        )
+        self.electric_potential_descriptor.feature_basis = (
+            _make_gto_basis_differentiable(
+                self.electric_potential_descriptor.feature_basis
+            )
+        )
+        self.coulomb_energy.density_basis = _make_gto_basis_differentiable(
+            self.coulomb_energy.density_basis
+        )
+
+    def _known_total_charge(
+        self,
+        data: Dict[str, torch.Tensor],
+        reference: torch.Tensor,
+        num_graphs: int,
+    ) -> torch.Tensor:
+        if "total_charge" in data:
+            return data["total_charge"].reshape(-1).to(reference)
+        return reference.new_zeros((num_graphs,))
+
+    def _conserve_total_charge(
+        self,
+        charges: torch.Tensor,
+        logits: torch.Tensor,
+        total_charge: torch.Tensor,
+        batch: torch.Tensor,
+        num_graphs: int,
+    ) -> torch.Tensor:
+        """Apply a stable graph softmax correction to predicted charges."""
+        graph_max = logits.new_full((num_graphs,), -torch.inf)
+        graph_max.scatter_reduce_(0, batch, logits, reduce="amax", include_self=True)
+        unnormalized = torch.exp(logits - graph_max[batch])
+        denominator = scatter_sum(unnormalized, batch, dim=0, dim_size=num_graphs)
+        weights = unnormalized / denominator[batch]
+        predicted_total = scatter_sum(charges, batch, dim=0, dim_size=num_graphs)
+        return charges + weights * (total_charge - predicted_total)[batch]
+
+    def _gto_multipoles(
+        self, charges: torch.Tensor, dipoles: torch.Tensor
+    ) -> torch.Tensor:
+        return torch.cat(
+            (
+                charges.unsqueeze(-1),
+                torch.index_select(dipoles, -1, self.cartesian_to_gto),
+            ),
+            dim=-1,
+        )
+
+    def _electrostatic_geometry(
+        self,
+        data: Dict[str, torch.Tensor],
+        positions: torch.Tensor,
+        displacement: torch.Tensor,
+        num_graphs: int,
+    ) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
+        pbc = data["pbc"].view(-1, 3)
+        periodic_graph = torch.any(pbc, dim=-1)
+        cell = data["cell"].view(-1, 3, 3)
+        symmetric_displacement = 0.5 * (displacement + displacement.transpose(-1, -2))
+        identity = torch.eye(3, dtype=positions.dtype, device=positions.device)
+        deformation = identity.unsqueeze(0) + symmetric_displacement
+        deformed_cell = torch.matmul(cell, deformation)
+        safe_cell = torch.where(
+            periodic_graph.view(-1, 1, 1),
+            deformed_cell,
+            identity.expand(num_graphs, -1, -1),
+        )
+        volume = torch.linalg.det(safe_cell).abs()
+        reciprocal_cell = 2.0 * torch.pi * torch.linalg.inv(safe_cell.transpose(-1, -2))
+
+        if torch.any(periodic_graph):
+            k_vectors, k_norm2, k_vector_batch, k0_mask = compute_k_vectors_flat(
+                self.kspace_cutoff,
+                safe_cell,
+                reciprocal_cell,
+            )
+        else:
+            k_vectors = positions.new_zeros((num_graphs, 3))
+            k_norm2 = positions.new_zeros((num_graphs,))
+            k_vector_batch = torch.arange(num_graphs, device=positions.device)
+            k0_mask = positions.new_ones((num_graphs,))
+        return (
+            k_vectors,
+            k_norm2,
+            k_vector_batch,
+            k0_mask,
+            volume,
+            pbc,
+        )
+
+    def _long_range_update(
+        self,
+        data: Dict[str, torch.Tensor],
+        node_feats: torch.Tensor,
+        node_dipoles: torch.Tensor,
+        positions: torch.Tensor,
+        displacement: torch.Tensor,
+        num_graphs: int,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        batch = data["batch"]
+        total_charge = self._known_total_charge(data, positions, num_graphs)
+        charge_logits = self.charge_weight_readout(node_feats).squeeze(-1)
+        charges = self._conserve_total_charge(
+            self.charge_readout(node_feats).squeeze(-1),
+            charge_logits,
+            total_charge,
+            batch,
+            num_graphs,
+        )
+        dipoles = node_dipoles
+
+        (
+            k_vectors,
+            k_norm2,
+            k_vector_batch,
+            k0_mask,
+            volume,
+            pbc,
+        ) = self._electrostatic_geometry(data, positions, displacement, num_graphs)
+        field_cache = self.electric_potential_descriptor.precompute_geometry(
+            k_vectors=k_vectors,
+            k_norm2=k_norm2,
+            k_vector_batch=k_vector_batch,
+            k0_mask=k0_mask,
+            node_positions=positions,
+            batch=batch,
+            volume=volume,
+            pbc=pbc,
+        )
+
+        for _ in range(self.num_field_updates):
+            field_update = self.field_updates[0]
+            source_multipoles = self._gto_multipoles(charges, dipoles)
+            field_features_gto = self.electric_potential_descriptor.forward_dynamic(
+                cache=field_cache,
+                source_feats=source_multipoles.unsqueeze(-2),
+                pbc=pbc,
+            )
+            field_features = torch.index_select(
+                field_features_gto, -1, self.field_gto_to_cartesian
+            )
+            update = field_update(
+                torch.cat(
+                    (
+                        node_feats,
+                        charges.unsqueeze(-1),
+                        dipoles,
+                        field_features,
+                    ),
+                    dim=-1,
+                )
+            )
+            charges = charges + update[:, 0]
+            charge_logits = charge_logits + update[:, 1]
+            dipoles = dipoles + update[:, 2:5]
+            charges = self._conserve_total_charge(
+                charges,
+                charge_logits,
+                total_charge,
+                batch,
+                num_graphs,
+            )
+
+        final_multipoles = self._gto_multipoles(charges, dipoles)
+        electrostatic_energy = self.coulomb_energy(
+            k_vectors=k_vectors,
+            k_norm2=k_norm2,
+            k_vector_batch=k_vector_batch,
+            k0_mask=k0_mask,
+            source_feats=final_multipoles,
+            node_positions=positions,
+            batch=batch,
+            volume=volume,
+            pbc=pbc,
+        )
+        return dipoles, electrostatic_energy
