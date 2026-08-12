@@ -562,6 +562,14 @@
   "provenance": {
     "description": "MACE-MPA-0 medium, the checkpoint tracked in this repository and the model an unqualified mace_mp() returns. No download; the release artifact at release_url has the identical digest, so a consumer that fetches it by URL is looking at this same file.",
     "evaluated_with": "mace.calculators.MACECalculator, e3nn, CPU, float64",
+    "fixture_names": [
+      "dimer_short",
+      "isolated_atom",
+      "slab_vacuum",
+      "slab_zero_vacuum",
+      "triclinic_bulk",
+      "water_cluster"
+    ],
     "fixture_tags": [],
     "recipe": "mace.calculators.foundations_models.mace_mp(default_dtype='float64', device='cpu')",
     "release_url": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model",

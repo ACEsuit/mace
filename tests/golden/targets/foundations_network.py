@@ -13,6 +13,9 @@ from tests.golden.targets import _foundations
 ORDER = 41
 HELP = "references for the published checkpoints that are downloaded"
 IN_ALL = False
+# One family, two tiers: the difference between them is a download, not a
+# different story, so both are described by docs/foundations.md.
+DOC = "foundations"
 
 
 def run() -> None:

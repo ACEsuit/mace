@@ -43,7 +43,13 @@ def regenerate(network: bool) -> None:
                 f"would produce a reference nobody can reproduce; update "
                 f"tests/golden/foundation_artifacts.py first, deliberately."
             )
-        fixtures = harness.load_fixtures(tags=spec.fixture_tags or None)
+        # Same selection the test replays, from the same field. A
+        # regeneration over a different fixture set than the comparison
+        # reads is a reference that pins the selection rather than the
+        # model.
+        fixtures = harness.load_fixtures(
+            names=list(spec.fixture_names), tags=spec.fixture_tags or None
+        )
         snapshot = harness.snapshot_outputs(
             calc,
             fixtures,
@@ -72,6 +78,7 @@ def regenerate(network: bool) -> None:
                 ),
                 "description": spec.description,
                 "fixture_tags": list(spec.fixture_tags),
+                "fixture_names": list(spec.fixture_names),
                 "evaluated_with": "mace.calculators.MACECalculator, e3nn, CPU, float64",
                 "tolerance_row": harness.FP64_CPU_REFERENCE.name,
             },

@@ -66,9 +66,17 @@ class FoundationArtifact:
     origin: str
     #: True when reaching the artifact requires a download
     network: bool
-    #: manifest tags selecting the fixtures this model is evaluated on;
-    #: empty means the whole set
+    #: manifest tags selecting the fixtures this model is evaluated on.
+    #: Empty does NOT mean "the whole set": see ``fixture_names``.
     fixture_tags: Tuple[str, ...]
+    #: the fixtures this reference pins, by name. Stated rather than
+    #: derived, because the manifest is shared with every other golden
+    #: family: a selection that means "everything this model can
+    #: evaluate" silently grows the moment another family commits a
+    #: fixture, and a reference whose fixture set moves under it is not
+    #: edit-locked at all. A published model covering most of the
+    #: periodic table would otherwise absorb every structure anyone adds.
+    fixture_names: Tuple[str, ...]
     description: str
     #: only for the network tier: the name of the dict in
     #: foundations_models.py that must still hold ``origin``, and the key
@@ -93,6 +101,14 @@ ARTIFACTS: Dict[str, FoundationArtifact] = {
         origin=_TRACKED_MPA0,
         network=False,
         fixture_tags=(),
+        fixture_names=(
+            "dimer_short",
+            "isolated_atom",
+            "slab_vacuum",
+            "slab_zero_vacuum",
+            "triclinic_bulk",
+            "water_cluster",
+        ),
         description=(
             "MACE-MPA-0 medium, the checkpoint tracked in this repository and "
             "the model an unqualified mace_mp() returns. No download; the "
@@ -117,6 +133,14 @@ ARTIFACTS: Dict[str, FoundationArtifact] = {
         origin=_MP_SMALL_URL,
         network=True,
         fixture_tags=(),
+        fixture_names=(
+            "dimer_short",
+            "isolated_atom",
+            "slab_vacuum",
+            "slab_zero_vacuum",
+            "triclinic_bulk",
+            "water_cluster",
+        ),
         description=(
             "MACE-MP-0 small (2023-12-10-mace-128-L0_energy_epoch-249), the "
             "pre-3.10 small tier, downloaded from the mace-mp release."
@@ -139,6 +163,7 @@ ARTIFACTS: Dict[str, FoundationArtifact] = {
         # stress of a slab: the molecular tag is how the fixture set is
         # narrowed to what this model was fitted for.
         fixture_tags=("molecular",),
+        fixture_names=("dimer_short", "isolated_atom", "water_cluster"),
         description=(
             "MACE-OFF23 small, organic chemistry (H C N O F P S Cl Br I), "
             "downloaded from the mace-off repository. ASL licensed."
