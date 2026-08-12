@@ -461,9 +461,17 @@ class EvaluatedFile:
         )
 
 
+#: These contracts drive the tiny ScaleShiftMACE anchor, which is an H/C/O
+#: model. The golden manifest is shared with every other family, so a bare
+#: load_fixtures() hands it whatever the next family commits -- and an
+#: element it has no z-table row for fails inside the CLI subprocess as a
+#: bare ValueError, which reads as a broken CLI rather than a wrong input.
+ANCHOR_ELEMENTS = (1, 6, 8)
+
+
 @pytest.fixture(name="fixture_structures", scope="module")
 def fixture_fixture_structures():
-    return harness.load_fixtures()
+    return harness.load_fixtures(elements=ANCHOR_ELEMENTS)
 
 
 @pytest.fixture(name="fixture_file", scope="module")

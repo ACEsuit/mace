@@ -1,6 +1,6 @@
 """The committed training regression set is what it claims to be.
 
-``fixtures/regression_train.xyz`` is the dataset the legacy-versus-rewrite
+``datasets/regression_train.xyz`` is the dataset the legacy-versus-rewrite
 training comparison runs on, and it is committed, so nothing regenerates it
 between runs -- which means nothing would notice if it drifted, went stale
 against its own recipe, or lost the families it exists to cover. These tests
@@ -22,7 +22,7 @@ from tests.golden.make_regression_set import OUTPUT, label, self_check
 def fixture_configs():
     assert OUTPUT.exists(), (
         f"{OUTPUT} is missing; regenerate it with "
-        f"`python tests/golden/regenerate.py --target regression_set "
+        f"`python tests/golden/regenerate.py --target regression-set "
         f"--i-know-what-i-am-doing`"
     )
     return ase_read(OUTPUT, index=":")

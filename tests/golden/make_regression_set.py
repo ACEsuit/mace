@@ -1,6 +1,6 @@
 """Recipe for the committed end-to-end training regression set.
 
-``regression_train.xyz`` is the dataset the legacy-versus-rewrite training
+``datasets/regression_train.xyz`` is the dataset the legacy-versus-rewrite training
 comparison is run on: small enough to train in seconds on one CPU core, and
 deliberately *diverse* -- isolated atoms, molecules, slabs and bulk cells, all
 three anchor elements, and both electrostatic labels (per-atom partial charges
@@ -57,7 +57,11 @@ from ase.io import write as ase_write
 from ase.neighborlist import neighbor_list
 
 HERE = Path(__file__).resolve().parent
-OUTPUT = HERE / "fixtures" / "regression_train.xyz"
+#: Deliberately not under ``fixtures/``. That directory is the evaluation
+#: set, and every file in it has to have a manifest row: a training set
+#: living there is loaded by nothing, described by nothing, and breaks the
+#: guard that keeps the manifest and the directory in step.
+OUTPUT = HERE / "datasets" / "regression_train.xyz"
 
 #: The anchor elements, and nothing else: the committed tiny anchors carry the
 #: z-table [1, 6, 8], so a set with a fourth element could not be fine-tuned

@@ -33,7 +33,7 @@ ANCHOR_MACE = GOLDEN_ROOT / "models" / "tiny_mace.model"
 #: and partial charges, all labelled by one closed-form potential so that
 #: "the loss went down" is a statement about the optimiser. See
 #: tests/golden/make_regression_set.py.
-REGRESSION_SET = GOLDEN_ROOT / "fixtures" / "regression_train.xyz"
+REGRESSION_SET = GOLDEN_ROOT / "datasets" / "regression_train.xyz"
 
 
 @pytest.fixture(name="anchor_scaleshift", scope="session")
