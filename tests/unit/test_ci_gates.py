@@ -345,3 +345,57 @@ def test_benchmarks_never_gate_a_correctness_job():
     # comparison flag. Nothing may pass one.
     for text in (NIGHTLY.read_text(encoding="utf-8"), pipeline):
         assert "--benchmark-compare-fail" not in text
+
+
+def _setup_step(job: str) -> dict:
+    """The setup-mace step of a job, which decides what is installed."""
+    for step in _steps(job):
+        if str(step.get("uses", "")).endswith("setup-mace"):
+            return step.get("with", {})
+    raise AssertionError(f"job {job!r} has no setup-mace step")
+
+
+def _run_tests_step(job: str) -> dict:
+    for step in _steps(job):
+        if str(step.get("uses", "")).endswith("run-tests"):
+            return step.get("with", {})
+    raise AssertionError(f"job {job!r} has no run-tests step")
+
+
+def test_the_coverage_job_installs_every_capability_it_requires():
+    """A required capability the install cannot provide is a floor that cannot be met.
+
+    coverage-full is where the project's real coverage number is produced, and
+    the per-file floors are enforced against it. It once required `polar` and
+    `les` -- which arrive through pip-packages rather than extras -- while the
+    `magnetic` extra was absent entirely. Every test under
+    tests/extensions/magnetic therefore skipped in the one job whose numbers
+    the floors judge, and the mace/modules/utils.py floor counts
+    compute_forces_virials_magforces and compute_forces_magforces, reachable
+    from nowhere else. That is ~8 points of a file with 2 points of headroom:
+    the floor could not have been met, and the failure would have read as a
+    coverage regression rather than a missing install.
+    """
+    setup = _setup_step("coverage-full")
+    required = {
+        cap.strip()
+        for cap in str(_run_tests_step("coverage-full")["require-caps"]).split(",")
+        if cap.strip()
+    }
+    # a capability is satisfiable if it is an extra, or arrives via pip-packages
+    provided = {e.strip() for e in str(setup.get("extras", "")).split(",") if e.strip()}
+    pip = str(setup.get("pip-packages", ""))
+    # `network` is not a package; it is the allow-network switch
+    unprovidable = {
+        cap
+        for cap in required - provided - {"network"}
+        if f"requirements/{cap}.txt" not in pip
+    }
+    assert not unprovidable, (
+        f"coverage-full requires {sorted(unprovidable)} but installs neither the "
+        f"extra nor requirements/<cap>.txt for it. Its tests will skip, and any "
+        f"floor counting code they reach becomes unmeetable."
+    )
+    assert str(_run_tests_step("coverage-full")["allow-network"]) == "true", (
+        "coverage-full requires the network capability, so it must allow network"
+    )

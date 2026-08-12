@@ -245,7 +245,7 @@ jobs:
       - uses: ./.github/actions/setup-mace
         with:
           python-version: "3.12"
-          extras: dev, cueq, torchsim, schedulefree
+          extras: dev, cueq, torchsim, schedulefree, magnetic
           pip-packages: -r requirements/polar.txt -r requirements/les.txt
       - name: Cache foundation model downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -261,7 +261,7 @@ jobs:
         with:
           tests: tests
           markers: not gpu and not benchmark
-          require-caps: network,cueq,polar,les,torchsim,schedulefree
+          require-caps: network,cueq,polar,les,torchsim,schedulefree,magnetic
           allow-network: "true"
           coverage: "data"
           splits: "3"
@@ -356,8 +356,12 @@ jobs:
       # THE SELECTION THESE FLOORS ARE MEASURED UNDER is exactly
       # coverage-full's, combined over all three shards:
       #   pytest tests -m "not gpu and not benchmark"
-      # with extras dev,cueq,torchsim,schedulefree plus requirements/polar.txt
-      # and requirements/les.txt, and MACE_CI_ALLOW_NETWORK=1.
+      # with extras dev,cueq,torchsim,schedulefree,magnetic plus
+      # requirements/polar.txt and requirements/les.txt, and
+      # MACE_CI_ALLOW_NETWORK=1. The magnetic extra is not optional here: the
+      # modules/utils.py floor counts compute_forces_virials_magforces and
+      # compute_forces_magforces, which only tests/extensions/magnetic reach,
+      # and they are ~8 points of that file against 2 points of headroom.
       #
       # HEADROOM, as measured under that selection when the floors went in:
       #   loss.py 100 (floor 90)      data/utils.py      96  (85)
