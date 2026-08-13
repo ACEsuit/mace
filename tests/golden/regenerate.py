@@ -12,9 +12,12 @@ Usage::
 
     python tests/golden/regenerate.py --target all --i-know-what-i-am-doing
 
-Targets, in dependency order: ``fixtures`` (structures + training set),
-``anchors`` (both checkpoints and their sidecars), ``references`` (the
-snapshot JSONs). ``all`` runs the three in that order.
+The targets are not listed here. Each family of goldens owns a module in
+``tests/golden/targets/`` and declares its own name, its order and its help
+line; ``--help`` reads them off the package. ``--target all`` runs the
+families that need nothing beyond a plain development environment, in
+dependency order, and names the ones it skipped instead of leaving their
+references silently stale.
 """
 
 from __future__ import annotations
@@ -22,7 +25,6 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict
 
 GOLDEN_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = GOLDEN_ROOT.parent.parent
@@ -30,95 +32,24 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # pylint: disable=wrong-import-position
-from tests.golden import harness  # noqa: E402
-from tests.golden.build_mace_anchor import MODEL_PATH as MACE_ANCHOR_PATH  # noqa: E402
-from tests.golden.build_mace_anchor import build_anchor  # noqa: E402
-from tests.golden.make_fixtures import write_fixtures  # noqa: E402
-from tests.golden.train_anchor import MODEL_PATH as SCALESHIFT_ANCHOR_PATH  # noqa: E402
-from tests.golden.train_anchor import train_anchor  # noqa: E402
-
-#: anchor name -> (checkpoint, reference file, what the anchor is for)
-ANCHORS: Dict[str, tuple] = {
-    "tiny_scaleshift": (
-        SCALESHIFT_ANCHOR_PATH,
-        "tiny_scaleshift_e3nn_cpu_fp64.json",
-        "Trained ScaleShiftMACE anchor: the class the training CLI emits, "
-        "with the short-range repulsion term inside the scale-shift.",
-    ),
-    "tiny_mace": (
-        MACE_ANCHOR_PATH,
-        "tiny_mace_e3nn_cpu_fp64.json",
-        "Directly instantiated plain MACE anchor: the class the CLI cannot "
-        "produce, with the short-range repulsion term outside any scaling.",
-    ),
-}
-
-
-def regenerate_fixtures() -> None:
-    written = write_fixtures()
-    for name, path in written.items():
-        print(f"  fixture  {name:16s} -> {path.relative_to(REPO_ROOT)}")
-
-
-def regenerate_anchors() -> None:
-    print("  training the ScaleShiftMACE anchor (a few seconds)...")
-    path = train_anchor()
-    print(f"  anchor   tiny_scaleshift  -> {path.relative_to(REPO_ROOT)}")
-    path = build_anchor()
-    print(f"  anchor   tiny_mace        -> {path.relative_to(REPO_ROOT)}")
-
-
-def regenerate_references() -> None:
-    # Imported here, not at module scope: the fixture and reference targets
-    # must stay runnable in an environment where the framework is importable
-    # but heavy, and nothing above this point needs torch.
-    import torch  # pylint: disable=import-outside-toplevel
-
-    from mace.calculators import MACECalculator  # pylint: disable=import-outside-toplevel
-
-    fixtures = harness.load_fixtures()
-    for name, (model_path, reference_name, description) in ANCHORS.items():
-        model = torch.load(model_path, weights_only=False, map_location="cpu")
-        calc = MACECalculator(models=[model], device="cpu", default_dtype="float64")
-        snapshot = harness.snapshot_outputs(
-            calc,
-            fixtures,
-            dtype="float64",
-            device="cpu",
-            backend="e3nn",
-            metadata={"model_class": type(model).__name__},
-        )
-        path = harness.write_reference(
-            harness.REFERENCES_DIR / reference_name,
-            snapshot,
-            provenance={
-                "source": f"tests/golden/models/{model_path.name}",
-                "recipe": (
-                    "tests/golden/train_anchor.py"
-                    if name == "tiny_scaleshift"
-                    else "tests/golden/build_mace_anchor.py"
-                ),
-                "description": description,
-                "evaluated_with": "mace.calculators.MACECalculator, e3nn, CPU, float64",
-                "tolerance_row": harness.FP64_CPU_REFERENCE.name,
-            },
-            allow_overwrite=True,
-        )
-        print(f"  reference {name:15s} -> {path.relative_to(REPO_ROOT)}")
-
-
-TARGETS = {
-    "fixtures": regenerate_fixtures,
-    "anchors": regenerate_anchors,
-    "references": regenerate_references,
-}
+from tests.golden import targets  # noqa: E402
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    available = targets.discover()
+    listing = "\n".join(
+        f"  {name:22s} {target.help}"
+        + ("" if target.in_all else "   (not part of 'all')")
+        for name, target in available.items()
+    )
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=f"targets, in the order 'all' runs them:\n{listing}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "--target",
-        choices=["all", *TARGETS],
+        choices=["all", *available],
         default="all",
         help="which golden artifacts to rewrite",
     )
@@ -139,10 +70,22 @@ def main(argv=None) -> int:
             "test into a passing one without anyone deciding that the new "
             "numbers are correct."
         )
-    names = list(TARGETS) if args.target == "all" else [args.target]
-    for name in names:
+
+    if args.target == "all":
+        selected = [name for name, t in available.items() if t.in_all]
+        skipped = [name for name, t in available.items() if not t.in_all]
+    else:
+        selected, skipped = [args.target], []
+
+    for name in selected:
         print(f"[{name}]")
-        TARGETS[name]()
+        available[name].run()
+
+    if skipped:
+        print(
+            "\nnot regenerated by 'all', ask for each by name once its "
+            "requirements are in place:\n  " + "\n  ".join(skipped)
+        )
     return 0
 
 

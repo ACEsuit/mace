@@ -712,6 +712,7 @@ def load_manifest() -> Dict[str, dict]:
 def load_fixtures(
     names: Optional[Sequence[str]] = None,
     tags: Optional[Iterable[str]] = None,
+    elements: Optional[Iterable[int]] = None,
 ) -> Dict[str, Atoms]:
     """Load the committed evaluation structures.
 
@@ -722,10 +723,29 @@ def load_fixtures(
             how a model family that only applies to part of the set -- an
             organic-chemistry model, say -- selects its subset without
             hard-coding names.
+        elements: keep only fixtures whose species are all in this set of
+            atomic numbers, which is the condition under which a model can
+            evaluate a structure at all. See below for why this is not just
+            another tag.
 
     Returns:
         An ordered mapping name -> ``ase.Atoms``. The returned objects are
         fresh copies; a caller may attach a calculator to them freely.
+
+    Note on ``elements``: one manifest serves every model family, and the
+    families do not share a periodic table -- a magnetic anchor is built on
+    Fe/O and an organic one on H/C/O, and handing either the other's
+    structures is not a tolerance failure but a ``KeyError`` out of the
+    z-table. So the no-argument call ("every fixture in the repository") is
+    something *no* single model can evaluate, and each golden has to say which
+    subset is its own. Saying it by chemistry rather than by a hand-kept tag
+    is what stops the next family's fixtures from silently joining somebody
+    else's reference: the filter is the model's own ``atomic_numbers``, and it
+    is derived from the structures rather than read from the manifest, so it
+    cannot go stale against the files.
+
+    An empty selection raises. A golden that quietly evaluates nothing pins
+    nothing, and reports success while doing it.
     """
     manifest = load_manifest()
     if names is None:
@@ -737,14 +757,25 @@ def load_fixtures(
                 f"unknown fixture(s) {unknown}; the manifest has {sorted(manifest)}"
             )
     wanted = set(tags or ())
+    allowed = None if elements is None else {int(z) for z in elements}
     out: Dict[str, Atoms] = {}
     for name in names:
         entry = manifest[name]
         if wanted and not wanted.issubset(set(entry.get("tags", []))):
             continue
         atoms = ase_read(FIXTURES_DIR / entry["file"], index=0, format="extxyz")
+        if allowed is not None and not set(
+            int(z) for z in atoms.get_atomic_numbers()
+        ) <= allowed:
+            continue
         atoms.info["golden_name"] = name
         out[name] = atoms
+    if not out:
+        raise KeyError(
+            f"no fixture matches names={names if names is not None else 'all'}, "
+            f"tags={sorted(wanted)}, elements={sorted(allowed or ())}. An empty "
+            f"fixture set is a golden that evaluates nothing and passes."
+        )
     return out
 
 

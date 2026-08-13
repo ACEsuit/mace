@@ -21,8 +21,28 @@ references/           committed expected-output JSON
 make_fixtures.py      seeded fixture generation
 build_mace_anchor.py  the plain-MACE anchor (direct instantiation)
 train_anchor.py       the ScaleShiftMACE anchor (training CLI)
+paths.py              where this directory sits
 regenerate.py         the only thing allowed to rewrite any of the above
+targets/              one module per family of goldens: what regenerating
+                      that family means
+docs/                 one page per family: what its goldens pin and why
 ```
+
+## A family of goldens owns two files, and edits no shared list
+
+Everything above is shared. Everything specific to one family of goldens — a
+model class, a backend, a foundation checkpoint — lives in exactly two places
+that no other family touches: a module in `targets/` that knows how to
+rewrite it, and a page in `docs/` that says what it pins. Its build scripts
+and its test file are named from there rather than added to the listing
+above.
+
+That is a merge property, not a filing preference. Families are added
+independently and land independently; the moment two of them have to append
+to one list, one enumeration in `regenerate.py`, or one section of this file,
+every pair of them conflicts. `regenerate.py` therefore discovers its targets
+instead of naming them, and this file describes the rule instead of listing
+the families.
 
 ## The harness never imports the framework
 
@@ -274,12 +294,14 @@ seed, the dtype and the full configuration that produced it.
 python tests/golden/regenerate.py --target all --i-know-what-i-am-doing
 ```
 
-It refuses to run without the flag. Targets are `fixtures`, `anchors`,
-`references`, or `all` (in that order). Regenerating a golden discards the
-evidence it was collected to provide, so it happens in its own reviewed
-change and never inside a feature change — a regenerated reference turns a
-failing test into a passing one without anyone having decided the new numbers
-are correct.
+It refuses to run without the flag. `--help` lists the targets, in the order
+`all` runs them, and marks the ones `all` leaves out because they need a
+download, an optional dependency or particular hardware; the list is read off
+`targets/`, so it is never out of date with what is actually there.
+Regenerating a golden discards the evidence it was collected to provide, so it
+happens in its own reviewed change and never inside a feature change — a
+regenerated reference turns a failing test into a passing one without anyone
+having decided the new numbers are correct.
 
 `references/tiny_scaleshift_training_errors.json` is written by the same run:
 it holds the final train/valid error table plus the last evaluation record
@@ -295,3 +317,7 @@ python -m pytest tests/golden -v
 No GPU, no network, no optional dependency, and no capability marker — these
 tests run in the ci-core `unit` job on all four supported Python versions.
 An anchor that could skip would be an anchor that could rot.
+
+A family whose tests do need a marker — a GPU, a download, an optional
+package — gives its selection line in its own `docs/` page, next to the
+reason it cannot be part of the unmarked set.
