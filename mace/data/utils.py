@@ -257,6 +257,36 @@ def config_from_atoms(
             properties["diameters"] = diameter_array
             property_weights["diameters"] = 0.0
 
+    rigid_principal_name_sets = {
+        "gyration_principal": (
+            ("c_gyration1", "c_gyration2", "c_gyration3"),
+            ("c_gyration[1]", "c_gyration[2]", "c_gyration[3]"),
+            ("gyration_principal1", "gyration_principal2", "gyration_principal3"),
+        ),
+        "steric_extent_principal": (
+            ("c_steric_extent1", "c_steric_extent2", "c_steric_extent3"),
+            ("c_steric_extent[1]", "c_steric_extent[2]", "c_steric_extent[3]"),
+            ("steric_extent_principal1", "steric_extent_principal2", "steric_extent_principal3"),
+        ),
+        "electrostatic_quadrupole_principal": (
+            ("c_quadrupole1", "c_quadrupole2", "c_quadrupole3"),
+            ("c_quadrupole[1]", "c_quadrupole[2]", "c_quadrupole[3]"),
+            ("electrostatic_quadrupole1", "electrostatic_quadrupole2", "electrostatic_quadrupole3"),
+        ),
+    }
+
+    for property_name, name_sets in rigid_principal_name_sets.items():
+        for keys in name_sets:
+            if all(key in atoms.arrays for key in keys):
+                properties[property_name] = np.column_stack(
+                    [
+                        np.asarray(atoms.arrays[key], dtype=float).reshape(-1)
+                        for key in keys
+                    ]
+                )
+                property_weights[property_name] = 0.0
+                break
+
     return Configuration(
         atomic_numbers=atomic_numbers,
         positions=atoms.get_positions(),

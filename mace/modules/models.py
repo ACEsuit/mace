@@ -45,6 +45,19 @@ from .utils import (
 )
 
 
+def _rigid_feature_data_keys(mode: str) -> tuple[str, str]:
+    if mode == "gyration":
+        return "gyration_irreps", "gyration_tensor"
+    if mode == "steric_extent":
+        return "steric_extent_irreps", "steric_extent_tensor"
+    if mode == "electrostatic_quadrupole":
+        return (
+            "electrostatic_quadrupole_irreps",
+            "electrostatic_quadrupole_tensor",
+        )
+    return "inertia_irreps", "inertia_tensor"
+
+
 @compile_mode("script")
 class MACE(torch.nn.Module):
     def __init__(
@@ -109,12 +122,24 @@ class MACE(torch.nn.Module):
         self.use_last_readout_only = use_last_readout_only
         self.use_edge_irreps_first = use_edge_irreps_first
         self.rigid_feature_mode = validate_rigid_feature_mode(rigid_feature_mode)
-        self.use_rigid_scalar = self.rigid_feature_mode in ("isotropic", "moi")
+        self.use_rigid_scalar = self.rigid_feature_mode in (
+            "isotropic",
+            "moi",
+            "gyration",
+            "steric_extent",
+            "electrostatic_quadrupole",
+        )
         self.use_rigid_tensor = self.rigid_feature_mode in (
             "traceless_moi",
             "moi",
+            "gyration",
+            "steric_extent",
+            "electrostatic_quadrupole",
         )
         self.use_inertia_edge_invariants = self.use_rigid_tensor
+        self.rigid_irreps_key, self.rigid_tensor_key = _rigid_feature_data_keys(
+            self.rigid_feature_mode
+        )
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -325,6 +350,13 @@ class MACE(torch.nn.Module):
             self.use_rigid_tensor = True
         if not hasattr(self, "use_inertia_edge_invariants"):
             self.use_inertia_edge_invariants = True
+        if not hasattr(self, "rigid_irreps_key") or not hasattr(
+            self,
+            "rigid_tensor_key",
+        ):
+            self.rigid_irreps_key, self.rigid_tensor_key = _rigid_feature_data_keys(
+                self.rigid_feature_mode
+            )
 
     def forward(
         self,
@@ -373,8 +405,9 @@ class MACE(torch.nn.Module):
         species_node_feats = self.node_embedding(
             data["node_attrs"]
         )
-        inertia_scalar = data["inertia_irreps"][:, :1]
-        inertia_tensor_irreps = data["inertia_irreps"][:, 1:]
+        rigid_irreps = data[self.rigid_irreps_key]
+        inertia_scalar = rigid_irreps[:, :1]
+        inertia_tensor_irreps = rigid_irreps[:, 1:]
         if not self.use_rigid_scalar:
             inertia_scalar = torch.zeros_like(inertia_scalar)
         if not self.use_rigid_tensor:
@@ -582,8 +615,9 @@ class ScaleShiftMACE(MACE):
         species_node_feats = self.node_embedding(
             data["node_attrs"]
         )
-        inertia_scalar = data["inertia_irreps"][:, :1]
-        inertia_tensor_irreps = data["inertia_irreps"][:, 1:]
+        rigid_irreps = data[self.rigid_irreps_key]
+        inertia_scalar = rigid_irreps[:, :1]
+        inertia_tensor_irreps = rigid_irreps[:, 1:]
         if not self.use_rigid_scalar:
             inertia_scalar = torch.zeros_like(inertia_scalar)
         if not self.use_rigid_tensor:

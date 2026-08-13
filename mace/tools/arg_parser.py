@@ -256,7 +256,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         "--rigid_feature_mode",
         type=str,
         default="moi",
-        choices=("none", "isotropic", "traceless_moi", "moi"),
+        choices=(
+            "none",
+            "isotropic",
+            "traceless_moi",
+            "moi",
+            "gyration",
+            "steric_extent",
+            "electrostatic_quadrupole",
+        ),
         help=(
             "Rigid-body node feature ablation. The model architecture is kept "
             "fixed; disabled MOI sectors and edge invariants are zeroed."

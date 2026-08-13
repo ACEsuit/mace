@@ -10,6 +10,9 @@ VALID_RIGID_FEATURE_MODES = (
     "isotropic",
     "traceless_moi",
     "moi",
+    "gyration",
+    "steric_extent",
+    "electrostatic_quadrupole",
 )
 
 
@@ -38,6 +41,21 @@ RIGID_FEATURE_SPECS = {
     ),
     "moi": RigidFeatureSpec(
         mode="moi",
+        irreps="1x0e + 1x2e",
+        dimension=6,
+    ),
+    "gyration": RigidFeatureSpec(
+        mode="gyration",
+        irreps="1x0e + 1x2e",
+        dimension=6,
+    ),
+    "steric_extent": RigidFeatureSpec(
+        mode="steric_extent",
+        irreps="1x0e + 1x2e",
+        dimension=6,
+    ),
+    "electrostatic_quadrupole": RigidFeatureSpec(
+        mode="electrostatic_quadrupole",
         irreps="1x0e + 1x2e",
         dimension=6,
     ),
@@ -103,7 +121,12 @@ def select_rigid_features(
     if mode == "traceless_moi":
         return inertia_irreps[:, 1:]
 
-    if mode == "moi":
+    if mode in (
+        "moi",
+        "gyration",
+        "steric_extent",
+        "electrostatic_quadrupole",
+    ):
         return inertia_irreps
 
     raise AssertionError(
@@ -129,7 +152,12 @@ def mask_inertia_irreps(
             f"got {tuple(inertia_irreps.shape)}."
         )
 
-    if mode == "moi":
+    if mode in (
+        "moi",
+        "gyration",
+        "steric_extent",
+        "electrostatic_quadrupole",
+    ):
         return inertia_irreps
 
     masked = torch.zeros_like(inertia_irreps)
