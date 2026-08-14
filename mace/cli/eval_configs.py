@@ -12,7 +12,7 @@ import ase.io
 import numpy as np
 import torch
 from e3nn import o3
-
+from tqdm.auto import tqdm
 from mace import data
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.modules.utils import extract_invariant
@@ -173,7 +173,7 @@ def run(args: argparse.Namespace) -> None:
             data.AtomicData.from_config(
                 config, z_table=z_table, cutoff=float(model.r_max), heads=heads
             )
-            for config in configs
+            for config in tqdm(configs)
         ],
         batch_size=args.batch_size,
         shuffle=False,
@@ -190,7 +190,7 @@ def run(args: argparse.Namespace) -> None:
     qs_list = []
     forces_collection = []
 
-    for batch in data_loader:
+    for batch in tqdm(data_loader):
         batch = batch.to(device)
         output = get_model_output(
             model, batch.to_dict(), args.compute_stress, args.compute_bec
