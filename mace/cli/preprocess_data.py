@@ -22,7 +22,7 @@ from mace.data.utils import save_configurations_as_HDF5
 from mace.modules import compute_statistics
 from mace.tools import torch_geometric
 from mace.tools.scripts_utils import get_atomic_energies, get_dataset_from_xyz
-from mace.tools.utils import AtomicNumberTable
+from mace.tools.utils import AtomicNumberTable, expand_glob
 
 
 def compute_stats_target(
@@ -176,11 +176,11 @@ def run(args: argparse.Namespace):
     # Data preparation
     collections, atomic_energies_dict = get_dataset_from_xyz(
         work_dir=args.work_dir,
-        train_path=args.train_file,
-        valid_path=args.valid_file,
+        train_path=expand_glob(args.train_file),
+        valid_path=expand_glob(args.valid_file),
         valid_fraction=args.valid_fraction,
         config_type_weights=config_type_weights,
-        test_path=args.test_file,
+        test_path=expand_glob(args.test_file),
         seed=args.seed,
         key_specification=args.key_specification,
         head_name="",
