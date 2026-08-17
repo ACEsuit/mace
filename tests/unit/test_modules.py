@@ -15,6 +15,7 @@ from mace.modules import (
     compute_mean_rms_energy_forces,
     compute_statistics,
 )
+from mace.modules.symmetric_contraction import Contraction
 from mace.tools import AtomicNumberTable, scatter, to_numpy, torch_geometric
 from mace.tools.scripts_utils import dict_to_array
 
@@ -184,6 +185,38 @@ def test_symmetric_contraction():
     out = operation(features, one_hots)
     assert out.shape == (30, 64)
     assert operation.contractions[0].weights_max.shape == (2, 11, 16)
+
+
+def test_symmetric_contraction_zeroes_the_unreachable_correlation_order():
+    """The zeroed weight slot must be the one forward() pairs with the empty U.
+
+    path_weight is built ascending (index i is correlation order nu = i + 1) but
+    self.weights is built descending, so the flag has to be remapped. Getting it
+    wrong zeroes a valid correlation order and leaves the dead one trainable,
+    which changes trained numbers without any error. Reachable whenever
+    hidden_irreps asks for an l that nu = 1 cannot produce, e.g. max_ell=1 with
+    max_L=2, which is what irreps_in/irrep_out model here.
+    """
+    contraction = Contraction(
+        irreps_in=o3.Irreps("4x0e + 4x1o"),
+        irrep_out=o3.Irreps("2e"),
+        correlation=3,
+        num_elements=2,
+    )
+    buffers = dict(contraction.named_buffers())
+    # nu = 1 cannot reach 2e from {0e, 1o}, so only that order is empty
+    assert torch.all(buffers["U_matrix_1"] == 0)
+    assert not torch.all(buffers["U_matrix_2"] == 0)
+    assert not torch.all(buffers["U_matrix_3"] == 0)
+
+    for i, weight in enumerate(contraction.weights):
+        nu = contraction.correlation - i - 1  # the pairing forward() uses
+        assert bool(torch.all(weight == 0)) == (nu == 1), (
+            f"weights[{i}] pairs with nu={nu}: expected "
+            f"{'zeroed' if nu == 1 else 'trainable'}"
+        )
+        assert weight.requires_grad == (nu != 1)
+        assert bool(buffers[f"weights_{i}_zeroed"]) == (nu == 1)
 
 
 def test_bessel_basis():
