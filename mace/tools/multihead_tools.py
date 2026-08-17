@@ -18,7 +18,11 @@ from mace.cli.fine_tuning_select import (
 from mace.data import AtomicData, KeySpecification
 from mace.data.utils import Configuration
 from mace.tools import torch_geometric
-from mace.tools.scripts_utils import SubsetCollection, get_dataset_from_xyz
+from mace.tools.scripts_utils import (
+    SubsetCollection,
+    extract_config_mace_model,
+    get_dataset_from_xyz,
+)
 from mace.tools.utils import AtomicNumberTable, get_cache_dir
 
 
@@ -448,3 +452,43 @@ def apply_pseudolabels_to_pt_head_configs(
     except Exception as e:  # pylint: disable=broad-except
         logging.error(f"Error applying pseudolabels: {str(e)}")
         return False
+
+
+def inherit_magnetic_hyperparameters_from_foundation(
+    args: argparse.Namespace, model_foundation: torch.nn.Module
+) -> Dict[str, Any]:
+    r"""Copy magnetic basis hyperparameters from the foundation checkpoint onto args."""
+    foundation_config = extract_config_mace_model(model_foundation)
+    inherited_magnetic_args: Dict[str, Any] = {}
+
+    foundation_m_max = foundation_config.get("m_max")
+    if foundation_m_max is not None:
+        if torch.is_tensor(foundation_m_max):
+            foundation_m_max = foundation_m_max.detach().cpu().tolist()
+        elif hasattr(foundation_m_max, "tolist"):
+            foundation_m_max = foundation_m_max.tolist()
+        args.m_max = foundation_m_max
+        inherited_magnetic_args["m_max_len"] = len(foundation_m_max)
+
+    foundation_max_m_ell = foundation_config.get("max_m_ell")
+    if foundation_max_m_ell is not None:
+        args.max_m_ell = int(foundation_max_m_ell)
+        inherited_magnetic_args["max_m_ell"] = args.max_m_ell
+
+    foundation_num_mag_radial_basis = foundation_config.get("num_mag_radial_basis")
+    if foundation_num_mag_radial_basis is not None:
+        args.num_mag_radial_basis = int(foundation_num_mag_radial_basis)
+        inherited_magnetic_args["num_mag_radial_basis"] = args.num_mag_radial_basis
+
+    foundation_num_mag_radial_basis_one_body = foundation_config.get(
+        "num_mag_radial_basis_one_body"
+    )
+    if foundation_num_mag_radial_basis_one_body is not None:
+        args.num_mag_radial_basis_one_body = int(
+            foundation_num_mag_radial_basis_one_body
+        )
+        inherited_magnetic_args["num_mag_radial_basis_one_body"] = (
+            args.num_mag_radial_basis_one_body
+        )
+
+    return inherited_magnetic_args

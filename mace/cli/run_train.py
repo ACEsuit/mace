@@ -45,6 +45,7 @@ from mace.tools.multihead_tools import (
     apply_pseudolabels_to_pt_head_configs,
     assemble_replay_data,
     dict_head_to_dataclass,
+    inherit_magnetic_hyperparameters_from_foundation,
     prepare_default_head,
     prepare_pt_head,
 )
@@ -136,6 +137,38 @@ def run(args) -> None:
     valid_mace_mp_models = [name for name in mace_mp_names if name is not None]
     args.foundation_model_kwargs = ast.literal_eval(args.foundation_model_kwargs)
     args.foundation_model_kwargs["head"] = args.foundation_head
+
+    # MDP fine-tuning validation
+    if args.finetune_dipoles_polarizabilities:
+        if args.model != "AtomicDielectricMACE":
+            raise ValueError(
+                "--finetune_dipoles_polarizabilities only supports "
+                "--model AtomicDielectricMACE"
+            )
+        if args.foundation_model is None:
+            raise ValueError(
+                "--foundation_model must be provided when using "
+                "--finetune_dipoles_polarizabilities"
+            )
+        if args.loss not in ("weighted", "dipole_polar"):
+            raise ValueError(
+                "--finetune_dipoles_polarizabilities requires --loss dipole_polar "
+                f"(got --loss={args.loss})"
+            )
+        args.loss = "dipole_polar"
+        # multiheads_finetuning defaults to True and would override loss to "universal"
+        args.multiheads_finetuning = False
+        # AtomicDielectricMACE has no atomic_energies_fn, so E0s="foundation"/"estimated" crash
+        if args.E0s is not None and args.E0s.lower() in ("foundation", "estimated"):
+            logging.warning(
+                f"--E0s={args.E0s} is not supported for AtomicDielectricMACE "
+                "(no atomic_energies_fn); falling back to --E0s=average"
+            )
+            args.E0s = "average"
+        logging.info(
+            "MDP fine-tuning mode: loss=dipole_polar, multiheads_finetuning disabled"
+        )
+
     if args.foundation_model is not None:
         if args.foundation_model in polar_model_names:
             logging.info(
@@ -185,6 +218,20 @@ def run(args) -> None:
                 f"Using foundation model {args.foundation_model} as initial checkpoint."
             )
         args.r_max = model_foundation.r_max.item()
+        inherited_magnetic_args = inherit_magnetic_hyperparameters_from_foundation(
+            args, model_foundation
+        )
+        if inherited_magnetic_args:
+            logging.info(
+                f"Inheriting magnetic hyperparameters from foundation model: {inherited_magnetic_args}"
+            )
+        if args.finetune_dipoles_polarizabilities:
+            foundation_cls = model_foundation.__class__.__name__
+            if foundation_cls != "AtomicDielectricMACE":
+                raise ValueError(
+                    f"--finetune_dipoles_polarizabilities requires an AtomicDielectricMACE "
+                    f"checkpoint, but --foundation_model contains a {foundation_cls} model."
+                )
         foundation_model_avg_num_neighbors = model_foundation.interactions[
             0
         ].avg_num_neighbors
@@ -802,6 +849,8 @@ def run(args) -> None:
             "ScaleShiftMACE",
             "MACELES",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
+            "AtomicDielectricMACE",
         ]
         model = run_e3nn_to_cueq(deepcopy(model), device=device)
     if args.enable_oeq:
@@ -811,10 +860,16 @@ def run(args) -> None:
             "ScaleShiftMACE",
             "MACELES",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
         ]
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
 
     # Optimizer
+    if (
+        hasattr(model, "onebody_magmombasis_coeffs")
+        and not args.train_one_body_contribution
+    ):
+        model.onebody_magmombasis_coeffs.requires_grad_(False)
     param_options = get_params_options(args, model)
 
     optimizer: torch.optim.Optimizer
@@ -893,7 +948,12 @@ def run(args) -> None:
     if args.wandb:
         setup_wandb(args)
     if args.distributed:
-        distributed_model = DDP(model, device_ids=[local_rank])
+        # device_ids is only valid for single-device accelerator modules;
+        # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
+        # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
+        distributed_model = DDP(
+            model, device_ids=[local_rank] if args.device in ("cuda", "xpu") else None
+        )
     else:
         distributed_model = None
 
@@ -965,6 +1025,7 @@ def run(args) -> None:
         plotter=plotter,
         train_sampler=train_sampler,
         rank=rank,
+        data_aug_magmom=args.data_aug_magmom,
     )
 
     logging.info("")
@@ -993,26 +1054,31 @@ def run(args) -> None:
     for head_config in head_configs:
         if all(check_path_ase_read(f) for f in head_config.train_file):
             for name, subset in head_config.collections.tests:
-                test_sets[name] = [
+                test_sets[head_config.head_name + "_" + name] = [
                     data.AtomicData.from_config(
                         config, z_table=z_table, cutoff=args.r_max, heads=heads
                     )
                     for config in subset
                 ]
         if head_config.test_dir is not None:
+            # Same head-prefixed key as the ASE branch above: two heads whose
+            # test files share a basename would otherwise overwrite each other,
+            # and visualise_train looks the sets up by that prefix.
             if not args.multi_processed_test:
                 test_files = get_files_with_suffix(head_config.test_dir, "_test.h5")
                 for test_file in test_files:
                     name = os.path.splitext(os.path.basename(test_file))[0]
-                    test_sets[name] = data.HDF5Dataset(
+                    test_sets[head_config.head_name + "_" + name] = data.HDF5Dataset(
                         test_file, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
                     )
             else:
                 test_folders = glob(head_config.test_dir + "/*")
                 for folder in test_folders:
-                    name = os.path.splitext(os.path.basename(test_file))[0]
-                    test_sets[name] = data.dataset_from_sharded_hdf5(
-                        folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                    name = os.path.splitext(os.path.basename(folder))[0]
+                    test_sets[head_config.head_name + "_" + name] = (
+                        data.dataset_from_sharded_hdf5(
+                            folder, r_max=args.r_max, z_table=z_table, heads=heads, head=head_config.head_name
+                        )
                     )
         for test_name, test_set in test_sets.items():
             test_sampler = None
@@ -1053,7 +1119,9 @@ def run(args) -> None:
             # after param.requires_grad = False was called before evaluating stage-one model
             for param in model.parameters():
                 param.requires_grad = True
-            distributed_model = DDP(model, device_ids=[local_rank])
+            distributed_model = DDP(
+                model, device_ids=[local_rank] if args.device in ("cuda", "xpu") else None
+            )
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")

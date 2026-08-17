@@ -61,7 +61,7 @@ def update_keyspec_from_kwargs(
         "polarizability_key",
         "total_spin_key",
     ]
-    arrays = ["forces_key", "charges_key"]
+    arrays = ["forces_key", "charges_key", "magmom_key", "magforces_key"]
     info_keys = {}
     arrays_keys = {}
     for key in infos:
@@ -456,7 +456,7 @@ def estimate_e0s_from_foundation(
         for i, config in enumerate(valid_configs):
             # Convert to AtomicData for model prediction
             # Import here to avoid circular dependency
-            from mace.data import AtomicData
+            from mace.data.atomic_data import AtomicData
             from mace.tools import torch_geometric
 
             atomic_data = AtomicData.from_config(

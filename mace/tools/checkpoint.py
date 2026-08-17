@@ -38,8 +38,16 @@ class CheckpointBuilder:
         state: CheckpointState, checkpoint: Checkpoint, strict: bool
     ) -> None:
         state.model.load_state_dict(checkpoint["model"], strict=strict)  # type: ignore
-        state.optimizer.load_state_dict(checkpoint["optimizer"])
-        state.lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+        try:
+            state.optimizer.load_state_dict(checkpoint["optimizer"])
+            state.lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+        except ValueError as exc:
+            logging.warning(
+                "Restored model weights but could not restore optimizer/scheduler "
+                f"state from checkpoint ({exc}). Resuming at the checkpoint's epoch "
+                "with a freshly initialized optimizer. This is expected if the "
+                "optimizer parameter groups changed since the checkpoint was written."
+            )
 
 
 @dataclasses.dataclass
