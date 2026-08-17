@@ -90,16 +90,18 @@ def load_foundations_elements_default(
         / (num_species_foundations / num_species) ** 0.5
     )
     if hasattr(model, "joint_embedding"):
-        
+
         model_specs = model.joint_embedding.specs
         foundation_embedding = getattr(model_foundations, "joint_embedding", None)
         foundation_specs = foundation_embedding.specs if foundation_embedding else {}
-        
+
         foundation_head_start = 0
         foundation_head_slices = {}
         for name, spec in foundation_specs.items():
-            dim = spec['emb_dim']
-            foundation_head_slices[name] = slice(foundation_head_start, foundation_head_start + dim)
+            dim = spec["emb_dim"]
+            foundation_head_slices[name] = slice(
+                foundation_head_start, foundation_head_start + dim
+            )
             foundation_head_start += dim
 
         if foundation_specs == {}:
@@ -110,29 +112,34 @@ def load_foundations_elements_default(
             spec_names = []
             head_start = 0
             head_slices = {}
+            # project[0] concatenates every spec in order, so the column offsets
+            # must span all of them, matching or not (same as the foundation side).
+            for name, spec in model_specs.items():
+                dim = spec["emb_dim"]
+                head_slices[name] = slice(head_start, head_start + dim)
+                head_start += dim
             for embedding_spec in model_specs.items():
-                
+
                 spec_name = embedding_spec[0]
                 submodule = model.joint_embedding.embedders[spec_name]
                 model_params = dict(submodule.named_parameters())
-                
+
                 for param_name, param in model_params.items():
-                     # embedding spec is the *exactly* the same as that in foundation model (ideal)
+                    # embedding spec is the *exactly* the same as that in foundation model (ideal)
                     if embedding_spec in foundation_specs.items():
-                
+
                         foundation_submodule = foundation_embedding.embedders[spec_name]
-                        foundation_params = dict(foundation_submodule.named_parameters())
+                        foundation_params = dict(
+                            foundation_submodule.named_parameters()
+                        )
                         param.data.copy_(foundation_params[param_name].data)
                     else:
                         torch.nn.init.uniform_(param.data, -0.05, 0.05)
-                        
-                # dims for head
+
+                # Which specs the foundation can supply weights for.
                 if embedding_spec in foundation_specs.items():
-                    dim = embedding_spec[1]['emb_dim']
-                    head_slices[spec_name] = slice(head_start, head_start + dim)
-                    head_start += dim
                     spec_names.append(spec_name)
-    
+
             # update head.
             foundation_emd_head = model_foundations.joint_embedding.project
             foundation_head_data = foundation_emd_head[0].weight.data
@@ -140,10 +147,12 @@ def load_foundations_elements_default(
             head_emb_data = model_emb_head[0].weight.data
 
             # init and overwrite.
-            torch.nn.init.uniform_(head_emb_data, -0.05, 0.05) 
+            torch.nn.init.uniform_(head_emb_data, -0.05, 0.05)
             for name in spec_names:
-                head_emb_data[:, head_slices[name]] = foundation_head_data[:, foundation_head_slices[name]]
-    
+                head_emb_data[:, head_slices[name]] = foundation_head_data[
+                    :, foundation_head_slices[name]
+                ]
+
     if hasattr(model, "embedding_readout"):
         for (_, param_1), (_, param_2) in zip(
             model.embedding_readout.named_parameters(),
@@ -396,7 +405,7 @@ def load_foundations_elements_default(
     for attr_name, module in model.named_children():
         if attr_name in _handled_attrs:
             continue
-        if attr_name not in model_foundations._modules: 
+        if attr_name not in dict(model_foundations.named_children()):
             continue
         submodules = (
             list(zip(module, model_foundations.__dict__["_modules"][attr_name]))
@@ -443,6 +452,11 @@ def load_foundations_elements_default(
         if name not in model_state:
             continue
         if not load_readout and name.startswith("readouts."):
+            continue
+        # The joint embedding is transferred spec by spec above. A blanket copy
+        # would re-align the head columns positionally and silently undo it
+        # whenever both heads happen to have the same shape.
+        if name.startswith("joint_embedding."):
             continue
         if model_state[name].shape != param.shape:
             continue
