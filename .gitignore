@@ -7,6 +7,9 @@ __pycache__/
 build/
 *.egg-info/
 
+# virtual environments
+.venv/
+
 # pytest
 .pytest_cache/
 
@@ -17,6 +20,7 @@ build/
 .idea/
 .vscode/
 *.txt
+!requirements/*.txt
 *.log
 
 # Distribution
@@ -38,5 +42,16 @@ dist/
 
 .benchmarks
 *.png
+# Personal/scratch scripts stay untracked; the repo's own wrappers in
+# scripts/ remain tracked (gitignore does not affect already-tracked files).
 /scripts
 *.cube
+
+# coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# local planning docs (not for the public repo)
+/doc

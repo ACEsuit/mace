@@ -46,23 +46,42 @@ def get_kmax_pairs(
     correlation: int,
     num_layers: int,
     keep_last_layer_irreps: bool,
+    last_layer_kmax: Union[int, None] = None,
 ) -> List[Tuple[int, int]]:
     """Determine kmax pairs based on num_product_irreps and correlation"""
+    if last_layer_kmax is None:
+        last_layer_kmax = num_product_irreps if keep_last_layer_irreps else 0
     if correlation == 2:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
-        if keep_last_layer_irreps:
-            kmax_pairs = kmax_pairs + [[num_layers - 1, num_product_irreps]]
-        else:
-            kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
+        kmax_pairs = kmax_pairs + [[num_layers - 1, last_layer_kmax]]
         return kmax_pairs
     if correlation == 3:
         kmax_pairs = [[i, num_product_irreps] for i in range(num_layers - 1)]
-        if keep_last_layer_irreps:
-            kmax_pairs = kmax_pairs + [[num_layers - 1, num_product_irreps]]
-        else:
-            kmax_pairs = kmax_pairs + [[num_layers - 1, 0]]
+        kmax_pairs = kmax_pairs + [[num_layers - 1, last_layer_kmax]]
         return kmax_pairs
     raise NotImplementedError(f"Correlation {correlation} not supported")
+
+
+def infer_product_kmax(
+    product: torch.nn.Module,
+    layer_idx: int,
+    num_product_irreps: int,
+    correlation: int,
+    num_layers: int,
+    keep_last_layer_irreps: bool,
+    last_layer_kmax: Union[int, None] = None,
+) -> int:
+    contractions = getattr(product.symmetric_contractions, "contractions", None)
+    if contractions is not None:
+        return len(contractions) - 1
+
+    return get_kmax_pairs(
+        num_product_irreps,
+        correlation,
+        num_layers,
+        keep_last_layer_irreps,
+        last_layer_kmax,
+    )[layer_idx][1]
 
 
 def transfer_symmetric_contractions(
@@ -74,13 +93,20 @@ def transfer_symmetric_contractions(
     num_layers: int,
     use_reduced_cg: bool,
     keep_last_layer_irreps: bool,
+    last_layer_kmax: Union[int, None] = None,
 ):
     """Transfer symmetric contraction weights from CuEq to E3nn format"""
-    kmax_pairs = get_kmax_pairs(
-        num_product_irreps, correlation, num_layers, keep_last_layer_irreps
-    )
     suffixes = ["_max"] + [f".{i}" for i in range(correlation - 1)]
-    for i, kmax in kmax_pairs:
+    for i in range(num_layers):
+        kmax = infer_product_kmax(
+            products[i],
+            i,
+            num_product_irreps,
+            correlation,
+            num_layers,
+            keep_last_layer_irreps,
+            last_layer_kmax,
+        )
         # Get the combined weight tensor from source
         irreps_in = o3.Irreps(
             irrep.ir for irrep in products[i].symmetric_contractions.irreps_in
@@ -145,6 +171,7 @@ def transfer_weights(
     num_layers: int,
     use_reduced_cg: bool,
     keep_last_layer_irreps: bool,
+    last_layer_kmax: Union[int, None] = None,
 ):
     """Transfer weights from CuEq to E3nn format"""
     # Get state dicts
@@ -162,6 +189,7 @@ def transfer_weights(
         num_layers,
         use_reduced_cg,
         keep_last_layer_irreps,
+        last_layer_kmax,
     )
 
     # Transfer remaining matching keys

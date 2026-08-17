@@ -1,0 +1,4 @@
+# External dependency of the polar extension (import name: graph_longrange).
+# Pinned by commit: an unpinned git dependency can break CI on its own.
+# To bump: update the SHA and run the polar jobs (ci-extensions.yaml).
+git+https://github.com/WillBaldwin0/graph_electrostatics.git@0e21d5546c482d08388a08eb4d948e833227ce47

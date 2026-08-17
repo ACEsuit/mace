@@ -1,0 +1,5 @@
+# External dependency of the LES extension (import name: les), not on PyPI.
+# Pinned by commit: an unpinned git dependency can break CI on its own.
+# To bump: update the SHA and run the les job (ci-extensions.yaml). Note the
+# two documented xfails in tests/extensions/les/test_maceles.py.
+git+https://github.com/ChengUCB/les.git@fadfb0ca3b89ed371e5de6b383f4425defabd4a8
