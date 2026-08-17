@@ -1,6 +1,7 @@
 """cuEquivariance backend: e3nn parity (CPU or GPU) and the CUDA multi-head
 regression (issue #1298). Capability: cueq; GPU cases carry the gpu marker.
 """
+
 # pylint: disable=wrong-import-position
 import os
 
@@ -14,10 +15,10 @@ from e3nn import o3
 from mace import data, modules, tools
 from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+from mace.cli.convert_e3nn_hybrid import run as run_e3nn_to_hybrid
 from mace.tools import torch_geometric
 from tests.backends.backend_parity import BackendTestBase
-from tests.helpers import CUDA_AVAILABLE, CUET_AVAILABLE
-
+from tests.helpers import CUDA_AVAILABLE, CUET_AVAILABLE, OEQ_AVAILABLE
 
 
 @pytest.mark.cueq
@@ -37,12 +38,27 @@ class TestCueq(BackendTestBase):
 @pytest.mark.skipif(not CUET_AVAILABLE, reason="cuequivariance not installed")
 @pytest.mark.skipif(not CUDA_AVAILABLE, reason="cuda is not available")
 @pytest.mark.parametrize("head_name", ["DFT", "MP2"])
-def test_cueq_cuda_multihead_matches_e3nn(head_name):
-    """Regression for CUDA CuEq multi-head inference.
+@pytest.mark.parametrize(
+    "backend",
+    [
+        "cueq",
+        pytest.param(
+            "hybrid",
+            marks=[
+                pytest.mark.oeq,
+                pytest.mark.skipif(
+                    not OEQ_AVAILABLE, reason="openequivariance not installed"
+                ),
+            ],
+        ),
+    ],
+)
+def test_cueq_cuda_multihead_matches_e3nn(head_name, backend):
+    """Regression for accelerated CUDA multi-head inference.
 
     Issue #1298 reports large energy disagreements for MACE-MH-1 with
-    enable_cueq=True on CUDA.  This smaller model exercises the same
-    multi-head readout/indexing path under CuEq conv fusion.
+    CuEq and hybrid acceleration on CUDA. This smaller model exercises the
+    same multi-head readout/indexing path in both accelerated conversions.
     """
     import numpy as np
     from ase import build
@@ -108,22 +124,24 @@ def test_cueq_cuda_multihead_matches_e3nn(head_name):
             use_reduced_cg=False,
         ).to(device=device, dtype=default_dtype)
 
-    model_cueq = run_e3nn_to_cueq(model_e3nn, device=device).to(
+    converter = run_e3nn_to_cueq if backend == "cueq" else run_e3nn_to_hybrid
+    model_accelerated = converter(model_e3nn, device=device).to(
         device=device, dtype=default_dtype
     )
 
     batch_e3nn = batch.clone().to_dict()
-    batch_cueq = batch.clone().to_dict()
+    batch_accelerated = batch.clone().to_dict()
     out_e3nn = model_e3nn(batch_e3nn, training=False, compute_stress=True)
-    out_cueq = model_cueq(batch_cueq, training=False, compute_stress=True)
-
-    torch.testing.assert_close(
-        out_cueq["energy"], out_e3nn["energy"], atol=1e-8, rtol=1e-8
-    )
-    torch.testing.assert_close(
-        out_cueq["forces"], out_e3nn["forces"], atol=1e-7, rtol=1e-7
-    )
-    torch.testing.assert_close(
-        out_cueq["stress"], out_e3nn["stress"], atol=1e-7, rtol=1e-7
+    out_accelerated = model_accelerated(
+        batch_accelerated, training=False, compute_stress=True
     )
 
+    torch.testing.assert_close(
+        out_accelerated["energy"], out_e3nn["energy"], atol=1e-8, rtol=1e-8
+    )
+    torch.testing.assert_close(
+        out_accelerated["forces"], out_e3nn["forces"], atol=1e-7, rtol=1e-7
+    )
+    torch.testing.assert_close(
+        out_accelerated["stress"], out_e3nn["stress"], atol=1e-7, rtol=1e-7
+    )
