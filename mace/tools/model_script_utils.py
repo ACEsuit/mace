@@ -95,6 +95,9 @@ def configure_model(
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
 
+        if args.embedding_specs:
+            model_config_foundation["embedding_specs"] = args.embedding_specs
+
         if args.foundation_model_elements:
             foundation_z_table = AtomicNumberTable(
                 [int(z) for z in model_foundation.atomic_numbers]
