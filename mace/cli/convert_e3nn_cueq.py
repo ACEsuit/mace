@@ -245,7 +245,7 @@ def run(
         layout=layout,
         group="O3_e3nn",
         optimize_all=True,
-        conv_fusion=(device == "cuda"),
+        conv_fusion=(torch.device(device).type == "cuda"),
     )
 
     # Create new model with cuequivariance config
