@@ -264,6 +264,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "gyration",
             "steric_extent",
             "electrostatic_quadrupole",
+            "learned_rank2",
         ),
         help=(
             "Rigid-body node feature ablation. The model architecture is kept "

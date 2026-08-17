@@ -13,6 +13,7 @@ VALID_RIGID_FEATURE_MODES = (
     "gyration",
     "steric_extent",
     "electrostatic_quadrupole",
+    "learned_rank2",
 )
 
 
@@ -56,6 +57,11 @@ RIGID_FEATURE_SPECS = {
     ),
     "electrostatic_quadrupole": RigidFeatureSpec(
         mode="electrostatic_quadrupole",
+        irreps="1x0e + 1x2e",
+        dimension=6,
+    ),
+    "learned_rank2": RigidFeatureSpec(
+        mode="learned_rank2",
         irreps="1x0e + 1x2e",
         dimension=6,
     ),
@@ -126,6 +132,7 @@ def select_rigid_features(
         "gyration",
         "steric_extent",
         "electrostatic_quadrupole",
+        "learned_rank2",
     ):
         return inertia_irreps
 
@@ -157,6 +164,7 @@ def mask_inertia_irreps(
         "gyration",
         "steric_extent",
         "electrostatic_quadrupole",
+        "learned_rank2",
     ):
         return inertia_irreps
 
