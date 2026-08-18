@@ -905,6 +905,17 @@ def get_params_options(
                 "weight_decay": 0.0,
             }
         )
+
+    if hasattr(model, "learned_rank2_body_tensor"):
+        param_options["params"].append(
+            {
+                "name": "learned_rank2",
+                "params": [model.learned_rank2_body_tensor],
+                "weight_decay": 0.0,
+                "lr": args.lr,
+            }
+        )
+
     return param_options
 
 

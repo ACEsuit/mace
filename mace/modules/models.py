@@ -184,7 +184,7 @@ class MACE(torch.nn.Module):
             # Parameter order: [xx, yy, zz, xy, xz, yz].
             self.learned_rank2_body_tensor = torch.nn.Parameter(
                 torch.tensor(
-                    [[1.0, 1.0, 1.0, 0.0, 0.0, 0.0]],
+                    [[1.0, 0.8, 0.6, 0.05, -0.03, 0.02]],
                     dtype=torch.get_default_dtype(),
                 )
             )
