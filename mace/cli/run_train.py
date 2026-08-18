@@ -415,9 +415,22 @@ def run(args) -> None:
             len(head_config.collections.valid) for head_config in head_configs
         )
         if size_collections_train < args.batch_size:
-            logging.error(
-                f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train})"
-            )
+            # Fatal or not depending on `drop_last`, which the training loader
+            # sets from these same two flags. Keeping the partial batch makes
+            # this ordinary, and reporting it at ERROR on a run that then
+            # trains to completion is what the split is for.
+            if args.distributed:
+                logging.warning(
+                    f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train}); what each rank receives is decided by the distributed sampler, not by this number"
+                )
+            elif args.lbfgs:
+                logging.warning(
+                    f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train}); --lbfgs keeps the incomplete batch, so every epoch is one batch of {size_collections_train}"
+                )
+            else:
+                logging.error(
+                    f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train})"
+                )
         if size_collections_valid < args.valid_batch_size:
             logging.warning(
                 f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({size_collections_valid})"
@@ -779,6 +792,37 @@ def run(args) -> None:
         num_workers=args.num_workers,
         generator=torch.Generator().manual_seed(args.seed),
     )
+
+    if len(train_loader) == 0:
+        # Two ways to end up here, and they need different advice.
+        #
+        # Without a distributed sampler the loader's own `drop_last` discards an
+        # incomplete final batch, which is the only batch when the set is smaller
+        # than one, so the batch size is the thing to change.
+        #
+        # With one, the loader keeps its partial batch and the *sampler* holds the
+        # `drop_last`: it splits the set across ranks and discards the remainder,
+        # so a set smaller than the world size leaves a rank with nothing. Lowering
+        # the batch size cannot fix that, and saying the set is smaller than the
+        # batch would often be false.
+        #
+        # Either way, without this the run died further down in
+        # `compute_avg_num_neighbors` on a `torch.cat()` of an empty list, naming
+        # none of it.
+        if train_sampler is not None:
+            raise RuntimeError(
+                f"This rank has no training data. The distributed sampler splits "
+                f"{len(train_set)} configurations over {world_size} ranks and "
+                f"drops the remainder, leaving {len(train_set) // world_size} per "
+                f"rank. Use fewer ranks or more data; --batch_size is not the "
+                f"cause."
+            )
+        raise RuntimeError(
+            f"The training set has {len(train_set)} configurations, fewer than "
+            f"--batch_size ({args.batch_size}), so the only batch was "
+            f"incomplete and has been dropped -- there is nothing left to "
+            f"train on. Lower --batch_size."
+        )
 
     valid_loaders = {heads[i]: None for i in range(len(heads))}
     if not isinstance(valid_sets, dict):
