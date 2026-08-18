@@ -15,6 +15,7 @@ against synthetic rows.
 """
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -31,16 +32,13 @@ Row = check_inventory.Row
 SourceSet = check_inventory.SourceSet
 
 
-def _row(ident, disposition="KEEP", pinned="P0-5", dest="CLI-1", ret="RET-6"):
+def _row(ident, disposition="KEEP", pinned="`tests/unit/test_compile.py`"):
     return Row(
         ident=ident,
         feature="`--thing`",
         source="`mace/tools/arg_parser.py:1`",
         disposition=disposition,
         pinned_by=pinned,
-        destination=dest,
-        retirement=ret,
-        status="todo",
         line=1,
     )
 
@@ -115,9 +113,6 @@ def test_a_matching_row_passes():
         (_row("x.a", disposition="DROP"), "no justification"),
         (_row("x.a", pinned=""), "no pinning test"),
         (_row("x.a", pinned="—"), "no pinning test"),
-        (_row("x.a", dest=""), "no destination ticket"),
-        (_row("x.a", ret=""), "no retirement ticket"),
-        (_row("x.a", ret="later"), "no retirement ticket"),
     ],
 )
 def test_row_hygiene_rejects(row, expected):
@@ -126,12 +121,11 @@ def test_row_hygiene_rejects(row, expected):
 
 
 def test_row_hygiene_accepts_the_deliberate_escapes():
-    """A DROP with a reason needs no pinning test, and a row with no legacy code
-    to delete says so instead of naming a RET ticket."""
+    """A DROP with a reason needs no pinning test, and an honest gap marker is a
+    legitimate cell -- the point of the column is that it can say "nothing"."""
     rows = [
-        _row("x.a", disposition="DROP — nobody uses it", pinned="—", ret="RET-1"),
-        _row("x.b", ret="n/a — test infrastructure, not legacy code"),
-        _row("x.c", pinned="⚠️ gap (add to P0-5)"),
+        _row("x.a", disposition="DROP — nobody uses it", pinned="—"),
+        _row("x.b", pinned="⚠️ gap (add a case to `tests/unit/test_radial.py`)"),
     ]
     assert check_inventory.check_row_hygiene(rows) == []
 
@@ -145,8 +139,10 @@ def test_row_hygiene_accepts_the_deliberate_escapes():
         ("TODO", "free text"),
         ("later", "free text"),
         ("the tests", "free text"),
-        ("SOMEDAY-3", "ticket family 'SOMEDAY'"),
-        ("XY-1", "ticket family 'XY'"),
+        # A ticket id used to be a legal pin. It named a test that did not exist
+        # yet, so the cell recorded an intention and read as coverage.
+        ("P0-5", "free text"),
+        ("CORE-4 will write it", "free text"),
         # A pin naming a test that does not exist reads as coverage and is
         # therefore worse than an honest ⚠️ gap marker.
         ("`tests/unit/test_not_here.py`", "does not exist on disk"),
@@ -167,7 +163,7 @@ def test_row_hygiene_accepts_the_deliberate_escapes():
         ("`tests/unit`", "the whole fast CPU tier"),
         ("`tests/workflows`", "the whole e2e tier"),
         ("`tests/extensions`", "the whole optional-dependency tier"),
-        ("P0-5 + `tests/unit`", "the whole fast CPU tier"),
+        ("`tests/unit/test_compile.py` + `tests/unit`", "the whole fast CPU tier"),
     ],
 )
 def test_a_pin_that_resolves_to_nothing_is_rejected(pin, expected):
@@ -221,17 +217,15 @@ def test_a_directory_pin_may_still_name_a_test_inside_it():
 @pytest.mark.parametrize(
     "pin",
     [
-        "P0-5",
-        "P0-3a",
-        "P0-4 pins the backend numerics",
-        "P0-5; committee ⚠️ gap (§12.1)",
-        "⚠️ gap (add to P0-5)",
+        "`tests/unit/test_compile.py`; committee ⚠️ gap (§12.1)",
+        "⚠️ gap (add a case to `tests/workflows/test_cli_contracts.py`)",
         "⚠️ gap (idem — spelled `--disallow_random_padding`, stored inverted)",
         "`tests/unit/test_compile.py`",
         "`tests/extensions/magnetic`",
         "`tests/extensions/magnetic::test_run_magnetic_scf`",
         "`tests/workflows/test_run_train.py::test_run_train_lbfgs`",
-        "`tests/extensions/les` + P0-3c",
+        "`tests/extensions/les` + `tests/unit/test_compile.py`",
+        "`tests/golden/anchors.py::ANCHORS[tiny_mace]`",
         "the suite itself",
         "the lint job itself",
         "—",
@@ -326,10 +320,26 @@ def test_the_probe_pin_resolves_against_the_real_dict():
     assert any("no `CAPABILITY_PROBES[nope]` exists" in p for p in problems), problems
 
 
-def test_every_ticket_family_the_inventory_uses_is_recognised():
-    """Otherwise the constant rots the other way: a real ticket reads as a typo."""
+def test_no_row_is_pinned_by_a_ticket_id():
+    """The rule that replaced the ticket vocabulary, asserted against the real
+    file: a pin names a test that runs, so the gate can resolve it."""
     rows, _ = check_inventory.read_rows()
-    assert check_inventory.check_ticket_prefixes(rows) == []
+    offenders = [
+        (r.ident, r.pinned_by)
+        for r in rows
+        if re.search(r"\b[A-Z][A-Z0-9]{1,7}-\d+[a-z]?\b", r.pinned_by)
+    ]
+    assert offenders == []
+
+
+def test_a_dict_entry_pin_resolves_through_an_annotated_assignment():
+    """`ANCHORS: Dict[str, dict] = {...}` is still a dict literal. Reading only
+    the bare `NAME = {...}` form reported a missing entry for a dict that has
+    it, which is a false failure on most of this codebase's tables."""
+    problems = check_inventory.check_pins(
+        [_row("x.a", pinned="`tests/golden/anchors.py::ANCHORS[tiny_mace]`")]
+    )
+    assert problems == []
 
 
 def test_duplicate_ids_are_rejected():

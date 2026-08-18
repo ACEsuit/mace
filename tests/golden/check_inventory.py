@@ -55,26 +55,19 @@ VALID_DISPOSITIONS = ("KEEP", "MERGE", "DROP")
 # covered" — a completeness contract that accepts "TODO" as evidence is not
 # one. So the cell now has to open with something a machine can resolve:
 #
-#   * a `⚠️ gap` marker — the honest "nothing pins this yet", already counted
-#     in the tally and already required to be closed before the phase gate;
+#   * a `⚠️ gap` marker — the honest "nothing pins this yet", counted in the
+#     tally so the number is read off the gate rather than off prose;
 #   * a backticked path under `tests/` — which must exist on disk, be specific
 #     enough to mean something, and whose `::node_id`, if it carries one, must
 #     exist too. A pin naming a test that was renamed or never written is
 #     worse than a gap marker, because it reads as coverage;
-#   * a ticket id from a known family — Phase 0 pins name tests that are not
-#     written yet, which is legitimate and the whole reason the column exists,
-#     but "not written yet" and "not a ticket" have to stay distinguishable;
 #   * one of the two pins below, where the enforcing thing is a CI job.
-
-#: Ticket-id families. Derived from the destination/retirement columns of the
-#: inventory itself, and checked against them at run time so a new family has
-#: to be added here deliberately rather than appearing by typo.
-TICKET_PREFIXES = (
-    "ARCH", "BKD", "CFG", "CLI", "CORE", "DATA", "DEP", "EDU", "ELEC",
-    "FM", "FT", "GOV", "INF", "MAG", "P0", "REL", "RET", "TRN",
-)
-TICKET_RE = re.compile(rf"(?:{'|'.join(TICKET_PREFIXES)})-\d+[a-z]?\b")
-ANY_TICKET_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,7})-\d+[a-z]?\b")
+#
+# There is deliberately no fourth form. A pin used to be allowed to name a
+# ticket, on the grounds that the test was planned; the cell then documented an
+# intention nobody could resolve, and a plan that slipped was indistinguishable
+# from coverage that existed. Every pin now names a test that runs today, or
+# admits it does not.
 
 #: Pins that are neither a test file nor a ticket, allowed one at a time with
 #: the reason each is not a file. Both are cases where the only thing that can
@@ -131,9 +124,6 @@ COLUMNS = (
     "source",
     "disposition",
     "pinned by",
-    "destination",
-    "retirement",
-    "status",
 )
 
 # The thirteen per-CLI parsers of `mace/cli/`. Six of them are the `convert_*`
@@ -600,9 +590,6 @@ class Row:
     source: str
     disposition: str
     pinned_by: str
-    destination: str
-    retirement: str
-    status: str
     line: int
 
     @property
@@ -661,12 +648,23 @@ def _node_id_exists(path: Path, node_id: str) -> bool:
 
 
 def _dict_literal(path: Path, name: str) -> dict | None:
-    """The string keys of a module-level `name = {...}`, or None."""
+    """The string keys of a module-level `name = {...}`, or None.
+
+    An annotation does not stop a dict from being a literal, and most of the
+    dicts a pin wants to name carry one (`ANCHORS: Dict[str, dict] = {...}`),
+    so both assignment forms are read. Reading only the bare form reports a
+    missing entry for a dict that plainly has it.
+    """
     for node in _parse(path).body:
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Dict):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
             continue
-        targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
-        if name in targets:
+        if not isinstance(node.value, ast.Dict):
+            continue
+        if isinstance(node, ast.AnnAssign):
+            bound = [node.target] if isinstance(node.target, ast.Name) else []
+        else:
+            bound = [t for t in node.targets if isinstance(t, ast.Name)]
+        if name in [t.id for t in bound]:
             return {
                 key.value: key
                 for key in node.value.keys
@@ -691,7 +689,7 @@ def _too_coarse(path: str) -> str | None:
 
 
 def check_pins(rows: list[Row]) -> list[str]:
-    """Every pin resolves to something: a file, a ticket, a gap, or a CI job.
+    """Every pin resolves to something: a test, a gap marker, or a CI job.
 
     Non-empty is not a rule. This is what makes the `pinned by` column
     evidence rather than decoration — see the vocabulary comment at the top.
@@ -739,23 +737,13 @@ def check_pins(rows: list[Row]) -> list[str]:
             continue
         if re.match(r"`tests/", pin):
             continue
-        if TICKET_RE.match(pin):
-            continue
 
-        lead = ANY_TICKET_RE.match(pin)
-        if lead is not None:
-            problems.append(
-                f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
-                f"'{pin}', whose ticket family '{lead.group(1)}' is not one of "
-                f"{'/'.join(TICKET_PREFIXES)}"
-            )
-        else:
-            problems.append(
-                f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
-                f"'{pin}', which is free text. A pin must open with a "
-                f"⚠️ gap marker, a backticked path under tests/, a ticket id, "
-                f"or one of {sorted(NON_TEST_PINS)}"
-            )
+        problems.append(
+            f"{INVENTORY.name}:{row.line}: `{row.ident}` is pinned by "
+            f"'{pin}', which is free text. A pin must open with a ⚠️ gap "
+            f"marker, a backticked path under tests/, or one of "
+            f"{sorted(NON_TEST_PINS)}"
+        )
     return problems
 
 
@@ -836,28 +824,6 @@ def check_marker_rows(rows: list[Row]) -> list[str]:
     return problems
 
 
-def check_ticket_prefixes(rows: list[Row]) -> list[str]:
-    """The recognised families must cover the ones the inventory actually uses.
-
-    Without this the constant above rots silently in the permissive
-    direction: a new ticket family appears in a destination column, a pin
-    names it, and the pin is rejected as free text for a reason that looks
-    like a typo.
-    """
-    unknown: dict[str, int] = {}
-    for row in rows:
-        for column in (row.destination, row.retirement):
-            for match in ANY_TICKET_RE.finditer(column):
-                if match.group(1) not in TICKET_PREFIXES:
-                    unknown.setdefault(match.group(1), row.line)
-    return [
-        f"{INVENTORY.name}:{line}: ticket family '{prefix}' is used by the "
-        f"inventory but is not in TICKET_PREFIXES; add it there so a pin may "
-        f"name it"
-        for prefix, line in sorted(unknown.items())
-    ]
-
-
 def check_row_hygiene(rows: list[Row]) -> list[str]:
     """Rules that hold for every row, gated section or not."""
     problems: list[str] = []
@@ -877,8 +843,8 @@ def check_row_hygiene(rows: list[Row]) -> list[str]:
             )
             continue
         if row.verdict == "DROP" and not row.reason:
-            # A drop without a reason is a deletion nobody can review, and
-            # REL-1's migration guide is generated from these reasons.
+            # A drop without a reason is a deletion nobody can review, and the
+            # release notes' migration guide is written from these reasons.
             problems.append(
                 f"{INVENTORY.name}:{row.line}: `{row.ident}` is DROP with no "
                 f"justification (write 'DROP — why')"
@@ -889,18 +855,6 @@ def check_row_hygiene(rows: list[Row]) -> list[str]:
                     f"{INVENTORY.name}:{row.line}: `{row.ident}` is {row.verdict} "
                     f"with no pinning test and no ⚠️ gap marker"
                 )
-            if not row.destination or row.destination == "—":
-                problems.append(
-                    f"{INVENTORY.name}:{row.line}: `{row.ident}` is {row.verdict} "
-                    f"with no destination ticket"
-                )
-            if not re.match(r"(RET-\d|n/a\b)", row.retirement):
-                problems.append(
-                    f"{INVENTORY.name}:{row.line}: `{row.ident}` is {row.verdict} "
-                    f"with no retirement ticket (RET-N, or 'n/a — why')"
-                )
-        if not row.status:
-            problems.append(f"{INVENTORY.name}:{row.line}: `{row.ident}` has no status")
     return problems
 
 
@@ -960,7 +914,6 @@ def main() -> int:
     hygiene = check_row_hygiene(rows)
     hygiene += check_pins(rows)
     hygiene += check_marker_rows(rows)
-    hygiene += check_ticket_prefixes(rows)
     failed = failed or bool(hygiene)
 
     gaps = [r for r in rows if "⚠️" in r.pinned_by]
