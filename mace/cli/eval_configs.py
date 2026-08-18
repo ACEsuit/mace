@@ -158,6 +158,7 @@ def run(args: argparse.Namespace) -> None:
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+
     if model.__class__.__name__ != "MACELES" and args.compute_bec:
         raise ValueError("BEC can only be computed with MACELES model. ")
     if args.enable_cueq:
@@ -327,7 +328,12 @@ def run(args: argparse.Namespace) -> None:
             descriptors_list.extend(descriptors[:-1])  # drop last as its empty
 
         if args.return_node_energies:
-            node_energies_list.append(
+            # extend, not append: one entry per structure, as the descriptors
+            # above do. Appending the per-batch list of splits made the outer
+            # list per-batch, and the concatenation below then had to build a
+            # rectangular array out of it -- which only works while every
+            # structure has the same number of atoms.
+            node_energies_list.extend(
                 np.split(
                     torch_tools.to_numpy(output["node_energy"]),
                     indices_or_sections=batch.ptr[1:],
@@ -388,8 +394,8 @@ def run(args: argparse.Namespace) -> None:
         assert len(atoms_list) == len(descriptors_list)
 
     if args.return_node_energies:
-        node_energies = np.concatenate(node_energies_list, axis=0)
-        assert len(atoms_list) == node_energies.shape[0]
+        # no concatenation - one array per structure, of that structure's length
+        assert len(atoms_list) == len(node_energies_list)
 
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
@@ -443,7 +449,7 @@ def run(args: argparse.Namespace) -> None:
                 atoms.arrays[args.info_prefix + "descriptors"] = np.array(descriptors)
 
         if args.return_node_energies:
-            atoms.arrays[args.info_prefix + "node_energies"] = node_energies[i]
+            atoms.arrays[args.info_prefix + "node_energies"] = node_energies_list[i]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
