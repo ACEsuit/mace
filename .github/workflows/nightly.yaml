@@ -110,12 +110,10 @@ jobs:
           if-no-files-found: ignore
 
   lammps-real:
-    # Real-tier LAMMPS via conda-forge (ML-IAP unified path). Deliberately
-    # continue-on-error while it proves itself; promote to blocking after a
-    # stable green streak.
+    # Real-tier LAMMPS via conda-forge (ML-IAP unified path). Runs a
+    # single-layer model; tests/integrations/README.md says why.
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    continue-on-error: true
     defaults:
       run:
         shell: bash -leo pipefail {0}

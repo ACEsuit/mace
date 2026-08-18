@@ -23,6 +23,18 @@ path stays in the contract tier (`lammps/test_mliap_exchange.py`, which also
 pins the actionable error the non-KOKKOS case now raises), and no bump of the
 `lammps` package will change that.
 
+`forward_exchange` is not the only KOKKOS-only call, and the second one is
+worse because it lands *after* the model has run: the writeback in
+`lammps_mliap_mace._update_lammps_data` used `data.eatoms` (a getter that
+exists only in the KOKKOS coupling — the plain one declares it a
+`write_only_property`) and `update_pair_forces_gpu` (KOKKOS-only outright).
+A single-layer model on a stock build therefore still died, with
+`property 'eatoms' ... has no getter` surfacing as a bare
+`mliap_unified.cpp:71 compute_forces failure`. The writeback now branches on
+the coupling, and both branches are pinned in `lammps/test_mliap_writeback.py`
+with stubs that reproduce each `.pyx`'s property shape — the real tier can only
+ever exercise the non-KOKKOS one.
+
 ## Adding integration X
 
 1. Create `tests/integrations/<x>/` with contract tests (and a `_harness.py`
@@ -32,7 +44,10 @@ pins the actionable error the non-KOKKOS case now raises), and no bump of the
    a broken install must read as unavailable).
 3. Mark real-tier tests `@pytest.mark.bin_<x>`.
 4. Add a paths-filtered contract job to `.github/workflows/ci-integrations.yaml`
-   and a real-tier job to `nightly.yaml` (start it with `continue-on-error:
-   true`; promote to blocking once it has been green for a while).
+   and a **blocking** real-tier job to `nightly.yaml`. Not
+   `continue-on-error`: a job that cannot turn the run red is indistinguishable
+   from a job that does not exist, and LAMMPS proved it by failing every night
+   for weeks under a green nightly. Too flaky to block means land it disabled,
+   or leave it out until it is not.
 5. If tests need a trained model, use the session-scoped
    `trained_tiny_model_path` fixture — never train per-test.
