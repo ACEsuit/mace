@@ -58,8 +58,10 @@ def _evaluate(model, configs, output, **flags):
         "device": "cpu",
     }
     params.update(flags)
-    run_mace_train(params, script=EVAL_CONFIGS)
-    return read(output, index=":")
+    result = run_mace_train(
+        params, script=EVAL_CONFIGS, capture_output=True, text=True
+    )
+    return read(output, index=":"), result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("fixture_name", ["uniform_configs", "mixed_configs"])
@@ -69,7 +71,7 @@ def test_node_energies_are_written_per_structure_whatever_its_size(
     """Asserted by value, not by exit code: each structure's per-atom energies
     have that structure's length and sum to the total reported for it."""
     configs = request.getfixturevalue(fixture_name)
-    frames = _evaluate(
+    frames, _ = _evaluate(
         trained_tiny_model_path,
         configs,
         tmp_path / f"{fixture_name}_out.xyz",
@@ -86,20 +88,35 @@ def test_node_energies_are_written_per_structure_whatever_its_size(
 def test_a_dtype_that_disagrees_with_the_checkpoint_is_converted_not_fatal(
     tmp_path, trained_tiny_model_path, uniform_configs
 ):
-    """And the converted result is the calculator's, to the bit. That agreement
-    is the contract: two shipped inference routes, one answer."""
+    """The defect: this used to die inside a scripted tensor product on "both
+    inputs should have same dtype", naming neither the flag nor the model.
+
+    What is asserted exactly is that it now runs and that it took the conversion
+    path, by the warning it emits. The energies are only compared loosely, and
+    deliberately so: the CLI runs in a subprocess while the calculator runs in
+    this one, and float32 kernel selection depends on the shapes a process has
+    already seen, so the two agree to about a float32 ulp rather than to the bit.
+    An earlier version of this test asserted equality and failed in CI at exactly
+    that: 1.1e-7 relative, against a float32 eps of 1.19e-7.
+    """
     from mace.calculators import MACECalculator
 
-    frames = _evaluate(
+    frames, output = _evaluate(
         trained_tiny_model_path,
         uniform_configs,
         tmp_path / "f32.xyz",
         default_dtype="float32",
     )
 
+    assert "does not match model dtype" in output, (
+        "the run succeeded without converting, so this no longer exercises the "
+        "mismatch:\n" + output[-2000:]
+    )
+
     atoms = read(uniform_configs, index=0)
     atoms.calc = MACECalculator(
         model_paths=str(trained_tiny_model_path), device="cpu", default_dtype="float32"
     )
-
-    assert float(frames[0].info["MACE_energy"]) == float(atoms.get_potential_energy())
+    assert float(frames[0].info["MACE_energy"]) == pytest.approx(
+        float(atoms.get_potential_energy()), rel=1e-5
+    )
