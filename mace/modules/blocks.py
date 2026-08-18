@@ -636,6 +636,8 @@ class EquivariantProductBasisWithSelfMagmomBlock(torch.nn.Module):
 
 @compile_mode("script")
 class InteractionBlock(torch.nn.Module):
+    avg_num_neighbors: torch.Tensor
+
     def __init__(
         self,
         node_attrs_irreps: o3.Irreps,
@@ -657,7 +659,10 @@ class InteractionBlock(torch.nn.Module):
         self.edge_feats_irreps = edge_feats_irreps
         self.target_irreps = target_irreps
         self.hidden_irreps = hidden_irreps
-        self.avg_num_neighbors = avg_num_neighbors
+        self.register_buffer(
+            "avg_num_neighbors",
+            torch.as_tensor(avg_num_neighbors, dtype=torch.get_default_dtype()),
+        )
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
         if edge_irreps is None:
@@ -671,6 +676,41 @@ class InteractionBlock(torch.nn.Module):
         if self.cueq_config and self.cueq_config.conv_fusion:
             self.conv_fusion = self.cueq_config.conv_fusion
         self._setup()
+
+    def set_avg_num_neighbors(self, value: Union[float, torch.Tensor]) -> None:
+        """Copy neighbor normalization from current or legacy models."""
+        self.avg_num_neighbors.copy_(
+            torch.as_tensor(
+                value,
+                dtype=self.avg_num_neighbors.dtype,
+                device=self.avg_num_neighbors.device,
+            )
+        )
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        key = prefix + "avg_num_neighbors"
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+        # Checkpoints created before this value became a buffer rely on the
+        # normalization supplied when reconstructing the model.
+        if key not in state_dict and key in missing_keys:
+            missing_keys.remove(key)
 
     @abstractmethod
     def _setup(self) -> None:
