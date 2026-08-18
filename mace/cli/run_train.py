@@ -993,7 +993,12 @@ def run(args) -> None:
                     _ddp_dev = 0
             except Exception:
                 _ddp_dev = 0
-        distributed_model = DDP(model, device_ids=[_ddp_dev])
+        # device_ids is only valid for single-device accelerator modules;
+        # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
+        # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
+        distributed_model = DDP(
+            model, device_ids=[_ddp_dev] if args.device in ("cuda", "xpu") else None
+        )
     else:
         distributed_model = None
 
@@ -1147,6 +1152,10 @@ def run(args) -> None:
         )
         model.to(device)
         if args.distributed:
+            # re-enable gradients for distributed model for evaluation of stage-two model
+            # after param.requires_grad = False was called before evaluating stage-one model
+            for param in model.parameters():
+                param.requires_grad = True
             # With ZE_AFFINITY_MASK (Aurora) each rank sees 1 xpu tile;
             # local_rank can exceed visible device count, causing DDP to
             # raise "value cannot be converted to type int without overflow".
@@ -1158,7 +1167,12 @@ def run(args) -> None:
                         _ddp_dev = 0
                 except Exception:
                     _ddp_dev = 0
-            distributed_model = DDP(model, device_ids=[_ddp_dev])
+            # device_ids is only valid for single-device accelerator modules;
+            # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
+            # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
+            distributed_model = DDP(
+                model, device_ids=[_ddp_dev] if args.device in ("cuda", "xpu") else None
+            )
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
