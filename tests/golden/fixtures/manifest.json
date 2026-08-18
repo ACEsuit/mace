@@ -1,0 +1,110 @@
+{
+  "fixtures": {
+    "dimer_short": {
+      "description": "C-O dimer at 0.62 Ang, deep in the repulsive wall.",
+      "file": "dimer_short.xyz",
+      "formula": "CO",
+      "n_atoms": 2,
+      "pbc": [
+        false,
+        false,
+        false
+      ],
+      "regime": "short-range repulsion envelope",
+      "tags": [
+        "aperiodic",
+        "molecular",
+        "repulsion"
+      ]
+    },
+    "isolated_atom": {
+      "description": "A single oxygen atom in vacuum.",
+      "file": "isolated_atom.xyz",
+      "formula": "O",
+      "n_atoms": 1,
+      "pbc": [
+        false,
+        false,
+        false
+      ],
+      "regime": "zero edges",
+      "tags": [
+        "aperiodic",
+        "molecular",
+        "single_atom"
+      ]
+    },
+    "slab_vacuum": {
+      "description": "Two-layer C/O/H slab, pbc (T, T, F), 12 Ang of real vacuum.",
+      "file": "slab_vacuum.xyz",
+      "formula": "C2HO",
+      "n_atoms": 4,
+      "pbc": [
+        true,
+        true,
+        false
+      ],
+      "regime": "mixed pbc, physical cell returned",
+      "tags": [
+        "periodic",
+        "stress",
+        "slab",
+        "multispecies"
+      ]
+    },
+    "slab_zero_vacuum": {
+      "description": "The same slab with an all-zero third cell row.",
+      "file": "slab_zero_vacuum.xyz",
+      "formula": "C2HO",
+      "n_atoms": 4,
+      "pbc": [
+        true,
+        true,
+        false
+      ],
+      "regime": "mixed pbc, vacuum row patched from the search cell",
+      "tags": [
+        "periodic",
+        "stress",
+        "slab",
+        "multispecies",
+        "degenerate_cell"
+      ]
+    },
+    "triclinic_bulk": {
+      "description": "6-atom H/C/O cell with a non-orthogonal lattice, fully periodic.",
+      "file": "triclinic_bulk.xyz",
+      "formula": "C2H2O2",
+      "n_atoms": 6,
+      "pbc": [
+        true,
+        true,
+        true
+      ],
+      "regime": "fully periodic, physical cell returned",
+      "tags": [
+        "periodic",
+        "stress",
+        "multispecies"
+      ]
+    },
+    "water_cluster": {
+      "description": "Three rattled water molecules, no periodic boundary.",
+      "file": "water_cluster.xyz",
+      "formula": "H6O3",
+      "n_atoms": 9,
+      "pbc": [
+        false,
+        false,
+        false
+      ],
+      "regime": "fully aperiodic, extended search cell returned",
+      "tags": [
+        "aperiodic",
+        "molecular"
+      ]
+    }
+  },
+  "r_max_hint": 3.5,
+  "seed": 20260810
+}

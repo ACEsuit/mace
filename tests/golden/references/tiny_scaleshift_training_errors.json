@@ -1,0 +1,39 @@
+{
+  "description": "Final train/valid error table of the ScaleShiftMACE anchor training, as rendered by mace/tools/tables_utils.create_error_table, plus the last evaluation record written by the metrics logger. Committed so a rewrite's training run can be compared against the legacy stack's own numbers on the same tiny set.",
+  "error_table": {
+    "train_Default": {
+      "RMSE E / meV / atom": 250.7,
+      "RMSE F / meV / A": 567.1,
+      "relative F RMSE %": 117.77
+    },
+    "valid_Default": {
+      "RMSE E / meV / atom": 361.8,
+      "RMSE F / meV / A": 483.9,
+      "relative F RMSE %": 104.15
+    }
+  },
+  "error_table_type": "PerAtomRMSE",
+  "final_eval_record": {
+    "epoch": 7,
+    "head": "Default",
+    "loss": 0.9345696140344177,
+    "mae_e": 1.2364561248924468,
+    "mae_e_per_atom": 0.3091140312231117,
+    "mae_f": 0.3939847417184877,
+    "mode": "eval",
+    "q95_e": 2.1842157784639626,
+    "q95_f": 0.9924546072105608,
+    "rel_mae_f": 105.99897993483502,
+    "rel_rmse_f": 106.72088988111807,
+    "rmse_e": 1.4304452670773589,
+    "rmse_e_per_atom": 0.3576113167693397,
+    "rmse_f": 0.49588688993242475
+  },
+  "model": "tiny_scaleshift.model",
+  "recipe": "tests/golden/train_anchor.py",
+  "schema_version": 1,
+  "units": {
+    "energy": "meV (per atom, as the table renders it)",
+    "forces": "meV/Ang"
+  }
+}

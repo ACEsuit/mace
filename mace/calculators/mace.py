@@ -573,7 +573,9 @@ class MACECalculator(Calculator):
         )
 
     def _atoms_to_batch(self, atoms):
-        self.arrays_keys.update({self.charges_key: "charges"})
+        # arrays_keys maps property name -> atoms.arrays key, not the reverse:
+        # config_from_atoms reads atoms.arrays[value] into properties[key].
+        self.arrays_keys.update({"charges": self.charges_key})
         keyspec = mace_data.KeySpecification(
             info_keys=self.info_keys, arrays_keys=self.arrays_keys
         )

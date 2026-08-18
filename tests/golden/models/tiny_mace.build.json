@@ -1,0 +1,40 @@
+{
+  "atomic_energies": [
+    -1.5,
+    -5.25,
+    -8.75
+  ],
+  "avg_num_neighbors": 8.0,
+  "built_by": "direct instantiation (the CLI cannot emit a plain MACE)",
+  "class": "MACE",
+  "command": "python -c \"from tests.golden.build_mace_anchor import build_anchor; build_anchor()\"",
+  "config": {
+    "MLP_irreps": "8x0e",
+    "atomic_numbers": [
+      1,
+      6,
+      8
+    ],
+    "correlation": 3,
+    "distance_transform": "None",
+    "gate": "silu",
+    "hidden_irreps": "16x0e + 16x1o",
+    "interaction_cls": "RealAgnosticResidualInteractionBlock",
+    "interaction_cls_first": "RealAgnosticInteractionBlock",
+    "max_ell": 2,
+    "num_bessel": 8,
+    "num_elements": 3,
+    "num_interactions": 2,
+    "num_polynomial_cutoff": 5,
+    "pair_repulsion": true,
+    "r_max": 3.5,
+    "radial_type": "bessel",
+    "use_reduced_cg": false
+  },
+  "dtype": "float64",
+  "model": "tiny_mace.model",
+  "num_parameters": 37704,
+  "recipe": "tests/golden/build_mace_anchor.py",
+  "regenerate_with": "python tests/golden/regenerate.py --target anchors --i-know-what-i-am-doing",
+  "seed": 20260810
+}
