@@ -225,6 +225,24 @@ def assemble_replay_data(
         ) from exc
 
 
+def pseudolabel_weight(config: Configuration, name: str) -> float:
+    """The loss weight a freshly generated label should carry.
+
+    A pseudolabel is a label, so leaving the weight at whatever the file had
+    makes the work pointless exactly when it is most needed: an unlabelled
+    replay set arrives with every property weight at zero, and a head whose
+    weights are all zero contributes nothing to the gradient while reporting a
+    loss of precisely zero and no error metrics at all. That reads as a replay
+    head doing its job perfectly.
+
+    A weight the user set deliberately is kept, which is why this is a floor
+    rather than an assignment. `stress` was already handled this way; the other
+    properties were not.
+    """
+    existing = config.property_weights.get(name, 0.0)
+    return existing if existing > 0.0 else 1.0
+
+
 def generate_pseudolabels_for_configs(
     model: torch.nn.Module,
     configs: List[Configuration],
@@ -305,6 +323,9 @@ def generate_pseudolabels_for_configs(
                     config_copy.properties["energy"] = (
                         out["energy"][j].detach().cpu().item()
                     )
+                    config_copy.property_weights["energy"] = pseudolabel_weight(
+                        config, "energy"
+                    )
                 if "forces" in out and out["forces"] is not None:
                     # Forces are per atom
                     node_start = batch.ptr[j].item()
@@ -313,21 +334,30 @@ def generate_pseudolabels_for_configs(
                     config_copy.properties["forces"] = (
                         out["forces"][node_start:node_end].detach().cpu().numpy()
                     )
+                    config_copy.property_weights["forces"] = pseudolabel_weight(
+                        config, "forces"
+                    )
                 if "stress" in out and out["stress"] is not None:
                     if had_stress or force_stress:
                         config_copy.properties["stress"] = (
                             out["stress"][j].detach().cpu().numpy()
                         )
-                        config_copy.property_weights["stress"] = (
-                            original_stress_weight if had_stress else 1.0
+                        config_copy.property_weights["stress"] = pseudolabel_weight(
+                            config, "stress"
                         )
                 if "virials" in out and out["virials"] is not None:
                     config_copy.properties["virials"] = (
                         out["virials"][j].detach().cpu().numpy()
                     )
+                    config_copy.property_weights["virials"] = pseudolabel_weight(
+                        config, "virials"
+                    )
                 if "dipole" in out and out["dipole"] is not None:
                     config_copy.properties["dipole"] = (
                         out["dipole"][j].detach().cpu().numpy()
+                    )
+                    config_copy.property_weights["dipole"] = pseudolabel_weight(
+                        config, "dipole"
                     )
                 if "charges" in out and out["charges"] is not None:
                     # Charges are per atom
@@ -337,12 +367,15 @@ def generate_pseudolabels_for_configs(
                     config_copy.properties["charges"] = (
                         out["charges"][node_start:node_end].detach().cpu().numpy()
                     )
+                    config_copy.property_weights["charges"] = pseudolabel_weight(
+                        config, "charges"
+                    )
 
                 updated_configs.append(config_copy)
 
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as exc:
             logging.error(
-                f"Error generating pseudolabels for batch {i//batch_size + 1}: {str(e)}"
+                f"Error generating pseudolabels for batch {i//batch_size + 1}: {str(exc)}"
             )
             # On error, return the original configs for this batch
             updated_configs.extend([deepcopy(config) for config in batch_configs])

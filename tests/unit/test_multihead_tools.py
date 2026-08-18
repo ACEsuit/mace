@@ -5,16 +5,27 @@ dict_head_to_dataclass (head-dict overrides vs. args fallbacks + the
 missing-train_file error), prepare_default_head with the real arg parser,
 and both branches of prepare_pt_head (neither branch downloads anything).
 
+Also covers what generate_pseudolabels_for_configs does to a configuration's
+property *weights*, and what it does when a batch fails, both of which need only
+a tiny model built in process.
+
 Not covered here (they require network access or a trained foundation model):
-assemble_replay_data (downloads replay xyz), generate_pseudolabels_for_configs
-and apply_pseudolabels_to_pt_head_configs (need a model instance; exercised by
-the finetuning workflow tests).
+assemble_replay_data (downloads replay xyz) and
+apply_pseudolabels_to_pt_head_configs (exercised by the finetuning workflow
+tests).
 """
 
 import argparse
 import dataclasses
 
+import numpy as np
 import pytest
+import torch
+from ase import Atoms
+from e3nn import o3
+
+from mace import modules, tools
+from mace.data.utils import config_from_atoms
 
 from mace.data import KeySpecification
 from mace.data.utils import update_keyspec_from_kwargs
@@ -22,8 +33,10 @@ from mace.tools import build_default_arg_parser
 from mace.tools.multihead_tools import (
     HeadConfig,
     dict_head_to_dataclass,
+    generate_pseudolabels_for_configs,
     prepare_default_head,
     prepare_pt_head,
+    pseudolabel_weight,
 )
 
 
@@ -240,3 +253,109 @@ def test_prepare_pt_head_custom_replay_branch():
     assert pt_keyspec.info_keys["energy"] == "REF_energy"
     assert pt_keyspec.arrays_keys["forces"] == "REF_forces"
     assert pt_head["key_specification"] is pt_keyspec
+
+
+# ---------------------------------------------------------------------------
+# generate_pseudolabels_for_configs: weights, and what a failed batch does
+# ---------------------------------------------------------------------------
+
+TABLE = tools.AtomicNumberTable([1, 8])
+
+
+def _tiny_model():
+    return modules.ScaleShiftMACE(
+        r_max=4.0,
+        num_bessel=4,
+        num_polynomial_cutoff=5,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("8x0e"),
+        MLP_irreps=o3.Irreps("4x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=np.array([-1.0, -5.0]),
+        avg_num_neighbors=4.0,
+        atomic_numbers=TABLE.zs,
+        correlation=2,
+        atomic_inter_scale=1.0,
+        atomic_inter_shift=0.0,
+    ).double()
+
+
+def _configs(count, labelled):
+    """`count` waters, with or without the labels a replay file would carry."""
+    rng = np.random.default_rng(0)
+    keyspec = KeySpecification.from_defaults()
+    keyspec.info_keys["energy"] = "REF_energy"
+    keyspec.arrays_keys["forces"] = "REF_forces"
+    out = []
+    for index in range(count):
+        atoms = Atoms(
+            "H2O",
+            positions=[[0, 0, 0], [0.95, 0, 0], [-0.24, 0.93, 0]],
+            cell=[8, 8, 8],
+            pbc=True,
+        )
+        atoms.positions += rng.normal(0, 0.04, (3, 3))
+        if labelled:
+            atoms.info["REF_energy"] = float(-20 + 0.1 * index)
+            atoms.arrays["REF_forces"] = rng.normal(0, 0.1, (3, 3))
+        out.append(config_from_atoms(atoms, key_specification=keyspec))
+    return out
+
+
+def _generate(configs, model=None, batch_size=4):
+    """The graph is built from the process default dtype, so scope it: a float64
+    model against a float32 graph fails every batch."""
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        return generate_pseudolabels_for_configs(
+            model=model if model is not None else _tiny_model(),
+            configs=configs,
+            z_table=TABLE,
+            r_max=4.0,
+            device=torch.device("cpu"),
+            batch_size=batch_size,
+        )
+    finally:
+        torch.set_default_dtype(previous)
+
+
+def test_pseudolabel_weight_is_a_floor_not_an_assignment():
+    config = _configs(1, labelled=True)[0]
+    config.property_weights["energy"] = 0.25
+    config.property_weights["forces"] = 0.0
+
+    assert pseudolabel_weight(config, "energy") == 0.25
+    assert pseudolabel_weight(config, "forces") == 1.0
+    assert pseudolabel_weight(config, "never_set") == 1.0
+
+
+def test_labels_generated_for_an_unlabelled_set_carry_a_usable_weight():
+    """The defect this closes: an unlabelled replay file arrives with every
+    weight at zero, so the head trained on nothing and reported a loss of
+    exactly zero with no error metrics -- indistinguishable from a perfect fit.
+    """
+    out = _generate(_configs(8, labelled=False))
+
+    for config in out:
+        assert config.properties["energy"] is not None
+        assert config.property_weights["energy"] > 0.0
+        assert config.property_weights["forces"] > 0.0
+
+
+def test_a_deliberate_weight_survives_pseudolabelling():
+    configs = _configs(8, labelled=True)
+    for config in configs:
+        config.property_weights["energy"] = 0.25
+
+    out = _generate(configs)
+
+    assert all(config.property_weights["energy"] == 0.25 for config in out)
