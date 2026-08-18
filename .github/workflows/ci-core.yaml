@@ -53,7 +53,13 @@ jobs:
           extras: dev
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/unit
+          # tests/golden rides along here rather than in a nightly: the
+          # committed anchors and their references are the numerical contract
+          # the rewrite is measured against, so a change that moves them has
+          # to fail the pull request that made it, not a run nobody reads the
+          # next morning. They are CPU-only, network-free, carry no capability
+          # marker and no `slow` mark, so they collect on all four versions.
+          tests: tests/unit tests/golden
           markers: not slow
           numprocs: auto
 
