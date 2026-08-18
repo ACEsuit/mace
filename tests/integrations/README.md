@@ -23,6 +23,18 @@ path stays in the contract tier (`lammps/test_mliap_exchange.py`, which also
 pins the actionable error the non-KOKKOS case now raises), and no bump of the
 `lammps` package will change that.
 
+`forward_exchange` is not the only KOKKOS-only call, and the second one is
+worse because it lands *after* the model has run: the writeback in
+`lammps_mliap_mace._update_lammps_data` used `data.eatoms` (a getter that
+exists only in the KOKKOS coupling — the plain one declares it a
+`write_only_property`) and `update_pair_forces_gpu` (KOKKOS-only outright).
+A single-layer model on a stock build therefore still died, with
+`property 'eatoms' ... has no getter` surfacing as a bare
+`mliap_unified.cpp:71 compute_forces failure`. The writeback now branches on
+the coupling, and both branches are pinned in `lammps/test_mliap_writeback.py`
+with stubs that reproduce each `.pyx`'s property shape — the real tier can only
+ever exercise the non-KOKKOS one.
+
 ## Adding integration X
 
 1. Create `tests/integrations/<x>/` with contract tests (and a `_harness.py`
