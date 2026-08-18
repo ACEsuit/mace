@@ -44,7 +44,10 @@ ever exercise the non-KOKKOS one.
    a broken install must read as unavailable).
 3. Mark real-tier tests `@pytest.mark.bin_<x>`.
 4. Add a paths-filtered contract job to `.github/workflows/ci-integrations.yaml`
-   and a real-tier job to `nightly.yaml` (start it with `continue-on-error:
-   true`; promote to blocking once it has been green for a while).
+   and a **blocking** real-tier job to `nightly.yaml`. Not
+   `continue-on-error`: a job that cannot turn the run red is indistinguishable
+   from a job that does not exist, and LAMMPS proved it by failing every night
+   for weeks under a green nightly. Too flaky to block means land it disabled,
+   or leave it out until it is not.
 5. If tests need a trained model, use the session-scoped
    `trained_tiny_model_path` fixture — never train per-test.
