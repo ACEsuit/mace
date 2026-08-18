@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import argparse
+import logging
 from typing import Dict
 
 import ase.data
@@ -14,6 +15,7 @@ import torch
 from e3nn import o3
 
 from mace import data
+from mace.calculators.mace import get_model_dtype
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.utils import extract_invariant
@@ -158,6 +160,25 @@ def run(args: argparse.Namespace) -> None:
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+
+    # Reconcile the requested dtype with the checkpoint's, as the ase
+    # calculator already does. Without this, `--default_dtype float32` against a
+    # float64 checkpoint reached the forward pass unchanged and died inside a
+    # scripted tensor product on "both inputs should have same dtype", naming
+    # neither the flag nor the checkpoint -- while the calculator, given the
+    # same two things, warned and converted. One request, two shipped inference
+    # routes, opposite outcomes.
+    model_dtype = get_model_dtype(model)
+    if model_dtype != args.default_dtype:
+        logging.warning(
+            f"Default dtype {args.default_dtype} does not match model dtype "
+            f"{model_dtype}, converting models to {args.default_dtype}."
+        )
+        if args.default_dtype == "float64":
+            model = model.double()
+        elif args.default_dtype == "float32":
+            model = model.float()
+
     if model.__class__.__name__ != "MACELES" and args.compute_bec:
         raise ValueError("BEC can only be computed with MACELES model. ")
     if args.enable_cueq:
@@ -327,7 +348,12 @@ def run(args: argparse.Namespace) -> None:
             descriptors_list.extend(descriptors[:-1])  # drop last as its empty
 
         if args.return_node_energies:
-            node_energies_list.append(
+            # extend, not append: one entry per structure, as the descriptors
+            # above do. Appending the per-batch list of splits made the outer
+            # list per-batch, and the concatenation below then had to build a
+            # rectangular array out of it -- which only works while every
+            # structure has the same number of atoms.
+            node_energies_list.extend(
                 np.split(
                     torch_tools.to_numpy(output["node_energy"]),
                     indices_or_sections=batch.ptr[1:],
@@ -388,8 +414,8 @@ def run(args: argparse.Namespace) -> None:
         assert len(atoms_list) == len(descriptors_list)
 
     if args.return_node_energies:
-        node_energies = np.concatenate(node_energies_list, axis=0)
-        assert len(atoms_list) == node_energies.shape[0]
+        # no concatenation - one array per structure, of that structure's length
+        assert len(atoms_list) == len(node_energies_list)
 
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
@@ -443,7 +469,7 @@ def run(args: argparse.Namespace) -> None:
                 atoms.arrays[args.info_prefix + "descriptors"] = np.array(descriptors)
 
         if args.return_node_energies:
-            atoms.arrays[args.info_prefix + "node_energies"] = node_energies[i]
+            atoms.arrays[args.info_prefix + "node_energies"] = node_energies_list[i]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")
