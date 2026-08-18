@@ -332,11 +332,14 @@ def test_lbfgs_keeps_the_last_partial_batch_and_the_default_regime_drops_it(
 
     Not a cosmetic difference. With a batch size larger than the training set
     there is exactly one batch and it is partial, so dropping it leaves the
-    loader empty -- and the default regime then dies before training starts,
-    on an empty-tensor error from the average-neighbour statistic, while the
-    identical command with ``--lbfgs`` trains normally. Characterisation, not
-    approval: the failure is a poor one and a rewrite is free to improve it,
-    but it must not silently start *training on a subset* instead.
+    loader empty -- and the default regime then refuses before training starts,
+    naming ``--batch_size``, while the identical command with ``--lbfgs`` trains
+    normally.
+
+    What is asserted is the *contrast* and that the refusal names the flag. It
+    used to die on an empty-tensor error from the average-neighbour statistic
+    instead, several hundred lines from the cause. Either way the regime must
+    not silently start training on a subset.
     """
     oversized = dict(batch_size=64, valid_batch_size=4, max_num_epochs=2)
 
@@ -359,9 +362,9 @@ def test_lbfgs_keeps_the_last_partial_batch_and_the_default_regime_drops_it(
         "loader empty, so the run cannot succeed; it did, which means "
         "drop_last is no longer the difference between the two regimes"
     )
-    assert "non-empty list of Tensors" in (dropped.stdout + dropped.stderr), (
-        "the default regime failed for some reason other than the empty "
-        "loader that drop_last produces:\n" + (dropped.stdout + dropped.stderr)[-2000:]
+    assert "--batch_size" in (dropped.stdout + dropped.stderr), (
+        "the default regime failed without naming the flag that caused it:\n"
+        + (dropped.stdout + dropped.stderr)[-2000:]
     )
 
 
@@ -595,30 +598,9 @@ def test_eval_info_prefix_renames_every_written_key(
         assert not [key for key in atoms.arrays if key.startswith("MACE_")]
 
 
-@pytest.fixture(name="equal_size_file", scope="module")
-def fixture_equal_size_file(tmp_path_factory):
-    """Structures that all have the same number of atoms.
-
-    Needed by ``--return_node_energies``, which cannot handle anything else
-    (see the two tests below). Taken from the committed regression set so the
-    file is reproducible.
-    """
-    from tests.workflows.conftest import REGRESSION_SET  # noqa: PLC0415
-
-    configs = [
-        atoms
-        for atoms in ase.io.read(REGRESSION_SET, index=":")
-        if len(atoms) == 6
-    ]
-    assert len(configs) >= 4, "the committed regression set lost its 6-atom cells"
-    path = tmp_path_factory.mktemp("equal_size") / "equal_size.xyz"
-    ase.io.write(path, configs)
-    return path
-
-
 @pytest.mark.timeout(600)
 def test_eval_node_energies_sum_to_the_total_energy(
-    tmp_path, anchor_scaleshift, equal_size_file
+    tmp_path, anchor_scaleshift, fixture_file
 ):
     """`--return_node_energies` asserted by value, not merely exercised.
 
@@ -628,12 +610,17 @@ def test_eval_node_energies_sum_to_the_total_energy(
     batch, or a per-atom array taken from the wrong graph, breaks it while
     still producing an array of the right shape. Two batch sizes, because the
     split is per batch and a one-batch run would not exercise it.
+
+    Run over the ordinary fixture set, whose structures differ in size. That
+    used to be impossible -- the per-configuration arrays were concatenated
+    into a rectangular array, so a ragged set died on "inhomogeneous shape" --
+    and the ragged case is the one every real evaluation set presents.
     """
     for batch_size in (1, 3):
         written = tmp_path / f"node_energies_{batch_size}.xyz"
         run_eval(
             anchor_scaleshift,
-            equal_size_file,
+            fixture_file,
             written,
             return_node_energies=None,
             batch_size=batch_size,
@@ -648,52 +635,6 @@ def test_eval_node_energies_sum_to_the_total_energy(
                 f"{node_energies.sum():.12g} but the run reported a total of "
                 f"{total:.12g}"
             )
-
-
-@pytest.mark.timeout(600)
-def test_eval_node_energies_cannot_handle_structures_of_different_sizes(
-    tmp_path, anchor_scaleshift, fixture_file
-):
-    """RECORDED DEFECT: the flag works only on a set of equal-sized structures.
-
-    The per-configuration arrays are collected into a list of lists and then
-    handed to ``numpy.concatenate``, which builds a rectangular array -- so
-    the moment two structures have different atom counts the run dies on
-    "inhomogeneous shape", before writing anything. Every realistic
-    evaluation set is ragged, so the flag is effectively unusable as shipped,
-    which is why the sibling test above needs a purpose-built file.
-
-    Pinned rather than fixed, because this ticket characterises the frozen
-    stack. **If this test starts failing, the defect was fixed** -- delete it
-    and point the sibling at the ordinary fixture set, which is the whole
-    repair.
-    """
-    written = tmp_path / "ragged_node_energies.xyz"
-    completed = run_mace_train(
-        {
-            "configs": str(fixture_file),
-            "model": str(anchor_scaleshift),
-            "output": str(written),
-            "device": "cpu",
-            "default_dtype": "float64",
-            "return_node_energies": None,
-        },
-        script=EVAL_CONFIGS,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode != 0, (
-        "--return_node_energies now handles structures of different sizes. "
-        "That is the fix, not a regression: delete this test and widen "
-        "test_eval_node_energies_sum_to_the_total_energy to the ragged "
-        "fixture set."
-    )
-    assert "inhomogeneous shape" in (completed.stdout + completed.stderr), (
-        "--return_node_energies failed on a ragged set for some reason other "
-        "than the recorded one:\n" + (completed.stdout + completed.stderr)[-2000:]
-    )
-    assert not written.exists()
 
 
 @pytest.mark.timeout(600)
@@ -865,48 +806,6 @@ def test_eval_at_float32_reproduces_float64_within_the_fp32_row(
         )
     harness.compare_to_reference(
         snapshots["float32"], snapshots["float64"], row=harness.FP32.name
-    )
-
-
-@pytest.mark.timeout(600)
-def test_eval_refuses_a_dtype_that_disagrees_with_the_checkpoint(
-    tmp_path, anchor_scaleshift, fixture_file
-):
-    """RECORDED DEFECT: the flag does not cast the model, and says so late.
-
-    ``mace_eval_configs`` sets the process default dtype and then loads the
-    checkpoint unchanged, so ``--default_dtype float32`` against a
-    double-precision model builds single-precision graphs and feeds them to
-    double-precision weights. The ase calculator does convert the model for
-    exactly this reason; the CLI does not, and the failure surfaces as a
-    dtype error from inside a scripted tensor product, several frames deep in
-    somebody else's library, with nothing naming the flag that caused it.
-
-    Pinned as it stands. A rewrite should either cast the model or refuse up
-    front naming ``--default_dtype``; both are behaviour changes and both
-    should come here and delete this test.
-    """
-    completed = run_mace_train(
-        {
-            "configs": str(fixture_file),
-            "model": str(anchor_scaleshift),
-            "output": str(tmp_path / "mismatched.xyz"),
-            "device": "cpu",
-            "default_dtype": "float32",
-        },
-        script=EVAL_CONFIGS,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode != 0, (
-        "--default_dtype float32 now works on a float64 checkpoint. If the "
-        "CLI casts the model, delete this test; if it silently produced "
-        "numbers, find out in which precision before doing anything else."
-    )
-    assert "same dtype" in (completed.stdout + completed.stderr), (
-        "the dtype mismatch failed differently than recorded:\n"
-        + (completed.stdout + completed.stderr)[-2000:]
     )
 
 

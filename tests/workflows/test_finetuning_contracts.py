@@ -226,27 +226,26 @@ def test_pseudolabel_replay_relabels_the_replay_set_from_the_foundation_model(
 def test_a_failing_pseudolabel_batch_keeps_the_file_labels_and_says_nothing(
     tmp_path, split, anchor_scaleshift
 ):
-    """RECORDED DROP: the per-batch fallback mixes label provenance in silence.
+    """A batch that cannot be relabelled stops the stage instead of mixing.
 
-    Pseudolabel generation catches every exception per batch and, on failure,
-    keeps that batch's *original file* labels -- so a replay set can end up
-    holding foundation-model labels for most configurations and foreign DFT
-    labels for the rest, with nothing but a log line to say which. The
-    function then reports success and training proceeds.
+    Pseudolabel generation used to catch every exception per batch and keep
+    that batch's *original file* labels, so a replay set could end up holding
+    foundation-model labels for most configurations and foreign ones for the
+    rest, with only a log line to say which -- and the stage then reported
+    success. It refuses now, naming the batch and the configurations in it,
+    and the caller reports that it did not succeed.
 
-    Exhibiting it needs a configuration the generation step chokes on, and
-    the one reachable from the command line -- an empty configuration, which
-    trips the aperiodic extent calculation -- also stops the run later, in
-    the ordinary loader. That is not a weakness of the test: it is the
-    measurement. The pseudolabel stage's failure is invisible in its own
-    output, and the run only stops later for an unrelated reason. So what is
-    asserted is exactly that: the batch failed, the stage still declared
-    success, and nothing in the stage's own report distinguishes this run
-    from a clean one.
+    "continuing with original configurations" is the load-bearing part. It was
+    false before: train was replaced as soon as it relabelled, so a failure on
+    valid left the two splits on different label sources while that line
+    claimed nothing had changed. Both splits are committed together now, so
+    the message is accurate.
 
-    A rewrite that turns this into a hard error should delete this test and
-    say so in its changelog. A rewrite that keeps the fallback must at least
-    make the mixed provenance visible in the artefacts.
+    Exhibiting it still needs a configuration the generation step chokes on,
+    and the one reachable from the command line -- an empty configuration,
+    which trips the aperiodic extent calculation -- also stops the run later in
+    the ordinary loader. So this asserts what the pseudolabel stage says, not
+    the exit code, which belongs to that unrelated second failure.
     """
     finetune, replay = split
     contaminated = tmp_path / "replay_with_empty.xyz"
@@ -272,20 +271,19 @@ def test_a_failing_pseudolabel_batch_keeps_the_file_labels_and_says_nothing(
     )
     printed = completed.stdout + completed.stderr
 
-    assert "Error generating pseudolabels for batch" in printed, (
-        "no batch failed, so this test is no longer exhibiting the fallback; "
+    assert "Pseudolabelling failed on batch" in printed, (
+        "no batch failed, so this test is no longer exhibiting the refusal; "
         "find another way to make one batch fail before deleting it\n"
-        + printed[-2000:]
+        + printed[-4000:]
     )
-    assert "Successfully applied pseudolabels to pt_head configurations" in printed, (
-        "the pseudolabel stage reported failure. That would be an improvement "
-        "on the recorded behaviour -- but it is a behaviour change, so update "
-        "this contract deliberately rather than letting it pass."
+    assert "Pseudolabeling was not successful" in printed, (
+        "a batch failed and the stage still declared success, which is the "
+        "silent label mixing this refusal exists to prevent:\n"
+        + printed[-4000:]
     )
-    assert "Pseudolabeling was not successful" not in printed, (
-        "the stage now warns that pseudolabelling did not succeed; the "
-        "recorded legacy behaviour is that a failed batch is invisible at the "
-        "stage level"
+    assert "Successfully applied pseudolabels to pt_head configurations" not in printed, (
+        "the stage reported success for a run in which a batch failed:\n"
+        + printed[-4000:]
     )
 
 
@@ -293,20 +291,23 @@ def test_a_failing_pseudolabel_batch_keeps_the_file_labels_and_says_nothing(
 def test_pseudolabel_replay_accepts_a_replay_set_with_no_labels_at_all(
     tmp_path, split, anchor_scaleshift
 ):
-    """RECORDED DROP: ``no_data_ok`` lets an unlabelled replay set through.
+    """An unlabelled replay set is relabelled into something that trains.
 
-    With pseudolabelling on, the replay reader is told that finding no labels
-    is acceptable, on the grounds that the labels are about to be generated.
-    The measured consequence is stronger than "it is allowed": the run
-    completes and the ``pt_head`` reports a loss of exactly zero with every
-    error metric ``None``, because the generated labels arrive carrying the
-    file's property *weights*, which are zero. So the replay head contributes
-    nothing to the gradient and the run looks perfect while doing none of the
-    work replay exists to do.
+    With pseudolabelling on, the replay reader is told that finding no labels is
+    acceptable, on the grounds that they are about to be generated. That used to
+    be worse than merely permissive: the generated labels arrived carrying the
+    file's property *weights*, which are zero, so the ``pt_head`` reported a loss
+    of exactly zero with every error metric absent -- the best number on the page,
+    from a head contributing nothing to the gradient.
 
-    The contrast run -- same file, flag off -- is refused outright, naming
-    the keys it could not find. That refusal is the behaviour a rewrite
-    should have in both cases.
+    The weights follow the labels now, so the head reports a real loss and real
+    metrics. What is asserted is the presence of the metrics rather than their
+    size: at ``max_num_epochs=0`` the labels come from the same model being
+    evaluated, so the residual is tiny by construction, and a threshold here
+    would be measuring that coincidence rather than the fix.
+
+    The contrast run -- same file, flag off -- is still refused outright, naming
+    the keys it could not find.
     """
     finetune, replay = split
     unlabelled = tmp_path / "replay_unlabelled.xyz"
@@ -333,14 +334,14 @@ def test_pseudolabel_replay_accepts_a_replay_set_with_no_labels_at_all(
         r for r in eval_records(tmp_path, "nodataok", 11, "pt_head")
         if r.get("epoch") is None
     )
-    assert initial["loss"] == 0.0, (
-        f"the unlabelled replay head reported a loss of {initial['loss']!r}; "
-        f"the recorded behaviour is exactly zero, because every property "
-        f"weight is zero"
+    assert initial.get("rmse_e_per_atom") is not None, (
+        "the unlabelled replay head reported no energy error at all, which is "
+        "what a head whose property weights are all zero does: the generated "
+        "labels are present but contribute nothing"
     )
-    assert initial.get("rmse_e_per_atom") is None, (
-        "the unlabelled replay head reported an energy error, so it has "
-        "labels after all and this is no longer the no_data_ok path"
+    assert initial.get("rmse_f") is not None, (
+        "the unlabelled replay head reported no force error, so the generated "
+        "forces carry no weight"
     )
 
     refused = run_mace_train(
