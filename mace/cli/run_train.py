@@ -905,7 +905,6 @@ def run(args) -> None:
     )
 
     start_epoch = 0
-    restart_lbfgs = False
     opt_start_epoch = None
     if args.restart_latest:
         try:
@@ -921,8 +920,14 @@ def run(args) -> None:
                     swa=False,
                     device=device,
                 )
-            except Exception: # pylint: disable=W0703
-                restart_lbfgs = True
+            except Exception:  # pylint: disable=W0703
+                # Both attempts raising used to set a flag for the reload below,
+                # so a run that asked to resume and could not started from
+                # scratch without saying so.
+                logging.warning(
+                    "--restart_latest was requested but no checkpoint could be "
+                    "loaded; training starts from scratch"
+                )
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
@@ -936,14 +941,6 @@ def run(args) -> None:
                           history_size=200,
                           max_iter=20,
                           line_search_fn="strong_wolfe")
-        if restart_lbfgs:
-            opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
-                swa=False,
-                device=device,
-            )
-            if opt_start_epoch is not None:
-                start_epoch = opt_start_epoch
 
     if args.wandb:
         setup_wandb(args)
