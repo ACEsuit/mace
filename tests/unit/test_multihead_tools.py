@@ -359,3 +359,23 @@ def test_a_deliberate_weight_survives_pseudolabelling():
     out = _generate(configs)
 
     assert all(config.property_weights["energy"] == 0.25 for config in out)
+
+
+def test_a_failed_batch_refuses_rather_than_mixing_label_provenance():
+    """It used to substitute the file's own labels for the failed batch and
+    carry on, so one call could return a set with two levels of theory in it and
+    nothing to say which configurations had which."""
+    model = _tiny_model()
+    calls = {"n": 0}
+    real_forward = model.forward
+
+    def fail_on_second(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("simulated transient failure")
+        return real_forward(*args, **kwargs)
+
+    model.forward = fail_on_second
+
+    with pytest.raises(RuntimeError, match="batch 2 of 3"):
+        _generate(_configs(12, labelled=True), model=model)

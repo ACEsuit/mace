@@ -374,17 +374,27 @@ def generate_pseudolabels_for_configs(
                 updated_configs.append(config_copy)
 
         except Exception as exc:
-            logging.error(
-                f"Error generating pseudolabels for batch {i//batch_size + 1}: {str(exc)}"
-            )
-            # On error, return the original configs for this batch
-            updated_configs.extend([deepcopy(config) for config in batch_configs])
+            # Substituting the file's own labels for a failed batch mixed two
+            # levels of theory inside one replay set and said so only in a log
+            # line, while the count below went on reporting every configuration
+            # as relabelled. A partly relabelled set is not a usable one -- the
+            # point of replay is to control which labels the head sees -- and
+            # the caller had no way to find out, so this raises instead.
+            raise RuntimeError(
+                f"Pseudolabelling failed on batch {i // batch_size + 1} of "
+                f"{(len(configs) + batch_size - 1) // batch_size} "
+                f"(configurations {i}-{i + len(batch_configs) - 1}). Returning "
+                f"the file's labels for that batch would mix them with the "
+                f"generated ones, so the set is not relabelled at all."
+            ) from exc
 
     # Restore original requires_grad settings
     for param, requires_grad in original_requires_grad.items():
         param.requires_grad = requires_grad
 
-    logging.info(f"Generated pseudolabels for {len(updated_configs)} configurations")
+    logging.info(
+        f"Generated pseudolabels for all {len(updated_configs)} configurations"
+    )
     return updated_configs
 
 
