@@ -5,6 +5,7 @@ import time
 from contextlib import contextmanager
 from typing import Dict, Tuple
 
+import numpy as np
 import torch
 from ase.data import chemical_symbols
 from e3nn.util.jit import compile_mode
@@ -150,6 +151,29 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         logging.info(f"MACE model initialized on device: {device}")
         self.initialized = True
 
+    def _check_ghost_exchange_support(self, data):
+        """Fail early when the build cannot exchange ghost node features.
+
+        Every interaction layer past the first needs the node features of the
+        ghost atoms, which only LAMMPS can fill in. The call that does it,
+        ``forward_exchange``, exists solely in the KOKKOS coupling
+        (``src/KOKKOS/mliap_unified_couple_kokkos.pyx``); the plain ML-IAP
+        ``MLIAPDataPy`` has no such method, so a stock non-KOKKOS build used
+        to reach the second layer and die there on a bare ``AttributeError``
+        with nothing pointing at the build.
+        """
+        num_interactions = int(self.model.num_interactions)
+        if num_interactions <= 1 or hasattr(data, "forward_exchange"):
+            return
+        raise RuntimeError(
+            f"This MACE model has {num_interactions} interaction layers, so it "
+            f"needs LAMMPS to exchange ghost-atom features between layers, but "
+            f"{type(data).__module__}.{type(data).__name__} provides no "
+            f"forward_exchange(). That call only exists in LAMMPS's KOKKOS "
+            f"ML-IAP coupling: rebuild LAMMPS with -D PKG_KOKKOS=yes and run "
+            f"it with '-k on -sf kk', or export a single-layer model."
+        )
+
     def compute_forces(self, data):
         natoms = data.nlocal
         ntotal = data.ntotal
@@ -159,6 +183,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
 
         if not self.initialized:
             self._initialize_device(data)
+            self._check_ghost_exchange_support(data)
 
         self.step += 1
         self._manage_profiling()
@@ -199,14 +224,44 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         }
 
     def _update_lammps_data(self, data, atom_energies, pair_forces, natoms):
-        """Update LAMMPS data structures with computed energies and forces."""
-        if self.dtype == torch.float32:
-            pair_forces = pair_forces.double()
-        eatoms = torch.as_tensor(data.eatoms)
-        atom_energies_real = atom_energies[:natoms].detach()
-        eatoms.copy_(atom_energies_real)
-        data.energy = atom_energies_real.sum().item()
-        data.update_pair_forces_gpu(pair_forces)
+        """Write per-atom energies and pair forces back into LAMMPS.
+
+        The two ML-IAP couplings expose two different writeback APIs, and only
+        the KOKKOS one takes device pointers: its ``MLIAPDataPy`` has an
+        ``eatoms`` getter (a view to copy into) and ``update_pair_forces_gpu``.
+        The plain coupling (``src/ML-IAP/mliap_unified_couple.pyx``) declares
+        ``eatoms`` write-only and offers only ``update_pair_forces``, which
+        wants a contiguous host array -- so on a stock non-KOKKOS build the
+        model used to run to completion and then die here on ``property
+        'eatoms' ... has no getter``, three frames below anything that names
+        the build. Both branches end in the same C ``update_pair_forces``;
+        only where the pointer comes from differs.
+        """
+        atom_energies_real = atom_energies[:natoms].detach().double()
+        total_energy = atom_energies_real.sum().item()
+        pair_forces = pair_forces.detach().double()
+
+        if hasattr(data, "update_pair_forces_gpu"):
+            torch.as_tensor(data.eatoms).copy_(atom_energies_real)
+            data.energy = total_energy
+            data.update_pair_forces_gpu(pair_forces)
+            return
+
+        # The write-only setter fills exactly nlistatoms doubles and Cython
+        # rejects a length mismatch, so say which two counts disagree rather
+        # than leaving a bare ValueError from inside the .pyx. The KOKKOS
+        # branch above assumes the same equality (its getter is sized by
+        # nlistatoms while the slice is sized by nlocal).
+        nlistatoms = int(getattr(data, "nlistatoms", natoms))
+        if nlistatoms != natoms:
+            raise RuntimeError(
+                f"LAMMPS expects {nlistatoms} per-atom energies (nlistatoms) "
+                f"but this step computed {natoms} (nlocal). The ML-IAP "
+                f"writeback needs the two to agree."
+            )
+        data.eatoms = atom_energies_real.cpu().numpy()
+        data.energy = total_energy
+        data.update_pair_forces(np.ascontiguousarray(pair_forces.cpu().numpy()))
 
     def _manage_profiling(self):
         if not self.config.debug_profile:

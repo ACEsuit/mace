@@ -1,0 +1,63 @@
+name: integration tests
+# Contract tier of the external-runtime integrations (LAMMPS today): export
+# CLIs, artifact loading and the data-layout contract, all WITHOUT the
+# external binary. The real tier (driving the binary) runs in nightly.yaml.
+# Template for adding integrations: tests/integrations/README.md.
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+  push:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-integrations-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      lammps: ${{ steps.filter.outputs.lammps || 'true' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            lammps:
+              - 'setup.cfg'
+              - 'pyproject.toml'
+              - 'tests/conftest.py'
+              - 'tests/helpers.py'
+              - '.github/workflows/ci-integrations.yaml'
+              - '.github/actions/setup-mace/**'
+              - 'mace/modules/**'
+              - 'mace/cli/create_lammps_model.py'
+              - 'mace/cli/select_head.py'
+              - 'mace/calculators/lammps_*.py'
+              - 'tests/integrations/**'
+
+  lammps-contract:
+    needs: changes
+    if: needs.changes.outputs.lammps == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.11"
+          # cueq: the mliap export path converts to the cueq layout.
+          extras: dev, cueq
+      - name: Run LAMMPS contract tests (no binary)
+        env:
+          MACE_REQUIRE_CAPS: cueq
+        run: |
+          pytest -v tests/integrations -m "not bin_lammps" --timeout=600

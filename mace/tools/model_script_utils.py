@@ -7,8 +7,8 @@ from e3nn import o3
 
 from mace import modules
 from mace.modules.wrapper_ops import CuEquivarianceConfig
-from mace.tools.finetuning_utils import load_foundations_elements
-from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.finetuning_utils import load_foundations_elements, load_foundations_mdp
+from mace.tools.scripts_utils import extract_config_mace_model, resolve_m_max
 from mace.tools.torch_tools import dtype_dict
 from mace.tools.utils import AtomicNumberTable
 
@@ -46,6 +46,7 @@ def configure_model(
         "stress": compute_stress,
         "dipoles": args.compute_dipole,
         "polarizabilities": args.compute_polarizability,
+        "magforces": args.compute_magforces,
     }
     logging.info(
         f"During training the following quantities will be reported: {', '.join([f'{report}' for report, value in output_args.items() if value])}"
@@ -94,6 +95,9 @@ def configure_model(
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
 
+        if args.embedding_specs:
+            model_config_foundation["embedding_specs"] = args.embedding_specs
+
         if args.foundation_model_elements:
             foundation_z_table = AtomicNumberTable(
                 [int(z) for z in model_foundation.atomic_numbers]
@@ -114,9 +118,11 @@ def configure_model(
         if args.model in (
             "ScaleShiftMACE",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
         ) or model_foundation.__class__.__name__ in (
             "ScaleShiftMACE",
             "PolarMACE",
+            "MagneticScaleShiftMACE",
         ):
             model_config_foundation["atomic_inter_shift"] = (
                 _determine_atomic_inter_shift(args.mean, heads)
@@ -205,14 +211,18 @@ def configure_model(
     model = _build_model(args, model_config, model_config_foundation, heads)
 
     if model_foundation is not None:
-        model = load_foundations_elements(
-            model,
-            model_foundation,
-            z_table,
-            load_readout=args.foundation_filter_elements,
-            max_L=args.max_L,
-            default_dtype=dtype_dict.get(args.default_dtype, torch.float64),
-        )
+        if getattr(args, "finetune_dipoles_polarizabilities", False):
+            # MDP fine-tuning: dedicated loader that handles higher-order irreps
+            load_foundations_mdp(model, model_foundation, z_table, max_L=args.max_L)
+        else:
+            model = load_foundations_elements(
+                model,
+                model_foundation,
+                z_table,
+                load_readout=args.foundation_filter_elements,
+                max_L=args.max_L,
+                default_dtype=dtype_dict.get(args.default_dtype, torch.float64),
+            )
 
     return model, output_args
 
@@ -247,10 +257,33 @@ def _parse_literal_or_none(value):
 def _build_model(
     args, model_config, model_config_foundation, heads
 ):  # pylint: disable=too-many-return-statements
+
+    if args.model == "MagneticScaleShiftMACE":
+        m_max = resolve_m_max(args.m_max, list(model_config["atomic_numbers"]))
+        return modules.MagneticScaleShiftMACE(
+            **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=args.std,
+            atomic_inter_shift=_determine_atomic_inter_shift(args.mean, heads),
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
+            heads=heads,
+            m_max=m_max,
+            max_m_ell=args.max_m_ell,
+            num_mag_radial_basis=args.num_mag_radial_basis,
+            num_mag_radial_basis_one_body=args.num_mag_radial_basis_one_body,
+            use_magmom_one_body=args.use_magmom_one_body,
+        )
     if args.model == "MACE":
         if args.interaction_first not in [
             "RealAgnosticInteractionBlock",
             "RealAgnosticDensityInteractionBlock",
+            "RealAgnosticResidualNonLinearInteractionBlock",
         ]:
             args.interaction_first = "RealAgnosticInteractionBlock"
         return modules.ScaleShiftMACE(

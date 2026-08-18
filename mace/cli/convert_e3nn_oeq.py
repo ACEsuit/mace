@@ -47,9 +47,9 @@ def run(
     target_model.load_state_dict(target_dict)
 
     for i in range(2):
-        target_model.interactions[i].avg_num_neighbors = source_model.interactions[
-            i
-        ].avg_num_neighbors
+        target_model.interactions[i].set_avg_num_neighbors(
+            source_model.interactions[i].avg_num_neighbors
+        )
 
     if return_model:
         return target_model

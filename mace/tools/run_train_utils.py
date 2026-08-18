@@ -87,6 +87,7 @@ def load_dataset_for_path(
                 z_table=z_table,
                 heads=heads,
                 head=head_config.head_name,
+                key_specification=head_config.key_specification,
             )
 
         h5_files = list(filepath.glob("*.h5")) + list(filepath.glob("*.hdf5"))
@@ -112,6 +113,7 @@ def load_dataset_for_path(
                 z_table=z_table,
                 heads=heads,
                 head=head_config.head_name,
+                key_specification=head_config.key_specification,
             )
 
         logging.info(f"Attempting to load directory as HDF5 dataset: {file_path}")
@@ -146,6 +148,7 @@ def load_dataset_for_path(
             z_table=z_table,
             heads=heads,
             head=head_config.head_name,
+            key_specification=head_config.key_specification,
         )
 
     logging.info(f"Attempting to load as LMDB: {file_path}")
@@ -155,6 +158,7 @@ def load_dataset_for_path(
         z_table=z_table,
         heads=heads,
         head=head_config.head_name,
+        key_specification=head_config.key_specification,
     )
 
 

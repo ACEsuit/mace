@@ -9,11 +9,15 @@ from .blocks import (
     InteractionBlock,
     LinearDipolePolarReadoutBlock,
     LinearDipoleReadoutBlock,
+    LinearLesReadoutBlock,
     LinearNodeEmbeddingBlock,
     LinearReadoutBlock,
+    MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock,
+    MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock,
     NonLinearBiasReadoutBlock,
     NonLinearDipolePolarReadoutBlock,
     NonLinearDipoleReadoutBlock,
+    NonLinearLesReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
     RealAgnosticAttResidualInteractionBlock,
@@ -24,7 +28,12 @@ from .blocks import (
     RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
 )
-from .extensions import PolarMACE
+from .extensions import (
+    MACELES,
+    MagneticScaleShiftMACE,
+    MagneticSCFMACE,
+    PolarMACE,
+)
 from .gate import GatedEquivariantBlock
 from .loss import (
     DipolePolarLoss,
@@ -65,6 +74,8 @@ interaction_classes: Dict[str, Type[InteractionBlock]] = {
     "RealAgnosticDensityInteractionBlock": RealAgnosticDensityInteractionBlock,
     "RealAgnosticDensityResidualInteractionBlock": RealAgnosticDensityResidualInteractionBlock,
     "RealAgnosticResidualNonLinearInteractionBlock": RealAgnosticResidualNonLinearInteractionBlock,
+    "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock": MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock,
+    "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock": MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock,
 }
 
 readout_classes: Dict[str, Type[LinearReadoutBlock]] = {
@@ -108,10 +119,15 @@ __all__ = [
     "GaussianBasis",
     "MACE",
     "ScaleShiftMACE",
+    "MACELES",
     "AtomicDipolesMACE",
     "AtomicDielectricMACE",
     "EnergyDipolesMACE",
+    "MagneticScaleShiftMACE",
+    "MagneticSCFMACE",
     "PolarMACE",
+    "LinearLesReadoutBlock",
+    "NonLinearLesReadoutBlock",
     "WeightedEnergyForcesLoss",
     "WeightedForcesLoss",
     "WeightedEnergyForcesVirialsLoss",
