@@ -133,6 +133,42 @@ def test_the_dtype_follows_the_model_not_the_process_default():
     assert buffer.item() == AVG_NUM_NEIGHBORS
 
 
+def test_the_promoted_buffer_lands_beside_the_weights():
+    """A float has no device; a buffer does, and it has to be the right one.
+
+    Asserted on every host, but it can only *fail* where a second device
+    exists, so the gpu case below is the one that measures it. Together they
+    say the same thing: after promotion the module's tensors are colocated.
+    """
+    loaded = _round_trip(_make_legacy(_build_model()))
+
+    block = loaded.interactions[0]
+    assert block.avg_num_neighbors.device == next(block.parameters()).device
+
+
+@pytest.mark.gpu
+def test_the_promoted_buffer_follows_a_map_location_onto_the_device():
+    """`torch.load(..., map_location="cuda")` is a load path that never calls
+    `.to()`, so nothing downstream repairs a buffer left on the CPU.
+
+    Building the buffer without a device left the module split across two
+    devices. `avg_num_neighbors` is zero-dim, so the division itself survives
+    under torch's cpu-scalar rule; what breaks is every caller that assumes a
+    module's tensors are colocated, DDP among them.
+    """
+    buffer = io.BytesIO()
+    torch.save(_make_legacy(_build_model()), buffer)
+    buffer.seek(0)
+    loaded = torch.load(buffer, weights_only=False, map_location="cuda")
+
+    block = loaded.interactions[0]
+    assert block.avg_num_neighbors.device.type == "cuda"
+    assert block.avg_num_neighbors.device == next(block.parameters()).device
+    assert {t.device for t in loaded.buffers()} == {
+        p.device for p in loaded.parameters()
+    }
+
+
 def test_a_model_pickled_after_the_buffer_landed_is_untouched():
     """The promotion must not fire twice, or re-cast a buffer somebody set."""
     model = _build_model().double()

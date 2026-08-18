@@ -702,23 +702,37 @@ class InteractionBlock(torch.nn.Module):
         which made `mace_create_lammps_model` fail on every checkpoint written
         before the buffer landed.
 
-        The dtype is taken from the module's own weights rather than from
-        `torch.get_default_dtype()`, because that is what preserves the
-        arithmetic. As a Python float the value participated at the precision
-        of whatever it was divided into, so a float64 model whose buffer was
-        built at the process default of float32 would silently round the
-        normalization -- a numerical change on load, in a value that scales
+        Both the dtype and the device come from the module's own weights, so
+        the promoted buffer lands beside them.
+
+        The dtype matters because it preserves the arithmetic. As a Python
+        float the value participated at the precision of whatever it was
+        divided into, so taking `torch.get_default_dtype()` instead would
+        silently round the normalization of a float64 model loaded under a
+        float32 default -- a numerical change on load, in a value that scales
         every message.
+
+        The device matters because a float has none. `torch.load(...,
+        map_location="cuda")` puts the weights on the accelerator, and a
+        promoted buffer built without a device would stay on the CPU, leaving
+        the module's tensors split across two devices for any caller that does
+        not go on to `.to()` -- the raw-model foundation loaders, and anything
+        that hands a freshly loaded model straight to DDP. `avg_num_neighbors`
+        is zero-dim, so the division itself would survive under torch's
+        cpu-scalar rule; what does not survive is everything that assumes a
+        module's tensors are colocated. `set_avg_num_neighbors` above already
+        carries both, and this is the same rule.
         """
         legacy = self.__dict__.pop("avg_num_neighbors", None)
         if legacy is None:
             return  # already a buffer: pickled after it became one
+        dtype, device = self._weight_dtype_and_device()
         self.register_buffer(
-            "avg_num_neighbors", torch.as_tensor(legacy, dtype=self._parameter_dtype())
+            "avg_num_neighbors", torch.as_tensor(legacy, dtype=dtype, device=device)
         )
 
-    def _parameter_dtype(self) -> torch.dtype:
-        """The floating dtype of this block's weights, or the process default.
+    def _weight_dtype_and_device(self) -> Tuple[torch.dtype, torch.device]:
+        """Where this block's weights are, or the process defaults.
 
         The weights live in submodules, and they are in place by the time
         `__setstate__` runs -- pickle builds the whole state mapping, child
@@ -727,8 +741,8 @@ class InteractionBlock(torch.nn.Module):
         """
         for tensor in itertools.chain(self.parameters(), self.buffers()):
             if tensor.is_floating_point():
-                return tensor.dtype
-        return torch.get_default_dtype()
+                return tensor.dtype, tensor.device
+        return torch.get_default_dtype(), torch.device("cpu")
 
     def set_avg_num_neighbors(self, value: Union[float, torch.Tensor]) -> None:
         """Copy neighbor normalization from current or legacy models."""
