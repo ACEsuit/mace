@@ -76,6 +76,12 @@ def test_tolerance_table_rows():
         "fp64_cpu_reference",
         "fp64_accelerated_backend",
         "fp32",
+        # not a golden row either: an implementation against the closed form
+        # it implements, in one process, which is what the pure-math units
+        # (radial bases, cutoffs, distance transforms) are checked at. It
+        # lives here so those tests import a row instead of each inventing a
+        # number, which is the whole point of a single table
+        "closed_form_fp64",
         # not selectable for outputs -- nothing reproduces bit for bit across
         # machines -- but it is what the recorded inputs are always compared
         # at, and it belongs in the one table rather than beside it
@@ -88,6 +94,8 @@ def test_tolerance_table_rows():
     # The fp32 absolute floor is adopted from tests/extensions/polar, which
     # documents 5e-6 failing in CI. Keeping the two equal is the point.
     assert harness.FP32.atol == 5e-5
+    assert harness.CLOSED_FORM_FP64.atol == 1e-12
+    assert harness.CLOSED_FORM_FP64.rtol == 1e-12
     for row in harness.TOLERANCES.values():
         assert row.rationale.strip(), f"row {row.name} has no rationale"
 

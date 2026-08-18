@@ -146,6 +146,30 @@ FP32 = Tolerance(
     ),
 )
 
+#: An implementation against the closed form it implements, in one process,
+#: at fp64. Not a golden row: nothing here crosses a machine, a device or a
+#: kernel, so the only term is the order the arithmetic happens in.
+CLOSED_FORM_FP64 = Tolerance(
+    name="closed_form_fp64",
+    atol=1e-12,
+    rtol=1e-12,
+    rationale=(
+        "A pure-math unit -- a radial basis, a cutoff envelope, a distance "
+        "transform -- checked against the analytic expression it implements, "
+        "with the expression's values committed as decimal literals in the "
+        "test. The two sides differ only in the order of the fp64 "
+        "operations, so the bound is three orders looser than what it has to "
+        "carry: measured over every case in tests/unit/test_radial.py, the "
+        "largest absolute deviation is 1.8e-15 (Chebyshev T_4 at x = 1.7, "
+        "value 14.55) and the largest relative one 7.1e-15 (Bessel n = 3 at "
+        "r = 1.7, value -0.023). "
+        "It exists so those tests do not have to invent a number each, and "
+        "it is deliberately NOT the row a committed reference uses: a value "
+        "reproduced from a formula and a value reproduced from a stored "
+        "snapshot of a network are different claims."
+    ),
+)
+
 #: Bit-for-bit. Not selectable by a golden for its *outputs* -- no numerical
 #: result reproduces exactly across machines, which is why the three rows
 #: above exist. It is what the recorded **inputs** are always compared at, and
@@ -169,7 +193,13 @@ EXACT = Tolerance(
 
 TOLERANCES: Dict[str, Tolerance] = {
     row.name: row
-    for row in (FP64_CPU_REFERENCE, FP64_ACCELERATED_BACKEND, FP32, EXACT)
+    for row in (
+        FP64_CPU_REFERENCE,
+        FP64_ACCELERATED_BACKEND,
+        FP32,
+        CLOSED_FORM_FP64,
+        EXACT,
+    )
 }
 
 
@@ -1745,6 +1775,7 @@ def compare_to_reference(
 __all__ = [
     "CHANNELS",
     "CHANNEL_ALIASES",
+    "CLOSED_FORM_FP64",
     "EXACT",
     "IGNORED_KEYS",
     "INPUT_ARRAY_KEYS",
