@@ -158,9 +158,7 @@ def test_load_foundations_elements_r_max_mismatch_raises():
     foundation, _ = build_scale_shift_mace(FOUNDATION_ZS, seed=1)
     target, target_table = build_scale_shift_mace(TARGET_ZS, seed=2, r_max=4.0)
     with pytest.raises(AssertionError):
-        load_foundations_elements(
-            target, foundation, table=target_table, max_L=MAX_L
-        )
+        load_foundations_elements(target, foundation, table=target_table, max_L=MAX_L)
 
 
 def test_load_foundations_copies_matching_shapes_and_skips_readouts():
@@ -186,21 +184,60 @@ def test_load_foundations_copies_matching_shapes_and_skips_readouts():
 
 
 def test_load_foundations_include_readouts():
-    # same avg_num_neighbors: load_foundations only copies the state dict, so
-    # non-state attributes must already match for predictions to coincide
     foundation, _ = build_scale_shift_mace(TARGET_ZS, seed=5, avg_num_neighbors=3.0)
     target, target_table = build_scale_shift_mace(
-        TARGET_ZS, seed=6, avg_num_neighbors=3.0
+        TARGET_ZS, seed=6, avg_num_neighbors=9.0
     )
     target = load_foundations(target, foundation, include_readouts=True)
     assert torch.allclose(
         target.readouts[0].linear.weight, foundation.readouts[0].linear.weight
     )
+    for target_interaction, foundation_interaction in zip(
+        target.interactions, foundation.interactions
+    ):
+        assert torch.equal(
+            target_interaction.avg_num_neighbors,
+            foundation_interaction.avg_num_neighbors,
+        )
     # identical architecture + full copy => identical predictions
     batch = water_batch(target_table, cutoff=R_MAX)
     out_t = target(batch.to_dict(), training=False, compute_force=False)
     out_f = foundation(batch.to_dict(), training=False, compute_force=False)
     assert torch.allclose(out_t["energy"], out_f["energy"])
+
+
+def test_avg_num_neighbors_is_checkpointed_and_cast():
+    model, _ = build_scale_shift_mace(TARGET_ZS, seed=7, avg_num_neighbors=4.25)
+
+    # Conversion utilities may copy this value from legacy models as a float.
+    model.interactions[0].set_avg_num_neighbors(6.5)
+    state_dict = model.state_dict()
+    for index in range(int(model.num_interactions)):
+        key = f"interactions.{index}.avg_num_neighbors"
+        assert key in state_dict
+        expected = 6.5 if index == 0 else 4.25
+        assert state_dict[key].item() == pytest.approx(expected)
+
+    model.float()
+    for interaction in model.interactions:
+        assert interaction.avg_num_neighbors.dtype == torch.float32
+
+
+def test_legacy_state_dict_without_avg_num_neighbors_loads_strictly():
+    source, _ = build_scale_shift_mace(TARGET_ZS, seed=8, avg_num_neighbors=3.0)
+    legacy_state_dict = {
+        key: value
+        for key, value in source.state_dict().items()
+        if not key.endswith("avg_num_neighbors")
+    }
+    target, _ = build_scale_shift_mace(TARGET_ZS, seed=9, avg_num_neighbors=7.0)
+
+    incompatible = target.load_state_dict(legacy_state_dict, strict=True)
+
+    assert incompatible.missing_keys == []
+    assert incompatible.unexpected_keys == []
+    for interaction in target.interactions:
+        assert interaction.avg_num_neighbors.item() == pytest.approx(7.0)
 
 
 # --- fine-tuning with joint embeddings (embedding_specs) -----------------------
