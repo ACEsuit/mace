@@ -277,120 +277,127 @@ def generate_pseudolabels_for_configs(
         param.requires_grad = False
 
     # Process configs in batches
-    for i in range(0, len(configs), batch_size):
-        batch_configs = configs[i : i + batch_size]
+    try:
+        for i in range(0, len(configs), batch_size):
+            batch_configs = configs[i : i + batch_size]
 
-        try:
-            # Create temporary AtomicData objects for this batch
-            batch_data = [
-                AtomicData.from_config(config, z_table=z_table, cutoff=r_max)
-                for config in batch_configs
-            ]
+            try:
+                # Create temporary AtomicData objects for this batch
+                batch_data = [
+                    AtomicData.from_config(config, z_table=z_table, cutoff=r_max)
+                    for config in batch_configs
+                ]
 
-            # Create a batch for model inference
-            batch = torch_geometric.Batch.from_data_list(batch_data).to(device)
-            batch_dict = batch.to_dict()
+                # Create a batch for model inference
+                batch = torch_geometric.Batch.from_data_list(batch_data).to(device)
+                batch_dict = batch.to_dict()
 
-            # Run model inference with computation of all properties
-            out = model(
-                batch_dict,
-                training=False,
-                compute_force=True,
-                compute_virials=True,
-                compute_stress=True,
-            )
-
-            # Process each configuration in the batch
-            for j, config in enumerate(batch_configs):
-                # Create a deepcopy to avoid modifying the original
-                config_copy = deepcopy(config)
-
-                # Ensure properties dict exists
-                if not hasattr(config_copy, "properties"):
-                    config_copy.properties = {}
-
-                if not hasattr(config_copy, "property_weights"):
-                    config_copy.property_weights = {}
-
-                original_stress_weight = config.property_weights.get("stress", 0.0)
-                had_stress = (
-                    config.properties.get("stress") is not None
-                    and original_stress_weight > 0.0
+                # Run model inference with computation of all properties
+                out = model(
+                    batch_dict,
+                    training=False,
+                    compute_force=True,
+                    compute_virials=True,
+                    compute_stress=True,
                 )
 
-                # Update config properties with pseudolabels
-                if "energy" in out and out["energy"] is not None:
-                    config_copy.properties["energy"] = (
-                        out["energy"][j].detach().cpu().item()
-                    )
-                    config_copy.property_weights["energy"] = pseudolabel_weight(
-                        config, "energy"
-                    )
-                if "forces" in out and out["forces"] is not None:
-                    # Forces are per atom
-                    node_start = batch.ptr[j].item()
-                    node_end = batch.ptr[j + 1].item()
+                # Process each configuration in the batch
+                for j, config in enumerate(batch_configs):
+                    # Create a deepcopy to avoid modifying the original
+                    config_copy = deepcopy(config)
 
-                    config_copy.properties["forces"] = (
-                        out["forces"][node_start:node_end].detach().cpu().numpy()
+                    # Ensure properties dict exists
+                    if not hasattr(config_copy, "properties"):
+                        config_copy.properties = {}
+
+                    if not hasattr(config_copy, "property_weights"):
+                        config_copy.property_weights = {}
+
+                    original_stress_weight = config.property_weights.get("stress", 0.0)
+                    had_stress = (
+                        config.properties.get("stress") is not None
+                        and original_stress_weight > 0.0
                     )
-                    config_copy.property_weights["forces"] = pseudolabel_weight(
-                        config, "forces"
-                    )
-                if "stress" in out and out["stress"] is not None:
-                    if had_stress or force_stress:
+
+                    # Update config properties with pseudolabels
+                    if "energy" in out and out["energy"] is not None:
+                        config_copy.properties["energy"] = (
+                            out["energy"][j].detach().cpu().item()
+                        )
+                        config_copy.property_weights["energy"] = pseudolabel_weight(
+                            config, "energy"
+                        )
+                    if "forces" in out and out["forces"] is not None:
+                        # Forces are per atom
+                        node_start = batch.ptr[j].item()
+                        node_end = batch.ptr[j + 1].item()
+
+                        config_copy.properties["forces"] = (
+                            out["forces"][node_start:node_end].detach().cpu().numpy()
+                        )
+                        config_copy.property_weights["forces"] = pseudolabel_weight(
+                            config, "forces"
+                        )
+                    if (
+                        "stress" in out
+                        and out["stress"] is not None
+                        and (had_stress or force_stress)
+                    ):
                         config_copy.properties["stress"] = (
                             out["stress"][j].detach().cpu().numpy()
                         )
                         config_copy.property_weights["stress"] = pseudolabel_weight(
                             config, "stress"
                         )
-                if "virials" in out and out["virials"] is not None:
-                    config_copy.properties["virials"] = (
-                        out["virials"][j].detach().cpu().numpy()
-                    )
-                    config_copy.property_weights["virials"] = pseudolabel_weight(
-                        config, "virials"
-                    )
-                if "dipole" in out and out["dipole"] is not None:
-                    config_copy.properties["dipole"] = (
-                        out["dipole"][j].detach().cpu().numpy()
-                    )
-                    config_copy.property_weights["dipole"] = pseudolabel_weight(
-                        config, "dipole"
-                    )
-                if "charges" in out and out["charges"] is not None:
-                    # Charges are per atom
-                    node_start = batch.ptr[j].item()
-                    node_end = batch.ptr[j + 1].item()
+                    if "virials" in out and out["virials"] is not None:
+                        config_copy.properties["virials"] = (
+                            out["virials"][j].detach().cpu().numpy()
+                        )
+                        config_copy.property_weights["virials"] = pseudolabel_weight(
+                            config, "virials"
+                        )
+                    if "dipole" in out and out["dipole"] is not None:
+                        config_copy.properties["dipole"] = (
+                            out["dipole"][j].detach().cpu().numpy()
+                        )
+                        config_copy.property_weights["dipole"] = pseudolabel_weight(
+                            config, "dipole"
+                        )
+                    if "charges" in out and out["charges"] is not None:
+                        # Charges are per atom
+                        node_start = batch.ptr[j].item()
+                        node_end = batch.ptr[j + 1].item()
 
-                    config_copy.properties["charges"] = (
-                        out["charges"][node_start:node_end].detach().cpu().numpy()
-                    )
-                    config_copy.property_weights["charges"] = pseudolabel_weight(
-                        config, "charges"
-                    )
+                        config_copy.properties["charges"] = (
+                            out["charges"][node_start:node_end].detach().cpu().numpy()
+                        )
+                        config_copy.property_weights["charges"] = pseudolabel_weight(
+                            config, "charges"
+                        )
 
-                updated_configs.append(config_copy)
+                    updated_configs.append(config_copy)
 
-        except Exception as exc:
-            # Substituting the file's own labels for a failed batch mixed two
-            # levels of theory inside one replay set and said so only in a log
-            # line, while the count below went on reporting every configuration
-            # as relabelled. A partly relabelled set is not a usable one -- the
-            # point of replay is to control which labels the head sees -- and
-            # the caller had no way to find out, so this raises instead.
-            raise RuntimeError(
-                f"Pseudolabelling failed on batch {i // batch_size + 1} of "
-                f"{(len(configs) + batch_size - 1) // batch_size} "
-                f"(configurations {i}-{i + len(batch_configs) - 1}). Returning "
-                f"the file's labels for that batch would mix them with the "
-                f"generated ones, so the set is not relabelled at all."
-            ) from exc
-
-    # Restore original requires_grad settings
-    for param, requires_grad in original_requires_grad.items():
-        param.requires_grad = requires_grad
+            except Exception as exc:
+                # Substituting the file's own labels for a failed batch mixed two
+                # levels of theory inside one replay set and said so only in a log
+                # line, while the count below went on reporting every configuration
+                # as relabelled. A partly relabelled set is not a usable one -- the
+                # point of replay is to control which labels the head sees -- and
+                # the caller had no way to find out, so this raises instead.
+                raise RuntimeError(
+                    f"Pseudolabelling failed on batch {i // batch_size + 1} of "
+                    f"{(len(configs) + batch_size - 1) // batch_size} "
+                    f"(configurations {i}-{i + len(batch_configs) - 1}). Returning "
+                    f"the file's labels for that batch would mix them with the "
+                    f"generated ones, so the set is not relabelled at all."
+                ) from exc
+    finally:
+        # Restored in a `finally` because the loop can now leave early: the
+        # raise below is a non-local exit past this point, and the model
+        # belongs to the caller. Skipping it handed back a model with every
+        # parameter's `requires_grad` still cleared.
+        for param, requires_grad in original_requires_grad.items():
+            param.requires_grad = requires_grad
 
     logging.info(
         f"Generated pseudolabels for all {len(updated_configs)} configurations"
@@ -442,6 +449,9 @@ def apply_pseudolabels_to_pt_head_configs(
             logging.warning("No atomic number table available for pseudolabeling")
             return False
 
+        updated_train_configs = None
+        updated_valid_configs = None
+
         # Process training configurations
         if (
             hasattr(pt_head_config.collections, "train")
@@ -458,12 +468,6 @@ def apply_pseudolabels_to_pt_head_configs(
                 device=device,
                 batch_size=batch_size,
                 force_stress=force_stress,
-            )
-
-            # Replace the original configurations with updated ones
-            pt_head_config.collections.train = updated_train_configs
-            logging.info(
-                f"Successfully applied pseudolabels to {len(updated_train_configs)} training configurations"
             )
 
         # Process validation configurations if they exist
@@ -484,7 +488,17 @@ def apply_pseudolabels_to_pt_head_configs(
                 force_stress=force_stress,
             )
 
-            # Replace the original configurations with updated ones
+        # Committed only once both splits are relabelled. Assigning train as soon
+        # as it succeeded meant a failure on valid left train on foundation labels
+        # and valid on the file's, while the caller was told nothing had changed --
+        # the same mixing of label sources this refuses inside a single split,
+        # moved up one level.
+        if updated_train_configs is not None:
+            pt_head_config.collections.train = updated_train_configs
+            logging.info(
+                f"Successfully applied pseudolabels to {len(updated_train_configs)} training configurations"
+            )
+        if updated_valid_configs is not None:
             pt_head_config.collections.valid = updated_valid_configs
             logging.info(
                 f"Successfully applied pseudolabels to {len(updated_valid_configs)} validation configurations"

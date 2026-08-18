@@ -32,6 +32,7 @@ from mace.data.utils import update_keyspec_from_kwargs
 from mace.tools import build_default_arg_parser
 from mace.tools.multihead_tools import (
     HeadConfig,
+    apply_pseudolabels_to_pt_head_configs,
     dict_head_to_dataclass,
     generate_pseudolabels_for_configs,
     prepare_default_head,
@@ -379,3 +380,74 @@ def test_a_failed_batch_refuses_rather_than_mixing_label_provenance():
 
     with pytest.raises(RuntimeError, match="batch 2 of 3"):
         _generate(_configs(12, labelled=True), model=model)
+
+
+def _flaky(model, fail_on_call):
+    """Make `model.forward` raise on the nth call, as a transient failure would."""
+    calls = {"n": 0}
+    real_forward = model.forward
+
+    def forward(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == fail_on_call:
+            raise RuntimeError("simulated transient failure")
+        return real_forward(*args, **kwargs)
+
+    model.forward = forward
+    return model
+
+
+def test_a_failure_hands_the_model_back_with_its_gradients_intact():
+    """The model belongs to the caller. Pseudolabelling clears `requires_grad` on
+    every parameter and must put it back even when it leaves early, which it now
+    can -- the raise is a non-local exit past the restore."""
+    model = _tiny_model()
+    before = {name: p.requires_grad for name, p in model.named_parameters()}
+    assert any(before.values()), "nothing to restore, so the test proves nothing"
+
+    with pytest.raises(RuntimeError):
+        _generate(_configs(12, labelled=True), model=_flaky(model, fail_on_call=2))
+
+    after = {name: p.requires_grad for name, p in model.named_parameters()}
+    assert after == before
+
+
+def _pt_head_config(train, valid):
+    collections = dataclasses.make_dataclass("C", ["train", "valid"])(train, valid)
+    return HeadConfig(
+        head_name="pt_head",
+        train_file=["unused.xyz"],
+        key_specification=KeySpecification.from_defaults(),
+        collections=collections,
+    )
+
+
+def test_a_failure_on_valid_leaves_both_splits_on_their_original_labels():
+    """Train used to be replaced as soon as it succeeded, so a failure on valid
+    left train relabelled and valid not, while the caller was told nothing had
+    changed. Either both splits move or neither does."""
+    train = _configs(8, labelled=True)
+    valid = _configs(8, labelled=True)
+    config = _pt_head_config(train, valid)
+    train_before = [c.properties["energy"] for c in train]
+    valid_before = [c.properties["energy"] for c in valid]
+
+    model = _tiny_model()
+    # 8 configs at batch_size 4 is two batches for train, so the third call is
+    # the first batch of valid
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        ok = apply_pseudolabels_to_pt_head_configs(
+            foundation_model=_flaky(model, fail_on_call=3),
+            pt_head_config=config,
+            r_max=4.0,
+            device=torch.device("cpu"),
+            batch_size=4,
+        )
+    finally:
+        torch.set_default_dtype(previous)
+
+    assert ok is False
+    assert [c.properties["energy"] for c in config.collections.train] == train_before
+    assert [c.properties["energy"] for c in config.collections.valid] == valid_before
