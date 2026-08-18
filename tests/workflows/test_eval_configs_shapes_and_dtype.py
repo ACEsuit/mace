@@ -81,3 +81,25 @@ def test_node_energies_are_written_per_structure_whatever_its_size(
         node_energies = atoms.arrays["MACE_node_energies"]
         assert node_energies.shape == (len(atoms),)
         assert np.isclose(node_energies.sum(), atoms.info["MACE_energy"])
+
+
+def test_a_dtype_that_disagrees_with_the_checkpoint_is_converted_not_fatal(
+    tmp_path, trained_tiny_model_path, uniform_configs
+):
+    """And the converted result is the calculator's, to the bit. That agreement
+    is the contract: two shipped inference routes, one answer."""
+    from mace.calculators import MACECalculator
+
+    frames = _evaluate(
+        trained_tiny_model_path,
+        uniform_configs,
+        tmp_path / "f32.xyz",
+        default_dtype="float32",
+    )
+
+    atoms = read(uniform_configs, index=0)
+    atoms.calc = MACECalculator(
+        model_paths=str(trained_tiny_model_path), device="cpu", default_dtype="float32"
+    )
+
+    assert float(frames[0].info["MACE_energy"]) == float(atoms.get_potential_energy())

@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import argparse
+import logging
 from typing import Dict
 
 import ase.data
@@ -14,6 +15,7 @@ import torch
 from e3nn import o3
 
 from mace import data
+from mace.calculators.mace import get_model_dtype
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.utils import extract_invariant
@@ -158,6 +160,24 @@ def run(args: argparse.Namespace) -> None:
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+
+    # Reconcile the requested dtype with the checkpoint's, as the ase
+    # calculator already does. Without this, `--default_dtype float32` against a
+    # float64 checkpoint reached the forward pass unchanged and died inside a
+    # scripted tensor product on "both inputs should have same dtype", naming
+    # neither the flag nor the checkpoint -- while the calculator, given the
+    # same two things, warned and converted. One request, two shipped inference
+    # routes, opposite outcomes.
+    model_dtype = get_model_dtype(model)
+    if model_dtype != args.default_dtype:
+        logging.warning(
+            f"Default dtype {args.default_dtype} does not match model dtype "
+            f"{model_dtype}, converting models to {args.default_dtype}."
+        )
+        if args.default_dtype == "float64":
+            model = model.double()
+        elif args.default_dtype == "float32":
+            model = model.float()
 
     if model.__class__.__name__ != "MACELES" and args.compute_bec:
         raise ValueError("BEC can only be computed with MACELES model. ")
