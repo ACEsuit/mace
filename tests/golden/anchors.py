@@ -8,12 +8,24 @@ live here rather than in one test file because five suites now need them
 golden, and the parity work that follows), and a second copy of `_batch` is
 exactly how two suites end up silently measuring different things.
 
-The one subtlety worth reading before copying this code: **the graph is built
-inside a `default_dtype` scope, not cast afterwards.** `AtomicData` reads the
-process-wide default dtype, which is float32 under pytest. Building in float32
-and casting up rounds the positions first, and the anchor then reproduces its
-own reference only to about 2e-8 relative -- under the fp64 row, so it reads
-as agreement, while making a bit-exact comparison impossible.
+Two subtleties worth reading before copying this code.
+
+**The graph is built inside a `default_dtype` scope, not cast afterwards.**
+`AtomicData` reads the process-wide default dtype, which is float32 under
+pytest. Building in float32 and casting up rounds the positions first, and the
+anchor then reproduces its own reference only to about 2e-8 relative -- under
+the fp64 row, so it reads as agreement, while making a bit-exact comparison
+impossible.
+
+**`KeySpecification.from_defaults()` is passed explicitly, because the default
+argument is an empty one.** `config_from_atoms` defaults to a bare
+`KeySpecification()` (mace/data/utils.py:174), which reads no property out of
+the structure at all, and `AtomicData.from_config` then falls back to
+`energy = 0.0` and `forces = zeros` (mace/data/atomic_data.py:308-321) while
+the matching weights fall back to 1.0 -- so a loss taken on that batch is the
+loss against zero labels, at full weight, with nothing to distinguish it from
+the real one but its value. `from_defaults()` maps the `REF_energy` /
+`REF_forces` keys `fixtures/tiny_train.xyz` actually carries.
 """
 
 from __future__ import annotations
@@ -25,6 +37,7 @@ import torch
 from ase import Atoms
 
 from mace import data
+from mace.data.utils import KeySpecification
 from mace.tools import torch_geometric, torch_tools, utils
 
 from . import harness
@@ -80,7 +93,7 @@ def anchor_batch(
     with torch_tools.default_dtype(_dtype_name(dtype)):
         graphs = [
             data.AtomicData.from_config(
-                data.config_from_atoms(atoms),
+                data.config_from_atoms(atoms, KeySpecification.from_defaults()),
                 z_table=z_table,
                 cutoff=float(model.r_max),
             )

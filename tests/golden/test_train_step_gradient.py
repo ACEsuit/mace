@@ -117,8 +117,8 @@ def test_the_digest_resolves_a_weight_change_six_orders_below_the_weights():
     """Why this golden is worth its bytes, as a measured resolution.
 
     Perturbing one weight and watching the digest, the response is linear
-    with a gain of 0.49: a change of d in a single weight moves the largest
-    digest field by about 0.49 * d. Against the 1e-6 reference row that puts
+    with a gain of 0.57: a change of d in a single weight moves the largest
+    digest field by about 0.57 * d. Against the 1e-6 reference row that puts
     the detection floor at a weight change of roughly 2e-6, while the weights
     themselves are of order 1 -- so a gradient defect anywhere near the scale
     of initialisation noise is six orders above what this can see, which is
@@ -126,7 +126,7 @@ def test_the_digest_resolves_a_weight_change_six_orders_below_the_weights():
 
     The perturbation used here is 1e-5, comfortably above the floor and still
     far below anything an error table would report: it moves the loss by
-    1.9e-7 eV.
+    2.5e-7 eV.
     """
     anchor = "tiny_scaleshift"
     baseline = train_step(anchor)

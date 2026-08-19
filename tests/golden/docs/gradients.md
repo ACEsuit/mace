@@ -20,7 +20,7 @@ four cannot see at all and which is what an irreps-layout mistake produces.
 `cos` of an integer rather than a seeded vector, so a reimplementation in
 another framework can reproduce it without sharing an RNG.
 
-Measured resolution: the response is linear with a gain of 0.49, so at the
+Measured resolution: the response is linear with a gain of 0.57, so at the
 1e-6 row the golden resolves a change of about 2e-6 in a single weight, six
 orders below the weights themselves. A test asserts that, and another asserts
 the permutation claim, rather than leaving either as a paragraph.
