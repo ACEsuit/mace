@@ -10,6 +10,7 @@ from mace.modules.wrapper_ops import CuEquivarianceConfig
 from mace.tools.cg import O3_e3nn
 from mace.tools.cg_cueq_tools import symmetric_contraction_proj
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import restores_default_dtype
 
 try:
     import cuequivariance as cue
@@ -212,6 +213,7 @@ def transfer_weights(
     target_model.load_state_dict(target_dict)
 
 
+@restores_default_dtype
 def run(
     input_model,
     output_model="_cueq.model",

@@ -8,6 +8,7 @@ import torch
 
 from mace.modules.wrapper_ops import CuEquivarianceConfig, OEQConfig
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import restores_default_dtype
 
 try:
     from mace.cli.convert_e3nn_cueq import transfer_symmetric_contractions
@@ -24,6 +25,7 @@ except ImportError:
     OEQ_AVAILABLE = False
 
 
+@restores_default_dtype
 def run(
     input_model,
     output_model="_hybrid.model",
