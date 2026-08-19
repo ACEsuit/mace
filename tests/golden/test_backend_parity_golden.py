@@ -44,7 +44,6 @@ os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
 import pytest
 import torch
 
-from mace.tools import torch_tools
 from tests.golden import backend_kernel_audit as audit
 from tests.golden import harness
 
@@ -128,24 +127,24 @@ def _reference_for(name):
 def _convert(model, backend, device):
     """Convert through the shipped entry points, with the device declared.
 
-    The ``default_dtype`` scope is not decoration: ``run`` calls
-    ``torch.set_default_dtype`` from the source model's parameters and never
-    puts it back, and the accelerated modules read the process-wide default
-    at construction time. Leaving that to escape would silently re-dtype
-    every later test in the session.
+    No ``default_dtype`` scope around this. ``run`` sets the process default
+    from the source model's parameters, so the accelerated modules it builds
+    read the right dtype at construction, and it puts the caller's default back
+    on the way out, exception included (#1659). An outer scope here would be
+    overridden by that inner set and would only look like it was doing
+    something.
     """
-    with torch_tools.default_dtype("float64"):
-        if backend == audit.CUEQ:
-            from mace.cli.convert_e3nn_cueq import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-                run as run_e3nn_to_cueq,
-            )
-
-            return run_e3nn_to_cueq(model, device=device)
-        from mace.cli.convert_e3nn_oeq import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-            run as run_e3nn_to_oeq,
+    if backend == audit.CUEQ:
+        from mace.cli.convert_e3nn_cueq import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+            run as run_e3nn_to_cueq,
         )
 
-        return run_e3nn_to_oeq(model, device=device)
+        return run_e3nn_to_cueq(model, device=device)
+    from mace.cli.convert_e3nn_oeq import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        run as run_e3nn_to_oeq,
+    )
+
+    return run_e3nn_to_oeq(model, device=device)
 
 
 def _calculator(model, device):
