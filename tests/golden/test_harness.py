@@ -1106,7 +1106,7 @@ def test_the_eval_cli_spellings_resolve_to_one_channel():
     and one this test used to assert the wrong way round. The CLI writes the
     model's raw `output["node_energy"]`, which *includes* the isolated-atom
     reference, and the channel for that is `energies`; `node_energy` is the
-    calculator's E0-subtracted quantity (mace/calculators/mace.py:787-790).
+    calculator's E0-subtracted quantity (mace/calculators/mace.py:792-795).
     The two have the same shape and the same unit, so an eval-route golden
     landing on the wrong one of them disagreed with a calculator-route golden
     by exactly the E0 table with nothing in the comparison able to say so.
@@ -1144,7 +1144,7 @@ def test_the_eval_cli_flattens_the_born_charges_and_the_schema_unflattens_them()
     n_atoms = 4
     rng = np.random.default_rng(1)
     full = rng.normal(size=(n_atoms, 3, 3))
-    flat = full.reshape(n_atoms, -1)  # what mace/cli/eval_configs.py:407 writes
+    flat = full.reshape(n_atoms, -1)  # what mace/cli/eval_configs.py:433 writes
     assert np.array_equal(eval_keys.unflatten_bec(flat), full)
 
     class Written:

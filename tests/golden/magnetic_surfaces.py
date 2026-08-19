@@ -233,7 +233,7 @@ class MagneticEvalCLI:
     extxyz's ``%16.8f`` on the per-atom columns is part of that surface.
 
     ``run()`` calls ``torch_tools.set_default_dtype`` on the *process*
-    (``mace/cli/eval_configs.py:167``), so the call is wrapped in a scope that
+    (``mace/cli/eval_configs.py:188``), so the call is wrapped in a scope that
     puts it back -- otherwise this leaks float64 into every test that runs
     after it in the same worker.
     """

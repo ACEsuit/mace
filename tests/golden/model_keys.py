@@ -105,7 +105,7 @@ harness.ignore_key(
 #                     at mace/modules/extensions.py:1917) -- E0 *included*
 #     calculator      results["energies"] = a copy of the model's node_energy,
 #                     then results["node_energy"] -= node_e0
-#                     (mace/calculators/mace.py:787-790) -- E0 *removed*
+#                     (mace/calculators/mace.py:792-795) -- E0 *removed*
 #
 # The channels already distinguish the two, and correctly: `energies` is the
 # ase-property meaning (per-atom energy including the isolated-atom
@@ -137,7 +137,7 @@ harness.register_alias(
         "the model's node_energy includes the isolated-atom reference "
         "(mace/modules/models.py:582), which is the `energies` channel. The "
         "calculator uses the same word for the E0-subtracted quantity "
-        "(mace/calculators/mace.py:787-790), which is the `node_energy` "
+        "(mace/calculators/mace.py:792-795), which is the `node_energy` "
         "channel. Same spelling, two quantities, differing by the E0 table."
     ),
 )

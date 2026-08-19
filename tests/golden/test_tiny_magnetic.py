@@ -402,7 +402,7 @@ def test_the_calculator_agrees_with_the_reference_on_what_it_does_expose(
 
     The second half is the collision. What ``MagneticMACECalculator`` calls
     ``node_energy`` is the model's ``node_energy`` with E0 subtracted
-    (mace/calculators/mace.py:1379), while the model's own spelling of that
+    (mace/calculators/mace.py:1388), while the model's own spelling of that
     word is the E0-inclusive quantity, which is the ``energies`` channel. Both
     are per-atom scalars in eV, so nothing but the numbers distinguishes them,
     and before the surface-scoped alias in model_keys.py a model-route
