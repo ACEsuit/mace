@@ -897,12 +897,158 @@ def check_set(source: SourceSet, rows: list[Row]) -> tuple[bool, list[str]]:
     return ok, report
 
 
+# ---------------------------------------------------------------- the gap audit
+#
+# A `⚠️ gap` marker is a claim about the *test suite*, and unlike every other
+# claim in this file nothing re-derives it. The source comparisons above are
+# recomputed from the tree on every run, and a pin has to resolve to a test that
+# exists -- but a gap says "nothing covers this", and it goes on saying so after
+# somebody covers it. That is not hypothetical: seventy-seven rows here were
+# still marked as gaps after the tests closing them had merged, because this file
+# is a sibling of the branches that added them rather than a descendant.
+#
+# Under-reporting coverage is the direction that wastes work: it sends somebody
+# to write a test that already exists. So this re-derives the gaps -- and it is a
+# heuristic rather than a proof, which is why it is a separate mode and not part
+# of the gate above. A heuristic wired into a required check gets switched off
+# the first time it is wrong; one that has to be asked for stays useful.
+#
+# The signal is a test function that both names the row's subject and asserts
+# something. Naming alone is not evidence: `tests/golden/calculator_keys.py`
+# names every output key in the package and asserts nothing, being a registry.
+# Requiring an assertion in the same function is what separates a test from a
+# declaration, and it is what makes the committee keys come out right -- one of
+# them is genuinely asserted and the rest only mentioned.
+
+#: Sections whose rows the audit has nothing to say about. The documentation
+#: pages of §18 track a user-facing *promise* rather than a code surface -- their
+#: own preamble says so -- so no test can close one of their gaps, and matching
+#: their titles against the suite only turns up the words "training" and "ase".
+AUDIT_SKIPPED_PREFIXES = ("doc.",)
+
+#: Test files that name a surface without covering it.
+#:
+#: `test_harness.py` is the golden harness's own suite: it asserts that the
+#: harness *knows* about a channel -- that the key is registered, classified,
+#: shaped and spelled once -- which is the registry case this audit exists to
+#: discount, only written as assertions rather than as data. Treating it as
+#: evidence marks every declared output key as covered, which is how nine of them
+#: turned up on the first run.
+#:
+#: `test_inventory.py` is this checker's own suite, and it names surfaces as
+#: fixture data: a sample row built around some flag is not a test of that flag.
+#: The audit found this one itself, by reporting a deliberately unused flag as
+#: covered by the very test asserting that it is not.
+AUDIT_NON_EVIDENCE = (
+    "tests/golden/test_harness.py",
+    "tests/golden/test_inventory.py",
+)
+
+#: how many matching test functions before a subject is too common to judge.
+#: `warmup`, `mean`, `heads` and friends appear all over the suite in contexts
+#: that have nothing to do with the row, and printing forty candidates for them
+#: is worse than printing none: it buries the rows where a match means
+#: something. Past this count the audit says so rather than guessing.
+AUDIT_MATCH_CEILING = 6
+
+
+def _asserting_test_functions() -> list[tuple[str, str, str]]:
+    """Every `def test_*` under `tests/` that asserts, as (path, name, source).
+
+    Functions with no assertion are dropped here rather than filtered later: a
+    helper or a fixture that mentions a flag is not coverage of it.
+    """
+    found: list[tuple[str, str, str]] = []
+    for path in sorted((REPO / "tests").rglob("*.py")):
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            if not node.name.startswith("test"):
+                continue
+            body = ast.get_source_segment(source, node) or ""
+            asserts = any(isinstance(sub, ast.Assert) for sub in ast.walk(node))
+            if not asserts and "pytest.raises" not in body:
+                continue
+            if _rel(path) in AUDIT_NON_EVIDENCE:
+                continue
+            found.append((_rel(path), node.name, body))
+    return found
+
+
+def audit_subjects(row: Row) -> list[str]:
+    """What to search the suite for on this row's behalf.
+
+    The id's last segment names the thing -- `out.calc.energy_var` is about
+    `energy_var`, `env.MACE_TIME` about `MACE_TIME` -- and for a flag row the
+    option strings in the feature cell are a sharper spelling of the same
+    subject, because that is how a test passes it.
+    """
+    subjects = [row.ident.rsplit(".", maxsplit=1)[-1]]
+    subjects += [
+        flag.lstrip("-") for flag in re.findall(r"`(--[A-Za-z0-9_]+)`", row.feature)
+    ]
+    return sorted({subject for subject in subjects if len(subject) > 2})
+
+
+def audit_gaps(rows: list[Row]) -> list[str]:
+    """Gap rows the suite now appears to cover, for review rather than for CI."""
+    functions = _asserting_test_functions()
+    report: list[str] = []
+    for row in rows:
+        if "⚠️" not in row.pinned_by:
+            continue
+        if row.ident.startswith(AUDIT_SKIPPED_PREFIXES):
+            continue
+        subjects = audit_subjects(row)
+        hits: list[str] = []
+        for subject in subjects:
+            needle = re.compile(rf"\b{re.escape(subject)}\b")
+            hits += [
+                f"{path}::{name}"
+                for path, name, source in functions
+                if needle.search(source)
+            ]
+        hits = sorted(set(hits))
+        if not hits:
+            continue
+        if len(hits) > AUDIT_MATCH_CEILING:
+            report.append(
+                f"{row.ident}: {len(hits)} asserting tests name "
+                f"{'/'.join(subjects)}, which is too common a word for the match "
+                f"to mean anything -- judge this row by hand"
+            )
+            continue
+        report.append(f"{row.ident}: marked a gap, but asserted by " + ", ".join(hits))
+    return report
+
+
 def main() -> int:
     if not INVENTORY.exists():
         print(f"inventory not found: {INVENTORY}")
         return 1
 
     rows, problems = read_rows()
+
+    # `--audit-gaps` is deliberately not part of the run below. The gate is a set
+    # of comparisons that are either right or wrong; the audit is a search that
+    # can be neither, so it answers when asked rather than on every pull request.
+    if "--audit-gaps" in sys.argv[1:]:
+        suspects = audit_gaps(rows)
+        gaps = sum(1 for row in rows if "⚠️" in row.pinned_by)
+        print(f"auditing {gaps} gap rows against the current suite\n")
+        for line in suspects:
+            print(" -", line)
+        print(
+            f"\n{len(suspects)} of {gaps} gap rows have an asserting test that "
+            f"names them. That is a suspicion, not a verdict: read each one and "
+            f"either cite the test or say in the row why the gap survives it."
+        )
+        return 1 if suspects else 0
     reports: list[str] = []
     failed = bool(problems)
 

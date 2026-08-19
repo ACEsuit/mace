@@ -375,3 +375,91 @@ def test_the_three_output_key_surfaces_are_non_empty():
     assert len(check_inventory.source_model_output_keys()) > 30
     assert len(check_inventory.source_calculator_result_keys()) > 20
     assert len(check_inventory.source_eval_output_keys()) > 10
+
+
+# ---------------------------------------------------------------------------
+# the gap audit: a heuristic, so what is tested is its shape, not its verdicts
+# ---------------------------------------------------------------------------
+
+
+def _gap_row(ident, feature="`--thing`", gap="⚠️ gap (nothing yet)"):
+    return Row(
+        ident=ident,
+        feature=feature,
+        source="`mace/tools/arg_parser.py:1`",
+        disposition="KEEP",
+        pinned_by=gap,
+        line=1,
+    )
+
+
+def test_the_audit_finds_a_gap_the_suite_already_covers():
+    """The failure it exists for: seventy-seven rows here stayed marked as gaps
+    after the tests closing them had merged."""
+    suspects = check_inventory.audit_gaps(
+        [_gap_row("out.calc.energy_var", feature="`energy_var` — committee")]
+    )
+
+    assert len(suspects) == 1
+    assert "test_calculator_committee" in suspects[0]
+
+
+def test_the_audit_says_nothing_about_a_row_nothing_covers():
+    row = _gap_row("train.no_such_flag_anywhere", feature="`--no_such_flag_anywhere`")
+
+    assert check_inventory.audit_gaps([row]) == []
+
+
+def test_a_pinned_row_is_not_audited():
+    """Only gap rows are claims about the suite; a pin is checked by the gate."""
+    pinned = _gap_row("out.calc.energy_var", gap="`tests/unit/test_compile.py`")
+    assert check_inventory.audit_gaps([pinned]) == []
+
+
+def test_the_documentation_rows_are_out_of_scope():
+    """§18 tracks a promise rather than a code surface, so no test can close one
+    of its gaps -- and matching page titles turns up "training" and "ase"."""
+    assert check_inventory.audit_gaps([_gap_row("doc.training")]) == []
+
+
+def test_the_harness_own_suite_is_not_evidence():
+    """`test_harness.py` asserts that the harness *knows* a channel, which is the
+    registry case the audit discounts, written as assertions rather than data."""
+    functions = check_inventory._asserting_test_functions()
+
+    assert functions, "the scan found no asserting tests at all"
+    assert not [path for path, _, _ in functions if path in check_inventory.AUDIT_NON_EVIDENCE]
+
+
+def test_a_subject_too_common_to_judge_says_so_instead_of_guessing():
+    suspects = check_inventory.audit_gaps([_gap_row("reg.None")])
+
+    assert len(suspects) == 1
+    assert "too common a word" in suspects[0]
+
+
+def test_the_subjects_come_from_the_id_and_the_option_strings():
+    row = _gap_row("train.apply_cutoff", feature="`--apply_cutoff` `--legacy_name`")
+
+    assert check_inventory.audit_subjects(row) == [
+        "apply_cutoff",
+        "legacy_name",
+    ]
+
+
+def test_the_gate_does_not_run_the_audit():
+    """The structural guarantee. The gate is a set of comparisons that are either
+    right or wrong; the audit is a search that can be neither, so wiring it into
+    a required check would make a heuristic block pull requests -- and it would
+    be switched off the first time it was wrong."""
+    import inspect
+
+    gate = inspect.getsource(check_inventory.main)
+    audited = gate.index("audit_gaps")
+    returns_early = gate.index('return 1 if suspects else 0')
+    comparisons = gate.index("for source in collect_sources()")
+
+    assert audited < returns_early < comparisons, (
+        "the audit no longer short-circuits ahead of the gate, so a heuristic "
+        "now runs as part of a required check"
+    )
