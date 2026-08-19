@@ -90,6 +90,23 @@ jobs:
       contents: read
 
   benchmarks:
+    # The performance baseline the rewrite will be judged against, recorded
+    # while legacy is still the live stack: "not slower" is only falsifiable
+    # against an old number, and after legacy retires the comparison runs
+    # against the frozen one, so these have to be reproducible cases with
+    # recorded metadata rather than one-off timings.
+    #
+    # This job used to be continue-on-error and published nothing at all: the
+    # only test in tests/benchmarks was marked `gpu` AND `network`, so all
+    # sixteen parametrizations skipped on a CPU runner, the job went green,
+    # and benchmark.json was reproducibly a 0-byte file. tests/benchmarks/
+    # test_inference_cpu.py adds the CPU cases, and since a job that cannot
+    # fail is not a baseline, continue-on-error is gone and the artifact is
+    # checked for contents below -- not merely for existence, which it always
+    # had.
+    #
+    # numprocs 0 is load-bearing: pytest-benchmark disables itself under
+    # xdist, so a parallel run of this job would collect timings from nothing.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -98,23 +115,75 @@ jobs:
         with:
           python-version: "3.12"
           extras: dev
-      # CPU benchmark tests currently skip without a GPU (they are
-      # gpu-marked); keep the job so CPU benchmarks land here when added.
+      - name: Cache foundation model downloads
+        # The MP-small cases are network-gated; without the cache every night
+        # re-downloads the same checkpoint.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mace
+          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
       - uses: ./.github/actions/run-tests
-        continue-on-error: true
         with:
           tests: tests/benchmarks
+          # Deliberately no marker expression: every narrowing applied here so
+          # far has ended with an empty artifact. The gpu-marked cases skip on
+          # this runner and say so.
           allow-network: "true"
+          # The MP-small half of the baseline is downloaded, so a lost network
+          # must turn this job red rather than quietly halve the artifact.
+          require-caps: network
           numprocs: "0"
           timeout: "3600"
           extra-args: --benchmark-json=benchmark.json
+      # THE check that this job stopped being green-while-measuring-nothing.
+      #
+      # `if-no-files-found: error` on the upload below cannot catch it:
+      # pytest-benchmark creates the --benchmark-json path regardless of what
+      # ran, and a session in which every case skipped leaves a **0-byte
+      # file** behind (reproduced locally: `pytest tests/benchmarks/
+      # test_benchmark.py --benchmark-json=...` -> 16 skipped, 0-byte json).
+      # So the file is always present, the upload always succeeds, and the
+      # only thing that distinguishes a baseline from an empty artifact is its
+      # contents. Hence a content assertion rather than a presence one.
+      #
+      # It also checks one case per declared size, because the hole this job
+      # had was size-shaped: skipping is per-parametrization, so a single
+      # surviving case would satisfy "non-empty" while the size spread the
+      # downstream comparison needs had quietly gone.
+      - name: The artifact must actually contain a baseline
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          raw = pathlib.Path("benchmark.json").read_text() or "{}"
+          runs = json.loads(raw).get("benchmarks", [])
+          if not runs:
+              sys.exit(
+                  "benchmark.json carries no benchmarks: every case skipped "
+                  "and this job would have published an empty baseline."
+              )
+          sizes = {b.get("extra_info", {}).get("regime") for b in runs}
+          missing = {"subdomain216", "subdomain512", "kernel1728"} - sizes
+          if missing:
+              sys.exit(f"no benchmark ran at size(s) {sorted(missing)}")
+          for b in runs:
+              info = b.get("extra_info", {})
+              absent = [
+                  k for k in ("dtype", "device", "torch_version", "backend")
+                  if not info.get(k)
+              ]
+              if absent:
+                  sys.exit(f"{b['name']} records no {absent}: not reproducible")
+          print(f"{len(runs)} benchmarks across sizes {sorted(sizes)}")
+          PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        # always(), so the artifact is there to diagnose a failed content check
+        # rather than only on the nights that pass it.
         if: always()
         with:
           name: benchmark-json
           path: benchmark.json
           retention-days: 90
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   lammps-real:
     # Real-tier LAMMPS via conda-forge (ML-IAP unified path). Runs a
@@ -183,7 +252,7 @@ jobs:
       - uses: ./.github/actions/setup-mace
         with:
           python-version: "3.12"
-          extras: dev, cueq, torchsim, schedulefree
+          extras: dev, cueq, torchsim, schedulefree, magnetic
           pip-packages: -r requirements/polar.txt -r requirements/les.txt
       - name: Cache foundation model downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -199,7 +268,7 @@ jobs:
         with:
           tests: tests
           markers: not gpu and not benchmark
-          require-caps: network,cueq,polar,les,torchsim,schedulefree
+          require-caps: network,cueq,polar,les,torchsim,schedulefree,magnetic
           allow-network: "true"
           coverage: "data"
           splits: "3"
@@ -250,7 +319,102 @@ jobs:
             coverage report --skip-covered --sort=cover | tail -40
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      # THE coverage gate. The overall percentage above stays informative in
+      # both this job and the per-PR one; only the files listed below are
+      # enforced.
+      #
+      # WHY ONLY THESE FILES. The rewrite's test-prerequisite bar is golden
+      # characterization + end-to-end contracts + line-coverage floors on the
+      # modules whose *behaviour* ports. There is deliberately no global
+      # target: everything else in mace/ is pinned by the goldens in
+      # tests/golden and the CLI/calculator contracts in tests/workflows, and
+      # a global number would be a second, weaker statement about the same
+      # code. These six are the pure-math and physics-glue modules that have
+      # no golden standing in for them.
+      #
+      # MIGRATION INVARIANT. A floor protects the behaviour, not the legacy
+      # file. When a capability moves to the new stack, its floor moves with
+      # it to the corresponding mace_core/mace_torch module in the same
+      # commit. Forgetting to is not silent: `--include` on a path that no
+      # longer exists selects nothing and `coverage report` exits 1 with
+      # "No data to report" (and tests/unit/test_ci_gates.py fails on the PR
+      # that renames the file, a night earlier).
+      #
+      # WHY HERE AND NOWHERE ELSE. Two other places look plausible and are
+      # both wrong. Inside coverage-full the check would run in a shard
+      # holding one third of the suite (splits: 3), so a module exercised
+      # entirely by tests that landed in another group would fail its own
+      # floor. In ci-core's coverage job the denominator is different: it
+      # measures tests/unit + tests/workflows only -- no extensions, backends,
+      # integrations or network -- so the same percentage means a different
+      # thing.
+      #
+      # That second one is not a theoretical objection, and the file that
+      # settles it is mace/modules/utils.py. Measured on one host over the
+      # whole selection: 76% on the PR slice, 87% on the full scope. Its floor
+      # is 85. The same number against the same file therefore PASSES here and
+      # FAILS in the PR job. The gap is 36 statements and it is not diffuse:
+      # compute_forces_virials_magforces, compute_forces_magforces, the
+      # get_outputs branches that dispatch to them, and
+      # compute_total_charge_dipole_permuted -- reached from tests/extensions,
+      # which the PR slice does not run. A floor is meaningless without naming
+      # the selection, so:
+      #
+      # THE SELECTION THESE FLOORS ARE MEASURED UNDER is exactly
+      # coverage-full's, combined over all three shards:
+      #   pytest tests -m "not gpu and not benchmark"
+      # with extras dev,cueq,torchsim,schedulefree,magnetic plus
+      # requirements/polar.txt and requirements/les.txt, and
+      # MACE_CI_ALLOW_NETWORK=1. The magnetic extra is not optional here: the
+      # modules/utils.py floor counts compute_forces_virials_magforces and
+      # compute_forces_magforces, which only tests/extensions/magnetic reach,
+      # and they are ~8 points of that file against 2 points of headroom.
+      #
+      # HEADROOM, as measured under that selection when the floors went in:
+      #   loss.py 100 (floor 90)      data/utils.py      96  (85)
+      #   radial.py 100 (floor 90)    neighborhood.py    100 (95)
+      #   modules/utils.py 87 (85)    atomic_data.py     96  (85)
+      # Two of those are ratchets rather than newly-cleared bars --
+      # neighborhood.py and atomic_data.py already sat above their floors
+      # before the characterization tests landed, so they gate against
+      # regression and nothing else. modules/utils.py is the tight one at two
+      # points; the honest reading is that its floor is the one that will bite
+      # first, which is the point of putting it here rather than rounding it
+      # down to something comfortable.
+      #
+      # This step runs after `coverage combine`, which is also why
+      # coverage-report is deliberately not `if: always()`: a gate must never
+      # be computed from a subset of the shards.
+      - name: Per-file coverage floors
+        run: |
+          status=0
+          echo '## Per-file coverage floors' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          while read -r file floor; do
+            case "$file" in ''|'#'*) continue ;; esac
+            if report=$(coverage report --include="$file" --fail-under="$floor" 2>&1); then
+              verdict='ok'
+            else
+              verdict='BELOW FLOOR'
+              status=1
+            fi
+            printf '%-34s >= %3s%%  %s\n' "$file" "$floor" "$verdict" \
+              >> "$GITHUB_STEP_SUMMARY"
+            printf '%s\n%s\n' "--- $file (floor ${floor}%): $verdict" "$report"
+          done <<'FLOORS'
+          mace/modules/loss.py 90
+          mace/modules/radial.py 90
+          mace/modules/utils.py 85
+          mace/data/utils.py 85
+          mace/data/neighborhood.py 95
+          mace/data/atomic_data.py 85
+          FLOORS
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        # always(), so the html report that explains a floor failure is
+        # available on the run that failed.
+        if: always()
         with:
           name: coverage-full
           path: |
