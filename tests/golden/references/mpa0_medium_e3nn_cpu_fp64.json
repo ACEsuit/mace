@@ -1,0 +1,577 @@
+{
+  "backend": "e3nn",
+  "device": "cpu",
+  "dtype": "float64",
+  "fixtures": {
+    "dimer_short": {
+      "formula": "CO",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 2,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            2
+          ],
+          "unit": "eV",
+          "value": [
+            21.713520002734874,
+            21.216597545243683
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": 42.93011754797856
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              0.0,
+              0.0,
+              -340.81122151863065
+            ],
+            [
+              0.0,
+              0.0,
+              340.81122151863065
+            ]
+          ]
+        },
+        "free_energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": 42.93011754797856
+        },
+        "node_energy": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            2
+          ],
+          "unit": "eV",
+          "value": [
+            22.975255072734875,
+            22.764985385243683
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "isolated_atom": {
+      "formula": "O",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 1,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            1
+          ],
+          "unit": "eV",
+          "value": [
+            -1.54838784
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -1.54838784
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            1,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "free_energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -1.54838784
+        },
+        "node_energy": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            1
+          ],
+          "unit": "eV",
+          "value": [
+            0.0
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "slab_vacuum": {
+      "formula": "C2HO",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 4,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            4
+          ],
+          "unit": "eV",
+          "value": [
+            -3.4118992756797573,
+            -4.7669682577380375,
+            -2.735347900629752,
+            -2.0823582915563836
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -12.99657372560393
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            4,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              1.4102365459881019,
+              0.4519721133423318,
+              2.622960333221967
+            ],
+            [
+              -1.046406108211993,
+              -0.02538531685463747,
+              -0.11711106322594694
+            ],
+            [
+              -0.1709286228970863,
+              -0.2801635727872799,
+              -2.131498819843448
+            ],
+            [
+              -0.19290181487902244,
+              -0.1464232237004147,
+              -0.37435045015257273
+            ]
+          ]
+        },
+        "free_energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -12.99657372560393
+        },
+        "node_energy": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            4
+          ],
+          "unit": "eV",
+          "value": [
+            -2.150164205679757,
+            -3.2185804177380373,
+            -1.473612830629752,
+            -0.9650182115563837
+          ]
+        },
+        "stress": {
+          "kind": "graph_tensor",
+          "shape": [
+            3,
+            3
+          ],
+          "unit": "eV/Ang^3",
+          "value": [
+            [
+              0.09487095985185719,
+              0.0005234607984155497,
+              0.0034584810284188825
+            ],
+            [
+              0.0005234607984155497,
+              0.041965483434718655,
+              0.003101851824459934
+            ],
+            [
+              0.0034584810284188825,
+              0.003101851824459934,
+              0.017899782321088728
+            ]
+          ]
+        }
+      },
+      "periodic": true
+    },
+    "slab_zero_vacuum": {
+      "formula": "C2HO",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 4,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            4
+          ],
+          "unit": "eV",
+          "value": [
+            -3.4118992756797573,
+            -4.7669682577380375,
+            -2.735347900629752,
+            -2.0823582915563836
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -12.99657372560393
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            4,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              1.4102365459881019,
+              0.4519721133423318,
+              2.622960333221967
+            ],
+            [
+              -1.046406108211993,
+              -0.02538531685463747,
+              -0.11711106322594694
+            ],
+            [
+              -0.1709286228970863,
+              -0.2801635727872799,
+              -2.131498819843448
+            ],
+            [
+              -0.19290181487902244,
+              -0.1464232237004147,
+              -0.37435045015257273
+            ]
+          ]
+        },
+        "free_energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -12.99657372560393
+        },
+        "node_energy": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            4
+          ],
+          "unit": "eV",
+          "value": [
+            -2.150164205679757,
+            -3.2185804177380373,
+            -1.473612830629752,
+            -0.9650182115563837
+          ]
+        },
+        "stress": {
+          "kind": "graph_tensor",
+          "shape": [
+            3,
+            3
+          ],
+          "unit": "eV/Ang^3",
+          "value": [
+            [
+              0.07870613787587594,
+              0.00043426964201737057,
+              0.002869199226917162
+            ],
+            [
+              0.00043426964201737057,
+              0.03481509126078581,
+              0.002573335167554982
+            ],
+            [
+              0.002869199226917162,
+              0.002573335167554982,
+              0.014849883858155114
+            ]
+          ]
+        }
+      },
+      "periodic": true
+    },
+    "triclinic_bulk": {
+      "formula": "C2H2O2",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 6,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            6
+          ],
+          "unit": "eV",
+          "value": [
+            -3.242559541927328,
+            -4.850524980964142,
+            -2.4349972214053217,
+            -3.780780813105655,
+            -5.803022271573667,
+            -2.4669926780946234
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -22.578877507070736
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            6,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              0.7173961121546413,
+              1.063257629524348,
+              0.6690298374560402
+            ],
+            [
+              -0.4117560005280243,
+              0.7133116864327117,
+              -1.2507190037917613
+            ],
+            [
+              1.3326917088712351,
+              -2.6237168358488288,
+              -2.9977274172953097
+            ],
+            [
+              -0.6993350688561712,
+              -0.6613739600276005,
+              0.534047094074469
+            ],
+            [
+              1.4781728404187229,
+              1.4902070337547526,
+              2.512271108070757
+            ],
+            [
+              -2.417169592060402,
+              0.01831444616461622,
+              0.5330983814858061
+            ]
+          ]
+        },
+        "free_energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -22.578877507070736
+        },
+        "node_energy": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            6
+          ],
+          "unit": "eV",
+          "value": [
+            -1.694171701927328,
+            -3.5887899109641417,
+            -1.3176571414053218,
+            -2.2323929731056547,
+            -4.541287201573667,
+            -1.3496525980946235
+          ]
+        },
+        "stress": {
+          "kind": "graph_tensor",
+          "shape": [
+            3,
+            3
+          ],
+          "unit": "eV/Ang^3",
+          "value": [
+            [
+              0.15155910390782165,
+              0.0015606283144482685,
+              -0.025249238750337563
+            ],
+            [
+              0.0015606283144482685,
+              0.1341060643867327,
+              -0.014678270173588966
+            ],
+            [
+              -0.025249238750337563,
+              -0.014678270173588966,
+              0.16809920043806928
+            ]
+          ]
+        }
+      },
+      "periodic": true
+    },
+    "water_cluster": {
+      "formula": "H6O3",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 9,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            9
+          ],
+          "unit": "eV",
+          "value": [
+            -6.662299753709202,
+            -3.6173945472271494,
+            -3.642329905204156,
+            -6.529612949620226,
+            -3.6683540735828393,
+            -3.6474711197282623,
+            -6.806227705238799,
+            -3.5907837769505444,
+            -3.5280111760600392
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -41.69248500732122
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            9,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.2612745393627333,
+              1.1789669232379862,
+              -0.2799750916456004
+            ],
+            [
+              -0.3027062347913833,
+              -0.7820311424262308,
+              0.8580225374301793
+            ],
+            [
+              -0.08451002263692099,
+              -0.6229209203033735,
+              -0.5011599371754446
+            ],
+            [
+              0.724629127129119,
+              1.9304791455402759,
+              1.2209079885927347
+            ],
+            [
+              0.20849759182074354,
+              -0.4541480776566737,
+              0.41285720531198133
+            ],
+            [
+              -0.2547112181153023,
+              -1.5711149536963773,
+              -1.3787261193837401
+            ],
+            [
+              -0.05671516559019167,
+              1.5636397602654866,
+              -0.8346202244443671
+            ],
+            [
+              0.00987139039867565,
+              -1.0028531962178087,
+              0.8512808220784863
+            ],
+            [
+              0.016919071147993327,
+              -0.24001753874328446,
+              -0.3485871807642291
+            ]
+          ]
+        },
+        "free_energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -41.69248500732122
+        },
+        "node_energy": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            9
+          ],
+          "unit": "eV",
+          "value": [
+            -5.1139119137092015,
+            -2.5000544672271494,
+            -2.524989825204156,
+            -4.981225109620226,
+            -2.5510139935828393,
+            -2.5301310397282624,
+            -5.2578398652387985,
+            -2.4734436969505444,
+            -2.4106710960600393
+          ]
+        }
+      },
+      "periodic": false
+    }
+  },
+  "metadata": {
+    "model_class": "ScaleShiftMACE",
+    "r_max": 6.0
+  },
+  "provenance": {
+    "description": "MACE-MPA-0 medium, the checkpoint tracked in this repository and the model an unqualified mace_mp() returns. No download; the release artifact at release_url has the identical digest, so a consumer that fetches it by URL is looking at this same file.",
+    "evaluated_with": "mace.calculators.MACECalculator, e3nn, CPU, float64",
+    "fixture_tags": [],
+    "recipe": "mace.calculators.foundations_models.mace_mp(default_dtype='float64', device='cpu')",
+    "release_url": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model",
+    "sha256": "75428afe3a1d7d8062e19bcaabd5c433623cabf308242ec9fb493e38604fb638",
+    "source": "mace/calculators/foundations_models/mace-mpa-0-medium.model",
+    "tolerance_row": "fp64_cpu_reference"
+  },
+  "schema_version": 1,
+  "units": {
+    "energy": "eV",
+    "length": "Ang"
+  }
+}
