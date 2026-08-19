@@ -101,6 +101,22 @@ def test_a_stale_row_fails():
     assert any("train.deleted_flag" in line for line in report)
 
 
+def test_a_stale_undecided_row_is_reported_and_not_looked_up():
+    """A row can be both stale and undecided, and only the stale half has a site.
+
+    The undecided report prints the declaration the row belongs to, so it can
+    only cover keys the source still declares; a REVIEW row for a deleted flag
+    is a stale row and belongs to that report.
+    """
+    ok, report = check_inventory.check_set(
+        _source(lr="--lr"),
+        [_row("train.lr"), _row("train.deleted_flag", disposition="REVIEW")],
+    )
+    assert not ok
+    assert not any("without a disposition" in line for line in report)
+    assert any("train.deleted_flag" in line for line in report)
+
+
 def test_a_matching_row_passes():
     ok, report = check_inventory.check_set(_source(lr="--lr"), [_row("train.lr")])
     assert ok

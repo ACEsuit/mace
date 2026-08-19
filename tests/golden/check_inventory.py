@@ -905,7 +905,7 @@ def check_set(source: SourceSet, rows: list[Row]) -> tuple[bool, list[str]]:
         f"source={len(source.decls)} inventory={len(have)}"
     )
     report: list[str] = []
-    offenders = sorted(set(missing) | set(undecided))
+    offenders = sorted(set(missing) | (set(undecided) - set(stale)))
     if offenders:
         report.append(
             f"FAIL {source.label}: {len(offenders)} {source.noun} without a disposition"
