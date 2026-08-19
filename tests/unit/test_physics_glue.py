@@ -126,17 +126,40 @@ def test_the_reported_force_is_the_gradient_of_the_energy_the_model_returns(fixt
     model, not an identity, so it is measured: if a future E0 term ever
     became position dependent, the ScaleShiftMACE forces would silently stop
     being the gradient of the energy it reports.
+
+    **Bit-for-bit is a claim about the seed.** Differentiating `energy.sum()`
+    seeds the shared backward with a stride-0 `expand` of a scalar instead of
+    the materialized `grad_outputs=ones` that `compute_forces` passes
+    (mace/modules/utils.py:36-46), and the broadcast path that takes lands on
+    different last bits: measured on Viper-CPU (EPYC Genoa, torch 2.13+rocm7.1,
+    MKL) the two disagree by 7.3e-17 for ScaleShiftMACE and 5.6e-17 for MACE,
+    about a third of an ulp, while on macOS/Accelerate both are exactly zero.
+    Matching the seed and `create_graph` makes this the same computation run
+    twice rather than two computations of one quantity, which is the only kind
+    of comparison bit-exactness belongs in; both platforms then give zero.
+
+    The deviations are collected over the anchors and asserted once, because
+    an assertion inside the loop stops at the first: when only ScaleShiftMACE
+    was reported, plain MACE was not passing, it was unreached.
     """
     atoms = fixtures["water_cluster"]
+    disagreed = []
     for anchor in ANCHORS:
         model = load_anchor(anchor)
         with torch_tools.default_dtype("float64"):
             graph = anchor_graph(model, atoms)
             out = model(graph, training=True, compute_force=True)
             gradient = torch.autograd.grad(
-                out["energy"].sum(), graph["positions"], retain_graph=True
+                outputs=[out["energy"]],
+                inputs=[graph["positions"]],
+                grad_outputs=[torch.ones_like(out["energy"])],
+                retain_graph=True,
+                create_graph=True,
             )[0]
-        assert torch.equal(out["forces"], -gradient), anchor
+        if not torch.equal(out["forces"], -gradient):
+            deviation = float((out["forces"] + gradient).abs().max())
+            disagreed.append(f"{anchor}: max |F + dE/dx| = {deviation:.3e}")
+    assert not disagreed, "; ".join(disagreed)
 
 
 def test_a_structure_with_no_edges_gets_zero_forces(fixtures):
