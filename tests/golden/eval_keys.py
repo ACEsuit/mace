@@ -204,7 +204,7 @@ for _latent in ("latent_alphas", "latent_quads"):
         convert=unflatten_latent_tensor,
         note=(
             "the eval CLI flattens each atom's latent multipole to fit an "
-            "extxyz array (mace/cli/eval_configs.py:417-423); the channel is "
+            "extxyz array (mace/cli/eval_configs.py:443-449); the channel is "
             "the layout the forward returns"
         ),
     )

@@ -19,7 +19,7 @@ subsumes the other:
   up inside the Ewald sum as the field that induces the dipoles), while
   ``eps_infty``, ``keep_neutral`` and ``electric_field_unit`` never do: they
   scale a Born-charge force correction the *calculator* adds after the forward
-  has returned (``mace/calculators/mace.py:810-859``). Evaluating the forward
+  has returned (``mace/calculators/mace.py:815-864``). Evaluating the forward
   alone would pin none of that.
 """
 
@@ -57,7 +57,7 @@ FIELD_SETTINGS: Dict[str, Any] = {
 
 #: The two fixtures the field reference is taken on, and why it is not all
 #: six: with ``eps_infty`` set, the calculator divides by ``atoms.get_volume()``
-#: (``mace/calculators/mace.py:828``), and ase refuses a volume for anything
+#: (``mace/calculators/mace.py:833``), and ase refuses a volume for anything
 #: whose cell is not full rank -- the two aperiodic structures, the dimer, and
 #: the slab whose vacuum row is all zeros all raise
 #: ``ValueError: You have N lattice vectors: volume not defined`` before any
@@ -202,7 +202,7 @@ def bec_force_correction(
 ) -> np.ndarray:
     """The field force the calculator adds, recomputed independently.
 
-    A transcription of ``mace/calculators/mace.py:810-859`` for the isotropic
+    A transcription of ``mace/calculators/mace.py:815-864`` for the isotropic
     case, so a test can assert the documented formula rather than assert that
     the calculator agrees with itself. Kept here next to ``FIELD_SETTINGS``
     because the two have to describe the same evaluation.
