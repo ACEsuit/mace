@@ -101,6 +101,15 @@ def train_step(anchor: str, perturbation=None) -> dict:
     structures = load_training_structures(limit=N_STRUCTURES)
     with torch_tools.default_dtype("float64"):
         batch = anchor_batch(model, structures, torch.float64)
+        # A batch whose labels never arrived carries zeros at full weight, and
+        # the gradient taken through it is wrong in a way nothing else here can
+        # see: same magnitude as the right one, same linear response to a
+        # perturbed weight, every parameter still differentiated. All four
+        # structures carry `REF_energy` and `REF_forces`, and the label-less
+        # isolated atoms are excluded upstream, so this cannot fire on a
+        # legitimately unlabelled configuration.
+        assert float(batch.energy.abs().sum()) > 0.0, "energy labels missing"
+        assert float(batch.forces.abs().sum()) > 0.0, "force labels missing"
         loss_fn = WeightedEnergyForcesLoss(**LOSS_WEIGHTS).to(torch.float64)
         output = model(batch.to_dict(), training=True, compute_force=True)
         loss = loss_fn(batch, output)
