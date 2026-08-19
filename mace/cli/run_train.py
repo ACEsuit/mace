@@ -1067,6 +1067,7 @@ def run(args) -> None:
         train_sampler=train_sampler,
         rank=rank,
         data_aug_magmom=args.data_aug_magmom,
+        data_aug_magmom_mode=getattr(args, "data_aug_magmom_mode", "non-soc"),
     )
 
     logging.info("")
