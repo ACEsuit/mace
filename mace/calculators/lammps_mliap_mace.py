@@ -65,17 +65,22 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
         self.register_buffer("atomic_numbers", model.atomic_numbers)
         self.register_buffer("r_max", model.r_max)
         self.register_buffer("num_interactions", model.num_interactions)
+        # From the model, not the process default. These feed the forward beside
+        # the model's own tensors, and the export used to land on the right dtype
+        # only as a side effect: `--format mliap` converts to cueq first, and that
+        # converter set the default globally on its way through. Now that it
+        # restores it, a global would hand a float64 export float32 buffers, which
+        # dtype promotion turns into a wrong number under LAMMPS rather than an
+        # error here. `r_max` is where `LAMMPS_MLIAP_MACE` reads its dtype too, so
+        # the wrapper and the coupling cannot disagree.
+        dtype = model.r_max.dtype
         self.register_buffer(
             "total_charge",
-            kwargs.get(
-                "total_charge", torch.tensor([0.0], dtype=torch.get_default_dtype())
-            ),
+            kwargs.get("total_charge", torch.tensor([0.0], dtype=dtype)),
         )
         self.register_buffer(
             "total_spin",
-            kwargs.get(
-                "total_spin", torch.tensor([1.0], dtype=torch.get_default_dtype())
-            ),
+            kwargs.get("total_spin", torch.tensor([1.0], dtype=dtype)),
         )
 
         if not hasattr(model, "heads"):
