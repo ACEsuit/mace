@@ -1199,6 +1199,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
+    parser.add_argument(
+        "--data_aug_magmom_mode",
+        help="Which magnetic symmetries to augment. 'non-soc' draws from the full "
+        "O(3)_spin (random rotation AND global sign flip), valid when the energy is "
+        "invariant under rotating the moments independently of the lattice. 'soc' applies "
+        "ONLY the sign flip m -> -m: with spin-orbit coupling a free spin rotation is not "
+        "a symmetry, so augmenting with it would teach an invariance the model must not "
+        "have, while time reversal still holds at zero field.",
+        type=str,
+        default="non-soc",
+        choices=["soc", "non-soc"],
+    )
 
     return parser
 
