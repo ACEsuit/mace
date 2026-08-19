@@ -37,9 +37,16 @@ jobs:
           key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
       # Downloads are allowed and REQUIRED here: a broken download host
       # must turn this job red, never a PR.
+      #
+      # tests/golden joins the selection for its `network`-marked foundation
+      # goldens: they are the only place a re-uploaded or re-pointed
+      # published artifact is caught, and with require-caps below they fail
+      # here rather than skipping. The unmarked goldens in that directory run
+      # again here, which is cheap and means a nightly is a complete
+      # statement about the golden set.
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/foundations
+          tests: tests/foundations tests/golden
           markers: not gpu
           require-caps: network,polar
           allow-network: "true"
