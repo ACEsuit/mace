@@ -5,8 +5,10 @@ import os
 import torch
 
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import restores_default_dtype
 
 
+@restores_default_dtype
 def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True):
     # Load OEQ model
     if isinstance(input_model, str):

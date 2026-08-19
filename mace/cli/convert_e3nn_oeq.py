@@ -6,8 +6,10 @@ import torch
 
 from mace.modules.wrapper_ops import OEQConfig
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import restores_default_dtype
 
 
+@restores_default_dtype
 def run(
     input_model,
     output_model="_oeq.model",
