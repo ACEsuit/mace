@@ -18,6 +18,10 @@ import torch
 from tests.golden import harness, routes
 from tests.golden.build_dipole_anchor import ANCHOR_CONFIG, build_model
 
+#: The basis is constructed on both sides, so the only difference between them
+#: is the order of the fp64 operations. Same claim as tests/unit/test_radial.py.
+BASIS = harness.tolerance("closed_form_fp64")
+
 MODEL_PATH = harness.MODELS_DIR / "tiny_dipoles.model"
 SIDECAR_PATH = harness.MODELS_DIR / "tiny_dipoles.build.json"
 REFERENCE_PATH = harness.REFERENCES_DIR / "tiny_dipoles_e3nn_cpu_fp64.json"
@@ -109,11 +113,21 @@ def test_the_committed_anchor_carries_the_plain_e3nn_basis():
 
     That is a claim about somebody else's dispatch table, so it is measured:
     the recipe is re-run in this process and its Clebsch-Gordan buffers are
-    compared bit for bit against the committed checkpoint's. The buffers are
-    not random -- they are CG coefficients -- so this is a real comparison and
-    not a re-seeding. It runs both with cuequivariance installed (the nightly
+    compared against the committed checkpoint's. The buffers are not random --
+    they are CG coefficients -- so this is a real comparison and not a
+    re-seeding. It runs both with cuequivariance installed (the nightly
     full-scope job) and without (every PR), and only one of the two can pass
     if the reduced basis ever leaks in.
+
+    The extent is held exactly, the entries at the ``closed_form_fp64`` row.
+    The reduced basis has a different extent, so the leak this test exists for
+    is caught by the shape assertion alone. The entries then need a tolerance
+    rather than bit-equality because e3nn builds the basis through torch
+    linalg, so the two sides differ in the order of the fp64 operations, which
+    is what that row is for: bit-equality failed on CI at 1e-16 against a
+    checkpoint recorded on a different torch build, and that says nothing about
+    anyone's dispatch table. A sign flip, or a genuinely different basis, is
+    O(1) and still fails.
     """
     committed = _load()
     previous = torch.get_default_dtype()
@@ -138,7 +152,13 @@ def test_the_committed_anchor_carries_the_plain_e3nn_basis():
             f"Clebsch-Gordan basis has a different extent, so this is what a "
             f"cuequivariance-dependent build looks like."
         )
-        assert torch.equal(other, tensor), f"{name} differs from the committed anchor"
+        assert torch.allclose(
+            other, tensor, rtol=BASIS.rtol, atol=BASIS.atol
+        ), (
+            f"{name} differs from the committed anchor by "
+            f"{(other - tensor).abs().max().item():.3e}, which is more than a "
+            f"torch build's worth of last-bit movement"
+        )
 
     for product in committed.products:
         contraction = product.symmetric_contractions

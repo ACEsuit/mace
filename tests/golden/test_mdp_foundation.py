@@ -102,15 +102,27 @@ def test_mdp_foundation_reproduces_its_reference(mdp_model, fixtures):
     )
 
 
-def test_the_calculator_agrees_with_the_direct_model_snapshot(mdp_calc, fixtures):
+def test_the_calculator_agrees_with_the_direct_model_snapshot(
+    mdp_calc, mdp_model, fixtures
+):
     """Deliverable 4: the ``mace_mdp`` calculator path, pinned to the same file.
 
-    Not "the two agree with each other" -- that would pass if both drifted
-    together. Both are compared against the committed reference, at the same
-    tolerance row, and the four shared channels are then required to be
-    *identical*, not merely close: the calculator is the same forward with a
-    dict rename in front of it, so anything other than bit-equality means the
-    graph reached the model differently on one of the two routes.
+    Two separate claims, because they need different strictness.
+
+    Drift is caught against the committed reference, at the same tolerance row
+    the model route uses. "The two routes agree with each other" would not do
+    on its own: they would still agree after both drifted together.
+
+    A route difference is caught between the two routes as evaluated here, in
+    this process, and there bit-equality is the right bar: the calculator is
+    the same forward with a dict rename in front of it, so anything other than
+    equality means the graph reached the model differently on one of them.
+
+    That second comparison cannot be made against the file. Bit-equality is a
+    claim about the two routes, not about the machine, and the last bit of a
+    float64 reduction moves between torch builds -- 2.11 and 2.13 disagree at
+    1e-16 on this model. Holding the file to bit-equality would have been a
+    claim about the build that recorded it.
     """
     reference = harness.load_reference(REFERENCE_PATH)
     snapshot = harness.snapshot_outputs(
@@ -127,9 +139,17 @@ def test_the_calculator_agrees_with_the_direct_model_snapshot(mdp_calc, fixtures
         row=harness.FP64_CPU_REFERENCE.name,
         channels=list(SHARED_WITH_CALCULATOR),
     )
+    forward = harness.snapshot_outputs(
+        routes.ForwardRoute(mdp_model, _projection),
+        fixtures,
+        dtype="float64",
+        device="cpu",
+        backend="e3nn",
+        channels=list(SHARED_WITH_CALCULATOR),
+    )
     for name in fixtures:
         got = snapshot["fixtures"][name]["outputs"]
-        want = reference["fixtures"][name]["outputs"]
+        want = forward["fixtures"][name]["outputs"]
         for channel in SHARED_WITH_CALCULATOR:
             assert got[channel] == want[channel], (
                 f"{name}/{channel}: the calculator route and the forward route "
