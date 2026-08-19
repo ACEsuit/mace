@@ -44,6 +44,15 @@ every pair of them conflicts. `regenerate.py` therefore discovers its targets
 instead of naming them, and this file describes the rule instead of listing
 the families.
 
+## One manifest, several periodic tables
+
+**Every consumer selects its own subset by chemistry** —
+`load_fixtures(elements=model.atomic_numbers)` — because the families do not
+share a periodic table, and handing a three-element H/C/O anchor an iron
+structure is a missing z-table entry rather than a tolerance failure. The
+no-argument call returns everything, which is a set no single model can
+evaluate; an empty selection raises rather than passing quietly.
+
 ## The harness never imports the framework
 
 `harness.py` depends on the standard library, numpy and ase, and on nothing

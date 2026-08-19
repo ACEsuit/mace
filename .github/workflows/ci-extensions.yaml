@@ -70,6 +70,10 @@ jobs:
               - 'mace/calculators/**'
               - 'mace/cli/**'
               - 'tests/extensions/magnetic/**'
+              # This job owns the magnetic goldens too: they live in
+              # tests/golden and are the only place that runs them with
+              # sphericart installed, so a change there has to reach it.
+              - 'tests/golden/**'
             torchsim:
               - *shared
               - 'mace/calculators/**'
@@ -172,7 +176,14 @@ jobs:
           extras: dev, magnetic
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/magnetic
+          # tests/golden rides along because the magnetic goldens live there
+          # and carry an explicit `magnetic` marker: in the core job, which
+          # installs no extras, they skip, and this is the only job where they
+          # run at all. With require-caps below, a broken sphericart install
+          # fails here instead of turning them green by absence. The rest of
+          # tests/golden is CPU-only and cheap, so collecting it twice costs
+          # seconds and buys the anchors a second python version.
+          tests: tests/extensions/magnetic tests/golden
           markers: not gpu
           require-caps: magnetic
 

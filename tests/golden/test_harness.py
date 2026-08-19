@@ -55,7 +55,9 @@ def test_harness_imports_with_the_framework_blocked():
         f"sys.path.insert(0, {str(GOLDEN_ROOT.parent.parent)!r})\n"
         "from tests.golden import harness\n"
         "fixtures = harness.load_fixtures()\n"
-        "assert len(fixtures) == 6, sorted(fixtures)\n"
+        # Derived, not a literal: every family adds fixtures, and a
+        # hard count turns each addition into an edit here.
+        "assert len(fixtures) == len(harness.load_manifest()) > 6\n"
         "assert 'mace' not in sys.modules\n"
         "print('ok')\n"
     )
@@ -129,15 +131,43 @@ def test_no_other_golden_module_defines_its_own_tolerance():
 
 
 def test_fixture_manifest_matches_the_files():
+    """Every .xyz is in the manifest and every manifest entry describes it.
+
+    Both directions, and no hard count. A count would have to be edited by
+    every family that adds fixtures, which is an edit nobody reads; what is
+    worth asserting is that the manifest and the directory have not drifted
+    apart, and that the entries' derived fields still describe the files --
+    `species` in particular, since `load_fixtures(elements=...)` reads the
+    files and a stale manifest would make the documented chemistry a lie.
+    """
     manifest = harness.load_manifest()
-    assert len(manifest) == 6
+    on_disk = {
+        path.name
+        for path in harness.FIXTURES_DIR.glob("*.xyz")
+        # the training set is an input to the anchor recipe, not a fixture
+        if path.name != "tiny_train.xyz"
+    }
+    assert {entry["file"] for entry in manifest.values()} == on_disk
     for name, entry in manifest.items():
         path = harness.FIXTURES_DIR / entry["file"]
         assert path.exists(), f"{name} points at a missing file {path}"
+        atoms = harness.load_fixtures([name])[name]
+        assert entry["n_atoms"] == len(atoms), name
+        assert entry["formula"] == atoms.get_chemical_formula(), name
+        assert entry["species"] == sorted(
+            {int(z) for z in atoms.get_atomic_numbers()}
+        ), name
+
+
+#: The anchor set's periodic table. Every fixture the two tiny H/C/O anchors
+#: are evaluated on is selected by chemistry rather than by name, so a family
+#: adding its own structures joins the manifest without joining their
+#: references.
+HCO = (1, 6, 8)
 
 
 def test_fixture_set_reaches_every_neighbour_list_regime():
-    fixtures = harness.load_fixtures()
+    fixtures = harness.load_fixtures(elements=HCO)
     pbc = {name: tuple(bool(p) for p in at.pbc) for name, at in fixtures.items()}
     cells = {name: np.asarray(at.cell) for name, at in fixtures.items()}
 
@@ -164,13 +194,45 @@ def test_fixture_set_reaches_every_neighbour_list_regime():
 
 
 def test_load_fixtures_by_tag_and_by_name():
-    molecular = harness.load_fixtures(tags=["molecular"])
+    molecular = harness.load_fixtures(tags=["molecular"], elements=HCO)
     assert set(molecular) == {"water_cluster", "isolated_atom", "dimer_short"}
     assert all(not any(at.pbc) for at in molecular.values())
     one = harness.load_fixtures(["triclinic_bulk"])
     assert list(one) == ["triclinic_bulk"]
     with pytest.raises(KeyError, match="nope"):
         harness.load_fixtures(["nope"])
+
+
+def test_load_fixtures_selects_by_chemistry_and_refuses_an_empty_set():
+    """The filter that keeps one manifest usable by more than one family.
+
+    A model can only evaluate a structure whose species are all in its
+    z-table, so "which fixtures are mine" is a question about chemistry, and
+    getting it wrong is a KeyError out of the z-table rather than a tolerance
+    failure. The magnetic group is iron-bearing and the anchor set is not, so
+    neither can pick up the other's structures by accident -- and the
+    no-argument call, which returns both, is a set no single model can run.
+
+    An empty selection raises rather than returning nothing, because a golden
+    that evaluates an empty fixture set pins nothing and says it passed.
+
+    Chemistry is necessary and not sufficient, and the overlap is where that
+    shows: `isolated_atom` is a lone oxygen, so an Fe/O model's z-table admits
+    it -- and it carries no magnetic moment, which a magnetic forward requires
+    before it does anything else. That is why the magnetic selection filters
+    on the `magmom` tag as well, and why the two filters are not two spellings
+    of one idea.
+    """
+    anchor_set = harness.load_fixtures(elements=HCO)
+    fe_o = harness.load_fixtures(elements=(8, 26))
+    assert "isolated_atom" in set(anchor_set) & set(fe_o)
+    assert not any("Fe" in at.get_chemical_symbols() for at in anchor_set.values())
+    magnetic = harness.load_fixtures(tags=["magmom"], elements=(8, 26))
+    assert set(magnetic) & set(anchor_set) == set()
+    assert all("REF_magmom" in at.arrays for at in magnetic.values())
+    assert set(anchor_set) | set(fe_o) == set(harness.load_manifest())
+    with pytest.raises(KeyError, match="empty fixture set"):
+        harness.load_fixtures(elements=(2,))
 
 
 def test_load_fixtures_returns_independent_copies():
@@ -1039,14 +1101,30 @@ def test_the_eval_cli_spellings_resolve_to_one_channel():
     `descriptors` is different -- see eval_keys.py for why only the per-atom
     form is pinnable -- and it lands on the channel the model calls
     node_feats.
+
+    `node_energies` is the third kind again: a collision rather than a rename,
+    and one this test used to assert the wrong way round. The CLI writes the
+    model's raw `output["node_energy"]`, which *includes* the isolated-atom
+    reference, and the channel for that is `energies`; `node_energy` is the
+    calculator's E0-subtracted quantity (mace/calculators/mace.py:792-795).
+    The two have the same shape and the same unit, so an eval-route golden
+    landing on the wrong one of them disagreed with a calculator-route golden
+    by exactly the E0 table with nothing in the comparison able to say so.
     """
     resolve = lambda key: harness.resolve_channel(key, harness.SURFACE_EVAL)
     assert resolve("BO_contributions") == "contributions"
-    assert resolve("node_energies") == "node_energy"
     assert resolve("descriptors") == "node_feats"
-    # ...and the plural is not the calculator's `energies`, which carries E0
-    assert resolve("node_energies") != "energies"
+    assert resolve("node_energies") == "energies"
+    # ...and not the E0-subtracted quantity, which this surface never writes
+    assert resolve("node_energies") != "node_energy"
     assert harness.CHANNELS["energies"].name != harness.CHANNELS["node_energy"].name
+    # The model surface spells the same E0-inclusive quantity `node_energy`,
+    # which is the other half of the collision.
+    assert harness.resolve_channel("node_energy", harness.SURFACE_MODEL) == "energies"
+    assert (
+        harness.resolve_channel("node_energy", harness.SURFACE_CALCULATOR)
+        == "node_energy"
+    )
 
 
 def test_the_eval_stress_is_not_put_through_the_voigt_conversion():
@@ -1066,7 +1144,7 @@ def test_the_eval_cli_flattens_the_born_charges_and_the_schema_unflattens_them()
     n_atoms = 4
     rng = np.random.default_rng(1)
     full = rng.normal(size=(n_atoms, 3, 3))
-    flat = full.reshape(n_atoms, -1)  # what mace/cli/eval_configs.py:407 writes
+    flat = full.reshape(n_atoms, -1)  # what mace/cli/eval_configs.py:433 writes
     assert np.array_equal(eval_keys.unflatten_bec(flat), full)
 
     class Written:
