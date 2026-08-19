@@ -77,6 +77,11 @@ jobs:
               - *shared
               - 'mace/cli/convert_*.py'
               - 'tests/backends/**'
+              # The backend goldens live with the other goldens, not in
+              # tests/backends: they are cueq/oeq tests that happen to assert
+              # against a committed reference. Without this line a change to
+              # them is reviewed by no job that has cuequivariance installed.
+              - 'tests/golden/**'
 
   polar:
     needs: changes
