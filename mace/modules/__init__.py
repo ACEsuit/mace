@@ -33,6 +33,7 @@ from .extensions import (
     MagneticScaleShiftMACE,
     MagneticSCFMACE,
     PolarMACE,
+    TimeReversalSymmetrizedMACE,
 )
 from .gate import GatedEquivariantBlock
 from .loss import (
@@ -125,6 +126,7 @@ __all__ = [
     "EnergyDipolesMACE",
     "MagneticScaleShiftMACE",
     "MagneticSCFMACE",
+    "TimeReversalSymmetrizedMACE",
     "PolarMACE",
     "LinearLesReadoutBlock",
     "NonLinearLesReadoutBlock",

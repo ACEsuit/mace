@@ -2103,3 +2103,211 @@ class MagneticSCFMACE(torch.nn.Module):
         final_output["equilibrated_magmom"] = magmom.detach()
 
         return final_output
+
+
+class TimeReversalSymmetrizedMACE(torch.nn.Module):
+    r"""Exact time-reversal symmetrisation of a magnetic MACE model.
+
+    Evaluates the projection
+
+    .. math::
+        E_{\mathrm{TR}}(R, M) = \tfrac{1}{2}\left[E_\theta(R, M) + E_\theta(R, -M)\right]
+
+    with :math:`M \mapsto -M` reversing **all** per-atom moments globally, so
+    :math:`E_{\mathrm{TR}}(R, -M) = E_{\mathrm{TR}}(R, M)` holds exactly for any base
+    model. The base model's O(3) behaviour is untouched, so the axial law
+    :math:`E_{\mathrm{TR}}(QR, \det(Q)\,QM) = E_{\mathrm{TR}}(R, M)` still holds.
+
+    Base parameters are unchanged: an existing checkpoint is loaded and wrapped without
+    retraining. Symmetrisation is explicit, and persisted if the wrapped model is saved.
+
+    By default the two branches are stacked into a single batch and evaluated in ONE
+    forward pass, which parallelises better on GPU than two sequential passes. Set
+    ``batched=False`` to evaluate them sequentially (lower peak memory). Either way the
+    cost is roughly twice the base model.
+
+    Outputs are combined by time-reversal parity: energies, forces, virials and stresses
+    are even and averaged; magnetic forces are odd and antisymmetrised as
+    :math:`\tfrac{1}{2}[F_M(+M) - F_M(-M)]`, following this repository's
+    ``magforces = -dE/dM`` convention. Latent outputs have no established parity and are
+    taken from the ``+M`` branch.
+
+    .. note::
+        Compose as ``MagneticSCFMACE(TimeReversalSymmetrizedMACE(base))`` so the projection
+        acts on the energy surface before the SCF; the reverse order is rejected.
+
+    .. warning::
+        Tooling that dispatches on the model's class name does not see through the
+        wrapper. In particular
+        :func:`mace.tools.scripts_utils.extract_config_mace_model` returns an error dict
+        rather than raising, so the
+        calculator's ``compile_mode`` path and TorchScript export must be applied to the
+        unwrapped model (``wrapped.model``), with the wrapper re-applied afterwards.
+        ``torch.save`` / ``torch.load`` of the wrapped model work normally, as does the
+        eager :class:`~mace.calculators.MagneticMACECalculator` path via attribute
+        delegation.
+    """
+
+    _EVEN_KEYS = (
+        "energy",
+        "node_energy",
+        "interaction_energy",
+        "contributions",
+        "forces",
+        "edge_forces",
+        "virials",
+        "stress",
+        "atomic_virials",
+        "atomic_stresses",
+        "hessian",
+    )
+    _ODD_KEYS = ("magforces",)
+
+    def __init__(self, model: torch.nn.Module, batched: bool = True) -> None:
+        super().__init__()
+        if isinstance(model, TimeReversalSymmetrizedMACE):
+            raise ValueError("model is already time-reversal symmetrised")
+        if isinstance(model, MagneticSCFMACE):
+            raise ValueError(
+                "wrap the base model, not MagneticSCFMACE: the projection must act BEFORE "
+                "the SCF. Use MagneticSCFMACE(TimeReversalSymmetrizedMACE(base), ...)."
+            )
+        self.model = model
+        self.batched = batched
+
+    def __getattr__(self, name: str):
+        """Fall back to the wrapped model for anything this class does not define.
+
+        ``_modules`` is read out of ``__dict__`` deliberately: during unpickling
+        ``__getattr__`` can fire before it exists, and ``self.model`` would recurse.
+        Mirrors :class:`MagneticSCFMACE`.
+        """
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            inner = self.__dict__.get("_modules", {}).get("model")
+            if inner is None or name == "model":
+                raise
+            return getattr(inner, name)
+
+    @staticmethod
+    def stack_time_reversed(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a batch holding the structures twice, moments reversed in the second copy.
+
+        Node- and edge-level tensors are concatenated; ``edge_index``, ``batch`` and ``ptr``
+        are offset so the two copies stay disconnected graphs. Evaluating this in one
+        forward pass parallelises better than two sequential passes. The caller's tensors
+        are not modified.
+        """
+        n_nodes = data["positions"].shape[0]
+        n_graphs = data["ptr"].numel() - 1
+        out: Dict[str, torch.Tensor] = {}
+        for key, value in data.items():
+            if not isinstance(value, torch.Tensor) or value.ndim == 0:
+                # non-tensors and 0-dim scalars are graph-independent: pass through
+                out[key] = value
+            elif key == "magmom":
+                out[key] = torch.cat([value, -value], dim=0)
+            elif key == "edge_index":
+                out[key] = torch.cat([value, value + n_nodes], dim=1)
+            elif key == "batch":
+                out[key] = torch.cat([value, value + n_graphs], dim=0)
+            elif key == "ptr":
+                out[key] = torch.cat([value, value[1:] + n_nodes], dim=0)
+            else:
+                out[key] = torch.cat([value, value], dim=0)
+        return out
+
+    def unstack_time_reversed(
+        self,
+        out: Dict[str, Optional[torch.Tensor]],
+        n_nodes: int,
+        n_graphs: int,
+        n_edges: int,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        """Inverse of :meth:`stack_time_reversed`: split each doubled output and combine
+        the two halves by their time-reversal parity.
+
+        A doubled output is recognised by its leading dimension, which is twice the node,
+        edge, graph or cell-row count depending on the quantity. The Hessian is handled
+        separately because it is doubled in TWO dimensions, giving a block-diagonal
+        ``(3 * 2N, 2N, 3)`` tensor whose off-diagonal blocks vanish (the copies are
+        disconnected graphs); its diagonal blocks are extracted and combined. Anything
+        whose leading dimension matches no known count is passed through unchanged.
+        """
+        halves = {
+            2 * n_nodes: n_nodes,
+            2 * n_edges: n_edges,
+            2 * n_graphs: n_graphs,
+            6 * n_graphs: 3 * n_graphs,
+        }
+        result: Dict[str, Optional[torch.Tensor]] = {}
+        for key, value in out.items():
+            if not isinstance(value, torch.Tensor) or value.ndim == 0:
+                result[key] = value
+                continue
+            if key == "hessian" and value.shape[0] == 6 * n_nodes:
+                rows = 3 * n_nodes
+                result[key] = self._combine(
+                    key, value[:rows, :n_nodes], value[rows:, n_nodes:]
+                )
+                continue
+            half = halves.get(value.shape[0])
+            result[key] = (
+                value
+                if half is None
+                else self._combine(key, value[:half], value[half:])
+            )
+        return result
+
+    def _combine(self, key: str, a: torch.Tensor, b: torch.Tensor):
+        if key in self._ODD_KEYS:
+            return 0.5 * (a - b)
+        if key in self._EVEN_KEYS:
+            return 0.5 * (a + b)
+        return a
+
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
+        **kwargs,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        magmom = data.get("magmom")
+        if magmom is None:
+            raise ValueError(
+                "TimeReversalSymmetrizedMACE requires per-atom moments under 'magmom'"
+            )
+
+        # Both branches must differentiate w.r.t. the same leaf: if the moments do not
+        # already require grad, the reversed copy becomes an independent leaf and
+        # d(E_TR)/dM sees only the +M half. The base model sets this flag itself, so this
+        # is the same side effect one step earlier; values are never modified.
+        if not magmom.requires_grad:
+            magmom.requires_grad_(True)
+
+        n_nodes = data["positions"].shape[0]
+        n_graphs = data["ptr"].numel() - 1
+
+        if self.batched:
+            stacked = self.model(
+                self.stack_time_reversed(dict(data)), training=training, **kwargs
+            )
+            return self.unstack_time_reversed(
+                stacked, n_nodes, n_graphs, data["edge_index"].shape[1]
+            )
+
+        data_plus = dict(data)
+        data_plus["magmom"] = magmom
+        data_minus = dict(data)
+        data_minus["magmom"] = -magmom
+        out_plus = self.model(data_plus, training=training, **kwargs)
+        out_minus = self.model(data_minus, training=training, **kwargs)
+        return {
+            key: (
+                value
+                if value is None or out_minus.get(key) is None
+                else self._combine(key, value, out_minus[key])
+            )
+            for key, value in out_plus.items()
+        }
