@@ -3,6 +3,21 @@ import os
 import torch
 
 
+def xpu_device_index(local_rank: int) -> int:
+    """
+    Map a local rank onto a visible XPU device index.
+
+    Under ZE_AFFINITY_MASK each rank sees a single tile, so local_rank can
+    exceed the number of visible devices; torch then rejects the index with
+    "value cannot be converted to type int without overflow".
+    """
+    try:
+        n_visible = torch.xpu.device_count()
+    except (AttributeError, RuntimeError):
+        return 0
+    return local_rank if local_rank < n_visible else 0
+
+
 def init_distributed(args):
     """
     Returns (rank, local_rank, world_size) and initialises the process-group.
@@ -36,15 +51,20 @@ def init_distributed(args):
             local_size = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_SIZE", 1))
             local_rank = rank % local_size
         else:
-            rank = int(os.environ.get("PMI_RANK",
-                       os.environ.get("PALS_RANKID", 0)))
+            rank = int(os.environ.get("PMI_RANK", os.environ.get("PALS_RANKID", 0)))
             # PMI_SIZE = global world size; PALS_NTASKS = same on PALS;
             # PALS_LOCAL_SIZE is per-NODE size, NOT a valid world_size.
-            world_size = int(os.environ.get("PMI_SIZE",
-                       os.environ.get("PALS_NTASKS",
-                       os.environ.get("WORLD_SIZE", 1))))
-            local_rank = int(os.environ.get("PALS_LOCAL_RANKID",
-                       os.environ.get("MPI_LOCALRANKID", rank)))
+            world_size = int(
+                os.environ.get(
+                    "PMI_SIZE",
+                    os.environ.get("PALS_NTASKS", os.environ.get("WORLD_SIZE", 1)),
+                )
+            )
+            local_rank = int(
+                os.environ.get(
+                    "PALS_LOCAL_RANKID", os.environ.get("MPI_LOCALRANKID", rank)
+                )
+            )
 
         # tell PyTorch where the rendez-vous server is
         os.environ.setdefault("MASTER_ADDR", os.environ["MASTER_ADDR"])
