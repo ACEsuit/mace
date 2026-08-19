@@ -43,6 +43,14 @@ jobs:
               - 'mace/cli/select_head.py'
               - 'mace/calculators/lammps_*.py'
               - 'tests/integrations/**'
+              # The export golden lives with the other goldens, not with the
+              # test that reads it, so a change to the committed numbers or
+              # to the anchor they were taken from has to reach this job too
+              # -- otherwise the one PR that moves them is the one PR that
+              # does not check them.
+              - 'tests/golden/harness.py'
+              - 'tests/golden/models/**'
+              - 'tests/golden/references/**'
 
   lammps-contract:
     needs: changes
