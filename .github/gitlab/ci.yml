@@ -103,6 +103,16 @@ stages:
     # and then skipped — silently narrower GPU coverage than the fleet had.
     # It is in REQUIRE_CAPS too, so removing this line fails the job instead of
     # quietly dropping those tests again.
+    #
+    # `and not benchmark` stays, and it is a decision rather than an oversight:
+    # this job runs -n 2 on a contended shared runner under a 2 h cap, so a
+    # timing taken here would be noise wearing a number, and it is a
+    # correctness gate that must not grow a perf-shaped flake. The consequence
+    # is that no CI job anywhere runs a gpu-marked benchmark — the CPU baseline
+    # in tests/benchmarks/test_inference_cpu.py is what the nightly publishes,
+    # and the GPU cases are the by-hand reproduction recipe recorded in that
+    # file's module docstring. Removing this clause is not the way to fix that;
+    # a separate, non-gating benchmark job would be.
     - >
       MACE_REQUIRE_CAPS="$REQUIRE_CAPS"
       MACE_CI_ALLOW_NETWORK=1
