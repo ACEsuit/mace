@@ -87,7 +87,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str,
         choices=[
             "PerAtomRMSE",
-            "PerAtomRMSE+Std",
             "TotalRMSE",
             "PerAtomRMSEstressvirials",
             "PerAtomMAEstressvirials",
@@ -476,7 +475,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         choices=[
             "ef",
             "weighted",
-            "dpose",
             "forces_only",
             "virials",
             "stress",
