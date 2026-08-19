@@ -394,6 +394,34 @@ def source_model_output_keys() -> dict[str, Decl]:
             for fn in cls.body:
                 if not isinstance(fn, ast.FunctionDef) or fn.name != "forward":
                     continue
+                # Copies of the input dict are still the input. A wrapper that
+                # re-evaluates its inner model builds one per evaluation
+                # (`data_plus = dict(data)` in TimeReversalSymmetrizedMACE), and
+                # writing a key into one of those declares nothing about what
+                # the forward returns.
+                inputs = {"data"}
+                for node in ast.walk(fn):
+                    if not isinstance(node, ast.Assign):
+                        continue
+                    value, copied = node.value, False
+                    if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
+                        copied = value.func.id == "dict" and any(
+                            isinstance(a, ast.Name) and a.id in inputs for a in value.args
+                        )
+                    elif isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute):
+                        copied = value.func.attr == "copy" and isinstance(
+                            value.func.value, ast.Name
+                        ) and value.func.value.id in inputs
+                    elif isinstance(value, ast.Dict):
+                        copied = any(
+                            k is None and isinstance(v, ast.Name) and v.id in inputs
+                            for k, v in zip(value.keys, value.values)
+                        )
+                    if copied:
+                        inputs.update(
+                            t.id for t in node.targets if isinstance(t, ast.Name)
+                        )
+
                 for node in ast.walk(fn):
                     if isinstance(node, ast.Dict) and node.keys and all(
                         isinstance(k, ast.Constant) and isinstance(k.value, str)
@@ -405,13 +433,13 @@ def source_model_output_keys() -> dict[str, Decl]:
                                 Decl(key.value, cls.name, f"{_rel(path)}:{key.lineno}"),
                             )
                     # keys added after the literal, e.g. the SCF wrapper's
-                    # extra outputs; `data[...]` is an input, not an output.
+                    # extra outputs; the input dict and its copies are inputs.
                     if isinstance(node, ast.Assign):
                         for tgt in node.targets:
                             if (
                                 isinstance(tgt, ast.Subscript)
                                 and isinstance(tgt.value, ast.Name)
-                                and tgt.value.id != "data"
+                                and tgt.value.id not in inputs
                                 and isinstance(tgt.slice, ast.Constant)
                                 and isinstance(tgt.slice.value, str)
                             ):
