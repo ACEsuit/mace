@@ -768,19 +768,24 @@ class MACECalculator(Calculator):
                 self.results[results_key] = data * unit_conv
 
                 if self.num_models > 1 and results_key in results_store_ensemble:
-                    data = ret_tensors[results_key].cpu().numpy()
-                    data *= unit_conv
-                    self.results[results_key + "_comm"] = data
+                    ensemble = ret_tensors[results_key]
+                    # Scale a copy. `.numpy()` shares storage with a cpu tensor,
+                    # so multiplying in place rescaled `ensemble` itself, and the
+                    # variance below was then taken over already-converted values.
+                    self.results[results_key + "_comm"] = (
+                        ensemble.cpu().numpy() * unit_conv
+                    )
 
-                    data = torch.var(
-                        ret_tensors[results_key], dim=0, unbiased=False
-                    ).cpu()
+                    spread = torch.var(ensemble, dim=0, unbiased=False).cpu()
                     if ret_key in scalar_tensors:
-                        data = data.item()
+                        spread = spread.item()
                     else:
-                        data = data.numpy()
-                    data *= unit_conv
-                    self.results[results_key + "_var"] = data
+                        spread = spread.numpy()
+                    # A variance carries the square of whatever scales the values.
+                    # With the aliasing above it came out at unit_conv**3, so an
+                    # ensemble spread was wrong by that factor for any caller who
+                    # set a unit conversion -- silently, since the default is 1.
+                    self.results[results_key + "_var"] = spread * unit_conv**2
 
         # special cases
         if self.results.get("energy") is not None:
@@ -1420,7 +1425,8 @@ class MagneticMACECalculator(Calculator):
                     torch.var(ret_tensors["energies"], dim=0, unbiased=False)
                     .cpu()
                     .item()
-                    * self.energy_units_to_eV
+                    # squared: a variance carries the square of the conversion
+                    * self.energy_units_to_eV**2
                 )
                 self.results["forces_comm"] = (
                     ret_tensors["forces"].cpu().numpy()
@@ -1442,8 +1448,7 @@ class MagneticMACECalculator(Calculator):
                         torch.var(ret_tensors["stress"], dim=0, unbiased=False)
                         .cpu()
                         .numpy()
-                        * self.energy_units_to_eV
-                        / self.length_units_to_A**3
+                        * (self.energy_units_to_eV / self.length_units_to_A**3) ** 2
                     )
         if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
             self.results["dipole"] = (
