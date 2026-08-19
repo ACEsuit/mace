@@ -28,6 +28,6 @@
   "model": "tiny_dipoles.model",
   "num_parameters": 38096,
   "recipe": "tests/golden/build_dipole_anchor.py",
-  "regenerate_with": "python tests/golden/regenerate.py --target anchors --i-know-what-i-am-doing",
+  "regenerate_with": "python tests/golden/regenerate.py --target dipoles --i-know-what-i-am-doing",
   "seed": 20260810
 }

@@ -128,7 +128,7 @@ def build_anchor(model_path: Path = MODEL_PATH) -> Path:
             'build_anchor; build_anchor()"'
         ),
         "regenerate_with": (
-            "python tests/golden/regenerate.py --target anchors "
+            "python tests/golden/regenerate.py --target dipoles "
             "--i-know-what-i-am-doing"
         ),
         "built_by": (

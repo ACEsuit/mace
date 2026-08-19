@@ -356,7 +356,10 @@ def test_sidecar_records_how_the_anchor_was_built():
     assert sidecar["dtype"] == "float64"
     assert sidecar["seed"]
     assert sidecar["command"]
-    assert "regenerate.py" in sidecar["regenerate_with"]
+    # The family that owns this anchor, not the one that owns the energy
+    # anchors: "--target anchors" runs a regeneration that leaves the dipole
+    # checkpoint and its reference untouched.
+    assert "--target dipoles" in sidecar["regenerate_with"]
     assert sidecar["config"] == ANCHOR_CONFIG
     # An energy model's sidecar records its E0 table; this class asserts there
     # is none, and recording it as null is the difference between "no E0s" and
