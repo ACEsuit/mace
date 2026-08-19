@@ -11,6 +11,10 @@
         false
       ],
       "regime": "short-range repulsion envelope",
+      "species": [
+        6,
+        8
+      ],
       "tags": [
         "aperiodic",
         "molecular",
@@ -28,10 +32,122 @@
         false
       ],
       "regime": "zero edges",
+      "species": [
+        8
+      ],
       "tags": [
         "aperiodic",
         "molecular",
         "single_atom"
+      ]
+    },
+    "mag_fe3_canted": {
+      "description": "Equilateral Fe3 triangle in a canted 120-degree Neel state.",
+      "file": "mag_fe3_canted.xyz",
+      "formula": "Fe3",
+      "n_atoms": 3,
+      "pbc": [
+        false,
+        false,
+        false
+      ],
+      "regime": "non-collinear moments; the only fixture exercising the l > 0 spherical harmonics of the moment",
+      "species": [
+        26
+      ],
+      "tags": [
+        "aperiodic",
+        "molecular",
+        "magmom",
+        "noncollinear",
+        "frustrated"
+      ]
+    },
+    "mag_fe_atom": {
+      "description": "One Fe atom carrying its free-atom moment, 4.0 muB along z.",
+      "file": "mag_fe_atom.xyz",
+      "formula": "Fe",
+      "n_atoms": 1,
+      "pbc": [
+        false,
+        false,
+        false
+      ],
+      "regime": "zero edges; the one-body magnetic term alone",
+      "species": [
+        26
+      ],
+      "tags": [
+        "aperiodic",
+        "molecular",
+        "single_atom",
+        "magmom",
+        "collinear"
+      ]
+    },
+    "mag_fe_dimer_afm": {
+      "description": "The same Fe2 geometry with the second moment reversed.",
+      "file": "mag_fe_dimer_afm.xyz",
+      "formula": "Fe2",
+      "n_atoms": 2,
+      "pbc": [
+        false,
+        false,
+        false
+      ],
+      "regime": "antiferromagnetic dimer; identical geometry to the FM one, so the whole difference between the two is the spin state",
+      "species": [
+        26
+      ],
+      "tags": [
+        "aperiodic",
+        "molecular",
+        "magmom",
+        "collinear"
+      ]
+    },
+    "mag_fe_dimer_fm": {
+      "description": "Fe2 at 2.02 Ang, both moments +3.0 muB along z.",
+      "file": "mag_fe_dimer_fm.xyz",
+      "formula": "Fe2",
+      "n_atoms": 2,
+      "pbc": [
+        false,
+        false,
+        false
+      ],
+      "regime": "ferromagnetic dimer; the partner of mag_fe_dimer_afm",
+      "species": [
+        26
+      ],
+      "tags": [
+        "aperiodic",
+        "molecular",
+        "magmom",
+        "collinear"
+      ]
+    },
+    "mag_feo_cluster": {
+      "description": "Planar Fe2O2 oxo-bridged core, Fe +-3.5 muB, O 0.3 muB.",
+      "file": "mag_feo_cluster.xyz",
+      "formula": "Fe2O2",
+      "n_atoms": 4,
+      "pbc": [
+        false,
+        false,
+        false
+      ],
+      "regime": "two elements with different m_max; the per-element lookup",
+      "species": [
+        8,
+        26
+      ],
+      "tags": [
+        "aperiodic",
+        "molecular",
+        "magmom",
+        "multispecies",
+        "noncollinear"
       ]
     },
     "slab_vacuum": {
@@ -45,6 +161,11 @@
         false
       ],
       "regime": "mixed pbc, physical cell returned",
+      "species": [
+        1,
+        6,
+        8
+      ],
       "tags": [
         "periodic",
         "stress",
@@ -63,6 +184,11 @@
         false
       ],
       "regime": "mixed pbc, vacuum row patched from the search cell",
+      "species": [
+        1,
+        6,
+        8
+      ],
       "tags": [
         "periodic",
         "stress",
@@ -82,6 +208,11 @@
         true
       ],
       "regime": "fully periodic, physical cell returned",
+      "species": [
+        1,
+        6,
+        8
+      ],
       "tags": [
         "periodic",
         "stress",
@@ -99,6 +230,10 @@
         false
       ],
       "regime": "fully aperiodic, extended search cell returned",
+      "species": [
+        1,
+        8
+      ],
       "tags": [
         "aperiodic",
         "molecular"

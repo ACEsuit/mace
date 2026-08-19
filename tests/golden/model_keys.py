@@ -93,6 +93,57 @@ harness.ignore_key(
 
 
 # ---------------------------------------------------------------------------
+# The second collision: `node_energy` means two different quantities
+#
+# `virials` was found first and is the famous one. This is the other, and it
+# is quieter, because both spellings are the same shape and the same unit --
+# the two surfaces differ by exactly the E0 table, so nothing about a
+# comparison looks wrong except the numbers.
+#
+#     model forward   node_energy = node_e0 + node_inter_es
+#                     (mace/modules/models.py:582, :399; the magnetic model
+#                     at mace/modules/extensions.py:1917) -- E0 *included*
+#     calculator      results["energies"] = a copy of the model's node_energy,
+#                     then results["node_energy"] -= node_e0
+#                     (mace/calculators/mace.py:792-795) -- E0 *removed*
+#
+# The channels already distinguish the two, and correctly: `energies` is the
+# ase-property meaning (per-atom energy including the isolated-atom
+# reference), `node_energy` has it subtracted. What was missing is that the
+# model's spelling lands on the first of those, not the second. Without this
+# alias a golden taken through `golden_outputs` records the E0-inclusive
+# number under the E0-exclusive channel, and comparing it against a
+# calculator-route reference fails by exactly the E0 table -- or, worse,
+# passes for a model whose E0s happen to be zero, which is how the anchors in
+# tests/extensions/magnetic are built.
+#
+# Measured on the committed tiny_scaleshift anchor over `water_cluster`,
+# float64: max |model.node_energy - calc.energies| = 0.0 (bit for bit), and
+# max |model.node_energy - calc.node_energy| = 0.4533, which is the E0 table.
+# tests/golden/test_tiny_magnetic.py re-measures it on all three surfaces
+# rather than trusting this paragraph.
+#
+# The model surface has no spelling for the E0-subtracted quantity, because it
+# never emits one. That is not a gap: it is a subtraction the calculator does,
+# and the pair is worth pinning separately precisely because their difference
+# is the E0 table.
+# ---------------------------------------------------------------------------
+
+harness.register_alias(
+    "node_energy",
+    "energies",
+    surface=harness.SURFACE_MODEL,
+    note=(
+        "the model's node_energy includes the isolated-atom reference "
+        "(mace/modules/models.py:582), which is the `energies` channel. The "
+        "calculator uses the same word for the E0-subtracted quantity "
+        "(mace/calculators/mace.py:792-795), which is the `node_energy` "
+        "channel. Same spelling, two quantities, differing by the E0 table."
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
 # Four things that are true of this surface and are not registrations
 #
 # 1. `virials` on this surface is the graph-level virial, shape (n_graphs, 3,

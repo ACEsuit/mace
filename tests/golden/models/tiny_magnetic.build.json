@@ -1,0 +1,56 @@
+{
+  "atomic_energies": [
+    -4.25,
+    -6.75
+  ],
+  "avg_num_neighbors": 3.0,
+  "built_by": "direct instantiation; a seeded untrained network exercises the energy assembly and both derivative paths exactly as a fitted one",
+  "class": "MagneticScaleShiftMACE",
+  "command": "python -c \"from tests.golden.build_magnetic_anchor import build_anchor; build_anchor()\"",
+  "config": {
+    "MLP_irreps": "8x0e",
+    "atomic_inter_scale": 0.7,
+    "atomic_inter_shift": 0.1,
+    "atomic_numbers": [
+      8,
+      26
+    ],
+    "correlation": 2,
+    "distance_transform": "None",
+    "gate": "silu",
+    "hidden_irreps": "16x0e + 16x1o",
+    "interaction_cls": "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+    "interaction_cls_first": "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
+    "m_max": [
+      1.2,
+      4.5
+    ],
+    "max_ell": 2,
+    "max_m_ell": 2,
+    "num_bessel": 8,
+    "num_elements": 2,
+    "num_interactions": 2,
+    "num_mag_radial_basis": 6,
+    "num_mag_radial_basis_one_body": 6,
+    "num_polynomial_cutoff": 5,
+    "pair_repulsion": true,
+    "r_max": 4.0,
+    "radial_type": "bessel",
+    "use_magmom_one_body": true,
+    "use_reduced_cg": false
+  },
+  "dtype": "float64",
+  "model": "tiny_magnetic.model",
+  "num_parameters": 75220,
+  "recipe": "tests/golden/build_magnetic_anchor.py",
+  "regenerate_with": "python tests/golden/regenerate.py --target magnetic --i-know-what-i-am-doing",
+  "requires": "the `magnetic` extra (sphericart) to build and to load",
+  "scf_config": {
+    "n_scf_step": 200,
+    "scf_step_size": 1.0,
+    "scf_tol": 1e-10,
+    "use_collinear": false,
+    "use_scf": true
+  },
+  "seed": 20260810
+}

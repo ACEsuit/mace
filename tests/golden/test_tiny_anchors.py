@@ -23,9 +23,17 @@ from tests.golden.anchors import anchor_graph as _batch
 from tests.golden.anchors import load_anchor as _load
 
 
+#: Both anchors are three-element H/C/O models, and one manifest now serves
+#: more than one family, so the set is selected by chemistry. Handing either
+#: anchor an iron structure is not a tolerance failure -- it is a missing
+#: z-table entry -- and selecting by name instead would mean editing this list
+#: every time another family commits a fixture.
+ANCHOR_ELEMENTS = (1, 6, 8)
+
+
 @pytest.fixture(name="fixtures", scope="module")
 def fixture_fixtures():
-    return harness.load_fixtures()
+    return harness.load_fixtures(elements=ANCHOR_ELEMENTS)
 
 
 @pytest.mark.parametrize("name", sorted(ANCHORS))
