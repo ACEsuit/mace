@@ -274,8 +274,17 @@ def test_the_tracked_anicc_checkpoint_cannot_be_loaded_on_a_cpu_only_host():
     CUDA host, and e3nn's `CodeGenMixin.__setstate__` calls
     `torch.jit.load(buffer)` with no `map_location`, so the archive is
     restored to the device it was saved on and `torch.load(...,
-    map_location="cpu")` still dies with a CUDA dispatch error. Nothing in
+    map_location="cpu")` still dies reaching for that device. Nothing in
     MACE can override that from the outside.
+
+    Which error arrives is a property of the local torch wheel, not of the
+    checkpoint, so both shapes are accepted here. A build without CUDA at
+    all (the macOS wheel) has no kernels registered and raises
+    `NotImplementedError` over the missing `CUDA` dispatch key; a CUDA build
+    on a host with no driver (the linux wheel every CI job installs) gets as
+    far as initialising the context and raises `RuntimeError: Found no
+    NVIDIA driver`. `NotImplementedError` is a subclass of `RuntimeError`,
+    so one `raises` covers both.
 
     If this ever starts failing, the artifact was re-exported and a
     `mace_anicc` golden becomes possible -- add it to
@@ -286,5 +295,5 @@ def test_the_tracked_anicc_checkpoint_cannot_be_loaded_on_a_cpu_only_host():
         pytest.skip(f"{fa.ANICC_TRACKED_PATH} is not present")
     if torch.cuda.is_available():
         pytest.skip("the refusal is a property of a host without CUDA")
-    with pytest.raises(NotImplementedError, match="CUDA"):
+    with pytest.raises(RuntimeError, match="CUDA|NVIDIA"):
         torch.load(path, map_location="cpu", weights_only=False)
