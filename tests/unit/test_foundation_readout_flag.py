@@ -166,3 +166,49 @@ def test_the_interactions_are_transferred_either_way():
         assert not torch.allclose(
             before, target.interactions[0].linear.weight
         ), f"interactions not transferred with load_readout={load_readout}"
+
+
+# ---------------------------------------------------------------------------
+# The same meaning from a config file as from the command line
+# ---------------------------------------------------------------------------
+
+
+def parse_yaml(tmp_path, body):
+    config = tmp_path / "config.yaml"
+    config.write_text(f"name: x\ntrain_file: y\n{body}\n", encoding="utf-8")
+    return arg_parser.build_default_arg_parser().parse_args(["--config", str(config)])
+
+
+def test_the_bare_flag_still_turns_the_transfer_off():
+    """It has been a bare switch since 2023, so it stays one."""
+    assert parse("--foundation_model_readout").foundation_model_readout is False
+
+
+@pytest.mark.parametrize("value,expected", [("True", True), ("False", False)])
+def test_an_explicit_value_is_taken_as_written(value, expected):
+    args = parse("--foundation_model_readout", value)
+
+    assert args.foundation_model_readout is expected
+
+
+@pytest.mark.parametrize("key", ["foundation_model_readout", "foundation_filter_elements"])
+@pytest.mark.parametrize("value,expected", [("true", True), ("false", False)])
+def test_a_config_file_means_what_it_says(tmp_path, key, value, expected):
+    """The trap this guards. configargparse turns a config entry into the flag
+    plus its value, and a `store_false` switch ignores the value: as a switch,
+    `foundation_model_readout: true` applied the flag and turned the transfer
+    OFF, while `false` left it on. Both spellings now read the same way from a
+    config as from the command line.
+    """
+    args = parse_yaml(tmp_path, f"{key}: {value}")
+
+    assert args.foundation_model_readout is expected
+
+
+def test_the_two_spellings_agree_from_a_config_file(tmp_path):
+    """One dest, two names, and no way for a config to set them against each
+    other by accident."""
+    by_new = parse_yaml(tmp_path, "foundation_model_readout: false")
+    by_old = parse_yaml(tmp_path, "foundation_filter_elements: false")
+
+    assert by_new.foundation_model_readout == by_old.foundation_model_readout is False

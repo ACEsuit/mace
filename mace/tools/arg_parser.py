@@ -1022,8 +1022,19 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--foundation_model_readout",
-        help="Use readout of foundation model for transfer learning",
-        action="store_false",
+        help=(
+            "Transfer the foundation model's readout weights. Pass the flag with "
+            "no value to turn the transfer off, or an explicit boolean."
+        ),
+        # `nargs="?"` rather than `store_false`, so the flag reads the same way
+        # from a YAML config as from the command line. configargparse turns a
+        # config entry into the flag plus its value, and a `store_false` switch
+        # ignores that value: `foundation_model_readout: true` then applied the
+        # bare switch and turned the transfer OFF. Accepting an optional value
+        # keeps the bare form working and makes the config say what it means.
+        nargs="?",
+        const=False,
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
