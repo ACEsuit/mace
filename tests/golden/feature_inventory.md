@@ -905,10 +905,10 @@ their downstream scripts. The default prefix is `MACE_`.
 | `out.eval.magforces` | `<info_prefix>magforces` → `atoms.arrays` | `mace/cli/eval_configs.py:401` | KEEP | `tests/extensions/magnetic` |
 | `out.eval.BEC` | `<info_prefix>BEC` → `atoms.arrays` | `mace/cli/eval_configs.py:407` | KEEP | `tests/golden/test_harness.py::test_the_eval_cli_flattens_the_born_charges_and_the_schema_unflattens_them` |
 | `out.eval.latent_charges` | `<info_prefix>latent_charges` → `atoms.arrays` | `mace/cli/eval_configs.py:411` | KEEP | `tests/golden/test_tiny_maceles.py::test_the_eval_cli_lands_on_the_same_numbers_as_the_forward` |
-| `out.eval.latent_dipoles` | `<info_prefix>latent_dipoles` → `atoms.arrays` | `mace/cli/eval_configs.py:413` | KEEP | ⚠️ gap (the eval CLI test compares `latent_charges` only; add the other four latent channels) |
-| `out.eval.latent_kappas` | `<info_prefix>latent_kappas` → `atoms.arrays` | `mace/cli/eval_configs.py:415` | KEEP | ⚠️ gap (idem) |
-| `out.eval.latent_alphas` | `<info_prefix>latent_alphas` → `atoms.arrays` | `mace/cli/eval_configs.py:417` | KEEP | ⚠️ gap (idem) |
-| `out.eval.latent_quads` | `<info_prefix>latent_quads` → `atoms.arrays` | `mace/cli/eval_configs.py:421` | KEEP | ⚠️ gap (idem) |
+| `out.eval.latent_dipoles` | `<info_prefix>latent_dipoles` → `atoms.arrays` | `mace/cli/eval_configs.py:413` | KEEP | `tests/golden/test_tiny_maceles.py::test_the_eval_cli_lands_on_the_same_numbers_as_the_forward` |
+| `out.eval.latent_kappas` | `<info_prefix>latent_kappas` → `atoms.arrays` | `mace/cli/eval_configs.py:415` | KEEP | `tests/golden/test_tiny_maceles.py::test_the_eval_cli_lands_on_the_same_numbers_as_the_forward` |
+| `out.eval.latent_alphas` | `<info_prefix>latent_alphas` → `atoms.arrays` | `mace/cli/eval_configs.py:417` | KEEP | `tests/golden/test_tiny_maceles.py::test_the_eval_cli_lands_on_the_same_numbers_as_the_forward` |
+| `out.eval.latent_quads` | `<info_prefix>latent_quads` → `atoms.arrays` | `mace/cli/eval_configs.py:421` | KEEP | `tests/golden/test_tiny_maceles.py::test_the_eval_cli_lands_on_the_same_numbers_as_the_forward` |
 
 ## 13. Behaviour-affecting environment variables (9 + 3)
 
