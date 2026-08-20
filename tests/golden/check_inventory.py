@@ -461,6 +461,54 @@ def source_calculator_exports() -> dict[str, Decl]:
     raise SystemExit("mace/calculators/__init__.py has no __all__")
 
 
+def source_radial_classes() -> dict[str, Decl]:
+    """Radial bases, cutoffs and distance transforms.
+
+    `--radial_type` selects among them by string, but the string list and the
+    classes are not the same set: `ZBLBasis`, `AgnesiTransform` and `RadialMLP`
+    are reached by other flags or by construction, so counting the choices does
+    not account for the file.
+    """
+    return _classes(REPO / "mace" / "modules" / "radial.py")
+
+
+def source_block_classes() -> dict[str, Decl]:
+    """The message-passing building blocks.
+
+    Most are reachable through `interaction_classes` / `readout_classes`, which
+    the registry set already covers, but that covers the *string* a user passes.
+    A block class added without a registry entry is reachable from Python and
+    from a checkpoint, and was invisible here until this set existed.
+    """
+    out = _classes(REPO / "mace" / "modules" / "blocks.py")
+    out.update(_classes(REPO / "mace" / "modules" / "gate.py"))
+    return out
+
+
+def source_contraction_classes() -> dict[str, Decl]:
+    """The many-body contraction, which the accelerated backends replace."""
+    return _classes(REPO / "mace" / "modules" / "symmetric_contraction.py")
+
+
+def source_data_transforms() -> dict[str, Decl]:
+    """Training-data transforms. `--data_aug_magmom` is one flag over a class
+    that could gain siblings, and a second transform would arrive unlisted."""
+    return _classes(REPO / "mace" / "data" / "augmentation.py")
+
+
+def source_calculator_classes() -> dict[str, Decl]:
+    """The runtime backends: the ASE calculators and the deployment wrappers.
+
+    `calc.param.*` and `calc.export.*` cover `MACECalculator`'s signature and
+    what `mace/calculators/__init__.py` exports; neither accounts for a new
+    class in these files.
+    """
+    out: dict[str, Decl] = {}
+    for name in ("mace.py", "lammps_mace.py", "lammps_mliap_mace.py", "mace_torchsim.py"):
+        out.update(_classes(REPO / "mace" / "calculators" / name))
+    return out
+
+
 def source_model_output_keys() -> dict[str, Decl]:
     """Keys of the dicts the model `forward`s return — the contract every
     consumer (calculator, eval CLI, LAMMPS, training loop) reads."""
@@ -674,6 +722,15 @@ def collect_sources() -> list[SourceSet]:
         SourceSet("--model choices", "choice.", "choices", source_model_choices()),
         SourceSet("model-level classes", "model.", "classes", source_model_classes()),
         SourceSet("registry entries", "reg.", "entries", source_registries()),
+        SourceSet("radial classes", "radial.", "classes", source_radial_classes()),
+        SourceSet("block classes", "block.", "classes", source_block_classes()),
+        SourceSet(
+            "contraction classes", "contraction.", "classes", source_contraction_classes()
+        ),
+        SourceSet("data transforms", "transform.", "transforms", source_data_transforms()),
+        SourceSet(
+            "calculator classes", "calc.class.", "classes", source_calculator_classes()
+        ),
         SourceSet("loss classes", "loss.", "classes", source_loss_classes()),
         SourceSet("calculator params", "calc.param.", "params", source_calculator_params()),
         SourceSet("calculator exports", "calc.export.", "exports", source_calculator_exports()),

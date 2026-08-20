@@ -698,6 +698,64 @@ surface.
 | `reg.abs` | `abs` — gate_dict | `mace/modules/__init__.py:97` | KEEP | `tests/unit/test_gate_registry.py::test_the_registry_maps_every_cli_value_to_its_callable` |
 | `reg.None` | `None` — gate_dict | `mace/modules/__init__.py:100` | KEEP — the string `"None"`, meaning no gate | `tests/unit/test_gate_registry.py::test_a_model_builds_and_runs_with_every_gate` |
 
+
+## 7b. Blocks, radial bases, contractions, transforms and calculator classes (46)
+
+The classes the registries do not account for. A registry entry is the *string* a
+user passes; these are the classes themselves, and one added without a registry
+entry is still reachable from Python and from a checkpoint. Adding these five sets
+to the checker was prompted by a mutation test: a new class in any of these files
+used to pass the gate in silence.
+
+| id | feature | source | disposition | pinned by |
+| --- | --- | --- | --- | --- |
+| `radial.BesselBasis` | `BesselBasis` | `mace/modules/radial.py:18` | KEEP — the default radial basis | `tests/unit/test_modules.py::test_bessel_basis` |
+| `radial.ChebychevBasis` | `ChebychevBasis` | `mace/modules/radial.py:61` | KEEP — `--radial_type chebyshev` | `tests/unit/test_radial.py::test_chebychev_basis_values` |
+| `radial.GaussianBasis` | `GaussianBasis` | `mace/modules/radial.py:89` | KEEP — `--radial_type gaussian` | `tests/unit/test_radial.py::test_gaussian_basis_values` |
+| `radial.PolynomialCutoff` | `PolynomialCutoff` | `mace/modules/radial.py:113` | KEEP — the envelope every basis is multiplied by | `tests/unit/test_modules.py::test_polynomial_cutoff` |
+| `radial.ZBLBasis` | `ZBLBasis` | `mace/modules/radial.py:149` | KEEP — `--pair_repulsion`, a physics term rather than a basis | `tests/unit/test_radial.py::test_zbl_buffers_and_trainability` |
+| `radial.AgnesiTransform` | `AgnesiTransform` | `mace/modules/radial.py:225` | KEEP — `--distance_transform agnesi` | `tests/unit/test_radial.py::test_agnesi_transform_values` |
+| `radial.SoftTransform` | `SoftTransform` | `mace/modules/radial.py:285` | KEEP — `--distance_transform soft` | `tests/unit/test_radial.py::test_soft_transform_values` |
+| `radial.RadialMLP` | `RadialMLP` | `mace/modules/radial.py:361` | KEEP — the MLP over the basis, sized by `--radial_MLP` | `tests/unit/test_radial.py::test_radial_mlp_structure_and_shapes` |
+| `block.LinearNodeEmbeddingBlock` | `LinearNodeEmbeddingBlock` | `mace/modules/blocks.py:45` | KEEP — one-hot elements to node features, in every model | `tests/unit/test_models.py::test_mace` |
+| `block.RadialEmbeddingBlock` | `RadialEmbeddingBlock` | `mace/modules/blocks.py:395` | KEEP — basis x cutoff, in every model | `tests/unit/test_radial.py::test_the_basis_sees_the_transformed_lengths` |
+| `block.AtomicEnergiesBlock` | `AtomicEnergiesBlock` | `mace/modules/blocks.py:364` | KEEP — the E0 term | `tests/unit/test_modules.py::test_atomic_energies` |
+| `block.ScaleShiftBlock` | `ScaleShiftBlock` | `mace/modules/blocks.py:1942` | KEEP — the dataset scale and shift | `tests/unit/test_scale_shift_dtype.py::test_the_scale_shift_buffers_are_also_frozen_at_construction` |
+| `block.EquivariantProductBasisBlock` | `EquivariantProductBasisBlock` | `mace/modules/blocks.py:440` | KEEP — the many-body product basis | `tests/golden/test_tiny_dipoles.py::test_the_committed_anchor_carries_the_plain_e3nn_basis` |
+| `block.InteractionBlock` | `InteractionBlock` | `mace/modules/blocks.py:639` | KEEP — the abstract base every interaction subclasses | `tests/unit/test_models.py::test_mace` |
+| `block.GatedEquivariantBlock` | `GatedEquivariantBlock` | `mace/modules/gate.py:39` | KEEP — the gate the nonlinear readouts apply | `tests/unit/test_gate.py::test_forward_matches_e3nn` |
+| `block.LinearReadoutBlock` | `LinearReadoutBlock` | `mace/modules/blocks.py:65` | KEEP — the per-layer site-energy readout | `tests/unit/test_models.py::test_mace` |
+| `block.NonLinearReadoutBlock` | `NonLinearReadoutBlock` | `mace/modules/blocks.py:87` | KEEP — the last-layer readout when `--MLP_irreps` is set | `tests/unit/test_models.py::test_mace` |
+| `block.LinearDipoleReadoutBlock` | `LinearDipoleReadoutBlock` | `mace/modules/blocks.py:163` | KEEP — the dipole family's readout | `tests/unit/test_models.py::test_dipole_mace` |
+| `block.NonLinearDipoleReadoutBlock` | `NonLinearDipoleReadoutBlock` | `mace/modules/blocks.py:185` | KEEP — idem, nonlinear | `tests/unit/test_models.py::test_dipole_mace` |
+| `block.LinearDipolePolarReadoutBlock` | `LinearDipolePolarReadoutBlock` | `mace/modules/blocks.py:233` | KEEP — dipole and polarizability together | `tests/unit/test_models.py::test_dipole_polar_mace` |
+| `block.NonLinearDipolePolarReadoutBlock` | `NonLinearDipolePolarReadoutBlock` | `mace/modules/blocks.py:262` | KEEP — idem, nonlinear | `tests/unit/test_models.py::test_dipole_polar_mace` |
+| `block.LinearLesReadoutBlock` | `LinearLesReadoutBlock` | `mace/modules/blocks.py:1974` | KEEP — the LES latent-multipole readout | `tests/extensions/les/test_maceles.py::test_les_readout_equivariance` |
+| `block.NonLinearLesReadoutBlock` | `NonLinearLesReadoutBlock` | `mace/modules/blocks.py:2084` | KEEP — idem, nonlinear | `tests/extensions/les/test_maceles.py::test_les_readout_equivariance` |
+| `block.NonLinearBiasReadoutBlock` | `NonLinearBiasReadoutBlock` | `mace/modules/blocks.py:123` | KEEP — the biased readout the field models use | ⚠️ gap (registered in `readout_classes` and used from `mace/modules/extensions.py`; no test names it) |
+| `block.GeneralNonLinearBiasReadoutBlock` | `GeneralNonLinearBiasReadoutBlock` | `mace/modules/blocks.py:314` | KEEP — idem, for `mace/modules/field_blocks.py` | ⚠️ gap (registered and reachable; no test names it) |
+| `block.RealAgnosticInteractionBlock` | `RealAgnosticInteractionBlock` | `mace/modules/blocks.py:835` | MERGE — one of five interaction variants that collapse into a configured convolution | `tests/backends/backend_parity.py::test_bidirectional_conversion` |
+| `block.RealAgnosticResidualInteractionBlock` | `RealAgnosticResidualInteractionBlock` | `mace/modules/blocks.py:938` | KEEP — the default | `tests/unit/test_models.py::test_mace` |
+| `block.RealAgnosticDensityInteractionBlock` | `RealAgnosticDensityInteractionBlock` | `mace/modules/blocks.py:1041` | MERGE — idem | `tests/backends/backend_parity.py::test_bidirectional_conversion` |
+| `block.RealAgnosticDensityResidualInteractionBlock` | `RealAgnosticDensityResidualInteractionBlock` | `mace/modules/blocks.py:1162` | MERGE — idem | `tests/integrations/lammps/test_mliap_exchange.py::test_mliap_exchange_density_residual` |
+| `block.RealAgnosticResidualNonLinearInteractionBlock` | `RealAgnosticResidualNonLinearInteractionBlock` | `mace/modules/blocks.py:1412` | KEEP — the PolarMACE interaction | `tests/backends/backend_parity.py::test_bidirectional_conversion` |
+| `block.RealAgnosticAttResidualInteractionBlock` | `RealAgnosticAttResidualInteractionBlock` | `mace/modules/blocks.py:1286` | MERGE — idem | ⚠️ gap (registered in `interaction_classes`, so reachable from `--interaction`; nothing builds it) |
+| `block.MagneticInteractionBlock` | `MagneticInteractionBlock` | `mace/modules/blocks.py:1602` | KEEP — the magnetic interactions' base class | `tests/extensions/magnetic/test_magmace.py::test_run_train_magnetic_mace` |
+| `block.MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock` | `MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock` | `mace/modules/blocks.py:1632` | KEEP — the SOC magnetic interaction | `tests/extensions/magnetic/test_magmace.py::test_run_magnetic_scf` |
+| `block.MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock` | `MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock` | `mace/modules/blocks.py:1785` | MERGE — the residual SOC variant | ⚠️ gap (registered and reachable from `--interaction`; nothing builds it) |
+| `block.EquivariantProductBasisWithSelfMagmomBlock` | `EquivariantProductBasisWithSelfMagmomBlock` | `mace/modules/blocks.py:517` | KEEP — the product basis that carries the site's own moment | ⚠️ gap (used from `mace/modules/extensions.py`; no test names it) |
+| `contraction.SymmetricContraction` | `SymmetricContraction` | `mace/modules/symmetric_contraction.py:26` | KEEP — the many-body contraction the accelerated backends replace | `tests/unit/test_modules.py::test_symmetric_contraction` |
+| `contraction.Contraction` | `Contraction` | `mace/modules/symmetric_contraction.py:91` | KEEP — one correlation order of it | `tests/unit/test_modules.py::test_symmetric_contraction_zeroes_the_unreachable_correlation_order` |
+| `contraction.EmptyParam` | `EmptyParam` | `mace/modules/symmetric_contraction.py:269` | MERGE — weight bookkeeping for an unreachable order, not a feature | `tests/unit/test_modules.py::test_symmetric_contraction_zeroes_the_unreachable_correlation_order` |
+| `transform.Random3DRotation` | `Random3DRotation` | `mace/data/augmentation.py:24` | MERGE — the `--data_aug_magmom` transform, which travels with the flag | `tests/extensions/magnetic/test_magmom_augmentation.py::test_non_soc_mode_samples_the_full_o3` |
+| `calc.class.MACECalculator` | `MACECalculator` | `mace/calculators/mace.py:77` | KEEP — the ASE calculator | `tests/workflows/test_calculator.py::test_calculator_forces` |
+| `calc.class.MagneticMACECalculator` | `MagneticMACECalculator` | `mace/calculators/mace.py:964` | KEEP — the magnetic ASE calculator | `tests/extensions/magnetic/test_magmace.py::test_run_train_magnetic_mace` |
+| `calc.class.LAMMPS_MACE` | `LAMMPS_MACE` | `mace/calculators/lammps_mace.py:10` | KEEP — the libtorch deployment wrapper | `tests/integrations/lammps/test_ghost_parity.py::test_virials_path_runs` |
+| `calc.class.LAMMPS_MLIAP_MACE` | `LAMMPS_MLIAP_MACE` | `mace/calculators/lammps_mliap_mace.py:125` | KEEP — the ML-IAP deployment wrapper | `tests/integrations/lammps/test_mliap_writeback.py::test_atom_count_mismatch_is_actionable` |
+| `calc.class.MACEEdgeForcesWrapper` | `MACEEdgeForcesWrapper` | `mace/calculators/lammps_mliap_mace.py:59` | KEEP — per-pair forces for the ML-IAP path | `tests/integrations/lammps/test_mliap_buffer_dtype.py::test_the_wrapper_buffers_follow_the_model_dtype` |
+| `calc.class.MACELammpsConfig` | `MACELammpsConfig` | `mace/calculators/lammps_mliap_mace.py:22` | MERGE — the ML-IAP wrapper's own config object, an implementation detail | `tests/integrations/lammps/test_mliap_writeback.py::test_atom_count_mismatch_is_actionable` |
+| `calc.class.MaceTorchSimModel` | `MaceTorchSimModel` | `mace/calculators/mace_torchsim.py:52` | KEEP — the torch-sim backend | `tests/extensions/torchsim/test_torchsim.py::test_mace_torchsim_no_stress` |
+
 ## 8. Loss classes (10)
 
 All ten MERGE into composable per-stage losses: each becomes a documented composition
