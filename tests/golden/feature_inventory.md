@@ -402,12 +402,12 @@ Group default: KEEP (the wandb extra).
 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `train.wandb` | `--wandb` | `mace/tools/arg_parser.py:1104` | KEEP | ⚠️ gap (offline-mode smoke) |
-| `train.wandb_dir` | `--wandb_dir` | `mace/tools/arg_parser.py:1110` | KEEP | ⚠️ gap (idem) |
-| `train.wandb_project` | `--wandb_project` | `mace/tools/arg_parser.py:1116` | KEEP | ⚠️ gap (idem) |
-| `train.wandb_entity` | `--wandb_entity` | `mace/tools/arg_parser.py:1122` | KEEP | ⚠️ gap (idem) |
-| `train.wandb_name` | `--wandb_name` | `mace/tools/arg_parser.py:1128` | KEEP | ⚠️ gap (idem) |
-| `train.wandb_log_hypers` | `--wandb_log_hypers` | `mace/tools/arg_parser.py:1134` | KEEP | ⚠️ gap (idem) |
+| `train.wandb` | `--wandb` | `mace/tools/arg_parser.py:1104` | KEEP | `tests/workflows/test_wandb_logging.py::test_a_training_run_with_wandb_writes_an_offline_run` |
+| `train.wandb_dir` | `--wandb_dir` | `mace/tools/arg_parser.py:1110` | KEEP | `tests/workflows/test_wandb_logging.py::test_each_flag_lands_on_its_own_keyword` + the offline smoke, which writes there |
+| `train.wandb_project` | `--wandb_project` | `mace/tools/arg_parser.py:1116` | KEEP | `tests/workflows/test_wandb_logging.py::test_each_flag_lands_on_its_own_keyword` |
+| `train.wandb_entity` | `--wandb_entity` | `mace/tools/arg_parser.py:1122` | KEEP | `tests/workflows/test_wandb_logging.py::test_each_flag_lands_on_its_own_keyword` |
+| `train.wandb_name` | `--wandb_name` | `mace/tools/arg_parser.py:1128` | KEEP | `tests/workflows/test_wandb_logging.py::test_each_flag_lands_on_its_own_keyword` |
+| `train.wandb_log_hypers` | `--wandb_log_hypers` | `mace/tools/arg_parser.py:1134` | KEEP | `tests/workflows/test_wandb_logging.py::test_only_the_requested_hyperparameters_are_logged` |
 
 ### 3.12 MagneticMACE (9)
 
@@ -840,7 +840,7 @@ copy — so the tree depends on both at once (§19).
 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `extra.wandb` | `[wandb]` | `setup.cfg` | KEEP | ⚠️ gap (offline-mode smoke) |
+| `extra.wandb` | `[wandb]` | `setup.cfg` | KEEP | `tests/workflows/test_wandb_logging.py::test_a_training_run_with_wandb_writes_an_offline_run` (skipped without the extra, so it is the extra that is being exercised) |
 | `extra.fpsample` | `[fpsample]` | `setup.cfg` | KEEP — fast farthest-point sampling for fine-tuning selection | `tests/workflows/test_finetuning_select_cli.py::test_fps_without_fpsample_falls_back_and_says_so` (the fallback, in whichever direction the extra is present) |
 | `extra.schedulefree` | `[schedulefree]` | `setup.cfg` | KEEP | `tests/extensions/schedulefree` |
 | `extra.torchsim` | `[torchsim]` | `setup.cfg` | KEEP — a first-class deployment path, not a secondary integration; the coupling to torch-sim's still-moving API becomes MACE's problem, so the version is pinned in `requirements/` | `tests/extensions/torchsim` |
