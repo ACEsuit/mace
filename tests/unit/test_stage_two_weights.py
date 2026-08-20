@@ -21,6 +21,7 @@ from mace import modules, tools
 from mace.tools.scripts_utils import get_swa
 
 ENERGY, FORCES, VIRIALS, STRESS = 7.0, 11.0, 13.0, 17.0
+DIPOLE, POLARIZABILITY, MAGFORCES = 19.0, 23.0, 29.0
 
 
 @pytest.fixture(name="model")
@@ -61,7 +62,10 @@ def settings(**overrides):
         swa_forces_weight=FORCES,
         swa_virials_weight=VIRIALS,
         swa_stress_weight=STRESS,
-        swa_dipole_weight=1.0,
+        swa_dipole_weight=DIPOLE,
+        swa_polarizability_weight=POLARIZABILITY,
+        swa_magforces_weight=MAGFORCES,
+        huber_delta=0.02,
     )
     for key, value in overrides.items():
         setattr(args, key, value)
@@ -133,3 +137,43 @@ def test_a_swap_after_the_last_epoch_is_refused(model):
 def test_stage_two_is_refused_with_a_forces_only_loss(model):
     with pytest.raises(ValueError, match="forces only"):
         build(model, loss="forces_only")
+
+
+def test_the_dipole_and_polarizability_weights_reach_the_dipole_polar_loss(model):
+    """`--loss dipole_polar` is the only branch that reads either, and it reads
+    both, so a single wrong lookup would still produce a working loss."""
+    swa, _ = build(model, loss="dipole_polar")
+
+    assert swa.loss_fn.dipole_weight == pytest.approx(DIPOLE)
+    assert swa.loss_fn.polarizability_weight == pytest.approx(POLARIZABILITY)
+
+
+def test_the_dipole_weight_also_reaches_the_energy_forces_dipole_loss(model):
+    """The same flag, a different branch. `energy_forces_dipole` takes the energy
+    and forces weights positionally and the dipole one by keyword, which is
+    exactly the shape a reordering breaks quietly."""
+    swa, _ = build(model, loss="energy_forces_dipole")
+
+    assert swa.loss_fn.energy_weight == pytest.approx(ENERGY)
+    assert swa.loss_fn.forces_weight == pytest.approx(FORCES)
+    assert swa.loss_fn.dipole_weight == pytest.approx(DIPOLE)
+
+
+def test_the_magforces_weight_reaches_the_universal_loss(model):
+    """`--loss universal` is where the magnetic force weight lands, alongside
+    three others and the huber delta."""
+    swa, _ = build(model, loss="universal")
+
+    assert swa.loss_fn.magforces_weight == pytest.approx(MAGFORCES)
+    assert swa.loss_fn.energy_weight == pytest.approx(ENERGY)
+    assert swa.loss_fn.forces_weight == pytest.approx(FORCES)
+    assert swa.loss_fn.stress_weight == pytest.approx(STRESS)
+
+
+def test_every_stage_two_weight_is_distinct_in_these_tests(model):
+    """The premise the assertions above rely on: seven different numbers, so a
+    loss that read the wrong flag cannot coincide with the right answer."""
+    values = [ENERGY, FORCES, VIRIALS, STRESS, DIPOLE, POLARIZABILITY, MAGFORCES]
+
+    assert len(set(values)) == len(values)
+    assert model is not None
