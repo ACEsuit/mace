@@ -155,7 +155,7 @@ def read_final_metrics(work_dir: Path) -> Dict[str, object]:
     return {k: v for k, v in evals[-1].items() if k != "time"}
 
 
-def train_anchor(model_path: Path = MODEL_PATH) -> Path:
+def train_anchor(model_path: Path) -> Path:
     """Run the training, install the checkpoint and write both sidecars."""
     with tempfile.TemporaryDirectory(prefix="golden_anchor_") as tmp:
         work_dir = Path(tmp)
@@ -219,7 +219,11 @@ def train_anchor(model_path: Path = MODEL_PATH) -> Path:
         "train_file": "tests/golden/fixtures/tiny_train.xyz",
         "args": {k: ("<flag>" if v is None else v) for k, v in TRAIN_ARGS.items()},
     }
-    with SIDECAR_PATH.open("w", encoding="utf-8") as handle:
+    # Beside the model that was written, for the same reason as the other
+    # builders: a run into a temporary directory must not touch the committed
+    # sidecar.
+    sidecar_path = model_path.with_suffix(".build.json")
+    with sidecar_path.open("w", encoding="utf-8") as handle:
         json.dump(sidecar, handle, indent=2, sort_keys=True)
         handle.write("\n")
 
@@ -250,4 +254,4 @@ def train_anchor(model_path: Path = MODEL_PATH) -> Path:
 
 
 if __name__ == "__main__":  # pragma: no cover - manual invocation
-    print(train_anchor())
+    print(train_anchor(MODEL_PATH))
