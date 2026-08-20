@@ -219,7 +219,7 @@ def configure_model(
                 model,
                 model_foundation,
                 z_table,
-                load_readout=args.foundation_filter_elements,
+                load_readout=args.foundation_model_readout,
                 max_L=args.max_L,
                 default_dtype=dtype_dict.get(args.default_dtype, torch.float64),
             )
