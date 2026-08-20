@@ -840,7 +840,7 @@ copy — so the tree depends on both at once (§19).
 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `extra.wandb` | `[wandb]` | `setup.cfg` | KEEP | `tests/workflows/test_wandb_logging.py::test_a_training_run_with_wandb_writes_an_offline_run` (skipped without the extra, so it is the extra that is being exercised) |
+| `extra.wandb` | `[wandb]` | `setup.cfg` | KEEP | `tests/workflows/test_wandb_logging.py::test_a_training_run_with_wandb_writes_an_offline_run` (`wandb`-marked, and the ci-core workflows job installs the extra and names the capability, so the extra is what is being exercised) |
 | `extra.fpsample` | `[fpsample]` | `setup.cfg` | KEEP — fast farthest-point sampling for fine-tuning selection | `tests/workflows/test_finetuning_select_cli.py::test_fps_without_fpsample_falls_back_and_says_so` (the fallback, in whichever direction the extra is present) |
 | `extra.schedulefree` | `[schedulefree]` | `setup.cfg` | KEEP | `tests/extensions/schedulefree` |
 | `extra.torchsim` | `[torchsim]` | `setup.cfg` | KEEP — a first-class deployment path, not a secondary integration; the coupling to torch-sim's still-moving API becomes MACE's problem, so the version is pinned in `requirements/` | `tests/extensions/torchsim` |
@@ -999,7 +999,7 @@ set:
 | `stdenv.TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` | `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` — set by `mace/__init__.py` so pickled checkpoints load under newer torch defaults | `mace/__init__.py` | DROP — v1 checkpoints are neutral-format (safetensors + manifest), so nothing needs the unsafe-pickle escape hatch; the legacy loader keeps it until the converter is the only reader | `tests/unit/test_scale_shift_dtype.py::test_a_full_pickle_round_trip_preserves_every_buffer_bit_for_bit` |
 | `stdenv.MASTER_PORT` | `MASTER_ADDR` / `MASTER_PORT` / `RANK` / `WORLD_SIZE` / `LOCAL_RANK` / `SLURM_*` / `OMPI_*` — standard DDP and launcher plumbing | `mace/tools/slurm_distributed.py`, `mace/tools/distributed_tools.py` | KEEP — the launcher contract is torch's and SLURM's, not MACE's, so v1 reads the same variables | `tests/workflows/test_distributed.py` |
 
-## 14. Registered pytest markers (13)
+## 14. Registered pytest markers (14)
 
 The capability model of the suite: locally a test whose capability is missing skips, and in CI a
 job that exports `MACE_REQUIRE_CAPS` fails instead. CI generates its capabilities manifest from
@@ -1016,11 +1016,12 @@ than left to be inferred.
 | `marker.magnetic` | `@pytest.mark.magnetic` | `pyproject.toml:29` | KEEP — a capability probe in `tests/conftest.py` | `tests/conftest.py::CAPABILITY_PROBES[magnetic]` |
 | `marker.torchsim` | `@pytest.mark.torchsim` | `pyproject.toml:30` | KEEP — a capability probe in `tests/conftest.py` | `tests/conftest.py::CAPABILITY_PROBES[torchsim]` |
 | `marker.schedulefree` | `@pytest.mark.schedulefree` | `pyproject.toml:31` | KEEP — a capability probe in `tests/conftest.py` | `tests/conftest.py::CAPABILITY_PROBES[schedulefree]` |
-| `marker.bin_lammps` | `@pytest.mark.bin_lammps` | `pyproject.toml:33` | KEEP — a capability probe in `tests/conftest.py` (an external binary rather than an import) | `tests/conftest.py::CAPABILITY_PROBES[bin_lammps]` |
+| `marker.wandb` | `@pytest.mark.wandb` | `pyproject.toml:32` | KEEP — a capability probe in `tests/conftest.py`; the `wandb` extra, needed for the `--wandb` flags of §3.11 | `tests/conftest.py::CAPABILITY_PROBES[wandb]` |
+| `marker.bin_lammps` | `@pytest.mark.bin_lammps` | `pyproject.toml:34` | KEEP — a capability probe in `tests/conftest.py` (an external binary rather than an import) | `tests/conftest.py::CAPABILITY_PROBES[bin_lammps]` |
 | `marker.network` | `@pytest.mark.network` | `pyproject.toml:24` | KEEP — a capability probe in `tests/conftest.py`; never autodetected, opt-in via `MACE_CI_ALLOW_NETWORK=1` | `tests/conftest.py::CAPABILITY_PROBES[network]` |
 | `marker.slow` | `@pytest.mark.slow` | `pyproject.toml:22` | KEEP — a cost marker, not a capability: applied by directory to `tests/workflows` | `tests/conftest.py::pytest_collection_modifyitems` |
-| `marker.benchmark` | `@pytest.mark.benchmark` | `pyproject.toml:32` | KEEP — a cost marker: performance measurement, never part of a correctness gate | `tests/conftest.py::pytest_collection_modifyitems` |
-| `marker.timeout` | `@pytest.mark.timeout` | `pyproject.toml:34` | KEEP — test infrastructure, and explicitly **not** a capability: it is registered only so collection works when `pytest-timeout` is absent (the plugin ships in the `test`/`dev` extras). It has no `CAPABILITY_PROBES` entry and must not be absorbed into the capabilities manifest. Three tests use it today (`tests/workflows/test_finetuning_pseudolabels.py:97,133,169`) | `tests/workflows/test_finetuning_pseudolabels.py` |
+| `marker.benchmark` | `@pytest.mark.benchmark` | `pyproject.toml:33` | KEEP — a cost marker: performance measurement, never part of a correctness gate | `tests/conftest.py::pytest_collection_modifyitems` |
+| `marker.timeout` | `@pytest.mark.timeout` | `pyproject.toml:35` | KEEP — test infrastructure, and explicitly **not** a capability: it is registered only so collection works when `pytest-timeout` is absent (the plugin ships in the `test`/`dev` extras). It has no `CAPABILITY_PROBES` entry and must not be absorbed into the capabilities manifest. Three tests use it today (`tests/workflows/test_finetuning_pseudolabels.py:97,133,169`) | `tests/workflows/test_finetuning_pseudolabels.py` |
 
 ## 15. Default property keys — the on-disk data contract (13)
 

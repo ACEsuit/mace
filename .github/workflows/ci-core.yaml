@@ -81,7 +81,11 @@ jobs:
       - uses: ./.github/actions/setup-mace
         with:
           python-version: ${{ matrix.python-version }}
-          extras: dev
+          # The wandb extra: test_wandb_logging.py is the only place the
+          # --wandb flags run, and it is `wandb`-marked, so without the client
+          # installed here the whole file skips and the flags go back to being
+          # covered by nothing.
+          extras: dev, wandb
 
       # Training tests can leave large files around until the run ends.
       - name: Free up disk space
@@ -94,6 +98,10 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           tests: tests/workflows
+          # A lost wandb install must fail this job, not quietly stop testing
+          # the flags. The zero-collection guard runs before pytest-split
+          # deselects, so it sees the whole directory in either group.
+          require-caps: wandb
           splits: "2"
           group: ${{ matrix.split-group }}
 
@@ -108,7 +116,9 @@ jobs:
       - uses: ./.github/actions/setup-mace
         with:
           python-version: "3.12"
-          extras: dev
+          # As in the workflows job above: without the extra the wandb tests
+          # skip, and setup_wandb reads as uncovered.
+          extras: dev, wandb
       - name: Free up disk space
         run: |
           sudo rm -rf /usr/lib/jvm /usr/share/dotnet /usr/share/swift \
@@ -117,6 +127,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           tests: tests/unit tests/workflows
+          require-caps: wandb
           coverage: "true"
       - name: Coverage summary
         if: always()

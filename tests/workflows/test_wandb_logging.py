@@ -25,7 +25,11 @@ import pytest
 from mace.tools import scripts_utils
 from tests.helpers import base_mace_params, make_fitting_configs, run_mace_train
 
-pytest.importorskip("wandb")
+# Capability contract (tests/conftest.py): skipped locally when the wandb extra
+# is missing, failed in the CI jobs that install it and name `wandb` in
+# MACE_REQUIRE_CAPS. An `importorskip` here would instead be a silent skip in
+# every job, which is the shape of the gap these tests close.
+pytestmark = pytest.mark.wandb
 
 HYPERS = ["lr", "batch_size", "max_num_epochs"]
 
