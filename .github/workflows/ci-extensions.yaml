@@ -64,6 +64,14 @@ jobs:
             les:
               - *shared
               - 'tests/extensions/les/**'
+              # The golden anchors run in this job, and two of the three
+              # surfaces they pin live outside mace/modules: the external-field
+              # and BEC handling in the calculator, and the eval CLI's
+              # flattened latent multipoles. Without these paths a change to
+              # either would not run the job that holds its numbers.
+              - 'tests/golden/**'
+              - 'mace/calculators/**'
+              - 'mace/cli/eval_configs.py'
               - 'requirements/les.txt'
             magnetic:
               - *shared
@@ -156,9 +164,14 @@ jobs:
           extras: dev
           pip-packages: -r requirements/les.txt
       # First CI coverage of LES ever; documented xfails (see test file).
+      # tests/golden rides along because the MACELES anchor is les-marked and
+      # this is the only PR job with les installed at the pinned commit -- the
+      # ci-core unit job runs the same directory without it and skips that one
+      # file. The rest of tests/golden is unmarked and fast, so it simply runs
+      # in both.
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/les
+          tests: tests/extensions/les tests/golden
           markers: not gpu
           require-caps: les
           allow-network: "true"

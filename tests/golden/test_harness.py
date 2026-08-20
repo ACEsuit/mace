@@ -284,7 +284,7 @@ def test_snapshot_records_kinds_units_and_shapes(two_fixtures):
     assert bulk["forces"]["kind"] == harness.PER_ATOM_VECTOR
     assert bulk["forces"]["shape"] == [6, 3]
     assert bulk["dipole"]["kind"] == harness.GRAPH_VECTOR
-    assert bulk["BEC"]["kind"] == harness.PER_ATOM_TENSOR
+    assert bulk["BEC"]["kind"] == harness.PER_ATOM_MATRIX
     assert bulk["BEC"]["shape"] == [6, 3, 3]
     assert bulk["magforces"]["unit"] == "eV/muB"
     assert bulk["latent_quads"]["shape"] == [6, 5]
@@ -1157,10 +1157,19 @@ def test_the_eval_cli_flattens_the_born_charges_and_the_schema_unflattens_them()
     snap = harness.snapshot_outputs(Written(), atoms)
     entry = snap["fixtures"]["probe"]["outputs"]["BEC"]
     assert entry["shape"] == [4, 3, 3]
-    assert entry["kind"] == harness.PER_ATOM_TENSOR
-    # the two-component form is refused rather than reshaped into a lie
-    with pytest.raises(ValueError, match="two-component"):
-        eval_keys.unflatten_bec(np.zeros((n_atoms, 18)))
+    assert entry["kind"] == harness.PER_ATOM_MATRIX
+
+    # The two-component form, which a MACELES with latent dipoles emits and
+    # the CLI flattens the same way: `les` stacks the charge and dipole
+    # contributions (les/module/bec.py:100-104), so eighteen columns are one
+    # (2, 3, 3) per atom and the reshape is its exact inverse here too.
+    paired = rng.normal(size=(n_atoms, 2, 3, 3))
+    assert np.array_equal(
+        eval_keys.unflatten_bec(paired.reshape(n_atoms, -1)), paired
+    )
+    # any other width is `les` having changed the layout, not a reshape
+    with pytest.raises(ValueError, match=r"\(n_atoms, 9\) or \(n_atoms, 18\)"):
+        eval_keys.unflatten_bec(np.zeros((n_atoms, 12)))
 
 
 def test_only_the_per_atom_descriptors_are_pinnable():
