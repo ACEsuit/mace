@@ -337,9 +337,9 @@ Group default: MERGE into composable per-stage losses; the numerics are pinned b
 | `train.swa_forces_weight` | `--swa_forces_weight` `--stage_two_forces_weight` | `mace/tools/arg_parser.py:802` | MERGE — idem | `tests/unit/test_stage_two_weights.py::test_the_energy_and_forces_weights_reach_the_stage_two_loss` |
 | `train.swa_virials_weight` | `--swa_virials_weight` `--stage_two_virials_weight` | `mace/tools/arg_parser.py:838` | MERGE — idem | `tests/unit/test_stage_two_weights.py::test_the_virials_weight_reaches_the_virials_loss` |
 | `train.swa_stress_weight` | `--swa_stress_weight` `--stage_two_stress_weight` | `mace/tools/arg_parser.py:849` | MERGE — idem | `tests/unit/test_stage_two_weights.py::test_the_stress_weight_reaches_the_stress_loss` |
-| `train.swa_dipole_weight` | `--swa_dipole_weight` `--stage_two_dipole_weight` | `mace/tools/arg_parser.py:860` | MERGE — idem | ⚠️ gap (no test sets a stage-two loss weight; `--swa_dipole_weight` only takes effect after the swap) |
-| `train.swa_polarizability_weight` | `--swa_polarizability_weight` `--stage_two_polarizability_weight` | `mace/tools/arg_parser.py:868` | MERGE — idem | ⚠️ gap (no test sets a stage-two loss weight; `--swa_polarizability_weight` only takes effect after the swap) |
-| `train.swa_magforces_weight` | `--swa_magforces_weight` `--stage_two_magforces_weight` | `mace/tools/arg_parser.py:816` | MERGE — idem | ⚠️ gap (add a case to `tests/golden/test_tiny_magnetic.py`) |
+| `train.swa_dipole_weight` | `--swa_dipole_weight` `--stage_two_dipole_weight` | `mace/tools/arg_parser.py:860` | MERGE — idem | `tests/unit/test_stage_two_weights.py::test_the_dipole_and_polarizability_weights_reach_the_dipole_polar_loss` |
+| `train.swa_polarizability_weight` | `--swa_polarizability_weight` `--stage_two_polarizability_weight` | `mace/tools/arg_parser.py:868` | MERGE — idem | `tests/unit/test_stage_two_weights.py::test_the_dipole_and_polarizability_weights_reach_the_dipole_polar_loss` |
+| `train.swa_magforces_weight` | `--swa_magforces_weight` `--stage_two_magforces_weight` | `mace/tools/arg_parser.py:816` | MERGE — idem | `tests/unit/test_stage_two_weights.py::test_the_magforces_weight_reaches_the_universal_loss` |
 | `train.huber_delta` | `--huber_delta` | `mace/tools/arg_parser.py:888` | KEEP | `tests/unit/test_loss.py::test_conditional_huber_forces` + `tests/unit/test_loss.py::test_weighted_huber_energy_forces_stress_loss` |
 
 ### 3.8 Optimizer, scheduler and training control (26)
@@ -372,7 +372,7 @@ Group default: KEEP as the `optimizer` / `schedule` config sections. `--swa`, `-
 | `train.max_num_epochs` | `--max_num_epochs` | `mace/tools/arg_parser.py:1010` | KEEP | `tests/workflows/test_cli_contracts.py::test_training_reduces_the_validation_loss_and_writes_a_model` |
 | `train.patience` | `--patience` | `mace/tools/arg_parser.py:1013` | KEEP | `tests/workflows/test_multifiles.py::test_multifile_training` |
 | `train.eval_interval` | `--eval_interval` | `mace/tools/arg_parser.py:1043` | KEEP | `tests/workflows/test_cli_contracts.py::test_training_reduces_the_validation_loss_and_writes_a_model` |
-| `train.clip_grad` | `--clip_grad` | `mace/tools/arg_parser.py:1070` | KEEP | ⚠️ gap (add an assertion to `tests/workflows/test_cli_contracts.py::test_training_reduces_the_validation_loss_and_writes_a_model`) |
+| `train.clip_grad` | `--clip_grad` | `mace/tools/arg_parser.py:1070` | KEEP | `tests/unit/test_checkpoint_retention_and_clipping.py::test_clipping_shortens_a_gradient_that_is_too_long` |
 | `train.dry_run` | `--dry_run` | `mace/tools/arg_parser.py:1076` | KEEP — cheap and useful | `tests/workflows/test_run_train.py::test_run_train_real_pt_data_ratio` |
 
 ### 3.9 Checkpointing (4)
@@ -382,8 +382,8 @@ Group default: KEEP.
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
 | `train.restart_latest` | `--restart_latest` | `mace/tools/arg_parser.py:1058` | KEEP | `tests/workflows/test_cli_contracts.py::test_restart_latest_continues_from_the_checkpoint_epoch` |
-| `train.keep_checkpoints` | `--keep_checkpoints` | `mace/tools/arg_parser.py:1046` | KEEP | ⚠️ gap (add an assertion to `tests/workflows/test_cli_contracts.py::test_restart_latest_continues_from_the_checkpoint_epoch`) |
-| `train.save_all_checkpoints` | `--save_all_checkpoints` | `mace/tools/arg_parser.py:1052` | KEEP | ⚠️ gap (idem) |
+| `train.keep_checkpoints` | `--keep_checkpoints` | `mace/tools/arg_parser.py:1046` | KEEP | `tests/workflows/test_checkpoint_retention.py::test_keep_checkpoints_accumulates_what_a_plain_run_deletes` + `tests/unit/test_checkpoint_retention_and_clipping.py::test_without_keep_only_the_latest_checkpoint_survives` |
+| `train.save_all_checkpoints` | `--save_all_checkpoints` | `mace/tools/arg_parser.py:1052` | KEEP | `tests/workflows/test_checkpoint_retention.py::test_save_all_checkpoints_leaves_one_per_evaluation` |
 | `train.save_cpu` | `--save_cpu` | `mace/tools/arg_parser.py:1064` | DROP — safetensors checkpoints are device-agnostic, so there is nothing to choose | — |
 
 ### 3.10 Acceleration (3)
