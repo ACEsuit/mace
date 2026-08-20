@@ -556,13 +556,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=False,
     )
     parser.add_argument(
-        "--foundation_filter_elements",
-        help="Filter element during fine-tuning",
-        type=str2bool,
-        default=True,
-        required=False,
-    )
-    parser.add_argument(
         "--heads",
         help="Dict of heads: containing individual files and E0s",
         type=str,
@@ -1032,6 +1025,23 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Use readout of foundation model for transfer learning",
         action="store_false",
         default=True,
+    )
+    parser.add_argument(
+        # Deprecated spelling of the flag above, kept because it has been the
+        # only way to reach this behaviour since April 2024. It never filtered
+        # elements: it was passed as `load_readout`, so both names have always
+        # meant "copy the foundation model's readout weights". Shares the dest,
+        # so old scripts keep working and get exactly what they got before.
+        "--foundation_filter_elements",
+        help=(
+            "Deprecated alias of --foundation_model_readout. Despite the name it "
+            "never filtered elements; it decides whether the foundation model's "
+            "readout weights are transferred."
+        ),
+        dest="foundation_model_readout",
+        type=str2bool,
+        default=True,
+        required=False,
     )
     parser.add_argument(
         "--finetune_dipoles_polarizabilities",
