@@ -532,3 +532,59 @@ def test_the_gate_does_not_run_the_audit():
         "the audit no longer short-circuits ahead of the gate, so a heuristic "
         "now runs as part of a required check"
     )
+
+
+# ---------------------------------------------------------------------------
+# The five class sets added because a mutation test showed the gate missing them
+# ---------------------------------------------------------------------------
+
+#: Prefix -> a file the set must read. Before these sets existed, a new class in
+#: any of these files passed the gate in silence: the registries cover the string
+#: a user passes, not the class, and `model.`/`loss.` read two files each.
+CLASS_SET_SOURCES = {
+    "radial.": "mace/modules/radial.py",
+    "block.": "mace/modules/blocks.py",
+    "contraction.": "mace/modules/symmetric_contraction.py",
+    "transform.": "mace/data/augmentation.py",
+    "calc.class.": "mace/calculators/mace.py",
+}
+
+
+@pytest.mark.parametrize("prefix", sorted(CLASS_SET_SOURCES))
+def test_the_class_sets_are_declared(prefix):
+    assert prefix in {s.prefix for s in check_inventory.collect_sources()}
+
+
+@pytest.mark.parametrize("prefix,path", sorted(CLASS_SET_SOURCES.items()))
+def test_each_class_set_reads_its_file(prefix, path):
+    """Named by file rather than by count, so adding a class to one of them does
+    not have to be reflected here as well."""
+    declared = {s.prefix: s.decls for s in check_inventory.collect_sources()}[prefix]
+    lines = {decl.site.split(":")[0] for decl in declared.values()}
+
+    assert path in lines, f"{prefix} does not read {path}, it reads {sorted(lines)}"
+
+
+def test_the_block_set_also_reads_the_gate_module():
+    """`gate.py` holds one class and is easy to forget; it is where the gate the
+    nonlinear readouts apply actually lives."""
+    blocks = {s.prefix: s.decls for s in check_inventory.collect_sources()}["block."]
+    lines = {decl.site.split(":")[0] for decl in blocks.values()}
+
+    assert "mace/modules/gate.py" in lines
+
+
+def test_a_class_in_a_covered_file_with_no_row_fails():
+    """The mutation that used to pass. A class the inventory does not mention has
+    to be reported, whichever of the five files it appears in.
+
+    Uses the shared `_source` helper rather than a real radial set, because the
+    behaviour under test is the comparison, not which files it reads: that is
+    what the two tests above are for.
+    """
+    ok, report = check_inventory.check_set(
+        _source(BesselBasis="", ProbeBasis=""), [_row("train.BesselBasis")]
+    )
+
+    assert not ok
+    assert any("ProbeBasis" in line for line in report), report
