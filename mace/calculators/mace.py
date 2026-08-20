@@ -56,13 +56,6 @@ except (ImportError, ModuleNotFoundError):
     HYBRID_AVAILABLE = False
     run_e3nn_to_hybrid = None
 
-try:
-    import intel_extension_for_pytorch as ipex
-
-    has_ipex = True
-except ImportError:
-    has_ipex = False
-
 _EDGE_PAD_MULTIPLE = 64
 _EDGE_PAD_HEADROOM = 1.25
 
@@ -278,10 +271,6 @@ class MACECalculator(Calculator):
 
         for model in self.models:
             model.to(device)
-
-        if has_ipex and device == "xpu":
-            for model in self.models:
-                model = ipex.optimize(model)
 
         r_maxs = [model.r_max.cpu() for model in self.models]
         r_maxs = np.array(r_maxs)

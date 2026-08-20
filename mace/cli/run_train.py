@@ -38,7 +38,7 @@ from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.lora import inject_LoRAs, merge_lora_weights
 from mace.tools import torch_geometric
-from mace.tools.distributed_tools import init_distributed
+from mace.tools.distributed_tools import init_distributed, xpu_device_index
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -97,14 +97,6 @@ def run(args) -> None:
     args.key_specification = KeySpecification()
     update_keyspec_from_kwargs(args.key_specification, vars(args))
 
-    if args.device == "xpu":
-        try:
-            import intel_extension_for_pytorch as ipex
-            import oneccl_bindings_for_pytorch as oneccl  # pylint: disable=unused-import
-        except ImportError as e:
-            raise ImportError(
-                "Error: Intel extension for PyTorch not found, but XPU device was specified"
-            ) from e
     rank, local_rank, world_size = init_distributed(args)
 
     # Setup
@@ -118,7 +110,7 @@ def run(args) -> None:
         if args.device == "cuda":
             torch.cuda.set_device(local_rank)
         elif args.device == "xpu":
-            torch.xpu.set_device(local_rank)
+            torch.xpu.set_device(xpu_device_index(local_rank))
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
         logging.info(f"Processes: {world_size}")
 
@@ -927,9 +919,6 @@ def run(args) -> None:
     for i, param_group in enumerate(optimizer.param_groups):
         logging.info(f"Param group {i}: lr = {param_group['lr']}")
 
-    if args.device == "xpu":
-        logging.info("Optimzing model and optimzier for XPU")
-        model, optimizer = ipex.optimize(model, optimizer=optimizer)
     logger = tools.MetricsLogger(
         directory=args.results_dir, tag=tag + "_train"
     )  # pylint: disable=E1123
@@ -992,9 +981,13 @@ def run(args) -> None:
         # device_ids is only valid for single-device accelerator modules;
         # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
         # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
-        distributed_model = DDP(
-            model, device_ids=[local_rank] if args.device in ("cuda", "xpu") else None
-        )
+        if args.device == "cuda":
+            device_ids = [local_rank]
+        elif args.device == "xpu":
+            device_ids = [xpu_device_index(local_rank)]
+        else:
+            device_ids = None
+        distributed_model = DDP(model, device_ids=device_ids)
     else:
         distributed_model = None
 
@@ -1030,15 +1023,6 @@ def run(args) -> None:
     if args.dry_run:
         logging.info("DRY RUN mode enabled. Stopping now.")
         return
-
-    if args.device == "xpu":
-        try:
-            model, optimizer = ipex.optimize(model, optimizer=optimizer)
-        except ImportError as e:
-            logging.error(
-                "Intel Extension for PyTorch not found, but XPU device was specified. "
-                "Please install it to use XPU device."
-            )
 
     tools.train(
         model=model,
@@ -1161,9 +1145,16 @@ def run(args) -> None:
             # after param.requires_grad = False was called before evaluating stage-one model
             for param in model.parameters():
                 param.requires_grad = True
-            distributed_model = DDP(
-                model, device_ids=[local_rank] if args.device in ("cuda", "xpu") else None
-            )
+            # device_ids is only valid for single-device accelerator modules;
+            # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
+            # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
+            if args.device == "cuda":
+                device_ids = [local_rank]
+            elif args.device == "xpu":
+                device_ids = [xpu_device_index(local_rank)]
+            else:
+                device_ids = None
+            distributed_model = DDP(model, device_ids=device_ids)
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")
