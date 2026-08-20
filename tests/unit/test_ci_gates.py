@@ -1,6 +1,6 @@
-"""The two CI gates that cannot check themselves.
+"""The CI gates that cannot check themselves.
 
-Both things this file guards failed the same way once: green, and measuring
+Everything this file guards failed the same way once: green, and measuring
 nothing.
 
 * The nightly `benchmarks` job ran a directory whose only test was marked
@@ -19,8 +19,14 @@ nothing.
   rather than a floor whose subject moved. The floors are explicitly supposed
   to migrate to `mace_core`/`mace_torch` as capabilities port, so the
   rename-without-moving-the-floor case is the expected one, not a freak.
+* A capability whose tests exist but which no job names in `require-caps` is
+  the skip-o-fail contract with nothing on the other end: every test that
+  needs it skips in every job, and the suite reports success by absence. That
+  is how the `--wandb` flags stayed untested while a test file for them was
+  in the tree -- the client is an extra, nothing installed it, and the file
+  skipped everywhere.
 
-These live in tests/unit rather than beside what they describe because both
+These live in tests/unit rather than beside what they describe because they
 belong in a PR-gating job: tests/benchmarks is nightly-only by construction,
 so a guard placed there would find the hole a day after it was dug.
 """
@@ -32,7 +38,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 import pytest
 import yaml
@@ -40,6 +46,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NIGHTLY = REPO_ROOT / ".github" / "workflows" / "nightly.yaml"
 GITLAB_PIPELINE = REPO_ROOT / ".github" / "gitlab" / "ci.yml"
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 pytestmark = pytest.mark.skipif(
     not NIGHTLY.is_file(), reason="workflow definitions are not part of an install"
@@ -398,4 +405,70 @@ def test_the_coverage_job_installs_every_capability_it_requires():
     )
     assert str(_run_tests_step("coverage-full")["allow-network"]) == "true", (
         "coverage-full requires the network capability, so it must allow network"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Capabilities and the jobs that guarantee them
+# ---------------------------------------------------------------------------
+
+_CAPS_KEYS = ("require-caps", "MACE_REQUIRE_CAPS")
+
+
+def _guaranteed_capabilities() -> Set[str]:
+    """Every capability some pipeline promises to have installed.
+
+    A recursive walk of the workflows rather than a per-job reader, because the
+    promise is spelled two ways there: the `require-caps` input of the run-tests
+    action, and a plain `MACE_REQUIRE_CAPS` env on a job that calls pytest
+    itself. The GitLab pipeline is read as text instead -- it uses GitLab's
+    `!reference` tag, which `yaml.safe_load` refuses -- so only its quoted
+    `REQUIRE_CAPS` values are matched, never the prose that mentions the name.
+
+    The other direction needs no test here: a required capability that is not a
+    capability at all is a `pytest.UsageError` from `pytest_configure`, so the
+    job that misspells one fails on its first collection.
+    """
+    found: Set[str] = set()
+
+    def record(value: str) -> None:
+        found.update(cap.strip() for cap in value.split(",") if cap.strip())
+
+    def walk(node) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in _CAPS_KEYS and isinstance(value, str):
+                    record(value)
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    for path in sorted(WORKFLOWS.glob("*.yaml")) + sorted(WORKFLOWS.glob("*.yml")):
+        walk(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+    pipeline = GITLAB_PIPELINE.read_text(encoding="utf-8")
+    for match in re.finditer(r'REQUIRE_CAPS:\s*"([^"]*)"', pipeline):
+        record(match.group(1))
+    return found
+
+
+def test_every_capability_is_guaranteed_by_some_job():
+    """A capability no job requires can only ever skip, and skips read as green.
+
+    The probe is the point: locally an absent optional dependency has to skip.
+    What makes the skip a hole is a capability that is *never* required
+    anywhere, because then no run distinguishes "this feature works" from "this
+    feature was never installed".
+    """
+    from tests.conftest import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        CAPABILITY_PROBES,
+    )
+
+    orphans = sorted(set(CAPABILITY_PROBES) - _guaranteed_capabilities())
+    assert not orphans, (
+        f"no CI job guarantees {orphans} via require-caps / MACE_REQUIRE_CAPS, "
+        f"so every test marked with one of them skips in every job and the "
+        f"suite is green by absence. Either give the capability a job that "
+        f"installs it and names it, or drop the marker."
     )
