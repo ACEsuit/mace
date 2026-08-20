@@ -725,7 +725,12 @@ def check_pins(rows: list[Row]) -> list[str]:
     problems: list[str] = []
     for row in rows:
         pin = row.pinned_by.strip()
-        if not pin or pin.startswith("—"):
+        # Only an *empty* claim is skipped -- an empty cell or the bare dash a
+        # DROP row carries. A cell that opens with a dash and then says
+        # something is making a claim, and it goes through the same rules as
+        # any other: prose after a dash is the "TODO" failure with a
+        # punctuation mark in front of it.
+        if pin in ("", "—"):
             continue  # required-ness is check_row_hygiene's business
 
         # Every test path named anywhere in the cell has to resolve, not just

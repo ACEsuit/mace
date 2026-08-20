@@ -159,6 +159,14 @@ def test_row_hygiene_accepts_the_deliberate_escapes():
         # yet, so the cell recorded an intention and read as coverage.
         ("P0-5", "free text"),
         ("CORE-4 will write it", "free text"),
+        # A dash is how a row says "nothing pins this, and nothing has to".
+        # A dash followed by prose says something, and it used to be the one
+        # spelling that escaped both checks: this one skipped anything opening
+        # with a dash, and the hygiene rule only rejected the bare dash. So a
+        # KEEP row could open the cell with a dash and pass with no evidence
+        # at all -- and one did (`pkg.public_import_surface`).
+        ("— see the docs", "free text"),
+        ("— (deliberate break)", "free text"),
         # A pin naming a test that does not exist reads as coverage and is
         # therefore worse than an honest ⚠️ gap marker.
         ("`tests/unit/test_not_here.py`", "does not exist on disk"),
