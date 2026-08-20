@@ -1,0 +1,94 @@
+# The LES configuration of the committed `tiny_maceles.model` anchor.
+#
+# This file is part of the anchor, not test setup. `MACELES` reads every one
+# of these switches in its constructor and hands the *same dict* on to
+# `les.Les`, which reads a second, disjoint set of them; between the two they
+# decide which readouts exist, what shape each latent quantity comes back in,
+# and how the Ewald sum is evaluated. A reference taken without this file
+# committed next to the checkpoint would not be reproducible, because the
+# architecture is not recoverable from the weights alone.
+#
+# It is also the exact payload the CLI builds: `--les_arguments <this file>`
+# is `type=read_yaml` (mace/tools/arg_parser.py:530-536) and the resulting
+# dict is passed straight to `MACELES(les_arguments=...)`
+# (mace/tools/model_script_utils.py:431-436). `tests/golden/test_tiny_maceles.py`
+# asserts that round trip rather than assuming it.
+#
+# Everything is written out, including values that are the current default,
+# because a default is a property of the installed code and this anchor is
+# pinned against one specific `les` commit. A silent default change upstream
+# would otherwise move the numbers with nothing in the diff.
+
+# --- read by MACELES (mace/modules/extensions.py:156-188) -------------------
+
+# All four latent quantities on: charges are always predicted, and these add
+# the dipole, quadrupole, induced-charge (kappa) and induced-dipole (alpha)
+# readouts. This is the maximal head set the tiny architecture can carry.
+use_dipole: true
+use_quad: true
+use_induced_charge: true
+use_induced_dipole: true
+
+# Isotropic polarizability, deliberately. With this false the alpha readout is
+# the scalar one, so `les_alpha` is [n_atoms] rather than [n_atoms, 3, 3] --
+# and that 1-D layout is the path `make_alpha_positive` used to skip, which is
+# the regression this anchor exists to hold down. Turning it on here would
+# pin only the branch that never broke.
+use_anisotropic_polarizability: false
+alpha_irreps: 0e+1o+2e
+alpha_1o_nonlinear_readout: false
+alpha_1o_linear_w_pos: true
+
+# Squaring, on both. Negative polarizabilities and negative induced charges are
+# unphysical and reach the Ewald solver when these are off.
+make_alpha_positive: true
+make_kappa_positive: true
+
+# The three scales the latent readouts are multiplied by, and the one place
+# this file departs from the constructor defaults (0.1 / 0.01 / 0.01).
+#
+# The anchor is untrained, so its readouts emit O(1e-2). The default scales
+# take the induced charge to 1e-4 and the polarizability to 3e-4, and both are
+# then *squared* by the two positivity flags above -- which lands them at 1e-8
+# and 1e-7, an order of magnitude or two BELOW the 1e-6 absolute floor of the
+# fp64 reference row. A reference whose numbers are smaller than its own
+# tolerance pins nothing: an implementation that returned exact zeros for
+# `latent_kappas` and `latent_alphas` would reproduce it. Measured before the
+# change: max |latent_kappas| = 8.0e-9, max |latent_alphas| = 1.1e-7.
+#
+# Unit scales put every one of the five latent quantities at 1e-4 or above,
+# which is where the tolerance can see them. Nothing else about the anchor
+# changes -- these are multipliers on the readout outputs, not switches.
+output_scale: 1.0
+kappa_scale: 1.0
+alpha_scale: 1.0
+
+# Born effective charges on at the model level, so the forward returns `BEC`
+# without the caller having to ask. `bec_output_index: null` keeps all three
+# Cartesian components; an integer would slice one out and change the shape.
+compute_bec: true
+bec_output_index: null
+
+# --- read by les.Les (les/les.py:59-78, pinned commit fadfb0c) --------------
+
+# No atomwise MLP: the latent charges come from the MACE readouts above, so
+# the LES-internal network is unused and its shape would otherwise be part of
+# the checkpoint for no reason.
+use_atomwise: false
+use_fixed_atomic_charges: false
+use_atomic_alpha: false
+
+# The Ewald parameters. `sigma` is the Gaussian smearing width in Angstrom and
+# `dl` the reciprocal-space grid spacing; both change every long-range number
+# in the reference.
+sigma: 1.0
+dl: 2.0
+remove_self_interaction: true
+use_epsilon_r_scaling: false
+
+# BEC-side: the polarization is computed from mean-subtracted charges, and the
+# high-frequency dielectric constant scales it. Note this is the *model*-side
+# epsilon and is distinct from the calculator's `eps_infty`, which scales the
+# field-force correction outside the model entirely.
+remove_mean: true
+epsilon_factor: 1.0

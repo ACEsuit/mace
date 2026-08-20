@@ -396,7 +396,20 @@ CHANNELS: Dict[str, Channel] = {
     "latent_alphas": _channel("latent_alphas", PER_ATOM_MATRIX, "arb"),
     "latent_kappas": _channel("latent_kappas", PER_ATOM_MATRIX, "arb"),
     "latent_quads": _channel("latent_quads", PER_ATOM_MATRIX, "e*Ang^2"),
-    "BEC": _channel("BEC", PER_ATOM_TENSOR, "e"),
+    # Born effective charges, dP_i/dr_j per atom. Per-atom *matrix* and not
+    # per-atom tensor, which was the original declaration and could not hold
+    # what the long-range solver actually emits: `les` returns (n_atoms, 3, 3)
+    # from the latent charges alone and stacks a second 3x3 in front when the
+    # model also predicts latent dipoles -- (n_atoms, 2, 3, 3), the charge and
+    # dipole contributions to the polarization derivative (les/module/bec.py
+    # :100-104, at the pinned commit). Both layouts are live, and the
+    # calculator that consumes them branches on `ndim == 4`. Pinning the
+    # tighter kind made the dipole-carrying case unsnapshottable -- it raised
+    # on the shape, so the only golden that could exist was one for the
+    # configuration that does not exercise the dipole path. The shape is still
+    # recorded per fixture and a comparison fails on it, so nothing is lost by
+    # leaving the trailing axes free.
+    "BEC": _channel("BEC", PER_ATOM_MATRIX, "e"),
     "electrostatic_potentials": _channel(
         "electrostatic_potentials", PER_ATOM_SCALAR, "V"
     ),
