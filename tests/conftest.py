@@ -66,6 +66,7 @@ CAPABILITY_PROBES = {
     "magnetic": lambda: _module_available("sphericart"),
     "torchsim": lambda: _module_available("torch_sim"),
     "schedulefree": lambda: _module_available("schedulefree"),
+    "wandb": lambda: _module_available("wandb"),
     "bin_lammps": _lammps_available,
     # Never autodetected: network access is an explicit opt-in so that PR jobs
     # stay deterministic and downloads live only in jobs that chose them.

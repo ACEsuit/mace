@@ -402,12 +402,12 @@ Group default: KEEP (the wandb extra).
 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `train.wandb` | `--wandb` | `mace/tools/arg_parser.py:1104` | KEEP | ⚠️ gap (offline-mode smoke) |
-| `train.wandb_dir` | `--wandb_dir` | `mace/tools/arg_parser.py:1110` | KEEP | ⚠️ gap (idem) |
-| `train.wandb_project` | `--wandb_project` | `mace/tools/arg_parser.py:1116` | KEEP | ⚠️ gap (idem) |
-| `train.wandb_entity` | `--wandb_entity` | `mace/tools/arg_parser.py:1122` | KEEP | ⚠️ gap (idem) |
-| `train.wandb_name` | `--wandb_name` | `mace/tools/arg_parser.py:1128` | KEEP | ⚠️ gap (idem) |
-| `train.wandb_log_hypers` | `--wandb_log_hypers` | `mace/tools/arg_parser.py:1134` | KEEP | ⚠️ gap (idem) |
+| `train.wandb` | `--wandb` | `mace/tools/arg_parser.py:1104` | KEEP | `tests/workflows/test_wandb_logging.py::test_a_training_run_with_wandb_writes_an_offline_run` |
+| `train.wandb_dir` | `--wandb_dir` | `mace/tools/arg_parser.py:1110` | KEEP | `tests/workflows/test_wandb_logging.py::test_each_flag_lands_on_its_own_keyword` + the offline smoke, which writes there |
+| `train.wandb_project` | `--wandb_project` | `mace/tools/arg_parser.py:1116` | KEEP | `tests/workflows/test_wandb_logging.py::test_each_flag_lands_on_its_own_keyword` |
+| `train.wandb_entity` | `--wandb_entity` | `mace/tools/arg_parser.py:1122` | KEEP | `tests/workflows/test_wandb_logging.py::test_each_flag_lands_on_its_own_keyword` |
+| `train.wandb_name` | `--wandb_name` | `mace/tools/arg_parser.py:1128` | KEEP | `tests/workflows/test_wandb_logging.py::test_each_flag_lands_on_its_own_keyword` |
+| `train.wandb_log_hypers` | `--wandb_log_hypers` | `mace/tools/arg_parser.py:1134` | KEEP | `tests/workflows/test_wandb_logging.py::test_only_the_requested_hyperparameters_are_logged` |
 
 ### 3.12 MagneticMACE (9)
 
@@ -840,7 +840,7 @@ copy — so the tree depends on both at once (§19).
 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `extra.wandb` | `[wandb]` | `setup.cfg` | KEEP | ⚠️ gap (offline-mode smoke) |
+| `extra.wandb` | `[wandb]` | `setup.cfg` | KEEP | `tests/workflows/test_wandb_logging.py::test_a_training_run_with_wandb_writes_an_offline_run` (`wandb`-marked, and the ci-core workflows job installs the extra and names the capability, so the extra is what is being exercised) |
 | `extra.fpsample` | `[fpsample]` | `setup.cfg` | KEEP — fast farthest-point sampling for fine-tuning selection | `tests/workflows/test_finetuning_select_cli.py::test_fps_without_fpsample_falls_back_and_says_so` (the fallback, in whichever direction the extra is present) |
 | `extra.schedulefree` | `[schedulefree]` | `setup.cfg` | KEEP | `tests/extensions/schedulefree` |
 | `extra.torchsim` | `[torchsim]` | `setup.cfg` | KEEP — a first-class deployment path, not a secondary integration; the coupling to torch-sim's still-moving API becomes MACE's problem, so the version is pinned in `requirements/` | `tests/extensions/torchsim` |
@@ -980,12 +980,12 @@ the one configuration channel that leaves no trace in the run metadata.
 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `env.MACE_TIME` | `MACE_TIME` | `mace/calculators/lammps_mliap_mace.py:25` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (per-step timing) | ⚠️ gap (env-var behaviour untested) |
-| `env.MACE_PROFILE` | `MACE_PROFILE` | `mace/calculators/lammps_mliap_mace.py:26` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (torch profiler) | ⚠️ gap (idem) |
-| `env.MACE_PROFILE_START` | `MACE_PROFILE_START` | `mace/calculators/lammps_mliap_mace.py:27` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (first profiled step) | ⚠️ gap (idem) |
-| `env.MACE_PROFILE_END` | `MACE_PROFILE_END` | `mace/calculators/lammps_mliap_mace.py:28` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (last profiled step) | ⚠️ gap (idem) |
-| `env.MACE_ALLOW_CPU` | `MACE_ALLOW_CPU` | `mace/calculators/lammps_mliap_mace.py:29` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (tolerate CPU tensors) | ⚠️ gap (idem) |
-| `env.MACE_FORCE_CPU` | `MACE_FORCE_CPU` | `mace/calculators/lammps_mliap_mace.py:30` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (force CPU execution) | ⚠️ gap (idem) |
+| `env.MACE_TIME` | `MACE_TIME` | `mace/calculators/lammps_mliap_mace.py:25` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (per-step timing) | `tests/integrations/lammps/test_mliap_env_config.py::test_mace_time_reaches_the_timer` |
+| `env.MACE_PROFILE` | `MACE_PROFILE` | `mace/calculators/lammps_mliap_mace.py:26` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (torch profiler) | `tests/integrations/lammps/test_mliap_env_config.py::test_profiling_off_does_not_touch_the_profiler` |
+| `env.MACE_PROFILE_START` | `MACE_PROFILE_START` | `mace/calculators/lammps_mliap_mace.py:27` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (first profiled step) | `tests/integrations/lammps/test_mliap_env_config.py::test_the_profiler_starts_at_the_step_it_was_told` |
+| `env.MACE_PROFILE_END` | `MACE_PROFILE_END` | `mace/calculators/lammps_mliap_mace.py:28` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (last profiled step) | `tests/integrations/lammps/test_mliap_env_config.py::test_the_end_step_stops_the_profiler_and_exits` |
+| `env.MACE_ALLOW_CPU` | `MACE_ALLOW_CPU` | `mace/calculators/lammps_mliap_mace.py:29` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (tolerate CPU tensors) | `tests/integrations/lammps/test_mliap_env_config.py::test_allow_cpu_lets_a_kokkos_run_proceed_on_the_host` |
+| `env.MACE_FORCE_CPU` | `MACE_FORCE_CPU` | `mace/calculators/lammps_mliap_mace.py:30` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (force CPU execution) | `tests/integrations/lammps/test_mliap_env_config.py::test_force_cpu_skips_the_device_check_entirely` |
 | `env.MACE_ASE_PAD_NUM_ATOMS` | `MACE_ASE_PAD_NUM_ATOMS` | `mace/calculators/mace.py:411` | KEEP — the calculator's padding override, as an explicit config field in v1 | `tests/workflows/test_cli_contracts.py::test_padding_through_the_two_environment_variables_behaves_identically` |
 | `env.MACE_ASE_PAD_NUM_EDGES` | `MACE_ASE_PAD_NUM_EDGES` | `mace/calculators/mace.py:413` | KEEP — idem | `tests/workflows/test_cli_contracts.py::test_padding_through_the_two_environment_variables_behaves_identically` |
 | `env.MACE_USE_CUEQ_CG` | `MACE_USE_CUEQ_CG` | `mace/tools/cg.py:23` | DROP — the variable goes, not the capability: an environment variable that silently changes model numerics is unreproducible and never lands in the run metadata; it is what makes machine-to-machine differences unexplainable. The CG source becomes a backend decision recorded in the resolved config | ⚠️ gap (nothing compares the two CG sources against each other) |
@@ -999,7 +999,7 @@ set:
 | `stdenv.TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` | `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` — set by `mace/__init__.py` so pickled checkpoints load under newer torch defaults | `mace/__init__.py` | DROP — v1 checkpoints are neutral-format (safetensors + manifest), so nothing needs the unsafe-pickle escape hatch; the legacy loader keeps it until the converter is the only reader | `tests/unit/test_scale_shift_dtype.py::test_a_full_pickle_round_trip_preserves_every_buffer_bit_for_bit` |
 | `stdenv.MASTER_PORT` | `MASTER_ADDR` / `MASTER_PORT` / `RANK` / `WORLD_SIZE` / `LOCAL_RANK` / `SLURM_*` / `OMPI_*` — standard DDP and launcher plumbing | `mace/tools/slurm_distributed.py`, `mace/tools/distributed_tools.py` | KEEP — the launcher contract is torch's and SLURM's, not MACE's, so v1 reads the same variables | `tests/workflows/test_distributed.py` |
 
-## 14. Registered pytest markers (13)
+## 14. Registered pytest markers (14)
 
 The capability model of the suite: locally a test whose capability is missing skips, and in CI a
 job that exports `MACE_REQUIRE_CAPS` fails instead. CI generates its capabilities manifest from
@@ -1016,11 +1016,12 @@ than left to be inferred.
 | `marker.magnetic` | `@pytest.mark.magnetic` | `pyproject.toml:29` | KEEP — a capability probe in `tests/conftest.py` | `tests/conftest.py::CAPABILITY_PROBES[magnetic]` |
 | `marker.torchsim` | `@pytest.mark.torchsim` | `pyproject.toml:30` | KEEP — a capability probe in `tests/conftest.py` | `tests/conftest.py::CAPABILITY_PROBES[torchsim]` |
 | `marker.schedulefree` | `@pytest.mark.schedulefree` | `pyproject.toml:31` | KEEP — a capability probe in `tests/conftest.py` | `tests/conftest.py::CAPABILITY_PROBES[schedulefree]` |
-| `marker.bin_lammps` | `@pytest.mark.bin_lammps` | `pyproject.toml:33` | KEEP — a capability probe in `tests/conftest.py` (an external binary rather than an import) | `tests/conftest.py::CAPABILITY_PROBES[bin_lammps]` |
+| `marker.wandb` | `@pytest.mark.wandb` | `pyproject.toml:32` | KEEP — a capability probe in `tests/conftest.py`; the `wandb` extra, needed for the `--wandb` flags of §3.11 | `tests/conftest.py::CAPABILITY_PROBES[wandb]` |
+| `marker.bin_lammps` | `@pytest.mark.bin_lammps` | `pyproject.toml:34` | KEEP — a capability probe in `tests/conftest.py` (an external binary rather than an import) | `tests/conftest.py::CAPABILITY_PROBES[bin_lammps]` |
 | `marker.network` | `@pytest.mark.network` | `pyproject.toml:24` | KEEP — a capability probe in `tests/conftest.py`; never autodetected, opt-in via `MACE_CI_ALLOW_NETWORK=1` | `tests/conftest.py::CAPABILITY_PROBES[network]` |
 | `marker.slow` | `@pytest.mark.slow` | `pyproject.toml:22` | KEEP — a cost marker, not a capability: applied by directory to `tests/workflows` | `tests/conftest.py::pytest_collection_modifyitems` |
-| `marker.benchmark` | `@pytest.mark.benchmark` | `pyproject.toml:32` | KEEP — a cost marker: performance measurement, never part of a correctness gate | `tests/conftest.py::pytest_collection_modifyitems` |
-| `marker.timeout` | `@pytest.mark.timeout` | `pyproject.toml:34` | KEEP — test infrastructure, and explicitly **not** a capability: it is registered only so collection works when `pytest-timeout` is absent (the plugin ships in the `test`/`dev` extras). It has no `CAPABILITY_PROBES` entry and must not be absorbed into the capabilities manifest. Three tests use it today (`tests/workflows/test_finetuning_pseudolabels.py:97,133,169`) | `tests/workflows/test_finetuning_pseudolabels.py` |
+| `marker.benchmark` | `@pytest.mark.benchmark` | `pyproject.toml:33` | KEEP — a cost marker: performance measurement, never part of a correctness gate | `tests/conftest.py::pytest_collection_modifyitems` |
+| `marker.timeout` | `@pytest.mark.timeout` | `pyproject.toml:35` | KEEP — test infrastructure, and explicitly **not** a capability: it is registered only so collection works when `pytest-timeout` is absent (the plugin ships in the `test`/`dev` extras). It has no `CAPABILITY_PROBES` entry and must not be absorbed into the capabilities manifest. Three tests use it today (`tests/workflows/test_finetuning_pseudolabels.py:97,133,169`) | `tests/workflows/test_finetuning_pseudolabels.py` |
 
 ## 15. Default property keys — the on-disk data contract (13)
 
