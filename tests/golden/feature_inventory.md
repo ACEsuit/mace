@@ -349,9 +349,9 @@ Group default: KEEP as the `optimizer` / `schedule` config sections. `--swa`, `-
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
 | `train.optimizer` | `--optimizer` | `mace/tools/arg_parser.py:894` | KEEP — adam / adamw / schedulefree | `tests/workflows/test_cli_contracts.py::test_lbfgs_is_selectable_from_the_command_line_and_reduces_the_loss` + `tests/extensions/schedulefree` |
-| `train.beta` | `--beta` | `mace/tools/arg_parser.py:901` | KEEP | ⚠️ gap (add a case beside `tests/workflows/test_cli_contracts.py::test_lbfgs_is_selectable_from_the_command_line_and_reduces_the_loss`) |
-| `train.amsgrad` | `--amsgrad` | `mace/tools/arg_parser.py:955` | KEEP | ⚠️ gap (add a case beside `tests/workflows/test_cli_contracts.py::test_lbfgs_is_selectable_from_the_command_line_and_reduces_the_loss`) |
-| `train.weight_decay` | `--weight_decay` | `mace/tools/arg_parser.py:940` | KEEP | ⚠️ gap (add a case beside `tests/workflows/test_cli_contracts.py::test_lbfgs_is_selectable_from_the_command_line_and_reduces_the_loss`) |
+| `train.beta` | `--beta` | `mace/tools/arg_parser.py:901` | KEEP | `tests/unit/test_optimizer_flags.py::test_beta_is_the_first_adam_moment` |
+| `train.amsgrad` | `--amsgrad` | `mace/tools/arg_parser.py:955` | KEEP | `tests/unit/test_optimizer_flags.py::test_amsgrad_reaches_the_optimizer` |
+| `train.weight_decay` | `--weight_decay` | `mace/tools/arg_parser.py:940` | KEEP | `tests/unit/test_optimizer_flags.py::test_weight_decay_applies_to_the_interaction_linears_and_the_products` + `tests/unit/test_optimizer_flags.py::test_weight_decay_is_kept_off_the_rest` |
 | `train.beta1_schedulefree` | `--beta1_schedulefree` | `mace/tools/arg_parser.py:907` | KEEP — the schedulefree extra's tuning surface | `tests/extensions/schedulefree` |
 | `train.beta2_schedulefree` | `--beta2_schedulefree` | `mace/tools/arg_parser.py:913` | KEEP — idem | `tests/extensions/schedulefree` |
 | `train.warmup_steps_schedulefree` | `--warmup_steps_schedulefree` | `mace/tools/arg_parser.py:919` | KEEP — idem (linear LR warmup, not an LR scheduler) | `tests/extensions/schedulefree` |
@@ -361,14 +361,14 @@ Group default: KEEP as the `optimizer` / `schedule` config sections. `--swa`, `-
 | `train.lr` | `--lr` | `mace/tools/arg_parser.py:929` | KEEP | `tests/workflows/test_cli_contracts.py::test_training_reduces_the_validation_loss_and_writes_a_model` |
 | `train.lr_factor` | `--lr_factor` | `mace/tools/arg_parser.py:964` | KEEP | `tests/workflows/test_freeze.py::test_run_train_soft_freeze` |
 | `train.scheduler` | `--scheduler` | `mace/tools/arg_parser.py:961` | KEEP | `tests/extensions/schedulefree/test_schedulefree.py::test_can_load_checkpoint` (sets `args.scheduler`; nothing passes the flag itself) |
-| `train.scheduler_patience` | `--scheduler_patience` | `mace/tools/arg_parser.py:967` | KEEP | ⚠️ gap (no test passes `--scheduler_patience`) |
+| `train.scheduler_patience` | `--scheduler_patience` | `mace/tools/arg_parser.py:967` | KEEP | `tests/unit/test_optimizer_flags.py::test_scheduler_patience_reaches_the_plateau_scheduler` |
 | `train.lr_scheduler_gamma` | `--lr_scheduler_gamma` | `mace/tools/arg_parser.py:970` | KEEP | `tests/extensions/schedulefree/test_schedulefree.py::test_can_load_checkpoint` (sets `args.lr_scheduler_gamma`; nothing passes the flag itself) |
 | `train.lr_params_factors` | `--lr_params_factors` | `mace/tools/arg_parser.py:943` | MERGE — typed per-param-group fields of the per-stage optimizer config; the capability stays (`--freeze` reuses it by zeroing factors), the hand-parsed JSON-in-a-string dies | `tests/workflows/test_freeze.py::test_run_train_soft_freeze` |
 | `train.swa` | `--swa` `--stage_two` | `mace/tools/arg_parser.py:976` | MERGE — stage two becomes a preset second stage of an arbitrary-stage schedule | `tests/unit/test_arg_parser.py::test_stage_two_alias_maps_to_swa_dest` + `tests/workflows/test_multifiles.py::test_multifile_training` |
 | `train.start_swa` | `--start_swa` `--start_stage_two` | `mace/tools/arg_parser.py:984` | MERGE — idem | `tests/unit/test_arg_parser.py::test_stage_two_alias_maps_to_swa_dest` + `tests/workflows/test_multifiles.py::test_multifile_training` |
-| `train.swa_lr` | `--swa_lr` `--stage_two_lr` | `mace/tools/arg_parser.py:932` | MERGE — idem | ⚠️ gap (no test passes `--swa_lr`; only the dest aliasing is pinned) |
-| `train.ema` | `--ema` | `mace/tools/arg_parser.py:998` | KEEP | ⚠️ gap (every training fixture sets `--ema`, but nothing asserts what it changes; add a case to `tests/workflows/test_cli_contracts.py`) |
-| `train.ema_decay` | `--ema_decay` | `mace/tools/arg_parser.py:1004` | KEEP | ⚠️ gap (idem) |
+| `train.swa_lr` | `--swa_lr` `--stage_two_lr` | `mace/tools/arg_parser.py:932` | MERGE — idem | `tests/unit/test_optimizer_flags.py::test_swa_lr_is_the_rate_the_second_stage_anneals_to` |
+| `train.ema` | `--ema` | `mace/tools/arg_parser.py:998` | KEEP | `tests/unit/test_optimizer_flags.py::test_the_average_lags_the_parameters` |
+| `train.ema_decay` | `--ema_decay` | `mace/tools/arg_parser.py:1004` | KEEP | `tests/unit/test_optimizer_flags.py::test_the_configured_decay_barely_matters_at_the_start` (the cold-start cap) + `tests/unit/test_optimizer_flags.py::test_a_higher_decay_lags_further_once_the_warmup_is_past` |
 | `train.max_num_epochs` | `--max_num_epochs` | `mace/tools/arg_parser.py:1010` | KEEP | `tests/workflows/test_cli_contracts.py::test_training_reduces_the_validation_loss_and_writes_a_model` |
 | `train.patience` | `--patience` | `mace/tools/arg_parser.py:1013` | KEEP | `tests/workflows/test_multifiles.py::test_multifile_training` |
 | `train.eval_interval` | `--eval_interval` | `mace/tools/arg_parser.py:1043` | KEEP | `tests/workflows/test_cli_contracts.py::test_training_reduces_the_validation_loss_and_writes_a_model` |
