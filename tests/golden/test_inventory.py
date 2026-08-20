@@ -393,6 +393,51 @@ def test_argparse_dest_resolution():
     assert dests["swa_lr"].detail == "--swa_lr --stage_two_lr"
 
 
+def test_the_calculator_surface_includes_what_is_read_from_kwargs():
+    """A constructor knob spelled only inside `**kwargs` is still a knob.
+
+    Reading the signature alone left three of them out of the set comparison,
+    so nothing could fail for their having no row -- `compute_atomic_stresses`
+    among them, which decides whether the calculator implements `stresses` and
+    `virials` at all. What is *not* collected matters as much: the rest of the
+    bag goes to `Calculator.__init__`, and enumerating it wholesale would
+    inventory ASE's parameters as MACE surface.
+    """
+    params = check_inventory.source_calculator_params()
+    for name in ("head", "compute_atomic_stresses", "model_path"):
+        assert name in params, sorted(params)
+        assert "kwargs" in params[name].detail
+    for passthrough in ("restart", "label", "atoms", "directory"):
+        assert passthrough not in params, passthrough
+
+
+def test_the_kwargs_extractor_reads_every_spelling(tmp_path, monkeypatch):
+    """The four forms the calculators use, and nothing else from the bag.
+
+    `kwargs.get(computed_name)` is the deliberate omission: a key that is not
+    a literal cannot be enumerated, so it is skipped rather than guessed at.
+    """
+    monkeypatch.setattr(check_inventory, "REPO", tmp_path)
+    source = tmp_path / "probe_calculator.py"
+    source.write_text(
+        "\n".join(
+            [
+                "class Probe:",
+                "    def __init__(self, declared, **kwargs):",
+                "        Base.__init__(self, **kwargs)",
+                "        self.a = kwargs.get('by_get', None)",
+                "        self.b = kwargs.pop('by_pop', None)",
+                "        if 'by_membership' in kwargs:",
+                "            self.c = kwargs['by_subscript']",
+                "        self.d = kwargs.get(computed_name)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    reads = check_inventory._kwargs_reads(source, "Probe")
+    assert set(reads) == {"by_get", "by_pop", "by_membership", "by_subscript"}
+
+
 def test_the_three_output_key_surfaces_are_non_empty():
     """The user-observable surface is three sets, not one: what the model returns,
     what the calculator exposes, and what the eval CLI writes into the XYZ."""

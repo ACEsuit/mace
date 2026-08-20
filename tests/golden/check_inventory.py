@@ -355,17 +355,96 @@ def _init_params(path: Path, class_name: str) -> dict[str, Decl]:
     raise SystemExit(f"{class_name}.__init__ not found — the extractor is stale")
 
 
+def _kwargs_reads(path: Path, class_name: str) -> dict[str, Decl]:
+    """Constructor knobs read out of `**kwargs` instead of being declared.
+
+    Three knobs are read that way today, and a signature-only extractor
+    leaves all three out of the set comparison, so nothing can fail for their
+    having no row. `compute_atomic_stresses` is the clearest case: callers
+    pass it to the constructor, it decides whether `stresses` and `virials`
+    are implemented properties at all, and it appears nowhere in the
+    signature.
+
+    Only names the class itself reads are collected. The rest of `**kwargs`
+    goes to `Calculator.__init__`, so enumerating the bag wholesale would
+    inventory ASE's parameters (`restart`, `label`, ...) as MACE surface.
+    """
+    for node in _parse(path).body:
+        if not isinstance(node, ast.ClassDef) or node.name != class_name:
+            continue
+        for item in node.body:
+            if not isinstance(item, ast.FunctionDef) or item.name != "__init__":
+                continue
+            if item.args.kwarg is None:
+                return {}
+            bag = item.args.kwarg.arg
+            out: dict[str, Decl] = {}
+            for sub in ast.walk(item):
+                name = _kwargs_key(sub, bag)
+                if name is not None:
+                    out.setdefault(
+                        name,
+                        Decl(
+                            name,
+                            f"{class_name} (**{bag})",
+                            f"{_rel(path)}:{sub.lineno}",
+                        ),
+                    )
+            return out
+    raise SystemExit(f"{class_name}.__init__ not found — the extractor is stale")
+
+
+def _kwargs_key(node: ast.AST, bag: str) -> str | None:
+    """The name read from `bag` by one node, in any of the three spellings the
+    calculators use: `bag.get("x")` / `bag.pop("x")`, `bag["x"]`, `"x" in bag`.
+    """
+    if isinstance(node, ast.Call):
+        func = node.func
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr in ("get", "pop")
+            and isinstance(func.value, ast.Name)
+            and func.value.id == bag
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            return node.args[0].value
+    if (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == bag
+        and isinstance(node.slice, ast.Constant)
+        and isinstance(node.slice.value, str)
+    ):
+        return node.slice.value
+    if (
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], (ast.In, ast.NotIn))
+        and isinstance(node.left, ast.Constant)
+        and isinstance(node.left.value, str)
+        and isinstance(node.comparators[0], ast.Name)
+        and node.comparators[0].id == bag
+    ):
+        return node.left.value
+    return None
+
+
 def source_calculator_params() -> dict[str, Decl]:
     """`MACECalculator.__init__` plus whatever `MagneticMACECalculator` adds.
 
     The magnetic calculator is a second Calculator subclass rather than a mode
     of the first, so its `__init__` is a second public surface; taking the union
-    keeps its extra knobs from being invisible.
+    keeps its extra knobs from being invisible. Each of the two is read twice:
+    the signature, and the names taken back out of `**kwargs`.
     """
     path = REPO / "mace" / "calculators" / "mace.py"
-    out = _init_params(path, "MACECalculator")
-    for name, decl in _init_params(path, "MagneticMACECalculator").items():
-        out.setdefault(name, decl)
+    out: dict[str, Decl] = {}
+    for class_name in ("MACECalculator", "MagneticMACECalculator"):
+        for source in (_init_params, _kwargs_reads):
+            for name, decl in source(path, class_name).items():
+                out.setdefault(name, decl)
     return out
 
 
