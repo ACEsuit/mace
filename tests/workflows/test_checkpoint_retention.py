@@ -12,10 +12,7 @@ evaluation. Getting that backwards either fills a disk or throws away the histor
 a restart needs, and a training run reports neither.
 """
 
-from pathlib import Path
-
 import ase.io
-import pytest
 
 from tests.helpers import base_mace_params, make_fitting_configs, run_mace_train
 
