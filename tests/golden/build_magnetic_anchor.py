@@ -183,8 +183,14 @@ def build_model() -> torch.nn.Module:
     )
 
 
-def build_anchor(model_path: Path = MODEL_PATH) -> Path:
-    """Build, save and document the anchor. Returns the model path."""
+def build_anchor(model_path: Path) -> Path:
+    """Build, save and document the anchor. Returns the model path.
+
+    `model_path` is required rather than defaulted to `MODEL_PATH`: this writes
+    over whatever it is given, and the committed anchor is what every reference
+    in this directory was recorded against. A default meant that calling this
+    with no argument, from a REPL or a half-remembered one-liner, silently
+    replaced the checkpoint with a fresh one -- same recipe, different bytes."""
     previous = torch.get_default_dtype()
     torch.set_default_dtype(torch.float64)
     try:
@@ -200,7 +206,7 @@ def build_anchor(model_path: Path = MODEL_PATH) -> Path:
         "recipe": "tests/golden/build_magnetic_anchor.py",
         "command": (
             "python -c \"from tests.golden.build_magnetic_anchor import "
-            'build_anchor; build_anchor()"'
+            'build_anchor, MODEL_PATH; build_anchor(MODEL_PATH)"'
         ),
         "regenerate_with": (
             "python tests/golden/regenerate.py --target magnetic "
@@ -219,11 +225,15 @@ def build_anchor(model_path: Path = MODEL_PATH) -> Path:
         "scf_config": SCF_CONFIG,
         "num_parameters": int(sum(p.numel() for p in model.parameters())),
     }
-    with SIDECAR_PATH.open("w", encoding="utf-8") as handle:
+    # Beside the model that was actually written, not beside the committed
+    # one: a build into a temporary directory used to leave the checkpoint
+    # there and overwrite the committed sidecar in place.
+    sidecar_path = model_path.with_suffix(".build.json")
+    with sidecar_path.open("w", encoding="utf-8") as handle:
         json.dump(sidecar, handle, indent=2, sort_keys=True)
         handle.write("\n")
     return model_path
 
 
 if __name__ == "__main__":  # pragma: no cover - manual invocation
-    print(build_anchor())
+    print(build_anchor(MODEL_PATH))
