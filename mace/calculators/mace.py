@@ -784,6 +784,23 @@ class MACECalculator(Calculator):
             self.results["node_energy"] -= node_e0
         if self.results.get("stress") is not None:
             self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
+        # The committee's stresses go with it. Leaving them 3x3 while `stress` is
+        # Voigt-6 meant a caller could not index a mean and its own spread the
+        # same way, and `MagneticMACECalculator` already converts its
+        # `stress_var`, so one key name carried two shapes depending on which
+        # calculator produced it. The helper broadcasts, so the committee axis of
+        # `stress_comm` survives: (n_models, 3, 3) becomes (n_models, 6).
+        # Written out rather than looped, because the golden surface scan follows
+        # literal keys: `self.results[key]` with a loop variable is a write it
+        # cannot attribute, and it refuses to let one pass unexplained.
+        if self.results.get("stress_comm") is not None:
+            self.results["stress_comm"] = full_3x3_to_voigt_6_stress(
+                self.results["stress_comm"]
+            )
+        if self.results.get("stress_var") is not None:
+            self.results["stress_var"] = full_3x3_to_voigt_6_stress(
+                self.results["stress_var"]
+            )
         if self.results.get("stresses") is not None:
             self.results["stresses"] = np.asarray(
                 [

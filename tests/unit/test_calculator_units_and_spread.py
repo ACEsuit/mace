@@ -27,6 +27,7 @@ from ase import Atoms
 from e3nn import o3
 
 from mace import modules
+import mace.calculators.mace as mace_calculator_module
 from mace.calculators import MACECalculator
 from mace.tools import AtomicNumberTable
 
@@ -251,25 +252,65 @@ def test_a_committee_reports_the_stress_of_the_members_it_averaged(water):
     results = _results(water, [_tiny_model(0), _tiny_model(1)])
 
     members = results["stress_comm"]
-    assert members.shape == (2, 3, 3)
+    assert members.shape == (2, 6), "one Voigt-6 stress per member"
     assert not np.allclose(members[0], members[1]), "two seeds, two stresses"
     assert np.allclose(results["stress_var"], np.var(members, axis=0))
 
 
-def test_the_stress_spread_is_not_in_the_layout_the_stress_is(water):
-    """`stress` is Voigt-6 and `stress_var` is the full 3x3, so a consumer cannot
-    index them the same way.
-
-    Pinned rather than corrected: `MagneticMACECalculator` converts its own
-    `stress_var` to Voigt-6 (mace/calculators/mace.py:1436) and this one does
-    not, so the two calculators disagree on the shape behind one key name, and
-    picking a side changes what existing readers receive.
+def test_the_stress_spread_is_in_the_same_layout_as_the_stress(water):
+    """One layout for the mean and its spread, so a caller can index them the
+    same way. `MACECalculator` used to leave these two 3x3 while `stress` was
+    Voigt-6, which also disagreed with `MagneticMACECalculator`.
     """
     results = _results(water, [_tiny_model(0), _tiny_model(1)])
 
     assert np.shape(results["stress"]) == (6,)
-    assert np.shape(results["stress_var"]) == (3, 3)
-    assert np.shape(results["stress_comm"]) == (2, 3, 3)
+    assert np.shape(results["stress_var"]) == (6,)
+    assert np.shape(results["stress_comm"]) == (2, 6)
+
+
+def test_the_committee_axis_survives_the_voigt_conversion(water):
+    """The conversion broadcasts, so three members stay three members."""
+    results = _results(water, [_tiny_model(0), _tiny_model(1), _tiny_model(2)])
+
+    assert np.shape(results["stress_comm"]) == (3, 6)
+    assert np.allclose(np.mean(results["stress_comm"], axis=0), results["stress"])
+    assert np.allclose(np.var(results["stress_comm"], axis=0), results["stress_var"])
+
+
+def test_the_members_are_symmetric_so_the_conversion_loses_nothing(water):
+    """Voigt-6 keeps six of nine components and averages the off-diagonal pairs,
+    which is only lossless because a MACE stress is symmetric. Asserted on the
+    raw 3x3 tensors, since after the conversion the evidence is gone.
+    """
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        atoms = water.copy()
+        calc = MACECalculator(
+            models=[_tiny_model(0), _tiny_model(1)],
+            device="cpu",
+            default_dtype="float64",
+        )
+        seen = []
+        original = mace_calculator_module.full_3x3_to_voigt_6_stress
+
+        def watching(value):
+            seen.append(np.asarray(value).copy())
+            return original(value)
+
+        mace_calculator_module.full_3x3_to_voigt_6_stress = watching
+        try:
+            calc.calculate(atoms)
+        finally:
+            mace_calculator_module.full_3x3_to_voigt_6_stress = original
+    finally:
+        torch.set_default_dtype(previous)
+
+    tensors = [array for array in seen if array.shape[-2:] == (3, 3)]
+    assert tensors, "nothing was converted, so the assertion below proves nothing"
+    for array in tensors:
+        assert np.allclose(array, np.swapaxes(array, -1, -2))
 
 
 def test_the_stress_variance_scales_as_the_square_of_the_conversion(water):
