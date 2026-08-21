@@ -38,7 +38,7 @@ from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.lora import inject_LoRAs, merge_lora_weights
 from mace.tools import torch_geometric
-from mace.tools.distributed_tools import init_distributed
+from mace.tools.distributed_tools import init_distributed, xpu_device_index
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -97,14 +97,6 @@ def run(args) -> None:
     args.key_specification = KeySpecification()
     update_keyspec_from_kwargs(args.key_specification, vars(args))
 
-    if args.device == "xpu":
-        try:
-            import intel_extension_for_pytorch as ipex
-            import oneccl_bindings_for_pytorch as oneccl  # pylint: disable=unused-import
-        except ImportError as e:
-            raise ImportError(
-                "Error: Intel extension for PyTorch not found, but XPU device was specified"
-            ) from e
     rank, local_rank, world_size = init_distributed(args)
 
     # Setup
@@ -118,7 +110,7 @@ def run(args) -> None:
         if args.device == "cuda":
             torch.cuda.set_device(local_rank)
         elif args.device == "xpu":
-            torch.xpu.set_device(local_rank)
+            torch.xpu.set_device(xpu_device_index(local_rank))
         logging.info(f"Process group initialized: {torch.distributed.is_initialized()}")
         logging.info(f"Processes: {world_size}")
 
@@ -415,9 +407,22 @@ def run(args) -> None:
             len(head_config.collections.valid) for head_config in head_configs
         )
         if size_collections_train < args.batch_size:
-            logging.error(
-                f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train})"
-            )
+            # Fatal or not depending on `drop_last`, which the training loader
+            # sets from these same two flags. Keeping the partial batch makes
+            # this ordinary, and reporting it at ERROR on a run that then
+            # trains to completion is what the split is for.
+            if args.distributed:
+                logging.warning(
+                    f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train}); what each rank receives is decided by the distributed sampler, not by this number"
+                )
+            elif args.lbfgs:
+                logging.warning(
+                    f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train}); --lbfgs keeps the incomplete batch, so every epoch is one batch of {size_collections_train}"
+                )
+            else:
+                logging.error(
+                    f"Batch size ({args.batch_size}) is larger than the number of training data ({size_collections_train})"
+                )
         if size_collections_valid < args.valid_batch_size:
             logging.warning(
                 f"Validation batch size ({args.valid_batch_size}) is larger than the number of validation data ({size_collections_valid})"
@@ -780,6 +785,37 @@ def run(args) -> None:
         generator=torch.Generator().manual_seed(args.seed),
     )
 
+    if len(train_loader) == 0:
+        # Two ways to end up here, and they need different advice.
+        #
+        # Without a distributed sampler the loader's own `drop_last` discards an
+        # incomplete final batch, which is the only batch when the set is smaller
+        # than one, so the batch size is the thing to change.
+        #
+        # With one, the loader keeps its partial batch and the *sampler* holds the
+        # `drop_last`: it splits the set across ranks and discards the remainder,
+        # so a set smaller than the world size leaves a rank with nothing. Lowering
+        # the batch size cannot fix that, and saying the set is smaller than the
+        # batch would often be false.
+        #
+        # Either way, without this the run died further down in
+        # `compute_avg_num_neighbors` on a `torch.cat()` of an empty list, naming
+        # none of it.
+        if train_sampler is not None:
+            raise RuntimeError(
+                f"This rank has no training data. The distributed sampler splits "
+                f"{len(train_set)} configurations over {world_size} ranks and "
+                f"drops the remainder, leaving {len(train_set) // world_size} per "
+                f"rank. Use fewer ranks or more data; --batch_size is not the "
+                f"cause."
+            )
+        raise RuntimeError(
+            f"The training set has {len(train_set)} configurations, fewer than "
+            f"--batch_size ({args.batch_size}), so the only batch was "
+            f"incomplete and has been dropped -- there is nothing left to "
+            f"train on. Lower --batch_size."
+        )
+
     valid_loaders = {heads[i]: None for i in range(len(heads))}
     if not isinstance(valid_sets, dict):
         valid_sets = {"Default": valid_sets}
@@ -883,9 +919,6 @@ def run(args) -> None:
     for i, param_group in enumerate(optimizer.param_groups):
         logging.info(f"Param group {i}: lr = {param_group['lr']}")
 
-    if args.device == "xpu":
-        logging.info("Optimzing model and optimzier for XPU")
-        model, optimizer = ipex.optimize(model, optimizer=optimizer)
     logger = tools.MetricsLogger(
         directory=args.results_dir, tag=tag + "_train"
     )  # pylint: disable=E1123
@@ -905,7 +938,6 @@ def run(args) -> None:
     )
 
     start_epoch = 0
-    restart_lbfgs = False
     opt_start_epoch = None
     if args.restart_latest:
         try:
@@ -921,8 +953,14 @@ def run(args) -> None:
                     swa=False,
                     device=device,
                 )
-            except Exception: # pylint: disable=W0703
-                restart_lbfgs = True
+            except Exception:  # pylint: disable=W0703
+                # Both attempts raising used to set a flag for the reload below,
+                # so a run that asked to resume and could not started from
+                # scratch without saying so.
+                logging.warning(
+                    "--restart_latest was requested but no checkpoint could be "
+                    "loaded; training starts from scratch"
+                )
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
 
@@ -936,14 +974,6 @@ def run(args) -> None:
                           history_size=200,
                           max_iter=20,
                           line_search_fn="strong_wolfe")
-        if restart_lbfgs:
-            opt_start_epoch = checkpoint_handler.load_latest(
-                state=tools.CheckpointState(model, optimizer, lr_scheduler),
-                swa=False,
-                device=device,
-            )
-            if opt_start_epoch is not None:
-                start_epoch = opt_start_epoch
 
     if args.wandb:
         setup_wandb(args)
@@ -951,9 +981,13 @@ def run(args) -> None:
         # device_ids is only valid for single-device accelerator modules;
         # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
         # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
-        distributed_model = DDP(
-            model, device_ids=[local_rank] if args.device in ("cuda", "xpu") else None
-        )
+        if args.device == "cuda":
+            device_ids = [local_rank]
+        elif args.device == "xpu":
+            device_ids = [xpu_device_index(local_rank)]
+        else:
+            device_ids = None
+        distributed_model = DDP(model, device_ids=device_ids)
     else:
         distributed_model = None
 
@@ -990,15 +1024,6 @@ def run(args) -> None:
         logging.info("DRY RUN mode enabled. Stopping now.")
         return
 
-    if args.device == "xpu":
-        try:
-            model, optimizer = ipex.optimize(model, optimizer=optimizer)
-        except ImportError as e:
-            logging.error(
-                "Intel Extension for PyTorch not found, but XPU device was specified. "
-                "Please install it to use XPU device."
-            )
-
     tools.train(
         model=model,
         loss_fn=loss_fn,
@@ -1026,6 +1051,7 @@ def run(args) -> None:
         train_sampler=train_sampler,
         rank=rank,
         data_aug_magmom=args.data_aug_magmom,
+        data_aug_magmom_mode=getattr(args, "data_aug_magmom_mode", "non-soc"),
     )
 
     logging.info("")
@@ -1119,9 +1145,16 @@ def run(args) -> None:
             # after param.requires_grad = False was called before evaluating stage-one model
             for param in model.parameters():
                 param.requires_grad = True
-            distributed_model = DDP(
-                model, device_ids=[local_rank] if args.device in ("cuda", "xpu") else None
-            )
+            # device_ids is only valid for single-device accelerator modules;
+            # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
+            # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
+            if args.device == "cuda":
+                device_ids = [local_rank]
+            elif args.device == "xpu":
+                device_ids = [xpu_device_index(local_rank)]
+            else:
+                device_ids = None
+            distributed_model = DDP(model, device_ids=device_ids)
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")

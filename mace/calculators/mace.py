@@ -56,13 +56,6 @@ except (ImportError, ModuleNotFoundError):
     HYBRID_AVAILABLE = False
     run_e3nn_to_hybrid = None
 
-try:
-    import intel_extension_for_pytorch as ipex
-
-    has_ipex = True
-except ImportError:
-    has_ipex = False
-
 _EDGE_PAD_MULTIPLE = 64
 _EDGE_PAD_HEADROOM = 1.25
 
@@ -209,6 +202,15 @@ class MACECalculator(Calculator):
                 f"Give a valid model_type: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
+        # A list of this instance's own. `Calculator.implemented_properties` is a
+        # class attribute (`[]` on the ASE base), so extending it in place grew
+        # the list every calculator ever built shared: the second committee in a
+        # process advertised twenty properties, the third thirty, and a
+        # DipoleMACE built after a MACE claimed energy and stress it cannot
+        # produce. `MagneticMACECalculator` assigns its own list, which is what
+        # this now does too.
+        self.implemented_properties = []
+
         if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
             self.implemented_properties.extend(
                 [
@@ -266,8 +268,18 @@ class MACECalculator(Calculator):
             logging.info(f"Running committee mace with {self.num_models} models")
 
             if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
+                # All six, because all six are written: `forces_var` and
+                # `stress_comm` were produced and never advertised, so a caller
+                # consulting `implemented_properties` was told they do not exist.
                 self.implemented_properties.extend(
-                    ["energy_comm", "energy_var", "forces_comm", "stress_var"]
+                    [
+                        "energy_comm",
+                        "energy_var",
+                        "forces_comm",
+                        "forces_var",
+                        "stress_comm",
+                        "stress_var",
+                    ]
                 )
             if model_type in [
                 "DipoleMACE",
@@ -278,10 +290,6 @@ class MACECalculator(Calculator):
 
         for model in self.models:
             model.to(device)
-
-        if has_ipex and device == "xpu":
-            for model in self.models:
-                model = ipex.optimize(model)
 
         r_maxs = [model.r_max.cpu() for model in self.models]
         r_maxs = np.array(r_maxs)
@@ -573,7 +581,9 @@ class MACECalculator(Calculator):
         )
 
     def _atoms_to_batch(self, atoms):
-        self.arrays_keys.update({self.charges_key: "charges"})
+        # arrays_keys maps property name -> atoms.arrays key, not the reverse:
+        # config_from_atoms reads atoms.arrays[value] into properties[key].
+        self.arrays_keys.update({"charges": self.charges_key})
         keyspec = mace_data.KeySpecification(
             info_keys=self.info_keys, arrays_keys=self.arrays_keys
         )
@@ -766,19 +776,24 @@ class MACECalculator(Calculator):
                 self.results[results_key] = data * unit_conv
 
                 if self.num_models > 1 and results_key in results_store_ensemble:
-                    data = ret_tensors[results_key].cpu().numpy()
-                    data *= unit_conv
-                    self.results[results_key + "_comm"] = data
+                    ensemble = ret_tensors[results_key]
+                    # Scale a copy. `.numpy()` shares storage with a cpu tensor,
+                    # so multiplying in place rescaled `ensemble` itself, and the
+                    # variance below was then taken over already-converted values.
+                    self.results[results_key + "_comm"] = (
+                        ensemble.cpu().numpy() * unit_conv
+                    )
 
-                    data = torch.var(
-                        ret_tensors[results_key], dim=0, unbiased=False
-                    ).cpu()
+                    spread = torch.var(ensemble, dim=0, unbiased=False).cpu()
                     if ret_key in scalar_tensors:
-                        data = data.item()
+                        spread = spread.item()
                     else:
-                        data = data.numpy()
-                    data *= unit_conv
-                    self.results[results_key + "_var"] = data
+                        spread = spread.numpy()
+                    # A variance carries the square of whatever scales the values.
+                    # With the aliasing above it came out at unit_conv**3, so an
+                    # ensemble spread was wrong by that factor for any caller who
+                    # set a unit conversion -- silently, since the default is 1.
+                    self.results[results_key + "_var"] = spread * unit_conv**2
 
         # special cases
         if self.results.get("energy") is not None:
@@ -788,6 +803,23 @@ class MACECalculator(Calculator):
             self.results["node_energy"] -= node_e0
         if self.results.get("stress") is not None:
             self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
+        # The committee's stresses go with it. Leaving them 3x3 while `stress` is
+        # Voigt-6 meant a caller could not index a mean and its own spread the
+        # same way, and `MagneticMACECalculator` already converts its
+        # `stress_var`, so one key name carried two shapes depending on which
+        # calculator produced it. The helper broadcasts, so the committee axis of
+        # `stress_comm` survives: (n_models, 3, 3) becomes (n_models, 6).
+        # Written out rather than looped, because the golden surface scan follows
+        # literal keys: `self.results[key]` with a loop variable is a write it
+        # cannot attribute, and it refuses to let one pass unexplained.
+        if self.results.get("stress_comm") is not None:
+            self.results["stress_comm"] = full_3x3_to_voigt_6_stress(
+                self.results["stress_comm"]
+            )
+        if self.results.get("stress_var") is not None:
+            self.results["stress_var"] = full_3x3_to_voigt_6_stress(
+                self.results["stress_var"]
+            )
         if self.results.get("stresses") is not None:
             self.results["stresses"] = np.asarray(
                 [
@@ -1418,7 +1450,8 @@ class MagneticMACECalculator(Calculator):
                     torch.var(ret_tensors["energies"], dim=0, unbiased=False)
                     .cpu()
                     .item()
-                    * self.energy_units_to_eV
+                    # squared: a variance carries the square of the conversion
+                    * self.energy_units_to_eV**2
                 )
                 self.results["forces_comm"] = (
                     ret_tensors["forces"].cpu().numpy()
@@ -1440,8 +1473,7 @@ class MagneticMACECalculator(Calculator):
                         torch.var(ret_tensors["stress"], dim=0, unbiased=False)
                         .cpu()
                         .numpy()
-                        * self.energy_units_to_eV
-                        / self.length_units_to_A**3
+                        * (self.energy_units_to_eV / self.length_units_to_A**3) ** 2
                     )
         if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
             self.results["dipole"] = (

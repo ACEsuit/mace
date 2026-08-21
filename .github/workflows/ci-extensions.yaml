@@ -57,15 +57,31 @@ jobs:
               - 'mace/calculators/**'
               - 'tests/extensions/polar/**'
               - 'requirements/polar.txt'
+              # The MACE-Polar golden lives here, and this is the only
+              # PR-time job with graph_longrange, so a change to tests/golden
+              # that this job would catch must be able to start it.
+              - 'tests/golden/**'
             les:
               - *shared
               - 'tests/extensions/les/**'
+              # The golden anchors run in this job, and two of the three
+              # surfaces they pin live outside mace/modules: the external-field
+              # and BEC handling in the calculator, and the eval CLI's
+              # flattened latent multipoles. Without these paths a change to
+              # either would not run the job that holds its numbers.
+              - 'tests/golden/**'
+              - 'mace/calculators/**'
+              - 'mace/cli/eval_configs.py'
               - 'requirements/les.txt'
             magnetic:
               - *shared
               - 'mace/calculators/**'
               - 'mace/cli/**'
               - 'tests/extensions/magnetic/**'
+              # This job owns the magnetic goldens too: they live in
+              # tests/golden and are the only place that runs them with
+              # sphericart installed, so a change there has to reach it.
+              - 'tests/golden/**'
             torchsim:
               - *shared
               - 'mace/calculators/**'
@@ -77,6 +93,11 @@ jobs:
               - *shared
               - 'mace/cli/convert_*.py'
               - 'tests/backends/**'
+              # The backend goldens live with the other goldens, not in
+              # tests/backends: they are cueq/oeq tests that happen to assert
+              # against a committed reference. Without this line a change to
+              # them is reviewed by no job that has cuequivariance installed.
+              - 'tests/golden/**'
 
   polar:
     needs: changes
@@ -90,12 +111,25 @@ jobs:
           python-version: "3.10"
           extras: dev
           pip-packages: -r requirements/polar.txt
+      - name: Cache foundation model downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mace
+          # URLs live in foundations_models.py: new URLs -> new cache.
+          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
       # Polar regression tests compare against released foundation models.
+      # tests/golden rides along because this is the only PR-time job with
+      # graph_longrange installed, and so the only one where the MACE-Polar
+      # golden is more than a skip. `network` joins require-caps for the same
+      # reason: the job already allows downloads, and without it a lost
+      # MACE_CI_ALLOW_NETWORK would turn every foundation golden green by
+      # skipping. The energy anchors in tests/golden run here too; they are
+      # seconds and they are the reference the polar work is measured against.
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/polar
+          tests: tests/extensions/polar tests/golden
           markers: not cueq and not gpu
-          require-caps: polar
+          require-caps: polar,network
           allow-network: "true"
 
   polar-cueq:
@@ -130,9 +164,14 @@ jobs:
           extras: dev
           pip-packages: -r requirements/les.txt
       # First CI coverage of LES ever; documented xfails (see test file).
+      # tests/golden rides along because the MACELES anchor is les-marked and
+      # this is the only PR job with les installed at the pinned commit -- the
+      # ci-core unit job runs the same directory without it and skips that one
+      # file. The rest of tests/golden is unmarked and fast, so it simply runs
+      # in both.
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/les
+          tests: tests/extensions/les tests/golden
           markers: not gpu
           require-caps: les
           allow-network: "true"
@@ -150,7 +189,14 @@ jobs:
           extras: dev, magnetic
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/magnetic
+          # tests/golden rides along because the magnetic goldens live there
+          # and carry an explicit `magnetic` marker: in the core job, which
+          # installs no extras, they skip, and this is the only job where they
+          # run at all. With require-caps below, a broken sphericart install
+          # fails here instead of turning them green by absence. The rest of
+          # tests/golden is CPU-only and cheap, so collecting it twice costs
+          # seconds and buys the anchors a second python version.
+          tests: tests/extensions/magnetic tests/golden
           markers: not gpu
           require-caps: magnetic
 

@@ -5,6 +5,7 @@ import time
 from contextlib import contextmanager
 from typing import Dict, Tuple
 
+import numpy as np
 import torch
 from ase.data import chemical_symbols
 from e3nn.util.jit import compile_mode
@@ -64,17 +65,22 @@ class MACEEdgeForcesWrapper(torch.nn.Module):
         self.register_buffer("atomic_numbers", model.atomic_numbers)
         self.register_buffer("r_max", model.r_max)
         self.register_buffer("num_interactions", model.num_interactions)
+        # From the model, not the process default. These feed the forward beside
+        # the model's own tensors, and the export used to land on the right dtype
+        # only as a side effect: `--format mliap` converts to cueq first, and that
+        # converter set the default globally on its way through. Now that it
+        # restores it, a global would hand a float64 export float32 buffers, which
+        # dtype promotion turns into a wrong number under LAMMPS rather than an
+        # error here. `r_max` is where `LAMMPS_MLIAP_MACE` reads its dtype too, so
+        # the wrapper and the coupling cannot disagree.
+        dtype = model.r_max.dtype
         self.register_buffer(
             "total_charge",
-            kwargs.get(
-                "total_charge", torch.tensor([0.0], dtype=torch.get_default_dtype())
-            ),
+            kwargs.get("total_charge", torch.tensor([0.0], dtype=dtype)),
         )
         self.register_buffer(
             "total_spin",
-            kwargs.get(
-                "total_spin", torch.tensor([1.0], dtype=torch.get_default_dtype())
-            ),
+            kwargs.get("total_spin", torch.tensor([1.0], dtype=dtype)),
         )
 
         if not hasattr(model, "heads"):
@@ -223,14 +229,44 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         }
 
     def _update_lammps_data(self, data, atom_energies, pair_forces, natoms):
-        """Update LAMMPS data structures with computed energies and forces."""
-        if self.dtype == torch.float32:
-            pair_forces = pair_forces.double()
-        eatoms = torch.as_tensor(data.eatoms)
-        atom_energies_real = atom_energies[:natoms].detach()
-        eatoms.copy_(atom_energies_real)
-        data.energy = atom_energies_real.sum().item()
-        data.update_pair_forces_gpu(pair_forces)
+        """Write per-atom energies and pair forces back into LAMMPS.
+
+        The two ML-IAP couplings expose two different writeback APIs, and only
+        the KOKKOS one takes device pointers: its ``MLIAPDataPy`` has an
+        ``eatoms`` getter (a view to copy into) and ``update_pair_forces_gpu``.
+        The plain coupling (``src/ML-IAP/mliap_unified_couple.pyx``) declares
+        ``eatoms`` write-only and offers only ``update_pair_forces``, which
+        wants a contiguous host array -- so on a stock non-KOKKOS build the
+        model used to run to completion and then die here on ``property
+        'eatoms' ... has no getter``, three frames below anything that names
+        the build. Both branches end in the same C ``update_pair_forces``;
+        only where the pointer comes from differs.
+        """
+        atom_energies_real = atom_energies[:natoms].detach().double()
+        total_energy = atom_energies_real.sum().item()
+        pair_forces = pair_forces.detach().double()
+
+        if hasattr(data, "update_pair_forces_gpu"):
+            torch.as_tensor(data.eatoms).copy_(atom_energies_real)
+            data.energy = total_energy
+            data.update_pair_forces_gpu(pair_forces)
+            return
+
+        # The write-only setter fills exactly nlistatoms doubles and Cython
+        # rejects a length mismatch, so say which two counts disagree rather
+        # than leaving a bare ValueError from inside the .pyx. The KOKKOS
+        # branch above assumes the same equality (its getter is sized by
+        # nlistatoms while the slice is sized by nlocal).
+        nlistatoms = int(getattr(data, "nlistatoms", natoms))
+        if nlistatoms != natoms:
+            raise RuntimeError(
+                f"LAMMPS expects {nlistatoms} per-atom energies (nlistatoms) "
+                f"but this step computed {natoms} (nlocal). The ML-IAP "
+                f"writeback needs the two to agree."
+            )
+        data.eatoms = atom_energies_real.cpu().numpy()
+        data.energy = total_energy
+        data.update_pair_forces(np.ascontiguousarray(pair_forces.cpu().numpy()))
 
     def _manage_profiling(self):
         if not self.config.debug_profile:

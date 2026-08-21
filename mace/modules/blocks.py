@@ -6,8 +6,9 @@
 ###########################################################################################
 # pylint: disable=too-many-lines
 
+import itertools
 from abc import abstractmethod
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch.nn.functional
@@ -636,6 +637,8 @@ class EquivariantProductBasisWithSelfMagmomBlock(torch.nn.Module):
 
 @compile_mode("script")
 class InteractionBlock(torch.nn.Module):
+    avg_num_neighbors: torch.Tensor
+
     def __init__(
         self,
         node_attrs_irreps: o3.Irreps,
@@ -657,7 +660,10 @@ class InteractionBlock(torch.nn.Module):
         self.edge_feats_irreps = edge_feats_irreps
         self.target_irreps = target_irreps
         self.hidden_irreps = hidden_irreps
-        self.avg_num_neighbors = avg_num_neighbors
+        self.register_buffer(
+            "avg_num_neighbors",
+            torch.as_tensor(avg_num_neighbors, dtype=torch.get_default_dtype()),
+        )
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
         if edge_irreps is None:
@@ -671,6 +677,107 @@ class InteractionBlock(torch.nn.Module):
         if self.cueq_config and self.cueq_config.conv_fusion:
             self.conv_fusion = self.cueq_config.conv_fusion
         self._setup()
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self._adopt_unpickled_avg_num_neighbors()
+
+    def _adopt_unpickled_avg_num_neighbors(self) -> None:
+        """Make a pickled float into the buffer this attribute now is.
+
+        `avg_num_neighbors` became a registered buffer with a declared
+        `torch.Tensor` type, and `_load_from_state_dict` covers checkpoints
+        loaded *as state dicts*. It does not cover the other way MACE ships a
+        model: `torch.load` of a whole pickled module, which is what the ASE
+        calculator, every `mace/cli` tool and the pretrained artifacts under
+        `mace/calculators/foundations_models/` all use. Unpickling restores
+        `__dict__` directly, so neither `__init__` nor `_load_from_state_dict`
+        runs, and the instance keeps the plain Python float it was pickled
+        with. Eager forward passes are indifferent -- a float promotes against
+        whatever it divides -- so this surfaces only under TorchScript, where
+        the declared type is checked:
+
+            Could not cast attribute 'avg_num_neighbors' to type Tensor
+
+        which made `mace_create_lammps_model` fail on every checkpoint written
+        before the buffer landed.
+
+        Both the dtype and the device come from the module's own weights, so
+        the promoted buffer lands beside them.
+
+        The dtype matters because it preserves the arithmetic. As a Python
+        float the value participated at the precision of whatever it was
+        divided into, so taking `torch.get_default_dtype()` instead would
+        silently round the normalization of a float64 model loaded under a
+        float32 default -- a numerical change on load, in a value that scales
+        every message.
+
+        The device matters because a float has none. `torch.load(...,
+        map_location="cuda")` puts the weights on the accelerator, and a
+        promoted buffer built without a device would stay on the CPU, leaving
+        the module's tensors split across two devices for any caller that does
+        not go on to `.to()` -- the raw-model foundation loaders, and anything
+        that hands a freshly loaded model straight to DDP. `avg_num_neighbors`
+        is zero-dim, so the division itself would survive under torch's
+        cpu-scalar rule; what does not survive is everything that assumes a
+        module's tensors are colocated. `set_avg_num_neighbors` above already
+        carries both, and this is the same rule.
+        """
+        legacy = self.__dict__.pop("avg_num_neighbors", None)
+        if legacy is None:
+            return  # already a buffer: pickled after it became one
+        dtype, device = self._weight_dtype_and_device()
+        self.register_buffer(
+            "avg_num_neighbors", torch.as_tensor(legacy, dtype=dtype, device=device)
+        )
+
+    def _weight_dtype_and_device(self) -> Tuple[torch.dtype, torch.device]:
+        """Where this block's weights are, or the process defaults.
+
+        The weights live in submodules, and they are in place by the time
+        `__setstate__` runs -- pickle builds the whole state mapping, child
+        modules included, before handing it over. The fallback is for a block
+        that genuinely has no floating tensor yet.
+        """
+        for tensor in itertools.chain(self.parameters(), self.buffers()):
+            if tensor.is_floating_point():
+                return tensor.dtype, tensor.device
+        return torch.get_default_dtype(), torch.device("cpu")
+
+    def set_avg_num_neighbors(self, value: Union[float, torch.Tensor]) -> None:
+        """Copy neighbor normalization from current or legacy models."""
+        self.avg_num_neighbors.copy_(
+            torch.as_tensor(
+                value,
+                dtype=self.avg_num_neighbors.dtype,
+                device=self.avg_num_neighbors.device,
+            )
+        )
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        key = prefix + "avg_num_neighbors"
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+        # Checkpoints created before this value became a buffer rely on the
+        # normalization supplied when reconstructing the model.
+        if key not in state_dict and key in missing_keys:
+            missing_keys.remove(key)
 
     @abstractmethod
     def _setup(self) -> None:

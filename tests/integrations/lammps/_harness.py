@@ -19,6 +19,21 @@ from mace.tools import AtomicNumberTable, torch_geometric
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+class StubMACE(torch.nn.Module):
+    """The metadata the LAMMPS wrappers read off a real MACE model.
+
+    ``dtype`` follows ``r_max``, exactly as `LAMMPS_MLIAP_MACE.__init__` does,
+    so a float32 stub exercises the float32 writeback path.
+    """
+
+    def __init__(self, num_interactions: int, dtype: torch.dtype = torch.float64):
+        super().__init__()
+        self.register_buffer("atomic_numbers", torch.tensor([1, 8]))
+        self.register_buffer("r_max", torch.tensor(3.5, dtype=dtype))
+        self.register_buffer("num_interactions", torch.tensor(num_interactions))
+        self.lin = torch.nn.Linear(1, 1)
+
+
 def water_unit_cell() -> Atoms:
     """The periodic water box the tiny session model was trained on."""
     return Atoms(
@@ -30,7 +45,16 @@ def water_unit_cell() -> Atoms:
 
 
 def model_batch(model: torch.nn.Module, atoms: Atoms) -> dict:
-    """Standard AtomicData batch for `atoms` matching the model's metadata."""
+    """Standard AtomicData batch for `atoms` matching the model's metadata.
+
+    `AtomicData` builds its tensors at the process-wide default dtype, which is
+    float32 unless a test set it otherwise, while these models are float64. The
+    mismatch does not surface as a dtype complaint about the batch: it surfaces
+    deep inside the first scripted e3nn graph as `both inputs should have same
+    dtype`, naming nothing. So the batch follows the model, taking its dtype
+    from `r_max` exactly as `LAMMPS_MLIAP_MACE.__init__` does.
+    """
+    dtype = model.r_max.dtype
     z_table = AtomicNumberTable([int(z) for z in model.atomic_numbers])
     config = data.config_from_atoms(atoms)
     loader = torch_geometric.dataloader.DataLoader(
@@ -43,7 +67,13 @@ def model_batch(model: torch.nn.Module, atoms: Atoms) -> dict:
         shuffle=False,
         drop_last=False,
     )
-    return next(iter(loader)).to_dict()
+    batch = next(iter(loader)).to_dict()
+    return {
+        key: value.to(dtype)
+        if torch.is_tensor(value) and value.is_floating_point()
+        else value
+        for key, value in batch.items()
+    }
 
 
 def lammps_style_cluster(model: torch.nn.Module, n_repeat: int):

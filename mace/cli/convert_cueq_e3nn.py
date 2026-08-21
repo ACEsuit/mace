@@ -10,6 +10,7 @@ from e3nn import o3
 from mace.tools.cg import O3_e3nn
 from mace.tools.cg_cueq_tools import symmetric_contraction_proj
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import restores_default_dtype
 
 try:
     import cuequivariance as cue
@@ -220,14 +221,15 @@ def transfer_weights(
 
     # Transfer avg_num_neighbors
     for i in range(num_layers):
-        target_model.interactions[i].avg_num_neighbors = source_model.interactions[
-            i
-        ].avg_num_neighbors
+        target_model.interactions[i].set_avg_num_neighbors(
+            source_model.interactions[i].avg_num_neighbors
+        )
 
     # Load state dict into target model
     target_model.load_state_dict(target_dict)
 
 
+@restores_default_dtype
 def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True):
 
     # Load CuEq model
