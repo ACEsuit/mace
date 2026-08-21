@@ -195,3 +195,117 @@ def test_a_single_model_reports_no_spread_at_all(water):
     assert "energy_comm" not in results
     assert "energy_var" not in results
     assert "forces_var" not in results
+
+
+# ---------------------------------------------------------------------------
+# the stress and dipole halves of the committee
+# ---------------------------------------------------------------------------
+
+
+def _dipole_model(seed):
+    """A dipole committee, since `dipole_comm` and `dipole_var` only appear for
+    a model whose readout is a dipole."""
+    torch.manual_seed(seed)
+    return modules.AtomicDipolesMACE(
+        r_max=4.0,
+        num_bessel=4,
+        num_polynomial_cutoff=5,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("8x0e + 8x1o"),
+        MLP_irreps=o3.Irreps("4x0e"),
+        gate=F.silu,
+        atomic_energies=None,
+        avg_num_neighbors=4.0,
+        atomic_numbers=TABLE.zs,
+        correlation=2,
+    ).double()
+
+
+def _dipole_results(water, models, **kwargs):
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        atoms = water.copy()
+        calc = MACECalculator(
+            models=models,
+            device="cpu",
+            default_dtype="float64",
+            model_type="DipoleMACE",
+            **kwargs,
+        )
+        calc.calculate(atoms)
+        return dict(calc.results)
+    finally:
+        torch.set_default_dtype(previous)
+
+
+def test_a_committee_reports_the_stress_of_the_members_it_averaged(water):
+    results = _results(water, [_tiny_model(0), _tiny_model(1)])
+
+    members = results["stress_comm"]
+    assert members.shape == (2, 3, 3)
+    assert not np.allclose(members[0], members[1]), "two seeds, two stresses"
+    assert np.allclose(results["stress_var"], np.var(members, axis=0))
+
+
+def test_the_stress_spread_is_not_in_the_layout_the_stress_is(water):
+    """`stress` is Voigt-6 and `stress_var` is the full 3x3, so a consumer cannot
+    index them the same way.
+
+    Pinned rather than corrected: `MagneticMACECalculator` converts its own
+    `stress_var` to Voigt-6 (mace/calculators/mace.py:1436) and this one does
+    not, so the two calculators disagree on the shape behind one key name, and
+    picking a side changes what existing readers receive.
+    """
+    results = _results(water, [_tiny_model(0), _tiny_model(1)])
+
+    assert np.shape(results["stress"]) == (6,)
+    assert np.shape(results["stress_var"]) == (3, 3)
+    assert np.shape(results["stress_comm"]) == (2, 3, 3)
+
+
+def test_the_stress_variance_scales_as_the_square_of_the_conversion(water):
+    """Same rule as the energy and forces above: a variance carries the square,
+    and for stress the conversion is itself energy over length cubed."""
+    plain = _results(water, [_tiny_model(0), _tiny_model(1)])
+    scaled = _results(
+        water, [_tiny_model(0), _tiny_model(1)], energy_units_to_eV=2.0
+    )
+
+    assert np.allclose(scaled["stress_comm"], plain["stress_comm"] * 2.0)
+    assert np.allclose(scaled["stress_var"], plain["stress_var"] * 4.0)
+
+
+def test_a_dipole_committee_reports_its_spread(water):
+    results = _dipole_results(water, [_dipole_model(0), _dipole_model(1)])
+
+    members = results["dipole_comm"]
+    assert np.shape(results["dipole"]) == (3,)
+    assert members.shape == (2, 3)
+    assert not np.allclose(members[0], members[1])
+    assert np.allclose(results["dipole_var"], np.var(members, axis=0))
+
+
+def test_the_dipole_spread_keeps_the_layout_of_the_dipole(water):
+    """Unlike stress: `dipole` and `dipole_var` are both (3,), so the pair is
+    indexable the same way."""
+    results = _dipole_results(water, [_dipole_model(0), _dipole_model(1)])
+
+    assert np.shape(results["dipole"]) == np.shape(results["dipole_var"])
+
+
+def test_a_single_dipole_model_reports_no_spread(water):
+    """The committee keys are a committee's, not a decoration on every run."""
+    results = _dipole_results(water, [_dipole_model(0)])
+
+    assert "dipole" in results
+    assert "dipole_comm" not in results
+    assert "dipole_var" not in results
