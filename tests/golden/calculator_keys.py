@@ -267,15 +267,13 @@ harness.register_input_probe("input_charges", attribute="charges_key", store="ar
 #     ensemble of models, so their value depends on how many checkpoints the
 #     caller happened to pass and which ones;
 #   * the "_comm" members carry a leading axis of committee size, which no
-#     channel kind expresses, and "stress_var" is not even self-consistent
-#     across the two calculators -- MACECalculator leaves it 3x3 (the Voigt
-#     conversion below it touches only results["stress"]) while
-#     MagneticMACECalculator converts it to Voigt-6. One kind cannot describe
-#     both, and picking one would silently mis-shape the other.
+#     channel kind expresses.
 #
-# A committee golden that wants these pinned should add a kind keyed on the
-# committee size and reconcile the stress_var layout first; the allowlist is
-# the record that nobody has, not an oversight.
+# The layout half of that is settled: both calculators now report the committee
+# stresses in Voigt-6, the same as results["stress"], so one kind could describe
+# them. What is still missing is a kind keyed on the committee size, since these
+# values depend on how many checkpoints the caller passed. The allowlist is the
+# record that nobody has written one, not an oversight.
 # ---------------------------------------------------------------------------
 
 _COMMITTEE_SPREAD = {
@@ -289,8 +287,7 @@ _COMMITTEE_SPREAD = {
     "stress_comm": "per-member stresses of a committee; leading axis is the "
     "committee size",
     "stress_var": "variance of a committee's stresses; an ensemble statistic, "
-    "and 3x3 from MACECalculator against Voigt-6 from "
-    "MagneticMACECalculator, so no single kind fits it",
+    "in Voigt-6 like the stress it is the spread of",
     "dipole_comm": "per-member dipoles of a committee; leading axis is the "
     "committee size",
     "dipole_var": "variance of a committee's dipoles; an ensemble statistic",
