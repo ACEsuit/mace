@@ -295,12 +295,12 @@ Group default: KEEP.
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
 | `train.foundation_model` | `--foundation_model` | `mace/tools/arg_parser.py:1019` | KEEP | `tests/workflows/test_finetuning_contracts.py::test_multihead_replay_finetuning_completes_and_carries_both_heads` + `tests/workflows/test_finetuning_contracts.py::test_finetuning_reduces_the_error_on_the_finetuning_set` |
-| `train.foundation_model_kwargs` | `--foundation_model_kwargs` | `mace/tools/arg_parser.py:1025` | KEEP | ⚠️ gap (no test passes `--foundation_model_kwargs`) |
+| `train.foundation_model_kwargs` | `--foundation_model_kwargs` | `mace/tools/arg_parser.py:1025` | KEEP | `tests/workflows/test_foundation_kwargs.py` (the parse every run performs, and that a checkpoint path ignores them) |
 | `train.foundation_model_readout` | `--foundation_model_readout` | `mace/tools/arg_parser.py:1031` | KEEP | `tests/unit/test_foundation_readout_flag.py::test_the_flag_turns_the_transfer_off` + `tests/unit/test_foundation_readout_flag.py::test_loading_without_it_leaves_them_alone` (`--foundation_filter_elements` is a deprecated alias of this dest) |
 | `train.multiheads_finetuning` | `--multiheads_finetuning` | `mace/tools/arg_parser.py:573` | KEEP | `tests/workflows/test_finetuning_contracts.py::test_multihead_replay_finetuning_completes_and_carries_both_heads` |
 | `train.heads` | `--heads` | `mace/tools/arg_parser.py:566` | KEEP — the heads YAML sub-schema | `tests/workflows/test_multifiles.py::test_multiple_xyz_per_head` |
 | `train.foundation_head` | `--foundation_head` | `mace/tools/arg_parser.py:579` | KEEP | `tests/workflows/test_run_train.py::test_run_train_mh_foundation` |
-| `train.weight_pt_head` | `--weight_pt_head` | `mace/tools/arg_parser.py:586` | KEEP | ⚠️ gap (no test passes `--weight_pt_head`, so the replay head's loss weight is unprotected) |
+| `train.weight_pt_head` | `--weight_pt_head` | `mace/tools/arg_parser.py:586` | KEEP | `tests/unit/test_multihead_tools.py::test_weight_pt_head_is_the_weight_every_replay_config_carries` (offline, against a seeded replay cache) |
 | `train.num_samples_pt` | `--num_samples_pt` | `mace/tools/arg_parser.py:598` | KEEP | `tests/workflows/test_finetuning_contracts.py::test_the_replay_selection_flags_exist_on_the_training_cli` |
 | `train.real_pt_data_ratio_threshold` | `--real_pt_data_ratio_threshold` | `mace/tools/arg_parser.py:592` | KEEP | `tests/workflows/test_run_train.py::test_run_train_real_pt_data_ratio` |
 | `train.pt_train_file` | `--pt_train_file` | `mace/tools/arg_parser.py:628` | KEEP | `tests/workflows/test_run_train.py::test_run_train_multihead_replay_custom_finetuning` |
