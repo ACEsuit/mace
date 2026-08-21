@@ -7,10 +7,27 @@
 [![Documentation Status](https://readthedocs.org/projects/mace/badge/)](https://mace-docs.readthedocs.io/en/latest/)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.14103332-blue.svg)](https://doi.org/10.5281/zenodo.14103332)
 
+## Project status
+
+**MACE is being rewritten toward v1.0.** The rewrite happens in the open on the
+[`mace-reforge`](https://github.com/ACEsuit/mace/tree/mace-reforge) branch, and
+tracks progress on [its board](https://github.com/orgs/ACEsuit/projects/2).
+
+**v0.3.x remains the supported line.** It keeps taking bug fixes, and nothing
+about installing or using MACE changes today. v1.0 will not preserve code
+compatibility, and trained checkpoints will migrate through an explicit
+converter rather than loading directly; functionality is preserved.
+
+Planning to contribute while this is under way? Read
+[CONTRIBUTING.md](CONTRIBUTING.md) first. It says what we can accept into v0.3
+and what belongs in v1. The answer depends on whether we can carry your change
+over.
+
 ## Table of contents
 
 - [MACE](#mace)
   - [Table of contents](#table-of-contents)
+  - [Project status](#project-status)
   - [About MACE](#about-mace)
   - [Documentation](#documentation)
   - [Installation](#installation)
@@ -32,6 +49,7 @@
     - [Latest recommended foundation models](#latest-recommended-foundation-models)
   - [Caching](#caching)
   - [Development](#development)
+  - [Contributing](#contributing)
   - [References](#references)
   - [Contact](#contact)
   - [License](#license)
@@ -342,6 +360,9 @@ the environment variable XDG_CACHE_HOME. When set, the new cache path expands to
 
 ## Development
 
+Before opening a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md): while the
+v1 rewrite is under way, where a change belongs depends on what it touches.
+
 This project uses [pre-commit](https://pre-commit.com/) to execute code formatting and linting on commit.
 We also use `black`, `isort`, `pylint`, and `mypy`.
 We recommend setting up your development environment by installing the `dev` packages
@@ -388,6 +409,14 @@ locally, read its `with:` block in the workflow and run the equivalent pytest
 command (e.g. the unit job is `pytest tests/unit -m "not slow" -n auto`).
 
 We are happy to accept pull requests under an [MIT license](https://choosealicense.com/licenses/mit/). Please copy/paste the license text as a comment into your pull request.
+
+## Contributing
+
+Bug fixes are always welcome, on both lines. New features are best built
+directly in v1; where that is not possible they are accepted into v0.3 if they
+are self-contained and tested on numbers we can reproduce. Changes to core or
+shared code go into v1 only. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+details and the reasoning.
 
 ## References
 
