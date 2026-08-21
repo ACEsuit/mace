@@ -1144,13 +1144,24 @@ golden, which is five new parity artifacts on top of the foundation-model set. W
 use inherits the electrostatics solver-dispatch decision, and where an accelerated solver is not
 bit-parity the solver identity becomes model state serialized with the checkpoint.
 
+**The five goldens cannot be captured from upstream first, so they arrive with the
+reimplementation.** `mace_scf` asserts its MACE version at import --
+`assert Version(mace.__version__) == Version("0.3.14")` in `mace_scf/__init__.py` -- and this
+tree is 0.3.17, so the package cannot be imported beside it at all (checked at `mace_scf`
+0.4.4, commit `2955ca0`). Taking a reference from it would mean either pinning this repository
+back four minor versions or patching that assert out, and a number measured through a patched
+import pins the patch. So there is no capability marker and no `requirements/scf.txt` to add
+yet: each of these rows is closed by the parity artifact its own reimplementation commits, and
+the gap markers below say so rather than reading as five tests somebody could sit down and
+write today.
+
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `scf.lc_mace` | LC-MACE — local charge: multipole moments read out from descriptors; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement; the cheapest of the five, no implicit-diff hook needed | ⚠️ gap (no golden yet) |
-| `scf.lsc_mace` | LSC-MACE — local split charge: charge + multipoles conserving local charge flow; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement | ⚠️ gap (no golden yet) |
-| `scf.qeq` | MACE-QEq — charge equilibration, solved self-consistently with implicit differentiation | `ACEsuit/mace-scf` | KEEP — reimplement; the load-bearing test case for the SCF hook | ⚠️ gap (no golden yet) |
-| `scf.fixedpoint` | FixedPointSCF — Kohn–Sham-like SCF cycles for multipole moments | `ACEsuit/mace-scf` | KEEP — reimplement; incremental once the hook is validated by QEq | ⚠️ gap (no golden yet) |
-| `scf.energy_functional` | EnergyFunctionalSCF — an alternative functional; upstream marks it experimental | `ACEsuit/mace-scf` | KEEP — reimplement; its golden pins whatever behaviour it has today, experimental or not | ⚠️ gap (no golden yet) |
+| `scf.lc_mace` | LC-MACE — local charge: multipole moments read out from descriptors; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement; the cheapest of the five, no implicit-diff hook needed | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
+| `scf.lsc_mace` | LSC-MACE — local split charge: charge + multipoles conserving local charge flow; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
+| `scf.qeq` | MACE-QEq — charge equilibration, solved self-consistently with implicit differentiation | `ACEsuit/mace-scf` | KEEP — reimplement; the load-bearing test case for the SCF hook | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
+| `scf.fixedpoint` | FixedPointSCF — Kohn–Sham-like SCF cycles for multipole moments | `ACEsuit/mace-scf` | KEEP — reimplement; incremental once the hook is validated by QEq | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
+| `scf.energy_functional` | EnergyFunctionalSCF — an alternative functional; upstream marks it experimental | `ACEsuit/mace-scf` | KEEP — reimplement; its golden pins whatever behaviour it has today, experimental or not | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
 
 ## 21. Foundation-model migration roster
 
