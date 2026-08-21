@@ -536,6 +536,18 @@ def test_setup_cfg_declares_the_extras_the_job_resolves():
     )
 
 
+def test_the_job_fails_when_the_derived_list_is_empty():
+    """The failure mode a derived list adds: an empty `for` runs no pip, leaves
+    `status` at 0, and reports green having resolved nothing. Reading setup.cfg
+    from the test proves the file is fine, not that the job's own parse found
+    anything, so the guard has to live in the script."""
+    script = _cueq_job_script()
+
+    assert '-z "$extras"' in script, "an empty derivation is not caught"
+    guard = script.split('-z "$extras"', 1)[1].split("fi", 1)[0]
+    assert "exit 1" in guard, "the empty case is reported but not failed"
+
+
 def test_the_job_reads_the_extras_out_of_setup_cfg():
     """Rather than naming them. A list written in the workflow goes stale in the
     direction nothing checks: an extra retired from setup.cfg leaves the job

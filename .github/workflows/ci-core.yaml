@@ -62,6 +62,13 @@ jobs:
           python -m pip install -U pip
           extras=$(python -c 'import configparser; c = configparser.ConfigParser(); c.read("setup.cfg", encoding="utf-8"); print(" ".join(n for n in c["options.extras_require"] if n.startswith("cueq")))')
           echo "resolving: $extras"
+          # A derived list can come back empty -- a renamed section, a changed
+          # prefix, a parse that failed -- and an empty `for` runs no pip at all,
+          # so the job would exit green having measured nothing.
+          if [ -z "$extras" ]; then
+            echo "no cueq extra found in setup.cfg: the derivation above is broken" >&2
+            exit 1
+          fi
           status=0
           echo '## cueq wheel extras' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
