@@ -472,3 +472,96 @@ def test_every_capability_is_guaranteed_by_some_job():
         f"suite is green by absence. Either give the capability a job that "
         f"installs it and names it, or drop the marker."
     )
+
+
+# ---------------------------------------------------------------------------
+# the cueq wheel extras
+#
+# `extra.cueq-cuda-11/12/13` name wheels the suite cannot assert anything about:
+# the only failure mode of an extras group is a job resolving it, and no test
+# inside the suite can resolve the suite's own dependencies. The GPU pipeline
+# installs cueq-cuda-13 and nothing installs the other two, so the nightly job
+# below is the only place cu11 and cu12 are checked at all.
+#
+# It reads setup.cfg, so this test is what keeps the two from drifting: an extra
+# added there and not here would go unresolved for as long as nobody looked.
+# ---------------------------------------------------------------------------
+
+CUEQ_EXTRAS = ("cueq", "cueq-cuda-11", "cueq-cuda-12", "cueq-cuda-13")
+
+
+def _cueq_job() -> dict:
+    """The job is a PR gate rather than a nightly one: resolving four extras is
+    seconds, so there is no reason to make a contributor wait until tomorrow to
+    learn that an extras group they touched no longer resolves."""
+    core = yaml.safe_load(
+        (WORKFLOWS / "ci-core.yaml").read_text(encoding="utf-8")
+    )
+    return core["jobs"]["cueq-wheel-extras"]
+
+
+def _cueq_job_script() -> str:
+    return "\n".join(step.get("run", "") for step in _cueq_job()["steps"])
+
+
+def test_a_pr_job_resolves_the_cueq_extras():
+    core = yaml.safe_load((WORKFLOWS / "ci-core.yaml").read_text(encoding="utf-8"))
+
+    assert "cueq-wheel-extras" in core["jobs"]
+    assert "cueq-wheel-extras" not in _nightly()["jobs"], (
+        "one copy only, and the PR gate is the useful one"
+    )
+
+
+@pytest.mark.parametrize("extra", CUEQ_EXTRAS)
+def test_every_cueq_extra_is_in_the_nightly_loop(extra):
+    assert extra in _cueq_job_script(), f"{extra} is not resolved by the nightly"
+
+
+def test_setup_cfg_declares_no_cueq_extra_the_nightly_misses():
+    """The direction that matters: a fourth CUDA major added to setup.cfg has to
+    reach the job, or it ships unresolved."""
+    import configparser  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    config = configparser.ConfigParser()
+    config.read(REPO_ROOT / "setup.cfg", encoding="utf-8")
+    declared = {
+        name for name in config["options.extras_require"] if name.startswith("cueq")
+    }
+    script = _cueq_job_script()
+
+    missing = sorted(name for name in declared if name not in script)
+    assert not missing, f"declared in setup.cfg and not resolved by the nightly: {missing}"
+
+
+def test_the_job_needs_no_gpu():
+    """The reason this can gate a PR at all: the ops wheels are manylinux
+    artifacts, so resolving them wants no device. If it ever moves to a GPU
+    runner, the rows that point at it are pointing somewhere much more expensive.
+    """
+    assert _cueq_job()["runs-on"] == "ubuntu-latest"
+
+
+def test_the_job_names_no_platform_tag():
+    """pip matches a platform tag exactly when it is given one, so naming
+    `manylinux_2_17` resolves nothing for the packages that ship
+    `manylinux_2_28`, and naming several resolves nothing at all. The runner's
+    own tags are the only set that is right for every one of these wheels.
+    """
+    assert "--platform" not in _cueq_job_script()
+
+
+def test_the_job_only_resolves_and_does_not_install():
+    """`--dry-run` is the whole assertion, and it keeps a nightly job from
+    downloading hundreds of megabytes of CUDA wheels four times over."""
+    assert "--dry-run" in _cueq_job_script()
+
+
+def test_a_failure_to_resolve_fails_the_job():
+    """The loop must not swallow the failure: a green job that resolved nothing is
+    the state these rows were already in.
+    """
+    script = _cueq_job_script()
+
+    assert "status=1" in script
+    assert 'exit "$status"' in script
