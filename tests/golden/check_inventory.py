@@ -116,6 +116,12 @@ NON_TEST_PINS = {
         "`[dev]` is what the lint job installs; same reason, and `pre-commit "
         "run --all-files` is the assertion"
     ),
+    "the docs, reviewed not tested": (
+        "the pages live in the separate mace-docs repository and are not run in "
+        "CI, by decision: what keeps them true is a doc review when the surface "
+        "they describe changes. A gap marker here would read as a test somebody "
+        "still owes, and nobody does"
+    ),
 }
 
 COLUMNS = (
