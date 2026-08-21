@@ -30,6 +30,7 @@ from mace.data.utils import config_from_atoms
 from mace.data import KeySpecification
 from mace.data.utils import update_keyspec_from_kwargs
 from mace.tools import build_default_arg_parser
+from mace.tools.torch_tools import default_dtype
 from mace.tools.multihead_tools import (
     HeadConfig,
     apply_pseudolabels_to_pt_head_configs,
@@ -451,3 +452,55 @@ def test_a_failure_on_valid_leaves_both_splits_on_their_original_labels():
     assert ok is False
     assert [c.properties["energy"] for c in config.collections.train] == train_before
     assert [c.properties["energy"] for c in config.collections.valid] == valid_before
+
+
+# ---------------------------------------------------------------------------
+# --pseudolabel_replay_compute_stress
+# ---------------------------------------------------------------------------
+
+
+def _generate_with_stress(configs, force_stress, batch_size=4):
+    # float64 because the model is: `AtomicData` reads the process-wide default,
+    # and a float32 batch against float64 weights fails inside the first linear.
+    with default_dtype(torch.float64):
+        return generate_pseudolabels_for_configs(
+            model=_tiny_model(),
+            configs=configs,
+            z_table=TABLE,
+            r_max=4.0,
+            device=torch.device("cpu"),
+            batch_size=batch_size,
+            force_stress=force_stress,
+        )
+
+
+def test_a_stress_pseudolabel_is_not_invented_by_default():
+    """The rule the flag overrides: a configuration that arrived without stress
+    keeps arriving without it, so replay data does not gain a label the original
+    dataset never had."""
+    configs = _configs(2, labelled=True)
+    for config in configs:
+        config.properties.pop("stress", None)
+
+    relabelled = _generate_with_stress(configs, force_stress=False)
+
+    assert relabelled
+    assert all("stress" not in c.properties for c in relabelled)
+
+
+def test_forcing_it_adds_the_stress_the_model_predicts():
+    """`--pseudolabel_replay_compute_stress`. The model computes a stress either
+    way; the flag decides whether it is written onto configurations that had
+    none, which is the difference between replaying the dataset and replaying the
+    model."""
+    configs = _configs(2, labelled=True)
+    for config in configs:
+        config.properties.pop("stress", None)
+
+    relabelled = _generate_with_stress(configs, force_stress=True)
+
+    assert relabelled
+    assert all("stress" in c.properties for c in relabelled)
+    assert all(
+        c.property_weights.get("stress", 0.0) > 0.0 for c in relabelled
+    ), "a written label needs a weight, or the loss ignores it"
