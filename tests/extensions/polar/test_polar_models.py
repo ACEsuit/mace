@@ -1190,6 +1190,7 @@ def test_polar_forces_match_finite_difference(
 @pytest.mark.parametrize(
     "cell, atol",
     [
+        (np.diag([8.0, 8.0, 8.0]), 2.0e-7),
         (
             np.array([[40.0, 2.0, 0.0], [0.5, 42.0, 1.5], [0.0, 0.2, 38.0]]),
             2.0e-7,
@@ -1204,7 +1205,7 @@ def test_polar_forces_match_finite_difference(
         ),
     ],
 )
-def test_polar_stress_matches_fd_large_periodic_boxes(
+def test_polar_stress_matches_fd_periodic_boxes(
     polar_calc_fd: MACECalculator,
     cell: np.ndarray,
     atol: float,
@@ -1212,7 +1213,15 @@ def test_polar_stress_matches_fd_large_periodic_boxes(
     atoms = _periodic_water(cell)
     atoms.calc = polar_calc_fd
 
+    energy_without_stress = atoms.get_potential_energy()
+    forces_without_stress = atoms.get_forces()
     stress = atoms.get_stress(voigt=True)
+    np.testing.assert_allclose(
+        atoms.calc.results["energy"], energy_without_stress, rtol=0.0, atol=1e-10
+    )
+    np.testing.assert_allclose(
+        atoms.calc.results["forces"], forces_without_stress, rtol=0.0, atol=1e-10
+    )
     stress_fd = calculate_numerical_stress(atoms, eps=1e-5, force_consistent=False)
 
     np.testing.assert_allclose(stress, stress_fd, rtol=0.0, atol=atol)

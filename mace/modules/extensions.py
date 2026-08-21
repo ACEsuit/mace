@@ -987,6 +987,23 @@ class PolarMACE(ScaleShiftMACE):
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
 
+        long_range_positions = data["positions"]
+        long_range_cell = cell.view(-1, 3, 3)
+        long_range_rcell = data["rcell"].view(-1, 3, 3)
+        long_range_volume = data["volume"]
+        if compute_virials or compute_stress or compute_displacement:
+            assert displacement is not None
+            symmetric_displacement = 0.5 * (
+                displacement + displacement.transpose(-1, -2)
+            )
+            long_range_cell = long_range_cell + torch.matmul(
+                long_range_cell, symmetric_displacement
+            )
+            long_range_volume = torch.linalg.det(long_range_cell)
+            long_range_rcell = (
+                2 * torch.pi * torch.linalg.inv(long_range_cell.transpose(-1, -2))
+            )
+
         if fermi_level is None:
             fermi_level = data["fermi_level"]
         if external_field is None:
@@ -1070,7 +1087,7 @@ class PolarMACE(ScaleShiftMACE):
             k_vectors_batch,
             k_vectors_0mask,
         ) = compute_k_vectors_flat(
-            self.kspace_cutoff, cell.view(-1, 3, 3), data["rcell"].view(-1, 3, 3)
+            self.kspace_cutoff, long_range_cell, long_range_rcell
         )
 
         field_feature_cache = self.electric_potential_descriptor.precompute_geometry(
@@ -1078,9 +1095,9 @@ class PolarMACE(ScaleShiftMACE):
             k_norm2=kv_norms_squared,
             k_vector_batch=k_vectors_batch,
             k0_mask=k_vectors_0mask,
-            node_positions=positions,
+            node_positions=long_range_positions,
             batch=data["batch"],
-            volume=data["volume"],
+            volume=long_range_volume,
             pbc=data["pbc"].view(-1, 3),
             force_pbc_evaluator=use_pbc_evaluator,
         )
@@ -1155,14 +1172,14 @@ class PolarMACE(ScaleShiftMACE):
 
             # Add external field contribution and subtract barycenter for gauge invariance
             barycenter = scatter_mean(
-                src=safe_double(positions),
+                src=safe_double(long_range_positions),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
-            ).to(positions.dtype)
+            ).to(long_range_positions.dtype)
             half_external_field = 0.5 * self.external_field_contribution(
                 data["batch"],
-                positions - barycenter[data["batch"], :],
+                long_range_positions - barycenter[data["batch"], :],
                 external_potential,
             )
             field_feats_alpha = (
@@ -1266,7 +1283,10 @@ class PolarMACE(ScaleShiftMACE):
             else spin_charge_density
         )
         total_charge, total_dipole = compute_total_charge_dipole_permuted(
-            charge_density_mul_ir, positions, data["batch"], num_graphs
+            charge_density_mul_ir,
+            long_range_positions,
+            data["batch"],
+            num_graphs,
         )
         electro_energy = self.coulomb_energy(
             k_vectors=k_vectors,
@@ -1274,9 +1294,9 @@ class PolarMACE(ScaleShiftMACE):
             k_vector_batch=k_vectors_batch,
             k0_mask=k_vectors_0mask,
             source_feats=charge_density_mul_ir,
-            node_positions=positions,
+            node_positions=long_range_positions,
             batch=data["batch"],
-            volume=data["volume"],
+            volume=long_range_volume,
             pbc=data["pbc"].view(-1, 3),
             force_pbc_evaluator=use_pbc_evaluator,
         )
