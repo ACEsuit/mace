@@ -27,6 +27,7 @@ from ase import Atoms
 from e3nn import o3
 
 from mace import modules
+import mace.calculators.mace as mace_calculator_module
 from mace.calculators import MACECalculator
 from mace.tools import AtomicNumberTable
 
@@ -195,3 +196,220 @@ def test_a_single_model_reports_no_spread_at_all(water):
     assert "energy_comm" not in results
     assert "energy_var" not in results
     assert "forces_var" not in results
+
+
+# ---------------------------------------------------------------------------
+# the stress and dipole halves of the committee
+# ---------------------------------------------------------------------------
+
+
+def _dipole_model(seed):
+    """A dipole committee, since `dipole_comm` and `dipole_var` only appear for
+    a model whose readout is a dipole."""
+    torch.manual_seed(seed)
+    return modules.AtomicDipolesMACE(
+        r_max=4.0,
+        num_bessel=4,
+        num_polynomial_cutoff=5,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("8x0e + 8x1o"),
+        MLP_irreps=o3.Irreps("4x0e"),
+        gate=F.silu,
+        atomic_energies=None,
+        avg_num_neighbors=4.0,
+        atomic_numbers=TABLE.zs,
+        correlation=2,
+    ).double()
+
+
+def _dipole_results(water, models, **kwargs):
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        atoms = water.copy()
+        calc = MACECalculator(
+            models=models,
+            device="cpu",
+            default_dtype="float64",
+            model_type="DipoleMACE",
+            **kwargs,
+        )
+        calc.calculate(atoms)
+        return dict(calc.results)
+    finally:
+        torch.set_default_dtype(previous)
+
+
+def test_a_committee_reports_the_stress_of_the_members_it_averaged(water):
+    results = _results(water, [_tiny_model(0), _tiny_model(1)])
+
+    members = results["stress_comm"]
+    assert members.shape == (2, 6), "one Voigt-6 stress per member"
+    assert not np.allclose(members[0], members[1]), "two seeds, two stresses"
+    assert np.allclose(results["stress_var"], np.var(members, axis=0))
+
+
+def test_the_stress_spread_is_in_the_same_layout_as_the_stress(water):
+    """One layout for the mean and its spread, so a caller can index them the
+    same way. `MACECalculator` used to leave these two 3x3 while `stress` was
+    Voigt-6, which also disagreed with `MagneticMACECalculator`.
+    """
+    results = _results(water, [_tiny_model(0), _tiny_model(1)])
+
+    assert np.shape(results["stress"]) == (6,)
+    assert np.shape(results["stress_var"]) == (6,)
+    assert np.shape(results["stress_comm"]) == (2, 6)
+
+
+def test_the_committee_axis_survives_the_voigt_conversion(water):
+    """The conversion broadcasts, so three members stay three members."""
+    results = _results(water, [_tiny_model(0), _tiny_model(1), _tiny_model(2)])
+
+    assert np.shape(results["stress_comm"]) == (3, 6)
+    assert np.allclose(np.mean(results["stress_comm"], axis=0), results["stress"])
+    assert np.allclose(np.var(results["stress_comm"], axis=0), results["stress_var"])
+
+
+def test_the_members_are_symmetric_so_the_conversion_loses_nothing(water):
+    """Voigt-6 keeps six of nine components and averages the off-diagonal pairs,
+    which is only lossless because a MACE stress is symmetric. Asserted on the
+    raw 3x3 tensors, since after the conversion the evidence is gone.
+    """
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        atoms = water.copy()
+        calc = MACECalculator(
+            models=[_tiny_model(0), _tiny_model(1)],
+            device="cpu",
+            default_dtype="float64",
+        )
+        seen = []
+        original = mace_calculator_module.full_3x3_to_voigt_6_stress
+
+        def watching(value):
+            seen.append(np.asarray(value).copy())
+            return original(value)
+
+        mace_calculator_module.full_3x3_to_voigt_6_stress = watching
+        try:
+            calc.calculate(atoms)
+        finally:
+            mace_calculator_module.full_3x3_to_voigt_6_stress = original
+    finally:
+        torch.set_default_dtype(previous)
+
+    tensors = [array for array in seen if array.shape[-2:] == (3, 3)]
+    assert tensors, "nothing was converted, so the assertion below proves nothing"
+    for array in tensors:
+        assert np.allclose(array, np.swapaxes(array, -1, -2))
+
+
+def test_the_stress_variance_scales_as_the_square_of_the_conversion(water):
+    """Same rule as the energy and forces above: a variance carries the square,
+    and for stress the conversion is itself energy over length cubed."""
+    plain = _results(water, [_tiny_model(0), _tiny_model(1)])
+    scaled = _results(
+        water, [_tiny_model(0), _tiny_model(1)], energy_units_to_eV=2.0
+    )
+
+    assert np.allclose(scaled["stress_comm"], plain["stress_comm"] * 2.0)
+    assert np.allclose(scaled["stress_var"], plain["stress_var"] * 4.0)
+
+
+def test_a_dipole_committee_reports_its_spread(water):
+    results = _dipole_results(water, [_dipole_model(0), _dipole_model(1)])
+
+    members = results["dipole_comm"]
+    assert np.shape(results["dipole"]) == (3,)
+    assert members.shape == (2, 3)
+    assert not np.allclose(members[0], members[1])
+    assert np.allclose(results["dipole_var"], np.var(members, axis=0))
+
+
+def test_the_dipole_spread_keeps_the_layout_of_the_dipole(water):
+    """Unlike stress: `dipole` and `dipole_var` are both (3,), so the pair is
+    indexable the same way."""
+    results = _dipole_results(water, [_dipole_model(0), _dipole_model(1)])
+
+    assert np.shape(results["dipole"]) == np.shape(results["dipole_var"])
+
+
+def test_a_single_dipole_model_reports_no_spread(water):
+    """The committee keys are a committee's, not a decoration on every run."""
+    results = _dipole_results(water, [_dipole_model(0)])
+
+    assert "dipole" in results
+    assert "dipole_comm" not in results
+    assert "dipole_var" not in results
+
+
+# ---------------------------------------------------------------------------
+# what the committee advertises against what it writes
+# ---------------------------------------------------------------------------
+
+
+def _calculator(models, **kwargs):
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        return MACECalculator(
+            models=models, device="cpu", default_dtype="float64", **kwargs
+        )
+    finally:
+        torch.set_default_dtype(previous)
+
+
+def test_implemented_properties_is_this_calculator_s_own(water):
+    """`Calculator.implemented_properties` is a class attribute on the ASE base,
+    so extending it in place grew a list every calculator in the process shared:
+    the second committee advertised twice as many properties as the first, and a
+    dipole calculator built after an energy one claimed energy and stress it
+    cannot produce.
+    """
+    first = _calculator([_tiny_model(0), _tiny_model(1)])
+    second = _calculator([_tiny_model(0), _tiny_model(1)])
+    third = _calculator([_tiny_model(0)])
+
+    assert first.implemented_properties == second.implemented_properties
+    assert len(third.implemented_properties) < len(first.implemented_properties), (
+        "a single model should advertise fewer properties, not the same list"
+    )
+    assert len(set(first.implemented_properties)) == len(
+        first.implemented_properties
+    ), f"duplicates: {first.implemented_properties}"
+
+
+def test_every_committee_key_written_is_also_advertised(water):
+    """ASE consumers ask `implemented_properties` whether a property exists, so
+    one that is written and not listed is unreachable through `get_property`.
+    `forces_var` and `stress_comm` were in exactly that state.
+    """
+    results = _results(water, [_tiny_model(0), _tiny_model(1)])
+    calc = _calculator([_tiny_model(0), _tiny_model(1)])
+
+    written = {key for key in results if key.endswith(("_comm", "_var"))}
+    advertised = {
+        key for key in calc.implemented_properties if key.endswith(("_comm", "_var"))
+    }
+
+    assert written == advertised, {
+        "written not advertised": sorted(written - advertised),
+        "advertised not written": sorted(advertised - written),
+    }
+
+
+def test_a_single_model_advertises_no_committee_keys(water):
+    calc = _calculator([_tiny_model(0)])
+
+    assert not [
+        key for key in calc.implemented_properties if key.endswith(("_comm", "_var"))
+    ]
