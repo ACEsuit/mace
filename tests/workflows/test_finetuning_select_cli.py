@@ -276,3 +276,136 @@ def test_the_yaml_config_is_read(tmp_path, pool):
     run_mace_train({"config": str(config)}, script=SELECT, cwd=tmp_path)
 
     assert read_selection(tmp_path) == by_flags
+
+
+# ---------------------------------------------------------------------------
+# --head_pt, --head_ft, --weight_pt, --weight_ft, --filter_atomic_numbers_pt
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(name="mixed_pool")
+def fixture_mixed_pool(tmp_path):
+    """A pool of two chemistries, so the element filter has something to remove."""
+    rng = np.random.default_rng(1)
+    configs = []
+    for symbols, positions in (
+        ("H2O", [[0, 0, 0], [0.95, 0, 0], [-0.24, 0.93, 0]]),
+        ("H2O", [[0, 0, 0], [0.98, 0, 0], [-0.26, 0.95, 0]]),
+        ("CH4", [[0, 0, 0], [1.09, 0, 0], [-0.36, 1.03, 0], [-0.36, -0.51, 0.89], [-0.36, -0.51, -0.89]]),
+        ("CH4", [[0, 0, 0], [1.10, 0, 0], [-0.37, 1.04, 0], [-0.37, -0.52, 0.90], [-0.37, -0.52, -0.90]]),
+    ):
+        for _ in range(2):
+            atoms = Atoms(symbols, positions=positions, cell=[9, 9, 9], pbc=[True] * 3)
+            atoms.positions += rng.normal(0, 0.02, atoms.positions.shape)
+            atoms.info["REF_energy"] = float(rng.normal())
+            atoms.arrays["REF_forces"] = rng.normal(0, 0.1, atoms.positions.shape)
+            configs.append(atoms)
+    path = tmp_path / "mixed.xyz"
+    ase.io.write(path, configs, format="extxyz")
+    return path
+
+
+def written(tmp_path, name="out.xyz"):
+    return ase.io.read(tmp_path / name, index=":")
+
+
+def combined_configs(tmp_path):
+    return ase.io.read(tmp_path / "out_combined.xyz", index=":")
+
+
+def test_the_pretraining_weight_is_written_onto_the_selection(tmp_path, pool):
+    """`--weight_pt` ends up in `atoms.info["config_weight"]`, which is what the
+    training loss reads, so a flag that stopped arriving would quietly weight the
+    replay data at 1.0."""
+    select(tmp_path, pool, num_samples=3, subselect="random", weight_pt=0.25)
+
+    assert {atoms.info["config_weight"] for atoms in written(tmp_path)} == {0.25}
+
+
+def test_the_selection_is_marked_as_pretraining(tmp_path, pool):
+    """The other half of the same metadata: the flag is only meaningful because
+    the configurations it lands on are labelled as the pretraining set."""
+    select(tmp_path, pool, num_samples=3, subselect="random", weight_pt=0.25)
+
+    assert all(atoms.info["pretrained"] for atoms in written(tmp_path))
+
+
+def test_the_finetuning_weight_applies_to_the_finetuning_configs(tmp_path, pool):
+    """`--weight_ft` is written onto `--configs_ft`, not onto the selection, and
+    the two arrive together in the combined file. Checked there, because that is
+    the file training consumes."""
+    select(
+        tmp_path,
+        pool,
+        num_samples=2,
+        subselect="random",
+        configs_ft=pool,
+        weight_pt=0.25,
+        weight_ft=0.75,
+    )
+
+    weights = {
+        (atoms.info["pretrained"], atoms.info["config_weight"])
+        for atoms in combined_configs(tmp_path)
+    }
+    assert (True, 0.25) in weights
+    assert (False, 0.75) in weights
+
+
+def test_the_default_weights_are_one(tmp_path, pool):
+    select(tmp_path, pool, num_samples=3, subselect="random")
+
+    assert {atoms.info["config_weight"] for atoms in written(tmp_path)} == {1.0}
+
+
+def test_the_heads_label_each_half(tmp_path, pool):
+    """`--head_pt` and `--head_ft` name the level of theory each set belongs to,
+    which is how multihead training tells them apart."""
+    select(
+        tmp_path,
+        pool,
+        num_samples=2,
+        subselect="random",
+        configs_ft=pool,
+        head_pt="pbe_mp",
+        head_ft="my_dft",
+    )
+
+    heads = {(atoms.info["pretrained"], atoms.info["head"]) for atoms in combined_configs(tmp_path)}
+    assert (True, "pbe_mp") in heads
+    assert (False, "my_dft") in heads
+
+
+def test_no_head_key_is_written_when_none_is_given(tmp_path, pool):
+    """`None` means "do not label", not "label it None": the key is absent, and a
+    consumer distinguishes the two."""
+    select(tmp_path, pool, num_samples=3, subselect="random")
+
+    assert all("head" not in atoms.info for atoms in written(tmp_path))
+
+
+def test_the_atomic_number_filter_restricts_the_pool(tmp_path, mixed_pool):
+    """`--filter_atomic_numbers_pt` decides which chemistries can be selected. It
+    only applies when no finetuning configurations were given, since those supply
+    the element list themselves.
+    """
+    select(
+        tmp_path,
+        mixed_pool,
+        num_samples=4,
+        subselect="random",
+        filter_atomic_numbers_pt="[1,8]",
+        filtering_type="exclusive",
+    )
+
+    elements = {symbol for atoms in written(tmp_path) for symbol in atoms.get_chemical_symbols()}
+    assert elements <= {"H", "O"}, elements
+    assert "C" not in elements
+
+
+def test_without_the_filter_both_chemistries_are_available(tmp_path, mixed_pool):
+    """Otherwise the test above would pass on a pool that had no carbon in it."""
+    select(tmp_path, mixed_pool, num_samples=8, subselect="random")
+
+    elements = {symbol for atoms in written(tmp_path) for symbol in atoms.get_chemical_symbols()}
+    assert "C" in elements
