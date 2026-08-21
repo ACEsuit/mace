@@ -177,8 +177,8 @@ Group default: KEEP as the `runtime` / `output` config sections. The four `*_dir
 | `train.distributed` | `--distributed` | `mace/tools/arg_parser.py:79` | KEEP | `tests/workflows/test_distributed.py` |
 | `train.launcher` | `--launcher` | `mace/tools/arg_parser.py:85` | KEEP | `tests/workflows/test_distributed.py` |
 | `train.log_level` | `--log_level` | `mace/tools/arg_parser.py:90` | KEEP | ⚠️ gap (trivial; conscious downgrade candidate) |
-| `train.plot` | `--plot` | `mace/tools/arg_parser.py:93` | KEEP | ⚠️ gap (with the `mace_plot_train` smoke) |
-| `train.plot_frequency` | `--plot_frequency` | `mace/tools/arg_parser.py:100` | KEEP | ⚠️ gap (idem) |
+| `train.plot` | `--plot` | `mace/tools/arg_parser.py:93` | KEEP | `tests/workflows/test_training_plots.py::test_a_default_run_draws_a_plot` + `tests/workflows/test_training_plots.py::test_turning_it_off_draws_nothing` |
+| `train.plot_frequency` | `--plot_frequency` | `mace/tools/arg_parser.py:100` | KEEP | `tests/workflows/test_training_plots.py::test_a_periodic_frequency_also_ends_with_a_plot` |
 | `train.plot_interaction_e` | `--plot_interaction_e` | `mace/tools/arg_parser.py:107` | DROP — niche diagnostic that drags model introspection into the plotting path | — |
 | `train.error_table` | `--error_table` | `mace/tools/arg_parser.py:114` | KEEP — the error-table types | `tests/workflows/test_cli_contracts.py::test_the_end_of_training_error_table_is_printed_and_parseable` |
 
