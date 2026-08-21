@@ -1164,7 +1164,7 @@ their heads intact, and a single-head export is `mace model select-head`. Model 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
 | `fm.mace_mp` | MACE-MP aliases (small/medium/large, 0b/0b2/0b3, MPA-0, OMAT, MATPES) | published artifacts | KEEP — convert | `tests/golden/test_foundation_goldens.py::test_foundation_model_reproduces_its_reference` |
-| `fm.mace_mh` | `mh-0` / `mh-1` — the MACE-MP multi-head releases | published artifacts | KEEP — convert with heads intact | ⚠️ gap (needs an mh-0 case in `tests/golden/test_foundation_goldens.py`; it is also the Density-block evidence, §7) |
+| `fm.mace_mh` | `mh-0` / `mh-1` — the MACE-MP multi-head releases | published artifacts | KEEP — convert with heads intact | `tests/golden/references/mh_0_e3nn_cpu_fp64.json` via `tests/golden/test_foundation_goldens.py` (network tier; the head set, the refusal to guess a head, and that the head changes the energy) |
 | `fm.mace_off` | MACE-OFF (OFF23 small/medium/large) | published artifacts | KEEP — convert | `tests/golden/test_foundation_goldens.py::test_foundation_model_reproduces_its_reference` |
 | `fm.mace_mdp` | MACE-MDP — the dielectric family (`AtomicDielectricMACE`), dipole and polarizability | published artifacts | KEEP — convert | `tests/golden/test_mdp_foundation.py::test_mdp_foundation_reproduces_its_reference` |
 | `fm.mace_omol` | MACE-OMOL — multi-head, `head="omol"` | published artifacts | KEEP — convert with heads intact | `tests/foundations/test_foundations.py::test_mace_omol_elements_subset_reproduces_energy_forces` |

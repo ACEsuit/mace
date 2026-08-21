@@ -297,3 +297,83 @@ def test_the_tracked_anicc_checkpoint_cannot_be_loaded_on_a_cpu_only_host():
         pytest.skip("the refusal is a property of a host without CUDA")
     with pytest.raises(RuntimeError, match="CUDA|NVIDIA"):
         torch.load(path, map_location="cpu", weights_only=False)
+
+
+# ---------------------------------------------------------------------------
+# mh-0, the multi-head release
+# ---------------------------------------------------------------------------
+#
+# The parametrized tests above already pin its numbers on one head. What is
+# specific to a multi-head artifact is the head set itself: a conversion that
+# came out with one head, or with the heads in a different order, would
+# reproduce the reference above exactly and still have lost the thing that makes
+# this release worth publishing. These three are that.
+
+MH_0_HEADS = [
+    "rgd1_b3lyp",
+    "matpes_r2scan",
+    "mp_pbe_refit_add",
+    "omol",
+    "spice_wB97M",
+    "oc20_usemppbe",
+    "omat_pbe",
+]
+
+
+@pytest.mark.network
+def test_mh_0_carries_every_published_head_in_order():
+    """Seven levels of theory in one model, and the order is part of the
+    artifact: heads are selected by name through the calculator, and by *index*
+    inside the model, where a head's one-hot picks its readout and its energy
+    shift. A reordering is silently wrong in a way no single-head reference can
+    see.
+    """
+    calc, _ = fa.load_calculator(fa.ARTIFACTS["mh_0"])
+
+    assert calc.models[0].heads == MH_0_HEADS
+
+
+@pytest.mark.network
+def test_mh_0_refuses_to_load_without_a_head():
+    """None of the seven is called `default`, so the calculator cannot pick one,
+    and it says so with the list rather than choosing. That refusal is why this
+    artifact's registry entry carries a `head` and the single-head ones do not.
+    """
+    from mace.calculators.foundations_models import (  # noqa: PLC0415
+        mace_mp,
+    )
+
+    with pytest.raises(ValueError, match="Head keyword was not provided") as raised:
+        mace_mp(model="mh-0", default_dtype="float64", device="cpu")
+
+    for head in MH_0_HEADS:
+        assert head in str(raised.value)
+
+
+@pytest.mark.network
+def test_the_head_selects_a_different_energy():
+    """What the reference cannot show on its own: the pinned head is doing
+    something. Two heads of one model, one structure, two energies -- so a
+    conversion that kept the head names while collapsing them onto one readout
+    fails here rather than passing everything.
+
+    Loaded twice through the registry, with `loader_kwargs` differing only in the
+    head, rather than by assigning to the calculator afterwards -- the point is
+    that the loader honours the argument.
+    """
+    import dataclasses  # noqa: PLC0415
+
+    spec = fa.ARTIFACTS["mh_0"]
+    atoms = _fixtures_for(spec)["triclinic_bulk"]
+
+    energies = {}
+    for head in ("mp_pbe_refit_add", "matpes_r2scan"):
+        variant = dataclasses.replace(
+            spec, loader_kwargs=dict(spec.loader_kwargs, head=head)
+        )
+        calc, _ = fa.load_calculator(variant)
+        probe = atoms.copy()
+        probe.calc = calc
+        energies[head] = float(probe.get_potential_energy())
+
+    assert energies["mp_pbe_refit_add"] != energies["matpes_r2scan"], energies
