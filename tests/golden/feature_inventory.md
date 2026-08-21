@@ -48,9 +48,9 @@ were live in this file:
 |---|---|
 | a gap marker, `⚠️ gap (…)` | nothing pins this yet, and the cell says where the test belongs |
 | a backticked path under `tests/` | a test that runs today: a file, a `::test_name`, a `::TABLE[key]` entry, or a directory at least two levels deep |
-| one of two named CI jobs | `the suite itself` and `the lint job itself`, for the two `setup.cfg` extras, where the only thing that can fail is a job installing them. Allowed by name, one entry each, with a written reason |
+| one of three named non-test pins | `the suite itself` and `the lint job itself` for the two `setup.cfg` extras, where the only thing that can fail is a job installing them, and `the docs, reviewed not tested` for the pages in mace-docs, which CI does not run. Allowed by name, with a written reason each |
 
-There is deliberately no fourth form. A pin used to be allowed to name a *planned* test by ticket id,
+There is deliberately no further form. A pin used to be allowed to name a *planned* test by ticket id,
 which meant the cell recorded an intention nobody could resolve: a plan that slipped read exactly
 like coverage that existed. Every pin now names something that runs, or admits that nothing does.
 A pin naming a *test id* rather than a ticket is also what makes the checker able to verify it, which
@@ -1090,23 +1090,23 @@ them and nothing here is pinned by a test that imports one.
 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `doc.quickstart` | Quick Start / Introduction / Installation / Troubleshooting | mace-docs | KEEP — maps to §1 and §10 | ⚠️ gap (docs are not CI-tested today) |
-| `doc.training` | Training | mace-docs | KEEP — maps to §3 | ⚠️ gap (idem) |
-| `doc.evaluation` | Evaluation | mace-docs | KEEP — maps to §5 eval | ⚠️ gap (idem) |
-| `doc.multihead` | Heterogeneous Data Training / Multihead Training | mace-docs | KEEP — maps to §3.6 | ⚠️ gap (idem) |
-| `doc.ase` | ASE calculator | mace-docs | KEEP — maps to §9 and §16 | ⚠️ gap (idem) |
-| `doc.descriptors` | MACE descriptors | mace-docs | KEEP — maps to `get_descriptors` (§16) and the eval descriptor flags (§5) | ⚠️ gap (idem) |
+| `doc.quickstart` | Quick Start / Introduction / Installation / Troubleshooting | mace-docs | KEEP — maps to §1 and §10 | the docs, reviewed not tested |
+| `doc.training` | Training | mace-docs | KEEP — maps to §3 | the docs, reviewed not tested |
+| `doc.evaluation` | Evaluation | mace-docs | KEEP — maps to §5 eval | the docs, reviewed not tested |
+| `doc.multihead` | Heterogeneous Data Training / Multihead Training | mace-docs | KEEP — maps to §3.6 | the docs, reviewed not tested |
+| `doc.ase` | ASE calculator | mace-docs | KEEP — maps to §9 and §16 | the docs, reviewed not tested |
+| `doc.descriptors` | MACE descriptors | mace-docs | KEEP — maps to `get_descriptors` (§16) and the eval descriptor flags (§5) | the docs, reviewed not tested |
 | `doc.hessians` | Analytical Hessians | mace-docs | KEEP — maps to `get_hessian` (§16) | `tests/foundations/test_hessian.py` |
-| `doc.dipoles` | Dipole Moments and Polarizabilities | mace-docs | KEEP — maps to §6 and §11 | ⚠️ gap (docs are not CI-tested today) |
+| `doc.dipoles` | Dipole Moments and Polarizabilities | mace-docs | KEEP — maps to §6 and §11 | the docs, reviewed not tested |
 | `doc.cuda` | CUDA Acceleration (cuEquivariance) | mace-docs | KEEP — rewritten: v1 dispatches instead of converting, so the page's central instruction (convert your model) disappears | `tests/golden/test_backend_parity_golden.py::test_the_audits_verdict_tracks_whether_the_fused_ops_are_installed` |
-| `doc.openmm` | OpenMM Interface | mace-docs | KEEP | ⚠️ gap (no OpenMM coverage in-tree) |
+| `doc.openmm` | OpenMM Interface | mace-docs | KEEP — and the interface has no in-tree coverage at all, which is separate from the page: a test would need OpenMM installed | the docs, reviewed not tested |
 | `doc.lammps` | MACE in LAMMPS / MACE in LAMMPS with ML-IAP | mace-docs | KEEP — reduced to the MLIAP path; maps to §17 | `tests/integrations/lammps` |
 | `doc.foundation_models` | Foundation models | mace-docs | KEEP — maps to §9.2 | `tests/golden/test_foundation_goldens.py::test_the_registry_url_is_still_the_package_url` |
 | `doc.electrostatics` | Electrostatic MACE | mace-docs | KEEP — maps to §3.3 and PolarMACE (§6) | `tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy` |
 | `doc.finetuning` | Fine-tuning / Multihead Replay / LoRA | mace-docs | KEEP — maps to §3.6 | `tests/workflows/test_finetuning_contracts.py::test_multihead_replay_finetuning_completes_and_carries_both_heads` |
 | `doc.preprocessing` | Large Dataset Pre-processing | mace-docs | KEEP — maps to §4 | `tests/workflows/test_preprocess.py` |
 | `doc.multigpu` | Multi-GPUs Training | mace-docs | KEEP — maps to `--distributed` (§3.1) | `tests/workflows/test_distributed.py` |
-| `doc.examples` | Examples (MD22, ANI-1x, liquid water; NVT with a foundation model) and Tutorials 1–3 | mace-docs | KEEP — end-to-end usage; the theory tutorial is superseded by the marimo notebooks | ⚠️ gap (examples are not CI-tested) |
+| `doc.examples` | Examples (MD22, ANI-1x, liquid water; NVT with a foundation model) and Tutorials 1–3 | mace-docs | KEEP — end-to-end usage; the theory tutorial is superseded by the marimo notebooks | the docs, reviewed not tested |
 
 ## 19. Package-level surfaces and second-pass findings
 
