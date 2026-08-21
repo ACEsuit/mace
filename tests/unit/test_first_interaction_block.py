@@ -18,8 +18,6 @@ change. What is pinned here is only the part that survives: which blocks are
 accepted.
 """
 
-import logging
-
 import numpy as np
 import pytest
 
