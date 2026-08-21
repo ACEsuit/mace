@@ -4,7 +4,7 @@ Targets: `foundations` (tracked artifact, part of `all`) and
 `foundations-network` (downloaded artifacts, not part of `all`).
 
 The anchors pin the *architecture*; these pin the *artifacts users actually
-load*. Three published checkpoints, in two tiers, described once in
+load*. Four published checkpoints, in two tiers, described once in
 `foundation_artifacts.py` — the loader call, the fixture selection and the
 sha256 — and read from there by both `regenerate.py` and
 `test_foundation_goldens.py`, so a reference cannot have been generated with
@@ -15,12 +15,22 @@ different arguments than the test replays.
 | `mpa0_medium_e3nn_cpu_fp64.json` | `mace-mpa-0-medium.model`, tracked in this repo | `mace_mp(default_dtype="float64", device="cpu")` | all six | every PR, no marker |
 | `mp_small_e3nn_cpu_fp64.json` | `2023-12-10-mace-128-L0_energy_epoch-249.model` | `mace_mp(model="small", …)` | all six | nightly, `network` |
 | `off_small_e3nn_cpu_fp64.json` | `MACE-OFF23_small.model` | `mace_off(model="small", …)` | molecular only | nightly, `network` |
+| `mh_0_e3nn_cpu_fp64.json` | `mace-mh-0.model` | `mace_mp(model="mh-0", head="mp_pbe_refit_add", …)` | all six | nightly, `network` |
 
 MPA-0 medium is the one published artifact that can be pinned per pull
 request: `download_mace_mp_checkpoint` short-circuits to the tracked file for
 `model=None`, so an unqualified `mace_mp()` is both the highest-traffic model
 in the project and download-free. MACE-OFF is organic chemistry, so it is
 evaluated on the `molecular` tag rather than on slabs.
+
+**mh-0 is the multi-head release, and one head's numbers do not pin it.** The
+model carries seven levels of theory, so the reference is the PBE materials head
+and three tests beside it are the head set: that all seven are present *and in
+order* (a head is selected by name through the calculator and by index inside the
+model, where its one-hot picks the readout and the energy shift), that a load
+without a `head` is refused with the list rather than guessing, and that two
+heads give two energies for one structure. A conversion that kept the names while
+collapsing the readouts would reproduce the reference exactly and fail those.
 
 **Identity is measured, not assumed.** An alias is a name and names get
 re-pointed upstream, so each reference records the sha256 of the checkpoint it
