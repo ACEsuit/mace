@@ -472,3 +472,132 @@ def test_every_capability_is_guaranteed_by_some_job():
         f"suite is green by absence. Either give the capability a job that "
         f"installs it and names it, or drop the marker."
     )
+
+
+# ---------------------------------------------------------------------------
+# the cueq wheel extras
+#
+# The `cueq*` extras name wheels the suite cannot assert anything about: the only
+# failure mode of an extras group is a job resolving it, and no test inside the
+# suite can resolve the suite's own dependencies. The GPU pipeline installs
+# cueq-cuda-13 and nothing installs the rest, so the job is the only place the
+# others are checked at all.
+#
+# The job derives its list from setup.cfg rather than naming the extras, and
+# these tests hold it to that: an extras group added or retired there is then
+# covered without an edit in the workflow, and neither file can drift from the
+# other while nobody is looking.
+# ---------------------------------------------------------------------------
+
+
+def _declared_cueq_extras() -> list:
+    import configparser  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    config = configparser.ConfigParser()
+    config.read(REPO_ROOT / "setup.cfg", encoding="utf-8")
+    return [
+        name
+        for name in config["options.extras_require"]
+        if name.startswith("cueq")
+    ]
+
+
+def _cueq_job() -> dict:
+    """The job is a PR gate rather than a nightly one: resolving a handful of
+    extras is seconds, so there is no reason to make a contributor wait until
+    tomorrow to learn that an extras group they touched no longer resolves."""
+    core = yaml.safe_load(
+        (WORKFLOWS / "ci-core.yaml").read_text(encoding="utf-8")
+    )
+    return core["jobs"]["cueq-wheel-extras"]
+
+
+def _cueq_job_script() -> str:
+    return "\n".join(step.get("run", "") for step in _cueq_job()["steps"])
+
+
+def test_a_pr_job_resolves_the_cueq_extras():
+    core = yaml.safe_load((WORKFLOWS / "ci-core.yaml").read_text(encoding="utf-8"))
+
+    assert "cueq-wheel-extras" in core["jobs"]
+    assert "cueq-wheel-extras" not in _nightly()["jobs"], (
+        "one copy only, and the PR gate is the useful one"
+    )
+
+
+def test_setup_cfg_declares_the_extras_the_job_resolves():
+    """setup.cfg is the list, and there has to be one to read: a section rename
+    would leave the loop iterating over nothing and the job passing on air."""
+    declared = _declared_cueq_extras()
+
+    assert "cueq" in declared
+    assert [name for name in declared if name.startswith("cueq-cuda-")], (
+        "no CUDA-major ops extra is declared, so the job resolves the frontend only"
+    )
+
+
+def test_the_job_fails_when_the_derived_list_is_empty():
+    """The failure mode a derived list adds: an empty `for` runs no pip, leaves
+    `status` at 0, and reports green having resolved nothing. Reading setup.cfg
+    from the test proves the file is fine, not that the job's own parse found
+    anything, so the guard has to live in the script."""
+    script = _cueq_job_script()
+
+    assert '-z "$extras"' in script, "an empty derivation is not caught"
+    guard = script.split('-z "$extras"', 1)[1].split("fi", 1)[0]
+    assert "exit 1" in guard, "the empty case is reported but not failed"
+
+
+def test_the_job_reads_the_extras_out_of_setup_cfg():
+    """Rather than naming them. A list written in the workflow goes stale in the
+    direction nothing checks: an extra retired from setup.cfg leaves the job
+    resolving a name pip only warns about, so it stays green while covering one
+    fewer group than it claims."""
+    script = _cueq_job_script()
+
+    assert "options.extras_require" in script and "setup.cfg" in script
+    # The bare `cueq` is exempt: it is the prefix the derivation filters on, so
+    # the string is in the script either way. The per-major names are the ones
+    # that would be a written-out list.
+    named = [
+        name
+        for name in _declared_cueq_extras()
+        if name.startswith("cueq-cuda-") and name in script
+    ]
+    assert not named, (
+        f"the job names {named} instead of deriving them, so setup.cfg and the "
+        f"workflow can disagree"
+    )
+
+
+def test_the_job_needs_no_gpu():
+    """The reason this can gate a PR at all: the ops wheels are manylinux
+    artifacts, so resolving them wants no device. If it ever moves to a GPU
+    runner, the rows that point at it are pointing somewhere much more expensive.
+    """
+    assert _cueq_job()["runs-on"] == "ubuntu-latest"
+
+
+def test_the_job_names_no_platform_tag():
+    """pip matches a platform tag exactly when it is given one, so naming
+    `manylinux_2_17` resolves nothing for the packages that ship
+    `manylinux_2_28`, and naming several resolves nothing at all. The runner's
+    own tags are the only set that is right for every one of these wheels.
+    """
+    assert "--platform" not in _cueq_job_script()
+
+
+def test_the_job_only_resolves_and_does_not_install():
+    """`--dry-run` is the whole assertion: nothing here needs the wheels on
+    disk, only proof that a resolver can find them."""
+    assert "--dry-run" in _cueq_job_script()
+
+
+def test_a_failure_to_resolve_fails_the_job():
+    """The loop must not swallow the failure: a green job that resolved nothing is
+    the state these rows were already in.
+    """
+    script = _cueq_job_script()
+
+    assert "status=1" in script
+    assert 'exit "$status"' in script
