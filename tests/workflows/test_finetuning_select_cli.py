@@ -309,7 +309,7 @@ def written(tmp_path, name="out.xyz"):
     return ase.io.read(tmp_path / name, index=":")
 
 
-def combined(tmp_path):
+def combined_configs(tmp_path):
     return ase.io.read(tmp_path / "out_combined.xyz", index=":")
 
 
@@ -346,7 +346,7 @@ def test_the_finetuning_weight_applies_to_the_finetuning_configs(tmp_path, pool)
 
     weights = {
         (atoms.info["pretrained"], atoms.info["config_weight"])
-        for atoms in combined(tmp_path)
+        for atoms in combined_configs(tmp_path)
     }
     assert (True, 0.25) in weights
     assert (False, 0.75) in weights
@@ -371,7 +371,7 @@ def test_the_heads_label_each_half(tmp_path, pool):
         head_ft="my_dft",
     )
 
-    heads = {(atoms.info["pretrained"], atoms.info["head"]) for atoms in combined(tmp_path)}
+    heads = {(atoms.info["pretrained"], atoms.info["head"]) for atoms in combined_configs(tmp_path)}
     assert (True, "pbe_mp") in heads
     assert (False, "my_dft") in heads
 
