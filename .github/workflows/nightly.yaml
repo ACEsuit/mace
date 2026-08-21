@@ -246,7 +246,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage to Coveralls
-        if: always()
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ github.token }}
