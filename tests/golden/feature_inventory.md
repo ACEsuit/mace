@@ -234,8 +234,8 @@ Group default: KEEP as the electrostatics-extra config section, pinned by the po
 | `train.quadrupole_feature_corrections` | `--quadrupole_feature_corrections` | `mace/tools/arg_parser.py:371` | KEEP | `tests/foundations/test_foundations.py::test_polar_extract_config_roundtrip` + `tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy` |
 | `train.return_electrostatic_potentials` | `--return_electrostatic_potentials` | `mace/tools/arg_parser.py:377` | MERGE — an observable declared in the output spec, not a model flag | `tests/extensions/polar/test_polar_output_keys.py::test_electrostatic_potentials_are_absent_unless_asked_for` (pins the off state; a case with it on is still to come) |
 | `train.field_norm_factor` | `--field_norm_factor` | `mace/tools/arg_parser.py:383` | KEEP | `tests/foundations/test_foundations.py::test_polar_extract_config_roundtrip` + `tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy` |
-| `train.fixedpoint_update_config` | `--fixedpoint_update_config` | `mace/tools/arg_parser.py:389` | KEEP — the fixed-point solver settings; the expert electrostatics config section | ⚠️ gap (add a case to `tests/golden/test_polar_foundation.py`) |
-| `train.field_readout_config` | `--field_readout_config` | `mace/tools/arg_parser.py:395` | KEEP — idem | ⚠️ gap (add a case to `tests/golden/test_polar_foundation.py`) |
+| `train.fixedpoint_update_config` | `--fixedpoint_update_config` | `mace/tools/arg_parser.py:389` | KEEP — the fixed-point solver settings; the expert electrostatics config section | `tests/extensions/polar/test_polar_block_configs.py` (the parse, the registry lookup, and the one option inside it that is ignored) |
+| `train.field_readout_config` | `--field_readout_config` | `mace/tools/arg_parser.py:395` | KEEP — idem | `tests/extensions/polar/test_polar_block_configs.py` (idem; unknown keys are discarded rather than refused) |
 
 ### 3.4 Outputs and scaling (8)
 
@@ -421,7 +421,7 @@ Group default: KEEP as the `magnetic`-extra config. Grouped like §3.3, but the 
 | `train.num_mag_radial_basis` | `--num_mag_radial_basis` | `mace/tools/arg_parser.py:1178` | KEEP — idem | `tests/extensions/magnetic` |
 | `train.num_mag_radial_basis_one_body` | `--num_mag_radial_basis_one_body` | `mace/tools/arg_parser.py:1154` | KEEP — idem | `tests/extensions/magnetic` |
 | `train.use_magmom_one_body` | `--use_magmom_one_body` | `mace/tools/arg_parser.py:1184` | KEEP — the one-body magmom term | `tests/golden/test_tiny_magnetic.py::test_the_one_body_magnetic_term_is_inside_the_reference` |
-| `train.train_one_body_contribution` | `--train_one_body_contribution` | `mace/tools/arg_parser.py:1190` | KEEP — whether the one-body coefficients are optimized | ⚠️ gap (add a case to `tests/golden/test_tiny_magnetic.py`) |
+| `train.train_one_body_contribution` | `--train_one_body_contribution` | `mace/tools/arg_parser.py:1190` | KEEP — whether the one-body coefficients are optimized | `tests/golden/test_tiny_magnetic.py::test_not_training_it_requires_freezing_it_first` + `::test_training_the_one_body_term_gives_it_its_own_parameter_group` |
 | `train.data_aug_magmom` | `--data_aug_magmom` | `mace/tools/arg_parser.py:1197` | MERGE — a training-data transform (`Random3DRotation`), not a model flag | `tests/extensions/magnetic` (rotation equivariance) |
 | `train.data_aug_magmom_mode` | `--data_aug_magmom_mode` | `mace/tools/arg_parser.py:1203` | MERGE — selects which spin symmetry the transform draws from (`non-soc` the full O(3), `soc` the sign flip alone), so it travels with `data_aug_magmom` | `tests/extensions/magnetic/test_magmom_augmentation.py::test_non_soc_mode_samples_the_full_o3` |
 
