@@ -9,6 +9,12 @@ Every existing fixture trains on a handful, so the branch never ran.
 A smoke run with workers is the only end-to-end statement available, so it is
 paired with a source check that no loader is built without it: a fifth loader
 added later is exactly how a knob like this stops applying to half the run.
+
+`--pin_memory` is the same shape of knob and gets the same treatment. It has no
+observable effect on a CPU-only run by construction -- pinned host memory is
+what makes a host-to-device copy asynchronous, so with no device there is
+nothing to pin -- which is exactly why the source check is the assertion that
+means something here.
 """
 
 import ast
@@ -127,3 +133,54 @@ def test_every_dataloader_is_given_the_worker_count():
             missing.append(f"{name} at line {node.lineno}")
 
     assert not missing, "DataLoader built without num_workers: " + ", ".join(missing)
+
+
+# ---------------------------------------------------------------------------
+# --pin_memory
+# ---------------------------------------------------------------------------
+
+
+def test_every_dataloader_is_told_whether_to_pin():
+    """Same failure mode as the worker count, and harder to notice: a loader
+    built without `pin_memory` is not slower on the machine that ran the tests,
+    it is slower on the GPU the training was for."""
+    tree = ast.parse(inspect.getsource(run_train_module))
+    missing = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = ast.unparse(node.func)
+        if not name.endswith("DataLoader"):
+            continue
+        if "pin_memory" not in {kw.arg for kw in node.keywords}:
+            missing.append(f"{name} at line {node.lineno}")
+
+    assert not missing, "DataLoader built without pin_memory: " + ", ".join(missing)
+
+
+def test_the_flag_is_the_value_the_loaders_are_given():
+    """Every one of them is handed `args.pin_memory` itself, so the flag cannot
+    be honoured in one place and hard-coded in another."""
+    tree = ast.parse(inspect.getsource(run_train_module))
+    values = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not ast.unparse(node.func).endswith("DataLoader"):
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "pin_memory":
+                values.append(ast.unparse(keyword.value))
+
+    assert values, "no DataLoader passes pin_memory at all"
+    assert set(values) == {"args.pin_memory"}, values
+
+
+@pytest.mark.parametrize("pin_memory", ["True", "False"])
+def test_a_run_trains_either_way(tmp_path, many_configs, pin_memory):
+    """The end-to-end half. On a CPU-only run the flag changes nothing that can
+    be measured, so what this rules out is the loaders refusing the argument --
+    which is what a torch release changing its signature would look like."""
+    result = train(tmp_path, many_configs, pin_memory=pin_memory)
+
+    assert result.returncode == 0
