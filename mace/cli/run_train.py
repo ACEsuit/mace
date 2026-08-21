@@ -5,11 +5,11 @@
 ###########################################################################################
 
 import ast
-import glob
 import json
 import logging
 import os
 from copy import deepcopy
+from glob import glob
 from pathlib import Path
 from typing import List, Optional
 
