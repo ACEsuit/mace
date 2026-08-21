@@ -202,6 +202,15 @@ class MACECalculator(Calculator):
                 f"Give a valid model_type: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
+        # A list of this instance's own. `Calculator.implemented_properties` is a
+        # class attribute (`[]` on the ASE base), so extending it in place grew
+        # the list every calculator ever built shared: the second committee in a
+        # process advertised twenty properties, the third thirty, and a
+        # DipoleMACE built after a MACE claimed energy and stress it cannot
+        # produce. `MagneticMACECalculator` assigns its own list, which is what
+        # this now does too.
+        self.implemented_properties = []
+
         if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
             self.implemented_properties.extend(
                 [
@@ -259,8 +268,18 @@ class MACECalculator(Calculator):
             logging.info(f"Running committee mace with {self.num_models} models")
 
             if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
+                # All six, because all six are written: `forces_var` and
+                # `stress_comm` were produced and never advertised, so a caller
+                # consulting `implemented_properties` was told they do not exist.
                 self.implemented_properties.extend(
-                    ["energy_comm", "energy_var", "forces_comm", "stress_var"]
+                    [
+                        "energy_comm",
+                        "energy_var",
+                        "forces_comm",
+                        "forces_var",
+                        "stress_comm",
+                        "stress_var",
+                    ]
                 )
             if model_type in [
                 "DipoleMACE",

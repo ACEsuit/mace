@@ -161,16 +161,13 @@ def test_the_calculator_agrees_with_the_direct_model_snapshot(
 def test_the_calculator_surface_is_the_dipole_polarizability_one(mdp_calc, fixtures):
     """``model_type``, the property list and the two shapes the ticket names.
 
-    The property list is checked by *difference* rather than by membership,
-    and that is deliberate: ``MACECalculator`` has no
-    ``implemented_properties`` of its own, so ``self.implemented_properties.
-    extend(...)`` (mace/calculators/mace.py:212-233) mutates
-    ``ase.calculators.calculator.Calculator.implemented_properties`` -- a list
-    shared by every calculator in the process. After any MACE calculator has
-    been built, a membership assertion here passes no matter what this one
-    declares. Counting what *this* construction added is exact either way, and
-    stays correct once the leak is fixed. See
-    ``test_implemented_properties_leak_onto_the_shared_ase_list``.
+    The property list is checked by *difference* rather than by membership. That
+    was originally to route around a leak -- every instance extended ase's
+    class-level list, so a membership assertion passed no matter what this
+    calculator declared -- and the leak is fixed now
+    (``test_implemented_properties_is_this_calculator_s_own``). The counting is
+    kept because it is exact either way: it says what this construction
+    contributes rather than what happens to be in the list.
     """
     from collections import Counter  # noqa: PLC0415
 
@@ -191,26 +188,29 @@ def test_the_calculator_surface_is_the_dipole_polarizability_one(mdp_calc, fixtu
     assert np.asarray(fresh.results["polarizability"]).shape == (3, 3)
 
 
-def test_implemented_properties_leak_onto_the_shared_ase_list(mdp_calc):
-    """The defect the test above has to route around, pinned so it is dated.
+def test_implemented_properties_is_this_calculator_s_own(mdp_calc):
+    """It used to be ase's. `MACECalculator` gave itself no
+    `implemented_properties`, so every instance extended the class-level list on
+    `ase.calculators.calculator.Calculator` in place: a calculator advertised
+    properties belonging to a different one built earlier in the same process,
+    and every non-MACE ase calculator in that process inherited them too.
 
-    ``MACECalculator`` never gives itself an ``implemented_properties``
-    attribute, so every instance extends ase's class-level list in place. Two
-    consequences, both silent: a MACE calculator advertises properties that
-    belong to a *different* MACE calculator built earlier in the same process,
-    and every non-MACE ase calculator in that process inherits them too.
-
-    Left as characterisation rather than fixed here, because a golden change
-    that also edits ``mace/calculators/mace.py`` is exactly the mixed change
-    the goldens exist to make impossible. When it is fixed, this test fails
-    and the counter above keeps working unchanged.
+    Kept as a test rather than deleted, because the shared list is still one
+    attribute assignment away from coming back.
     """
     from ase.calculators.calculator import Calculator  # noqa: PLC0415
 
-    from mace.calculators import MACECalculator  # noqa: PLC0415
+    from mace.calculators.foundations_models import mace_mdp  # noqa: PLC0415
 
-    assert "implemented_properties" not in MACECalculator.__dict__
-    assert mdp_calc.implemented_properties is Calculator.implemented_properties
+    assert mdp_calc.implemented_properties is not Calculator.implemented_properties
+    assert Calculator.implemented_properties == [], (
+        "the ase base list has been written to, so it is shared again"
+    )
+
+    second = mace_mdp(device="cpu", default_dtype="float64")
+    assert second.implemented_properties == mdp_calc.implemented_properties, (
+        "two identical calculators must advertise the same properties"
+    )
 
 
 def test_mace_mdp_refuses_another_model_type():

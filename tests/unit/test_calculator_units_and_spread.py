@@ -350,3 +350,66 @@ def test_a_single_dipole_model_reports_no_spread(water):
     assert "dipole" in results
     assert "dipole_comm" not in results
     assert "dipole_var" not in results
+
+
+# ---------------------------------------------------------------------------
+# what the committee advertises against what it writes
+# ---------------------------------------------------------------------------
+
+
+def _calculator(models, **kwargs):
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        return MACECalculator(
+            models=models, device="cpu", default_dtype="float64", **kwargs
+        )
+    finally:
+        torch.set_default_dtype(previous)
+
+
+def test_implemented_properties_is_this_calculator_s_own(water):
+    """`Calculator.implemented_properties` is a class attribute on the ASE base,
+    so extending it in place grew a list every calculator in the process shared:
+    the second committee advertised twice as many properties as the first, and a
+    dipole calculator built after an energy one claimed energy and stress it
+    cannot produce.
+    """
+    first = _calculator([_tiny_model(0), _tiny_model(1)])
+    second = _calculator([_tiny_model(0), _tiny_model(1)])
+    third = _calculator([_tiny_model(0)])
+
+    assert first.implemented_properties == second.implemented_properties
+    assert len(third.implemented_properties) < len(first.implemented_properties), (
+        "a single model should advertise fewer properties, not the same list"
+    )
+    assert len(set(first.implemented_properties)) == len(
+        first.implemented_properties
+    ), f"duplicates: {first.implemented_properties}"
+
+
+def test_every_committee_key_written_is_also_advertised(water):
+    """ASE consumers ask `implemented_properties` whether a property exists, so
+    one that is written and not listed is unreachable through `get_property`.
+    `forces_var` and `stress_comm` were in exactly that state.
+    """
+    results = _results(water, [_tiny_model(0), _tiny_model(1)])
+    calc = _calculator([_tiny_model(0), _tiny_model(1)])
+
+    written = {key for key in results if key.endswith(("_comm", "_var"))}
+    advertised = {
+        key for key in calc.implemented_properties if key.endswith(("_comm", "_var"))
+    }
+
+    assert written == advertised, {
+        "written not advertised": sorted(written - advertised),
+        "advertised not written": sorted(advertised - written),
+    }
+
+
+def test_a_single_model_advertises_no_committee_keys(water):
+    calc = _calculator([_tiny_model(0)])
+
+    assert not [
+        key for key in calc.implemented_properties if key.endswith(("_comm", "_var"))
+    ]
