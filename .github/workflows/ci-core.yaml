@@ -47,6 +47,9 @@ jobs:
     # No `--platform` flag. pip matches platform tags exactly when told one, so
     # naming a tag resolves nothing for the packages that ship a different one:
     # the runner's own tags are the only set that is right for all of them.
+    #
+    # The list is read out of `setup.cfg`, not written here, so an extras group
+    # added or retired there needs no edit in this file to be covered.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -57,10 +60,12 @@ jobs:
       - name: Resolve every cueq extra
         run: |
           python -m pip install -U pip
+          extras=$(python -c 'import configparser; c = configparser.ConfigParser(); c.read("setup.cfg", encoding="utf-8"); print(" ".join(n for n in c["options.extras_require"] if n.startswith("cueq")))')
+          echo "resolving: $extras"
           status=0
           echo '## cueq wheel extras' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          for extra in cueq cueq-cuda-11 cueq-cuda-12 cueq-cuda-13; do
+          for extra in $extras; do
             if report=$(python -m pip install --dry-run --quiet ".[$extra]" 2>&1); then
               verdict=ok
             else

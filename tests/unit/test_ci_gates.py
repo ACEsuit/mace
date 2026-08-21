@@ -477,23 +477,35 @@ def test_every_capability_is_guaranteed_by_some_job():
 # ---------------------------------------------------------------------------
 # the cueq wheel extras
 #
-# `extra.cueq-cuda-11/12/13` name wheels the suite cannot assert anything about:
-# the only failure mode of an extras group is a job resolving it, and no test
-# inside the suite can resolve the suite's own dependencies. The GPU pipeline
-# installs cueq-cuda-13 and nothing installs the other two, so the nightly job
-# below is the only place cu11 and cu12 are checked at all.
+# The `cueq*` extras name wheels the suite cannot assert anything about: the only
+# failure mode of an extras group is a job resolving it, and no test inside the
+# suite can resolve the suite's own dependencies. The GPU pipeline installs
+# cueq-cuda-13 and nothing installs the rest, so the job is the only place the
+# others are checked at all.
 #
-# It reads setup.cfg, so this test is what keeps the two from drifting: an extra
-# added there and not here would go unresolved for as long as nobody looked.
+# The job derives its list from setup.cfg rather than naming the extras, and
+# these tests hold it to that: an extras group added or retired there is then
+# covered without an edit in the workflow, and neither file can drift from the
+# other while nobody is looking.
 # ---------------------------------------------------------------------------
 
-CUEQ_EXTRAS = ("cueq", "cueq-cuda-11", "cueq-cuda-12", "cueq-cuda-13")
+
+def _declared_cueq_extras() -> list:
+    import configparser  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    config = configparser.ConfigParser()
+    config.read(REPO_ROOT / "setup.cfg", encoding="utf-8")
+    return [
+        name
+        for name in config["options.extras_require"]
+        if name.startswith("cueq")
+    ]
 
 
 def _cueq_job() -> dict:
-    """The job is a PR gate rather than a nightly one: resolving four extras is
-    seconds, so there is no reason to make a contributor wait until tomorrow to
-    learn that an extras group they touched no longer resolves."""
+    """The job is a PR gate rather than a nightly one: resolving a handful of
+    extras is seconds, so there is no reason to make a contributor wait until
+    tomorrow to learn that an extras group they touched no longer resolves."""
     core = yaml.safe_load(
         (WORKFLOWS / "ci-core.yaml").read_text(encoding="utf-8")
     )
@@ -513,25 +525,37 @@ def test_a_pr_job_resolves_the_cueq_extras():
     )
 
 
-@pytest.mark.parametrize("extra", CUEQ_EXTRAS)
-def test_every_cueq_extra_is_in_the_nightly_loop(extra):
-    assert extra in _cueq_job_script(), f"{extra} is not resolved by the nightly"
+def test_setup_cfg_declares_the_extras_the_job_resolves():
+    """setup.cfg is the list, and there has to be one to read: a section rename
+    would leave the loop iterating over nothing and the job passing on air."""
+    declared = _declared_cueq_extras()
+
+    assert "cueq" in declared
+    assert [name for name in declared if name.startswith("cueq-cuda-")], (
+        "no CUDA-major ops extra is declared, so the job resolves the frontend only"
+    )
 
 
-def test_setup_cfg_declares_no_cueq_extra_the_nightly_misses():
-    """The direction that matters: a fourth CUDA major added to setup.cfg has to
-    reach the job, or it ships unresolved."""
-    import configparser  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-    config = configparser.ConfigParser()
-    config.read(REPO_ROOT / "setup.cfg", encoding="utf-8")
-    declared = {
-        name for name in config["options.extras_require"] if name.startswith("cueq")
-    }
+def test_the_job_reads_the_extras_out_of_setup_cfg():
+    """Rather than naming them. A list written in the workflow goes stale in the
+    direction nothing checks: an extra retired from setup.cfg leaves the job
+    resolving a name pip only warns about, so it stays green while covering one
+    fewer group than it claims."""
     script = _cueq_job_script()
 
-    missing = sorted(name for name in declared if name not in script)
-    assert not missing, f"declared in setup.cfg and not resolved by the nightly: {missing}"
+    assert "options.extras_require" in script and "setup.cfg" in script
+    # The bare `cueq` is exempt: it is the prefix the derivation filters on, so
+    # the string is in the script either way. The per-major names are the ones
+    # that would be a written-out list.
+    named = [
+        name
+        for name in _declared_cueq_extras()
+        if name.startswith("cueq-cuda-") and name in script
+    ]
+    assert not named, (
+        f"the job names {named} instead of deriving them, so setup.cfg and the "
+        f"workflow can disagree"
+    )
 
 
 def test_the_job_needs_no_gpu():
@@ -552,8 +576,8 @@ def test_the_job_names_no_platform_tag():
 
 
 def test_the_job_only_resolves_and_does_not_install():
-    """`--dry-run` is the whole assertion, and it keeps a nightly job from
-    downloading hundreds of megabytes of CUDA wheels four times over."""
+    """`--dry-run` is the whole assertion: nothing here needs the wheels on
+    disk, only proof that a resolver can find them."""
     assert "--dry-run" in _cueq_job_script()
 
 
