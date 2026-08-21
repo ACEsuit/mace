@@ -21,6 +21,7 @@ import dataclasses
 import numpy as np
 import pytest
 import torch
+import ase.io
 from ase import Atoms
 from e3nn import o3
 
@@ -33,6 +34,7 @@ from mace.tools import build_default_arg_parser
 from mace.tools.torch_tools import default_dtype
 from mace.tools.multihead_tools import (
     HeadConfig,
+    assemble_replay_data,
     apply_pseudolabels_to_pt_head_configs,
     dict_head_to_dataclass,
     generate_pseudolabels_for_configs,
@@ -504,3 +506,92 @@ def test_forcing_it_adds_the_stress_the_model_predicts():
     assert all(
         c.property_weights.get("stress", 0.0) > 0.0 for c in relabelled
     ), "a written label needs a weight, or the loss ignores it"
+
+
+# ---------------------------------------------------------------------------
+# --weight_pt_head
+# ---------------------------------------------------------------------------
+#
+# The flag sets the loss weight every replay configuration carries. It reaches
+# the data through `assemble_replay_data` -> `SelectionSettings.weight_pt` ->
+# `_write_metadata`, and only on the branch that downloads a named replay set:
+# a `--pt_train_file` given by hand is used as it stands. That branch is
+# reachable offline anyway, because it skips the download when the cache already
+# holds the file, which is what these tests exploit -- no network, and the real
+# selection code runs.
+
+
+REPLAY_CACHE_NAMES = {"mp": "mp_traj_combinedxyz"}
+
+
+def _seed_replay_cache(tmp_path, monkeypatch, name="mp", count=6):
+    """Put a replay set where the downloader looks, so it does not download."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    cached = tools.utils.get_cache_dir() / REPLAY_CACHE_NAMES[name]
+    cached.parent.mkdir(parents=True, exist_ok=True)
+
+    rng = np.random.default_rng(3)
+    atoms_list = []
+    for index in range(count):
+        atoms = Atoms(
+            "H2O",
+            positions=[[0, 0, 0], [0.95, 0, 0], [-0.24, 0.93, 0]],
+            cell=[8, 8, 8],
+            pbc=True,
+        )
+        atoms.info["REF_energy"] = float(rng.normal())
+        atoms.info["config_type"] = f"replay_{index}"
+        atoms.arrays["REF_forces"] = rng.normal(size=(3, 3))
+        atoms_list.append(atoms)
+    ase.io.write(cached, atoms_list, format="extxyz")
+    return cached
+
+
+def _replay(tmp_path, monkeypatch, extra=None):
+    """Run `assemble_replay_data` in `tmp_path` and read back what it wrote.
+
+    It writes `mp_finetuning-<tag>.xyz` into the working directory, so the test
+    has to own the working directory.
+    """
+    _seed_replay_cache(tmp_path, monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    # `--num_samples_pt` defaults to 10000, and asking a six-structure cache for
+    # that many fails before any weight is written.
+    args = parse_minimal_args(["--num_samples_pt", "4"] + list(extra or []))
+    args.work_dir = str(tmp_path)
+    head_config_pt = prepare_pt_head(
+        args, args.key_specification, foundation_model_num_neighbours=8.0
+    )
+    config = dict_head_to_dataclass(head_config_pt, "pt_head", args)
+
+    assemble_replay_data("mp", args, config, tag="tagged")
+
+    written = ase.io.read(tmp_path / "mp_finetuning-tagged.xyz", index=":")
+    assert written, "the selection wrote no replay configurations"
+    return written
+
+
+def test_the_replay_weight_defaults_to_one(tmp_path, monkeypatch):
+    written = _replay(tmp_path, monkeypatch)
+
+    assert {atoms.info["config_weight"] for atoms in written} == {1.0}
+
+
+def test_weight_pt_head_is_the_weight_every_replay_config_carries(
+    tmp_path, monkeypatch
+):
+    """`--weight_pt_head` is how the replay head's pull on the loss is tuned
+    against the new head's, and it is per configuration rather than per head:
+    the number lands in `config_weight` on every selected structure."""
+    written = _replay(tmp_path, monkeypatch, ["--weight_pt_head", "0.25"])
+
+    assert {atoms.info["config_weight"] for atoms in written} == {0.25}
+
+
+def test_the_replay_configs_are_tagged_as_the_pretraining_head(tmp_path, monkeypatch):
+    """The weight only means something alongside the head it weighs, and both
+    are written by the same call."""
+    written = _replay(tmp_path, monkeypatch)
+
+    assert {atoms.info["head"] for atoms in written} == {"pbe_mp"}
+    assert {atoms.info["pretrained"] for atoms in written} == {True}
