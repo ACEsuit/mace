@@ -322,6 +322,13 @@ jobs:
             coverage report --skip-covered --sort=cover | tail -40
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ github.token }}
+          file: coverage.xml
+          format: cobertura
+          fail-on-error: false
       # THE coverage gate. The overall percentage above stays informative in
       # both this job and the per-PR one; only the files listed below are
       # enforced.
