@@ -1317,6 +1317,7 @@ class PolarMACE(ScaleShiftMACE):
                 num_atoms=positions.shape[0],
                 batch=data["batch"],
                 cell=cell,
+                pbc=pbc,
             )
 
         return {
