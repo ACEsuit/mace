@@ -49,6 +49,43 @@ def compute_forces(
     return -1 * gradient
 
 
+def cell_volume_and_mask(
+    cell: torch.Tensor,  # [n_graphs, 3, 3] or [n_graphs * 3, 3]
+    pbc: Optional[torch.Tensor] = None,  # [n_graphs, 3]
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Per-graph cell volume, plus a mask of the graphs it is a volume for.
+
+    A graph with no periodic direction has nothing to normalize a virial by:
+    the cell it carries is the padding box `get_neighborhood` builds around the
+    atoms, so `virials / det(cell)` is a number set by that padding rather than
+    a stress. The mask marks those graphs (and any with a degenerate cell) so
+    the caller can zero them and keep the stress of the periodic graphs in a
+    batch that mixes molecules with crystals. `pbc` may be None (LAMMPS,
+    hand-built inputs), in which case only a degenerate cell is masked.
+
+    The returned volume is 1 where the mask is False, so the caller's division
+    stays finite: masking a nan after the fact still routes a nan back through
+    the division on the backward pass.
+    """
+    cell = cell.view(-1, 3, 3)
+    volume = torch.linalg.det(cell).abs()
+    periodic = volume > 0.0
+    if pbc is not None:
+        periodic = torch.logical_and(periodic, pbc.view(-1, 3).any(dim=-1))
+    return torch.where(periodic, volume, torch.ones_like(volume)), periodic
+
+
+def stress_from_virials(
+    virials: torch.Tensor,  # [n_graphs, 3, 3]
+    cell: torch.Tensor,
+    pbc: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    volume, periodic = cell_volume_and_mask(cell, pbc)
+    stress = virials / volume.view(-1, 1, 1)
+    stress = torch.where(periodic.view(-1, 1, 1), stress, torch.zeros_like(stress))
+    return torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
+
+
 def compute_forces_virials(
     energy: torch.Tensor,
     positions: torch.Tensor,
@@ -56,6 +93,7 @@ def compute_forces_virials(
     cell: torch.Tensor,
     training: bool = True,
     compute_stress: bool = False,
+    pbc: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
     forces, virials = torch.autograd.grad(
@@ -68,10 +106,7 @@ def compute_forces_virials(
     )
     stress = torch.zeros_like(displacement)
     if compute_stress and virials is not None:
-        cell = cell.view(-1, 3, 3)
-        volume = torch.linalg.det(cell).abs().unsqueeze(-1)
-        stress = virials / volume.view(-1, 1, 1)
-        stress = torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
+        stress = stress_from_virials(virials, cell, pbc)
     if forces is None:
         forces = torch.zeros_like(positions)
     if virials is None:
@@ -183,6 +218,7 @@ def compute_forces_virials_magforces(
     magmoms: torch.Tensor,
     training: bool = True,
     compute_stress: bool = False,
+    pbc: Optional[torch.Tensor] = None,
 ) -> Tuple[
     torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]
 ]:
@@ -218,10 +254,7 @@ def compute_forces_virials_magforces(
     # Compute stress if requested
     stress = torch.zeros_like(displacement)
     if compute_stress:
-        cell = cell.view(-1, 3, 3)
-        volume = torch.linalg.det(cell).abs().unsqueeze(-1)
-        stress = virials / volume.view(-1, 1, 1)
-        stress = torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
+        stress = stress_from_virials(virials, cell, pbc)
 
     return -forces, -virials, stress, -mag_forces
 
@@ -281,6 +314,7 @@ def get_outputs(
     compute_hessian: bool = False,
     compute_edge_forces: bool = False,
     compute_magforces: bool = False,
+    pbc: Optional[torch.Tensor] = None,
 ) -> Tuple[
     Optional[torch.Tensor],
     Optional[torch.Tensor],
@@ -303,6 +337,7 @@ def get_outputs(
             magmoms=magmoms,
             training=(training or compute_hessian or compute_edge_forces),
             compute_stress=True,
+            pbc=pbc,
         )
     elif (compute_virials or compute_stress) and displacement is not None:
         forces, virials, stress = compute_forces_virials(
@@ -312,6 +347,7 @@ def get_outputs(
             cell=cell,
             compute_stress=compute_stress,
             training=(training or compute_hessian or compute_edge_forces),
+            pbc=pbc,
         )
         mag_forces = None
     elif compute_force and compute_magforces:
@@ -362,6 +398,7 @@ def get_atomic_virials_stresses(
     num_atoms: int,
     batch: torch.Tensor,
     cell: torch.Tensor,  # [n_graphs, 3, 3]
+    pbc: Optional[torch.Tensor] = None,  # [n_graphs, 3]
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
     Compute atomic virials and optionally atomic stresses from edge forces and vectors.
@@ -380,11 +417,13 @@ def get_atomic_virials_stresses(
     )
     atom_virial = (atom_virial_sender + atom_virial_receiver) / 2
     atom_virial = (atom_virial + atom_virial.transpose(-1, -2)) / 2
-    atom_stress = None
-    cell = cell.view(-1, 3, 3)
-    volume = torch.linalg.det(cell).abs().unsqueeze(-1)
-    atom_volume = volume[batch].view(-1, 1, 1)
-    atom_stress = atom_virial / atom_volume
+    # Masked exactly like the total stress, so an aperiodic graph's atomic
+    # stresses stay zero rather than reporting its padding box.
+    volume, periodic = cell_volume_and_mask(cell, pbc)
+    atom_stress = atom_virial / volume[batch].view(-1, 1, 1)
+    atom_stress = torch.where(
+        periodic[batch].view(-1, 1, 1), atom_stress, torch.zeros_like(atom_stress)
+    )
     atom_stress = torch.where(
         torch.abs(atom_stress) < 1e10, atom_stress, torch.zeros_like(atom_stress)
     )
@@ -722,6 +761,7 @@ class GraphContext(NamedTuple):
     vectors: torch.Tensor
     lengths: torch.Tensor
     cell: torch.Tensor
+    pbc: Optional[torch.Tensor]
     node_heads: torch.Tensor
     interaction_kwargs: InteractionKwargs
 
@@ -742,6 +782,7 @@ def prepare_graph(
         else torch.zeros_like(data["batch"])
     )
 
+    pbc: Optional[torch.Tensor] = None
     if lammps_mliap:
         n_real, n_ghost = data["natoms"][0], data["natoms"][1]
         num_graphs = 2
@@ -765,6 +806,7 @@ def prepare_graph(
             data["positions"].requires_grad_(True)
         positions = data["positions"]
         cell = data["cell"]
+        pbc = data["pbc"] if "pbc" in data else None
         num_atoms_arange = torch.arange(positions.shape[0], device=positions.device)
         num_graphs = int(data["ptr"].numel() - 1)
         displacement = torch.zeros(
@@ -797,6 +839,7 @@ def prepare_graph(
         vectors=vectors,
         lengths=lengths,
         cell=cell,
+        pbc=pbc,
         node_heads=node_heads,
         interaction_kwargs=ikw,
     )
