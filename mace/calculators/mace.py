@@ -111,7 +111,6 @@ class MACECalculator(Calculator):
         enable_oeq=False,
         pad_num_atoms: int = 0,
         pad_num_edges: int = 0,
-        warmup: bool = False,
         compute_bec: bool = False,
         external_field: Union[list, None] = None,
         eps_infty: float = None,
@@ -422,9 +421,6 @@ class MACECalculator(Calculator):
         self.pad_num_atoms = max(int(pad_num_atoms), 0)
         self.pad_num_edges = max(int(pad_num_edges), 0)
         self._padding_initialized = self.pad_num_atoms > 0 and self.pad_num_edges > 0
-
-        if warmup and self.use_compile:
-            logging.info("Warmup requested -- will trigger on first calculate() call")
 
     def check_state(self, atoms, tol: float = 1e-15) -> list:
         """

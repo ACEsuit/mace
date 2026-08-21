@@ -1114,7 +1114,7 @@ AUDIT_NON_EVIDENCE = (
 )
 
 #: how many matching test functions before a subject is too common to judge.
-#: `warmup`, `mean`, `heads` and friends appear all over the suite in contexts
+#: `mean`, `heads` and friends appear all over the suite in contexts
 #: that have nothing to do with the row, and printing forty candidates for them
 #: is worse than printing none: it buries the rows where a match means
 #: something. Past this count the audit says so rather than guessing.
