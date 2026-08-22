@@ -218,7 +218,12 @@ class MACECalculator(Calculator):
                 self.compute_atomic_stresses = True
         if model_type == "PolarMACE":
             self.implemented_properties.extend(["fukui_functions"])
-        if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
+        if model_type in [
+            "EnergyDipoleMACE",
+            "DipoleMACE",
+            "DipolePolarizabilityMACE",
+            "PolarMACE",
+        ]:
             self.implemented_properties.extend(["dipole"])
         if model_type == "DipolePolarizabilityMACE":
             self.implemented_properties.extend(

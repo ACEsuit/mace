@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import torch
 from ase import Atoms
+from ase.calculators.calculator import Calculator
 from ase.io import read
 from e3nn import o3
 
@@ -820,6 +821,32 @@ def test_polar_calculator_returns_fukui_functions_by_default():
     assert fukui.shape == (len(atoms), 2)
     assert np.all(np.isfinite(fukui))
     np.testing.assert_allclose(fukui.sum(axis=0), np.ones(2), atol=1e-5)
+
+
+def test_polar_calculator_implements_dipole():
+    """A PolarMACE calculator declares dipole and serves atoms.get_dipole_moment()."""
+    device = torch.device("cpu")
+    dtype = torch.float32
+    torch.manual_seed(0)
+    model = _build_minimal_model(device, dtype).eval()
+
+    # The declaration is added to a global list in the calculator class.
+    # Only checking membership could pass due to earlier dipole-declaring tests.
+    # So the tests also counts if the constructor adds exactly one.
+    before = Calculator.implemented_properties.count("dipole")
+    calc = MACECalculator(
+        models=model,
+        device="cpu",
+        default_dtype="float32",
+        model_type="PolarMACE",
+    )
+    assert calc.implemented_properties.count("dipole") == before + 1
+
+    atoms = _water_atoms()
+    atoms.calc = calc
+    dipole = atoms.get_dipole_moment()
+    assert dipole.shape == (3,)
+    np.testing.assert_allclose(dipole, calc.results["dipole"])
 
 
 # ---------------------------------------------------------------------------
