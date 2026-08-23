@@ -356,6 +356,18 @@ def dict_to_yaml_str(data, indent=0):
 _trial_yamls_and_and_expected = trial_yamls_and_and_expected()
 
 
+@pytest.mark.parametrize("value, expected", [("false", False), ("true", True)])
+def test_compute_bec_yaml_boolean(tmp_path, value, expected):
+    config = tmp_path / "compute_bec.yaml"
+    config.write_text(
+        f"name: compute_bec_test\ncompute_bec: {value}\n", encoding="utf-8"
+    )
+
+    args = build_default_arg_parser().parse_args(["--config", str(config)])
+
+    assert args.compute_bec is expected
+
+
 @pytest.mark.parametrize(
     "yaml_contents, name, expected_value", _trial_yamls_and_and_expected
 )

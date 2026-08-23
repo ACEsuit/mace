@@ -21,7 +21,10 @@ def load_foundations_elements(
     assert model_foundations.r_max == model.r_max
     z_table = AtomicNumberTable([int(z) for z in model_foundations.atomic_numbers])
     target_dtype = default_dtype or next(model.parameters()).dtype
-    model_heads = model.heads
+    # Some specialised models (for example EnergyDipoleMACE) predate the
+    # multi-head interface.  They still have a single implicit head and can be
+    # used as foundation models.
+    model_heads = getattr(model, "heads", ["Default"])
     new_z_table = table
     num_species_foundations = len(z_table.zs)
     num_channels_foundation = (
@@ -121,13 +124,22 @@ def load_foundations_elements(
             model.interactions[i].beta = torch.nn.Parameter(
                 model_foundations.interactions[i].beta.clone()
             )
-        if model.interactions[i].__class__.__name__ in [
+        target_skip = model.interactions[i].skip_tp.weight
+        foundation_skip = model_foundations.interactions[i].skip_tp.weight
+        if target_skip.shape == foundation_skip.shape:
+            # The common fine-tuning case keeps both the element table and the
+            # architecture unchanged. This also covers equivariant dipole
+            # models, whose skip tensor has more angular channels than the
+            # scalar-only reshape below assumes.
+            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
+                foundation_skip.clone()
+            )
+        elif model.interactions[i].__class__.__name__ in [
             "RealAgnosticResidualInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
         ]:
             model.interactions[i].skip_tp.weight = torch.nn.Parameter(
-                model_foundations.interactions[i]
-                .skip_tp.weight.reshape(
+                foundation_skip.reshape(
                     num_channels_foundation,
                     num_species_foundations,
                     num_channels_foundation,
@@ -139,13 +151,10 @@ def load_foundations_elements(
         elif model.interactions[i].__class__.__name__ in [
             "RealAgnosticResidualNonLinearInteractionBlock",
         ]:
-            model.interactions[i].skip_tp.weight = torch.nn.Parameter(
-                model_foundations.interactions[i].skip_tp.weight
-            )
+            model.interactions[i].skip_tp.weight = torch.nn.Parameter(foundation_skip)
         else:
             model.interactions[i].skip_tp.weight = torch.nn.Parameter(
-                model_foundations.interactions[i]
-                .skip_tp.weight.reshape(
+                foundation_skip.reshape(
                     num_channels_foundation,
                     (max_ell + 1),
                     num_species_foundations,
@@ -291,13 +300,20 @@ def load_foundations_elements(
                             model_readouts_one_linear_2_bias
                         )
     _handled_attrs = {"interactions", "products", "readouts"}
+    foundation_children = dict(model_foundations.named_children())
     for attr_name, module in model.named_children():
         if attr_name in _handled_attrs:
             continue
+        # A derived target may add trainable modules which do not exist in the
+        # foundation model.  Keep their initial values; compatible parameters
+        # from the shared backbone are copied below.
+        if attr_name not in foundation_children:
+            continue
+        foundation_module = foundation_children[attr_name]
         submodules = (
-            list(zip(module, model_foundations.__dict__["_modules"][attr_name]))
+            list(zip(module, foundation_module))
             if isinstance(module, torch.nn.ModuleList)
-            else [(module, getattr(model_foundations, attr_name))]
+            else [(module, foundation_module)]
         )
         for sub_new, sub_found in submodules:
             for emb_name in ("source_embedding", "target_embedding"):
@@ -321,13 +337,15 @@ def load_foundations_elements(
                         / (num_species_foundations / num_species) ** 0.5
                     )
 
-    if model_foundations.scale_shift is not None:
+    foundation_scale_shift = getattr(model_foundations, "scale_shift", None)
+    model_scale_shift = getattr(model, "scale_shift", None)
+    if foundation_scale_shift is not None and model_scale_shift is not None:
         if use_scale:
-            model.scale_shift.scale = model_foundations.scale_shift.scale.repeat(
+            model_scale_shift.scale = foundation_scale_shift.scale.repeat(
                 len(model_heads)
             ).clone()
         if use_shift:
-            model.scale_shift.shift = model_foundations.scale_shift.shift.repeat(
+            model_scale_shift.shift = foundation_scale_shift.shift.repeat(
                 len(model_heads)
             ).clone()
 

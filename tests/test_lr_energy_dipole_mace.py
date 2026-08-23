@@ -17,6 +17,7 @@ from mace.calculators import MACECalculator
 from mace.tools.scatter import scatter_sum
 from mace.tools import torch_geometric
 from mace.tools.model_script_utils import _build_model
+from mace.tools.finetuning_utils import load_foundations_elements
 from mace.tools.scripts_utils import get_optimizer, get_params_options
 
 GTOElectrostaticEnergy = pytest.importorskip(
@@ -176,7 +177,9 @@ plot: false
 
     repo_root = Path(__file__).parent.parent
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(repo_root)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        path for path in (str(repo_root), environment.get("PYTHONPATH")) if path
+    )
     environment["MPLCONFIGDIR"] = str(tmp_path / "matplotlib")
     result = subprocess.run(
         [
@@ -219,6 +222,32 @@ def test_interface_compatibility(model_config):
         else:
             assert long_output[key].shape == short_output[key].shape
             assert long_output[key].dtype == short_output[key].dtype
+
+
+def test_finetuning_from_energy_dipole_foundation(model_config):
+    torch.manual_seed(11)
+    foundation = modules.EnergyDipoleMACE(**model_config)
+    torch.manual_seed(29)
+    target = modules.LREnergyDipoleMACE(**model_config)
+    charge_readout_before = target.charge_readout.weight.detach().clone()
+
+    loaded = load_foundations_elements(
+        model=target,
+        model_foundations=foundation,
+        table=tools.AtomicNumberTable(model_config["atomic_numbers"]),
+        load_readout=True,
+        max_L=model_config["hidden_irreps"].lmax,
+    )
+
+    assert torch.equal(
+        loaded.node_embedding.linear.weight,
+        foundation.node_embedding.linear.weight,
+    )
+    assert torch.equal(
+        loaded.readouts[-1].linear_2.weight,
+        foundation.readouts[-1].linear_2.weight,
+    )
+    assert torch.equal(loaded.charge_readout.weight, charge_readout_before)
 
 
 def test_actual_final_charges_are_conserved_for_a_batch(model_config):
