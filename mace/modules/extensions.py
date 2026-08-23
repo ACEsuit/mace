@@ -99,7 +99,7 @@ class _DifferentiableRadialIntegral(torch.nn.Module):
         return torch.stack((monopoles, dipoles), dim=-1)
 
 
-class _DifferentiableGTOBasis(GTOBasis):
+class _DifferentiableGTOBasis(GTOBasis):  # pylint: disable=abstract-method
     """GTO basis without graph_longrange 0.4.0's in-place autograd hazards."""
 
     def __init__(self, *args, **kwargs):
