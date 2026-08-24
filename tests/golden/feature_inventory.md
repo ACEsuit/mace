@@ -48,9 +48,9 @@ were live in this file:
 |---|---|
 | a gap marker, `⚠️ gap (…)` | nothing pins this yet, and the cell says where the test belongs |
 | a backticked path under `tests/` | a test that runs today: a file, a `::test_name`, a `::TABLE[key]` entry, or a directory at least two levels deep |
-| one of two named CI jobs | `the suite itself` and `the lint job itself`, for the two `setup.cfg` extras, where the only thing that can fail is a job installing them. Allowed by name, one entry each, with a written reason |
+| one of three named non-test pins | `the suite itself` and `the lint job itself` for the two `setup.cfg` extras, where the only thing that can fail is a job installing them, and `the docs, reviewed not tested` for the pages in mace-docs, which CI does not run. Allowed by name, with a written reason each |
 
-There is deliberately no fourth form. A pin used to be allowed to name a *planned* test by ticket id,
+There is deliberately no further form. A pin used to be allowed to name a *planned* test by ticket id,
 which meant the cell recorded an intention nobody could resolve: a plan that slipped read exactly
 like coverage that existed. Every pin now names something that runs, or admits that nothing does.
 A pin naming a *test id* rather than a ticket is also what makes the checker able to verify it, which
@@ -171,14 +171,14 @@ Group default: KEEP as the `runtime` / `output` config sections. The four `*_dir
 | `train.model_dir` | `--model_dir` | `mace/tools/arg_parser.py:48` | MERGE — idem | `tests/workflows/test_cli_contracts.py::test_training_reduces_the_validation_loss_and_writes_a_model` |
 | `train.checkpoints_dir` | `--checkpoints_dir` | `mace/tools/arg_parser.py:51` | MERGE — idem | `tests/workflows/test_cli_contracts.py::test_restart_latest_continues_from_the_checkpoint_epoch` |
 | `train.results_dir` | `--results_dir` | `mace/tools/arg_parser.py:57` | MERGE — idem | `tests/workflows/test_cli_contracts.py::test_lbfgs_takes_one_step_per_epoch_and_the_other_regime_one_per_batch` |
-| `train.downloads_dir` | `--downloads_dir` | `mace/tools/arg_parser.py:60` | MERGE — XDG cache-dir convention | ⚠️ gap (cache-path contract) |
+| `train.downloads_dir` | `--downloads_dir` | `mace/tools/arg_parser.py:60` | MERGE — XDG cache-dir convention | `tests/unit/test_readout_and_directory_flags.py::test_the_downloads_directory_defaults_under_the_work_dir` + `tests/unit/test_readout_and_directory_flags.py::test_an_explicit_downloads_directory_is_kept` |
 | `train.device` | `--device` | `mace/tools/arg_parser.py:65` | KEEP | `tests/workflows/test_cli_contracts.py::test_select_head_honours_output_file_and_target_device` |
 | `train.default_dtype` | `--default_dtype` | `mace/tools/arg_parser.py:72` | MERGE — `PrecisionConfig` | `tests/workflows/test_cli_contracts.py::test_eval_at_float32_reproduces_float64_within_the_fp32_row` + `tests/golden/test_harness.py::test_tolerance_table_rows` |
 | `train.distributed` | `--distributed` | `mace/tools/arg_parser.py:79` | KEEP | `tests/workflows/test_distributed.py` |
 | `train.launcher` | `--launcher` | `mace/tools/arg_parser.py:85` | KEEP | `tests/workflows/test_distributed.py` |
-| `train.log_level` | `--log_level` | `mace/tools/arg_parser.py:90` | KEEP | ⚠️ gap (trivial; conscious downgrade candidate) |
-| `train.plot` | `--plot` | `mace/tools/arg_parser.py:93` | KEEP | ⚠️ gap (with the `mace_plot_train` smoke) |
-| `train.plot_frequency` | `--plot_frequency` | `mace/tools/arg_parser.py:100` | KEEP | ⚠️ gap (idem) |
+| `train.log_level` | `--log_level` | `mace/tools/arg_parser.py:90` | KEEP | `tests/unit/test_logging_setup.py` |
+| `train.plot` | `--plot` | `mace/tools/arg_parser.py:93` | KEEP | `tests/workflows/test_training_plots.py::test_a_default_run_draws_a_plot` + `tests/workflows/test_training_plots.py::test_turning_it_off_draws_nothing` |
+| `train.plot_frequency` | `--plot_frequency` | `mace/tools/arg_parser.py:100` | KEEP | `tests/workflows/test_training_plots.py::test_a_periodic_frequency_also_ends_with_a_plot` |
 | `train.plot_interaction_e` | `--plot_interaction_e` | `mace/tools/arg_parser.py:107` | DROP — niche diagnostic that drags model introspection into the plotting path | — |
 | `train.error_table` | `--error_table` | `mace/tools/arg_parser.py:114` | KEEP — the error-table types | `tests/workflows/test_cli_contracts.py::test_the_end_of_training_error_table_is_printed_and_parseable` |
 
@@ -196,8 +196,8 @@ Group default: KEEP as the `model` config section; the defaults are pinned by th
 | `train.pair_repulsion` | `--pair_repulsion` | `mace/tools/arg_parser.py:173` | KEEP — the ZBL short-range term | `tests/unit/test_radial.py::test_zbl_matches_the_published_formula` + `tests/golden/test_tiny_anchors.py::test_the_repulsion_term_is_scaled_in_one_class_and_raw_in_the_other` |
 | `train.distance_transform` | `--distance_transform` | `mace/tools/arg_parser.py:179` | KEEP | `tests/unit/test_radial.py::test_the_basis_sees_the_transformed_lengths` + `tests/unit/test_radial.py::test_the_cutoff_is_computed_before_the_distance_transform` |
 | `train.apply_cutoff` | `--apply_cutoff` | `mace/tools/arg_parser.py:185` | KEEP | `tests/unit/test_radial.py::test_apply_cutoff_true_returns_the_product_and_no_envelope` + `tests/unit/test_radial.py::test_apply_cutoff_false_defers_the_envelope_to_the_consumer` |
-| `train.use_last_readout_only` | `--use_last_readout_only` | `mace/tools/arg_parser.py:191` | MERGE — readout policy: once you declare which layers read out, 'only the last' is configuration, not a boolean | ⚠️ gap (add a case to `tests/unit/test_models.py`) |
-| `train.use_embedding_readout` | `--use_embedding_readout` | `mace/tools/arg_parser.py:197` | MERGE — idem ('also read the embedding layer') | ⚠️ gap (add a case to `tests/unit/test_models.py`) |
+| `train.use_last_readout_only` | `--use_last_readout_only` | `mace/tools/arg_parser.py:191` | MERGE — readout policy: once you declare which layers read out, 'only the last' is configuration, not a boolean | `tests/unit/test_readout_and_directory_flags.py::test_the_flag_leaves_only_the_last_readout` + `tests/unit/test_readout_and_directory_flags.py::test_the_two_models_disagree_on_the_energy` |
+| `train.use_embedding_readout` | `--use_embedding_readout` | `mace/tools/arg_parser.py:197` | MERGE — idem ('also read the embedding layer') | `tests/unit/test_readout_and_directory_flags.py::test_the_flag_adds_a_readout_over_the_joint_embedding` + `tests/unit/test_readout_and_directory_flags.py::test_it_needs_the_joint_embedding_to_read_from` |
 | `train.interaction` | `--interaction` | `mace/tools/arg_parser.py:203` | KEEP — see the registry rows in §7 for which classes survive | `tests/golden/test_tiny_anchors.py::test_anchor_reproduces_its_reference` |
 | `train.interaction_first` | `--interaction_first` | `mace/tools/arg_parser.py:219` | KEEP | `tests/unit/test_models.py::test_non_linear_first_interaction_block_runs_and_is_equivariant` |
 | `train.max_ell` | `--max_ell` | `mace/tools/arg_parser.py:234` | KEEP | `tests/golden/test_tiny_anchors.py::test_anchor_reproduces_its_reference` |
@@ -234,8 +234,8 @@ Group default: KEEP as the electrostatics-extra config section, pinned by the po
 | `train.quadrupole_feature_corrections` | `--quadrupole_feature_corrections` | `mace/tools/arg_parser.py:371` | KEEP | `tests/foundations/test_foundations.py::test_polar_extract_config_roundtrip` + `tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy` |
 | `train.return_electrostatic_potentials` | `--return_electrostatic_potentials` | `mace/tools/arg_parser.py:377` | MERGE — an observable declared in the output spec, not a model flag | `tests/extensions/polar/test_polar_output_keys.py::test_electrostatic_potentials_are_absent_unless_asked_for` (pins the off state; a case with it on is still to come) |
 | `train.field_norm_factor` | `--field_norm_factor` | `mace/tools/arg_parser.py:383` | KEEP | `tests/foundations/test_foundations.py::test_polar_extract_config_roundtrip` + `tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy` |
-| `train.fixedpoint_update_config` | `--fixedpoint_update_config` | `mace/tools/arg_parser.py:389` | KEEP — the fixed-point solver settings; the expert electrostatics config section | ⚠️ gap (add a case to `tests/golden/test_polar_foundation.py`) |
-| `train.field_readout_config` | `--field_readout_config` | `mace/tools/arg_parser.py:395` | KEEP — idem | ⚠️ gap (add a case to `tests/golden/test_polar_foundation.py`) |
+| `train.fixedpoint_update_config` | `--fixedpoint_update_config` | `mace/tools/arg_parser.py:389` | KEEP — the fixed-point solver settings; the expert electrostatics config section | `tests/extensions/polar/test_polar_block_configs.py` (the parse, the registry lookup, and the one option inside it that is ignored) |
+| `train.field_readout_config` | `--field_readout_config` | `mace/tools/arg_parser.py:395` | KEEP — idem | `tests/extensions/polar/test_polar_block_configs.py` (idem; unknown keys are discarded rather than refused) |
 
 ### 3.4 Outputs and scaling (8)
 
@@ -263,9 +263,9 @@ Group default: the `*_key` flags MERGE into the property-key convention; the fil
 | `train.test_file` | `--test_file` | `mace/tools/arg_parser.py:472` | KEEP | `tests/workflows/test_multifiles.py::test_single_xyz_per_head` |
 | `train.test_dir` | `--test_dir` | `mace/tools/arg_parser.py:477` | KEEP | `tests/unit/test_multihead_tools.py::test_prepare_default_head_single_default_head` |
 | `train.valid_fraction` | `--valid_fraction` | `mace/tools/arg_parser.py:465` | KEEP | `tests/workflows/test_cli_contracts.py::test_training_reduces_the_validation_loss_and_writes_a_model` |
-| `train.multi_processed_test` | `--multi_processed_test` | `mace/tools/arg_parser.py:484` | MERGE — the data layer infers sharding from the dataset; whether a test set is split across files is not something the user should have to declare and get wrong (today it is a bare `if` in `run_train.py`) | ⚠️ gap (add a case to `tests/workflows/test_cli_contracts.py`) |
+| `train.multi_processed_test` | `--multi_processed_test` | `mace/tools/arg_parser.py:484` | MERGE — the data layer infers sharding from the dataset; whether a test set is split across files is not something the user should have to declare and get wrong (today it is a bare `if` in `run_train.py`) | `tests/workflows/test_multi_processed_test_layout.py` (both layouts, from a real `mace_prepare_data` run, and both mismatches) |
 | `train.num_workers` | `--num_workers` | `mace/tools/arg_parser.py:491` | KEEP | `tests/workflows/test_train_work_dir_and_workers.py::test_every_dataloader_is_given_the_worker_count` (every loader is given it; the run itself is smoked by `test_a_run_with_workers_trains`) |
-| `train.pin_memory` | `--pin_memory` | `mace/tools/arg_parser.py:497` | KEEP | ⚠️ gap (perf knob; conscious downgrade candidate) |
+| `train.pin_memory` | `--pin_memory` | `mace/tools/arg_parser.py:497` | KEEP | `tests/workflows/test_train_work_dir_and_workers.py::test_every_dataloader_is_told_whether_to_pin` + `::test_the_flag_is_the_value_the_loaders_are_given` |
 | `train.atomic_numbers` | `--atomic_numbers` | `mace/tools/arg_parser.py:503` | MERGE — statistics / model metadata | `tests/foundations/test_foundations.py::test_mace_mh_1_elements_subset_reproduces_energy_forces` |
 | `train.mean` | `--mean` | `mace/tools/arg_parser.py:510` | MERGE — statistics override | `tests/unit/test_e0s_characterization.py::test_mean_and_std_together_override_the_dataset_statistics` + `tests/unit/test_e0s_characterization.py::test_mean_without_std_is_accepted_and_then_discarded` |
 | `train.std` | `--std` | `mace/tools/arg_parser.py:517` | MERGE — idem | `tests/unit/test_e0s_characterization.py::test_mean_and_std_together_override_the_dataset_statistics` + `tests/unit/test_e0s_characterization.py::test_no_scaling_overrides_even_an_explicit_std` |
@@ -286,7 +286,7 @@ Group default: the `*_key` flags MERGE into the property-key convention; the fil
 | `train.total_spin_key` | `--total_spin_key` | `mace/tools/arg_parser.py:738` | KEEP — idem | `tests/unit/test_lmdb_database.py::test_lmdb_dataset_honors_key_specification` |
 | `train.total_charge_key` | `--total_charge_key` | `mace/tools/arg_parser.py:744` | KEEP — idem | `tests/unit/test_lmdb_database.py::test_lmdb_dataset_honors_key_specification` |
 | `train.embedding_specs` | `--embedding_specs` | `mace/tools/arg_parser.py:750` | KEEP — categorical / graph-level embeddings | `tests/workflows/test_embedding_train.py::test_run_train_with_atom_embed` + `tests/unit/test_data_utils.py::test_update_keyspec_from_kwargs_embedding_specs` |
-| `train.skip_evaluate_heads` | `--skip_evaluate_heads` | `mace/tools/arg_parser.py:773` | KEEP | ⚠️ gap (add a case to `tests/workflows/test_finetuning_contracts.py`) |
+| `train.skip_evaluate_heads` | `--skip_evaluate_heads` | `mace/tools/arg_parser.py:773` | KEEP | `tests/unit/test_error_table_heads.py` (which rows the flag removes, and the substring match it uses) + `tests/workflows/test_per_head_reporting.py::test_the_replay_head_is_left_out_of_the_final_table` (the default, on a real finetuning run) |
 
 ### 3.6 Fine-tuning, multihead and foundation models (24)
 
@@ -295,12 +295,12 @@ Group default: KEEP.
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
 | `train.foundation_model` | `--foundation_model` | `mace/tools/arg_parser.py:1019` | KEEP | `tests/workflows/test_finetuning_contracts.py::test_multihead_replay_finetuning_completes_and_carries_both_heads` + `tests/workflows/test_finetuning_contracts.py::test_finetuning_reduces_the_error_on_the_finetuning_set` |
-| `train.foundation_model_kwargs` | `--foundation_model_kwargs` | `mace/tools/arg_parser.py:1025` | KEEP | ⚠️ gap (no test passes `--foundation_model_kwargs`) |
+| `train.foundation_model_kwargs` | `--foundation_model_kwargs` | `mace/tools/arg_parser.py:1025` | KEEP | `tests/workflows/test_foundation_kwargs.py` (the parse every run performs, and that a checkpoint path ignores them) |
 | `train.foundation_model_readout` | `--foundation_model_readout` | `mace/tools/arg_parser.py:1031` | KEEP | `tests/unit/test_foundation_readout_flag.py::test_the_flag_turns_the_transfer_off` + `tests/unit/test_foundation_readout_flag.py::test_loading_without_it_leaves_them_alone` (`--foundation_filter_elements` is a deprecated alias of this dest) |
 | `train.multiheads_finetuning` | `--multiheads_finetuning` | `mace/tools/arg_parser.py:573` | KEEP | `tests/workflows/test_finetuning_contracts.py::test_multihead_replay_finetuning_completes_and_carries_both_heads` |
 | `train.heads` | `--heads` | `mace/tools/arg_parser.py:566` | KEEP — the heads YAML sub-schema | `tests/workflows/test_multifiles.py::test_multiple_xyz_per_head` |
 | `train.foundation_head` | `--foundation_head` | `mace/tools/arg_parser.py:579` | KEEP | `tests/workflows/test_run_train.py::test_run_train_mh_foundation` |
-| `train.weight_pt_head` | `--weight_pt_head` | `mace/tools/arg_parser.py:586` | KEEP | ⚠️ gap (no test passes `--weight_pt_head`, so the replay head's loss weight is unprotected) |
+| `train.weight_pt_head` | `--weight_pt_head` | `mace/tools/arg_parser.py:586` | KEEP | `tests/unit/test_multihead_tools.py::test_weight_pt_head_is_the_weight_every_replay_config_carries` (offline, against a seeded replay cache) |
 | `train.num_samples_pt` | `--num_samples_pt` | `mace/tools/arg_parser.py:598` | KEEP | `tests/workflows/test_finetuning_contracts.py::test_the_replay_selection_flags_exist_on_the_training_cli` |
 | `train.real_pt_data_ratio_threshold` | `--real_pt_data_ratio_threshold` | `mace/tools/arg_parser.py:592` | KEEP | `tests/workflows/test_run_train.py::test_run_train_real_pt_data_ratio` |
 | `train.pt_train_file` | `--pt_train_file` | `mace/tools/arg_parser.py:628` | KEEP | `tests/workflows/test_run_train.py::test_run_train_multihead_replay_custom_finetuning` |
@@ -309,7 +309,7 @@ Group default: KEEP.
 | `train.filter_type_pt` | `--filter_type_pt` | `mace/tools/arg_parser.py:616` | KEEP | `tests/workflows/test_finetuning_contracts.py::test_filtering_type_restricts_the_pool_to_the_target_elements` |
 | `train.allow_random_padding_pt` | `--disallow_random_padding_pt` | `mace/tools/arg_parser.py:622` | KEEP — spelled `--disallow_random_padding_pt`, stored inverted | `tests/workflows/test_finetuning_contracts.py::test_random_padding_tops_up_a_short_pool_and_disallowing_it_does_not` + `tests/workflows/test_finetuning_contracts.py::test_disallow_random_padding_pt_is_a_bare_flag_on_the_training_cli` |
 | `train.pseudolabel_replay` | `--pseudolabel_replay` | `mace/tools/arg_parser.py:547` | KEEP | `tests/workflows/test_finetuning_contracts.py::test_pseudolabel_replay_relabels_the_replay_set_from_the_foundation_model` + `tests/workflows/test_finetuning_contracts.py::test_a_failing_pseudolabel_batch_keeps_the_file_labels_and_says_nothing` |
-| `train.pseudolabel_replay_compute_stress` | `--pseudolabel_replay_compute_stress` | `mace/tools/arg_parser.py:553` | KEEP | ⚠️ gap (no test passes `--pseudolabel_replay_compute_stress`) |
+| `train.pseudolabel_replay_compute_stress` | `--pseudolabel_replay_compute_stress` | `mace/tools/arg_parser.py:553` | KEEP | `tests/unit/test_multihead_tools.py::test_forcing_it_adds_the_stress_the_model_predicts` |
 | `train.foundation_model_elements` | `--foundation_model_elements` | `mace/tools/arg_parser.py:640` | KEEP — all-species weight saving is a v1 default | `tests/workflows/test_run_train.py::test_run_train_foundation_elements` + `tests/workflows/test_run_train.py::test_run_train_foundation_elements_multihead` |
 | `train.force_mh_ft_lr` | `--force_mh_ft_lr` | `mace/tools/arg_parser.py:604` | DROP — replay-dependent defaults replace the override; the flag exists only to defeat a heuristic v1 does not have | — |
 | `train.lora` | `--lora` | `mace/tools/arg_parser.py:652` | KEEP | `tests/unit/test_lora.py` (port cases) |
@@ -421,7 +421,7 @@ Group default: KEEP as the `magnetic`-extra config. Grouped like §3.3, but the 
 | `train.num_mag_radial_basis` | `--num_mag_radial_basis` | `mace/tools/arg_parser.py:1178` | KEEP — idem | `tests/extensions/magnetic` |
 | `train.num_mag_radial_basis_one_body` | `--num_mag_radial_basis_one_body` | `mace/tools/arg_parser.py:1154` | KEEP — idem | `tests/extensions/magnetic` |
 | `train.use_magmom_one_body` | `--use_magmom_one_body` | `mace/tools/arg_parser.py:1184` | KEEP — the one-body magmom term | `tests/golden/test_tiny_magnetic.py::test_the_one_body_magnetic_term_is_inside_the_reference` |
-| `train.train_one_body_contribution` | `--train_one_body_contribution` | `mace/tools/arg_parser.py:1190` | KEEP — whether the one-body coefficients are optimized | ⚠️ gap (add a case to `tests/golden/test_tiny_magnetic.py`) |
+| `train.train_one_body_contribution` | `--train_one_body_contribution` | `mace/tools/arg_parser.py:1190` | KEEP — whether the one-body coefficients are optimized | `tests/golden/test_tiny_magnetic.py::test_not_training_it_requires_freezing_it_first` + `::test_training_the_one_body_term_gives_it_its_own_parameter_group` |
 | `train.data_aug_magmom` | `--data_aug_magmom` | `mace/tools/arg_parser.py:1197` | MERGE — a training-data transform (`Random3DRotation`), not a model flag | `tests/extensions/magnetic` (rotation equivariance) |
 | `train.data_aug_magmom_mode` | `--data_aug_magmom_mode` | `mace/tools/arg_parser.py:1203` | MERGE — selects which spin symmetry the transform draws from (`non-soc` the full O(3), `soc` the sign flip alone), so it travels with `data_aug_magmom` | `tests/extensions/magnetic/test_magmom_augmentation.py::test_non_soc_mode_samples_the_full_o3` |
 
@@ -446,7 +446,7 @@ so the same spelling is two knobs needing two dispositions.
 | `prep.virials_key` | `--virials_key` | `mace/tools/arg_parser.py:1292` | MERGE — `mace data prepare` reads the same config section as `mace train` instead of redeclaring the flag | `tests/workflows/test_preprocess_keys.py::test_a_property_key_is_read_under_the_name_it_is_given` |
 | `prep.stress_key` | `--stress_key` | `mace/tools/arg_parser.py:1298` | MERGE — `mace data prepare` reads the same config section as `mace train` instead of redeclaring the flag | `tests/workflows/test_preprocess.py::test_preprocess_data` |
 | `prep.dipole_key` | `--dipole_key` | `mace/tools/arg_parser.py:1304` | MERGE — `mace data prepare` reads the same config section as `mace train` instead of redeclaring the flag | `tests/workflows/test_preprocess_keys.py::test_a_property_key_is_read_under_the_name_it_is_given` |
-| `prep.polarizability_key` | `--polarizability_key` | `mace/tools/arg_parser.py:1310` | MERGE — `mace data prepare` reads the same config section as `mace train` instead of redeclaring the flag | ⚠️ gap (preprocess path) |
+| `prep.polarizability_key` | `--polarizability_key` | `mace/tools/arg_parser.py:1310` | MERGE — `mace data prepare` reads the same config section as `mace train` instead of redeclaring the flag | `tests/workflows/test_preprocess_keys.py::test_a_property_key_is_read_under_the_name_it_is_given` |
 | `prep.charges_key` | `--charges_key` | `mace/tools/arg_parser.py:1316` | MERGE — `mace data prepare` reads the same config section as `mace train` instead of redeclaring the flag | `tests/workflows/test_preprocess_keys.py::test_a_property_key_is_read_under_the_name_it_is_given` |
 | `prep.head_key` | `--head_key` | `mace/tools/arg_parser.py:1368` | MERGE — `mace data prepare` reads the same config section as `mace train` instead of redeclaring the flag | `tests/workflows/test_preprocess.py` |
 | `prep.heads` | `--heads` | `mace/tools/arg_parser.py:1374` | MERGE — `mace data prepare` reads the same config section as `mace train` instead of redeclaring the flag | `tests/workflows/test_preprocess.py` |
@@ -504,12 +504,12 @@ CLIs is four knobs with four defaults.
 | `cli.fine_tuning_select.output` | `--output` | `mace/cli/fine_tuning_select.py:121` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_select_cli.py::test_the_output_path_is_where_the_flag_says` |
 | `cli.fine_tuning_select.descriptors` | `--descriptors` | `mace/cli/fine_tuning_select.py:123` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_select.py::test_load_descriptors` |
 | `cli.fine_tuning_select.device` | `--device` | `mace/cli/fine_tuning_select.py:126` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_select_cli.py::test_a_device_outside_the_choices_is_rejected` |
-| `cli.fine_tuning_select.head_pt` | `--head_pt` | `mace/cli/fine_tuning_select.py:140` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | ⚠️ gap (idem) |
-| `cli.fine_tuning_select.head_ft` | `--head_ft` | `mace/cli/fine_tuning_select.py:146` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | ⚠️ gap (idem) |
+| `cli.fine_tuning_select.head_pt` | `--head_pt` | `mace/cli/fine_tuning_select.py:140` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_select_cli.py::test_the_heads_label_each_half` |
+| `cli.fine_tuning_select.head_ft` | `--head_ft` | `mace/cli/fine_tuning_select.py:146` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_select_cli.py::test_the_heads_label_each_half` + `tests/workflows/test_finetuning_select_cli.py::test_no_head_key_is_written_when_none_is_given` |
 | `cli.fine_tuning_select.filtering_type` | `--filtering_type` | `mace/cli/fine_tuning_select.py:152` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_contracts.py::test_filtering_type_restricts_the_pool_to_the_target_elements` + `tests/workflows/test_finetuning_select.py::test_filter_data` |
-| `cli.fine_tuning_select.weight_ft` | `--weight_ft` | `mace/cli/fine_tuning_select.py:159` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | ⚠️ gap (no test passes `--weight_ft` / `--weight_pt`) |
-| `cli.fine_tuning_select.weight_pt` | `--weight_pt` | `mace/cli/fine_tuning_select.py:165` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | ⚠️ gap (idem) |
-| `cli.fine_tuning_select.filter_atomic_numbers_pt` | `--filter_atomic_numbers_pt` | `mace/cli/fine_tuning_select.py:171` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | ⚠️ gap (idem) |
+| `cli.fine_tuning_select.weight_ft` | `--weight_ft` | `mace/cli/fine_tuning_select.py:159` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_select_cli.py::test_the_finetuning_weight_applies_to_the_finetuning_configs` |
+| `cli.fine_tuning_select.weight_pt` | `--weight_pt` | `mace/cli/fine_tuning_select.py:165` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_select_cli.py::test_the_pretraining_weight_is_written_onto_the_selection` |
+| `cli.fine_tuning_select.filter_atomic_numbers_pt` | `--filter_atomic_numbers_pt` | `mace/cli/fine_tuning_select.py:171` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_select_cli.py::test_the_atomic_number_filter_restricts_the_pool` |
 | `cli.fine_tuning_select.allow_random_padding` | `--disallow_random_padding` | `mace/cli/fine_tuning_select.py:177` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_contracts.py::test_random_padding_tops_up_a_short_pool_and_disallowing_it_does_not` |
 | `cli.fine_tuning_select.seed` | `--seed` | `mace/cli/fine_tuning_select.py:182` | MERGE — absorbed into the integrated fine-tuning pipeline (`mace train` with a fine-tuning config); selection stops being a separate CLI over a separate model load | `tests/workflows/test_finetuning_select_cli.py::test_the_same_seed_selects_the_same_configurations` |
 | `cli.fine_tuning_select.default_dtype` | `--default_dtype` | `mace/cli/fine_tuning_select.py:133` | MERGE — `PrecisionConfig` | `tests/workflows/test_finetuning_select_cli.py::test_the_descriptors_follow_the_requested_dtype` |
@@ -677,7 +677,7 @@ surface.
 |---|---|---|---|---|
 | `reg.RealAgnosticResidualInteractionBlock` | `RealAgnosticResidualInteractionBlock` — interaction_classes | `mace/modules/__init__.py:71` | KEEP — the standard interaction block | `tests/golden/test_tiny_anchors.py::test_anchor_reproduces_its_reference` |
 | `reg.RealAgnosticInteractionBlock` | `RealAgnosticInteractionBlock` — interaction_classes | `mace/modules/__init__.py:73` | KEEP — the default first layer | `tests/golden/test_tiny_anchors.py::test_anchor_reproduces_its_reference` |
-| `reg.RealAgnosticDensityInteractionBlock` | `RealAgnosticDensityInteractionBlock` — interaction_classes | `mace/modules/__init__.py:74` | KEEP — foundation-model architecture, not a research variant: MACE-MP-0b2 S/M/L and MACE-mh-0 use it in the first layer | ⚠️ gap (needs an MP-0b2 or mh-0 case in `tests/golden/test_foundation_goldens.py`) |
+| `reg.RealAgnosticDensityInteractionBlock` | `RealAgnosticDensityInteractionBlock` — interaction_classes | `mace/modules/__init__.py:74` | KEEP — foundation-model architecture, not a research variant: MACE-MP-0b2 S/M/L and MACE-mh-0 use it in the first layer | `tests/unit/test_first_interaction_block.py::test_the_density_block_is_reachable_as_a_first_layer` |
 | `reg.RealAgnosticDensityResidualInteractionBlock` | `RealAgnosticDensityResidualInteractionBlock` — interaction_classes | `mace/modules/__init__.py:75` | KEEP — idem, used in the remaining layers of the same published models | `tests/integrations/lammps/test_mliap_exchange.py::test_mliap_exchange_density_residual` |
 | `reg.RealAgnosticResidualNonLinearInteractionBlock` | `RealAgnosticResidualNonLinearInteractionBlock` — interaction_classes | `mace/modules/__init__.py:76` | KEEP — the interaction block of MACE-Polar S/M/L | `tests/unit/test_models.py::test_non_linear_first_interaction_block_runs_and_is_equivariant` + `tests/unit/test_models.py::test_non_linear_first_interaction_block_cannot_be_torchscripted` |
 | `reg.RealAgnosticAttResidualInteractionBlock` | `RealAgnosticAttResidualInteractionBlock` — interaction_classes | `mace/modules/__init__.py:72` | DROP — unlike the Density blocks it appears in no `finetuning_utils` branch and no converter, only in the registry and the parser choices: a research variant with no published model, no test and no owner | — |
@@ -802,7 +802,6 @@ only the bag spells.
 | `calc.param.fullgraph` | `fullgraph` — MACECalculator | `mace/calculators/mace.py:116` | KEEP | `tests/unit/test_compile.py` |
 | `calc.param.pad_num_atoms` | `pad_num_atoms` — MACECalculator | `mace/calculators/mace.py:119` | KEEP — graph padding, so a compiled graph is not recaptured per frame | `tests/workflows/test_cli_contracts.py::test_padded_per_atom_arrays_come_back_with_exactly_len_atoms_rows` |
 | `calc.param.pad_num_edges` | `pad_num_edges` — MACECalculator | `mace/calculators/mace.py:120` | KEEP — idem | `tests/workflows/test_calculator.py::test_calculator_padding` + `tests/unit/test_padding.py::test_edge_index_within_bounds` |
-| `calc.param.warmup` | `warmup` — MACECalculator | `mace/calculators/mace.py:121` | KEEP — one throwaway forward so the first real call is not the compile | ⚠️ gap (no test passes `warmup`, so the throwaway forward is unobserved) |
 | `calc.param.enable_cueq` | `enable_cueq` — MACECalculator | `mace/calculators/mace.py:117` | MERGE — backend dispatch config | `tests/golden/test_backend_parity_golden.py::test_the_calculators_own_backend_flag_reaches_the_same_kernels` |
 | `calc.param.enable_oeq` | `enable_oeq` — MACECalculator | `mace/calculators/mace.py:118` | MERGE — idem | `tests/golden/test_backend_parity_golden.py::test_the_calculators_own_backend_flag_reaches_the_same_kernels` |
 | `calc.param.compute_bec` | `compute_bec` — MACECalculator | `mace/calculators/mace.py:122` | KEEP — Born effective charges from the LES/polar path | `tests/extensions/les/test_maceles.py::test_run_eval_with_bec` + `tests/extensions/les/test_maceles.py::test_run_eval_no_bec` |
@@ -845,9 +844,8 @@ copy — so the tree depends on both at once (§19).
 | `extra.torchsim` | `[torchsim]` | `setup.cfg` | KEEP — a first-class deployment path, not a secondary integration; the coupling to torch-sim's still-moving API becomes MACE's problem, so the version is pinned in `requirements/` | `tests/extensions/torchsim` |
 | `extra.magnetic` | `[magnetic]` | `setup.cfg` | KEEP — `sphericart-torch` + `torch-geometric` | `tests/extensions/magnetic` |
 | `extra.cueq` | `[cueq]` | `setup.cfg` | KEEP — the backend extra naming is worth revisiting | `tests/golden/test_backend_parity_golden.py::test_the_audits_verdict_tracks_whether_the_fused_ops_are_installed` |
-| `extra.cueq-cuda-11` | `[cueq-cuda-11]` | `setup.cfg` | KEEP — idem; the ops major must match `torch.version.cuda`, not the newest available | ⚠️ gap (nothing in the suite can assert a `cueq-cuda-11` wheel resolves; only the GPU CI job installing it can) |
-| `extra.cueq-cuda-12` | `[cueq-cuda-12]` | `setup.cfg` | KEEP — idem | ⚠️ gap (nothing in the suite can assert a `cueq-cuda-12` wheel resolves; only the GPU CI job installing it can) |
-| `extra.cueq-cuda-13` | `[cueq-cuda-13]` | `setup.cfg` | KEEP — idem; cu13 ops start at cuequivariance 0.7.0 | ⚠️ gap (nothing in the suite can assert a `cueq-cuda-13` wheel resolves; only the GPU CI job installing it can) |
+| `extra.cueq-cuda-12` | `[cueq-cuda-12]` | `setup.cfg` | KEEP — idem; the ops major must match `torch.version.cuda`, not the newest available, and a CUDA 11 host wants this one | `tests/unit/test_ci_gates.py::test_the_job_reads_the_extras_out_of_setup_cfg` (the `cueq-wheel-extras` PR job resolves each one; this keeps setup.cfg and that job in step) |
+| `extra.cueq-cuda-13` | `[cueq-cuda-13]` | `setup.cfg` | KEEP — idem; cu13 ops start at cuequivariance 0.7.0 | `tests/unit/test_ci_gates.py::test_the_job_reads_the_extras_out_of_setup_cfg` (the `cueq-wheel-extras` PR job resolves each one; this keeps setup.cfg and that job in step) |
 | `extra.oeq` | `[oeq]` | `setup.cfg` | KEEP — OpenEquivariance, the AMD-capable accelerated backend | `tests/golden/test_backend_parity_golden.py::test_the_audit_accepts_a_well_formed_oeq_conversion_and_only_that` |
 | `extra.dev` | `[dev]` | `setup.cfg` | KEEP — the lint/format toolchain | the lint job itself |
 | `extra.test` | `[test]` | `setup.cfg` | KEEP — pytest and its plugins, split out of `dev` so a test job need not install the linters | the suite itself |
@@ -945,10 +943,10 @@ and the committee suffixes derived from `results_store_ensemble` (`_comm` = the 
 | `out.calc.energy_var` | `energy_var` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (energy variance). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | `tests/unit/test_calculator_units_and_spread.py::test_a_committee_reports_the_spread_of_the_members_it_averaged` |
 | `out.calc.forces_comm` | `forces_comm` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (per-model forces). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | `tests/unit/test_calculator_units_and_spread.py::test_a_committee_reports_the_spread_of_the_members_it_averaged` |
 | `out.calc.forces_var` | `forces_var` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (force variance). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | `tests/unit/test_calculator_units_and_spread.py::test_the_variance_scales_as_the_square_and_the_members_linearly` |
-| `out.calc.stress_comm` | `stress_comm` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (per-model stresses). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | ⚠️ gap (idem) |
-| `out.calc.stress_var` | `stress_var` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (stress variance). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | ⚠️ gap (idem) |
-| `out.calc.dipole_comm` | `dipole_comm` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (per-model dipoles). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | ⚠️ gap (idem) |
-| `out.calc.dipole_var` | `dipole_var` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (dipole variance). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | ⚠️ gap (idem) |
+| `out.calc.stress_comm` | `stress_comm` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (per-model stresses). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | `tests/unit/test_calculator_units_and_spread.py::test_a_committee_reports_the_stress_of_the_members_it_averaged` |
+| `out.calc.stress_var` | `stress_var` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (stress variance). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | `tests/unit/test_calculator_units_and_spread.py::test_the_stress_variance_scales_as_the_square_of_the_conversion` + `tests/unit/test_calculator_units_and_spread.py::test_the_stress_spread_is_in_the_same_layout_as_the_stress` + `tests/unit/test_calculator_units_and_spread.py::test_the_members_are_symmetric_so_the_conversion_loses_nothing` |
+| `out.calc.dipole_comm` | `dipole_comm` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (per-model dipoles). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | `tests/unit/test_calculator_units_and_spread.py::test_a_dipole_committee_reports_its_spread` |
+| `out.calc.dipole_var` | `dipole_var` — committee | `mace/calculators/mace.py:718` | KEEP — committee output (dipole variance). The committee is the part of `mace_active_learning_md` that MACE must keep guaranteeing (§1) | `tests/unit/test_calculator_units_and_spread.py::test_a_dipole_committee_reports_its_spread` + `tests/unit/test_calculator_units_and_spread.py::test_the_dipole_spread_keeps_the_layout_of_the_dipole` |
 
 ### 12.2 Keys `mace_eval_configs` writes (13)
 
@@ -987,7 +985,7 @@ the one configuration channel that leaves no trace in the run metadata.
 | `env.MACE_FORCE_CPU` | `MACE_FORCE_CPU` | `mace/calculators/lammps_mliap_mace.py:30` | KEEP — MLIAP runtime config; behaviour preserved even if it later moves into a deploy manifest (force CPU execution) | `tests/integrations/lammps/test_mliap_env_config.py::test_force_cpu_skips_the_device_check_entirely` |
 | `env.MACE_ASE_PAD_NUM_ATOMS` | `MACE_ASE_PAD_NUM_ATOMS` | `mace/calculators/mace.py:411` | KEEP — the calculator's padding override, as an explicit config field in v1 | `tests/workflows/test_cli_contracts.py::test_padding_through_the_two_environment_variables_behaves_identically` |
 | `env.MACE_ASE_PAD_NUM_EDGES` | `MACE_ASE_PAD_NUM_EDGES` | `mace/calculators/mace.py:413` | KEEP — idem | `tests/workflows/test_cli_contracts.py::test_padding_through_the_two_environment_variables_behaves_identically` |
-| `env.MACE_USE_CUEQ_CG` | `MACE_USE_CUEQ_CG` | `mace/tools/cg.py:23` | DROP — the variable goes, not the capability: an environment variable that silently changes model numerics is unreproducible and never lands in the run metadata; it is what makes machine-to-machine differences unexplainable. The CG source becomes a backend decision recorded in the resolved config | ⚠️ gap (nothing compares the two CG sources against each other) |
+| `env.MACE_USE_CUEQ_CG` | `MACE_USE_CUEQ_CG` | `mace/tools/cg.py:23` | DROP — the variable goes, not the capability: an environment variable that silently changes model numerics is unreproducible and never lands in the run metadata; it is what makes machine-to-machine differences unexplainable. The CG source becomes a backend decision recorded in the resolved config | — |
 
 Three further variables are read but are not MACE's own namespace, so they are not in the gated
 set:
@@ -1067,8 +1065,8 @@ under the same schema. The loader kwargs are the ones hidden behind `@overload`s
 | `kwarg.model_path` | `mace_anicc(model_path=…)` — the one loader whose first argument is spelled differently from every other | `mace/calculators/foundations_models.py` | DROP — goes with `mace_anicc` itself (§9.2); the signature exception is part of why | — |
 | `kwarg.dispersion` | `mace_mp(dispersion=…)` — D3 dispersion correction via torch-dftd | `mace/calculators/foundations_models.py` | KEEP | `tests/unit/test_foundations_models.py::test_dispersion_damping_is_forwarded` |
 | `kwarg.damping` | `mace_mp(damping=…)` — D3 damping function | `mace/calculators/foundations_models.py` | KEEP | `tests/unit/test_foundations_models.py::test_legacy_damping_name_is_accepted` |
-| `kwarg.dispersion_xc` | `mace_mp(dispersion_xc=…)` — the functional the D3 parameters are taken from | `mace/calculators/foundations_models.py` | KEEP | ⚠️ gap (idem) |
-| `kwarg.dispersion_cutoff` | `mace_mp(dispersion_cutoff=…)` | `mace/calculators/foundations_models.py` | KEEP | ⚠️ gap (idem) |
+| `kwarg.dispersion_xc` | `mace_mp(dispersion_xc=…)` — the functional the D3 parameters are taken from | `mace/calculators/foundations_models.py` | KEEP | `tests/unit/test_foundations_models.py::test_dispersion_xc_is_forwarded` + `tests/unit/test_foundations_models.py::test_the_default_functional_is_pbe` |
+| `kwarg.dispersion_cutoff` | `mace_mp(dispersion_cutoff=…)` | `mace/calculators/foundations_models.py` | KEEP | `tests/unit/test_foundations_models.py::test_dispersion_cutoff_is_forwarded` + `tests/unit/test_foundations_models.py::test_the_two_cutoffs_are_separate_knobs` |
 | `alias.published_names` | The per-loader shortcut names users write in code and docs — `small`/`medium`/`large`, `small-0b`/`medium-0b`/`*-0b2`/`medium-0b3`, `medium-mpa-0`, `small-omat-0`/`medium-omat-0`, plus the OFF/polar/MDP/OMOL sets. This **is** the current model registry | `mace/calculators/foundations_models.py` | KEEP — carried into the model registry, possibly renamed under the new naming scheme with a deprecation mapping per old alias | `tests/unit/test_download_urls.py` |
 | `pkg.torchsim_backend` | `mace/calculators/mace_torchsim.py` — the torch-sim backend, including PolarMACE support | `mace/calculators/mace_torchsim.py` | KEEP — a first-class deployment path alongside ASE and LAMMPS | `tests/extensions/torchsim` |
 
@@ -1090,23 +1088,23 @@ them and nothing here is pinned by a test that imports one.
 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `doc.quickstart` | Quick Start / Introduction / Installation / Troubleshooting | mace-docs | KEEP — maps to §1 and §10 | ⚠️ gap (docs are not CI-tested today) |
-| `doc.training` | Training | mace-docs | KEEP — maps to §3 | ⚠️ gap (idem) |
-| `doc.evaluation` | Evaluation | mace-docs | KEEP — maps to §5 eval | ⚠️ gap (idem) |
-| `doc.multihead` | Heterogeneous Data Training / Multihead Training | mace-docs | KEEP — maps to §3.6 | ⚠️ gap (idem) |
-| `doc.ase` | ASE calculator | mace-docs | KEEP — maps to §9 and §16 | ⚠️ gap (idem) |
-| `doc.descriptors` | MACE descriptors | mace-docs | KEEP — maps to `get_descriptors` (§16) and the eval descriptor flags (§5) | ⚠️ gap (idem) |
+| `doc.quickstart` | Quick Start / Introduction / Installation / Troubleshooting | mace-docs | KEEP — maps to §1 and §10 | the docs, reviewed not tested |
+| `doc.training` | Training | mace-docs | KEEP — maps to §3 | the docs, reviewed not tested |
+| `doc.evaluation` | Evaluation | mace-docs | KEEP — maps to §5 eval | the docs, reviewed not tested |
+| `doc.multihead` | Heterogeneous Data Training / Multihead Training | mace-docs | KEEP — maps to §3.6 | the docs, reviewed not tested |
+| `doc.ase` | ASE calculator | mace-docs | KEEP — maps to §9 and §16 | the docs, reviewed not tested |
+| `doc.descriptors` | MACE descriptors | mace-docs | KEEP — maps to `get_descriptors` (§16) and the eval descriptor flags (§5) | the docs, reviewed not tested |
 | `doc.hessians` | Analytical Hessians | mace-docs | KEEP — maps to `get_hessian` (§16) | `tests/foundations/test_hessian.py` |
-| `doc.dipoles` | Dipole Moments and Polarizabilities | mace-docs | KEEP — maps to §6 and §11 | ⚠️ gap (docs are not CI-tested today) |
+| `doc.dipoles` | Dipole Moments and Polarizabilities | mace-docs | KEEP — maps to §6 and §11 | the docs, reviewed not tested |
 | `doc.cuda` | CUDA Acceleration (cuEquivariance) | mace-docs | KEEP — rewritten: v1 dispatches instead of converting, so the page's central instruction (convert your model) disappears | `tests/golden/test_backend_parity_golden.py::test_the_audits_verdict_tracks_whether_the_fused_ops_are_installed` |
-| `doc.openmm` | OpenMM Interface | mace-docs | KEEP | ⚠️ gap (no OpenMM coverage in-tree) |
+| `doc.openmm` | OpenMM Interface | mace-docs | KEEP — and the interface has no in-tree coverage at all, which is separate from the page: a test would need OpenMM installed | the docs, reviewed not tested |
 | `doc.lammps` | MACE in LAMMPS / MACE in LAMMPS with ML-IAP | mace-docs | KEEP — reduced to the MLIAP path; maps to §17 | `tests/integrations/lammps` |
 | `doc.foundation_models` | Foundation models | mace-docs | KEEP — maps to §9.2 | `tests/golden/test_foundation_goldens.py::test_the_registry_url_is_still_the_package_url` |
 | `doc.electrostatics` | Electrostatic MACE | mace-docs | KEEP — maps to §3.3 and PolarMACE (§6) | `tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy` |
 | `doc.finetuning` | Fine-tuning / Multihead Replay / LoRA | mace-docs | KEEP — maps to §3.6 | `tests/workflows/test_finetuning_contracts.py::test_multihead_replay_finetuning_completes_and_carries_both_heads` |
 | `doc.preprocessing` | Large Dataset Pre-processing | mace-docs | KEEP — maps to §4 | `tests/workflows/test_preprocess.py` |
 | `doc.multigpu` | Multi-GPUs Training | mace-docs | KEEP — maps to `--distributed` (§3.1) | `tests/workflows/test_distributed.py` |
-| `doc.examples` | Examples (MD22, ANI-1x, liquid water; NVT with a foundation model) and Tutorials 1–3 | mace-docs | KEEP — end-to-end usage; the theory tutorial is superseded by the marimo notebooks | ⚠️ gap (examples are not CI-tested) |
+| `doc.examples` | Examples (MD22, ANI-1x, liquid water; NVT with a foundation model) and Tutorials 1–3 | mace-docs | KEEP — end-to-end usage; the theory tutorial is superseded by the marimo notebooks | the docs, reviewed not tested |
 
 ## 19. Package-level surfaces and second-pass findings
 
@@ -1130,10 +1128,10 @@ misses.
 | `pkg.e0_estimation` | The three E0 resolution modes — explicit dict, `average` (least squares) and `estimated` (foundation-corrected) | `mace/tools/scripts_utils.py` | KEEP — E0 specification is a config section with an explicit, tested resolution order | `tests/unit/test_e0s_characterization.py::test_estimated_e0s_are_the_foundation_e0s_plus_a_least_squares_correction` + `tests/unit/test_e0s_characterization.py::test_estimated_e0s_are_deterministic_at_cpu_float64` |
 | `pkg.lr_param_groups` | Explicit optimizer parameter groups, driven by `--lr_params_factors` and reused by `--freeze` | `mace/tools/scripts_utils.py` | MERGE — typed per-param-group fields of the per-stage optimizer config | `tests/unit/test_optimizer_param_groups.py::test_trainable_bessel_weights_get_their_own_group` + `tests/workflows/test_freeze.py::test_run_train_freeze` |
 | `pkg.augmentation` | `Random3DRotation` — the training-data augmentation transform behind `--data_aug_magmom` | `mace/data/augmentation.py` | MERGE — a registered training-data transform, not a model flag | `tests/extensions/magnetic` (rotation equivariance) |
-| `pkg.per_head_reporting` | Per-head validation logging, per-head test error tables and per-head parity plots with labels | `mace/tools/train.py`, `mace/tools/tables_utils.py` | KEEP — multihead is the normal case now, so per-head reporting is not an add-on | ⚠️ gap (multihead reporting; add a case to `tests/workflows/test_finetuning_contracts.py`) |
+| `pkg.per_head_reporting` | Per-head validation logging, per-head test error tables and per-head parity plots with labels | `mace/tools/train.py`, `mace/tools/tables_utils.py` | KEEP — multihead is the normal case now, so per-head reporting is not an add-on | `tests/workflows/test_per_head_reporting.py` (validation lines, results-log `head` field and final-table rows, on one two-head run) + `tests/unit/test_error_table_heads.py::test_every_loader_becomes_its_own_row` |
 | `pkg.atomic_download` | Race-free foundation-model downloads: fetch to a temporary file and rename, so a failed or concurrent download cannot leave a truncated checkpoint in the cache | `mace/calculators/foundations_models.py` | KEEP — the property, not the implementation: a partial download must never be readable as a model | `tests/unit/test_download_urls.py` |
-| `pkg.first_block_allowlist` | The three first-interaction blocks a `MACE`-type model accepts — plain, Density and, since recently, the **non-linear** residual one | `mace/tools/model_script_utils.py:280-284` | KEEP — a non-linear first block is a valid architecture and the v1 assembly must not re-impose the old restriction | ⚠️ gap (add a case to `tests/unit/test_models.py`) |
-| `pkg.first_block_coercion` | For `--model MACE`, anything outside that allowlist is **silently rewritten** to `RealAgnosticInteractionBlock` | `mace/tools/model_script_utils.py:285` | DROP — a config value the tool overwrites without a word is worse than a rejected one: the run trains a different architecture than the user asked for and nothing says so. v1 fails the combination in config validation | ⚠️ gap (add a case to `tests/unit/test_models.py`) |
+| `pkg.first_block_allowlist` | The three first-interaction blocks a `MACE`-type model accepts — plain, Density and, since recently, the **non-linear** residual one | `mace/tools/model_script_utils.py:280-284` | KEEP — a non-linear first block is a valid architecture and the v1 assembly must not re-impose the old restriction | `tests/unit/test_first_interaction_block.py::test_an_allowlisted_first_block_is_the_one_built` + `tests/unit/test_first_interaction_block.py::test_the_allowlist_has_exactly_these_three_entries` |
+| `pkg.first_block_coercion` | For `--model MACE`, anything outside that allowlist is **silently rewritten** to `RealAgnosticInteractionBlock` | `mace/tools/model_script_utils.py:285` | DROP — a config value the tool overwrites without a word is worse than a rejected one: the run trains a different architecture than the user asked for and nothing says so. v1 fails the combination in config validation | — |
 
 ## 20. External `mace-scf` model families (out-of-tree)
 
@@ -1146,13 +1144,24 @@ golden, which is five new parity artifacts on top of the foundation-model set. W
 use inherits the electrostatics solver-dispatch decision, and where an accelerated solver is not
 bit-parity the solver identity becomes model state serialized with the checkpoint.
 
+**The five goldens cannot be captured from upstream first, so they arrive with the
+reimplementation.** `mace_scf` asserts its MACE version at import --
+`assert Version(mace.__version__) == Version("0.3.14")` in `mace_scf/__init__.py` -- and this
+tree is 0.3.17, so the package cannot be imported beside it at all (checked at `mace_scf`
+0.4.4, commit `2955ca0`). Taking a reference from it would mean either pinning this repository
+back four minor versions or patching that assert out, and a number measured through a patched
+import pins the patch. So there is no capability marker and no `requirements/scf.txt` to add
+yet: each of these rows is closed by the parity artifact its own reimplementation commits, and
+the gap markers below say so rather than reading as five tests somebody could sit down and
+write today.
+
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
-| `scf.lc_mace` | LC-MACE — local charge: multipole moments read out from descriptors; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement; the cheapest of the five, no implicit-diff hook needed | ⚠️ gap (no golden yet) |
-| `scf.lsc_mace` | LSC-MACE — local split charge: charge + multipoles conserving local charge flow; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement | ⚠️ gap (no golden yet) |
-| `scf.qeq` | MACE-QEq — charge equilibration, solved self-consistently with implicit differentiation | `ACEsuit/mace-scf` | KEEP — reimplement; the load-bearing test case for the SCF hook | ⚠️ gap (no golden yet) |
-| `scf.fixedpoint` | FixedPointSCF — Kohn–Sham-like SCF cycles for multipole moments | `ACEsuit/mace-scf` | KEEP — reimplement; incremental once the hook is validated by QEq | ⚠️ gap (no golden yet) |
-| `scf.energy_functional` | EnergyFunctionalSCF — an alternative functional; upstream marks it experimental | `ACEsuit/mace-scf` | KEEP — reimplement; its golden pins whatever behaviour it has today, experimental or not | ⚠️ gap (no golden yet) |
+| `scf.lc_mace` | LC-MACE — local charge: multipole moments read out from descriptors; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement; the cheapest of the five, no implicit-diff hook needed | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
+| `scf.lsc_mace` | LSC-MACE — local split charge: charge + multipoles conserving local charge flow; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
+| `scf.qeq` | MACE-QEq — charge equilibration, solved self-consistently with implicit differentiation | `ACEsuit/mace-scf` | KEEP — reimplement; the load-bearing test case for the SCF hook | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
+| `scf.fixedpoint` | FixedPointSCF — Kohn–Sham-like SCF cycles for multipole moments | `ACEsuit/mace-scf` | KEEP — reimplement; incremental once the hook is validated by QEq | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
+| `scf.energy_functional` | EnergyFunctionalSCF — an alternative functional; upstream marks it experimental | `ACEsuit/mace-scf` | KEEP — reimplement; its golden pins whatever behaviour it has today, experimental or not | ⚠️ gap (no golden yet, and none can be taken here: see the note above) |
 
 ## 21. Foundation-model migration roster
 
@@ -1164,7 +1173,7 @@ their heads intact, and a single-head export is `mace model select-head`. Model 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
 | `fm.mace_mp` | MACE-MP aliases (small/medium/large, 0b/0b2/0b3, MPA-0, OMAT, MATPES) | published artifacts | KEEP — convert | `tests/golden/test_foundation_goldens.py::test_foundation_model_reproduces_its_reference` |
-| `fm.mace_mh` | `mh-0` / `mh-1` — the MACE-MP multi-head releases | published artifacts | KEEP — convert with heads intact | ⚠️ gap (needs an mh-0 case in `tests/golden/test_foundation_goldens.py`; it is also the Density-block evidence, §7) |
+| `fm.mace_mh` | `mh-0` / `mh-1` — the MACE-MP multi-head releases | published artifacts | KEEP — convert with heads intact | `tests/golden/references/mh_0_e3nn_cpu_fp64.json` via `tests/golden/test_foundation_goldens.py` (network tier; the head set, the refusal to guess a head, and that the head changes the energy) |
 | `fm.mace_off` | MACE-OFF (OFF23 small/medium/large) | published artifacts | KEEP — convert | `tests/golden/test_foundation_goldens.py::test_foundation_model_reproduces_its_reference` |
 | `fm.mace_mdp` | MACE-MDP — the dielectric family (`AtomicDielectricMACE`), dipole and polarizability | published artifacts | KEEP — convert | `tests/golden/test_mdp_foundation.py::test_mdp_foundation_reproduces_its_reference` |
 | `fm.mace_omol` | MACE-OMOL — multi-head, `head="omol"` | published artifacts | KEEP — convert with heads intact | `tests/foundations/test_foundations.py::test_mace_omol_elements_subset_reproduces_energy_forces` |

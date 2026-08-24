@@ -561,3 +561,97 @@ def test_a_joint_rotation_is_a_symmetry_and_a_spin_only_one_is_not(anchor, fixtu
         "architecture has become spin-only invariant and --data_aug_magmom "
         "induces something it already has"
     )
+
+
+# ---------------------------------------------------------------------------
+# --train_one_body_contribution
+# ---------------------------------------------------------------------------
+#
+# The flag decides whether the one-body magnetic coefficients are trained, and
+# it does so in two places that only work together: `run_train` freezes
+# `onebody_magmombasis_coeffs` when the flag is off, and `get_params_options`
+# adds a parameter group for it when the flag is on. Skipping the freeze is not
+# a slower run or a differently-trained model -- `get_params_options` refuses a
+# trainable parameter that belongs to no group -- so the pairing is the contract
+# worth pinning rather than either half.
+
+
+def _params_options(flag, model):
+    from mace.tools import build_default_arg_parser  # noqa: PLC0415
+    from mace.tools.scripts_utils import get_params_options  # noqa: PLC0415
+
+    args = build_default_arg_parser().parse_args(
+        [
+            "--name", "onebody",
+            "--train_file", "train.xyz",
+            "--train_one_body_contribution", flag,
+        ]
+    )
+    return get_params_options(args, model)
+
+
+def _group_names(options):
+    return [group.get("name") for group in options["params"]]
+
+
+@pytest.fixture(name="trainable_anchor")
+def fixture_trainable_anchor():
+    """A fresh anchor, not the module-scoped one.
+
+    These are the only tests here that care about `requires_grad`, and the shared
+    anchor has been through `eval_configs` by the time they run, which freezes
+    every parameter of the model it is handed. Loading one costs a moment and
+    removes the ordering dependency entirely.
+    """
+    model = ms.load_anchor()
+    assert model.onebody_magmombasis_coeffs.requires_grad, (
+        "a freshly loaded anchor should carry trainable one-body coefficients"
+    )
+    return model
+
+
+def test_training_the_one_body_term_gives_it_its_own_parameter_group(
+    trainable_anchor,
+):
+    """Its own group because it takes its own weight decay: the coefficients are
+    a one-body correction, and decaying them toward zero pulls the isolated-atom
+    energies with them."""
+    options = _params_options("True", trainable_anchor)
+
+    assert "onebody_magmombasis_coeffs" in _group_names(options)
+
+
+def test_not_training_it_requires_freezing_it_first(trainable_anchor):
+    """What `run_train` does immediately before building the optimizer, and why.
+    Left trainable and ungrouped, the parameter would silently never be updated,
+    so `get_params_options` refuses instead -- naming the parameter, which is the
+    only reason this is a legible failure rather than a quietly wrong run.
+    """
+    with pytest.raises(ValueError, match="onebody_magmombasis_coeffs"):
+        _params_options("False", trainable_anchor)
+
+
+def test_frozen_it_is_absent_from_the_optimizer_and_nothing_complains(
+    trainable_anchor,
+):
+    """The flag's off state, spelled the way `run_train` spells it."""
+    trainable_anchor.onebody_magmombasis_coeffs.requires_grad_(False)
+
+    options = _params_options("False", trainable_anchor)
+
+    assert "onebody_magmombasis_coeffs" not in _group_names(options)
+
+
+def test_the_flag_defaults_to_training_it(trainable_anchor):
+    """So `--use_magmom_one_body` alone gives a trained one-body term, and the
+    flag exists to hold it fixed -- at a foundation model's values, say."""
+    from mace.tools import build_default_arg_parser  # noqa: PLC0415
+
+    args = build_default_arg_parser().parse_args(
+        ["--name", "onebody", "--train_file", "train.xyz"]
+    )
+
+    assert args.train_one_body_contribution is True
+    assert "onebody_magmombasis_coeffs" in _group_names(
+        _params_options("True", trainable_anchor)
+    )

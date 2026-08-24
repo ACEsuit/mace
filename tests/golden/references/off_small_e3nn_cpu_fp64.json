@@ -242,6 +242,11 @@
   "provenance": {
     "description": "MACE-OFF23 small, organic chemistry (H C N O F P S Cl Br I), downloaded from the mace-off repository. ASL licensed.",
     "evaluated_with": "mace.calculators.MACECalculator, e3nn, CPU, float64",
+    "fixture_names": [
+      "dimer_short",
+      "isolated_atom",
+      "water_cluster"
+    ],
     "fixture_tags": [
       "molecular"
     ],

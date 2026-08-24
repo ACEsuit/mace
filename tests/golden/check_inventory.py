@@ -116,6 +116,12 @@ NON_TEST_PINS = {
         "`[dev]` is what the lint job installs; same reason, and `pre-commit "
         "run --all-files` is the assertion"
     ),
+    "the docs, reviewed not tested": (
+        "the pages live in the separate mace-docs repository and are not run in "
+        "CI, by decision: what keeps them true is a doc review when the surface "
+        "they describe changes. A gap marker here would read as a test somebody "
+        "still owes, and nobody does"
+    ),
 }
 
 COLUMNS = (
@@ -1114,7 +1120,7 @@ AUDIT_NON_EVIDENCE = (
 )
 
 #: how many matching test functions before a subject is too common to judge.
-#: `warmup`, `mean`, `heads` and friends appear all over the suite in contexts
+#: `mean`, `heads` and friends appear all over the suite in contexts
 #: that have nothing to do with the row, and printing forty candidates for them
 #: is worse than printing none: it buries the rows where a match means
 #: something. Past this count the audit says so rather than guessing.

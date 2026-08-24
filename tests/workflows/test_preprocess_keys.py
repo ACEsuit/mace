@@ -53,6 +53,7 @@ def fixture_configs():
         frame.info["MY_virials"] = rng.normal(0.1, size=(3, 3))
         frame.info["MY_dipole"] = rng.normal(0.1, size=3)
         frame.new_array("MY_charges", rng.normal(0.1, size=len(frame)))
+        frame.info["MY_polarizability"] = rng.normal(0.1, size=(3, 3))
         frames.append(frame)
     return isolated + frames
 
@@ -111,6 +112,7 @@ def test_the_energy_and_forces_keys_reach_the_shards(tmp_path, configs):
         ("virials_key", "MY_virials", "virials", (3, 3)),
         ("dipole_key", "MY_dipole", "dipole", (3,)),
         ("charges_key", "MY_charges", "charges", (3,)),
+        ("polarizability_key", "MY_polarizability", "polarizability", (3, 3)),
     ],
 )
 def test_a_property_key_is_read_under_the_name_it_is_given(
@@ -122,7 +124,7 @@ def test_a_property_key_is_read_under_the_name_it_is_given(
 
 
 @pytest.mark.parametrize(
-    "shard_name", ["virials", "dipole", "charges"]
+    "shard_name", ["virials", "dipole", "charges", "polarizability"]
 )
 def test_the_property_is_a_placeholder_when_no_key_is_given(
     tmp_path, configs, shard_name

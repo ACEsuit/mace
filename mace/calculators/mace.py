@@ -111,7 +111,6 @@ class MACECalculator(Calculator):
         enable_oeq=False,
         pad_num_atoms: int = 0,
         pad_num_edges: int = 0,
-        warmup: bool = False,
         compute_bec: bool = False,
         external_field: Union[list, None] = None,
         eps_infty: float = None,
@@ -202,6 +201,15 @@ class MACECalculator(Calculator):
                 f"Give a valid model_type: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
+        # A list of this instance's own. `Calculator.implemented_properties` is a
+        # class attribute (`[]` on the ASE base), so extending it in place grew
+        # the list every calculator ever built shared: the second committee in a
+        # process advertised twenty properties, the third thirty, and a
+        # DipoleMACE built after a MACE claimed energy and stress it cannot
+        # produce. `MagneticMACECalculator` assigns its own list, which is what
+        # this now does too.
+        self.implemented_properties = []
+
         if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
             self.implemented_properties.extend(
                 [
@@ -264,8 +272,18 @@ class MACECalculator(Calculator):
             logging.info(f"Running committee mace with {self.num_models} models")
 
             if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
+                # All six, because all six are written: `forces_var` and
+                # `stress_comm` were produced and never advertised, so a caller
+                # consulting `implemented_properties` was told they do not exist.
                 self.implemented_properties.extend(
-                    ["energy_comm", "energy_var", "forces_comm", "stress_var"]
+                    [
+                        "energy_comm",
+                        "energy_var",
+                        "forces_comm",
+                        "forces_var",
+                        "stress_comm",
+                        "stress_var",
+                    ]
                 )
             if model_type in [
                 "DipoleMACE",
@@ -408,9 +426,6 @@ class MACECalculator(Calculator):
         self.pad_num_atoms = max(int(pad_num_atoms), 0)
         self.pad_num_edges = max(int(pad_num_edges), 0)
         self._padding_initialized = self.pad_num_atoms > 0 and self.pad_num_edges > 0
-
-        if warmup and self.use_compile:
-            logging.info("Warmup requested -- will trigger on first calculate() call")
 
     def check_state(self, atoms, tol: float = 1e-15) -> list:
         """
@@ -789,6 +804,23 @@ class MACECalculator(Calculator):
             self.results["node_energy"] -= node_e0
         if self.results.get("stress") is not None:
             self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
+        # The committee's stresses go with it. Leaving them 3x3 while `stress` is
+        # Voigt-6 meant a caller could not index a mean and its own spread the
+        # same way, and `MagneticMACECalculator` already converts its
+        # `stress_var`, so one key name carried two shapes depending on which
+        # calculator produced it. The helper broadcasts, so the committee axis of
+        # `stress_comm` survives: (n_models, 3, 3) becomes (n_models, 6).
+        # Written out rather than looped, because the golden surface scan follows
+        # literal keys: `self.results[key]` with a loop variable is a write it
+        # cannot attribute, and it refuses to let one pass unexplained.
+        if self.results.get("stress_comm") is not None:
+            self.results["stress_comm"] = full_3x3_to_voigt_6_stress(
+                self.results["stress_comm"]
+            )
+        if self.results.get("stress_var") is not None:
+            self.results["stress_var"] = full_3x3_to_voigt_6_stress(
+                self.results["stress_var"]
+            )
         if self.results.get("stresses") is not None:
             self.results["stresses"] = np.asarray(
                 [

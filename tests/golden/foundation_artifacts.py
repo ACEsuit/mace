@@ -47,6 +47,10 @@ _OFF_SMALL_URL = (
     "https://raw.githubusercontent.com/ACEsuit/mace-off/main/mace_off23/"
     "MACE-OFF23_small.model"
 )
+_MH_0_URL = (
+    "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/"
+    "mace-mh-0.model"
+)
 
 
 @dataclass(frozen=True)
@@ -146,6 +150,44 @@ ARTIFACTS: Dict[str, FoundationArtifact] = {
             "pre-3.10 small tier, downloaded from the mace-mp release."
         ),
         url_table=("mace_mp_urls", "small"),
+    ),
+    "mh_0": FoundationArtifact(
+        name="mh_0",
+        loader="mace_mp",
+        loader_kwargs={
+            "model": "mh-0",
+            "default_dtype": "float64",
+            "device": "cpu",
+            # Not optional. The heads of this model are levels of theory and
+            # none of them is called `default`, so the calculator refuses to
+            # guess -- see
+            # test_foundation_goldens.py::test_mh_0_refuses_to_load_without_a_head.
+            # `mp_pbe_refit_add` is the PBE materials head, which is the one the
+            # fixtures below are bulk and slab structures for.
+            "head": "mp_pbe_refit_add",
+        },
+        reference="mh_0_e3nn_cpu_fp64.json",
+        sha256="d62ff8f293664e6556cfa49364b28ee72a70cf1e6150f3c111a578397fed609d",
+        origin=_MH_0_URL,
+        network=True,
+        fixture_tags=(),
+        fixture_names=(
+            "dimer_short",
+            "isolated_atom",
+            "slab_vacuum",
+            "slab_zero_vacuum",
+            "triclinic_bulk",
+            "water_cluster",
+        ),
+        description=(
+            "MACE-MP mh-0, the multi-head release: one model carrying seven "
+            "levels of theory (rgd1_b3lyp, matpes_r2scan, mp_pbe_refit_add, "
+            "omol, spice_wB97M, oc20_usemppbe, omat_pbe). Pinned on the PBE "
+            "materials head. The published multihead artifact a conversion has "
+            "to come out of with every head still selectable, so the reference "
+            "is one head's numbers and the tests beside it are the head set."
+        ),
+        url_table=("mace_mp_urls", "mh-0"),
     ),
     "off_small": FoundationArtifact(
         name="off_small",

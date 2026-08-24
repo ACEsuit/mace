@@ -252,6 +252,7 @@ def test_a_directory_pin_may_still_name_a_test_inside_it():
         "`tests/golden/anchors.py::ANCHORS[tiny_mace]`",
         "the suite itself",
         "the lint job itself",
+        "the docs, reviewed not tested",
         "—",
         "",
     ],
@@ -262,24 +263,45 @@ def test_the_pin_vocabulary_actually_in_use_is_accepted(pin):
     assert check_inventory.check_pins([_row("x.a", pinned=pin)]) == []
 
 
-def test_the_two_non_test_pins_are_named_and_justified():
+def test_the_non_test_pins_are_named_and_justified():
     """Allowed by name, not by a wildcard, and each says why it is not a file.
 
-    Both are extras groups: the only thing that can fail is a CI job
-    installing them, and no test inside the suite can assert that the suite's
-    own dependencies resolve. Everything else that used this phrasing -- the
-    thirteen pytest markers -- now points into `tests/conftest.py`, each
-    capability at its own `CAPABILITY_PROBES` entry rather than at the file.
+    Two are extras groups: the only thing that can fail is a CI job installing
+    them, and no test inside the suite can assert that the suite's own
+    dependencies resolve. The third is the docs, which live in a separate
+    repository that CI does not run: what keeps them true is a review when the
+    surface they describe changes.
+
+    Everything else that used this phrasing -- the thirteen pytest markers --
+    now points into `tests/conftest.py`, each capability at its own
+    `CAPABILITY_PROBES` entry rather than at the file.
     """
     assert set(check_inventory.NON_TEST_PINS) == {
         "the suite itself",
         "the lint job itself",
+        "the docs, reviewed not tested",
     }
-    for pin, reason in check_inventory.NON_TEST_PINS.items():
-        assert len(reason) > 40, pin
+    for reason in check_inventory.NON_TEST_PINS.values():
+        assert len(reason) > 40, reason
+
+    # And who is allowed to use one, since the excuse is the kind of thing that
+    # spreads: a row that cannot be tested is rare, a row nobody got round to
+    # testing is not, and only the first sort belongs on this list.
     rows, _ = check_inventory.read_rows()
     users = sorted(r.ident for r in rows if r.pinned_by in check_inventory.NON_TEST_PINS)
-    assert users == ["extra.dev", "extra.test"], users
+    assert users == [
+        "doc.ase",
+        "doc.descriptors",
+        "doc.dipoles",
+        "doc.evaluation",
+        "doc.examples",
+        "doc.multihead",
+        "doc.openmm",
+        "doc.quickstart",
+        "doc.training",
+        "extra.dev",
+        "extra.test",
+    ], users
 
 
 def test_every_marker_row_pins_its_own_probe():
