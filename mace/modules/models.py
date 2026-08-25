@@ -36,6 +36,10 @@ from mace.data.rigid_body import (
     quaternion_to_matrix,
 )
 from mace.data.rigid_features import validate_rigid_feature_mode
+from mace.modules.rigid_pair_tp import (
+    RigidPairEdgeEmbedding,
+    validate_rigid_pair_mode,
+)
 
 from .utils import (
     compute_dielectric_gradients,
@@ -134,6 +138,7 @@ class MACE(torch.nn.Module):
         readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
         keep_last_layer_irreps: bool = False,
         rigid_feature_mode: str = "moi",
+        rigid_pair_mode: str = "none",
     ):
         super().__init__()
         self.register_buffer(
@@ -159,6 +164,14 @@ class MACE(torch.nn.Module):
         self.use_last_readout_only = use_last_readout_only
         self.use_edge_irreps_first = use_edge_irreps_first
         self.rigid_feature_mode = validate_rigid_feature_mode(rigid_feature_mode)
+        self.rigid_pair_mode = validate_rigid_pair_mode(rigid_pair_mode)
+
+        if self.rigid_pair_mode != "none" and use_so3:
+            raise ValueError(
+                "rigid_pair_mode='full_frame' currently supports the "
+                "standard O(3) MACE edge convention only; use_so3=True "
+                "is not yet supported."
+            )
         self.use_rigid_scalar = self.rigid_feature_mode in (
             "isotropic",
             "moi",
@@ -275,6 +288,12 @@ class MACE(torch.nn.Module):
         self.spherical_harmonics = o3.SphericalHarmonics(
             sh_irreps, normalize=True, normalization="component"
         )
+
+        if self.rigid_pair_mode == "full_frame":
+            self.rigid_pair_edge_embedding = RigidPairEdgeEmbedding(
+                lmax=max_ell,
+                edge_irreps=sh_irreps,
+            )
         if radial_MLP is None:
             radial_MLP = [64, 64, 64]
         # Interactions and readout
@@ -388,6 +407,8 @@ class MACE(torch.nn.Module):
 
     def __setstate__(self, state):
         super().__setstate__(state)
+        if not hasattr(self, "rigid_pair_mode"):
+            self.rigid_pair_mode = "none"
         # Models serialized before rigid feature ablations implicitly used
         # the complete MOI representation. Restore that behavior on load.
         if not hasattr(self, "rigid_feature_mode"):
@@ -484,6 +505,12 @@ class MACE(torch.nn.Module):
         )
         node_feats = node_feats + inertia_node_feats
         edge_attrs = self.spherical_harmonics(vectors)
+        if self.rigid_pair_mode == "full_frame":
+            edge_attrs = edge_attrs + self.rigid_pair_edge_embedding(
+                data["quaternions"],
+                data["edge_index"],
+                vectors,
+            )
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
@@ -705,6 +732,12 @@ class ScaleShiftMACE(MACE):
         )
         node_feats = node_feats + inertia_node_feats
         edge_attrs = self.spherical_harmonics(vectors)
+        if self.rigid_pair_mode == "full_frame":
+            edge_attrs = edge_attrs + self.rigid_pair_edge_embedding(
+                data["quaternions"],
+                data["edge_index"],
+                vectors,
+            )
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )

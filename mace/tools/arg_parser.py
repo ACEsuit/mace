@@ -272,6 +272,17 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--rigid_pair_mode",
+        type=str,
+        default="none",
+        choices=("none", "full_frame"),
+        help=(
+            "Optional rigid-body pair-orientation contribution to MACE "
+            "edge attributes."
+        ),
+    )
+
+    parser.add_argument(
         "--MLP_irreps",
         help="hidden irreps of the MLP in last readout",
         type=str,
