@@ -125,10 +125,7 @@ def test_cueq_cuda_multihead_matches_e3nn(head_name, backend):
         ).to(device=device, dtype=default_dtype)
 
     converter = run_e3nn_to_cueq if backend == "cueq" else run_e3nn_to_hybrid
-    conversion_kwargs = {"device": device}
-    if backend == "cueq":
-        conversion_kwargs["conv_fusion"] = True
-    model_accelerated = converter(model_e3nn, **conversion_kwargs).to(
+    model_accelerated = converter(model_e3nn, device=device).to(
         device=device, dtype=default_dtype
     )
 

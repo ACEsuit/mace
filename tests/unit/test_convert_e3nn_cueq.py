@@ -29,9 +29,10 @@ class _ConversionModelStub(torch.nn.Module):
 @pytest.mark.parametrize(
     ("device", "kwargs", "expected"),
     [
-        ("cuda", {}, False),
-        (torch.device("cuda"), {"conv_fusion": True}, True),
-        ("cpu", {"conv_fusion": True}, False),
+        ("cuda", {}, True),
+        (torch.device("cuda"), {}, True),
+        ("cuda", {"conv_fusion": False}, False),
+        ("cpu", {}, False),
     ],
 )
 def test_conversion_fusion_policy(monkeypatch, device, kwargs, expected):

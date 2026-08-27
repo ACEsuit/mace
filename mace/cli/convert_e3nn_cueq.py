@@ -220,7 +220,7 @@ def run(
     device="cpu",
     return_model=True,
     layout: str = "ir_mul",
-    conv_fusion: bool = False,
+    conv_fusion: bool = True,
 ):
     # Setup logging
 
