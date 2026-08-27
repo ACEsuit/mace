@@ -133,7 +133,7 @@ class MaceTorchSimModel(ModelInterface):
                 from mace.cli.convert_e3nn_hybrid import run as run_hybrid
 
                 log.warning(
-                    "cuEquivariance conversion failed, "
+                    "cueq conv_fusion failed (non-uniform irreps), "
                     "falling back to hybrid (cueq + oeq)"
                 )
                 self.model = run_hybrid(self.model, device=self._device.type)
