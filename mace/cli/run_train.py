@@ -888,7 +888,9 @@ def run(args) -> None:
             "MagneticScaleShiftMACE",
             "AtomicDielectricMACE",
         ]
-        model = run_e3nn_to_cueq(deepcopy(model), device=device)
+        model = run_e3nn_to_cueq(
+            deepcopy(model), device=device, conv_fusion=False
+        )
     if args.enable_oeq:
         logging.info("Converting model to OEQ for accelerated training")
         assert model.__class__.__name__ in [
