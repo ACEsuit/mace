@@ -1,15 +1,24 @@
 name: Release smoke test
 description: >
-  The only check of the PACKAGED artifact: installs the built wheel in a clean
-  venv, resolves all console entry points with --help (catches broken
-  setup.cfg entry points, the most common packaging failure), then runs a
-  mini train / eval / LAMMPS-export cycle. Run it against a branch without
-  tagging via the release workflow's workflow_dispatch trigger.
+  The only check of the PACKAGED artifact: installs the built wheels in a clean
+  venv, resolves all console entry points with --help (catches broken entry
+  point declarations, the most common packaging failure), then runs a mini
+  train / eval / LAMMPS-export cycle. Run it against a branch without tagging
+  via the release workflow's workflow_dispatch trigger.
+
+  The commands live in the mace-launcher distribution, not in mace-torch, so
+  the pair has to be installed for any of them to exist.
 
 inputs:
   wheel:
     description: Path (or glob resolving to one file) of the wheel to test
     required: true
+  launcher-wheel:
+    description: >
+      Path (or glob) of the mace-launcher wheel. It declares every mace_*
+      console script, so without it the entry point check below finds nothing.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -18,6 +27,7 @@ runs:
       shell: bash
       env:
         IN_WHEEL: ${{ inputs.wheel }}
+        IN_LAUNCHER_WHEEL: ${{ inputs.launcher-wheel }}
       run: |
         WORK="$(mktemp -d)"
         trap 'rm -rf "$WORK"' EXIT
@@ -31,10 +41,21 @@ runs:
         WHEEL_PATH="$(ls $IN_WHEEL | head -1)"
         pip install -q "$WHEEL_PATH"
 
+        if [ -n "$IN_LAUNCHER_WHEEL" ]; then
+          # shellcheck disable=SC2086
+          LAUNCHER_PATH="$(ls $IN_LAUNCHER_WHEEL | head -1)"
+          pip install -q "$LAUNCHER_PATH"
+          echo "installed launcher: $LAUNCHER_PATH"
+        else
+          echo "no launcher wheel given: every entry point below will be missing" >&2
+          exit 1
+        fi
+
         python -c "import mace; print('mace import OK')"
 
         # Every console entry point must at least resolve and print help: this
-        # catches broken setup.cfg entry points, the most common packaging failure.
+        # catches broken entry point declarations, the most common packaging
+        # failure. They come from the launcher wheel installed above.
         for ep in mace_run_train mace_eval_configs mace_prepare_data \
                   mace_create_lammps_model mace_convert_device mace_select_head \
                   mace_e3nn_cueq mace_cueq_to_e3nn mace_finetuning_select \

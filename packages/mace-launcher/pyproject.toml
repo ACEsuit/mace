@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mace-launcher"
+dynamic = ["version"]
+description = "Console entry points for MACE, dispatching between the legacy and v1 engines."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "MACE developers" }]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+# No runtime dependencies. The launcher imports a stack only when a script is
+# actually run, so declaring either one here would drag it into every install
+# and defeat the point of dispatching. Both stacks are installed alongside it.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/ACEsuit/mace"
+
+# The sole owner of every mace_* console script. Two distributions declaring
+# one script name is undefined behaviour in pip, which is why the root
+# setup.cfg no longer declares these.
+[project.scripts]
+mace_active_learning_md = "mace_launcher:active_learning_md"
+mace_create_lammps_model = "mace_launcher:create_lammps_model"
+mace_eval_configs = "mace_launcher:eval_configs"
+mace_plot_train = "mace_launcher:plot_train"
+mace_run_train = "mace_launcher:run_train"
+mace_prepare_data = "mace_launcher:prepare_data"
+mace_finetuning_select = "mace_launcher:finetuning_select"
+mace_convert_device = "mace_launcher:convert_device"
+mace_select_head = "mace_launcher:select_head"
+mace_e3nn_cueq = "mace_launcher:e3nn_cueq"
+mace_cueq_to_e3nn = "mace_launcher:cueq_to_e3nn"
+mace_polar_density_cube = "mace_launcher:polar_density_cube"
+
+[tool.hatch.version]
+source = "vcs"
+tag-pattern = "^mace-launcher-v(?P<version>.+)$"
+fallback-version = "0.0.0"
+raw-options = { root = "../..", git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "mace-launcher-v*"] }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mace_launcher"]

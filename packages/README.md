@@ -23,6 +23,7 @@ library code arrives with the tickets that build it.
 | `packages/mace-core` | `mace-core` | `mace_core` | `mace-core-v*` |
 | `packages/mace-torch` | `mace-torch-v1` | `mace_torch` | `mace-torch-v*` |
 | `packages/mace-jax` | `mace-jax` | `mace_jax` | `mace-jax-v*` |
+| `packages/mace-launcher` | `mace-launcher` | `mace_launcher` | `mace-launcher-v*` |
 
 The import names never collide with the legacy import name `mace`, so both
 stacks live in one process.
@@ -44,9 +45,15 @@ Tag prefixes are keyed on the directory rather than the distribution name, so
 each package versions independently from git tags and the RET-6 rename touches
 only the `name` field.
 
-A fourth distribution, `mace-launcher`, owns every `mace_*` console script.
-None of the three packages here declares one: two distributions declaring the
-same script name is undefined behaviour in pip.
+`mace-launcher` owns every `mace_*` console script and none of the other three
+declares one, because two distributions declaring the same script name is
+undefined behaviour in pip. That is not a theoretical hazard: uninstalling one
+of two such distributions deletes the script files the other one had
+overwritten, and the surviving distribution is left with none.
+
+The launcher is also the only place the two stacks meet. It picks one with
+`--engine {legacy,v1}` or `MACE_ENGINE`, defaulting to `legacy`, and installs a
+runtime guard that fails if a v1 module imports the frozen legacy package.
 
 ## Installing alongside the legacy package
 
@@ -54,11 +61,12 @@ Both stacks in one environment, from a fresh venv at the repository root:
 
 ```bash
 python -m venv .venv-v1 && source .venv-v1/bin/activate
-pip install -e packages/mace-core -e packages/mace-torch -e packages/mace-jax
+pip install -e packages/mace-core -e packages/mace-torch \
+            -e packages/mace-jax -e packages/mace-launcher
 pip install -e .
 ```
 
-One `pip install` for the three packages, not three: `mace-torch-v1` and
+One `pip install` for the packages, not one each: `mace-torch-v1` and
 `mace-jax` require `mace-core`, which is not on PyPI, so pip has to see it as a
 local requirement in the same resolution.
 
