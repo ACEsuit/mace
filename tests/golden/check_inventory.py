@@ -238,13 +238,62 @@ def _setup_cfg() -> configparser.ConfigParser:
     return parser
 
 
+LAUNCHER_PYPROJECT = REPO / "packages" / "mace-launcher" / "pyproject.toml"
+
+
+def _project_scripts(pyproject: Path) -> dict[str, str]:
+    """Read `[project.scripts]` out of a pyproject, without a TOML library.
+
+    `tomllib` is 3.11+, this file is imported by a test that runs on 3.10, and
+    the rest of the module deliberately depends on nothing but the standard
+    library at its oldest supported version. The table is flat and every value
+    is a quoted string, so it needs no general TOML parser.
+    """
+    scripts: dict[str, str] = {}
+    in_section = False
+    for line in pyproject.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_section = stripped == "[project.scripts]"
+            continue
+        if not in_section or not stripped or stripped.startswith("#"):
+            continue
+        name, _, target = stripped.partition("=")
+        scripts[name.strip()] = target.strip().strip('"').strip("'")
+    return scripts
+
+
 def source_entry_points() -> dict[str, Decl]:
+    """The console scripts, read from whichever distribution declares them.
+
+    They moved out of `setup.cfg` when the launcher took ownership: two
+    distributions declaring one script name is undefined behaviour in pip, so
+    exactly one file may carry them. Reading both and refusing when both are
+    populated keeps that rule checkable here rather than only at install time.
+    """
     cfg = _setup_cfg()
-    raw = cfg["options.entry_points"]["console_scripts"].strip().splitlines()
+    legacy_raw = []
+    if cfg.has_option("options.entry_points", "console_scripts"):
+        legacy_raw = cfg["options.entry_points"]["console_scripts"].strip().splitlines()
+
+    launcher_scripts: dict[str, str] = {}
+    if LAUNCHER_PYPROJECT.exists():
+        launcher_scripts = _project_scripts(LAUNCHER_PYPROJECT)
+
+    if legacy_raw and launcher_scripts:
+        raise SystemExit(
+            "console scripts are declared in BOTH setup.cfg and "
+            "packages/mace-launcher/pyproject.toml. Two distributions "
+            "providing one script name is undefined behaviour in pip; exactly "
+            "one of the two files may carry them."
+        )
+
     out = {}
-    for line in raw:
+    for line in legacy_raw:
         name, target = (part.strip() for part in line.split("=", 1))
         out[name] = Decl(name, target, "setup.cfg")
+    for name, target in launcher_scripts.items():
+        out[name] = Decl(name, target, "packages/mace-launcher/pyproject.toml")
     return out
 
 
