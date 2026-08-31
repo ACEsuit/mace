@@ -305,6 +305,7 @@ class MACELES(ScaleShiftMACE):
         vectors = ctx.vectors
         lengths = ctx.lengths
         cell = ctx.cell
+        pbc = ctx.pbc
         node_heads = ctx.node_heads
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
@@ -614,6 +615,7 @@ class MACELES(ScaleShiftMACE):
             displacement=displacement,
             vectors=vectors,
             cell=cell,
+            pbc=pbc,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -632,6 +634,7 @@ class MACELES(ScaleShiftMACE):
                 num_atoms=positions.shape[0],
                 batch=data["batch"],
                 cell=cell,
+                pbc=pbc,
             )
         return {
             "energy": total_energy,
@@ -982,6 +985,7 @@ class PolarMACE(ScaleShiftMACE):
         vectors = ctx.vectors
         lengths = ctx.lengths
         cell = ctx.cell
+        pbc = ctx.pbc
         node_heads = ctx.node_heads
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
@@ -1292,6 +1296,7 @@ class PolarMACE(ScaleShiftMACE):
             displacement=displacement,
             vectors=vectors,
             cell=cell,
+            pbc=pbc,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -1312,6 +1317,7 @@ class PolarMACE(ScaleShiftMACE):
                 num_atoms=positions.shape[0],
                 batch=data["batch"],
                 cell=cell,
+                pbc=pbc,
             )
 
         return {
@@ -1923,6 +1929,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
             displacement=displacement,
             vectors=vectors,
             cell=data["cell"],
+            pbc=data["pbc"] if "pbc" in data else None,
             magmoms=data["magmom"],
             training=training,
             compute_force=compute_force,
@@ -1942,6 +1949,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
                 num_atoms=data["positions"].shape[0],
                 batch=data["batch"],
                 cell=data["cell"],
+                pbc=data["pbc"] if "pbc" in data else None,
             )
         output = {
             "energy": total_energy,

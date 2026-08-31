@@ -527,6 +527,98 @@ def test_stress_partial_pbc():
     )
 
 
+def test_stress_zero_without_pbc():
+    """
+    A graph with no periodic direction has no volume to normalize a virial by:
+    the cell it carries is the box get_neighborhood pads around the atoms, so
+    its stress is exactly zero rather than virials/det(padding box). The energy
+    and the virial are identical whatever that box is, so the old behaviour was
+    an arbitrary number that merely shrank as the padding grew.
+    """
+    torch.set_default_dtype(torch.float64)
+    torch.manual_seed(7)
+
+    mixed_z_table = tools.AtomicNumberTable([1, 8, 14])
+    model = modules.ScaleShiftMACE(
+        r_max=5.0,
+        num_bessel=8,
+        num_polynomial_cutoff=6,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=3,
+        hidden_irreps=o3.Irreps("16x0e + 16x1o"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=np.zeros(3),
+        avg_num_neighbors=8,
+        atomic_numbers=mixed_z_table.zs,
+        correlation=3,
+        radial_type="bessel",
+        atomic_inter_scale=1.0,
+        atomic_inter_shift=0.0,
+    )
+
+    def compute(atoms_list):
+        dataset = [
+            data.AtomicData.from_config(
+                data.config_from_atoms(atoms), z_table=mixed_z_table, cutoff=5.0
+            )
+            for atoms in atoms_list
+        ]
+        loader = torch_geometric.dataloader.DataLoader(
+            dataset=dataset, batch_size=len(dataset), shuffle=False, drop_last=False
+        )
+        batch = next(iter(loader)).to_dict()
+        output = model(
+            batch,
+            training=True,
+            compute_stress=True,
+            compute_virials=True,
+            compute_edge_forces=True,
+            compute_atomic_stresses=True,
+        )
+        return batch, output
+
+    molecule = build.molecule("H2O")
+    crystal = build.bulk("Si", "diamond", a=5.43)
+    crystal.set_cell(crystal.get_cell() @ (np.eye(3) * 1.02), scale_atoms=True)
+
+    _, molecule_only = compute([molecule])
+    assert torch.count_nonzero(molecule_only["stress"]) == 0
+    assert torch.count_nonzero(molecule_only["atomic_stresses"]) == 0
+    # The virial itself is untouched: it is the volume that is missing, not the
+    # strain derivative.
+    assert molecule_only["virials"].abs().max() > 0
+
+    # Enlarging the padding box cannot move a masked stress, whereas dividing
+    # by det(cell) would scale it by 1/L**3.
+    padded = molecule.copy()
+    padded.set_cell(np.eye(3) * 50.0)
+    padded.set_pbc(False)
+    _, padded_only = compute([padded])
+    assert torch.count_nonzero(padded_only["stress"]) == 0
+
+    # A periodic graph keeps its stress, and keeps it unchanged when batched
+    # next to an aperiodic one.
+    _, crystal_only = compute([crystal])
+    assert crystal_only["stress"].abs().max() > 0
+    _, mixed = compute([molecule, crystal])
+    assert torch.count_nonzero(mixed["stress"][0]) == 0
+    assert torch.allclose(mixed["stress"][1], crystal_only["stress"][0])
+
+    # The atomic stresses stay a decomposition of the total, per graph.
+    batch, mixed = compute([molecule, crystal])
+    summed = torch.zeros_like(mixed["stress"])
+    summed.index_add_(0, batch["batch"], mixed["atomic_stresses"])
+    assert torch.allclose(summed, mixed["stress"], atol=1e-9)
+
+
 # ===========================================================================
 # Two model-construction knobs no published checkpoint stores, and which
 # therefore have no golden: --use_edge_irreps_first and a non-linear first
