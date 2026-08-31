@@ -255,6 +255,28 @@ def test_lora_merge_preserves_outputs(build_lora_model, random_configs) -> None:
     ), f"Forces mismatch after merge: max diff = {(forces_before - forces_after).abs().max()}"
 
 
+def test_lora_merge_handles_o3_linear_bias_instructions() -> None:
+    """Bias paths have a one-dimensional path shape, unlike weight paths."""
+    from mace.modules.lora import LoRAO3Linear
+
+    base = o3.Linear("2x0e", "3x0e", biases=True)
+    assert any(len(instr.path_shape) == 1 for instr in base.instructions)
+
+    wrapped = LoRAO3Linear(base, rank=2, alpha=0.5)
+    with torch.no_grad():
+        for param in wrapped.lora_A.parameters():
+            param.normal_(mean=0.0, std=0.05)
+        for param in wrapped.lora_B.parameters():
+            param.normal_(mean=0.0, std=0.05)
+
+        inputs = torch.randn(5, base.irreps_in.dim)
+        output_before = wrapped(inputs)
+        merged = wrapped.merge_into_base()
+        output_after = merged(inputs)
+
+    torch.testing.assert_close(output_after, output_before)
+
+
 def test_lora_merge_removes_wrappers(build_lora_model) -> None:
     """Test that merging removes LoRA wrapper modules."""
     from mace.modules.lora import LoRADenseLinear, LoRAFCLayer, LoRAO3Linear
