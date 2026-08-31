@@ -37,6 +37,16 @@ runs:
           python -m pip install --retries 5 ${{ inputs.pip-packages }}
         fi
 
+    - name: Install mace-launcher
+      # The mace_* console scripts moved out of setup.cfg: exactly one
+      # distribution may declare a script name, and the launcher is now the one
+      # that does. Installing mace alone therefore no longer puts any mace_*
+      # command on PATH, so this restores what `pip install .` used to give
+      # every job. It pulls in nothing: the launcher has no dependencies and
+      # imports a stack only when a script is actually run.
+      shell: bash
+      run: python -m pip install --retries 5 -e packages/mace-launcher
+
     - name: Log installed environment
       shell: bash
       run: python -m pip freeze

@@ -39,6 +39,7 @@ import ast
 import configparser
 import re
 import sys
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -238,13 +239,41 @@ def _setup_cfg() -> configparser.ConfigParser:
     return parser
 
 
+LAUNCHER_PYPROJECT = REPO / "packages" / "mace-launcher" / "pyproject.toml"
+
+
 def source_entry_points() -> dict[str, Decl]:
+    """The console scripts, read from whichever distribution declares them.
+
+    They moved out of `setup.cfg` when the launcher took ownership: two
+    distributions declaring one script name is undefined behaviour in pip, so
+    exactly one file may carry them. Reading both and refusing when both are
+    populated keeps that rule checkable here rather than only at install time.
+    """
     cfg = _setup_cfg()
-    raw = cfg["options.entry_points"]["console_scripts"].strip().splitlines()
+    legacy_raw = []
+    if cfg.has_option("options.entry_points", "console_scripts"):
+        legacy_raw = cfg["options.entry_points"]["console_scripts"].strip().splitlines()
+
+    launcher_scripts: dict[str, str] = {}
+    if LAUNCHER_PYPROJECT.exists():
+        with LAUNCHER_PYPROJECT.open("rb") as handle:
+            launcher_scripts = tomllib.load(handle).get("project", {}).get("scripts", {})
+
+    if legacy_raw and launcher_scripts:
+        raise SystemExit(
+            "console scripts are declared in BOTH setup.cfg and "
+            "packages/mace-launcher/pyproject.toml. Two distributions "
+            "providing one script name is undefined behaviour in pip; exactly "
+            "one of the two files may carry them."
+        )
+
     out = {}
-    for line in raw:
+    for line in legacy_raw:
         name, target = (part.strip() for part in line.split("=", 1))
         out[name] = Decl(name, target, "setup.cfg")
+    for name, target in launcher_scripts.items():
+        out[name] = Decl(name, target, "packages/mace-launcher/pyproject.toml")
     return out
 
 
