@@ -162,18 +162,27 @@ def test_exactly_one_distribution_provides_each_console_script():
     duplicated = {k: sorted(v) for k, v in owners.items() if len(v) > 1}
     assert not duplicated, f"more than one distribution provides {duplicated}"
 
-    launcher_pyproject = REPO_ROOT / "packages" / "mace-launcher" / "pyproject.toml"
-    if launcher_pyproject.exists():
-        import tomllib
-
-        with launcher_pyproject.open("rb") as handle:
-            declared = tomllib.load(handle)["project"]["scripts"]
-        assert len(declared) == 12, f"expected twelve scripts, found {len(declared)}"
-        # Installed or not, every declared script must be owned by the launcher
-        # alone. json keeps the failure readable when it is not.
-        wrong = {
-            name: sorted(owners[name])
-            for name in declared
-            if name in owners and sorted(owners[name]) != ["mace-launcher"]
+    # Read what the launcher declares from its installed metadata rather than
+    # from its pyproject: that is the reality a user gets, and it avoids a TOML
+    # parser, which the standard library does not have before 3.11.
+    launcher = [
+        distribution
+        for distribution in distributions()
+        if distribution.metadata["Name"] == "mace-launcher"
+    ]
+    if not launcher:
+        pytest.skip("mace-launcher is not installed")
+    declared = sorted(
+        {
+            entry.name
+            for entry in launcher[0].entry_points
+            if entry.group == "console_scripts"
         }
-        assert not wrong, f"scripts owned by something else: {json.dumps(wrong)}"
+    )
+    assert len(declared) == 12, f"expected twelve scripts, found {len(declared)}"
+    wrong = {
+        name: sorted(owners[name])
+        for name in declared
+        if sorted(owners.get(name, [])) != ["mace-launcher"]
+    }
+    assert not wrong, f"scripts owned by something else: {json.dumps(wrong)}"
