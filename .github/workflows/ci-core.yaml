@@ -31,6 +31,17 @@ jobs:
           # The pylint hook is `language: system`: packages the linted code
           # imports must be importable in this environment.
           pip-packages: wandb
+      - name: Install the v1 packages
+        # Same rule as the extras above, for the other tree. pylint lints
+        # packages/** until INF-4 splits the toolchain, and without these
+        # installed every module there reports import-error rather than
+        # anything about the code. One invocation: mace-core is unpublished,
+        # so pip only resolves it as a sibling in the same run. The version
+        # falls back to 0.0.0 on this shallow clone, which lint does not read.
+        run: |
+          python -m pip install -e packages/mace-core \
+                                -e packages/mace-torch \
+                                -e packages/mace-jax
       - run: pre-commit run --all-files --show-diff-on-failure
 
   cueq-wheel-extras:
@@ -111,9 +122,56 @@ jobs:
           # to fail the pull request that made it, not a run nobody reads the
           # next morning. They are CPU-only, network-free, carry no capability
           # marker and no `slow` mark, so they collect on all four versions.
-          tests: tests/unit tests/golden
+          #
+          # tests/architecture is the fitness suite: structural invariants of
+          # the two-stack tree that no functional test can see. It runs here
+          # because it needs the repository and this job already has it, and
+          # it costs milliseconds.
+          tests: tests/unit tests/golden tests/architecture
           markers: not slow
           numprocs: auto
+
+  packages:
+    # The v1 stack under packages/. It installs no legacy package and no
+    # torch, and that is the point rather than a saving: mace_core, mace_torch
+    # and mace_jax have to stand up on their own, and a job that installed the
+    # legacy environment first would keep passing on the day one of them grows
+    # a dependency on it.
+    #
+    # Same four versions as the unit job, for the same reason: what breaks
+    # across python versions here is import- and packaging-shaped, and the job
+    # takes seconds.
+    needs: lint
+    runs-on: ubuntu-latest
+    name: packages (py${{ matrix.python-version }})
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ '3.10', '3.11', '3.12', '3.13' ]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # hatch-vcs reads each version off `git describe`. The default
+          # shallow clone carries no tags, so every package would build as its
+          # fallback version and the metadata this job checks would be a
+          # constant.
+          fetch-depth: 0
+      - uses: actions/setup-python@e9d6f990972a57673cdb72ec29e19d42ba28880f # v6.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the v1 packages
+        # One pip invocation, not three: mace-torch-v1 and mace-jax require
+        # mace-core, which is not published, so pip only resolves it when it
+        # sees the local path in the same run.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e packages/mace-core \
+                                -e packages/mace-torch \
+                                -e packages/mace-jax
+          python -m pip install pytest
+      - name: Run the package suites
+        run: python -m pytest packages/*/tests -v
 
   workflows:
     # End-to-end CLI trainings via subprocess — the expensive suite. PRs run
