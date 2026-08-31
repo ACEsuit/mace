@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mace-torch-v1"
+dynamic = ["version"]
+description = "The PyTorch stack for MACE v1: models, training, kernel backends, deployment."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "MACE developers" }]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+dependencies = ["mace-core"]
+
+[project.urls]
+Homepage = "https://github.com/ACEsuit/mace"
+
+# No [project.scripts]. Every mace_* console entry point is owned by one
+# distribution, mace-launcher; two distributions declaring the same script name
+# is undefined behaviour in pip.
+
+[tool.hatch.version]
+source = "vcs"
+# Tag prefixes are keyed on the directory, not the distribution name, so each
+# package versions independently and renaming a distribution leaves the tag
+# scheme alone. --match stops git describe resolving a sibling's tag or a
+# legacy v0.3.x one, which tag-pattern would then reject outright.
+tag-pattern = "^mace-torch-v(?P<version>.+)$"
+fallback-version = "0.0.0"
+raw-options = { root = "../..", git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "mace-torch-v*"] }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mace_torch"]
