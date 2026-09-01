@@ -17,7 +17,7 @@ from __future__ import annotations
 import importlib
 import os
 import sys
-from typing import Callable, List, Tuple
+from collections.abc import Callable
 
 from mace_launcher import audit
 
@@ -58,7 +58,7 @@ TARGETS = {
 }
 
 
-def _take_engine(argv: List[str]) -> Tuple[str, List[str]]:
+def _take_engine(argv: list[str]) -> tuple[str, list[str]]:
     """Pull ``--engine`` out of argv, returning the engine and what remains.
 
     Accepts ``--engine v1`` and ``--engine=v1``. Everything else is passed
@@ -66,7 +66,7 @@ def _take_engine(argv: List[str]) -> Tuple[str, List[str]]:
     argument that merely looks like the flag reaches the target intact.
     """
     engine = os.environ.get(ENGINE_ENV_VAR, DEFAULT_ENGINE)
-    remaining: List[str] = []
+    remaining: list[str] = []
     index = 0
     saw_separator = False
     while index < len(argv):

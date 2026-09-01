@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Assert that no file is governed by two toolchains, and none by neither.
+
+Two toolchains coexist for the length of the migration:
+
+    mace/**                    black + isort + pylint + mypy
+    packages/** and the seams  ruff (lint + format) + ty
+
+The cost of that is thrash: a file claimed by both formatters is rewritten one
+way by a pull request and back by the next, and a file claimed by neither
+quietly rots. This computes each toolchain's effective file set from the hook
+patterns themselves, so the answer comes from the configuration that actually
+runs rather than from a table in a document.
+
+Two overlaps are hard failures, because they are the pairs that fight:
+
+    black  and ruff-format   two formatters, opposite rewrites
+    mypy   and ty            two type checkers, contradictory verdicts
+
+Ruff *lint* on `mace/**` is deliberately not a conflict. It is reduced there to
+the single FA102 rule, which guards a real TorchScript constraint, and linting
+never rewrites a file.
+
+Scope: the governed trees are `mace/**`, `packages/**` and the declared seams.
+Everything else is ungoverned on purpose and reported as such, not as a
+failure. `tests/` in particular is not formatted, by a standing decision, and
+handing it over would reformat 93 files of the frozen suite.
+
+Run from anywhere:  python3 tests/architecture/check_toolchain_ownership.py
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import yaml
+
+REPO = Path(__file__).resolve().parents[2]
+CONFIG = REPO / ".pre-commit-config.yaml"
+CI = REPO / ".github" / "workflows" / "ci-core.yaml"
+
+#: Hook id -> the toolchain it belongs to. Hooks outside this map (whitespace
+#: hygiene) belong to neither and are not part of the ownership question.
+TOOLCHAIN_OF = {
+    "black": "legacy",
+    "isort": "legacy",
+    "pylint": "legacy",
+    "ruff-check": "new",
+    "ruff-format": "new",
+    "ty": "new",
+}
+
+#: The pairs that actively fight over a file.
+CONFLICTS = (("black", "ruff-format"), ("mypy", "ty"))
+
+GOVERNED = ("mace/", "packages/")
+SEAMS = ("tests/parity/", "tests/conftest.py")
+
+SETUP_CFG = REPO / "setup.cfg"
+
+#: Tools whose version is declared in more than one place. A pin that drifts
+#: between them is worse than no pin: pre-commit and CI then disagree about
+#: formatting, and the disagreement shows up as a diff nobody can reproduce.
+PINNED_EVERYWHERE = ("ruff", "ty")
+
+
+def check_pins() -> list[str]:
+    """The ruff hook rev, the dev extra and the CI job must name one version."""
+    config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    hook_rev = next(
+        (repo["rev"].lstrip("v") for repo in config["repos"]
+         if "ruff-pre-commit" in (repo.get("repo") or "")),
+        None,
+    )
+    setup = SETUP_CFG.read_text(encoding="utf-8")
+    ci = CI.read_text(encoding="utf-8") if CI.exists() else ""
+
+    problems = []
+    for tool in PINNED_EVERYWHERE:
+        extra = re.search(rf"^\s*{tool}==(?P<v>[\w.]+)\s*$", setup, re.M)
+        job = re.search(rf"{tool}==(?P<v>[\w.]+)", ci)
+        if not extra:
+            problems.append(f"  {tool} is not pinned in the dev extra of setup.cfg")
+            continue
+        if not job:
+            problems.append(f"  {tool} is not pinned in the packages-lint CI job")
+            continue
+        if extra["v"] != job["v"]:
+            problems.append(
+                f"  {tool}: dev extra pins {extra['v']}, CI pins {job['v']}"
+            )
+    if hook_rev is None:
+        problems.append("  the ruff pre-commit hook has no rev")
+    else:
+        extra = re.search(r"^\s*ruff==(?P<v>[\w.]+)\s*$", setup, re.M)
+        if extra and extra["v"] != hook_rev:
+            problems.append(
+                f"  ruff: pre-commit rev is {hook_rev}, dev extra pins {extra['v']}"
+            )
+    return problems
+
+
+def tracked_python_files() -> list[str]:
+    out = subprocess.run(
+        ["git", "ls-files", "*.py"], cwd=REPO, capture_output=True, text=True, check=True
+    )
+    return out.stdout.split()
+
+
+def hook_patterns() -> dict[str, str]:
+    """hook id -> its `files:` regex, resolved through the YAML anchors."""
+    config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    patterns: dict[str, str] = {}
+    for repo in config["repos"]:
+        for hook in repo["hooks"]:
+            if hook["id"] in TOOLCHAIN_OF:
+                patterns[hook["id"]] = hook.get("files", "")
+    return patterns
+
+
+def global_exclude() -> re.Pattern:
+    """The top-level `exclude:`, which every hook is filtered through.
+
+    A hook's `files:` is not the whole story: pre-commit drops anything the
+    global exclude matches before the hook ever sees it. Reading `files:` alone
+    reports a path as owned when nothing can reach it, which is the failure
+    this check exists to catch, so it has to be applied here too.
+    """
+    config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    pattern = (config.get("exclude") or "").strip()
+    return re.compile(pattern) if pattern else re.compile(r"(?!)")
+
+
+def owns(regex: re.Pattern, excluded: re.Pattern, path: str) -> bool:
+    """A hook reaches a path only if `files:` matches and the exclude does not."""
+    return bool(regex.match(path)) and not excluded.match(path)
+
+
+def mypy_scope() -> str:
+    """mypy owns `mace/**`, declared by the CI step rather than by a hook."""
+    text = CI.read_text(encoding="utf-8") if CI.exists() else ""
+    if "check_mypy_baseline.py" in text:
+        return "^mace/"
+    return ""
+
+
+def legacy_guard_runs() -> bool:
+    """legacy-lint must invoke the FA102 guard over the frozen tree.
+
+    ruff.toml reduces ruff to one rule there, but a rule nothing invokes
+    guards nothing, and the hooks are scoped away from that tree.
+    """
+    text = CI.read_text(encoding="utf-8") if CI.exists() else ""
+    return "ruff check mace/" in text
+
+
+def main() -> int:
+    patterns = hook_patterns()
+    missing = sorted(set(TOOLCHAIN_OF) - set(patterns))
+    if missing:
+        print(f"hooks named in the ownership map but absent from the config: {missing}")
+        return 1
+
+    unscoped = sorted(name for name, pattern in patterns.items() if not pattern)
+    if unscoped:
+        print(
+            f"hooks with no `files:` scope, so they claim the whole tree: {unscoped}"
+        )
+        return 1
+
+    patterns["mypy"] = mypy_scope()
+    if not patterns["mypy"]:
+        print("mypy has no declared scope: the legacy-lint job does not run it")
+        return 1
+
+    compiled = {name: re.compile(pattern) for name, pattern in patterns.items()}
+    excluded = global_exclude()
+    files = tracked_python_files()
+
+    overlaps: list[str] = []
+    for left, right in CONFLICTS:
+        both = [
+            path for path in files
+            if owns(compiled[left], excluded, path)
+            and owns(compiled[right], excluded, path)
+        ]
+        if both:
+            overlaps.append(
+                f"  {left} AND {right} both claim {len(both)} file(s), "
+                f"e.g. {both[:3]}"
+            )
+
+    unowned = [
+        path for path in files
+        if path.startswith(GOVERNED) or path.startswith(SEAMS)
+        if not any(owns(regex, excluded, path) for regex in compiled.values())
+    ]
+
+    if overlaps:
+        print("toolchain ownership overlaps:")
+        print("\n".join(overlaps))
+    if unowned:
+        print(f"\nfiles in a governed tree that no toolchain claims: {len(unowned)}")
+        for path in unowned[:10]:
+            print(f"  {path}")
+    if overlaps or unowned:
+        return 1
+
+    if not legacy_guard_runs():
+        print(
+            "ruff.toml keeps FA102 over mace/, but no job invokes ruff on that "
+            "tree, so the guard is configured and never runs. legacy-lint needs "
+            "a `ruff check mace/` step."
+        )
+        return 1
+
+    pin_problems = check_pins()
+    if pin_problems:
+        print("toolchain version pins disagree:")
+        print("\n".join(pin_problems))
+        return 1
+
+    legacy = sum(1 for path in files if owns(compiled["black"], excluded, path))
+    new = sum(1 for path in files if owns(compiled["ruff-format"], excluded, path))
+    ungoverned = len(files) - legacy - new
+    print(
+        f"1:1 ownership ok  (legacy {legacy} files, new {new} files, "
+        f"{ungoverned} deliberately ungoverned)"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
