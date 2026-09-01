@@ -79,7 +79,10 @@ jobs:
                                 -e packages/mace-torch \
                                 -e packages/mace-jax \
                                 -e packages/mace-launcher
-          python -m pip install ruff ty
+          # Pinned to the same versions as the dev extra and the
+          # ruff-pre-commit rev, so this job and a developer's machine
+          # cannot reach different verdicts.
+          python -m pip install ruff==0.16.5 ty==0.0.77
       - name: Ruff lint
         run: ruff check packages/
       - name: Ruff format

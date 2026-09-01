@@ -63,6 +63,49 @@ MYPY_STEP = re.compile(r"check_mypy_baseline\.py|python -m mypy (?P<target>\S+)"
 GOVERNED = ("mace/", "packages/")
 SEAMS = ("tests/parity/", "tests/conftest.py")
 
+SETUP_CFG = REPO / "setup.cfg"
+
+#: Tools whose version is declared in more than one place. A pin that drifts
+#: between them is worse than no pin: pre-commit and CI then disagree about
+#: formatting, and the disagreement shows up as a diff nobody can reproduce.
+PINNED_EVERYWHERE = ("ruff", "ty")
+
+
+def check_pins() -> list[str]:
+    """The ruff hook rev, the dev extra and the CI job must name one version."""
+    config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    hook_rev = next(
+        (repo["rev"].lstrip("v") for repo in config["repos"]
+         if "ruff-pre-commit" in (repo.get("repo") or "")),
+        None,
+    )
+    setup = SETUP_CFG.read_text(encoding="utf-8")
+    ci = CI.read_text(encoding="utf-8") if CI.exists() else ""
+
+    problems = []
+    for tool in PINNED_EVERYWHERE:
+        extra = re.search(rf"^\s*{tool}==(?P<v>[\w.]+)\s*$", setup, re.M)
+        job = re.search(rf"{tool}==(?P<v>[\w.]+)", ci)
+        if not extra:
+            problems.append(f"  {tool} is not pinned in the dev extra of setup.cfg")
+            continue
+        if not job:
+            problems.append(f"  {tool} is not pinned in the packages-lint CI job")
+            continue
+        if extra["v"] != job["v"]:
+            problems.append(
+                f"  {tool}: dev extra pins {extra['v']}, CI pins {job['v']}"
+            )
+    if hook_rev is None:
+        problems.append("  the ruff pre-commit hook has no rev")
+    else:
+        extra = re.search(r"^\s*ruff==(?P<v>[\w.]+)\s*$", setup, re.M)
+        if extra and extra["v"] != hook_rev:
+            problems.append(
+                f"  ruff: pre-commit rev is {hook_rev}, dev extra pins {extra['v']}"
+            )
+    return problems
+
 
 def tracked_python_files() -> list[str]:
     out = subprocess.run(
@@ -138,6 +181,12 @@ def main() -> int:
         for path in unowned[:10]:
             print(f"  {path}")
     if overlaps or unowned:
+        return 1
+
+    pin_problems = check_pins()
+    if pin_problems:
+        print("toolchain version pins disagree:")
+        print("\n".join(pin_problems))
         return 1
 
     legacy = sum(1 for path in files if compiled["black"].match(path))
