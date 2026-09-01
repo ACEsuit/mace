@@ -56,10 +56,6 @@ TOOLCHAIN_OF = {
 #: The pairs that actively fight over a file.
 CONFLICTS = (("black", "ruff-format"), ("mypy", "ty"))
 
-#: mypy has no hook. Its scope is the argument of the legacy-lint CI step, so
-#: it is read from there rather than invented here.
-MYPY_STEP = re.compile(r"check_mypy_baseline\.py|python -m mypy (?P<target>\S+)")
-
 GOVERNED = ("mace/", "packages/")
 SEAMS = ("tests/parity/", "tests/conftest.py")
 

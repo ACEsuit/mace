@@ -89,10 +89,19 @@ jobs:
           # pytest too: the packages' own tests import it, and ty has to
           # resolve every import or it reports the absence as an error.
           python -m pip install ruff==0.16.5 ty==0.0.77 pytest
-      - name: Ruff lint
-        run: ruff check packages/ tests/conftest.py
-      - name: Ruff format
-        run: ruff format --check packages/ tests/conftest.py
+      - name: Ruff lint and format
+        # The same set the ruff hooks claim in .pre-commit-config.yaml. A list
+        # written out here drifts from that one silently, and the drift shows
+        # up as a file that passes CI and fails pre-commit, which is the
+        # disagreement this split exists to prevent. tests/parity/ is created
+        # by PAR-1 and ruff errors on a path that does not exist yet, so it
+        # joins the set the moment it appears.
+        run: |
+          paths="packages/ tests/conftest.py"
+          [ -d tests/parity ] && paths="$paths tests/parity/"
+          echo "checking: $paths"
+          ruff check $paths
+          ruff format --check $paths
       - name: ty
         # packages/ only: see the ty hook in .pre-commit-config.yaml.
         run: ty check packages/
