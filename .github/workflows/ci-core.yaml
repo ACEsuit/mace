@@ -124,13 +124,48 @@ jobs:
           # next morning. They are CPU-only, network-free, carry no capability
           # marker and no `slow` mark, so they collect on all four versions.
           #
-          # tests/architecture is the fitness suite: structural invariants of
-          # the two-stack tree that no functional test can see. It runs here
-          # because it needs the repository and this job already has it, and
-          # it costs milliseconds.
-          tests: tests/unit tests/golden tests/architecture
+          # tests/architecture is NOT here: it moved to the `architecture` job
+          # below, which is the only one that installs both trees editable and
+          # can therefore run the import contracts alongside it.
+          tests: tests/unit tests/golden
           markers: not slow
           numprocs: auto
+
+  architecture:
+    # The guard that keeps the frozen legacy package unreachable from the v1
+    # stack: the static import contracts, and the meta-lint that catches a
+    # legacy symbol named in a v1 file with or without an import.
+    #
+    # It needs BOTH trees installed editable, which is what separates it from
+    # every other job: import-linter resolves each root package on the
+    # filesystem, so a missing one is reported as a broken contract rather than
+    # as a missing install, and the gate would fail for the wrong reason.
+    #
+    # Fast and CPU-only, so it gates every pull request. It does not depend on
+    # `lint`: a formatting failure and an import-direction failure are
+    # different answers and waiting for one to hear the other helps nobody.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # hatch-vcs derives each package version from git describe.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev
+      - name: Install the v1 packages
+        run: |
+          python -m pip install -e packages/mace-core \
+                                -e packages/mace-torch \
+                                -e packages/mace-jax
+      - name: Check the import contracts
+        run: lint-imports --config .importlinter
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/architecture
+          numprocs: "0"
 
   packages:
     # The v1 stack under packages/. It installs no legacy package and no

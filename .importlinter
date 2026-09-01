@@ -1,0 +1,85 @@
+; Import contracts for the two-stack tree. Run with `lint-imports`.
+;
+; The rewrite keeps the legacy `mace` package in the tree, byte-frozen, as the
+; numerical oracle the new stack is measured against. That only works while the
+; two are physically unreachable from one another: a legacy class that can be
+; imported can be subclassed, re-exported and quietly ported, and then the
+; oracle is no longer independent of the thing it judges.
+;
+; This file is the static half of that guard. The runtime half lives in
+; `mace_launcher.audit`, because static analysis cannot see
+; `importlib.import_module("mace." + name)`.
+
+[importlinter]
+root_packages =
+    mace
+    mace_core
+    mace_torch
+    mace_jax
+    mace_launcher
+include_external_packages = True
+
+[importlinter:contract:no-legacy-from-v1]
+name = The v1 stack never imports the frozen legacy package
+type = forbidden
+source_modules =
+    mace_core
+    mace_torch
+    mace_jax
+forbidden_modules =
+    mace
+; `mace_launcher` is deliberately absent from the source modules: dispatching
+; into both stacks is its entire job, and it is one of the two allowlisted
+; crossers. The other is `tests/parity/`, which does not exist until PAR-1
+; creates it and cannot be named here before then.
+
+[importlinter:contract:no-v1-from-legacy]
+name = The frozen legacy package never imports the v1 stack
+type = forbidden
+source_modules =
+    mace
+forbidden_modules =
+    mace_core
+    mace_torch
+    mace_jax
+    mace_launcher
+
+[importlinter:contract:core-is-framework-free]
+name = mace_core depends on no framework and on no sibling
+type = forbidden
+source_modules =
+    mace_core
+forbidden_modules =
+    torch
+    jax
+    e3nn
+    mace_torch
+    mace_jax
+    mace_launcher
+
+[importlinter:contract:siblings-do-not-mix]
+name = The torch and jax implementations never import each other
+type = forbidden
+source_modules =
+    mace_torch
+    mace_jax
+forbidden_modules =
+    mace_jax
+    mace_torch
+
+[importlinter:contract:torch-internal-layering]
+name = mace_torch layers only import downwards
+type = layers
+; Every layer is optional, so the contract is written once and starts enforcing
+; each boundary the moment that layer appears. Without the parentheses a
+; contract naming a module that does not exist yet is simply broken, and the
+; gate would have to be added later, which is to say after the imports it is
+; meant to prevent.
+layers =
+    (cli)
+    (train) | (data)
+    (models)
+    (nn)
+    (kernels)
+containers =
+    mace_torch
