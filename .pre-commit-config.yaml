@@ -105,4 +105,8 @@ repos:
         entry: ty check
         language: system
         types: [python]
-        files: *new_files
+        # packages/ only, not the seams. A type checker has to resolve the
+        # imports, and the seam imports torch and ase, which the packages-lint
+        # job installs neither of by design. Ruff covers the seams: a linter
+        # and a formatter read the file, they do not need its dependencies.
+        files: ^packages/

@@ -37,6 +37,13 @@ TARGET = "mace"
 #: `path:line: error: message  [code]`
 ERROR = re.compile(r"^(?P<path>[^:]+):\d+: error: .*\[(?P<code>[a-z-]+)\]\s*$")
 
+#: Codes that measure the environment rather than the code. Which optional
+#: dependencies are installed decides them, and the lint job deliberately
+#: installs fewer than a developer has, so counting them makes the baseline
+#: report a different number on every machine. The frozen tree cannot regress
+#: by someone not installing cuequivariance.
+ENVIRONMENT_CODES = frozenset({"import-not-found", "import-untyped", "import"})
+
 
 def run_mypy() -> Counter:
     result = subprocess.run(
@@ -44,14 +51,36 @@ def run_mypy() -> Counter:
         cwd=REPO, capture_output=True, text=True, check=False,
     )
     if "error:" not in result.stdout and result.returncode not in (0, 1):
+        raise SystemExit(f"mypy did not run:\n{result.stdout}\n{result.stderr}")
+
+    # A truncated run is the dangerous case: mypy reports a handful of parse
+    # failures, stops, and returns a plausible-looking list that is nothing
+    # like the real one. Compared against a full baseline it invents hundreds
+    # of improvements and a few regressions, none of them real. It happens when
+    # a third-party stub uses syntax newer than `python_version` in .mypy.ini:
+    # numpy 2.5's stubs are PEP 695 and do not parse as 3.10.
+    if "errors prevented further checking" in result.stdout:
         raise SystemExit(
-            f"mypy did not run:\n{result.stdout}\n{result.stderr}"
+            "mypy stopped early, so this run says nothing about the tree.\n"
+            "A dependency's stubs are newer than the python_version in "
+            ".mypy.ini. Run the check on the interpreter that config names "
+            "(3.10), or update the config deliberately.\n\n"
+            + "\n".join(result.stdout.splitlines()[-5:])
         )
     counts: Counter = Counter()
     for line in result.stdout.splitlines():
         match = ERROR.match(line)
-        if match:
-            counts[f"{match['path']}::{match['code']}"] += 1
+        if not match:
+            continue
+        path, code = match["path"], match["code"]
+        # Errors mypy attributes to a third-party stub are not ours, and their
+        # path is an absolute one inside whichever interpreter is running. CI
+        # reported one in numpy's own .pyi.
+        if not path.startswith(f"{TARGET}/"):
+            continue
+        if code in ENVIRONMENT_CODES:
+            continue
+        counts[f"{path}::{code}"] += 1
     return counts
 
 

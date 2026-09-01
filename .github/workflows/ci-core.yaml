@@ -29,7 +29,11 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
         with:
-          python-version: "3.12"
+          # 3.10, the version .mypy.ini declares. mypy parses third-party stubs
+          # against python_version, and numpy 2.5's are PEP 695, so on a newer
+          # interpreter the run stops at a parse error and checks nothing. The
+          # hooks pass identically on 3.10.
+          python-version: "3.10"
           extras: dev
           # The pylint hook is `language: system`: packages the linted code
           # imports must be importable in this environment.
@@ -82,13 +86,16 @@ jobs:
           # Pinned to the same versions as the dev extra and the
           # ruff-pre-commit rev, so this job and a developer's machine
           # cannot reach different verdicts.
-          python -m pip install ruff==0.16.5 ty==0.0.77
+          # pytest too: the packages' own tests import it, and ty has to
+          # resolve every import or it reports the absence as an error.
+          python -m pip install ruff==0.16.5 ty==0.0.77 pytest
       - name: Ruff lint
         run: ruff check packages/ tests/conftest.py
       - name: Ruff format
         run: ruff format --check packages/ tests/conftest.py
       - name: ty
-        run: ty check packages/ tests/conftest.py
+        # packages/ only: see the ty hook in .pre-commit-config.yaml.
+        run: ty check packages/
 
   cueq-wheel-extras:
     # The `cueq*` extras name wheels no PR job installs: the GPU pipeline pulls
