@@ -6,9 +6,9 @@ package unreachable from the v1 stack. They are checked here as well as by the
 locally sees the same answer as the pull request will.
 """
 
+import importlib.util
 import shutil
 import subprocess
-import sys
 from configparser import ConfigParser
 from pathlib import Path
 
@@ -51,19 +51,48 @@ def test_exactly_two_modules_may_import_both_stacks():
     assert len(ALLOWED_DOUBLE_IMPORTERS) == 2
 
 
+#: Every package the config declares as a root. import-linter resolves each on
+#: the filesystem, so one that is not installed is reported as a broken
+#: contract rather than as a missing install, which reads as a real violation.
+ROOT_PACKAGES = ("mace", "mace_core", "mace_torch", "mace_jax", "mace_launcher")
+
+
+def _missing_roots() -> list[str]:
+    return [name for name in ROOT_PACKAGES if importlib.util.find_spec(name) is None]
+
+
 @pytest.mark.skipif(
     shutil.which("lint-imports") is None,
     reason="import-linter is not installed (it ships in the dev extra)",
 )
 def test_all_import_contracts_hold():
+    """Run the contracts through the console script, not `python -m`.
+
+    `importlinter.cli` has no `__main__` guard, so `python -m importlinter.cli`
+    imports the module, does nothing and exits 0. A test asserting only on the
+    return code then passes without checking a single contract, which is worse
+    than not having it.
+    """
+    missing = _missing_roots()
+    if missing:
+        pytest.skip(
+            f"the import contracts need every root package installed; missing "
+            f"{missing}. The ci-core `architecture` job installs both trees; "
+            f"a job that only installs one cannot run this."
+        )
+
     result = subprocess.run(
-        [sys.executable, "-m", "importlinter.cli", "lint-imports",
-         "--config", str(CONFIG)],
+        [shutil.which("lint-imports"), "--config", str(CONFIG)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
-    assert result.returncode == 0, (
-        "import contracts broken:\n" + result.stdout + result.stderr
+    output = result.stdout + result.stderr
+    # Assert the work happened, not just that nothing failed: the silent no-op
+    # above also returned 0.
+    assert "Contracts:" in output, (
+        "lint-imports produced no contract report, so nothing was checked:\n"
+        + output
     )
+    assert result.returncode == 0, "import contracts broken:\n" + output
