@@ -78,6 +78,10 @@ def names_used(source: str) -> set[str]:
     and `from x import ScaleShiftMACE as Y` are both caught. Non-docstring
     string constants count too, because `getattr(module, "ScaleShiftMACE")` is
     a reference that carries no identifier at all.
+
+    Definitions count as well. A file that declares `class ScaleShiftMACE` and
+    never mentions the name again refers to nothing, so collecting only
+    references would miss the wholesale copy this check exists to catch.
     """
     tree = ast.parse(source)
     docstrings = set()
@@ -89,7 +93,9 @@ def names_used(source: str) -> set[str]:
 
     used: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            used.add(node.name)
+        elif isinstance(node, ast.Name):
             used.add(node.id)
         elif isinstance(node, ast.Attribute):
             used.add(node.attr)
@@ -177,6 +183,9 @@ def test_names_v1_reuses_are_not_denied():
         "import mace\nmodel = mace.modules.ScaleShiftMACE()",
         "from x import ScaleShiftMACE as Backbone",
         "cls = getattr(module, 'ScaleShiftMACE')",
+        "class ScaleShiftMACE(Module):\n    pass",
+        "class MACELES(ScaleShiftMACE):\n    pass",
+        "def interaction_classes():\n    return {}",
         "from mace.modules import interaction_classes",
         "batch = AtomicData.from_config(config)",
     ],
