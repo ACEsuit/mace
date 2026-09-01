@@ -125,6 +125,24 @@ def hook_patterns() -> dict[str, str]:
     return patterns
 
 
+def global_exclude() -> re.Pattern:
+    """The top-level `exclude:`, which every hook is filtered through.
+
+    A hook's `files:` is not the whole story: pre-commit drops anything the
+    global exclude matches before the hook ever sees it. Reading `files:` alone
+    reports a path as owned when nothing can reach it, which is the failure
+    this check exists to catch, so it has to be applied here too.
+    """
+    config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    pattern = (config.get("exclude") or "").strip()
+    return re.compile(pattern) if pattern else re.compile(r"(?!)")
+
+
+def owns(regex: re.Pattern, excluded: re.Pattern, path: str) -> bool:
+    """A hook reaches a path only if `files:` matches and the exclude does not."""
+    return bool(regex.match(path)) and not excluded.match(path)
+
+
 def mypy_scope() -> str:
     """mypy owns `mace/**`, declared by the CI step rather than by a hook."""
     text = CI.read_text(encoding="utf-8") if CI.exists() else ""
@@ -153,13 +171,15 @@ def main() -> int:
         return 1
 
     compiled = {name: re.compile(pattern) for name, pattern in patterns.items()}
+    excluded = global_exclude()
     files = tracked_python_files()
 
     overlaps: list[str] = []
     for left, right in CONFLICTS:
         both = [
             path for path in files
-            if compiled[left].match(path) and compiled[right].match(path)
+            if owns(compiled[left], excluded, path)
+            and owns(compiled[right], excluded, path)
         ]
         if both:
             overlaps.append(
@@ -170,7 +190,7 @@ def main() -> int:
     unowned = [
         path for path in files
         if path.startswith(GOVERNED) or path.startswith(SEAMS)
-        if not any(regex.match(path) for regex in compiled.values())
+        if not any(owns(regex, excluded, path) for regex in compiled.values())
     ]
 
     if overlaps:
@@ -189,8 +209,8 @@ def main() -> int:
         print("\n".join(pin_problems))
         return 1
 
-    legacy = sum(1 for path in files if compiled["black"].match(path))
-    new = sum(1 for path in files if compiled["ruff-format"].match(path))
+    legacy = sum(1 for path in files if owns(compiled["black"], excluded, path))
+    new = sum(1 for path in files if owns(compiled["ruff-format"], excluded, path))
     ungoverned = len(files) - legacy - new
     print(
         f"1:1 ownership ok  (legacy {legacy} files, new {new} files, "

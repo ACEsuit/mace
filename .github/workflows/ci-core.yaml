@@ -84,11 +84,11 @@ jobs:
           # cannot reach different verdicts.
           python -m pip install ruff==0.16.5 ty==0.0.77
       - name: Ruff lint
-        run: ruff check packages/
+        run: ruff check packages/ tests/conftest.py
       - name: Ruff format
-        run: ruff format --check packages/
+        run: ruff format --check packages/ tests/conftest.py
       - name: ty
-        run: ty check packages/
+        run: ty check packages/ tests/conftest.py
 
   cueq-wheel-extras:
     # The `cueq*` extras name wheels no PR job installs: the GPU pipeline pulls

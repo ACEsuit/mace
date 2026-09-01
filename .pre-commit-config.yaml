@@ -13,11 +13,14 @@
 # particular tests/ is not formatted, by decision, and only the two declared
 # seams (tests/parity/, the shared conftest) are handed to the new toolchain.
 
-# Whitespace hygiene, which belongs to neither toolchain and predates both.
+# Applied to every hook, on top of each hook's own `files:`. A path listed
+# here is unreachable by any hook, whatever that hook claims, which is why the
+# two seams are carved out of the tests/ entry rather than left to `files:` to
+# pick up: an entry here wins.
 exclude: &exclude_files >
     (?x)^(
         docs/.*|
-        tests/.*|
+        tests/(?!conftest\.py$|parity/).*|
         .github/.*|
         LICENSE.md|
         README.md|
