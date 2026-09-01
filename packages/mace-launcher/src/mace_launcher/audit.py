@@ -28,7 +28,7 @@ process is legacy, so a crossing is not a crossing.
 from __future__ import annotations
 
 import sys
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 #: Import roots of the v1 stack. A crossing is any of these importing `mace`.
 V1_ROOTS = ("mace_core", "mace_torch", "mace_jax")
