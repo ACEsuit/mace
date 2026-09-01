@@ -19,7 +19,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  lint:
+  legacy-lint:
+    # The frozen tree's toolchain: black + isort + pylint, plus mypy against a
+    # committed baseline. It runs the hooks scoped to mace/** in
+    # .pre-commit-config.yaml, so a violation in packages/** cannot fail it.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -32,18 +35,57 @@ jobs:
           # imports must be importable in this environment.
           pip-packages: wandb
       - name: Install the v1 packages
-        # Same rule as the extras above, for the other tree. pylint lints
-        # packages/** until INF-4 splits the toolchain, and without these
-        # installed every module there reports import-error rather than
-        # anything about the code. One invocation: mace-core is unpublished,
-        # so pip only resolves it as a sibling in the same run. The version
-        # falls back to 0.0.0 on this shallow clone, which lint does not read.
+        # pylint resolves imports against this environment, and the seams
+        # import the new packages, so both trees have to be present even
+        # though this job only lints one of them.
         run: |
+          python -m pip install -e packages/mace-core \
+                                -e packages/mace-torch \
+                                -e packages/mace-jax
+      - name: Legacy hooks
+        # `pre-commit run` takes at most one hook id, so the new toolchain's
+        # hooks are skipped by name instead. That is what keeps a packages/**
+        # violation out of this job: the hooks are path-scoped, but running
+        # them here at all would report the other tree's failures as this
+        # tree's.
+        env:
+          SKIP: ruff-check,ruff-format,ty
+        run: pre-commit run --all-files --show-diff-on-failure
+      - name: mypy against the committed baseline
+        # mypy has never run here, so the frozen tree carries a backlog it is
+        # not this migration's job to fix: the tree is the numerical oracle and
+        # editing it moves the oracle. Only a new error fails.
+        run: python tests/architecture/check_mypy_baseline.py
+
+  packages-lint:
+    # The new tree's toolchain: ruff lint, ruff format and ty, scoped to
+    # packages/** and the two seams.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # hatch-vcs derives each package version from git describe.
+          fetch-depth: 0
+      - uses: actions/setup-python@e9d6f990972a57673cdb72ec29e19d42ba28880f # v6.0.0
+        with:
+          python-version: "3.12"
+      - name: Install the v1 packages and the new toolchain
+        # No legacy install: the new toolchain must not need it, and a job that
+        # installed it would stop noticing if that changed.
+        run: |
+          python -m pip install --upgrade pip
           python -m pip install -e packages/mace-core \
                                 -e packages/mace-torch \
                                 -e packages/mace-jax \
                                 -e packages/mace-launcher
-      - run: pre-commit run --all-files --show-diff-on-failure
+          python -m pip install ruff ty
+      - name: Ruff lint
+        run: ruff check packages/
+      - name: Ruff format
+        run: ruff format --check packages/
+      - name: ty
+        run: ty check packages/
 
   cueq-wheel-extras:
     # The `cueq*` extras name wheels no PR job installs: the GPU pipeline pulls
@@ -101,7 +143,7 @@ jobs:
     # The only 5-version matrix: python-version bugs are import/API-shaped and
     # this suite is cheap. No pytest-split: if tests/unit needs sharding, the
     # tests are misclassified.
-    needs: lint
+    needs: [ legacy-lint, packages-lint ]
     runs-on: ubuntu-latest
     name: unit (py${{ matrix.python-version }})
     timeout-minutes: 60
@@ -162,6 +204,10 @@ jobs:
                                 -e packages/mace-jax
       - name: Check the import contracts
         run: lint-imports --config .importlinter
+      - name: Check toolchain ownership
+        # One owner per file, computed from the hook patterns themselves rather
+        # than from a table that can drift away from them.
+        run: python tests/architecture/check_toolchain_ownership.py
       - uses: ./.github/actions/run-tests
         with:
           tests: tests/architecture
@@ -177,7 +223,7 @@ jobs:
     # Same four versions as the unit job, for the same reason: what breaks
     # across python versions here is import- and packaging-shaped, and the job
     # takes seconds.
-    needs: lint
+    needs: [ legacy-lint, packages-lint ]
     runs-on: ubuntu-latest
     name: packages (py${{ matrix.python-version }})
     timeout-minutes: 15
@@ -214,7 +260,7 @@ jobs:
     # End-to-end CLI trainings via subprocess — the expensive suite. PRs run
     # the python-version frontier (min+max); pushes run the full matrix, and
     # nightly.yaml repeats it with network tests enabled.
-    needs: lint
+    needs: [ legacy-lint, packages-lint ]
     runs-on: ubuntu-latest
     name: workflows (py${{ matrix.python-version }}, group ${{ matrix.split-group }})
     timeout-minutes: 90
@@ -255,7 +301,7 @@ jobs:
   coverage:
     # Informative (no threshold gate yet): summary + artifact. Nightly runs
     # the network-inclusive variant.
-    needs: lint
+    needs: [ legacy-lint, packages-lint ]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

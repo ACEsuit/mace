@@ -3,6 +3,12 @@
 # most of the tree — which is correct: those annotations are fine at runtime.
 target-version = "py310"
 
+# The vendored trees are excluded from every toolchain, as they always were.
+extend-exclude = [
+    "mace/tools/torch_geometric",
+    "mace/tools/scatter.py",
+]
+
 # ...except in the code TorchScript parses. TorchScript rejects `X | Y` in a
 # type expression on torch < 2.2 ("Expression of type | cannot be used in a
 # type expression"), and `from __future__ import annotations` does NOT rescue
@@ -19,7 +25,27 @@ target-version = "py310"
 "mace/calculators/lammps_mliap_mace.py" = "py39"
 
 [lint]
-select = ["FA102"]
+# The standard for new code. The legacy tree is held to FA102 alone, below:
+# it is byte-frozen as the numerical oracle, and a reformat moves it.
+select = [
+    "F",      # pyflakes
+    "E", "W", # pycodestyle
+    "I",      # import sorting, the ruff equivalent of isort
+    "UP",     # pyupgrade
+    "B",      # bugbear
+    "SIM",    # simplify
+    "RUF",    # ruff's own
+    "FA102",  # the TorchScript guard above
+]
 
-# NOTE: nothing currently RUNS ruff — it is absent from .pre-commit-config.yaml
-# and from every CI job, so this file documents intent more than it enforces it.
+[lint.per-file-ignores]
+# `mace/**` is owned by black + isort + pylint + mypy and is never reformatted.
+# Ruff keeps exactly one rule there, the TorchScript union guard, which is why
+# this is an ignore list rather than an exclusion: an exclusion would drop that
+# guard as well. Ruff *format* never touches the tree at all, which is the half
+# that could move it.
+"mace/**" = [
+    "F", "E", "W", "I", "UP", "B", "SIM", "RUF",
+]
+# Tests assert; they do not need the production rule set.
+"tests/**" = ["B011"]

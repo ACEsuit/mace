@@ -1,3 +1,19 @@
+# Two toolchains, path-scoped so that no file is governed by both.
+#
+#   mace/**                          black + isort + pylint + mypy
+#   packages/** and the seams        ruff (lint + format) + ty
+#
+# The legacy tree is the byte-frozen numerical oracle the rewrite is measured
+# against, so it keeps its current stack unchanged and is never reformatted: a
+# reformat moves the oracle. The split is enforced by
+# tests/architecture/check_toolchain_ownership.py, which fails if any path is
+# claimed by both formatters or both type checkers.
+#
+# Everything outside those two trees stays ungoverned, as it is today. In
+# particular tests/ is not formatted, by decision, and only the two declared
+# seams (tests/parity/, the shared conftest) are handed to the new toolchain.
+
+# Whitespace hygiene, which belongs to neither toolchain and predates both.
 exclude: &exclude_files >
     (?x)^(
         docs/.*|
@@ -6,6 +22,13 @@ exclude: &exclude_files >
         LICENSE.md|
         README.md|
     )$
+
+# The legacy tree, and only the legacy tree.
+_legacy_files: &legacy_files ^mace/
+
+# The new tree plus the two seams the ticket names. mace_launcher lives under
+# packages/, so it is already covered.
+_new_files: &new_files ^(packages/|tests/parity/|tests/conftest\.py$)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -20,20 +43,21 @@ repos:
     hooks:
       - id: black
         name: Black Formating
-        exclude: *exclude_files
+        files: *legacy_files
 
   - repo: https://github.com/pycqa/isort
     rev: 8.0.1
     hooks:
       - id: isort
         name: Sort imports
-        exclude: *exclude_files
+        files: *legacy_files
 
   - repo: https://github.com/PyCQA/pylint
     rev: pylint-2.5.2
     hooks:
     -   id: pylint
         language: system
+        files: *legacy_files
         args: [
           '--disable=line-too-long',
           '--disable=no-member',
@@ -57,4 +81,25 @@ repos:
           '--disable=use-dict-literal',
           '--max-module-lines=1600',  # mirrored in pyproject.toml
         ]
-        exclude: *exclude_files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff-check
+        name: Ruff lint
+        files: *new_files
+        args: [--fix]
+      - id: ruff-format
+        name: Ruff format
+        files: *new_files
+
+  - repo: local
+    hooks:
+      # ty ships no published hook repository yet, so it runs from the ambient
+      # dev environment the way pylint does.
+      - id: ty
+        name: ty type check
+        entry: ty check
+        language: system
+        types: [python]
+        files: *new_files
