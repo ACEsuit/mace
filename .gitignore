@@ -28,3 +28,4 @@ logs/MACE_run-5.log
 /results
 *.db
 *.png
+finetuning_tutorial_work/

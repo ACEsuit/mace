@@ -168,3 +168,30 @@ Tips for Successful LoRA Fine-tuning
 - **Prefer naive over multihead**: LoRA is most useful with naive fine-tuning, where its regularisation effect helps prevent both overfitting and catastrophic forgetting. With :ref:`multihead replay <multihead_finetuning>`, the replay data already provides strong regularisation, so the additional constraint from LoRA is less beneficial.
 - **Monitor trainable parameter count**: The training log reports the number of trainable parameters before and after LoRA injection. Use this to verify that LoRA is working as expected and to compare different rank settings.
 - **Saved models are standard MACE**: After training, the saved model has no LoRA layers — weights are merged automatically. You can use the model in all the same ways as a regular MACE model.
+
+Related Work
+============
+
+The original LoRA method was introduced in `Hu et al. (2022)
+<https://arxiv.org/abs/2106.09685>`_ for large language models.
+
+The equivariant-bottleneck LoRA implementation in MACE documented on this page
+was introduced by `Tompa et al. (2026)
+<https://arxiv.org/abs/2606.12704>`_ in *Fine-tuning MLIP foundation models:
+strategies for accuracy and transferability*. That work also compares the
+implementation with full-parameter fine-tuning, layer freezing and multihead
+replay, considering target accuracy, transferability and the preservation of
+physical behaviour. See :ref:`finetuning_guidance` for the resulting
+practical recommendations.
+
+`Wang et al. (2025) <https://proceedings.mlr.press/v267/wang25al.html>`_
+introduced **ELoRA** (*ELoRA: Low-Rank Adaptation for Equivariant GNNs*,
+ICML 2025), the first published study specifically addressing
+parameter-efficient fine-tuning for SO(3)-equivariant GNNs.
+
+ELoRA applies low-rank decomposition directly to path-dependent weight
+matrices, whereas MACE inserts an equivariant bottleneck in activation space
+and also adapts dense and readout MLP layers. For ``o3.Linear`` layers, both
+constructions reduce to an update of rank :math:`r` along each shared-irrep
+path. The two implementations were developed independently. ELoRA additionally
+supports ``Contraction`` layers inside ``SymmetricContraction``.

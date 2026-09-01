@@ -1,8 +1,8 @@
 .. _finetuning:
 
-****************************
+*********************************
 Fine-tuning Foundation Models
-****************************
+*********************************
 
 .. warning::
     Fine-tuning is still experimental and under active development. The API and methods are subject to change.
@@ -16,8 +16,14 @@ We have three fine-tuning protocols:
  - The **multihead replay** fine-tuning protocol, where the model is trained on the new dataset while replaying a part of the original foundational model training data.
  - The **LoRA** (Low-Rank Adaptation) fine-tuning protocol, where only small low-rank adapters are trained while the base model weights are frozen. See the :ref:`LoRA fine-tuning <lora_finetuning>` guide.
 
-The multihead replay finetuning prevent catastrophic forgetting that occurs sometimes during the naive fine-tuning. 
-It usually leads to a more robust and stable model. It is **recommended** to use this protocol to fine-tune any materials project foundation model.
+Multihead replay can prevent the catastrophic forgetting that sometimes occurs
+during naive fine-tuning. Use it when the fine-tuned model must preserve broad
+foundation-model behaviour; for a narrow single-system task, naive fine-tuning
+is a strong baseline.
+
+For guidance on selecting a foundation model, setting atomic reference
+energies, choosing method-specific hyperparameters and validating physical
+behaviour, see :ref:`finetuning_guidance`.
 
 To finetune one of the mace-mp-0 foundation model, you can use the mace_run_train script with the extra argument `--foundation_model=model_type`. 
 
@@ -37,16 +43,18 @@ For example to finetune the small model on a new dataset, you can use:
         --train_file="train.xyz" \
         --valid_fraction=0.05 \
         --test_file="test.xyz" \
-        --energy_weight=1.0 \
-        --forces_weight=1.0 \
-        --E0s="average" \
-        --lr=0.01 \
+        --energy_weight=10.0 \
+        --forces_weight=10.0 \
+        --E0s="estimated" \
+        --lr=0.001 \
+        --weight_decay=0.0 \
         --scaling="rms_forces_scaling" \
         --batch_size=2 \
         --max_num_epochs=6 \
         --ema \
-        --ema_decay=0.99 \
+        --ema_decay=0.999 \
         --amsgrad \
+        --clip_grad=1.0 \
         --default_dtype="float64" \
         --device=cuda \
         --seed=3 
@@ -58,8 +66,10 @@ If you want to finetune another model, the model will be loaded from the path pr
 Multihead Replay Fine-tuning
 ############################
 
-The multihead replay fine-tuning protocol prevents catastrophic forgetting that occurs sometimes during the naive fine-tuning.
-It usually leads to a more robust and stable model. It is the **recommended** way to fine-tune any materials project foundation model.
+The multihead replay fine-tuning protocol reduces catastrophic forgetting by
+training on the target and replay datasets together. It is recommended when
+out-of-distribution robustness or preservation of the foundation model's
+behaviour matters.
 
 For more information on the multihead replay fine-tuning protocol, please refer to the `multihead fine-tuning <https://mace-docs.readthedocs.io/en/latest/guide/multihead_finetuning.html>`_ guide.
 
