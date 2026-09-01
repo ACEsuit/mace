@@ -44,6 +44,10 @@ select = [
 # this is an ignore list rather than an exclusion: an exclusion would drop that
 # guard as well. Ruff *format* never touches the tree at all, which is the half
 # that could move it.
+#
+# The guard is invoked by legacy-lint's `ruff check mace/` step, not by a hook:
+# the ruff hooks are scoped to the new tree and that job skips them, so without
+# the step this list would describe a rule that runs nowhere.
 "mace/**" = [
     "F", "E", "W", "I", "UP", "B", "SIM", "RUF",
 ]

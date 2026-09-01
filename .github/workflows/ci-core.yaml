@@ -55,6 +55,13 @@ jobs:
         env:
           SKIP: ruff-check,ruff-format,ty
         run: pre-commit run --all-files --show-diff-on-failure
+      - name: TorchScript union guard
+        # ruff over mace/ is reduced by ruff.toml to FA102 alone. It runs here,
+        # in the job that owns the frozen tree, rather than as a hook: the ruff
+        # hooks are scoped to the new tree and skipped by this job, so the
+        # guard would otherwise be configured and never invoked. Linting does
+        # not rewrite a file, so this does not make ruff a second owner.
+        run: ruff check mace/
       - name: mypy against the committed baseline
         # mypy has never run here, so the frozen tree carries a backlog it is
         # not this migration's job to fix: the tree is the numerical oracle and
