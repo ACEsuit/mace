@@ -6,6 +6,9 @@ import torch
 
 from mace.calculators import mace_torchsim
 from mace.cli import convert_e3nn_cueq, run_train
+from mace.tools import model_script_utils
+from mace.tools.arg_parser import build_default_arg_parser
+from mace.tools.utils import AtomicNumberTable
 
 
 class _HiddenIrrepsStub:
@@ -51,7 +54,7 @@ def test_conversion_fusion_policy(monkeypatch, device, kwargs, expected):
     assert converted.cueq_config.conv_fusion is expected
 
 
-def test_training_conversion_explicitly_disables_fusion():
+def test_training_conversion_forwards_fusion_flag():
     tree = ast.parse(inspect.getsource(run_train.run))
     conversion_calls = [
         node
@@ -63,8 +66,56 @@ def test_training_conversion_explicitly_disables_fusion():
 
     assert len(conversion_calls) == 1
     keywords = {keyword.arg: keyword.value for keyword in conversion_calls[0].keywords}
-    assert isinstance(keywords["conv_fusion"], ast.Constant)
-    assert keywords["conv_fusion"].value is False
+    assert isinstance(keywords["conv_fusion"], ast.Attribute)
+    assert keywords["conv_fusion"].attr == "cueq_conv_fusion"
+
+
+@pytest.mark.parametrize(
+    ("device", "requested", "expected"),
+    [("cuda", False, False), ("cuda", True, True), ("cpu", True, False)],
+)
+def test_only_cueq_uses_training_fusion_policy(
+    monkeypatch, device, requested, expected
+):
+    args = build_default_arg_parser().parse_args(
+        [
+            "--name",
+            "test",
+            "--device",
+            device,
+            "--scaling",
+            "no_scaling",
+            "--hidden_irreps",
+            "4x0e",
+            "--only_cueq",
+            "True",
+            "--cueq_conv_fusion",
+            str(requested),
+        ]
+    )
+    args.compute_energy = True
+    args.compute_forces = False
+    args.compute_dipole = False
+    args.compute_polarizability = False
+    args.compute_magforces = False
+    args.mean = 0.0
+    monkeypatch.setattr(
+        model_script_utils,
+        "_build_model",
+        lambda _args, model_config, _foundation_config, _heads: model_config[
+            "cueq_config"
+        ],
+    )
+
+    cueq_config, _ = model_script_utils.configure_model(
+        args,
+        train_loader=None,
+        atomic_energies=[0.0],
+        heads=["Default"],
+        z_table=AtomicNumberTable([1]),
+    )
+
+    assert cueq_config.conv_fusion is expected
 
 
 def test_torchsim_requests_convolution_fusion(monkeypatch):

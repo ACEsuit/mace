@@ -889,7 +889,7 @@ def run(args) -> None:
             "AtomicDielectricMACE",
         ]
         model = run_e3nn_to_cueq(
-            deepcopy(model), device=device, conv_fusion=False
+            deepcopy(model), device=device, conv_fusion=args.cueq_conv_fusion
         )
     if args.enable_oeq:
         logging.info("Converting model to OEQ for accelerated training")
